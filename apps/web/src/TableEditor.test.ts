@@ -73,6 +73,16 @@ describe('table relation view semantics',()=>{
   const logical=renderToStaticMarkup(createElement(TableRelationsSvg,{document:doc,viewId:'d',viewMode:'logical',onSelect:()=>{}}));
   expect(physical).toBe('');
   expect(logical).toContain('논리 검토 관계');
-  expect(logical).not.toContain('marker-end');
+  expect(logical).toContain('marker-end');
+  expect(logical).toContain('marker-start');
  });
+});
+
+it('renders explicit endpoint cardinality consistently with crowfoot markers rather than legacy cardinality',()=>{
+ const doc=upsertTableRelation(example(),{id:'explicit',sourceTableId:'t',targetTableId:'t',scope:'both',logical:{name:'연결',cardinality:'one-to-many',required:false,sourceCardinality:{min:1,max:1},targetCardinality:{min:0,max:'many'}},physical:null});
+ const markup=renderToStaticMarkup(createElement(TableRelationsSvg,{document:doc,viewId:'d',viewMode:'both',onSelect:()=>{}}));
+ expect(markup).toContain('1..1 → 0..N');
+ expect(markup).not.toContain(' · 1:N');
+ expect(markup).toContain('marker-start="url(#table-crow-explicit-0)"');
+ expect(markup).toContain('marker-end="url(#table-crow-explicit-1)"');
 });
