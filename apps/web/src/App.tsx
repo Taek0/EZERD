@@ -4,6 +4,7 @@ import { userSchema, projectSchema, projectDocumentSchema, designDocumentSchema,
 import { ApiError, SaveGate, body, message, request, acknowledgeSave } from './client.js';
 import { Canvas } from './Canvas.js';
 import { CommentsPanel, CommentPins, Notifications, type CommentContext } from './CommentsPanel.js';
+import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { LatestRequest } from './comments-state.js';
 import {
   Avatar,
@@ -34,6 +35,8 @@ type OpenProject = {
 };
 const identityKey = 'ezerd.userId';
 export function App() {
+  const confirm = useConfirm();
+  const [draftTarget, setDraftTarget] = useState<(CommentContext & { nonce: number })>();
   const [user, setUser] = useState<User | null>(null), [checking, setChecking] = useState(true);
   const [username, setUsername] = useState(''), [editingName, setEditingName] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]), [search, setSearch] = useState(''), [status, setStatus] = useState<'active' | 'archived'>('active');
@@ -56,10 +59,12 @@ export function App() {
   }>();
   const navigation = useRef(new LatestRequest());
   function focusThread(thread: Thread) {
+    setDraftTarget(undefined);
     setCommentsOpen(true);
     setFocusTarget({ viewId: thread.viewId, objectId: thread.objectId, threadId: thread.id, x: thread.x, y: thread.y, nonce: Date.now() });
   }
   function resetReview() {
+    setDraftTarget(undefined);
     setThreads([]);
     setFocusTarget(undefined);
     setCanvasContext({ viewId: 'overview', selectedObjectId: null, position: { x: 120, y: 120 } });
@@ -68,7 +73,7 @@ export function App() {
     if (saving || busy)
       return false;
     const sameProject = current.current?.project.id === notification.projectId;
-    if (!sameProject && dirty && !window.confirm('저장하지 않은 변경을 버리고 알림의 프로젝트로 이동할까요?'))
+    if (!sameProject && dirty && !await confirm({ title: '프로젝트 이동', description: '저장하지 않은 변경을 버리고 알림의 프로젝트로 이동할까요?', confirmLabel: '이동', destructive: true }))
       return false;
     const ticket = navigation.current.begin();
     const startingRevision = rev.current;
@@ -85,7 +90,7 @@ export function App() {
       if (!thread)
         throw new Error('알림의 댓글을 찾을 수 없습니다.');
       if (projectValue) {
-        if (rev.current !== startingRevision && !window.confirm('이동을 준비하는 동안 추가한 변경을 버리고 이동할까요?'))
+        if (rev.current !== startingRevision && !await confirm({ title: '프로젝트 이동', description: '이동을 준비하는 동안 추가한 변경을 버리고 이동할까요?', confirmLabel: '이동', destructive: true }))
           return false;
         setOpened(projectDocumentSchema.parse(projectValue));
         setRevision(0);
@@ -252,6 +257,18 @@ export function App() {
       setBusy(false);
     }
   }
+  async function deleteProject(project: Project) {
+    if (busy || project.status !== 'archived') return;
+    if (!await confirm({ title: '프로젝트 영구 삭제', description: `“${project.name}” 프로젝트를 삭제할까요? 도메인, 테이블, 관계, 핀과 답글 및 관련 알림이 함께 삭제되며 복원할 수 없습니다.`, confirmLabel: '영구 삭제', destructive: true })) return;
+    setBusy(true);
+    setError('');
+    try {
+      await request(`/api/projects/${project.id}`, body('DELETE', { expectedVersion: project.version }));
+      setProjects(items => items.filter(item => item.id !== project.id));
+      setRefresh(value => value + 1);
+    } catch (e) { setError(message(e)); }
+    finally { setBusy(false); }
+  }
   function edit(document: DesignDocument) {
     setOpened(value => value ? { ...value, document } : value);
     setRevision(v => v + 1);
@@ -280,10 +297,10 @@ export function App() {
       setSaving(false);
     }
   }
-  function leave() {
+  async function leave() {
     if (saving)
       return;
-    if (dirty && !window.confirm('저장하지 않은 변경을 버리고 갤러리로 이동할까요?'))
+    if (dirty && !await confirm({ title: '갤러리로 이동', description: '저장하지 않은 변경을 버리고 갤러리로 이동할까요?', confirmLabel: '이동', destructive: true }))
       return;
     navigation.current.begin();
     setBusy(false);
@@ -362,7 +379,7 @@ export function App() {
           </div>
         </div>
         <div className="save-controls">
-          <Button aria-expanded={commentsOpen} onClick={() => setCommentsOpen(v => !v)}>검토 대화</Button>
+          <Button aria-expanded={commentsOpen} onClick={() => setCommentsOpen(v => !v)}>핀</Button>
           <span role="status" className={saveError ? 'save-state failed' : 'save-state'}>
             {saving ? '◌ 저장 중' : conflict ? '! 저장 충돌' : saveError ? '! 저장 실패' : dirty ? '● 저장하지 않은 변경' : '✓ 저장 완료'}
           </span>
@@ -376,8 +393,8 @@ export function App() {
       {opened.project.status === 'archived' && <div className="notice">보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.</div>}
       {saveError && <div className="notice error" role="alert">
         {saveError}
-        {conflict ? <Button disabled={saving} onClick={() => {
-          if (window.confirm('내 변경을 버리고 최신 저장 내용을 다시 열까요?'))
+        {conflict ? <Button disabled={saving} onClick={async () => {
+          if (await confirm({ title: '최신 내용 다시 열기', description: '내 변경을 버리고 최신 저장 내용을 다시 열까요?', confirmLabel: '다시 열기', destructive: true }))
             void open(opened.project.id);
         }}>최신 내용 다시 열기</Button> : <Button disabled={saving} onClick={() => void save()}>다시 저장</Button>}
       </div>}
@@ -388,6 +405,12 @@ export function App() {
           onChange={edit}
           readOnly={opened.project.status === 'archived'}
           onContextChange={setCanvasContext}
+          onCreatePin={context => {
+            setCanvasContext(context);
+            setFocusTarget(undefined);
+            setDraftTarget({ ...context, selectedObjectId: null, nonce: Date.now() });
+            setCommentsOpen(true);
+          }}
           {...(focusTarget ? { focusTarget } : {})}
           pins={<CommentPins
             threads={threads}
@@ -401,6 +424,7 @@ export function App() {
             userId={user.id}
             document={opened.document}
             context={canvasContext}
+            {...(draftTarget ? { draftTarget } : {})}
             activeThreadId={focusTarget?.threadId ?? null}
             onThreads={setThreads}
             onNavigate={focusThread}
@@ -478,12 +502,13 @@ export function App() {
               if (name?.trim())
                 void changeProject(project, { name: name.trim() });
             }}>이름 수정</Button>
-            <Button disabled={busy} onClick={() => {
-              if (project.status === 'archived' || window.confirm('이 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.'))
+            <Button className={project.status === 'active' ? 'project-archive' : 'project-restore'} disabled={busy} onClick={async () => {
+              if (project.status === 'archived' || await confirm({ title: '프로젝트 보관', description: `“${project.name}” 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.`, confirmLabel: '보관' }))
                 void changeProject(project, { status: project.status === 'active' ? 'archived' : 'active' });
             }}>
               {project.status === 'active' ? '보관' : '복원'}
             </Button>
+            {project.status === 'archived' && <Button className="project-delete" variant="danger" disabled={busy} onClick={() => void deleteProject(project)}>삭제</Button>}
           </div>
         </article>)}
       </section>}

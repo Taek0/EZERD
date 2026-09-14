@@ -102,3 +102,16 @@
 }
 
 .notification-popover > button > [data-text] { min-width: 0; width: 100%; flex-direction: column; align-items: flex-start; white-space: normal; text-align: left; }
+
+/* Pins use the same readable body/control scale as the workspace. */
+.comments-panel { font-size:16px; line-height:1.5; }
+.comments-panel button,.comments-panel label,.comments-panel textarea { font-size:15px; }
+.comments-panel .comment-message p { font-size:16px; }
+.comments-panel .comment-message time { font-size:14px; }
+.comment-reply { margin-left:10px; padding-left:12px; border-left:2px solid #c6d3e6; }
+.comment-thread .comment-composer { margin-top:12px; padding-top:12px; border-top:1px solid #c6d3e6; }
+.thread-reply-open { width:100%; justify-content:flex-start; }
+.notification-popover { font-size:16px; line-height:1.5; }
+.notification-popover > button { font-size:15px; }
+.notification-popover time { font-size:14px; }
+.new-thread > p { margin:10px 0; }

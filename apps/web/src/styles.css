@@ -961,3 +961,14 @@ button.relation-disclosure:hover { color: var(--accent); background: #dce2eb66; 
 /* Source Button text wrappers preserve the product’s composed content layout. */
 .project-open > [data-text] { min-width: 0; width: 100%; justify-content: space-between; padding: 0; }
 .user-button > [data-text] { min-width: 0; max-width: 100%; }
+
+/* Dashboard actions and shared interaction affordances. */
+.gallery-tools .tabs { border:1px solid #8997aa; border-radius:10px; padding:3px; }
+.gallery-tools .tabs button { border:1px solid #a2adbc; }
+.gallery .project-card { border:1px solid #8e9caf; }
+.gallery .project-card:hover,.gallery .project-card:focus-within { border-color:#526e9d; }
+.card-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.card-actions .project-archive,.card-actions .project-delete { margin-left:auto; }
+.card-actions .project-archive:hover,.card-actions .project-delete:hover { background:#b63737; color:white; border-color:#a62b2b; }
+button,[role="button"],summary { user-select:none; }
+.editor-shell .save-controls button[aria-expanded] { font-size:15px; }

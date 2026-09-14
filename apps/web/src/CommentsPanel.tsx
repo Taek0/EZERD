@@ -43,17 +43,20 @@ export function CommentPins({ threads, document, viewId, onOpen }: {
         e.stopPropagation();
         onOpen(thread);
       }}
-      aria-label={`댓글 ${index + 1}: ${thread.messages[0]?.body ?? ''}`}>
+      aria-label={`핀 ${index + 1}: ${thread.messages[0]?.body ?? ''}`}>
       {index + 1}
     </IconButton>;
   })}</>;
 }
-function Composer({ users, busy, label, onSend }: {
+function Composer({ users, busy, label, onSend, focusNonce }: {
+  focusNonce?: number;
   users: Member[];
   busy: boolean;
   label: string;
   onSend: (text: string, mentions: string[]) => Promise<boolean>;
 }) {
+  const composerRef = useRef<HTMLFormElement>(null);
+  useEffect(() => { if (focusNonce !== undefined) composerRef.current?.querySelector('textarea')?.focus(); }, [focusNonce]);
   const [text, setText] = useState(''), [mentions, setMentions] = useState<string[]>([]), [query, setQuery] = useState(''), [picking, setPicking] = useState(false);
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -63,7 +66,7 @@ function Composer({ users, busy, label, onSend }: {
       setPicking(false);
     }
   }
-  return <form className="comment-composer" onSubmit={e => void submit(e)}>
+  return <form ref={composerRef} className="comment-composer" onSubmit={e => void submit(e)}>
     <label>
       {label}
       <Textarea
@@ -71,7 +74,7 @@ function Composer({ users, busy, label, onSend }: {
         onChange={e => setText(e.target.value)}
         maxLength={10000}
         required
-        placeholder="검토 의견을 남겨 주세요"
+        placeholder="팀에 의견을 남겨 주세요"
         disabled={busy} />
     </label>
     <div className="mention-chips">
@@ -110,7 +113,8 @@ function Composer({ users, busy, label, onSend }: {
     </div>}
   </form>;
 }
-export function CommentsPanel({ projectId, userId, document, context, activeThreadId, onThreads, onNavigate, onClose, dirty }: {
+export function CommentsPanel({ projectId, userId, document, context, activeThreadId, onThreads, onNavigate, onClose, dirty, draftTarget }: {
+  draftTarget?: CommentContext & { nonce: number };
   projectId: string;
   userId: string;
   document: DesignDocument;
@@ -121,7 +125,9 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
   onClose: () => void;
   dirty: boolean;
 }) {
-  const [threads, setThreads] = useState<Thread[]>([]), [users, setUsers] = useState<Member[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [showResolved, setShowResolved] = useState(false), [allViews, setAllViews] = useState(false), [blank, setBlank] = useState(false), [refresh, setRefresh] = useState(0);
+  const [threads, setThreads] = useState<Thread[]>([]), [users, setUsers] = useState<Member[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [showResolved, setShowResolved] = useState(false), [allViews, setAllViews] = useState(true), [blank, setBlank] = useState(true), [refresh, setRefresh] = useState(0);
+  const draftContext = draftTarget && draftTarget.viewId === context.viewId ? draftTarget : context;
+  useEffect(() => { if (draftTarget) setBlank(true); }, [draftTarget]);
   const mounted = useRef(true), mutation = useRef(false), threadRevision = useRef(0);
   useEffect(() => {
     mounted.current = true;
@@ -151,6 +157,10 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
     });
     return () => controller.abort();
   }, [projectId, refresh, activeThreadId]);
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (!mutation.current && !window.document.hidden) setRefresh(value => value + 1); }, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     onThreads(threads);
   }, [threads, onThreads]);
@@ -194,17 +204,17 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
     }
   }
   const visible = threads.filter(t => (allViews || t.viewId === context.viewId) && (showResolved || !t.resolved));
-  return <aside className="comments-panel" aria-label="검토 대화">
+  return <aside className="comments-panel" aria-label="핀">
     <div className="comment-panel-heading">
-      <h2>검토 대화 <Badge variant="plain">
+      <h2>핀 <Badge variant="plain">
         {threads.filter(t => !t.resolved).length}
       </Badge></h2>
-      <IconButton onClick={onClose} aria-label="검토 대화 닫기">×</IconButton>
+      <IconButton onClick={onClose} aria-label="핀 닫기">×</IconButton>
     </div>
     <div className="comment-filters">
       <label><Checkbox
         checked={allViews}
-        onChange={e => setAllViews(e.target.checked)} />모든 화면</label>
+        onChange={e => setAllViews(e.target.checked)} />프로젝트 전체 핀</label>
       <label><Checkbox
         checked={showResolved}
         onChange={e => setShowResolved(e.target.checked)} />해결됨 포함</label>
@@ -220,13 +230,13 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
         className={`comment-thread ${activeThreadId === thread.id ? 'active' : ''}`}>
         <div className="comment-thread-heading">
           <Button onClick={() => onNavigate(thread)}>
-            {pinPosition(document, thread).missing ? '대상 삭제됨' : thread.objectId ? '연결된 객체로 이동 ↗' : '댓글 위치로 이동 ↗'}
+            {pinPosition(document, thread).missing ? '대상 삭제됨' : thread.objectId ? '연결된 객체로 이동 ↗' : '핀 위치로 이동 ↗'}
           </Button>
           <Button disabled={busy} onClick={() => void mutate(`/api/threads/${thread.id}`, 'PATCH', { resolved: !thread.resolved })}>
             {thread.resolved ? '다시 열기' : '해결'}
           </Button>
         </div>
-        {thread.messages.map(entry => <div className="comment-message" key={entry.id}>
+        {thread.messages.map((entry, index) => <div className={`comment-message ${index > 0 ? 'comment-reply' : 'comment-root'}`} key={entry.id}>
           <div>
             <strong>
               {users.find(u => u.id === entry.authorId)?.username ?? '사용자'}
@@ -242,6 +252,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
             {entry.mentionIds.map(id => <Badge key={id}>@{users.find(u => u.id === id)?.username ?? '사용자'}</Badge>)}
           </div>
         </div>)}
+        {activeThreadId !== thread.id && <Button className="thread-reply-open" onClick={() => onNavigate(thread)}>답글 {Math.max(0, thread.messages.length - 1)}개 · 답글 남기기</Button>}
         {activeThreadId === thread.id && <Composer
           key={thread.id}
           users={users}
@@ -249,20 +260,21 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
           label="답글 등록"
           onSend={(text, mentionIds) => mutate(`/api/threads/${thread.id}/messages`, 'POST', { authorId: userId, body: text, mentionIds })} />}
       </article>)}
-      {!visible.length && <p className="comment-empty">아직 대화가 없습니다. 캔버스의 객체나 빈 공간을 선택해 첫 의견을 남겨 보세요.</p>}
+      {!visible.length && <p className="comment-empty">아직 핀이 없습니다. 캔버스의 빈 공간에서 우클릭해 첫 핀을 남겨 보세요.</p>}
     </div>
     <div className="new-thread">
-      <h3>새 댓글 핀</h3>
+      <h3>새 핀</h3>
       <label><Checkbox
         checked={blank}
         onChange={e => setBlank(e.target.checked)} />빈 공간에 연결</label>
-      <p>{blank || !context.selectedObjectId ? '선택한 캔버스 위치' : '선택한 객체'}에 댓글을 남깁니다.</p>
-      {dirty && <p className="comment-save-hint">새 객체에 댓글을 연결하려면 먼저 설계를 저장해 주세요.</p>}
+      <p>{blank || !draftContext.selectedObjectId ? '선택한 캔버스 위치' : '선택한 객체'}에 핀을 남깁니다.</p>
+      {dirty && <p className="comment-save-hint">새 객체에 핀을 연결하려면 먼저 설계를 저장해 주세요.</p>}
       <Composer
         users={users}
         busy={busy}
-        label="댓글 등록"
-        onSend={(text, mentionIds) => mutate(`/api/projects/${projectId}/threads`, 'POST', { authorId: userId, viewId: context.viewId, ...pinAttachment(document, context.viewId, blank ? null : context.selectedObjectId, context.position), body: text, mentionIds })} />
+        label="핀 등록"
+        {...(draftTarget ? { focusNonce: draftTarget.nonce } : {})}
+        onSend={(text, mentionIds) => mutate(`/api/projects/${projectId}/threads`, 'POST', { authorId: userId, viewId: draftContext.viewId, ...pinAttachment(document, draftContext.viewId, blank ? null : context.selectedObjectId, draftContext.position), body: text, mentionIds })} />
     </div>
   </aside>;
 }
@@ -333,7 +345,7 @@ export function Notifications({ userId, onNavigate }: {
         <strong>
           {item.read ? '읽음' : '새 멘션'}
         </strong>
-        <span>검토 대화로 이동 ↗</span>
+        <span>핀으로 이동 ↗</span>
         <time>
           {new Date(item.createdAt).toLocaleString('ko-KR')}
         </time>
