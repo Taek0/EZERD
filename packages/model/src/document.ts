@@ -13,6 +13,8 @@ export interface Table {
   physical: { name: string; schema: string; comment: string };
   customProperties: CustomProperties;
 }
+export interface ProjectEnum { id: string; name: string; schema: string; values: string[] }
+export interface RelationCardinality { min: 0 | 1; max: 1 | 'many' }
 export interface Column {
   id: string;
   tableId: string;
@@ -20,7 +22,7 @@ export interface Column {
   logical: { name: string; definition: string; semanticType: string; required: boolean };
   physical: {
     name: string;
-    type: { name: string; length?: number | undefined; precision?: number | undefined; scale?: number | undefined; isArray: boolean };
+    type: { name: string; enumId?: string | undefined; length?: number | undefined; precision?: number | undefined; scale?: number | undefined; isArray: boolean };
     nullable: boolean;
     defaultExpression: string | null;
     comment: string;
@@ -41,7 +43,7 @@ export interface TableRelation {
   sourceTableId: string;
   targetTableId: string;
   scope: ModelScope;
-  logical: { name: string; cardinality: 'one-to-one' | 'one-to-many' | 'many-to-many'; required: boolean };
+  logical: { name: string; cardinality: 'one-to-one' | 'one-to-many' | 'many-to-many'; required: boolean; description?: string | undefined; sourceCardinality?: RelationCardinality | undefined; targetCardinality?: RelationCardinality | undefined };
   physical: null | {
     name: string;
     sourceColumnIds: string[];
@@ -61,6 +63,7 @@ export interface DesignDocument {
   domains: Domain[];
   domainRelations: DomainRelation[];
   notes: Note[];
+  enums?: ProjectEnum[] | undefined;
   tables?: Table[] | undefined;
   columns?: Column[] | undefined;
   keys?: TableKey[] | undefined;
@@ -73,7 +76,7 @@ export function createEmptyDocument(): DesignDocument {
 function requireObject(found: unknown): asserts found { if (!found) throw new Error('대상을 찾을 수 없습니다.'); }
 function requireView(doc: DesignDocument, viewId: string) { requireObject(viewId === 'overview' || doc.domains.some(d => d.id === viewId)); }
 function requireNewId(doc: DesignDocument, id: string) {
-  if (!id.trim() || id === 'overview' || [...doc.domains, ...doc.notes, ...doc.domainRelations, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? [])].some(o => o.id === id)) throw new Error('객체 ID는 고유해야 합니다.');
+  if (!id.trim() || id === 'overview' || [...doc.domains, ...doc.notes, ...doc.domainRelations, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? []), ...(doc.enums ?? [])].some(o => o.id === id)) throw new Error('객체 ID는 고유해야 합니다.');
 }
 function position(value: Position) {
   if (!Number.isFinite(value.x) || !Number.isFinite(value.y) || Math.abs(value.x) > 1e7 || Math.abs(value.y) > 1e7) throw new Error('좌표가 유효하지 않습니다.');
@@ -145,7 +148,7 @@ export function diagnoseDocument(doc: DesignDocument): DocumentDiagnostic[] {
   const validView = (id: string) => id === 'overview' || domains.has(id);
   const scopeConflict = (child: ModelScope, parent: ModelScope) => parent !== 'both' && child !== parent;
   const seen = new Set<string>();
-  for (const object of [...doc.domains, ...doc.notes, ...doc.domainRelations, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? [])]) {
+  for (const object of [...doc.domains, ...doc.notes, ...doc.domainRelations, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? []), ...(doc.enums ?? [])]) {
     if (seen.has(object.id) || !object.id.trim() || object.id === 'overview') report('duplicate-id', object.id, '객체 ID가 비어 있거나 중복되었습니다.');
     seen.add(object.id);
   }
@@ -177,6 +180,9 @@ export function diagnoseDocument(doc: DesignDocument): DocumentDiagnostic[] {
     const table = tables.get(column.tableId);
     if (!table) report('missing-column-table', column.id, '컬럼의 테이블을 찾을 수 없습니다.');
     else if (scopeConflict(column.scope, table.scope)) report('scope-conflict', column.id, '컬럼의 모델 범위가 테이블 범위를 벗어납니다.');
+  }
+  for (const column of columns.values()) {
+    if (column.physical.type.enumId && !doc.enums?.some(item => item.id === column.physical.type.enumId)) report('missing-enum', column.id, '컬럼의 ENUM 정의를 찾을 수 없습니다.');
   }
   const primaryTables = new Set<string>();
   for (const key of doc.keys ?? []) {
@@ -336,3 +342,21 @@ export function removeTableRelation(doc: DesignDocument, id: string): DesignDocu
 function cloneModel<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
+
+/** Stable project-wide types; changing a name does not invalidate column references. */
+export function upsertEnum(doc: DesignDocument, item: ProjectEnum): DesignDocument {
+  const validName = (value: string) => !!value.trim() && !value.includes('\0') && utf8Length(value) <= 63;
+  if (!validName(item.name) || !validName(item.schema || 'public')) throw new Error('ENUM 이름과 스키마는 UTF-8 63바이트 이하여야 합니다.');
+  if (!item.values.length || item.values.length > 1000 || new Set(item.values).size !== item.values.length || item.values.some(value => value.includes('\0') || utf8Length(value) > 63)) throw new Error('ENUM 값은 중복 없이 UTF-8 63바이트 이하로 입력해 주세요.');
+  const next = { ...item, schema: item.schema || 'public', values: [...item.values] };
+  if (doc.enums?.some(value => value.id !== item.id && (value.schema || 'public') === next.schema && value.name === next.name)) throw new Error('같은 스키마에 ENUM 이름이 중복됩니다.');
+  const exists = doc.enums?.some(value => value.id === item.id);
+  if (!exists) requireNewId(doc, item.id);
+  return { ...doc, enums: exists ? doc.enums!.map(value => value.id === item.id ? next : value) : [...(doc.enums ?? []), next] };
+}
+export function removeEnum(doc: DesignDocument, id: string): DesignDocument {
+  if (doc.columns?.some(column => column.physical.type.enumId === id)) throw new Error('사용 중인 ENUM은 삭제할 수 없습니다. 컬럼 타입을 먼저 변경해 주세요.');
+  return { ...doc, ...(doc.enums && { enums: doc.enums.filter(item => item.id !== id) }) };
+}
+
+function utf8Length(value: string): number { let count = 0; for (const char of value) { const code = char.codePointAt(0)!; count += code <= 127 ? 1 : code <= 2047 ? 2 : code <= 65535 ? 3 : 4; } return count; }

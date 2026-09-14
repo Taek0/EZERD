@@ -1,4 +1,4 @@
-import { tableSchema, columnSchema, tableKeySchema, tableRelationSchema } from './relational.js';
+import { tableSchema, columnSchema, tableKeySchema, tableRelationSchema, projectEnumSchema } from './relational.js';
 import { z } from 'zod';
 export const MAX_DOCUMENT_BYTES = 1_500_000;
 function withinDocumentBudget(doc: unknown): boolean {
@@ -21,6 +21,7 @@ export const nodeLayoutSchema = z.strictObject({ id, objectId: id, viewId: id, x
 export const viewportSchema = z.strictObject({ viewId: id, x: coordinate, y: coordinate, zoom: z.number().min(0.1).max(4) });
 export const designDocumentSchema = z.strictObject({
   schemaVersion: z.literal(1),
+  enums: z.array(projectEnumSchema).max(1000).optional(),
   tables: z.array(tableSchema).max(5000).optional(),
   columns: z.array(columnSchema).max(20000).optional(),
   keys: z.array(tableKeySchema).max(10000).optional(),
@@ -32,7 +33,7 @@ export const designDocumentSchema = z.strictObject({
 }).superRefine((doc, ctx) => {
   if (!withinDocumentBudget(doc)) ctx.addIssue({ code: 'custom', message: '설계 문서는 UTF-8 JSON 기준 1.5 MB까지 저장할 수 있습니다.' });
   const unique = (values: string[], path: string[]) => { if (new Set(values).size !== values.length) ctx.addIssue({ code: 'custom', path, message: 'Duplicate identities are not allowed.' }); };
-  unique([...doc.domains, ...doc.domainRelations, ...doc.notes, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? [])].map(o => o.id), ['domains']);
+  unique([...doc.domains, ...doc.domainRelations, ...doc.notes, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? []), ...(doc.enums ?? [])].map(o => o.id), ['domains']);
   unique(doc.layout.nodes.map(n => n.id), ['layout', 'nodes']);
   unique(doc.layout.nodes.map(n => JSON.stringify([n.viewId, n.objectId])), ['layout', 'nodes']);
   unique(doc.layout.viewports.map(v => v.viewId), ['layout', 'viewports']);
