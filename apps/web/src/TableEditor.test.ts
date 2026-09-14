@@ -1,3 +1,4 @@
+import { ConfirmProvider } from './components/ui/ConfirmProvider.js';
 import { describe, expect, it } from 'vitest';
 import { moveColumn, parseMetadata, setMappingPair } from './TableEditor.js';
 describe('table editor actions', () => {
@@ -37,8 +38,8 @@ describe('table editor rendered controls',()=>{
  });
  it('keeps physical inspector mutations read-only without exposing model view controls',()=>{
   const doc=example();
-  const inspector=renderToStaticMarkup(createElement(TableInspector,{document:doc,tableId:'t',onChange:()=>{},readOnly:true}));
-  expect(inspector).toContain('<fieldset disabled=""'); expect(inspector).toContain('물리 테이블명'); expect(inspector).toContain('키 · PK / UNIQUE');
+  const inspector=renderToStaticMarkup(createElement(ConfirmProvider,{children:createElement(TableInspector,{document:doc,tableId:'t',onChange:()=>{},readOnly:true})}));
+  expect(inspector).toContain('<fieldset disabled=""'); expect(inspector).toContain('테이블명'); expect(inspector).toContain('키 · PK / UNIQUE');
   const tools=renderToStaticMarkup(createElement(TableWorkspaceTools,{document:doc,viewId:'d',viewMode:'both',onViewModeChange:()=>{},onChange:()=>{},readOnly:true,position:{x:0,y:0},onSelect:()=>{}}));
   const addTableButton = [...tools.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match => match[2]?.includes('+ 테이블'));
   expect(addTableButton?.[1]).toMatch(/\bdisabled=""/);
@@ -80,7 +81,8 @@ describe('table relation view semantics',()=>{
 it('renders explicit endpoint cardinality consistently with crowfoot markers rather than legacy cardinality',()=>{
  const doc=upsertTableRelation(example(),{id:'explicit',sourceTableId:'t',targetTableId:'t',scope:'both',logical:{name:'연결',cardinality:'one-to-many',required:false,sourceCardinality:{min:1,max:1},targetCardinality:{min:0,max:'many'}},physical:null});
  const markup=renderToStaticMarkup(createElement(TableRelationsSvg,{document:doc,viewId:'d',viewMode:'both',onSelect:()=>{}}));
- expect(markup).toContain('1..1 → 0..N');
+ expect(markup).toContain('invoice.연결:invoice');
+ expect(markup).not.toContain('1..1 → 0..N');
  expect(markup).not.toContain(' · 1:N');
  expect(markup).toContain('marker-start="url(#table-crow-explicit-0)"');
  expect(markup).toContain('marker-end="url(#table-crow-explicit-1)"');

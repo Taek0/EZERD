@@ -235,3 +235,29 @@
 .table-node-content .table-columns>p{margin:12px;font-size:12px}
 .table-create-grid{grid-template-columns:38px minmax(0,1fr);min-width:0;gap:9px}
 .table-create-grid label:has(.ui-input-group),.table-create-grid label:has(.ui-select-root){grid-column:1/-1}
+
+/* Content measurements are shared with canvas resize, routing and export. */
+.table-node-content header{height:48px;min-height:48px;padding:10px 12px;box-sizing:border-box}
+.table-node-content header strong,.table-node-content header span{font-size:18px;line-height:26px}
+.table-node-content .table-columns{overflow:visible;flex:1;min-height:auto}
+.table-node-content .table-column-row{grid-template-columns:var(--table-grid);min-width:0;gap:8px;padding:8px 12px;font-size:15px;line-height:22px;box-sizing:border-box}
+.table-node-content .table-column-head{height:34px;min-height:34px;padding-top:6px;padding-bottom:6px;font-size:13px;position:static}
+.table-node-content .table-inline,.table-node-content .table-type-label{white-space:pre-wrap;overflow-wrap:anywhere;text-overflow:clip;overflow:visible}
+.table-node-content header .table-inline{white-space:nowrap}
+.table-node-content .table-key-marker{font-size:13px}
+.table-node-content .table-column-pk{background:#fff7df}
+.table-node-content .table-column-fk{background:#edf5ff}
+.table-node-content .table-column-pk.table-column-fk{background:#f1f0ff}
+.table-node-content .table-node-footer{height:56px;min-height:56px;justify-content:flex-start;align-items:center;padding:8px 52px 8px 12px;box-sizing:border-box}
+.table-node-footer button{width:32px;height:32px;min-width:32px;min-height:32px;font-size:22px}
+.table-node-content .table-columns>p{font-size:15px}
+.table-node-content .table-column-row .ui-input{font-size:15px;min-height:30px;height:30px}
+.ui-search-type{width:100%;min-width:0}
+.ui-search-type .ui-input-group>svg{width:18px;height:18px;margin-left:12px;flex:none;color:var(--muted)}
+.ui-search-type .ui-input-group .ui-input{padding-left:8px;text-transform:uppercase}
+.ui-search-type[data-disabled]{opacity:.55}
+.table-create-grid label:has(.ui-search-type){grid-column:1/-1}
+.table-route-adjust{cursor:pointer}
+.table-route-adjust rect{fill:#fff;stroke:#8395ac;stroke-width:1}
+.table-route-adjust:hover rect,.table-route-adjust:focus rect{fill:#e7efff;stroke:var(--accent)}
+.table-route-adjust text{font-size:17px;stroke:none;fill:var(--accent)}
