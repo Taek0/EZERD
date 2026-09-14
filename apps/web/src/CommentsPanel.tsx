@@ -4,6 +4,7 @@ import { notificationSchema, threadSchema, userSchema, type Thread, type Notific
 import { body, message, request } from './client.js';
 import { pinAttachment, pinPosition, selectedMentions } from './comments-state.js';
 import {
+  Avatar,
   Badge,
   Button,
   Checkbox,
@@ -48,7 +49,8 @@ export function CommentPins({ threads, document, viewId, onOpen }: {
     </IconButton>;
   })}</>;
 }
-function Composer({ users, busy, label, onSend, focusNonce }: {
+function Composer({ users, busy, label, onSend, focusNonce, authorName }: {
+  authorName: string;
   focusNonce?: number;
   users: Member[];
   busy: boolean;
@@ -66,17 +68,19 @@ function Composer({ users, busy, label, onSend, focusNonce }: {
       setPicking(false);
     }
   }
-  return <form ref={composerRef} className="comment-composer" onSubmit={e => void submit(e)}>
-    <label>
-      {label}
+  return <form ref={composerRef} className={`comment-composer ${text || picking ? 'has-draft' : ''}`} onSubmit={e => void submit(e)}>
+    <div className="comment-composer-row">
+      <Avatar size="xs" aria-hidden="true">{authorName.slice(0, 1)}</Avatar>
       <Textarea
+        aria-label={label}
+        rows={1}
         value={text}
         onChange={e => setText(e.target.value)}
         maxLength={10000}
         required
-        placeholder="팀에 의견을 남겨 주세요"
+        placeholder={label === '핀 등록' ? '핀 추가' : '답글 추가'}
         disabled={busy} />
-    </label>
+    </div>
     <div className="mention-chips">
       {mentions.map(id => <Button
         type="button"
@@ -237,12 +241,14 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
           </Button>
         </div>
         {thread.messages.map((entry, index) => <div className={`comment-message ${index > 0 ? 'comment-reply' : 'comment-root'}`} key={entry.id}>
-          <div>
+          <Avatar size="xs" aria-hidden="true">{(users.find(u => u.id === entry.authorId)?.username ?? '사용자').slice(0, 1)}</Avatar>
+          <div className="comment-message-content">
+          <div className="comment-message-meta">
             <strong>
               {users.find(u => u.id === entry.authorId)?.username ?? '사용자'}
             </strong>
-            <time dateTime={entry.createdAt}>
-              {new Date(entry.createdAt).toLocaleString('ko-KR')}
+            <time dateTime={entry.createdAt} title={new Date(entry.createdAt).toLocaleString('ko-KR')}>
+              {new Date(entry.createdAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
             </time>
           </div>
           <p>
@@ -251,14 +257,16 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
           <div className="mention-chips">
             {entry.mentionIds.map(id => <Badge key={id}>@{users.find(u => u.id === id)?.username ?? '사용자'}</Badge>)}
           </div>
+          </div>
         </div>)}
         {activeThreadId !== thread.id && <Button className="thread-reply-open" onClick={() => onNavigate(thread)}>답글 {Math.max(0, thread.messages.length - 1)}개 · 답글 남기기</Button>}
-        {activeThreadId === thread.id && <Composer
+        <div hidden={activeThreadId !== thread.id}><Composer
           key={thread.id}
           users={users}
+          authorName={users.find(u => u.id === userId)?.username ?? '나'}
           busy={busy}
           label="답글 등록"
-          onSend={(text, mentionIds) => mutate(`/api/threads/${thread.id}/messages`, 'POST', { authorId: userId, body: text, mentionIds })} />}
+          onSend={(text, mentionIds) => mutate(`/api/threads/${thread.id}/messages`, 'POST', { authorId: userId, body: text, mentionIds })} /></div>
       </article>)}
       {!visible.length && <p className="comment-empty">아직 핀이 없습니다. 캔버스의 빈 공간에서 우클릭해 첫 핀을 남겨 보세요.</p>}
     </div>
@@ -271,6 +279,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
       {dirty && <p className="comment-save-hint">새 객체에 핀을 연결하려면 먼저 설계를 저장해 주세요.</p>}
       <Composer
         users={users}
+        authorName={users.find(u => u.id === userId)?.username ?? '나'}
         busy={busy}
         label="핀 등록"
         {...(draftTarget ? { focusNonce: draftTarget.nonce } : {})}

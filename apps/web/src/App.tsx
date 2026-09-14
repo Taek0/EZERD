@@ -417,7 +417,7 @@ export function App() {
             document={opened.document}
             viewId={canvasContext.viewId}
             onOpen={focusThread} />} />
-        <div hidden={!commentsOpen} className="comments-container">
+        <div data-open={commentsOpen} aria-hidden={!commentsOpen} inert={!commentsOpen} className="comments-container">
           <CommentsPanel
             key={opened.project.id}
             projectId={opened.project.id}
