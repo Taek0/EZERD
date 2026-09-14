@@ -107,3 +107,15 @@ describe('physical editor validation', () => {
   expect(typeParameterEnabled({name:'varchar',isArray:false,enumId:'e'},'length')).toBe(false);
  });
 });
+
+it('presents existing relations before creation with PK first for every endpoint control', () => {
+ let doc = example();
+ doc = addTable(doc,{id:'parent',domainId:'d',scope:'physical',logical:{name:'부모',definition:''},physical:{name:'parent',schema:'public',comment:''},customProperties:metadata},{x:400,y:0});
+ doc = {...doc,tableRelations:[{id:'ordered',sourceTableId:'t',targetTableId:'parent',scope:'physical',logical:{name:'참조',cardinality:'one-to-many',required:false},physical:{name:'fk_test',sourceColumnIds:['c'],targetColumnIds:['pk'],onDelete:'NO ACTION',onUpdate:'NO ACTION'}}]};
+ const html=renderToStaticMarkup(createElement(ConfirmProvider,{children:createElement(TableInspector,{document:doc,tableId:'t',onChange:()=>{},readOnly:false})}));
+ expect(html.indexOf('출발 테이블 (PK)')).toBeLessThan(html.indexOf('대상 테이블 (FK)'));
+ expect(html.indexOf('출발 끝점 (PK)')).toBeLessThan(html.indexOf('대상 끝점 (FK)'));
+ expect(html.indexOf('PK / UNIQUE 컬럼 1')).toBeLessThan(html.indexOf('FK 컬럼 1'));
+ expect(html.indexOf('FK 이름')).toBeLessThan(html.indexOf('PK 출발 컬럼'));
+ expect(html).not.toContain('속성명');
+});

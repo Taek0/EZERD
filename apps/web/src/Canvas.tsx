@@ -1,7 +1,7 @@
 import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from './components/ui/untitled.js';
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
-import { type DesignDocument, type Table, upsertCombinedView, removeCombinedView, isVisibleInView, autoLayoutView, removeTableReference, addTable, addTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
+import { type DesignDocument, type Table, upsertCombinedView, removeCombinedView, isVisibleInView, autoLayoutView, removeTableReference, addTable, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
 import { tableCardSize } from './table-geometry.js';
 import { exportCanvasPng } from './canvas-export.js';
@@ -154,7 +154,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   const query = relationSearch.trim().toLocaleLowerCase();
   const matches = (...values: (string | undefined | null)[]) => !query || values.filter(Boolean).join(' ').toLocaleLowerCase().includes(query);
   const viewTables = (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode) && nodes.some(n => n.objectId === t.id));
-  const otherTables = (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode) && t.domainId !== viewId && !doc.layout.nodes.some(n => n.objectId === t.id && n.viewId === viewId));
+  const otherTables = referencedDomainTables(doc, viewId);
   const viewRelations = (doc.tableRelations ?? []).filter(r => isVisibleInView(r.scope, viewMode) && !!r.physical && (viewTables.some(t => t.id === r.sourceTableId) && viewTables.some(t => t.id === r.targetTableId)));
   const tableLabel = (t: Table) => t.physical.name || t.logical.name || '이름 없는 테이블';
   const outlineCount = viewId === 'overview' ? doc.domains.length : viewTables.length;
@@ -221,11 +221,6 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     const id = newId();
     change(addTable(doc, { id, domainId: viewId, scope: 'physical', logical: { name: '새 테이블', definition: '' }, physical: { name, schema: 'public', comment: '' }, customProperties: emptyMetadata() }, position()));
     pick(id);
-  }
-  function reference(tableId: string) {
-    if (readOnly || viewId === 'overview') return;
-    change(addTableReference(doc, tableId, viewId, position()));
-    pick(tableId);
   }
   function pick(id: string) {
     setSelected(id);
@@ -368,7 +363,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
 <UntitledPopover className="domain-view-popover" placement="bottom start" shouldFlip={false} offset={8}><Dialog aria-label="도메인 뷰" className="combined-view-picker">
         <Input aria-label="도메인 뷰 이름" value={combinedName} onChange={e => setCombinedName(e.target.value)} maxLength={120} />
         <div className="combined-domain-options">{doc.domains.map(d => <label key={d.id}><Checkbox aria-label={d.name} checked={selectedDomains.includes(d.id)} onChange={e => setSelectedDomains(value => e.target.checked ? [...value,d.id] : value.filter(id => id !== d.id))}/><span style={{color:d.color ?? '#8993a3'}}>●</span>{d.name}</label>)}</div>
-        <div className="actions"><Button disabled={readOnly || !selectedDomains.length || !combinedName.trim()} onClick={() => {const id=viewDraftId ?? newId();let next=upsertCombinedView(doc,{id,name:combinedName.trim(),domainIds:selectedDomains});if(!viewDraftId){next={...next,layout:{...next.layout,nodes:next.layout.nodes.map(n=>n.viewId===id ? {...n,...tableCardSize(next,n.objectId,n.width,n.height)} : n)}};next=autoLayoutView(next,id);next=setViewport(next,{viewId:id,x:40,y:120,zoom:1});}change(next);navigate(id);setViewPickerOpen(false);}}>뷰 저장</Button>
+        <div className="actions"><Button disabled={readOnly || !selectedDomains.length || !combinedName.trim()} onClick={() => {const id=viewDraftId ?? newId();let next=upsertCombinedView(doc,{id,name:combinedName.trim(),domainIds:selectedDomains});if(!viewDraftId){next={...next,layout:{...next.layout,nodes:next.layout.nodes.map(n=>n.viewId===id ? {...n,...tableCardSize(next,n.objectId,n.width,n.height)} : n)}};next=autoLayoutView(next,id);next=setViewport(next,{viewId:id,x:40,y:120,zoom:1});}change(next);navigate(id);setViewPickerOpen(false);}}>적용</Button>
         {viewDraftId && <Button disabled={readOnly} onClick={async () => {if(await confirm({title:'도메인 뷰 삭제',description:'저장한 보기와 배치를 삭제합니다. 원본 테이블은 유지됩니다.',destructive:true,confirmLabel:'삭제'})){change(removeCombinedView(doc,viewDraftId));navigate('overview');setViewPickerOpen(false);}}}>보기 삭제</Button>}
         <Button disabled={readOnly} onClick={()=>{setViewDraftId(null);setCombinedName('새 도메인 뷰');setSelectedDomains([]);}}>새 뷰</Button><Button onClick={() => setViewPickerOpen(false)}>닫기</Button></div>
         {!!doc.views?.length && <div className="domain-view-list" aria-label="저장한 도메인 뷰">{doc.views.map(v => <Button key={v.id} onClick={() => {navigate(v.id);setViewPickerOpen(false);}}>{v.name}</Button>)}</div>}
@@ -632,20 +627,21 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               <PanelSection title="테이블 관계" count={viewRelations.length}>
                 <PanelList empty="이 화면에 표시할 테이블 관계가 없습니다.">
                   {viewRelations.filter(r => matches(r.logical.name, r.physical?.name)).map(r => <PanelRow key={r.id}
-                    title={((doc.tables ?? []).find(t => t.id === r.sourceTableId)?.physical.name || '?') + ' → ' + ((doc.tables ?? []).find(t => t.id === r.targetTableId)?.physical.name || '?')}
+                    title={((doc.tables ?? []).find(t => t.id === r.targetTableId)?.physical.name || '?') + ' (PK) → ' + ((doc.tables ?? []).find(t => t.id === r.sourceTableId)?.physical.name || '?') + ' (FK)'}
                     meta={r.physical?.name || 'FK'}
                     badge={r.physical ? 'FK' : undefined}
                     onSelect={() => pick(r.sourceTableId)} />)}
                 </PanelList>
               </PanelSection>
-              {!readOnly && !activeCombined && <PanelSection title="다른 도메인 테이블" count={otherTables.length}>
-                <PanelNote>선택하면 이 화면에 원본 참조로 추가합니다. 참조 화면에서 편집해도 원본 테이블이 바뀝니다.</PanelNote>
-                <PanelList empty="참조할 수 있는 다른 도메인의 테이블이 없습니다.">
-                  {otherTables.filter(t => matches(t.physical.name, t.logical.name)).map(t => <PanelRow key={t.id}
-                    title={tableLabel(t)}
-                    meta={doc.domains.find(d => d.id === t.domainId)?.name}
-                    badge="＋ 참조"
-                    onSelect={() => reference(t.id)} />)}
+              {!activeCombined && <PanelSection title="다른 도메인 테이블" count={otherTables.length}>
+                <PanelNote>도메인 뷰에서 현재 도메인과 키 관계로 연결된 참조 테이블입니다.</PanelNote>
+                <PanelList empty="도메인 뷰에서 참조 관계를 설정한 다른 도메인 테이블이 없습니다.">
+                  {otherTables.filter(t => matches(t.physical.name, t.logical.name)).map(t => <li key={t.id} className="panel-row">
+                    <div className="panel-row-main reference-table-row">
+                      <span className="panel-row-text"><span className="panel-row-title">{tableLabel(t)}</span><small>{doc.domains.find(d => d.id === t.domainId)?.name}</small></span>
+                      <span className="panel-row-badge">참조</span>
+                    </div>
+                  </li>)}
                 </PanelList>
               </PanelSection>}
             </>}
@@ -764,10 +760,19 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             {!activeCombined && <PanelSection title="새 테이블 만들기" defaultOpen>
               <TableWorkspaceTools hideViewMode document={doc} viewId={viewId} viewMode={viewMode} onViewModeChange={() => {}} onChange={change} readOnly={readOnly} position={position()} onSelect={pick} />
             </PanelSection>}
-            <PanelNote>목록 탭에서 테이블을 찾고 다른 도메인의 테이블을 참조로 추가할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.</PanelNote>
+            <PanelNote>목록 탭에서 테이블과 다른 도메인의 참조 관계를 확인할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.</PanelNote>
           </>}
         </div>
       </aside>
     </div>
   </div>;
+}
+
+/** External tables must have a physical key relation in a saved view containing this domain. */
+export function referencedDomainTables(doc: DesignDocument, domainId: string): Table[] {
+  const tables = (doc.tables ?? []).filter(t => isVisibleInView(t.scope, 'physical'));
+  const ownIds = new Set(tables.filter(t => t.domainId === domainId).map(t => t.id));
+  const sharedDomains = new Set((doc.views ?? []).filter(v => v.domainIds.includes(domainId)).flatMap(v => v.domainIds));
+  const referencedIds = new Set((doc.tableRelations ?? []).filter(r => r.physical && isVisibleInView(r.scope, 'physical')).flatMap(r => ownIds.has(r.sourceTableId) ? [r.targetTableId] : ownIds.has(r.targetTableId) ? [r.sourceTableId] : []));
+  return tables.filter(t => t.domainId !== domainId && sharedDomains.has(t.domainId) && referencedIds.has(t.id));
 }

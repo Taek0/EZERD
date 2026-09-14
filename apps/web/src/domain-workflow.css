@@ -56,3 +56,11 @@
 .domain-view-list{display:grid;gap:3px;border-top:1px solid var(--line);padding-top:8px}
 .domain-view-list .ui-button{justify-content:flex-start;box-shadow:none;border-color:transparent;background:transparent;text-align:left}
 .domain-view-trigger [data-text]{display:flex;align-items:center;gap:6px}
+.reference-table-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  cursor: default;
+}
