@@ -5,6 +5,7 @@ import { createProjectSchema, deleteProjectSchema, projectQuerySchema, saveDocum
 import type { Project, User } from '@ezerd/contracts';
 import { DatabaseService } from './db/database.service.js';
 import { projects, users } from './db/schema.js';
+import { isUsernameConflict } from './user-conflicts.js';
 import type { ProjectRow } from './db/schema.js';
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -23,6 +24,7 @@ async function databaseOperation<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); }
   catch (error) {
     if (error instanceof HttpException) throw error;
+    if (isUsernameConflict(error)) throw new ConflictException('이미 사용 중인 사용자 이름입니다. 다른 이름을 입력해주세요.');
     throw new ServiceUnavailableException('저장소에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.');
   }
 }

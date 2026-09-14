@@ -43,20 +43,23 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     }
     if (app) await app.close();
   });
-  it('registers, revisits and renames stable user IDs; duplicate names stay distinct', async () => {
-    const first = await request('/users', 'POST', { username: '  테스트 사용자  ' });
-    if (first.data.id) userIds.push(first.data.id);
-    expect(first.status).toBe(201);
-    expect(first.data.username).toBe('테스트 사용자');
-    const second = await request('/users', 'POST', { username: '테스트 사용자' });
-    if (second.data.id) userIds.push(second.data.id);
-    expect(second.data.id).not.toBe(first.data.id);
-    expect((await request(`/users/${first.data.id}`)).data).toEqual(first.data);
-    expect((await request(`/users/${first.data.id}`, 'PATCH', { username: '새 이름' })).data.username).toBe('새 이름');
-    expect((await request('/users')).data.some((user: { id: string }) => user.id === first.data.id)).toBe(true);
-    expect((await request('/users', 'POST', { username: ' ' })).status).toBe(400);
+  it('enforces unique trimmed usernames on registration rename and concurrent creation', async () => {
+    const name='사용자'+randomUUID().slice(0,8);
+    const first=await request('/users','POST',{username:'  '+name+'  '});if(first.data.id)userIds.push(first.data.id);
+    expect(first.status).toBe(201);expect(first.data.username).toBe(name);
+    const duplicate=await request('/users','POST',{username:name});if(duplicate.data.id)userIds.push(duplicate.data.id);
+    expect(duplicate.status).toBe(409);
+    const other=await request('/users','POST',{username:name+'-other'});if(other.data.id)userIds.push(other.data.id);
+    expect((await request('/users/'+other.data.id,'PATCH',{username:name})).status).toBe(409);
+    expect((await request('/users/'+other.data.id)).data.username).toBe(name+'-other');
+    expect((await request('/users/'+first.data.id,'PATCH',{username:name})).status).toBe(200);
+    expect((await request('/users/'+first.data.id,'PATCH',{username:name+'-new'})).data.username).toBe(name+'-new');
+    const raceName='동시'+randomUUID().slice(0,8);
+    const raced=await Promise.all([request('/users','POST',{username:raceName}),request('/users','POST',{username:raceName})]);
+    raced.forEach(value=>{if(value.data.id)userIds.push(value.data.id);});expect(raced.map(value=>value.status).sort()).toEqual([201,409]);
+    expect((await request('/users','POST',{username:' '})).status).toBe(400);
     expect((await request('/users/invalid')).status).toBe(400);
-    expect((await request(`/users/${randomUUID()}`)).status).toBe(404);
+    expect((await request('/users/'+randomUUID())).status).toBe(404);
   });
   it('persists documents, atomically rejects stale writes, and protects archived projects', async () => {
     const name = `integration-${randomUUID()}_%`;

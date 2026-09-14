@@ -14,10 +14,10 @@ export const projects = pgTable('projects', {
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 
-// Names may repeat; stable browser-held IDs identify returning teammates.
+// Display names are unique after API trimming; stable IDs identify returning teammates.
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  username: varchar('username', { length: 40 }).notNull(),
+  username: varchar('username', { length: 40 }).notNull().unique('users_username_unique'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
