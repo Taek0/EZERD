@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
-import { type DesignDocument, isVisibleInView, autoLayoutView, removeTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport, diagnoseDocument } from '@ezerd/model';
+import { type DesignDocument, type Table, isVisibleInView, autoLayoutView, removeTableReference, addTable, addTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport, diagnoseDocument } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
 import { cardSize, connectedRelations } from './canvas-state.js';
-import { TableNodeContent, TableInspector, TableWorkspaceTools, TableRelationsSvg, ForeignKeyDialog } from './TableEditor.js';
+import { TableNodeContent, TableInspector, TableWorkspaceTools, TableRelationsSvg, ForeignKeyDialog, EnumDialog, emptyMetadata } from './TableEditor.js';
 import { clampLayoutPatch, newId, validViewId, viewportDestination } from './client.js';
-import { Accordion, Button, Collapse, ContextMenu, DisclosureButton, IconButton, Input, Select, Textarea } from './components/ui/index.js';
+import { Button, ContextMenu, IconButton, Input, Select, TabButton, Textarea } from './components/ui/index.js';
+import { PanelList, PanelNote, PanelRow, PanelSection } from './panel.js';
 import './domain-workflow.css';
 export type CanvasContext = { viewId: string; selectedObjectId: string | null; position: { x: number; y: number } };
 type Props = {
@@ -40,6 +41,8 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   const stackedInspector = workspaceWidth < 620;
   const [relationsOpen, setRelationsOpen] = useState(false);
   const [connectedOpen, setConnectedOpen] = useState(true);
+  const [panelTab, setPanelTab] = useState<'properties' | 'outline'>('properties');
+  const [enumOpen, setEnumOpen] = useState(false);
   const [domainName, setDomainName] = useState('');
   const [filterDomain, setFilterDomain] = useState('');
   const [relationSearch, setRelationSearch] = useState('');
@@ -131,6 +134,15 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   }, [doc.domains, filterDomain, connectSource]);
   const diagnostics = diagnoseDocument(doc);
   const activeDomain = doc.domains.find(d => d.id === viewId);
+  const query = relationSearch.trim().toLocaleLowerCase();
+  const matches = (...values: (string | undefined | null)[]) => !query || values.filter(Boolean).join(' ').toLocaleLowerCase().includes(query);
+  const viewTables = (doc.tables ?? []).filter(t => doc.layout.nodes.some(n => n.viewId === viewId && n.objectId === t.id));
+  const otherTables = (doc.tables ?? []).filter(t => t.domainId !== viewId && !doc.layout.nodes.some(n => n.objectId === t.id && n.viewId === viewId));
+  const viewRelations = (doc.tableRelations ?? []).filter(r => viewTables.some(t => t.id === r.sourceTableId) || viewTables.some(t => t.id === r.targetTableId));
+  const tableLabel = (t: Table) => t.physical.name || t.logical.name || '이름 없는 테이블';
+  const outlineCount = viewId === 'overview' ? doc.domains.length : viewTables.length;
+  const selectionKind = table ? '테이블' : domain ? '도메인' : note ? '텍스트' : '';
+  const selectionName = table ? tableLabel(table) : domain ? domain.name : note ? (note.text.slice(0, 40) || '자유 텍스트') : '';
   function change(next: DesignDocument) {
     if (!readOnly)
       onChange(next);
@@ -164,12 +176,29 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     if (readOnly) return;
     const id = newId();
     change(addDomain(doc, { id, name, description: '', color: '#8993a3' }, at ?? position()));
-    setSelected(id); setInspectorOpen(true); setDomainName(''); setMenu(null);
+    setSelected(id); setInspectorOpen(true); setPanelTab('properties'); setDomainName(''); setMenu(null);
   }
   function newNote() {
+    if (readOnly) return;
     const id = newId();
     change(addNote(doc, { id, viewId, text: '업무 설명을 입력하세요.' }, position()));
+    pick(id);
+  }
+  function newTable(name = '') {
+    if (readOnly || viewId === 'overview') return;
+    const id = newId();
+    change(addTable(doc, { id, domainId: viewId, scope: 'both', logical: { name: '새 테이블', definition: '' }, physical: { name, schema: 'public', comment: '' }, customProperties: emptyMetadata() }, position()));
+    pick(id);
+  }
+  function reference(tableId: string) {
+    if (readOnly || viewId === 'overview') return;
+    change(addTableReference(doc, tableId, viewId, position()));
+    pick(tableId);
+  }
+  function pick(id: string) {
     setSelected(id);
+    setInspectorOpen(true);
+    setPanelTab('properties');
   }
   function zoom(value: number) {
     const next = Math.max(.25, Math.min(2, value));
@@ -248,6 +277,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     if (!relation)
       return;
     setInspectorOpen(true);
+    setPanelTab('properties');
     setRelationsOpen(true);
     setRelationId(id);
     setSource(relation.sourceDomainId);
@@ -270,6 +300,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     setSelected(null);
     setMenu(null);
     setInspectorOpen(true);
+    setPanelTab('properties');
     setRelationsOpen(true);
     requestAnimationFrame(() => globalThis.document.querySelector<HTMLInputElement>('[aria-label="관계 이름"]')?.focus());
   }
@@ -279,23 +310,31 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
         <div className="breadcrumbs">
           <Button className={viewId === 'overview' ? 'current' : ''} onClick={() => navigate('overview')}>도메인 맵</Button>
           {activeDomain && <>
-            <span>/</span>
-            <strong>
+            <span aria-hidden="true">/</span>
+            <strong title={activeDomain.name}>
               {activeDomain.name}
             </strong>
           </>}
         </div>
         <div className="actions">
+          {viewId !== 'overview' && <div className="view-mode-switch" role="group" aria-label="표시 모드">
+            {(['both', 'logical', 'physical'] as const).map(mode => <TabButton key={mode} selected={viewMode === mode} onClick={() => setViewMode(mode)}>
+              {mode === 'both' ? '논리+물리' : mode === 'logical' ? '논리' : '물리'}
+            </TabButton>)}
+          </div>}
+          {viewId === 'overview'
+            ? <Button disabled={readOnly} onClick={() => newDomain()}>＋ 도메인</Button>
+            : <Button disabled={readOnly} onClick={() => newTable()}>＋ 테이블</Button>}
+          <Button disabled={readOnly} onClick={newNote}>＋ 텍스트</Button>
+          {viewId !== 'overview' && <Button onClick={() => setEnumOpen(true)}>ENUM</Button>}
+          <span className="toolbar-divider" aria-hidden="true" />
           <IconButton className="inspector-toggle" aria-label={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'} title={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'} aria-expanded={inspectorOpen} aria-controls="canvas-inspector" onClick={() => setInspectorOpen(value => !value)}>
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="3" /><path className="sidebar-icon-divider" d="M12 4.5v11" /><path className="sidebar-icon-fill" d="M13 5h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1z" /></svg>
           </IconButton>
-          {viewId === 'overview' && <Button disabled={readOnly} onClick={() => newDomain()}>＋ 도메인</Button>}
-          <Button disabled={readOnly} onClick={newNote}>T 텍스트</Button>
         </div>
       </div>
       {viewId === 'overview' && filterDomain && <div className="domain-filter-status" role="status">{doc.domains.find(d => d.id === filterDomain)?.name} 연결 강조 <Button onClick={() => setFilterDomain('')}>강조 해제</Button></div>}
-      {viewId !== 'overview' && <div className="table-view-mode"><label>표시 모드<Select aria-label="표시 모드" value={viewMode} onChange={e => setViewMode(e.target.value as typeof viewMode)}><option value="both">논리 + 물리</option><option value="logical">논리</option><option value="physical">물리</option></Select></label></div>}
-      <div
+            <div
         ref={surface}
         className={`canvas-surface ${connectSource || fkSource ? 'connection-target-mode' : ''}`}
         onContextMenu={e => {
@@ -457,6 +496,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
       ...(viewId === 'overview' ? [{id:'new-domain',label:'새 도메인 생성',onAction:() => newDomain('새 도메인', blankPosition.current?.viewId === viewId ? blankPosition.current : undefined)}, {id:'new-relation',label:'새 도메인 관계',onAction:() => startRelation('', '')}] : []),
       {id:'auto-layout',label:'자동 배치',disabled:!nodes.length,onAction:() => {change(autoLayoutView(doc, viewId));setMenu(null);}},
     ] : []} />
+    {enumOpen && <EnumDialog document={doc} onChange={change} readOnly={readOnly} onClose={() => setEnumOpen(false)} />}
     <div className="inspector-shell" inert={!inspectorOpen} aria-hidden={!inspectorOpen}>
       <div className="inspector-resizer" role="separator" aria-label="속성 패널 너비 조절" aria-orientation="vertical" aria-valuemin={panelBounds.min} aria-valuemax={panelBounds.max} aria-valuenow={Math.round(panelWidth)} tabIndex={inspectorOpen && !stackedInspector ? 0 : -1}
         onPointerDown={e => {
@@ -478,170 +518,206 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
           if (next !== null) { e.preventDefault(); setInspectorWidth(clampInspectorWidth(next, workspaceWidth)); }
         }} />
       <aside id="canvas-inspector" className="inspector">
-      {diagnostics.length > 0 && <div className="document-diagnostics" role="status">
-        <h3>설계 확인 {diagnostics.length}건</h3>
-        <p>저장은 가능하지만 아래 항목을 확인해 주세요.</p>
-        <ul>
-          {diagnostics.map((item, index) => <li key={`${item.code}-${item.objectId}-${index}`}>
-            {item.message}
-          </li>)}
-        </ul>
-      </div>}
-      <div className="inspector-heading">
-        <span>02 / INSPECTOR</span>
-        <h2>
-          {selected ? '선택 항목' : viewId === 'overview' ? '도메인 관계' : '속성'}
-        </h2>
-      </div>
-      {table ? <>
-        {selectedNode && table.domainId !== viewId && <Button variant="danger" className="danger" disabled={readOnly} onClick={() => {
-          change(removeTableReference(doc, selectedNode.id));
-          setSelected(null);
-        }}>이 화면의 참조 제거</Button>}
-        <TableInspector document={doc} tableId={table.id} onChange={change} readOnly={readOnly} onStartForeignKey={columnId => {setFkSource(columnId);setFkTarget(null);}} />
-      </> : selectedNode && (domain || note) ? <div className="inspector-fields">
-        {domain ? <>
-          <label>도메인 이름<Input
-            value={domain.name}
-            maxLength={120}
-            disabled={readOnly}
-            onChange={e => change(updateDomain(doc, domain.id, { name: e.target.value }))} />
-          </label>
-          <label>업무 설명<Textarea
-            maxLength={10000}
-            value={domain.description}
-            disabled={readOnly}
-            onChange={e => change(updateDomain(doc, domain.id, { description: e.target.value }))} />
-          </label>
-        {domain && <div className="relation-list"><DisclosureButton className="relation-disclosure" expanded={connectedOpen} controls="selected-domain-relations" onClick={() => setConnectedOpen(value => !value)}>연결된 도메인 관계 <span className="relation-count">{connectedRelations(doc.domainRelations,domain.id).length}</span></DisclosureButton><Collapse id="selected-domain-relations" open={connectedOpen}>
-          {connectedRelations(doc.domainRelations,domain.id).map(r => <Button key={r.id} onClick={() => editRelation(r.id)}>{r.name}<small>{doc.domains.find(d => d.id === r.sourceDomainId)?.name} {r.direction === 'both' ? '↔' : '→'} {doc.domains.find(d => d.id === r.targetDomainId)?.name}</small></Button>)}
-          {!connectedRelations(doc.domainRelations,domain.id).length && <p className="field-help">연결된 관계가 없습니다. 카드에서 우클릭해 연결하세요.</p>}
-        </Collapse></div>}
-          <label>도메인 색상<Input type="color" value={domain.color ?? '#8993a3'} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, {color:e.target.value}))} /></label>
-          <Button onClick={() => navigate(domain.id)}>도메인 내부 열기 →</Button>
-          <Button disabled={readOnly} onClick={() => startRelation(domain.id, '')}>새 도메인 관계</Button>
-        </> : <label>자유 텍스트<Textarea
-          maxLength={20000}
-          value={note?.text ?? ''}
-          disabled={readOnly}
-          onChange={e => note && change(updateNote(doc, note.id, e.target.value))} />
-        </label>}
-        <div className="dimensions">
-          {(['x', 'y', 'width', 'height'] as const).map(key => <label key={key}>
-            {({ x: 'X', y: 'Y', width: '너비', height: '높이' })[key]}
-            <Input
-              type="number"
-              min={key === 'x' || key === 'y' ? -10000000 : cardSize(domain ? 'domain' : 'note',0,0)[key]}
-              max={key === 'x' || key === 'y' ? 10000000 : 10000}
-              value={Math.round(selectedNode[key])}
-              disabled={readOnly}
-              onChange={e => {
-                const number = Number(e.target.value);
-                if (Number.isFinite(number) && (key === 'x' || key === 'y' || number >= 40))
-                  change(updateNodeLayout(doc, selectedNode.id, { [key]: number }));
-              }} />
-          </label>)}
-        </div>
-        <Button
-          variant="danger" className="danger"
-          disabled={readOnly}
-          onClick={() => {
-            if (!window.confirm(domain ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?' : '이 텍스트를 삭제할까요?'))
-              return;
-            change(domain ? removeDomain(doc, domain.id) : removeNote(doc, note!.id));
-            setSelected(null);
-          }}>선택 항목 삭제</Button>
-        <Button onClick={() => setSelected(null)}>선택 해제</Button>
-
-      </div> : viewId === 'overview' ? <>
-        <Accordion title="새 도메인 생성" className="domain-panel-section"><form className="inspector-fields" onSubmit={e => {e.preventDefault(); if (domainName.trim()) newDomain(domainName.trim());}}><label>새 도메인 이름<Input value={domainName} onChange={e => setDomainName(e.target.value)} maxLength={120} disabled={readOnly} required /></label><Button type="submit" variant="primary" disabled={readOnly || !domainName.trim()}>도메인 생성</Button></form></Accordion>
-        <DisclosureButton className="relation-disclosure domain-panel-heading" expanded={relationsOpen} controls="business-relations" onClick={() => setRelationsOpen(value => !value)}>{relationId ? '도메인 관계 수정' : '새 도메인 관계 생성'}</DisclosureButton>
-        <Collapse id="business-relations" open={relationsOpen}><form className="inspector-fields relation-form" onSubmit={e => {
-          e.preventDefault();
-          if (!doc.domains.some(d => d.id === source) || !doc.domains.some(d => d.id === target) || source === target)
-            return;
-          change(upsertDomainRelation(doc, { id: relationId || newId(), sourceDomainId: source, targetDomainId: target, name: relationName.trim(), direction, description: relationDescription }));
-          resetRelation();
-        }}>
-          <p className="field-help">도메인 사이의 업무 흐름을 연결합니다.</p>
-          <div className="relation-endpoints"><label>출발 도메인<Select
-            aria-label="출발 도메인"
-            required
-            value={source}
-            disabled={readOnly}
-            onChange={e => setSource(e.target.value)}>
-            <option value="">도메인 선택</option>
-            {doc.domains.map(d => <option key={d.id} value={d.id}>
-              {d.name}
-            </option>)}
-          </Select>
-          </label>
-          <label>도착 도메인<Select
-            aria-label="도착 도메인"
-            required
-            value={target}
-            disabled={readOnly}
-            onChange={e => setTarget(e.target.value)}>
-            <option value="">도메인 선택</option>
-            {doc.domains.map(d => <option key={d.id} value={d.id}>
-              {d.name}
-            </option>)}
-          </Select>
-          </label>
-          </div><label>관계 이름<Input aria-label="관계 이름"
-            required
-            maxLength={120}
-            value={relationName}
-            placeholder="예: 결제 요청"
-            disabled={readOnly}
-            onChange={e => setRelationName(e.target.value)} />
-          </label>
-          <label>방향<Select
-            aria-label="방향"
-            value={direction}
-            disabled={readOnly}
-            onChange={e => setDirection(e.target.value as 'forward' | 'both')}>
-            <option value="forward">출발 → 도착</option>
-            <option value="both">출발 ↔ 도착</option>
-          </Select>
-          </label>
-          <label>설명<Textarea
-            maxLength={10000}
-            value={relationDescription}
-            disabled={readOnly}
-            onChange={e => setRelationDescription(e.target.value)} />
-          </label>
-          <Button type="submit" variant="primary" className="primary" disabled={readOnly || !source || !target || source === target || !relationName.trim()}>
-            {relationId ? '관계 수정' : '관계 연결'}
-          </Button>
-          {relationId && <div className="actions">
-            <Button
-              type="button"
-              variant="danger" className="danger"
-              disabled={readOnly}
-              onClick={() => {
-                change(removeDomainRelation(doc, relationId));
-                resetRelation();
-              }}>관계 삭제</Button>
-            <Button type="button" onClick={resetRelation}>취소</Button>
+        <div className="inspector-topbar">
+          <div className="inspector-place">
+            <span>{viewId === 'overview' ? 'VIEW' : 'DOMAIN'}</span>
+            <strong title={activeDomain?.name ?? '도메인 맵'}>{activeDomain?.name ?? '도메인 맵'}</strong>
+          </div>
+          {selectionName && <div className="inspector-selection">
+            <span className="selection-kind">{selectionKind}</span>
+            <strong title={selectionName}>{selectionName}</strong>
+            <IconButton aria-label="선택 해제" onClick={() => setSelected(null)}>×</IconButton>
           </div>}
-        </form>
-        </Collapse>
-        <Accordion title="연결된 관계 검색" className="domain-panel-section"><div className="inspector-fields"><label>관계 검색<Input placeholder="관계 이름, 도메인, 설명 검색" value={relationSearch} onChange={e => setRelationSearch(e.target.value)} /></label><label>연결된 도메인 강조<Select value={filterDomain} onChange={e => setFilterDomain(e.target.value)}><option value="">모든 도메인</option>{doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></label></div></Accordion>
-        <Accordion title={`도메인 관계 목록 (${filteredRelations.length})`} className="domain-panel-section"><div className="relation-list">
-          <h3>연결된 관계 <span>
-            {doc.domainRelations.length}
-          </span>
-          </h3>
-          {filteredRelations.map(r => <Button key={r.id} onClick={() => editRelation(r.id)}>
-            {r.name}
-            <small>
-              {doc.domains.find(d => d.id === r.sourceDomainId)?.name} {r.direction === 'both' ? '↔' : '→'} {doc.domains.find(d => d.id === r.targetDomainId)?.name}
-            </small>
-          </Button>)}
-          {!filteredRelations.length && <p className="field-help">표시할 관계가 없습니다.</p>}
-        </div></Accordion>
-      </> : <TableWorkspaceTools hideViewMode document={doc} viewId={viewId} viewMode={viewMode} onViewModeChange={setViewMode} onChange={change} readOnly={readOnly} position={position()} onSelect={setSelected} />}
-    </aside></div>
+          <div className="inspector-tabs" role="group" aria-label="패널 보기 전환">
+            <TabButton selected={panelTab === 'properties'} onClick={() => setPanelTab('properties')}>속성</TabButton>
+            <TabButton selected={panelTab === 'outline'} onClick={() => setPanelTab('outline')}>목록 <span className="panel-count">{outlineCount}</span></TabButton>
+          </div>
+        </div>
+        <div className="inspector-body">
+          {diagnostics.length > 0 && <PanelSection className="document-diagnostics" title="설계 확인" count={diagnostics.length}>
+            <PanelNote>저장은 가능하지만 아래 항목을 확인해 주세요.</PanelNote>
+            <ul>
+              {diagnostics.map((item, index) => <li key={item.code + '-' + item.objectId + '-' + index}>{item.message}</li>)}
+            </ul>
+          </PanelSection>}
+          {panelTab === 'outline' ? <>
+            <div className="panel-search">
+              <Input aria-label="현재 화면 검색" placeholder={viewId === 'overview' ? '도메인·관계 검색' : '테이블·관계 검색'} value={relationSearch} onChange={e => setRelationSearch(e.target.value)} />
+            </div>
+            {viewId === 'overview' ? <>
+              <PanelSection title="도메인" count={doc.domains.length} defaultOpen>
+                <PanelList empty="표시할 도메인이 없습니다.">
+                  {doc.domains.filter(d => matches(d.name, d.description)).map(d => <PanelRow key={d.id}
+                    accent={d.color ?? '#8993a3'}
+                    active={selected === d.id}
+                    title={d.name}
+                    meta={'관계 ' + connectedRelations(doc.domainRelations, d.id).length + '개'}
+                    onSelect={() => pick(d.id)}
+                    action={<Button onClick={() => navigate(d.id)}>열기</Button>} />)}
+                </PanelList>
+              </PanelSection>
+              <PanelSection title="도메인 관계" count={filteredRelations.length} defaultOpen>
+                <div className="inspector-fields">
+                  <label>연결 강조<Select value={filterDomain} onChange={e => setFilterDomain(e.target.value)}><option value="">모든 도메인</option>{doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></label>
+                </div>
+                <PanelList empty="표시할 관계가 없습니다.">
+                  {filteredRelations.map(r => <PanelRow key={r.id}
+                    active={relationId === r.id}
+                    title={r.name}
+                    meta={(doc.domains.find(d => d.id === r.sourceDomainId)?.name ?? '') + (r.direction === 'both' ? ' ↔ ' : ' → ') + (doc.domains.find(d => d.id === r.targetDomainId)?.name ?? '')}
+                    onSelect={() => editRelation(r.id)} />)}
+                </PanelList>
+              </PanelSection>
+            </> : <>
+              <PanelSection title="이 화면의 테이블" count={viewTables.length} defaultOpen>
+                <PanelList empty="이 도메인에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.">
+                  {viewTables.filter(t => matches(t.physical.name, t.logical.name)).map(t => <PanelRow key={t.id}
+                    active={selected === t.id}
+                    title={tableLabel(t)}
+                    meta={t.logical.name + ' · 컬럼 ' + (doc.columns ?? []).filter(c => c.tableId === t.id).length + '개'}
+                    badge={t.domainId === viewId ? undefined : '참조'}
+                    onSelect={() => pick(t.id)} />)}
+                </PanelList>
+              </PanelSection>
+              <PanelSection title="테이블 관계" count={viewRelations.length}>
+                <PanelList empty="이 화면에 표시할 테이블 관계가 없습니다.">
+                  {viewRelations.filter(r => matches(r.logical.name, r.physical?.name)).map(r => <PanelRow key={r.id}
+                    title={((doc.tables ?? []).find(t => t.id === r.sourceTableId)?.physical.name || '?') + ' → ' + ((doc.tables ?? []).find(t => t.id === r.targetTableId)?.physical.name || '?')}
+                    meta={r.logical.name || (r.physical ? '물리 FK' : '논리 관계')}
+                    badge={r.physical ? 'FK' : undefined}
+                    onSelect={() => pick(r.sourceTableId)} />)}
+                </PanelList>
+              </PanelSection>
+              {!readOnly && <PanelSection title="다른 도메인 테이블" count={otherTables.length}>
+                <PanelNote>선택하면 이 화면에 원본 참조로 추가합니다. 참조 화면에서 편집해도 원본 테이블이 바뀝니다.</PanelNote>
+                <PanelList empty="참조할 수 있는 다른 도메인의 테이블이 없습니다.">
+                  {otherTables.filter(t => matches(t.physical.name, t.logical.name)).map(t => <PanelRow key={t.id}
+                    title={tableLabel(t)}
+                    meta={doc.domains.find(d => d.id === t.domainId)?.name}
+                    badge="＋ 참조"
+                    onSelect={() => reference(t.id)} />)}
+                </PanelList>
+              </PanelSection>}
+            </>}
+          </> : table ? <>
+            {selectedNode && table.domainId !== viewId && <Button variant="danger" className="danger" disabled={readOnly} onClick={() => {
+              change(removeTableReference(doc, selectedNode.id));
+              setSelected(null);
+            }}>이 화면의 참조 제거</Button>}
+            <TableInspector key={table.id} document={doc} tableId={table.id} onChange={change} readOnly={readOnly} onStartForeignKey={columnId => {setFkSource(columnId);setFkTarget(null);}} />
+          </> : selectedNode && (domain || note) ? <>
+            <div className="inspector-fields">
+              {domain ? <>
+                <label>도메인 이름<Input value={domain.name} maxLength={120} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, { name: e.target.value }))} /></label>
+                <label>업무 설명<Textarea maxLength={10000} value={domain.description} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, { description: e.target.value }))} /></label>
+                <label className="color-field">도메인 색상<Input type="color" value={domain.color ?? '#8993a3'} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, { color: e.target.value }))} /></label>
+                <div className="panel-actions">
+                  <Button onClick={() => navigate(domain.id)}>도메인 열기 →</Button>
+                  <Button disabled={readOnly} onClick={() => startRelation(domain.id, '')}>＋ 관계</Button>
+                  <Button onClick={() => { setFilterDomain(domain.id); setPanelTab('outline'); }}>연결 강조</Button>
+                </div>
+              </> : <label>자유 텍스트<Textarea maxLength={20000} value={note?.text ?? ''} disabled={readOnly} onChange={e => note && change(updateNote(doc, note.id, e.target.value))} /></label>}
+            </div>
+            {domain && <PanelSection title="연결된 도메인 관계" count={connectedRelations(doc.domainRelations, domain.id).length} open={connectedOpen} onOpenChange={setConnectedOpen}>
+              <PanelList empty="연결된 관계가 없습니다. 카드를 우클릭하거나 위의 ＋ 관계로 연결하세요.">
+                {connectedRelations(doc.domainRelations, domain.id).map(r => <PanelRow key={r.id}
+                  active={relationId === r.id}
+                  title={r.name}
+                  meta={(doc.domains.find(d => d.id === r.sourceDomainId)?.name ?? '') + (r.direction === 'both' ? ' ↔ ' : ' → ') + (doc.domains.find(d => d.id === r.targetDomainId)?.name ?? '')}
+                  onSelect={() => editRelation(r.id)} />)}
+              </PanelList>
+            </PanelSection>}
+            <PanelSection title="위치와 크기">
+              <div className="dimensions">
+                {(['x', 'y', 'width', 'height'] as const).map(key => <label key={key}>
+                  {({ x: 'X', y: 'Y', width: '너비', height: '높이' })[key]}
+                  <Input
+                    type="number"
+                    min={key === 'x' || key === 'y' ? -10000000 : cardSize(domain ? 'domain' : 'note', 0, 0)[key]}
+                    max={key === 'x' || key === 'y' ? 10000000 : 10000}
+                    value={Math.round(selectedNode[key])}
+                    disabled={readOnly}
+                    onChange={e => {
+                      const number = Number(e.target.value);
+                      if (Number.isFinite(number) && (key === 'x' || key === 'y' || number >= 40))
+                        change(updateNodeLayout(doc, selectedNode.id, { [key]: number }));
+                    }} />
+                </label>)}
+              </div>
+            </PanelSection>
+            <div className="panel-danger">
+              <Button variant="danger" className="danger" disabled={readOnly} onClick={() => {
+                if (!window.confirm(domain ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?' : '이 텍스트를 삭제할까요?'))
+                  return;
+                change(domain ? removeDomain(doc, domain.id) : removeNote(doc, note!.id));
+                setSelected(null);
+              }}>{domain ? '도메인 삭제' : '텍스트 삭제'}</Button>
+            </div>
+          </> : viewId === 'overview' ? <>
+            <div className="panel-empty">
+              <strong>도메인 맵</strong>
+              <p>카드를 선택하면 이름·설명·색상과 연결된 관계를 여기에서 편집합니다.</p>
+            </div>
+            <div className="panel-summary">
+              <span>도메인 <b>{doc.domains.length}</b></span>
+              <span>관계 <b>{doc.domainRelations.length}</b></span>
+            </div>
+            <PanelSection title="새 도메인 만들기">
+              <form className="inspector-fields" onSubmit={e => {e.preventDefault(); if (domainName.trim()) newDomain(domainName.trim());}}>
+                <label>도메인 이름<Input value={domainName} onChange={e => setDomainName(e.target.value)} maxLength={120} disabled={readOnly} required /></label>
+                <Button type="submit" variant="primary" className="primary" disabled={readOnly || !domainName.trim()}>도메인 생성</Button>
+              </form>
+            </PanelSection>
+            <PanelSection title={relationId ? '도메인 관계 수정' : '새 도메인 관계'} open={relationsOpen} onOpenChange={setRelationsOpen}>
+              <form className="inspector-fields relation-form" onSubmit={e => {
+                e.preventDefault();
+                if (!doc.domains.some(d => d.id === source) || !doc.domains.some(d => d.id === target) || source === target)
+                  return;
+                change(upsertDomainRelation(doc, { id: relationId || newId(), sourceDomainId: source, targetDomainId: target, name: relationName.trim(), direction, description: relationDescription }));
+                resetRelation();
+              }}>
+                <p className="field-help">도메인 사이의 업무 흐름을 연결합니다.</p>
+                <div className="relation-endpoints">
+                  <label>출발 도메인<Select aria-label="출발 도메인" required value={source} disabled={readOnly} onChange={e => setSource(e.target.value)}>
+                    <option value="">도메인 선택</option>
+                    {doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </Select></label>
+                  <label>도착 도메인<Select aria-label="도착 도메인" required value={target} disabled={readOnly} onChange={e => setTarget(e.target.value)}>
+                    <option value="">도메인 선택</option>
+                    {doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </Select></label>
+                </div>
+                <label>관계 이름<Input aria-label="관계 이름" required maxLength={120} value={relationName} placeholder="예: 결제 요청" disabled={readOnly} onChange={e => setRelationName(e.target.value)} /></label>
+                <label>방향<Select aria-label="방향" value={direction} disabled={readOnly} onChange={e => setDirection(e.target.value as 'forward' | 'both')}>
+                  <option value="forward">출발 → 도착</option>
+                  <option value="both">출발 ↔ 도착</option>
+                </Select></label>
+                <label>설명<Textarea maxLength={10000} value={relationDescription} disabled={readOnly} onChange={e => setRelationDescription(e.target.value)} /></label>
+                <Button type="submit" variant="primary" className="primary" disabled={readOnly || !source || !target || source === target || !relationName.trim()}>{relationId ? '관계 수정' : '관계 연결'}</Button>
+                {relationId && <div className="actions">
+                  <Button type="button" variant="danger" className="danger" disabled={readOnly} onClick={() => { change(removeDomainRelation(doc, relationId)); resetRelation(); }}>관계 삭제</Button>
+                  <Button type="button" onClick={resetRelation}>취소</Button>
+                </div>}
+              </form>
+            </PanelSection>
+            <PanelNote>빈 캔버스를 우클릭하면 자동 배치와 생성 명령을 바로 사용할 수 있습니다.</PanelNote>
+          </> : <>
+            <div className="panel-empty">
+              <strong>{activeDomain?.name ?? '도메인'}</strong>
+              <p>테이블을 선택하면 컬럼·키·관계를 여기에서 편집합니다.</p>
+            </div>
+            <div className="panel-summary">
+              <span>테이블 <b>{viewTables.length}</b></span>
+              <span>관계 <b>{viewRelations.length}</b></span>
+              <span>ENUM <b>{(doc.enums ?? []).length}</b></span>
+            </div>
+            <PanelSection title="새 테이블 만들기" defaultOpen>
+              <TableWorkspaceTools hideViewMode document={doc} viewId={viewId} viewMode={viewMode} onViewModeChange={setViewMode} onChange={change} readOnly={readOnly} position={position()} onSelect={pick} />
+            </PanelSection>
+            <PanelNote>목록 탭에서 테이블을 찾고 다른 도메인의 테이블을 참조로 추가할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.</PanelNote>
+          </>}
+        </div>
+      </aside>
+    </div>
   </div>;
 }
