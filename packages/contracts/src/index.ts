@@ -16,3 +16,5 @@ export type Readiness = z.infer<typeof readinessSchema>;
 export * from './workspace.js';
 export * from './relational.js';
 export * from './review.js';
+
+export * from './project-actions.js';

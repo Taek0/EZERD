@@ -108,6 +108,33 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect((await request('/projects/' + id)).data.document).toEqual(document);
   });
 
+  it('deletes only version-matched archived projects and cascades pins without deleting people', async () => {
+    const author = await request('/users', 'POST', { username: 'delete fixture author' });
+    const recipient = await request('/users', 'POST', { username: 'delete fixture recipient' });
+    userIds.push(author.data.id, recipient.data.id);
+    const created = await request('/projects', 'POST', { name: 'delete fixture project' });
+    const other = await request('/projects', 'POST', { name: 'retained fixture project' });
+    projectIds.push(created.data.id, other.data.id);
+    const id = created.data.id;
+    const pin = await request('/projects/' + id + '/threads', 'POST', { authorId: author.data.id, viewId: 'overview', objectId: null, x: 15, y: 25, body: 'pin to cascade', mentionIds: [recipient.data.id] });
+    expect(pin.status).toBe(201);
+    expect((await request('/projects/' + id, 'DELETE', { expectedVersion: 0 })).status).toBe(409);
+    expect((await request('/projects/' + id, 'DELETE', { expectedVersion: -1 })).status).toBe(400);
+    expect((await request('/projects/' + id, 'PATCH', { expectedVersion: 0, status: 'archived' })).status).toBe(200);
+    expect((await request('/projects/' + id, 'DELETE', { expectedVersion: 0 })).status).toBe(409);
+    expect((await request('/projects/' + id)).status).toBe(200);
+    const deleted = await request('/projects/' + id, 'DELETE', { expectedVersion: 1 });
+    expect(deleted.status).toBe(200);
+    expect(deleted.data).toEqual({ id, deleted: true });
+    expect((await request('/projects/' + id)).status).toBe(404);
+    expect((await request('/projects/' + id, 'DELETE', { expectedVersion: 1 })).status).toBe(404);
+    expect((await request('/threads/' + pin.data.id + '/messages', 'POST', { authorId: author.data.id, body: 'gone', mentionIds: [] })).status).toBe(404);
+    expect((await request('/users/' + recipient.data.id + '/notifications')).data).toEqual([]);
+    expect((await request('/users/' + author.data.id)).status).toBe(200);
+    expect((await request('/projects/' + other.data.id)).status).toBe(200);
+    expect((await pool.query('SELECT count(*)::int AS count FROM review_messages WHERE thread_id=$1', [pin.data.id])).rows[0].count).toBe(0);
+  });
+
   it('accepts documents over 100 KB and rejects malformed edits without changing data', async () => {
     const created = await request('/projects', 'POST', { name: 'integration large document' });
     if (created.data.id) projectIds.push(created.data.id);
