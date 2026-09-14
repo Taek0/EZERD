@@ -198,111 +198,19 @@ function KeyEditor({ item: k, columns, onChange, onDelete }: {
 }) {
     return <PanelSection defaultOpen title={<>{k.kind === 'primary' ? '기본 키' : '고유 키'} · {k.name || '이름 없음'}</>}><label>키 종류<Select aria-label="키 종류" value={k.kind} onValueChange={value => onChange({ ...k, kind: value as TableKey['kind'] })}><option value="primary">PRIMARY KEY</option><option value="unique">UNIQUE</option></Select></label><TextField label="키 이름" value={k.name} max={120} onChange={name => onChange({ ...k, name })}/><p>체크한 순서대로 하나의 복합 {k.kind==='primary'?'PRIMARY KEY':'UNIQUE'}를 구성합니다.</p><div className="table-key-options">{columns.map(c=><Check key={c.id} label={`${k.columnIds.includes(c.id)?`${k.columnIds.indexOf(c.id)+1}. `:''}${c.physical.name||columnName(c)}`} value={k.columnIds.includes(c.id)} onChange={checked=>onChange({...k,columnIds:checked?[...k.columnIds,c.id]:k.columnIds.filter(id=>id!==c.id)})}/>)}</div><Button variant="danger" className="danger" onClick={onDelete}>키 삭제</Button></PanelSection>;
 }
-function RelationEditor({ document: doc, item: r, onChange, onDelete }: {
+export function RelationEditor({ document: doc, item: r, onChange, onDelete, defaultOpen = false }: {
+    defaultOpen?: boolean;
     document: DesignDocument;
     item: TableRelation;
     onChange: (r: TableRelation) => void;
     onDelete: () => void;
 }) {
     const physical = r.physical, source = (doc.columns ?? []).filter(c => c.tableId === r.sourceTableId), target = (doc.columns ?? []).filter(c => c.tableId === r.targetTableId);
-    return <PanelSection title={<>{doc.tables?.find(t => t.id === r.targetTableId)?.physical.name} (PK) → {doc.tables?.find(t => t.id === r.sourceTableId)?.physical.name} (FK) · {r.logical.name}</>}>{(['targetTableId', 'sourceTableId'] as const).map(key => <label key={key}>{key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}<Select aria-label={key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'} value={r[key]} onValueChange={value => onChange({ ...r, [key]: value, physical: physical ? { ...physical, sourceColumnIds: [], targetColumnIds: [] } : null })}>{doc.tables?.map(t => <option key={t.id} value={t.id}>{doc.domains.find(d => d.id === t.domainId)?.name} / {tableName(t)}</option>)}</Select></label>)}<TextField label="관계명" value={r.logical.name} max={120} onChange={name => onChange({ ...r, logical: { ...r.logical, name } })}/>{!r.logical.sourceCardinality&&!r.logical.targetCardinality&&<label>카디널리티<Select aria-label="카디널리티" value={r.logical.cardinality} onValueChange={value => onChange({ ...r, logical: { ...r.logical, cardinality: value as TableRelation['logical']['cardinality'] } })}><option value="one-to-one">1 : 1</option><option value="one-to-many">1 : N</option><option value="many-to-many">N : M</option></Select></label>}<TextField label="관계 설명" value={r.logical.description??''} onChange={description=>onChange({...r,logical:{...r.logical,description}})}/>{(['targetCardinality','sourceCardinality'] as const).map(side=>{const endpoint=r.logical[side]??{min:side==='sourceCardinality'?0:r.logical.required?1:0,max:side==='sourceCardinality'?(r.logical.cardinality==='one-to-one'?1:'many'):(r.logical.cardinality==='many-to-many'?'many':1)};return <label key={side}>{side==='targetCardinality'?'출발 끝점 (PK)':'대상 끝점 (FK)'}<Select aria-label={side === 'targetCardinality' ? '출발 끝점 (PK)' : '대상 끝점 (FK)'} value={`${endpoint.min}:${endpoint.max}`} onValueChange={value =>{const [min,max]=value.split(':');onChange({...r,logical:{...r.logical,[side]:{min:Number(min) as 0|1,max:max==='many'?'many':1}}});}}><option value="0:1">0..1</option><option value="1:1">1</option><option value="0:many">0..N</option><option value="1:many">1..N</option></Select></label>;})}{!r.logical.targetCardinality&&<Check label="관계 필수" value={r.logical.required} onChange={required => onChange({ ...r, logical: { ...r.logical, required } })}/>}{physical?<Button onClick={()=>onChange({...r,physical:null})}>FK 정의 제거</Button>:<p>새 FK는 출발 PK 컬럼을 선택한 뒤 도착 테이블을 클릭하여 생성합니다.</p>}{physical && <><TextField label="FK 이름" value={physical.name} max={120} onChange={name => onChange({ ...r, physical: { ...physical, name } })}/><p>출발 PK / UNIQUE 컬럼 → 대상 FK 컬럼 순서로 대응합니다.</p>{physical.sourceColumnIds.map((id, i) => <div className="table-mapping" key={i}><span>{i + 1}</span>{(['target', 'source'] as const).map(side => <label key={side}>{side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼<Select aria-label={`${side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼 ${i + 1}`} value={side === 'source' ? id : physical.targetColumnIds[i] ?? ''} onValueChange={value => { if (value)
+    return <PanelSection defaultOpen={defaultOpen} title={<>{doc.tables?.find(t => t.id === r.targetTableId)?.physical.name} (PK) → {doc.tables?.find(t => t.id === r.sourceTableId)?.physical.name} (FK) · {r.logical.name}</>}>{(['targetTableId', 'sourceTableId'] as const).map(key => <label key={key}>{key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}<Select aria-label={key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'} value={r[key]} onValueChange={value => onChange({ ...r, [key]: value, physical: physical ? { ...physical, sourceColumnIds: [], targetColumnIds: [] } : null })}>{doc.tables?.map(t => <option key={t.id} value={t.id}>{doc.domains.find(d => d.id === t.domainId)?.name} / {tableName(t)}</option>)}</Select></label>)}<TextField label="관계명" value={r.logical.name} max={120} onChange={name => onChange({ ...r, logical: { ...r.logical, name } })}/>{!r.logical.sourceCardinality&&!r.logical.targetCardinality&&<label>카디널리티<Select aria-label="카디널리티" value={r.logical.cardinality} onValueChange={value => onChange({ ...r, logical: { ...r.logical, cardinality: value as TableRelation['logical']['cardinality'] } })}><option value="one-to-one">1 : 1</option><option value="one-to-many">1 : N</option><option value="many-to-many">N : M</option></Select></label>}<TextField label="관계 설명" value={r.logical.description??''} onChange={description=>onChange({...r,logical:{...r.logical,description}})}/>{(['targetCardinality','sourceCardinality'] as const).map(side=>{const endpoint=r.logical[side]??{min:side==='sourceCardinality'?0:r.logical.required?1:0,max:side==='sourceCardinality'?(r.logical.cardinality==='one-to-one'?1:'many'):(r.logical.cardinality==='many-to-many'?'many':1)};return <label key={side}>{side==='targetCardinality'?'출발 끝점 (PK)':'대상 끝점 (FK)'}<Select aria-label={side === 'targetCardinality' ? '출발 끝점 (PK)' : '대상 끝점 (FK)'} value={`${endpoint.min}:${endpoint.max}`} onValueChange={value =>{const [min,max]=value.split(':');onChange({...r,logical:{...r.logical,[side]:{min:Number(min) as 0|1,max:max==='many'?'many':1}}});}}><option value="0:1">0..1</option><option value="1:1">1</option><option value="0:many">0..N</option><option value="1:many">1..N</option></Select></label>;})}{!r.logical.targetCardinality&&<Check label="관계 필수" value={r.logical.required} onChange={required => onChange({ ...r, logical: { ...r.logical, required } })}/>}{physical?<Button onClick={()=>onChange({...r,physical:null})}>FK 정의 제거</Button>:<p>새 FK는 출발 PK 컬럼을 선택한 뒤 도착 테이블을 클릭하여 생성합니다.</p>}{physical && <><TextField label="FK 이름" value={physical.name} max={120} onChange={name => onChange({ ...r, physical: { ...physical, name } })}/><p>출발 PK / UNIQUE 컬럼 → 대상 FK 컬럼 순서로 대응합니다.</p>{physical.sourceColumnIds.map((id, i) => <div className="table-mapping" key={i}><span>{i + 1}</span>{(['target', 'source'] as const).map(side => <label key={side}>{side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼<Select aria-label={`${side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼 ${i + 1}`} value={side === 'source' ? id : physical.targetColumnIds[i] ?? ''} onValueChange={value => { if (value)
         onChange({ ...r, physical: setMappingPair(physical, i, side, value) }); }}><option value="">선택</option>{(side === 'source' ? source : target).map(c => <option key={c.id} value={c.id}>{columnName(c)}</option>)}</Select></label>)}<IconButton aria-label={`매핑 ${i + 1} 삭제`} onClick={() => onChange({ ...r, physical: { ...physical, sourceColumnIds: physical.sourceColumnIds.filter((_, at) => at !== i), targetColumnIds: physical.targetColumnIds.filter((_, at) => at !== i) } })}>×</IconButton></div>)}<Button disabled={!source.length || !target.length} onClick={() => onChange({ ...r, physical: { ...physical, sourceColumnIds: [...physical.sourceColumnIds, source[0]?.id ?? ''], targetColumnIds: [...physical.targetColumnIds, target[0]?.id ?? ''] } })}>+ 컬럼 매핑</Button>{(['onDelete', 'onUpdate'] as const).map(key => <label key={key}>{key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}<Select aria-label={key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'} value={physical[key]} onValueChange={value => onChange({ ...r, physical: { ...physical, [key]: value as ReferentialAction } })}>{['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT'].map(action => <option key={action}>{action}</option>)}</Select></label>)}</>}<Button variant="danger" className="danger" onClick={onDelete}>관계 삭제</Button></PanelSection>;
 }
 
-type RelationBounds = { x: number; y: number; width: number; height: number };
-/** Keep labels outside endpoint cards when their horizontal gap cannot fit the label. */
-export function relationGeometry(a: RelationBounds, b: RelationBounds, labelWidth: number, lane: number, offset = 0, bend?: {x:number;y:number}) {
-    const aw = Math.max(280, a.width), ah = Math.max(220, a.height);
-    const bw = Math.max(280, b.width), bh = Math.max(220, b.height);
-    const ax = a.x + aw, ay = a.y + ah / 2, bx = b.x, by = b.y + bh / 2;
-    if (bend) {
-        const finishX = a === b ? a.x + aw / 2 : bx - 24;
-        const finishY = a === b ? a.y - 8 : by;
-        return {path:`M ${ax + 5} ${ay} L ${bend.x} ${ay} L ${bend.x} ${bend.y} L ${finishX} ${bend.y} L ${finishX} ${finishY}${a === b ? '' : ` L ${bx - 8} ${by}`}`,labelX:bend.x,labelY:bend.y - 18};
-    }
-    if (a === b) {
-        const top = a.y - 54 - lane * 32 - offset, right = ax + 54;
-        return {
-            path: `M ${ax + 5} ${ay} L ${right} ${ay} L ${right} ${top} L ${a.x + aw / 2} ${top} L ${a.x + aw / 2} ${a.y - 8}`,
-            labelX: (right + a.x + aw / 2) / 2, labelY: top - 17,
-        };
-    }
-    if (bx - ax < labelWidth + 40) {
-        const top = Math.min(a.y, b.y) - 54 - lane * 32 - offset;
-        const startX = a.x + aw / 2, endX = b.x + bw / 2;
-        return {
-            path: `M ${startX} ${a.y - 5} L ${startX} ${top} L ${endX} ${top} L ${endX} ${b.y - 8}`,
-            labelX: (startX + endX) / 2, labelY: top - 17,
-        };
-    }
-    return {
-        path: `M ${ax + 5} ${ay} L ${(ax + bx) / 2} ${ay} L ${(ax + bx) / 2} ${Math.min(ay,by)-lane*32-offset} L ${bx - 24} ${Math.min(ay,by)-lane*32-offset} L ${bx - 24} ${by} L ${bx - 8} ${by}`,
-        labelX: (ax + bx) / 2, labelY: Math.min(ay,by) - 18 - lane*32 - offset,
-    };
-}
-export function TableRelationsSvg({ document: doc, viewId, viewMode, onSelect, onChange, readOnly=false, controlsOnly=false, hideControls=false, visibleNodeIds }: {
-    document: DesignDocument;
-    viewId: string;
-    viewMode: ModelScope;
-    onSelect: (id: string) => void;
-    onChange?: (d:DesignDocument)=>void;readOnly?:boolean;controlsOnly?:boolean;hideControls?:boolean;visibleNodeIds?:string[];
-}) {
-    const drag=useRef<{id:string;pointerId:number;start:{x:number;y:number};origin:{x:number;y:number}}|null>(null);
-    const [menu,setMenu]=useState<{x:number;y:number;id:string}|null>(null);
-    return <>{(doc.tableRelations ?? []).map((relation) => {
-        const source = doc.tables?.find(table => table.id === relation.sourceTableId);
-        const target = doc.tables?.find(table => table.id === relation.targetTableId);
-        const a = doc.layout.nodes.find(node => node.objectId === relation.sourceTableId && node.viewId === viewId);
-        const b = doc.layout.nodes.find(node => node.objectId === relation.targetTableId && node.viewId === viewId);
-        if (!source || !target || !a || !b || !isVisibleInView(relation.scope, viewMode)
-            || !isVisibleInView(source.scope, viewMode) || !isVisibleInView(target.scope, viewMode)) return null;
-        if (visibleNodeIds && (!visibleNodeIds.includes(a.id)||!visibleNodeIds.includes(b.id))) return null;
-        if (viewMode === 'physical' && !relation.physical) return null;
-        const combined=doc.views?.find(view=>view.id===viewId);
-        if(combined&&(!combined.domainIds.includes(source.domainId)||!combined.domainIds.includes(target.domainId)))return null;
-        const physical = viewMode !== 'logical' && !!relation.physical && relation.scope !== 'logical';
-        const attribute=(relation.physical?.targetColumnIds??[]).map(id=>doc.columns?.find(c=>c.id===id)?.physical.name||'?').join(', ');
-        const fullLabel = `${target.physical.name||target.logical.name}.${attribute||relation.logical.name||'관계'}:${source.physical.name||source.logical.name}`;
-        const label = fullLabel;
-        const labelWidth = Math.max(90, [...label].reduce((sum, character) => sum + (character.charCodeAt(0) > 255 ? 14 : 8), 24));
-        const pair=(doc.tableRelations??[]).filter(r=>[r.sourceTableId,r.targetTableId].sort().join(':')===[relation.sourceTableId,relation.targetTableId].sort().join(':'));
-        const sourceBounds={...a,...tableCardSize(doc,source.id,a.width,a.height)};
-        const targetBounds=source.id===target.id?sourceBounds:{...b,...tableCardSize(doc,target.id,b.width,b.height)};
-        const route=doc.layout.relations?.find(item=>item.relationId===relation.id&&item.viewId===viewId);
-        const offset=route?.offset??0;
-        const geometry = relationGeometry(sourceBounds, targetBounds, labelWidth, pair.findIndex(r=>r.id===relation.id),offset,route?.bend);
-        const origin=route?.bend??{x:geometry.labelX,y:geometry.labelY+18};
-        const adjust=(bend:{x:number;y:number})=>onChange?.(upsertRelationLayout(doc,{relationId:relation.id,viewId,offset,bend}));
-        const worldPoint=(element:SVGGElement,clientX:number,clientY:number)=>{
-            const matrix=element.getScreenCTM();
-            return matrix ? new DOMPoint(clientX,clientY).matrixTransform(matrix.inverse()) : null;
-        };
-        const markerId = `table-crow-${relation.id}`;
-        const endpoints=[relation.logical.sourceCardinality??{min:0,max:relation.logical.cardinality==='one-to-one'?1:'many'},relation.logical.targetCardinality??{min:relation.logical.required?1:0,max:relation.logical.cardinality==='many-to-many'?'many':1}];
-        const stroke = physical ? 'var(--accent)' : 'var(--muted)';
-        return <g key={relation.id} className={controlsOnly?"table-route-control-group":"table-relation-line"} role={controlsOnly?undefined:"button"} tabIndex={controlsOnly?undefined:0}
-            aria-label={controlsOnly?undefined:`테이블 관계 ${fullLabel}`} onContextMenu={event=>{if(readOnly||!onChange)return;event.preventDefault();event.stopPropagation();setMenu({x:event.clientX,y:event.clientY,id:relation.id});}}
-            onClick={event => { event.stopPropagation(); onSelect(relation.sourceTableId); }}
-            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(relation.sourceTableId); } }}>
-            {!controlsOnly&&<><title>{`${fullLabel}${relation.logical.description?` — ${relation.logical.description}`:''}`}</title>
-            <defs>{endpoints.map((endpoint,i)=><marker key={i} id={`${markerId}-${i}`} viewBox="0 0 32 24" refX="30" refY="12" markerWidth="32" markerHeight="24" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><g fill="none" stroke={stroke} strokeWidth="1.7">{endpoint.max==='many'?<path d="M 18 12 L 30 3 M 18 12 L 30 21 M 18 12 L 30 12"/>:<path d="M 27 4 L 27 20"/>}{endpoint.min===0?<circle cx="10" cy="12" r="5" fill="#fafbfc"/>:<path d="M 13 4 L 13 20"/>}</g></marker>)}</defs>
-            <path d={geometry.path} fill="none" stroke="transparent" strokeWidth={18}/>
-            <path d={geometry.path} fill="none" stroke={stroke} strokeWidth={2} strokeLinejoin="round"
-                strokeDasharray={physical ? undefined : '6 4'} markerStart={`url(#${markerId}-0)`} markerEnd={`url(#${markerId}-1)`}/>
-            <rect x={geometry.labelX - labelWidth / 2} y={geometry.labelY - 13} width={labelWidth} height={28}
-                rx={9} fill="#fafbfc" stroke="#bdc8d8" strokeWidth={1}/>
-            <text x={geometry.labelX} y={geometry.labelY + 5} textAnchor="middle">{label}</text></>}
-            {!hideControls&&!readOnly&&onChange&&<g className="table-route-adjust" data-export-hidden="true" role="button" tabIndex={0} aria-label={`관계 선 조절 ${fullLabel}`}
-                onPointerDown={e=>{e.preventDefault();e.stopPropagation();if(e.button!==0)return;const point=worldPoint(e.currentTarget,e.clientX,e.clientY);if(!point)return;drag.current={id:relation.id,pointerId:e.pointerId,start:point,origin};e.currentTarget.setPointerCapture(e.pointerId);}}
-                onPointerMove={e=>{const active=drag.current;if(active?.id!==relation.id||active.pointerId!==e.pointerId)return;e.stopPropagation();const point=worldPoint(e.currentTarget,e.clientX,e.clientY);if(point)adjust({x:active.origin.x+point.x-active.start.x,y:active.origin.y+point.y-active.start.y});}}
-                onPointerUp={e=>{e.stopPropagation();if(drag.current?.pointerId===e.pointerId){drag.current=null;if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}}
-                onPointerCancel={()=>{drag.current=null;}} onLostPointerCapture={()=>{drag.current=null;}}
-                onClick={e=>e.stopPropagation()}
-                onKeyDown={e=>{const direction={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(direction){e.preventDefault();e.stopPropagation();const step=e.shiftKey?32:8;adjust({x:origin.x+direction[0]!*step,y:origin.y+direction[1]!*step});}}}>
-                <title>드래그하여 관계 선 이동 · 방향키로 미세 조절</title><rect x={geometry.labelX+labelWidth/2+6} y={geometry.labelY-13} width={28} height={28} rx={6}/><text x={geometry.labelX+labelWidth/2+20} y={geometry.labelY+6} textAnchor="middle">⤧</text></g>}
-        </g>;
-    })}{menu&&typeof document!=='undefined'&&createPortal(<ContextMenu position={menu} onClose={()=>setMenu(null)} label="테이블 관계" items={[{id:'delete',label:'관계 삭제',destructive:true,onAction:()=>{if(menu&&!readOnly)onChange?.(removeTableRelation(doc,menu.id));}}]}/>,document.body)}</>;
-}
+export { relationGeometry, TableRelationsSvg } from './TableRelations.js';
 
 export function ForeignKeyDialog({document:doc,sourceColumnId,targetTableId,onChange,onClose}:{document:DesignDocument;sourceColumnId:string;targetTableId:string;onChange:(d:DesignDocument)=>void;onClose:()=>void}) {
  const dialog=useRef<HTMLDialogElement>(null);const source=doc.columns?.find(c=>c.id===sourceColumnId);

@@ -1,7 +1,7 @@
 import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from './components/ui/untitled.js';
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
-import { type DesignDocument, type Table, upsertCombinedView, removeCombinedView, isVisibleInView, autoLayoutView, removeTableReference, addTable, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
+import { type DesignDocument, type Table, upsertTableRelation, removeTableRelation, upsertCombinedView, removeCombinedView, isVisibleInView, autoLayoutView, removeTableReference, addTable, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
 import { tableCardSize } from './table-geometry.js';
 import { exportCanvasPng } from './canvas-export.js';
@@ -10,7 +10,7 @@ import { DomainDescription } from './DomainDescription.js';
 import { DomainColorPicker } from './DomainColorPicker.js';
 import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { cardSize, connectedRelations } from './canvas-state.js';
-import { TableNodeContent, TableInspector, TableWorkspaceTools, TableRelationsSvg, ForeignKeyDialog, EnumDialog, emptyMetadata } from './TableEditor.js';
+import { TableNodeContent, TableInspector, RelationEditor, TableWorkspaceTools, TableRelationsSvg, ForeignKeyDialog, EnumDialog, emptyMetadata } from './TableEditor.js';
 import { clampLayoutPatch, newId, validViewId, viewportDestination } from './client.js';
 import { Button, Checkbox, ContextMenu, IconButton, Input, Select, TabButton, Textarea } from './components/ui/index.js';
 import { PanelList, PanelNote, PanelRow, PanelSection } from './panel.js';
@@ -128,6 +128,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     }
   }, [doc.domains, doc.domainRelations, source, target, relationId]);
   const table = (doc.tables ?? []).find(t => t.id === selected);
+  const selectedTableRelation = (doc.tableRelations ?? []).find(r => r.id === selected);
   useEffect(() => {
     contextCallback.current?.({viewId, selectedObjectId: selected, position: selectedNode ? {x:selectedNode.x+selectedNode.width/2, y:selectedNode.y+selectedNode.height/2} : blankPosition.current?.viewId === viewId ? blankPosition.current : position()});
   }, [viewId, selected, selectedNode?.x, selectedNode?.y, selectedNode?.width, selectedNode?.height]);
@@ -161,8 +162,8 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   const viewRelations = (doc.tableRelations ?? []).filter(r => isVisibleInView(r.scope, viewMode) && !!r.physical && (viewTables.some(t => t.id === r.sourceTableId) && viewTables.some(t => t.id === r.targetTableId)));
   const tableLabel = (t: Table) => t.physical.name || t.logical.name || '이름 없는 테이블';
   const outlineCount = viewId === 'overview' ? doc.domains.length : viewTables.length;
-  const selectionKind = table ? '테이블' : domain ? '도메인' : note ? '텍스트' : '';
-  const selectionName = table ? tableLabel(table) : domain ? domain.name : note ? (note.text.slice(0, 40) || '자유 텍스트') : '';
+  const selectionKind = selectedTableRelation ? '테이블 관계' : table ? '테이블' : domain ? '도메인' : note ? '텍스트' : '';
+  const selectionName = selectedTableRelation ? `${tableLabel(doc.tables!.find(t=>t.id===selectedTableRelation.targetTableId)!)} → ${tableLabel(doc.tables!.find(t=>t.id===selectedTableRelation.sourceTableId)!)}` : table ? tableLabel(table) : domain ? domain.name : note ? (note.text.slice(0, 40) || '자유 텍스트') : '';
   function pinAt(clientX: number, clientY: number) {
     const rect=surface.current?.getBoundingClientRect();
     onCreatePin?.({viewId,selectedObjectId:null,position:{x:(clientX-(rect?.left ?? 0)-viewport.x)/viewport.zoom,y:(clientY-(rect?.top ?? 0)-viewport.y)/viewport.zoom}});
@@ -439,7 +440,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             })}
             {connectSource && connectPointer && (() => { const origin = nodes.find(n => n.objectId === connectSource); return origin ? <path className="domain-connection-preview" d={`M ${origin.x+origin.width/2} ${origin.y+origin.height/2} L ${connectPointer.x} ${connectPointer.y}`} markerEnd="url(#arrow-end)" /> : null; })()}
           </svg>}
-          {viewId !== 'overview' && <><svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg hideControls document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg><svg className="relations table-route-overlay" data-export-hidden="true" aria-label="관계 선 조절" onPointerDown={e=>e.stopPropagation()}><TableRelationsSvg controlsOnly document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg></>}
+          {viewId !== 'overview' && <><svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg hideControls selectedId={selected} document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true); setPanelTab('properties');}} /></svg><svg className="relations table-route-overlay" data-export-hidden="true" aria-label="관계 선 조절" onPointerDown={e=>e.stopPropagation()}><TableRelationsSvg controlsOnly selectedId={selected} document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true); setPanelTab('properties');}} /></svg></>}
           {fkSource && !fkTarget && connectPointer && <svg className="relations connection-preview-layer" aria-hidden="true">{(() => {const column=doc.columns?.find(c => c.id===fkSource);const origin=nodes.find(n => n.objectId===column?.tableId);if(!origin)return null;const x=origin.x+origin.width,y=origin.y+origin.height/2,middle=(x+connectPointer.x)/2;return <path className="domain-connection-preview" d={`M ${x} ${y} H ${middle} V ${connectPointer.y} H ${connectPointer.x}`} />;})()}</svg>}
           {nodes.map(node => {
             const d = doc.domains.find(v => v.id === node.objectId),
@@ -615,7 +616,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                     title={((doc.tables ?? []).find(t => t.id === r.targetTableId)?.physical.name || '?') + ' (PK) → ' + ((doc.tables ?? []).find(t => t.id === r.sourceTableId)?.physical.name || '?') + ' (FK)'}
                     meta={r.physical?.name || 'FK'}
                     badge={r.physical ? 'FK' : undefined}
-                    onSelect={() => pick(r.sourceTableId)} />)}
+                    onSelect={() => {setSelected(r.id);setInspectorOpen(true);setPanelTab('properties');}} />)}
                 </PanelList>
               </PanelSection>
               {!activeCombined && <PanelSection title="다른 도메인 테이블" count={otherTables.length}>
@@ -630,7 +631,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                 </PanelList>
               </PanelSection>}
             </>}
-          </> : table ? <>
+          </> : selectedTableRelation ? <section className="table-inspector"><fieldset disabled={readOnly}><RelationEditor defaultOpen document={doc} item={selectedTableRelation} onChange={next=>change(upsertTableRelation(doc,next))} onDelete={()=>{change(removeTableRelation(doc,selectedTableRelation.id));setSelected(null);}} /></fieldset></section> : table ? <>
             {selectedNode && !activeCombined && table.domainId !== viewId && <Button variant="danger" className="danger" disabled={readOnly} onClick={() => {
               change(removeTableReference(doc, selectedNode.id));
               setSelected(null);

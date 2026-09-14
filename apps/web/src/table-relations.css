@@ -1,0 +1,6 @@
+.canvas-world .table-relation-line{pointer-events:none;cursor:pointer;outline:none}
+.table-relation-line .table-relation-hit{pointer-events:stroke;cursor:pointer}
+.table-relation-line .table-relation-label,.table-relation-line text{pointer-events:visiblePainted}
+.table-relation-line .table-relation-stroke{pointer-events:none;transition:stroke-width 140ms ease}
+.table-relation-line.selected .table-relation-stroke,.table-relation-line:focus .table-relation-stroke{stroke-width:3.5}
+.table-relation-line.selected .table-relation-label{stroke:var(--accent);fill:#edf2ff}
