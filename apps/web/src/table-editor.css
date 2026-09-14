@@ -227,3 +227,19 @@
 .table-column-create{width:100%;max-width:100%}
 .table-workspace-tools details{border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .table-workspace-tools summary{font-size:14px;font-weight:600}
+/* The table header and rows form the card itself. */
+.table-node-content{background:#fff;border-radius:4px}
+.table-node-content header{display:flex;align-items:center;min-height:34px;padding:7px 10px;background:#316e9f;color:#fff;border:0;gap:0}
+.table-node-content header strong,.table-node-content header span{font-size:14px;line-height:20px;font-weight:700}
+.table-node-content header strong{width:100%}
+.table-columns{padding:0;flex:1}
+.table-column-row{grid-template-columns:34px minmax(85px,1.2fr) minmax(70px,1fr) 28px minmax(65px,1fr);min-width:350px;gap:6px;padding:6px 10px;font-size:12px;line-height:20px;border-bottom:1px solid #edf0f3}
+.table-column-head{padding-top:3px;padding-bottom:3px;line-height:18px;font-size:10px;background:#f3f5f7}
+.table-type-label{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#737d87;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.table-key-marker{font-size:10px}
+.table-node-footer{padding:2px 8px;background:#f7f9fb;border-top:1px solid #e9edf1}
+.table-node-footer button{width:22px;height:22px;min-width:22px;min-height:22px;font-size:17px}
+.table-node-content .table-columns>p{margin:12px;font-size:12px}
+.table-create-grid{grid-template-columns:38px minmax(0,1fr);min-width:0;gap:9px}
+.table-create-grid label:has(input:not([type=checkbox])),.table-create-grid label:has(select){grid-column:1/-1}
+.table-type-params input:disabled{background:#eef1f4;color:#98a0ab;cursor:not-allowed}

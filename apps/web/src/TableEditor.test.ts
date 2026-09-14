@@ -31,11 +31,11 @@ describe('table editor rendered controls',()=>{
  it('shows owner and respects logical-only column visibility in physical cards',()=>{
   const doc=example();
   const logical=renderToStaticMarkup(createElement(TableNodeContent,{document:doc,tableId:'t',viewMode:'logical',viewId:'external'}));
-  expect(logical).toContain('외부 참조 · '); expect(logical).toContain('논리 전용 항목');
+  expect(logical).toContain('외부 참조 · '); expect(logical).not.toContain('논리 전용 항목');
   const physical=renderToStaticMarkup(createElement(TableNodeContent,{document:doc,tableId:'t',viewMode:'physical'}));
   expect(physical).toContain('invoice'); expect(physical).not.toContain('hidden_column');
  });
- it('makes inspector mutation controls read-only while keeping model view selectable',()=>{
+ it('keeps physical inspector mutations read-only without exposing model view controls',()=>{
   const doc=example();
   const inspector=renderToStaticMarkup(createElement(TableInspector,{document:doc,tableId:'t',onChange:()=>{},readOnly:true}));
   expect(inspector).toContain('<fieldset disabled=""'); expect(inspector).toContain('물리 테이블명'); expect(inspector).toContain('키 · PK / UNIQUE');
@@ -43,8 +43,7 @@ describe('table editor rendered controls',()=>{
   const addTableButton = [...tools.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match => match[2]?.includes('+ 테이블'));
   expect(addTableButton?.[1]).toMatch(/\bdisabled=""/);
   const viewSelect = tools.match(/<select\b([^>]*)>([\s\S]*?)<\/select>/);
-  expect(viewSelect?.[1]).not.toMatch(/\bdisabled/);
-  expect(viewSelect?.[2]).toContain('value="both" selected=""');
+  expect(viewSelect).toBeNull();
  });
 });
 
@@ -85,4 +84,24 @@ it('renders explicit endpoint cardinality consistently with crowfoot markers rat
  expect(markup).not.toContain(' · 1:N');
  expect(markup).toContain('marker-start="url(#table-crow-explicit-0)"');
  expect(markup).toContain('marker-end="url(#table-crow-explicit-1)"');
+});
+
+import { canSaveKey, typeParameterEnabled } from './TableEditor.js';
+describe('physical editor validation', () => {
+ it('requires a unique ordered key mapping from the same physical table', () => {
+  const columns=[{id:'a',tableId:'t',scope:'physical'},{id:'b',tableId:'other',scope:'physical'}] as never;
+  const key={id:'k',tableId:'t',scope:'physical',kind:'unique',name:'',columnIds:[]} as import('@ezerd/model').TableKey;
+  expect(canSaveKey(key,columns,[])).toBe(false);
+  expect(canSaveKey({...key,columnIds:['a']},columns,[])).toBe(true);
+  expect(canSaveKey({...key,columnIds:['b']},columns,[])).toBe(false);
+  expect(canSaveKey({...key,columnIds:['a','a']},columns,[])).toBe(false);
+  expect(canSaveKey({...key,columnIds:['a']},columns,[{...key,id:'old',columnIds:['a']}])).toBe(false);
+ });
+ it('enables only meaningful type parameters and never enables enum parameters',()=>{
+  expect(typeParameterEnabled({name:'varchar',isArray:false},'length')).toBe(true);
+  expect(typeParameterEnabled({name:'integer',isArray:false},'precision')).toBe(false);
+  expect(typeParameterEnabled({name:'numeric',isArray:false,precision:10},'scale')).toBe(true);
+  expect(typeParameterEnabled({name:'timestamp',isArray:false},'precision')).toBe(true);
+  expect(typeParameterEnabled({name:'varchar',isArray:false,enumId:'e'},'length')).toBe(false);
+ });
 });

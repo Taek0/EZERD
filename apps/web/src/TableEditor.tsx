@@ -1,4 +1,4 @@
-import { useId, useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { type DesignDocument, type ModelScope, type Table, type Column, type CustomProperties, type TableRelation, type TableKey, type ReferentialAction, addTable, updateTable, removeTable, addColumn, updateColumn, removeColumn, upsertKey, removeKey, upsertTableRelation, removeTableRelation, isVisibleInView } from '@ezerd/model';
 import { createPortal } from 'react-dom';
 import { upsertEnum, removeEnum, exportPostgres } from '@ezerd/model';
@@ -6,12 +6,20 @@ import { newId } from './client.js';
 import './table-editor.css';
 import { Button, Checkbox, ContextMenu, IconButton, Input, Select, Textarea } from './components/ui/index.js';
 import { PanelList, PanelNote, PanelRow, PanelSection } from './panel.js';
-const scopes: ModelScope[] = ['both', 'logical', 'physical'];
-const scopeNames = { both: '함께', logical: '논리', physical: '물리' };
+export const physicalTypes=['uuid','integer','bigint','smallint','serial','bigserial','smallserial','boolean','text','varchar','char','numeric','decimal','real','double precision','date','time','timetz','timestamp','timestamptz','json','jsonb','bytea'];
+export function typeParameterEnabled(type:Column['physical']['type'], parameter:'length'|'precision'|'scale') {
+ if(type.enumId)return false;
+ if(parameter==='length')return ['varchar','char','character varying','character','bit','bit varying'].includes(type.name);
+ if(parameter==='scale')return ['numeric','decimal'].includes(type.name)&&type.precision!==undefined;
+ return ['numeric','decimal','time','timetz','timestamp','timestamptz','interval'].includes(type.name);
+}
+export function canSaveKey(key:TableKey, columns:Column[], keys:TableKey[]) {
+ return key.columnIds.length>0&&new Set(key.columnIds).size===key.columnIds.length&&key.columnIds.every(id=>columns.some(c=>c.id===id&&c.tableId===key.tableId&&c.scope!=='logical'))&&!keys.some(k=>k.id!==key.id&&k.tableId===key.tableId&&k.scope!=='logical'&&((key.kind==='primary'&&k.kind==='primary')||(k.kind===key.kind&&k.columnIds.length===key.columnIds.length&&k.columnIds.every((id,i)=>id===key.columnIds[i]))));
+}
 export const emptyMetadata = (): CustomProperties => ({ common: {}, logical: {}, physical: {} });
 const emptyMeta = emptyMetadata;
-const tableName = (t: Table, mode: ModelScope = 'both') => mode === 'physical' ? t.physical.name || '이름 없는 테이블' : t.logical.name || t.physical.name || '이름 없는 테이블';
-const columnName = (c: Column) => c.logical.name || c.physical.name || '이름 없는 컬럼';
+const tableName = (t: Table) => t.physical.name || '이름 없는 테이블';
+const columnName = (c: Column) => c.physical.name || '이름 없는 컬럼';
 export function parseMetadata(text: string): Record<string, string> {
     const value: unknown = JSON.parse(text);
     if (!value || Array.isArray(value) || typeof value !== 'object' || Object.entries(value).some(([key, v]) => !key.trim() || key.length > 120 || typeof v !== 'string' || v.length > 10000) || Object.keys(value).length > 100)
@@ -37,10 +45,6 @@ export function setMappingPair<T extends {
     ids[index] = value;
     return { ...mapping, [key]: ids };
 }
-function Scope({ value, onChange }: {
-    value: ModelScope;
-    onChange: (v: ModelScope) => void;
-}) { return <label>적용 범위<Select value={value} onChange={e => onChange(e.target.value as ModelScope)}>{scopes.map(s => <option key={s} value={s}>{scopeNames[s]}</option>)}</Select></label>; }
 function TextField({ label, value, onChange, max = 10000 }: {
     label: string;
     value: string;
@@ -52,73 +56,47 @@ function Check({ label, value, onChange }: {
     value: boolean;
     onChange: (v: boolean) => void;
 }) { return <label className="table-check"><Checkbox checked={value} onChange={e => onChange(e.target.checked)}/>{label}</label>; }
-function Metadata({ value, onChange }: {
-    value: CustomProperties;
-    onChange: (v: CustomProperties) => void;
-}) {
-    return <PanelSection title="사용자 정의 메타데이터">{(['common', 'logical', 'physical'] as const).map(key => <MetadataArea key={key} label={key === 'common' ? '공통' : scopeNames[key]} value={value[key]} onChange={v => onChange({ ...value, [key]: v })}/>)}</PanelSection>;
-}
-function MetadataArea({ label, value, onChange }: {
-    label: string;
-    value: Record<string, string>;
-    onChange: (v: Record<string, string>) => void;
-}) {
-    const errorId = useId();
-    const [draft, setDraft] = useState<string | null>(null), [error, setError] = useState('');
-    return <label>{label} 메타데이터 (JSON)<Textarea invalid={!!error} aria-describedby={error ? errorId : undefined} value={draft ?? JSON.stringify(value, null, 2)} onChange={e => setDraft(e.target.value)} onBlur={() => { if (draft === null)
-        return; try {
-        onChange(parseMetadata(draft));
-        setDraft(null);
-        setError('');
-    }
-    catch (e) {
-        setError(e instanceof Error ? e.message : '문자열 값을 가진 JSON 객체를 입력하세요.');
-    } }}/>{error && <span id={errorId} role="alert" className="table-error">{error}</span>}</label>;
-}
 function InlineCell({value, label, onCommit, disabled = false}: {value:string;label:string;onCommit:(value:string)=>void;disabled?:boolean}) {
     const [editing,setEditing]=useState(false), [draft,setDraft]=useState(value); const cancel=useRef(false);
     const commit=()=>{if(!cancel.current && draft!==value)onCommit(draft);setEditing(false);};
     return editing ? <Input autoFocus aria-label={label} value={draft} onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape'){cancel.current=true;setEditing(false);}if(e.key==='Enter'){e.preventDefault();commit();}}}/> : <span className="table-inline" title={`${label}: ${value || '미입력'}${disabled?'':' · 더블클릭하여 편집'}`} onDoubleClick={e=>{if(disabled)return;e.stopPropagation();cancel.current=false;setDraft(value);setEditing(true);}}>{value || '—'}</span>;
 }
-const freshColumn=(tableId:string,scope:ModelScope='both'):Column=>({id:newId(),tableId,scope,logical:{name:'새 컬럼',definition:'',semanticType:'',required:false},physical:{name:'',type:{name:'text',isArray:false},nullable:false,defaultExpression:null,comment:''},customProperties:emptyMeta()});
-export function TableNodeContent({ document:doc, tableId, viewMode, viewId, onChange, readOnly=false, onStartForeignKey }: {
+const freshColumn=(tableId:string,scope:ModelScope='physical'):Column=>({id:newId(),tableId,scope,logical:{name:'새 컬럼',definition:'',semanticType:'',required:false},physical:{name:'',type:{name:'text',isArray:false},nullable:false,defaultExpression:null,comment:''},customProperties:emptyMeta()});
+export function TableNodeContent({ document:doc, tableId, viewId, onChange, readOnly=false, onStartForeignKey }: {
  document:DesignDocument;tableId:string;viewMode:ModelScope;viewId?:string;onChange?:(d:DesignDocument)=>void;readOnly?:boolean;onStartForeignKey?:(id:string)=>void;
 }) {
  const [menu,setMenu]=useState<{x:number;y:number;id:string}|null>(null);
  const table=doc.tables?.find(t=>t.id===tableId);if(!table)return null;
- const columns=(doc.columns??[]).filter(c=>c.tableId===tableId&&isVisibleInView(c.scope,viewMode,table.scope));
+ const columns=(doc.columns??[]).filter(c=>c.tableId===tableId&&isVisibleInView(c.scope,'physical',table.scope));
  const editable=!!onChange&&!readOnly;
  const cell=(value:string,label:string,commit:(v:string)=>DesignDocument)=><InlineCell value={value} label={label} disabled={!editable} onCommit={v=>onChange?.(commit(v))}/>;
- return <div className="table-node-content"><header><small className="table-owner">{viewId&&viewId!==table.domainId?'외부 참조 · ':''}{doc.domains.find(d=>d.id===table.domainId)?.name}</small>
- <strong>{viewMode==='logical'?cell(table.logical.name,'논리 테이블명',name=>updateTable(doc,tableId,{logical:{...table.logical,name}})):cell(table.physical.name,'물리 테이블명',name=>updateTable(doc,tableId,{physical:{...table.physical,name}}))}</strong>
- {viewMode==='both'&&cell(table.logical.name,'논리 테이블명',name=>updateTable(doc,tableId,{logical:{...table.logical,name}}))}</header>
- <div className="table-columns"><div className="table-column-row table-column-head"><span>키</span><span>속성</span><span>타입</span><span>NULL</span><span>주석</span></div>{columns.map(c=>{
- const keys=(doc.keys??[]).filter(k=>k.columnIds.includes(c.id)&&isVisibleInView(k.scope,viewMode,table.scope));
- const fk=(doc.tableRelations??[]).some(r=>r.physical?.sourceColumnIds.includes(c.id)&&r.scope!=='logical'&&isVisibleInView(r.scope,viewMode));
- const logical=viewMode==='logical';const patch=(v:Partial<Column['physical']>)=>updateColumn(doc,c.id,{physical:{...c.physical,...v}});
+ return <div className="table-node-content"><header title={`${viewId&&viewId!==table.domainId?'외부 참조 · ':''}${doc.domains.find(d=>d.id===table.domainId)?.name??''}`}><strong>{cell(table.physical.name,'물리 테이블명',name=>updateTable(doc,tableId,{physical:{...table.physical,name}}))}</strong></header>
+ <div className="table-columns"><div className="table-column-row table-column-head"><span>키</span><span>컬럼</span><span>타입</span><span>NULL</span><span>comment</span></div>{columns.map(c=>{
+ const keys=(doc.keys??[]).filter(k=>k.columnIds.includes(c.id)&&k.scope!=='logical');
+ const fk=(doc.tableRelations??[]).some(r=>r.physical?.sourceColumnIds.includes(c.id)&&r.scope!=='logical');
+ const patch=(v:Partial<Column['physical']>)=>updateColumn(doc,c.id,{physical:{...c.physical,...v}});
  return <div className="table-column-row" key={c.id} onContextMenu={e=>{if(!editable)return;e.preventDefault();e.stopPropagation();setMenu({x:e.clientX,y:e.clientY,id:c.id});}}>
  <span className="table-key-marker">{[keys.some(k=>k.kind==='primary')?'PK':'',fk?'FK':'',keys.some(k=>k.kind==='unique')?'UQ':''].filter(Boolean).join(' ')}</span>
- <span>{cell(logical?c.logical.name:c.physical.name,logical?'논리 컬럼명':'물리 컬럼명',name=>logical?updateColumn(doc,c.id,{logical:{...c.logical,name}}):patch({name}))}{viewMode==='both'&&<small>{cell(c.logical.name,'논리 컬럼명',name=>updateColumn(doc,c.id,{logical:{...c.logical,name}}))}</small>}</span>
- <span>{cell(logical?c.logical.semanticType:c.physical.type.enumId?((t)=>t?`${t.schema}.${t.name}`:'ENUM')((doc.enums??[]).find(t=>t.id===c.physical.type.enumId)):c.physical.type.name,logical?'의미 타입':'타입',name=>logical?updateColumn(doc,c.id,{logical:{...c.logical,semanticType:name}}):patch({type:(doc.enums??[]).some(t=>`${t.schema}.${t.name}`===name)?{name,enumId:(doc.enums??[]).find(t=>`${t.schema}.${t.name}`===name)!.id,isArray:c.physical.type.isArray}:{...c.physical.type,name,enumId:undefined}}))}{!logical&&c.physical.type.isArray?'[]':''}</span>
- <span data-inline-edit="true" title="더블클릭하여 NULL 설정 변경" onDoubleClick={e=>{e.stopPropagation();if(editable)onChange?.(logical?updateColumn(doc,c.id,{logical:{...c.logical,required:!c.logical.required}}):patch({nullable:!c.physical.nullable}));}}>{logical?(c.logical.required?'필수':'선택'):(c.physical.nullable?'NULL':'NN')}</span>
- {cell(logical?c.logical.definition:c.physical.comment,'컬럼 주석',comment=>logical?updateColumn(doc,c.id,{logical:{...c.logical,definition:comment}}):patch({comment}))}</div>;
+ {cell(c.physical.name,'물리 컬럼명',name=>patch({name}))}
+ <span className="table-type-label">{c.physical.type.enumId?doc.enums?.find(t=>t.id===c.physical.type.enumId)?.name??'ENUM':c.physical.type.name}{c.physical.type.isArray?'[]':''}</span>
+ <span data-inline-edit="true" title="더블클릭하여 NULL 설정 변경" onDoubleClick={e=>{e.stopPropagation();if(editable)onChange?.(patch({nullable:!c.physical.nullable}));}}>{c.physical.nullable?'':'NN'}</span>
+ {cell(c.physical.comment,'컬럼 comment',comment=>patch({comment}))}</div>;
  })}{!columns.length&&<p>컬럼을 추가해 설계를 시작하세요.</p>}</div>
- <div className="table-node-footer" onPointerDown={e=>e.stopPropagation()}><IconButton aria-label="컬럼 추가" disabled={!editable} onClick={()=>onChange?.(addColumn(doc,freshColumn(tableId,table.scope)))}>+</IconButton></div>
+ <div className="table-node-footer" onPointerDown={e=>e.stopPropagation()}><IconButton aria-label="컬럼 추가" disabled={!editable} onClick={()=>onChange?.(addColumn(doc,freshColumn(tableId)))}>+</IconButton></div>
  <ContextMenu position={menu} onClose={()=>setMenu(null)} label="컬럼" items={[{id:'fk',label:'FK 관계 연결',disabled:!onStartForeignKey,onAction:()=>menu&&onStartForeignKey?.(menu.id)}]}/></div>;
 }
-export function TableWorkspaceTools({document:doc,viewId,viewMode,onViewModeChange,onChange,readOnly,position,onSelect,hideViewMode=false}:{document:DesignDocument;viewId:string;viewMode:ModelScope;onViewModeChange:(v:ModelScope)=>void;onChange:(d:DesignDocument)=>void;readOnly:boolean;position:{x:number;y:number};onSelect:(id:string)=>void;hideViewMode?:boolean}) {
+export function TableWorkspaceTools({document:doc,viewId,onChange,readOnly,position,onSelect}:{document:DesignDocument;viewId:string;viewMode:ModelScope;onViewModeChange:(v:ModelScope)=>void;onChange:(d:DesignDocument)=>void;readOnly:boolean;position:{x:number;y:number};onSelect:(id:string)=>void;hideViewMode?:boolean}) {
  const [name,setName]=useState('');
  return <div className="table-workspace-tools">
-  {!hideViewMode&&<label>모델 보기<Select value={viewMode} onChange={e=>onViewModeChange(e.target.value as ModelScope)}>{scopes.map(s=><option key={s} value={s}>{scopeNames[s]}</option>)}</Select></label>}
   <TextField label="새 테이블 물리명" value={name} max={120} onChange={setName}/>
-  <Button variant="primary" className="primary" disabled={readOnly||viewId==='overview'} onClick={()=>{const id=newId();onChange(addTable(doc,{id,domainId:viewId,scope:'both',logical:{name:'새 테이블',definition:''},physical:{name,schema:'public',comment:''},customProperties:emptyMetadata()},position));setName('');onSelect(id);}}>+ 테이블</Button>
+  <Button variant="primary" className="primary" disabled={readOnly||viewId==='overview'} onClick={()=>{const id=newId();onChange(addTable(doc,{id,domainId:viewId,scope:'physical',logical:{name:'새 테이블',definition:''},physical:{name,schema:'public',comment:''},customProperties:emptyMetadata()},position));setName('');onSelect(id);}}>+ 테이블</Button>
   <PanelNote>물리명을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이 화면으로 참조할 수 있습니다.</PanelNote>
  </div>;
 }
 function EnumManager({document:doc,onChange,readOnly}:{document:DesignDocument;onChange:(d:DesignDocument)=>void;readOnly:boolean}) {
  const [editing,setEditing]=useState<string|null>(null),[name,setName]=useState(''),[schema,setSchema]=useState('public'),[values,setValues]=useState(''),[error,setError]=useState('');
- return <fieldset disabled={readOnly}><p>프로젝트의 모든 테이블에서 함께 사용하는 PostgreSQL ENUM입니다.</p>{(doc.enums??[]).map(item=><div className="table-enum-item" key={item.id}><strong>{item.schema}.{item.name}</strong><small>{item.values.join(' · ')}</small><div className="table-actions"><Button onClick={()=>{setEditing(item.id);setName(item.name);setSchema(item.schema);setValues(item.values.join('\n'));}}>편집</Button><Button variant="danger" onClick={()=>{try{onChange(removeEnum(doc,item.id));setError('');}catch(e){setError(e instanceof Error?e.message:'사용 중인 ENUM은 삭제할 수 없습니다.');}}}>삭제</Button></div></div>)}
- <TextField label="ENUM 이름" value={name} max={120} onChange={setName}/><TextField label="ENUM 스키마" value={schema} max={120} onChange={setSchema}/><label>ENUM 값 (한 줄에 하나, 빈 줄은 빈 문자열)<Textarea value={values} onChange={e=>setValues(e.target.value)}/></label><Button disabled={!name.trim()||!schema.trim()} onClick={()=>{try{onChange(upsertEnum(doc,{id:editing??newId(),name:name.trim(),schema:schema.trim(),values:values.split('\n')}));setEditing(null);setName('');setValues('');setError('');}catch(e){setError(e instanceof Error?e.message:'ENUM을 확인하세요.');}}}>{editing?'ENUM 변경 적용':'ENUM 생성'}</Button>{editing&&<Button onClick={()=>{setEditing(null);setName('');setValues('');}}>편집 취소</Button>}{error&&<p role="alert" className="table-error">{error}</p>}</fieldset>;
+ return <fieldset disabled={readOnly}><p>프로젝트의 테이블에서 사용하는 ENUM 값 목록입니다.</p>{(doc.enums??[]).map(item=><div className="table-enum-item" key={item.id}><strong>{item.name}</strong><small>{item.values.join(' · ')}</small><div className="table-actions"><Button onClick={()=>{setEditing(item.id);setName(item.name);setSchema(item.schema);setValues(item.values.join('\n'));}}>편집</Button><Button variant="danger" onClick={()=>{try{onChange(removeEnum(doc,item.id));setError('');}catch(e){setError(e instanceof Error?e.message:'사용 중인 ENUM은 삭제할 수 없습니다.');}}}>삭제</Button></div></div>)}
+ <TextField label="ENUM 이름" value={name} max={120} onChange={setName}/><label>ENUM 값 (한 줄에 하나, 빈 줄은 빈 문자열)<Textarea value={values} onChange={e=>setValues(e.target.value)}/></label><Button disabled={!name.trim()||!schema.trim()} onClick={()=>{try{onChange(upsertEnum(doc,{id:editing??newId(),name:name.trim(),schema:schema.trim(),values:values.split('\n')}));setEditing(null);setName('');setSchema('public');setValues('');setError('');}catch(e){setError(e instanceof Error?e.message:'ENUM을 확인하세요.');}}}>{editing?'ENUM 변경 적용':'ENUM 생성'}</Button>{editing&&<Button onClick={()=>{setEditing(null);setName('');setSchema('public');setValues('');}}>편집 취소</Button>}{error&&<p role="alert" className="table-error">{error}</p>}</fieldset>;
 }
 export function TableInspector({ document: doc, tableId, onChange, readOnly, onStartForeignKey }: {
     document: DesignDocument;
@@ -128,12 +106,14 @@ export function TableInspector({ document: doc, tableId, onChange, readOnly, onS
     onStartForeignKey?: (id:string)=>void;
 }) {
     const [columnId, setColumnId] = useState<string | null>(null);
+    const [keyDraft,setKeyDraft]=useState<TableKey|null>(null),[fkColumnId,setFkColumnId]=useState('');
+    useEffect(()=>{setColumnId(null);setKeyDraft(null);setFkColumnId('');},[tableId]);
     const table = doc.tables?.find(t => t.id === tableId);
     if (!table)
         return null;
-    const cols = (doc.columns ?? []).filter(c => c.tableId === tableId);
-    const relations = (doc.tableRelations ?? []).filter(r => r.sourceTableId === tableId || r.targetTableId === tableId);
-    const keys = (doc.keys ?? []).filter(k => k.tableId === tableId);
+    const cols = (doc.columns ?? []).filter(c => c.tableId === tableId && c.scope !== 'logical');
+    const relations = (doc.tableRelations ?? []).filter(r => r.physical && r.scope !== 'logical' && (r.sourceTableId === tableId || r.targetTableId === tableId));
+    const keys = (doc.keys ?? []).filter(k => k.tableId === tableId && k.scope !== 'logical');
     const change = (next: DesignDocument) => { if (!readOnly)
         onChange(next); };
     const patch = (p: Partial<Table>) => change(updateTable(doc, tableId, p));
@@ -148,12 +128,7 @@ export function TableInspector({ document: doc, tableId, onChange, readOnly, onS
         <p className="table-owner">소유 도메인 · {doc.domains.find(d => d.id === table.domainId)?.name} · 참조 화면에서도 원본을 편집합니다.</p>
         <fieldset disabled={readOnly}>
             <PanelSection title="기본 정보" defaultOpen>
-                <Scope value={table.scope} onChange={scope => patch({ scope })}/>
-                <TextField label="논리 테이블명" value={table.logical.name} max={120} onChange={name => patch({ logical: { ...table.logical, name } })}/>
-                <TextField label="테이블 정의" value={table.logical.definition} onChange={definition => patch({ logical: { ...table.logical, definition } })}/>
                 <TextField label="물리 테이블명" value={table.physical.name} max={120} onChange={name => patch({ physical: { ...table.physical, name } })}/>
-                <TextField label="스키마" value={table.physical.schema} max={120} onChange={schema => patch({ physical: { ...table.physical, schema } })}/>
-                <TextField label="테이블 주석" value={table.physical.comment} onChange={comment => patch({ physical: { ...table.physical, comment } })}/>
             </PanelSection>
             <PanelSection title="컬럼" count={cols.length} defaultOpen>
                 <PanelList empty="아직 컬럼이 없습니다. 아래 컬럼 추가에서 첫 컬럼을 만들어 주세요.">
@@ -173,14 +148,15 @@ export function TableInspector({ document: doc, tableId, onChange, readOnly, onS
             </PanelSection>
             <PanelSection title="키 · PK / UNIQUE" count={keys.length}>
                 {keys.map(k => <KeyEditor key={k.id} item={k} columns={cols} onChange={next => change(upsertKey(doc, next))} onDelete={() => change(removeKey(doc, k.id))}/>)}
-                <Button onClick={() => change(upsertKey(doc, { id: newId(), tableId, scope: table.scope, kind: 'unique', name: '', columnIds: [] }))}>+ 키 추가</Button>
+                {keyDraft&&<><KeyEditor item={keyDraft} columns={cols} onChange={setKeyDraft} onDelete={()=>setKeyDraft(null)}/><Button variant="primary" disabled={!canSaveKey(keyDraft,cols,keys)} onClick={()=>{if(!canSaveKey(keyDraft,cols,keys))return;change(upsertKey(doc,keyDraft));setKeyDraft(null);}}>키 생성</Button><PanelNote>컬럼을 선택한 뒤 키를 생성하세요. 같은 키는 중복 생성할 수 없습니다.</PanelNote></>}
+                <Button disabled={!!keyDraft||!cols.length} onClick={()=>setKeyDraft({id:newId(),tableId,scope:'physical',kind:'unique',name:'',columnIds:[]})}>+ 키 추가</Button>
             </PanelSection>
             <PanelSection title="테이블 관계" count={relations.length}>
-                <label>FK 출발 컬럼<Select value="" disabled={!onStartForeignKey} onChange={e=>e.target.value&&onStartForeignKey?.(e.target.value)}><option value="">컬럼 선택 후 대상 테이블 클릭</option>{cols.filter(c=>c.scope!=='logical').map(c=><option key={c.id} value={c.id}>{c.physical.name||c.logical.name}</option>)}</Select></label>
+                <label>FK 출발 컬럼<Select value={fkColumnId} disabled={!onStartForeignKey} onChange={e=>setFkColumnId(e.target.value)}><option value="">출발 컬럼 선택</option>{cols.map(c=><option key={c.id} value={c.id}>{columnName(c)}</option>)}</Select></label>
+                <Button disabled={!onStartForeignKey||!cols.some(c=>c.id===fkColumnId)} onClick={()=>{if(!cols.some(c=>c.id===fkColumnId))return;onStartForeignKey?.(fkColumnId);setFkColumnId('');}}>+ 테이블 관계 추가</Button>
+                <PanelNote>출발 컬럼을 선택하고 관계 추가를 누른 뒤, 대상 테이블의 PK / UNIQUE 대응을 확인하세요.</PanelNote>
                 {relations.map(r => <RelationEditor key={r.id} document={doc} item={r} onChange={next => change(upsertTableRelation(doc, next))} onDelete={() => change(removeTableRelation(doc, r.id))}/>)}
-                <Button disabled={table.scope==='physical'} onClick={() => change(upsertTableRelation(doc, { id: newId(), sourceTableId: tableId, targetTableId: tableId, scope: 'logical', logical: { name: '새 관계', cardinality: 'one-to-many', required: false }, physical: null }))}>+ 테이블 관계 추가</Button>
             </PanelSection>
-            <Metadata value={table.customProperties} onChange={customProperties => patch({ customProperties })}/>
             <div className="panel-danger">
                 <Button variant="danger" className="danger" onClick={() => { if (window.confirm('테이블과 소유 컬럼, 키, 관계 및 모든 외부 참조를 삭제할까요?'))
                     change(removeTable(doc, tableId)); }}>테이블 삭제</Button>
@@ -198,17 +174,22 @@ function ColumnEditor({ document:doc, column: c, index, count, onChange, onMove,
     onDelete: () => void;
     onClose: () => void;
 }) {
-    const logical = (p: Partial<Column['logical']>) => onChange({ logical: { ...c.logical, ...p } }), physical = (p: Partial<Column['physical']>) => onChange({ physical: { ...c.physical, ...p } });
-    return <div className="panel-detail"><div className="panel-detail-head"><strong>{index + 1}. {columnName(c)}</strong><IconButton aria-label={`${columnName(c)} 위로`} disabled={index === 0} onClick={() => onMove(-1)}>↑</IconButton><IconButton aria-label={`${columnName(c)} 아래로`} disabled={index === count - 1} onClick={() => onMove(1)}>↓</IconButton><IconButton aria-label="컬럼 편집 닫기" onClick={onClose}>×</IconButton></div><Scope value={c.scope} onChange={scope => onChange({ scope })}/><TextField label="논리 컬럼명" value={c.logical.name} max={120} onChange={name => logical({ name })}/><TextField label="의미 타입" value={c.logical.semanticType} max={120} onChange={semanticType => logical({ semanticType })}/><TextField label="컬럼 정의" value={c.logical.definition} onChange={definition => logical({ definition })}/><Check label="논리 필수" value={c.logical.required} onChange={required => logical({ required })}/><TextField label="물리 컬럼명" value={c.physical.name} max={120} onChange={name => physical({ name })}/><label>공통 ENUM<Select value={c.physical.type.enumId??''} onChange={e=>physical({type:{name:e.target.value?(doc.enums??[]).find(t=>t.id===e.target.value)?.name??'text':'text',isArray:c.physical.type.isArray,enumId:e.target.value||undefined}})}><option value="">기본 PostgreSQL 타입</option>{(doc.enums??[]).map(t=><option key={t.id} value={t.id}>{t.schema}.{t.name}</option>)}</Select></label><label>PostgreSQL 타입<Input disabled={!!c.physical.type.enumId} list={`postgres-types-${c.id}`} maxLength={120} value={c.physical.type.name} onChange={e => physical({ type: { ...c.physical.type, name: e.target.value } })}/><datalist id={`postgres-types-${c.id}`}>{['uuid', 'integer', 'bigint', 'smallint', 'serial', 'bigserial', 'smallserial', 'boolean', 'text', 'varchar', 'char', 'numeric', 'decimal', 'real', 'double precision', 'date', 'time', 'timetz', 'timestamp', 'timestamptz', 'json', 'jsonb', 'bytea'].map(t => <option key={t} value={t}/>)}</datalist></label><div className="table-type-params">{(['length', 'precision', 'scale'] as const).map(key => <label key={key}>{{ length: '길이', precision: '정밀도', scale: '소수 자릿수' }[key]}<Input type="number" step={1} min={key === 'scale' ? -1000 : key === 'precision' ? 0 : 1} max={key === 'length' ? 10485760 : 1000} value={c.physical.type[key] ?? ''} onChange={e => { const value = e.target.value === '' ? undefined : Number(e.target.value); if (value === undefined || (Number.isInteger(value) && value >= (key === 'scale' ? -1000 : key === 'precision' ? 0 : 1) && value <= (key === 'length' ? 10485760 : 1000)))
-        physical({ type: { ...c.physical.type, [key]: value } }); }}/></label>)}</div><Check label="배열 타입" value={c.physical.type.isArray} onChange={isArray => physical({ type: { ...c.physical.type, isArray } })}/><Check label="물리 NULL 허용" value={c.physical.nullable} onChange={nullable => physical({ nullable })}/><TextField label="기본값 SQL 식" value={c.physical.defaultExpression ?? ''} onChange={defaultExpression => physical({ defaultExpression: defaultExpression || null })}/><TextField label="컬럼 주석" value={c.physical.comment} onChange={comment => physical({ comment })}/><Metadata value={c.customProperties} onChange={customProperties => onChange({ customProperties })}/><div className="panel-danger"><Button variant="danger" className="danger" onClick={onDelete}>컬럼 삭제</Button></div></div>;
+    const physical = (p: Partial<Column['physical']>) => onChange({ physical: { ...c.physical, ...p } });
+    return <div className="panel-detail"><div className="panel-detail-head"><strong>{index+1}. {columnName(c)}</strong><IconButton aria-label={`${columnName(c)} 위로`} disabled={index===0} onClick={()=>onMove(-1)}>↑</IconButton><IconButton aria-label={`${columnName(c)} 아래로`} disabled={index===count-1} onClick={()=>onMove(1)}>↓</IconButton><IconButton aria-label="컬럼 편집 닫기" onClick={onClose}>×</IconButton></div>
+    <TextField label="물리 컬럼명" value={c.physical.name} max={120} onChange={name=>physical({name})}/>
+    <label>ENUM<Select value={c.physical.type.enumId??''} onChange={e=>physical({type:{name:e.target.value?doc.enums?.find(t=>t.id===e.target.value)?.name??'text':'text',isArray:c.physical.type.isArray,enumId:e.target.value||undefined}})}><option value="">기본 타입</option>{doc.enums?.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</Select></label>
+    <label>타입<Select disabled={!!c.physical.type.enumId} value={c.physical.type.name} onChange={e=>physical({type:{name:e.target.value,isArray:c.physical.type.isArray}})}>{!physicalTypes.includes(c.physical.type.name)&&<option value={c.physical.type.name}>{c.physical.type.name}</option>}{physicalTypes.map(t=><option key={t}>{t}</option>)}</Select></label>
+    <div className="table-type-params">{(['length','precision','scale'] as const).map(key=><label key={key}>{{length:'길이',precision:'정밀도',scale:'소수 자릿수'}[key]}<Input type="number" disabled={!typeParameterEnabled(c.physical.type,key)} step={1} min={key==='scale'?-1000:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?0:1} max={key==='length'?10485760:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?6:1000} value={c.physical.type[key]??''} onChange={e=>{const value=e.target.value===''?undefined:Number(e.target.value);if(value===undefined||(Number.isInteger(value)&&value>=(key==='scale'?-1000:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?0:1)&&value<=(key==='length'?10485760:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?6:1000)))physical({type:{...c.physical.type,[key]:value,...(key==='precision'&&value===undefined?{scale:undefined}:{})}});}}/></label>)}</div>
+    <Check label="배열 타입" value={c.physical.type.isArray} onChange={isArray=>physical({type:{...c.physical.type,isArray}})}/><Check label="NULL 허용" value={c.physical.nullable} onChange={nullable=>physical({nullable})}/><TextField label="컬럼 comment" value={c.physical.comment} onChange={comment=>physical({comment})}/><div className="panel-danger"><Button variant="danger" onClick={onDelete}>컬럼 삭제</Button></div></div>;
 }
+
 function KeyEditor({ item: k, columns, onChange, onDelete }: {
     item: TableKey;
     columns: Column[];
     onChange: (k: TableKey) => void;
     onDelete: () => void;
 }) {
-    return <PanelSection defaultOpen title={<>{k.kind === 'primary' ? '기본 키' : '고유 키'} · {k.name || '이름 없음'}</>}><Scope value={k.scope} onChange={scope => onChange({ ...k, scope })}/><label>키 종류<Select value={k.kind} onChange={e => onChange({ ...k, kind: e.target.value as TableKey['kind'] })}><option value="primary">PRIMARY KEY</option><option value="unique">UNIQUE</option></Select></label><TextField label="키 이름" value={k.name} max={120} onChange={name => onChange({ ...k, name })}/><p>체크한 순서대로 하나의 복합 {k.kind==='primary'?'PRIMARY KEY':'UNIQUE'}를 구성합니다.</p><div className="table-key-options">{columns.map(c=><Check key={c.id} label={`${k.columnIds.includes(c.id)?`${k.columnIds.indexOf(c.id)+1}. `:''}${c.physical.name||columnName(c)}`} value={k.columnIds.includes(c.id)} onChange={checked=>onChange({...k,columnIds:checked?[...k.columnIds,c.id]:k.columnIds.filter(id=>id!==c.id)})}/>)}</div><Button variant="danger" className="danger" onClick={onDelete}>키 삭제</Button></PanelSection>;
+    return <PanelSection defaultOpen title={<>{k.kind === 'primary' ? '기본 키' : '고유 키'} · {k.name || '이름 없음'}</>}><label>키 종류<Select value={k.kind} onChange={e => onChange({ ...k, kind: e.target.value as TableKey['kind'] })}><option value="primary">PRIMARY KEY</option><option value="unique">UNIQUE</option></Select></label><TextField label="키 이름" value={k.name} max={120} onChange={name => onChange({ ...k, name })}/><p>체크한 순서대로 하나의 복합 {k.kind==='primary'?'PRIMARY KEY':'UNIQUE'}를 구성합니다.</p><div className="table-key-options">{columns.map(c=><Check key={c.id} label={`${k.columnIds.includes(c.id)?`${k.columnIds.indexOf(c.id)+1}. `:''}${c.physical.name||columnName(c)}`} value={k.columnIds.includes(c.id)} onChange={checked=>onChange({...k,columnIds:checked?[...k.columnIds,c.id]:k.columnIds.filter(id=>id!==c.id)})}/>)}</div><Button variant="danger" className="danger" onClick={onDelete}>키 삭제</Button></PanelSection>;
 }
 function RelationEditor({ document: doc, item: r, onChange, onDelete }: {
     document: DesignDocument;
@@ -217,7 +198,7 @@ function RelationEditor({ document: doc, item: r, onChange, onDelete }: {
     onDelete: () => void;
 }) {
     const physical = r.physical, source = (doc.columns ?? []).filter(c => c.tableId === r.sourceTableId), target = (doc.columns ?? []).filter(c => c.tableId === r.targetTableId);
-    return <PanelSection title={<>{doc.tables?.find(t => t.id === r.sourceTableId)?.logical.name} → {doc.tables?.find(t => t.id === r.targetTableId)?.logical.name} · {r.logical.name}</>}><Scope value={r.scope} onChange={scope => onChange({ ...r, scope })}/>{(['sourceTableId', 'targetTableId'] as const).map(key => <label key={key}>{key === 'sourceTableId' ? '출발 테이블 (FK 보유)' : '대상 테이블 (참조 키)'}<Select value={r[key]} onChange={e => onChange({ ...r, [key]: e.target.value, physical: physical ? { ...physical, sourceColumnIds: [], targetColumnIds: [] } : null })}>{doc.tables?.map(t => <option key={t.id} value={t.id}>{doc.domains.find(d => d.id === t.domainId)?.name} / {tableName(t)}</option>)}</Select></label>)}<TextField label="논리 관계명" value={r.logical.name} max={120} onChange={name => onChange({ ...r, logical: { ...r.logical, name } })}/>{!r.logical.sourceCardinality&&!r.logical.targetCardinality&&<label>논리 카디널리티<Select value={r.logical.cardinality} onChange={e => onChange({ ...r, logical: { ...r.logical, cardinality: e.target.value as TableRelation['logical']['cardinality'] } })}><option value="one-to-one">1 : 1</option><option value="one-to-many">1 : N</option><option value="many-to-many">N : M</option></Select></label>}<TextField label="관계 설명" value={r.logical.description??''} onChange={description=>onChange({...r,logical:{...r.logical,description}})}/>{(['sourceCardinality','targetCardinality'] as const).map(side=>{const endpoint=r.logical[side]??{min:side==='sourceCardinality'?0:r.logical.required?1:0,max:side==='sourceCardinality'?(r.logical.cardinality==='one-to-one'?1:'many'):(r.logical.cardinality==='many-to-many'?'many':1)};return <label key={side}>{side==='sourceCardinality'?'출발 끝점':'대상 끝점'}<Select value={`${endpoint.min}:${endpoint.max}`} onChange={e=>{const [min,max]=e.target.value.split(':');onChange({...r,logical:{...r.logical,[side]:{min:Number(min) as 0|1,max:max==='many'?'many':1}}});}}><option value="0:1">0..1</option><option value="1:1">1</option><option value="0:many">0..N</option><option value="1:many">1..N</option></Select></label>;})}{!r.logical.targetCardinality&&<Check label="논리 관계 필수" value={r.logical.required} onChange={required => onChange({ ...r, logical: { ...r.logical, required } })}/>}{physical?<Button onClick={()=>onChange({...r,physical:null})}>물리 FK 정의 제거</Button>:<p>새 FK는 테이블 관계의 출발 컬럼을 선택한 뒤 대상 PK / UNIQUE 대응을 확인하여 생성합니다.</p>}{physical && <><TextField label="FK 이름" value={physical.name} max={120} onChange={name => onChange({ ...r, physical: { ...physical, name } })}/><p>출발 컬럼 → 대상 컬럼을 순서대로 연결합니다. 대상 컬럼은 PK 또는 UNIQUE와 일치해야 합니다.</p>{physical.sourceColumnIds.map((id, i) => <div className="table-mapping" key={i}><span>{i + 1}</span>{(['source', 'target'] as const).map(side => <label key={side}>{side === 'source' ? '출발' : '대상'} 컬럼<Select value={side === 'source' ? id : physical.targetColumnIds[i] ?? ''} onChange={e => { if (e.target.value)
+    return <PanelSection title={<>{doc.tables?.find(t => t.id === r.sourceTableId)?.physical.name} → {doc.tables?.find(t => t.id === r.targetTableId)?.physical.name} · {r.logical.name}</>}>{(['sourceTableId', 'targetTableId'] as const).map(key => <label key={key}>{key === 'sourceTableId' ? '출발 테이블 (FK 보유)' : '대상 테이블 (참조 키)'}<Select value={r[key]} onChange={e => onChange({ ...r, [key]: e.target.value, physical: physical ? { ...physical, sourceColumnIds: [], targetColumnIds: [] } : null })}>{doc.tables?.map(t => <option key={t.id} value={t.id}>{doc.domains.find(d => d.id === t.domainId)?.name} / {tableName(t)}</option>)}</Select></label>)}<TextField label="관계명" value={r.logical.name} max={120} onChange={name => onChange({ ...r, logical: { ...r.logical, name } })}/>{!r.logical.sourceCardinality&&!r.logical.targetCardinality&&<label>카디널리티<Select value={r.logical.cardinality} onChange={e => onChange({ ...r, logical: { ...r.logical, cardinality: e.target.value as TableRelation['logical']['cardinality'] } })}><option value="one-to-one">1 : 1</option><option value="one-to-many">1 : N</option><option value="many-to-many">N : M</option></Select></label>}<TextField label="관계 설명" value={r.logical.description??''} onChange={description=>onChange({...r,logical:{...r.logical,description}})}/>{(['sourceCardinality','targetCardinality'] as const).map(side=>{const endpoint=r.logical[side]??{min:side==='sourceCardinality'?0:r.logical.required?1:0,max:side==='sourceCardinality'?(r.logical.cardinality==='one-to-one'?1:'many'):(r.logical.cardinality==='many-to-many'?'many':1)};return <label key={side}>{side==='sourceCardinality'?'출발 끝점':'대상 끝점'}<Select value={`${endpoint.min}:${endpoint.max}`} onChange={e=>{const [min,max]=e.target.value.split(':');onChange({...r,logical:{...r.logical,[side]:{min:Number(min) as 0|1,max:max==='many'?'many':1}}});}}><option value="0:1">0..1</option><option value="1:1">1</option><option value="0:many">0..N</option><option value="1:many">1..N</option></Select></label>;})}{!r.logical.targetCardinality&&<Check label="관계 필수" value={r.logical.required} onChange={required => onChange({ ...r, logical: { ...r.logical, required } })}/>}{physical?<Button onClick={()=>onChange({...r,physical:null})}>물리 FK 정의 제거</Button>:<p>새 FK는 테이블 관계의 출발 컬럼을 선택한 뒤 대상 PK / UNIQUE 대응을 확인하여 생성합니다.</p>}{physical && <><TextField label="FK 이름" value={physical.name} max={120} onChange={name => onChange({ ...r, physical: { ...physical, name } })}/><p>출발 컬럼 → 대상 컬럼을 순서대로 연결합니다. 대상 컬럼은 PK 또는 UNIQUE와 일치해야 합니다.</p>{physical.sourceColumnIds.map((id, i) => <div className="table-mapping" key={i}><span>{i + 1}</span>{(['source', 'target'] as const).map(side => <label key={side}>{side === 'source' ? '출발' : '대상'} 컬럼<Select value={side === 'source' ? id : physical.targetColumnIds[i] ?? ''} onChange={e => { if (e.target.value)
         onChange({ ...r, physical: setMappingPair(physical, i, side, e.target.value) }); }}><option value="">선택</option>{(side === 'source' ? source : target).map(c => <option key={c.id} value={c.id}>{columnName(c)}</option>)}</Select></label>)}<IconButton aria-label={`매핑 ${i + 1} 삭제`} onClick={() => onChange({ ...r, physical: { ...physical, sourceColumnIds: physical.sourceColumnIds.filter((_, at) => at !== i), targetColumnIds: physical.targetColumnIds.filter((_, at) => at !== i) } })}>×</IconButton></div>)}<Button disabled={!source.length || !target.length} onClick={() => onChange({ ...r, physical: { ...physical, sourceColumnIds: [...physical.sourceColumnIds, source[0]?.id ?? ''], targetColumnIds: [...physical.targetColumnIds, target[0]?.id ?? ''] } })}>+ 컬럼 매핑</Button>{(['onDelete', 'onUpdate'] as const).map(key => <label key={key}>{key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}<Select value={physical[key]} onChange={e => onChange({ ...r, physical: { ...physical, [key]: e.target.value as ReferentialAction } })}>{['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT'].map(action => <option key={action}>{action}</option>)}</Select></label>)}</>}<Button variant="danger" className="danger" onClick={onDelete}>관계 삭제</Button></PanelSection>;
 }
 
@@ -302,21 +283,21 @@ export function ForeignKeyDialog({document:doc,sourceColumnId,targetTableId,onCh
  const key=keys.find(k=>k.id===keyId);const columns=(doc.columns??[]).filter(c=>c.tableId===source?.tableId&&c.scope!=='logical');
  useEffect(()=>{const previous=document.activeElement;dialog.current?.showModal();return()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};},[]);
  const valid=!!source&&!!sourceTable&&sourceTable.scope!=='logical'&&!!target&&target.scope!=='logical'&&!!key&&key.columnIds.length===mapping.filter(Boolean).length&&new Set(mapping).size===mapping.length&&mapping.every(id=>columns.some(c=>c.id===id));
- return createPortal(<dialog ref={dialog} className="table-fk-dialog" aria-labelledby="fk-dialog-title" onCancel={onClose} onClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()}><h2 id="fk-dialog-title">FK 컬럼 대응 확인</h2><p>{sourceTable?.physical.name||sourceTable?.logical.name} → {target?.physical.name||target?.logical.name}</p>
+ return createPortal(<dialog ref={dialog} className="table-fk-dialog" aria-labelledby="fk-dialog-title" onCancel={onClose} onClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()}><h2 id="fk-dialog-title">FK 컬럼 대응 확인</h2><p>{sourceTable?.physical.name||sourceTable?.physical.name} → {target?.physical.name||target?.logical.name}</p>
  <label>대상 PK / UNIQUE<Select value={keyId} onChange={e=>{setKeyId(e.target.value);setMapping([sourceColumnId]);setError('');}}>{keys.length===0&&<option value="">참조 가능한 키 없음</option>}{keys.map(k=><option key={k.id} value={k.id}>{k.kind==='primary'?'PK':'UNIQUE'} · {k.name||k.columnIds.map(id=>doc.columns?.find(c=>c.id===id)?.physical.name).join(', ')}</option>)}</Select></label>
  {!keys.length&&<p role="status">대상 테이블에 물리 PK 또는 UNIQUE를 먼저 정의하세요.</p>}
  <div className="table-fk-pairs">{key?.columnIds.map((id,index)=><div key={id}><label>출발 컬럼 {index+1}<Select value={mapping[index]??''} onChange={e=>{const next=[...mapping];next[index]=e.target.value;setMapping(next);setError('');}}><option value="">컬럼 선택</option>{columns.map(c=><option key={c.id} value={c.id}>{c.physical.name||c.logical.name} · {c.physical.type.name}</option>)}</Select></label><span aria-hidden="true">→</span><span>{doc.columns?.find(c=>c.id===id)?.physical.name||'이름 없는 컬럼'}<small>{doc.columns?.find(c=>c.id===id)?.physical.type.name}</small></span></div>)}</div>
  <div className="table-type-params">{([{label:'출발 끝점',value:sourceEnd,set:setSourceEnd},{label:'대상 끝점',value:targetEnd,set:setTargetEnd}]).map(item=><label key={item.label}>{item.label}<Select value={item.value} onChange={e=>item.set(e.target.value)}><option value="0:1">0..1</option><option value="1:1">1</option><option value="0:many">0..N</option><option value="1:many">1..N</option></Select></label>)}</div><TextField label="FK 제약조건 이름 (선택)" value={name} max={120} onChange={setName}/><TextField label="관계 설명" value={description} onChange={setDescription}/>
  {error&&<p role="alert" className="table-error">{error}</p>}<div className="table-actions"><Button onClick={onClose}>취소</Button><Button variant="primary" disabled={!valid} onClick={()=>{if(!source||!key||!valid)return;
- const relation:TableRelation={id:newId(),sourceTableId:source.tableId,targetTableId,scope:sourceTable?.scope==='physical'||target?.scope==='physical'?'physical':'both',logical:{name:'',description,cardinality:'one-to-many',required:false,sourceCardinality:{min:sourceEnd.startsWith('0')?0:1,max:sourceEnd.endsWith('many')?'many':1},targetCardinality:{min:targetEnd.startsWith('0')?0:1,max:targetEnd.endsWith('many')?'many':1}},physical:{name,sourceColumnIds:mapping,targetColumnIds:key.columnIds,onDelete:'NO ACTION',onUpdate:'NO ACTION'}};
+ const relation:TableRelation={id:newId(),sourceTableId:source.tableId,targetTableId,scope:'physical',logical:{name:'',description,cardinality:'one-to-many',required:false,sourceCardinality:{min:sourceEnd.startsWith('0')?0:1,max:sourceEnd.endsWith('many')?'many':1},targetCardinality:{min:targetEnd.startsWith('0')?0:1,max:targetEnd.endsWith('many')?'many':1}},physical:{name,sourceColumnIds:mapping,targetColumnIds:key.columnIds,onDelete:'NO ACTION',onUpdate:'NO ACTION'}};
  const next=upsertTableRelation(doc,relation);const diagnostics=exportPostgres(next).diagnostics.filter(d=>d.objectId===relation.id);
  if(diagnostics.length){setError(diagnostics.map(d=>d.message).join(' '));return;}onChange(next);onClose();}}>대응 확인 후 FK 생성</Button></div></dialog>,document.body);
 }
 
 function ColumnCreationForm({document:doc,tableId,onChange}:{document:DesignDocument;tableId:string;onChange:(d:DesignDocument)=>void}) {
- const [name,setName]=useState(''),[logicalName,setLogicalName]=useState(''),[type,setType]=useState('text'),[comment,setComment]=useState(''),[pk,setPk]=useState(false),[notNull,setNotNull]=useState(true);
- return <div className="table-column-create"><div className="table-create-grid"><label>PK<Checkbox checked={pk} onChange={e=>setPk(e.target.checked)}/></label><TextField label="물리 속성명" value={name} max={120} onChange={setName}/><TextField label="논리 속성명" value={logicalName} max={120} onChange={setLogicalName}/><label>타입<Select value={type} onChange={e=>setType(e.target.value)}>{['text','uuid','integer','bigint','boolean','numeric','date','timestamptz','jsonb'].map(t=><option key={t}>{t}</option>)}{(doc.enums??[]).map(t=><option key={t.id} value={`enum:${t.id}`}>{t.schema}.{t.name}</option>)}</Select></label><label>NOT NULL<Checkbox checked={notNull||pk} disabled={pk} onChange={e=>setNotNull(e.target.checked)}/></label><TextField label="새 컬럼 주석" value={comment} onChange={setComment}/></div>
- <Button onClick={()=>{const column=freshColumn(tableId,doc.tables?.find(t=>t.id===tableId)?.scope);column.logical.name=logicalName||'새 컬럼';column.physical.name=name;column.physical.comment=comment;column.physical.nullable=!notNull&&!pk;column.physical.type=type.startsWith('enum:')?{name:(doc.enums??[]).find(t=>t.id===type.slice(5))?.name??'text',enumId:type.slice(5),isArray:false}:{name:type,isArray:false};let next=addColumn(doc,column);if(pk){const existing=doc.keys?.find(k=>k.tableId===tableId&&k.kind==='primary');next=upsertKey(next,existing?{...existing,columnIds:[...existing.columnIds,column.id]}:{id:newId(),tableId,scope:column.scope,kind:'primary',name:'',columnIds:[column.id]});}onChange(next);setName('');setLogicalName('');setComment('');setPk(false);}}>+ 컬럼 추가</Button></div>;
+ const [name,setName]=useState(''),[type,setType]=useState('text'),[comment,setComment]=useState(''),[pk,setPk]=useState(false),[notNull,setNotNull]=useState(true);
+ return <div className="table-column-create"><div className="table-create-grid"><label>PK<Checkbox checked={pk} onChange={e=>setPk(e.target.checked)}/></label><TextField label="물리 속성명" value={name} max={120} onChange={setName}/><label>타입<Select value={type} onChange={e=>setType(e.target.value)}>{physicalTypes.map(t=><option key={t}>{t}</option>)}{(doc.enums??[]).map(t=><option key={t.id} value={`enum:${t.id}`}>{t.name}</option>)}</Select></label><label>NOT NULL<Checkbox checked={notNull||pk} disabled={pk} onChange={e=>setNotNull(e.target.checked)}/></label><TextField label="새 컬럼 comment" value={comment} onChange={setComment}/></div>
+ <Button onClick={()=>{const column=freshColumn(tableId);column.physical.name=name;column.physical.comment=comment;column.physical.nullable=!notNull&&!pk;column.physical.type=type.startsWith('enum:')?{name:(doc.enums??[]).find(t=>t.id===type.slice(5))?.name??'text',enumId:type.slice(5),isArray:false}:{name:type,isArray:false};let next=addColumn(doc,column);if(pk){const existing=doc.keys?.find(k=>k.tableId===tableId&&k.kind==='primary');next=upsertKey(next,existing?{...existing,columnIds:[...existing.columnIds,column.id]}:{id:newId(),tableId,scope:column.scope,kind:'primary',name:'',columnIds:[column.id]});}onChange(next);setName('');setComment('');setPk(false);}}>+ 컬럼 추가</Button></div>;
 }
 
 export function EnumDialog({document:doc,onChange,readOnly,onClose}:{document:DesignDocument;onChange:(d:DesignDocument)=>void;readOnly:boolean;onClose:()=>void}) {
