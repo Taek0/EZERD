@@ -4,6 +4,7 @@ import { userSchema, projectSchema, projectDocumentSchema, designDocumentSchema,
 import { ApiError, SaveGate, body, message, request, acknowledgeSave } from './client.js';
 import { Canvas } from './Canvas.js';
 import { CommentsPanel, CommentPins, Notifications, type CommentContext } from './CommentsPanel.js';
+import { RenameDialog } from './components/ui/RenameDialog.js';
 import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { LatestRequest } from './comments-state.js';
 import { DocumentHistory, documentEditGroup, mergeHistoryViewports } from './document-history.js';
@@ -37,6 +38,7 @@ type OpenProject = {
 const identityKey = 'ezerd.userId';
 export function App() {
   const confirm = useConfirm();
+  const [renamingProject, setRenamingProject] = useState<Project | null>(null);
   const [draftTarget, setDraftTarget] = useState<(CommentContext & { nonce: number })>();
   const [user, setUser] = useState<User | null>(null), [checking, setChecking] = useState(true);
   const [username, setUsername] = useState(''), [editingName, setEditingName] = useState(false);
@@ -295,9 +297,12 @@ export function App() {
     try {
       await request(`/api/projects/${project.id}`, body('PATCH', { expectedVersion: project.version, ...patch }));
       setRefresh(v => v + 1);
+      return true;
     }
     catch (e) {
       setError(message(e));
+      if (patch.name !== undefined) throw e;
+      return false;
     }
     finally {
       setBusy(false);
@@ -446,7 +451,7 @@ export function App() {
         <div className="save-controls">
           <Button aria-label="실행 취소" title="실행 취소 (Ctrl+Z / ⌘Z)" disabled={busy || opened.project.status === 'archived' || !history.current?.canUndo} onClick={() => restoreHistory('undo')}>↶</Button>
           <Button aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)" disabled={busy || opened.project.status === 'archived' || !history.current?.canRedo} onClick={() => restoreHistory('redo')}>↷</Button>
-          <Button aria-expanded={commentsOpen} onClick={() => setCommentsOpen(v => !v)}>핀</Button>
+          <Button aria-expanded={commentsOpen} onClick={() => { setDraftTarget(undefined); setCommentsOpen(v => !v); }}>핀</Button>
           <span role="status" className={saveError ? 'save-state failed' : 'save-state'}>
             {saving ? '◌ 저장 중' : conflict ? '! 저장 충돌' : saveError ? '! 저장 실패' : dirty ? '● 저장하지 않은 변경' : '✓ 저장 완료'}
           </span>
@@ -495,8 +500,8 @@ export function App() {
             activeThreadId={focusTarget?.threadId ?? null}
             onThreads={setThreads}
             onNavigate={focusThread}
-            onClose={() => setCommentsOpen(false)}
-            dirty={dirty} />
+            onClose={() => { setDraftTarget(undefined); setCommentsOpen(false); }}
+            onCancelPinDraft={() => setDraftTarget(undefined)} />
         </div>
       </div>
     </main> : <main id="main" className="gallery">
@@ -564,11 +569,7 @@ export function App() {
           <p>수정 {new Date(project.updatedAt).toLocaleDateString('ko-KR')}
           </p>
           <div className="card-actions">
-            <Button disabled={busy} onClick={() => {
-              const name = window.prompt('프로젝트 이름', project.name);
-              if (name?.trim())
-                void changeProject(project, { name: name.trim() });
-            }}>이름 수정</Button>
+            <Button disabled={busy} onClick={() => setRenamingProject(project)}>이름 수정</Button>
             <Button className={project.status === 'active' ? 'project-archive' : 'project-restore'} disabled={busy} onClick={async () => {
               if (project.status === 'archived' || await confirm({ title: '프로젝트 보관', description: `“${project.name}” 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.`, confirmLabel: '보관' }))
                 void changeProject(project, { status: project.status === 'active' ? 'archived' : 'active' });
@@ -593,5 +594,12 @@ export function App() {
         <span>명확한 구조. 함께 만드는 설계.</span>
       </footer>
     </main>}
+    {renamingProject && <RenameDialog
+      title="프로젝트 이름 수정"
+      label="프로젝트 이름"
+      initialValue={renamingProject.name}
+      maxLength={120}
+      onCancel={() => setRenamingProject(null)}
+      onSave={async name => { if (await changeProject(renamingProject, { name })) setRenamingProject(null); }} />}
   </div>;
 }

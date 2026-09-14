@@ -130,7 +130,7 @@ function Composer({ users, busy, label, onSend, focusNonce, authorName }: {
     </div>}
   </form>;
 }
-export function CommentsPanel({ projectId, userId, document, context, activeThreadId, onThreads, onNavigate, onClose, dirty, draftTarget }: {
+export function CommentsPanel({ projectId, userId, document, context, activeThreadId, onThreads, onNavigate, onClose, onCancelPinDraft, draftTarget }: {
   draftTarget?: CommentContext & { nonce: number };
   projectId: string;
   userId: string;
@@ -140,12 +140,11 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
   onThreads: (threads: Thread[]) => void;
   onNavigate: (thread: Thread) => void;
   onClose: () => void;
-  dirty: boolean;
+  onCancelPinDraft: () => void;
 }) {
-  const [threads, setThreads] = useState<Thread[]>([]), [users, setUsers] = useState<Member[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [showResolved, setShowResolved] = useState(false), [allViews, setAllViews] = useState(true), [blank, setBlank] = useState(true), [refresh, setRefresh] = useState(0);
+  const [threads, setThreads] = useState<Thread[]>([]), [users, setUsers] = useState<Member[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [showResolved, setShowResolved] = useState(false), [allViews, setAllViews] = useState(true), [refresh, setRefresh] = useState(0);
   const confirm = useConfirm();
-  const draftContext = draftTarget && draftTarget.viewId === context.viewId ? draftTarget : context;
-  useEffect(() => { if (draftTarget) setBlank(true); }, [draftTarget]);
+  const draftContext = draftTarget?.viewId === context.viewId ? draftTarget : undefined;
   const mounted = useRef(true), mutation = useRef(false), threadRevision = useRef(0);
   useEffect(() => {
     mounted.current = true;
@@ -318,21 +317,17 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
       </article>)}
       {!visible.length && <p className="comment-empty">아직 핀이 없습니다. 캔버스의 빈 공간에서 우클릭해 첫 핀을 남겨 보세요.</p>}
     </div>
-    <div className="new-thread">
-      <h3>새 핀</h3>
-      <label><Checkbox
-        checked={blank}
-        onChange={e => setBlank(e.target.checked)} />빈 공간에 연결</label>
-      <p>{blank || !draftContext.selectedObjectId ? '선택한 캔버스 위치' : '선택한 객체'}에 핀을 남깁니다.</p>
-      {dirty && <p className="comment-save-hint">새 객체에 핀을 연결하려면 먼저 설계를 저장해 주세요.</p>}
+    {draftContext && <div className="new-thread" aria-label="선택한 위치에 핀 작성">
+      <Button type="button" disabled={busy} onClick={onCancelPinDraft}>작성 취소</Button>
       <Composer
+        key={draftContext.nonce}
         users={users}
         authorName={users.find(u => u.id === userId)?.username ?? '나'}
         busy={busy}
         label="핀 등록"
-        {...(draftTarget ? { focusNonce: draftTarget.nonce } : {})}
-        onSend={(text, mentionIds) => mutate(`/api/projects/${projectId}/threads`, 'POST', { authorId: userId, viewId: draftContext.viewId, ...pinAttachment(document, draftContext.viewId, blank ? null : context.selectedObjectId, draftContext.position), body: text, mentionIds })} />
-    </div>
+        focusNonce={draftContext.nonce}
+        onSend={(text, mentionIds) => mutate(`/api/projects/${projectId}/threads`, 'POST', { authorId: userId, viewId: draftContext.viewId, ...pinAttachment(document, draftContext.viewId, null, draftContext.position), body: text, mentionIds })} />
+    </div>}
   </aside>;
 }
 export function Notifications({ userId, onNavigate }: {

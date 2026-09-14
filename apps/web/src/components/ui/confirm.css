@@ -7,3 +7,4 @@
 .confirmation-dialog-actions .confirmation-danger { color:#fff; background:#b63737; border-color:#a82b2b; }
 .confirmation-dialog-actions .confirmation-danger:hover:not(:disabled) { background:#962828; color:#fff; }
 @media(prefers-reduced-motion:no-preference) { .confirmation-dialog[open] { animation:confirmation-appear .16s ease-out; } @keyframes confirmation-appear { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } } }
+.rename-dialog label { display:block; margin-bottom:8px; font-size:14px; } .rename-dialog input { width:100%; margin-bottom:20px; }
