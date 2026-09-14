@@ -6,6 +6,7 @@ export interface CustomProperties {
   physical: Record<string, string>;
 }
 export interface Table {
+  canvasDisplay?: {showNullable?: boolean; showComment?: boolean} | undefined;
   id: string;
   domainId: string;
   scope: ModelScope;

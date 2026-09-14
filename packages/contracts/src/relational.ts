@@ -6,6 +6,7 @@ const scope = z.enum(['both', 'logical', 'physical']);
 const properties = z.record(z.string().min(1).max(120), z.string().max(10000)).refine(value => Object.keys(value).length <= 100, '속성은 영역별 100개까지 가능합니다.');
 export const customPropertiesSchema = z.strictObject({ common: properties, logical: properties, physical: properties });
 export const tableSchema = z.strictObject({
+  canvasDisplay: z.strictObject({showNullable:z.boolean().optional(),showComment:z.boolean().optional()}).optional(),
   id, domainId: id, scope,
   logical: z.strictObject({ name, definition: description }),
   physical: z.strictObject({ name, schema: name, comment: description }),

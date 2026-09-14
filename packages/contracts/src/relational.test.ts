@@ -21,3 +21,9 @@ describe('relational and review API contracts',()=>{
   expect(createThreadSchema.safeParse({authorId:id,viewId:'overview',objectId:null,x:Infinity,y:0,body:'hi',mentionIds:[]}).success).toBe(false);
  });
 });
+
+it('round-trips optional table display preferences and rejects invalid flags',()=>{
+ const doc={...base,tables:[{...table,canvasDisplay:{showNullable:false,showComment:false}}]};
+ expect(designDocumentSchema.parse(doc)).toEqual(doc);
+ expect(designDocumentSchema.safeParse({...base,tables:[{...table,canvasDisplay:{showNullable:'no'}}]}).success).toBe(false);
+});
