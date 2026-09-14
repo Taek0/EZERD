@@ -5,6 +5,8 @@ import { type DesignDocument, type Table, upsertCombinedView, removeCombinedView
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
 import { tableCardSize } from './table-geometry.js';
 import { exportCanvasPng } from './canvas-export.js';
+import { layoutDomainRelations } from './domain-relations.js';
+import { DomainDescription } from './DomainDescription.js';
 import { DomainColorPicker } from './DomainColorPicker.js';
 import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { cardSize, connectedRelations } from './canvas-state.js';
@@ -110,6 +112,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     const kind = doc.domains.some(d => d.id === node.objectId) ? 'domain' : (doc.tables ?? []).some(t => t.id === node.objectId) ? 'table' : 'note';
     return {...node, ...(kind === 'table' ? tableCardSize(doc, node.objectId, node.width, node.height) : cardSize(kind, node.width, node.height))};
   });
+  const domainRoutes = layoutDomainRelations(doc.domainRelations, nodes);
   const selectedNode = nodes.find(n => n.objectId === selected),
     domain = doc.domains.find(d => d.id === selected),
     note = doc.notes.find(n => n.id === selected);
@@ -415,36 +418,20 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               </marker>
             </defs>
             {doc.domainRelations.map(r => {
-              const a = nodes.find(n => n.objectId === r.sourceDomainId),
-                b = nodes.find(n => n.objectId === r.targetDomainId);
-              if (!a || !b)
-                return null;
-              const ax = a.x + a.width / 2,
-                ay = a.y + a.height / 2,
-                bx = b.x + b.width / 2,
-                by = b.y + b.height / 2,
-                dx = bx - ax,
-                dy = by - ay;
-              const ratioA = Math.min(a.width / 2 / Math.max(Math.abs(dx), .001), a.height / 2 / Math.max(Math.abs(dy), .001)),
-                ratioB = Math.min(b.width / 2 / Math.max(Math.abs(dx), .001), b.height / 2 / Math.max(Math.abs(dy), .001));
-              const pair = doc.domainRelations.filter(item => [item.sourceDomainId,item.targetDomainId].sort().join('|') === [r.sourceDomainId,r.targetDomainId].sort().join('|'));
-              const offset = (pair.findIndex(item => item.id === r.id) - (pair.length-1)/2) * 54;
-              const length = Math.max(1, Math.hypot(dx,dy));
-              const sign = r.sourceDomainId < r.targetDomainId ? 1 : -1;
-              const cx = (ax+bx)/2 - dy/length*offset*sign;
-              const cy = (ay+by)/2 + dx/length*offset*sign;
+              const route = domainRoutes.get(r.id);
+              if (!route) return null;
               return <g
                 key={r.id}
                 onPointerDown={e => e.stopPropagation()}
                 onClick={() => editRelation(r.id)}
                 className={`relation ${relationId === r.id ? 'selected' : ''} ${filterDomain && r.sourceDomainId !== filterDomain && r.targetDomainId !== filterDomain ? 'domain-dimmed' : ''}`}>
                 <path
-                  d={`M ${ax+dx*ratioA} ${ay+dy*ratioA} Q ${cx} ${cy} ${bx-dx*ratioB} ${by-dy*ratioB}`}
+                  d={route.path}
                   markerEnd="url(#arrow-end)"
                   markerStart={r.direction === 'both' ? 'url(#arrow-end)' : undefined} />
                 <text
-                  x={(ax+bx)/4+cx/2}
-                  y={(ay+by)/4+cy/2-10}
+                  x={route.label.x}
+                  y={route.label.y}
                   textAnchor="middle">
                   {r.name}
                 </text>
@@ -493,9 +480,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                 <h2>
                   {d.name}
                 </h2>
-                <p>
-                  {d.description || '업무 영역을 설명해 주세요'}
-                </p>
+                <DomainDescription value={d.description} name={d.name} readOnly={readOnly} onCommit={description => change(updateDomain(live.current, d.id, { description }))} />
                 <Button
                   className="enter-domain"
                   onPointerDown={e => e.stopPropagation()}
