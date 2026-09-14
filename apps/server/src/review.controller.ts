@@ -1,7 +1,7 @@
-import { BadRequestException, Body, Controller, Get, HttpException, Inject, NotFoundException, Param, Patch, Post, ServiceUnavailableException } from '@nestjs/common';
-import { asc, desc, eq, inArray } from 'drizzle-orm';
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpException, Inject, NotFoundException, Param, Patch, Post, ServiceUnavailableException } from '@nestjs/common';
+import { asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { createThreadSchema, createMessageSchema, updateThreadSchema, updateNotificationSchema } from '@ezerd/contracts';
+import { createThreadSchema, createMessageSchema, deleteThreadSchema, updateThreadSchema, updateNotificationSchema } from '@ezerd/contracts';
 import { DatabaseService } from './db/database.service.js';
 import { messages, notifications, projects, threads, users } from './db/schema.js';
 
@@ -13,6 +13,8 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 const idSchema = z.uuid();
+// Millisecond precision matches API timestamps; advance even for same-tick updates.
+const nextThreadTimestamp = sql`greatest(date_trunc('milliseconds', clock_timestamp()), date_trunc('milliseconds', ${threads.updatedAt}) + interval '1 millisecond')`;
 async function operation<T>(callback: () => Promise<T>) {
   try { return await callback(); }
   catch (error) {
@@ -40,7 +42,7 @@ async function addMessage(db: Transaction, threadId: string, projectId: string, 
   await db.insert(messages).values({ threadId, authorId: input.authorId, body: input.body, mentionIds });
   const recipientIds = mentionIds.filter(id => id !== input.authorId);
   if (recipientIds.length) await db.insert(notifications).values(recipientIds.map(userId => ({ userId, projectId, threadId })));
-  await db.update(threads).set({ updatedAt: new Date() }).where(eq(threads.id, threadId));
+  await db.update(threads).set({ updatedAt: nextThreadTimestamp }).where(eq(threads.id, threadId));
 }
 
 @Controller()
@@ -80,6 +82,19 @@ export class ReviewController {
     }));
   }
 
+  @Delete('threads/:id')
+  remove(@Param('id') rawId: string, @Body() body: unknown) {
+    const id = parse(idSchema, rawId);
+    const input = parse(deleteThreadSchema, body);
+    return operation(() => this.database.db.transaction(async tx => {
+      const [thread] = await tx.select().from(threads).where(eq(threads.id, id)).for('update');
+      if (!thread) throw new NotFoundException('핀을 찾을 수 없습니다.');
+      if (thread.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) throw new ConflictException('새 답글 또는 상태 변경이 있습니다. 최신 핀을 확인한 후 삭제해주세요.');
+      await tx.delete(threads).where(eq(threads.id, id));
+      return { id, deleted: true };
+    }));
+  }
+
   @Post('threads/:id/messages')
   reply(@Param('id') rawId: string, @Body() body: unknown) {
     const id = parse(idSchema, rawId);
@@ -97,7 +112,7 @@ export class ReviewController {
     const id = parse(idSchema, rawId);
     const input = parse(updateThreadSchema, body);
     return operation(() => this.database.db.transaction(async tx => {
-      const [row] = await tx.update(threads).set({ ...input, updatedAt: new Date() }).where(eq(threads.id, id)).returning();
+      const [row] = await tx.update(threads).set({ ...input, updatedAt: nextThreadTimestamp }).where(eq(threads.id, id)).returning();
       if (!row) throw new NotFoundException('댓글을 찾을 수 없습니다.');
       return loadThread(tx, id);
     }));

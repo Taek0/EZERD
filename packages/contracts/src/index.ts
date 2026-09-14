@@ -18,3 +18,5 @@ export * from './relational.js';
 export * from './review.js';
 
 export * from './project-actions.js';
+
+export * from './pin-actions.js';

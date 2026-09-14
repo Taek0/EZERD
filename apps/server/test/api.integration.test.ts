@@ -149,6 +149,26 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect((await request('/projects/' + id + '/threads', 'POST', {authorId:person.data.id,viewId:'combined',objectId:null,x:0,y:0,body:'missing view',mentionIds:[]})).status).toBe(400);
   });
 
+  it('deletes a pin and replies atomically but rejects deletion after a new reply', async () => {
+    const author=await request('/users','POST',{username:'pin delete author'});userIds.push(author.data.id);
+    const recipient=await request('/users','POST',{username:'pin delete recipient'});userIds.push(recipient.data.id);
+    const created=await request('/projects','POST',{name:'pin delete fixture'});const id=created.data.id;projectIds.push(id);
+    const payload={authorId:author.data.id,viewId:'overview',objectId:null,x:10,y:20,body:'delete me',mentionIds:[recipient.data.id]};
+    const first=await request('/projects/'+id+'/threads','POST',payload);
+    const retained=await request('/projects/'+id+'/threads','POST',{...payload,body:'keep me'});
+    const reply=await request('/threads/'+first.data.id+'/messages','POST',{authorId:author.data.id,body:'new reply',mentionIds:[]});
+    expect(reply.status).toBe(201);
+    expect((await request('/threads/'+first.data.id,'DELETE',{expectedUpdatedAt:first.data.updatedAt})).status).toBe(409);
+    expect((await request('/threads/'+first.data.id,'DELETE',{})).status).toBe(400);
+    const removed=await request('/threads/'+first.data.id,'DELETE',{expectedUpdatedAt:reply.data.updatedAt});
+    expect(removed.status).toBe(200);expect(removed.data).toEqual({id:first.data.id,deleted:true});
+    const pins=await request('/projects/'+id+'/threads');expect(pins.data.map((p:{id:string})=>p.id)).toEqual([retained.data.id]);
+    const alerts=await request('/users/'+recipient.data.id+'/notifications');expect(alerts.data.map((n:{threadId:string})=>n.threadId)).toEqual([retained.data.id]);
+    expect((await pool.query('SELECT count(*)::int AS count FROM review_messages WHERE thread_id=$1',[first.data.id])).rows[0].count).toBe(0);
+    expect((await request('/users/'+author.data.id)).status).toBe(200);
+    expect((await request('/threads/'+first.data.id,'DELETE',{expectedUpdatedAt:reply.data.updatedAt})).status).toBe(404);
+  });
+
   it('accepts documents over 100 KB and rejects malformed edits without changing data', async () => {
     const created = await request('/projects', 'POST', { name: 'integration large document' });
     if (created.data.id) projectIds.push(created.data.id);
