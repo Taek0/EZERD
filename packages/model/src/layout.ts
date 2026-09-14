@@ -14,6 +14,9 @@ export function autoLayoutView(document: DesignDocument, viewId: string): Design
   const nodes = document.layout.nodes.filter(node => node.viewId === viewId && objects.has(node.objectId))
     .toSorted((a, b) => compare(a.objectId, b.objectId) || compare(a.id, b.id));
   if (nodes.length === 0) return document;
+  // Match the canvas minimums without changing legacy persisted card dimensions.
+  const width = (node: NodeLayout) => Math.max(viewId === 'overview' ? 240 : 280, node.width);
+  const height = (node: NodeLayout) => Math.max(viewId === 'overview' ? 210 : 220, node.height);
   const indices = new Map<string, number[]>();
   nodes.forEach((node, index) => indices.set(node.objectId, [...indices.get(node.objectId) ?? [], index]));
   const outgoing = nodes.map(() => new Set<number>());
@@ -92,13 +95,13 @@ export function autoLayoutView(document: DesignDocument, viewId: string): Design
     layers.set(rank, [...layers.get(rank) ?? [], ...component]);
   });
   const orderedLayers = [...layers].sort(([a], [b]) => a - b).map(([, layer]) => layer.sort((a, b) => a - b));
-  const heights = orderedLayers.map(layer => layer.reduce((sum, index) => sum + nodes[index]!.height, 0) + (layer.length - 1) * VERTICAL_GAP);
+  const heights = orderedLayers.map(layer => layer.reduce((sum, index) => sum + height(nodes[index]!), 0) + (layer.length - 1) * VERTICAL_GAP);
   const maximumHeight = Math.max(...heights);
   // Keep notes stationary and leave their occupied vertical area unobstructed.
   const noteIds = new Set(document.notes.filter(note => note.viewId === viewId).map(note => note.id));
   let originY = MARGIN;
   for (const node of document.layout.nodes) if (node.viewId === viewId && noteIds.has(node.objectId)) {
-    originY = Math.max(originY, node.y + node.height + VERTICAL_GAP);
+    originY = Math.max(originY, node.y + Math.max(110, node.height) + VERTICAL_GAP);
   }
   const positions = new Map<string, Pick<NodeLayout, 'x' | 'y'>>();
   let x = MARGIN;
@@ -107,9 +110,9 @@ export function autoLayoutView(document: DesignDocument, viewId: string): Design
     for (const index of layer) {
       const node = nodes[index]!;
       positions.set(node.id, { x, y });
-      y += node.height + VERTICAL_GAP;
+      y += height(node) + VERTICAL_GAP;
     }
-    x += Math.max(...layer.map(index => nodes[index]!.width)) + HORIZONTAL_GAP;
+    x += Math.max(...layer.map(index => width(nodes[index]!))) + HORIZONTAL_GAP;
   });
   return { ...document, layout: { ...document.layout, nodes: document.layout.nodes.map(node => {
     const point = positions.get(node.id);

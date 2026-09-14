@@ -51,6 +51,13 @@ describe('manual relationship flow layout', () => {
     expect(after.notes).toBe(before.notes);
     for (const n of before.layout.nodes.filter(n => !selected.some(s => s.id === n.id))) expect(after.layout.nodes.find(a => a.id === n.id)).toBe(n);
   });
+  it('respects rendered minimum domain dimensions without rewriting stored sizes', () => {
+    const before = fixture(['a', 'b', 'c'], []);
+    before.layout.nodes = before.layout.nodes.map(n => ({ ...n, width: 100, height: 140 }));
+    const after = autoLayoutView(before, 'overview');
+    noOverlap(after.layout.nodes.map(n => ({ ...n, width: 240, height: 210 })));
+    expect(after.layout.nodes.every(n => n.width === 100 && n.height === 140)).toBe(true);
+  });
   it('returns unchanged empty views and rejects an unknown view', () => {
     const empty = createEmptyDocument();
     expect(autoLayoutView(empty, 'overview')).toBe(empty);
