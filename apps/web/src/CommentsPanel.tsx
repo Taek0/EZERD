@@ -12,6 +12,7 @@ import {
   Input,
   Textarea,
 } from './components/ui/index.js';
+import { useConfirm } from './components/ui/ConfirmProvider.js';
 import './comments.css';
 type Member = {
   id: string;
@@ -58,15 +59,20 @@ function Composer({ users, busy, label, onSend, focusNonce, authorName }: {
   onSend: (text: string, mentions: string[]) => Promise<boolean>;
 }) {
   const composerRef = useRef<HTMLFormElement>(null);
+  const composing = useRef(false), submitting = useRef(false);
   useEffect(() => { if (focusNonce !== undefined) composerRef.current?.querySelector('textarea')?.focus(); }, [focusNonce]);
   const [text, setText] = useState(''), [mentions, setMentions] = useState<string[]>([]), [query, setQuery] = useState(''), [picking, setPicking] = useState(false);
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (await onSend(text.trim(), selectedMentions(mentions, users))) {
-      setText('');
-      setMentions([]);
-      setPicking(false);
-    }
+    if (busy || submitting.current || composing.current || !text.trim()) return;
+    submitting.current = true;
+    try {
+      if (await onSend(text.trim(), selectedMentions(mentions, users))) {
+        setText('');
+        setMentions([]);
+        setPicking(false);
+      }
+    } finally { submitting.current = false; }
   }
   return <form ref={composerRef} className={`comment-composer ${text || picking ? 'has-draft' : ''}`} onSubmit={e => void submit(e)}>
     <div className="comment-composer-row">
@@ -76,6 +82,13 @@ function Composer({ users, busy, label, onSend, focusNonce, authorName }: {
         rows={1}
         value={text}
         onChange={e => setText(e.target.value)}
+        onCompositionStart={() => { composing.current = true; }}
+        onCompositionEnd={() => { composing.current = false; }}
+        onKeyDown={e => {
+          if (e.key !== 'Enter' || e.shiftKey || composing.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+          e.preventDefault();
+          if (!busy && !submitting.current && text.trim()) composerRef.current?.requestSubmit();
+        }}
         maxLength={10000}
         required
         placeholder={label === '핀 등록' ? '핀 추가' : '답글 추가'}
@@ -130,6 +143,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
   dirty: boolean;
 }) {
   const [threads, setThreads] = useState<Thread[]>([]), [users, setUsers] = useState<Member[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [showResolved, setShowResolved] = useState(false), [allViews, setAllViews] = useState(true), [blank, setBlank] = useState(true), [refresh, setRefresh] = useState(0);
+  const confirm = useConfirm();
   const draftContext = draftTarget && draftTarget.viewId === context.viewId ? draftTarget : context;
   useEffect(() => { if (draftTarget) setBlank(true); }, [draftTarget]);
   const mounted = useRef(true), mutation = useRef(false), threadRevision = useRef(0);
@@ -207,6 +221,39 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
         setBusy(false);
     }
   }
+  async function deleteThread(thread: Thread) {
+    if (mutation.current) return;
+    const accepted = await confirm({
+      title: '핀 삭제',
+      description: '이 핀과 모든 답글을 삭제합니다. 삭제한 내용은 되돌릴 수 없습니다.',
+      confirmLabel: '삭제',
+      destructive: true,
+    });
+    if (!accepted || !mounted.current || mutation.current) return;
+    mutation.current = true;
+    ++threadRevision.current;
+    setBusy(true);
+    setError('');
+    try {
+      await request(`/api/threads/${thread.id}`, body('DELETE', { expectedUpdatedAt: thread.updatedAt }));
+      if (mounted.current) {
+        setThreads(items => items.filter(item => item.id !== thread.id));
+        setRefresh(value => value + 1);
+      }
+    } catch (e) {
+      try {
+        const latest = await request<unknown[]>(`/api/projects/${projectId}/threads`);
+        if (mounted.current) setThreads(latest.map(value => threadSchema.parse(value)));
+      } catch { /* Keep the existing pins visible when refreshing also fails. */ }
+      if (mounted.current) setError(message(e));
+    } finally {
+      ++threadRevision.current;
+      mutation.current = false;
+      if (mounted.current) {
+        setBusy(false);
+      }
+    }
+  }
   const visible = threads.filter(t => (allViews || t.viewId === context.viewId) && (showResolved || !t.resolved));
   return <aside className="comments-panel" aria-label="핀">
     <div className="comment-panel-heading">
@@ -239,6 +286,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
           <Button disabled={busy} onClick={() => void mutate(`/api/threads/${thread.id}`, 'PATCH', { resolved: !thread.resolved })}>
             {thread.resolved ? '다시 열기' : '해결'}
           </Button>
+          <Button disabled={busy} aria-label="핀 삭제" onClick={() => void deleteThread(thread)}>삭제</Button>
         </div>
         {thread.messages.map((entry, index) => <div className={`comment-message ${index > 0 ? 'comment-reply' : 'comment-root'}`} key={entry.id}>
           <Avatar size="xs" aria-hidden="true">{(users.find(u => u.id === entry.authorId)?.username ?? '사용자').slice(0, 1)}</Avatar>
