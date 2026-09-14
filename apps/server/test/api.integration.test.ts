@@ -85,6 +85,29 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect((await request(`/projects/${randomUUID()}`)).status).toBe(404);
   });
 
+  it('round-trips project enums, stable references and independent crow-foot endpoints', async () => {
+    const created = await request('/projects', 'POST', { name: 'integration editor workflow' });
+    projectIds.push(created.data.id);
+    const id = created.data.id;
+    const opened = await request('/projects/' + id);
+    const properties = { common: {}, logical: {}, physical: {} };
+    const document = {
+      ...opened.data.document,
+      domains: [{ id: 'd', name: 'domain', description: '' }],
+      enums: [{ id: 'enum', schema: 'public', name: 'status', values: ['new', 'done'] }],
+      tables: [{ id: 't', domainId: 'd', scope: 'both', logical: { name: '상태', definition: '' }, physical: { name: 'state', schema: 'public', comment: '' }, customProperties: properties }],
+      columns: [{ id: 'c', tableId: 't', scope: 'both', logical: { name: '상태', definition: '', semanticType: '', required: false }, physical: { name: 'status', type: { name: 'status', enumId: 'enum', isArray: false }, nullable: false, defaultExpression: null, comment: '' }, customProperties: properties }],
+      tableRelations: [{ id: 'r', sourceTableId: 't', targetTableId: 't', scope: 'logical', logical: { name: 'state.status:state', cardinality: 'one-to-many', required: false, description: '설명', sourceCardinality: { min: 0, max: 'many' }, targetCardinality: { min: 1, max: 1 } }, physical: null }],
+    };
+    expect((await request('/projects/' + id + '/document', 'PUT', { expectedVersion: 0, document })).status).toBe(200);
+    expect((await request('/projects/' + id)).data.document).toEqual(document);
+    document.enums[0]!.name = 'workflow_status';
+    expect((await request('/projects/' + id + '/document', 'PUT', { expectedVersion: 1, document })).status).toBe(200);
+    expect((await request('/projects/' + id)).data.document.columns[0].physical.type.enumId).toBe('enum');
+    expect((await request('/projects/' + id + '/document', 'PUT', { expectedVersion: 2, document: { ...document, enums: [{ ...document.enums[0], values: ['same', 'same'] }] } })).status).toBe(400);
+    expect((await request('/projects/' + id)).data.document).toEqual(document);
+  });
+
   it('accepts documents over 100 KB and rejects malformed edits without changing data', async () => {
     const created = await request('/projects', 'POST', { name: 'integration large document' });
     if (created.data.id) projectIds.push(created.data.id);
