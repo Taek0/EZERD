@@ -246,7 +246,7 @@ export function ForeignKeyDialog({document:doc,sourceColumnId,targetTableId,onCh
  const [name,setName]=useState(''),[description,setDescription]=useState('');
  const [sourceEnd,setSourceEnd]=useState('0:many'),[targetEnd,setTargetEnd]=useState(source?.physical.nullable?'0:1':'1:1');
  const key=keys.find(k=>k.id===keyId);const columns=(doc.columns??[]).filter(c=>c.tableId===source?.tableId&&c.scope!=='logical');
- useEffect(()=>{dialog.current?.showModal();const previous=document.activeElement;return()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};},[]);
+ useEffect(()=>{const previous=document.activeElement;dialog.current?.showModal();return()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};},[]);
  const valid=!!source&&!!sourceTable&&sourceTable.scope!=='logical'&&!!target&&target.scope!=='logical'&&!!key&&key.columnIds.length===mapping.filter(Boolean).length&&new Set(mapping).size===mapping.length&&mapping.every(id=>columns.some(c=>c.id===id));
  return createPortal(<dialog ref={dialog} className="table-fk-dialog" aria-labelledby="fk-dialog-title" onCancel={onClose} onClick={e=>e.stopPropagation()} onPointerDown={e=>e.stopPropagation()}><h2 id="fk-dialog-title">FK 컬럼 대응 확인</h2><p>{sourceTable?.physical.name||sourceTable?.logical.name} → {target?.physical.name||target?.logical.name}</p>
  <label>대상 PK / UNIQUE<Select value={keyId} onChange={e=>{setKeyId(e.target.value);setMapping([sourceColumnId]);setError('');}}>{keys.length===0&&<option value="">참조 가능한 키 없음</option>}{keys.map(k=><option key={k.id} value={k.id}>{k.kind==='primary'?'PK':'UNIQUE'} · {k.name||k.columnIds.map(id=>doc.columns?.find(c=>c.id===id)?.physical.name).join(', ')}</option>)}</Select></label>

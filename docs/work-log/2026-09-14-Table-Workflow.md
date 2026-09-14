@@ -18,7 +18,11 @@
 ## 검증
 
 - `pnpm --filter @ezerd/web typecheck` 통과.
-- `pnpm exec vitest run apps/web/src/TableEditor.test.ts` 기존 8개 테스트 통과. 까마귀발 도입에 따른 양쪽 marker 기대값 갱신. SSR 환경의 document 접근 회귀도 수정했다.
-- `scripts/browser-table-workflow-smoke.mjs` 로컬 Vite + 별도 Headless Chrome 테스트 통과: 물리명 우선, Enter 저장/Escape 취소, 신규 컬럼 NOT NULL, FK 확인 전 미생성 및 확인 후 대응 저장, 복합 UNIQUE, ENUM 생성, 표형 폼의 PK/NOT NULL 기본값.
+- `pnpm exec vitest run apps/web/src/TableEditor.test.ts` 9개 테스트 통과 (명시적 끝점 라벨과 까마귀발 일치 검증 포함). 까마귀발 도입에 따른 양쪽 marker 기대값 갱신. SSR 환경의 document 접근 회귀도 수정했다.
+- `scripts/browser-table-workflow-smoke.mjs` 로컬 Vite + 별도 Headless Chrome 테스트 통과: 물리명 우선, Enter 저장/Escape 취소, 신규 컬럼 NOT NULL, FK 확인 전 미생성 및 확인 후 대응 저장, 복합 UNIQUE, ENUM 생성, 표형 폼의 PK/NOT NULL 기본값, FK 양쪽 카디널리티 선택 저장, 관계 우클릭 삭제.
 - `.cache/table-workflow.png` 캡처를 직접 검토하고 좁은 속성 패널의 폼 넘침을 수정했다.
 - 기존 갤러리 스타일과 사용자 변경 문서는 수정하지 않았다.
+
+- 실제 Canvas 통합에서 포인터 캡처가 더블클릭을 가로채는 회귀를 발견하여, 카드 선택 후 인라인 셀에서는 드래그 캡처를 건너뛰도록 Canvas 담당자와 수정했다.
+
+- FK 확인 대화상자를 열기 전 활성 요소를 저장하여 취소/확인 후 연결된 이전 컨트롤로 포커스를 복원하도록 순서를 수정했다.
