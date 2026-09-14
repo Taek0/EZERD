@@ -1,0 +1,28 @@
+{
+  "name": "ezerd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": { "node": ">=24.18.1 <25", "pnpm": "11.24.0" },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "build:shared": "pnpm --filter @ezerd/model build && pnpm --filter @ezerd/contracts build",
+    "dev": "pnpm build:shared && concurrently -k -n model,contracts,server,web \"pnpm --filter @ezerd/model dev\" \"pnpm --filter @ezerd/contracts dev\" \"pnpm --filter @ezerd/server dev\" \"pnpm --filter @ezerd/web dev\"",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm build:shared && pnpm -r typecheck",
+    "test": "pnpm build:shared && vitest run",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:stop": "docker compose stop postgres",
+    "db:generate": "pnpm --filter @ezerd/server db:generate",
+    "db:migrate": "pnpm --filter @ezerd/server db:migrate",
+    "db:check": "pnpm --filter @ezerd/server db:check"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.4",
+    "concurrently": "10.0.5",
+    "typescript": "6.0.3",
+    "vitest": "5.0.0"
+  }
+}

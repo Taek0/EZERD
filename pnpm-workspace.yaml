@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - zod@4.6.5
+
+saveExact: true
+engineStrict: true
+storeDir: .cache/pnpm-store
+cacheDir: .cache/pnpm-cache
