@@ -8,6 +8,20 @@
       "when": 1789353255490,
       "tag": "0000_create_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789360027519,
+      "tag": "0001_dazzling_scrambler",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789362314064,
+      "tag": "0002_handy_centennial",
+      "breakpoints": true
     }
   ]
 }

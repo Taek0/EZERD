@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tools.json --noEmit",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
-    "db:check": "tsx scripts/db-check.ts"
+    "db:check": "tsx scripts/db-check.ts",
+    "test:integration": "pnpm --filter @ezerd/model build && pnpm --filter @ezerd/contracts build && pnpm build && pnpm --filter @ezerd/web build && node scripts/test-integration.mjs"
   },
   "dependencies": {
     "@ezerd/contracts": "workspace:*",
