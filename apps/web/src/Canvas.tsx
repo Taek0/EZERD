@@ -76,6 +76,9 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   const drag = useRef<{
     id: string | null;
     resize: boolean;
+    pending: boolean;
+    captureTarget: HTMLDivElement;
+    pointerId: number;
     startX: number;
     startY: number;
     x: number;
@@ -249,15 +252,16 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     else
       setSelected(null);
     setMenu(null);
-    if (node && !resize && (e.target as HTMLElement).closest('.table-inline,[data-inline-edit]')) { e.stopPropagation(); return; }
+    if (node && !resize && (e.target as HTMLElement).closest('input,textarea,select,button,[data-inline-edit]')) { e.stopPropagation(); return; }
     if (readOnly && id) { e.stopPropagation(); return; }
     if (!node) {
       const rect = surface.current?.getBoundingClientRect();
       blankPosition.current = {viewId, x:(e.clientX-(rect?.left ?? 0)-viewport.x)/viewport.zoom, y:(e.clientY-(rect?.top ?? 0)-viewport.y)/viewport.zoom};
       contextCallback.current?.({viewId, selectedObjectId:null, position:blankPosition.current});
     }
-    drag.current = { id, resize, startX: e.clientX, startY: e.clientY, x: node?.x ?? viewport.x, y: node?.y ?? viewport.y, width: node?.width ?? 0, height: node?.height ?? 0 };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    const pending = !!node && !resize && !!(e.target as HTMLElement).closest('.table-inline');
+    drag.current = { id, resize, pending, captureTarget: e.currentTarget, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, x: node?.x ?? viewport.x, y: node?.y ?? viewport.y, width: node?.width ?? 0, height: node?.height ?? 0 };
+    if (!pending) e.currentTarget.setPointerCapture(e.pointerId);
     e.stopPropagation();
   }
   function move(e: PointerEvent<HTMLDivElement>) {
@@ -270,6 +274,13 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
       return;
     const dx = e.clientX - start.startX,
       dy = e.clientY - start.startY;
+    if (e.buttons === 0) { finish(); return; }
+    if (start.pending) {
+      // Preserve the original click target so stationary double-clicks enter editing.
+      if (Math.hypot(dx, dy) < 5) return;
+      start.pending = false;
+      start.captureTarget.setPointerCapture(start.pointerId);
+    }
     if (start.id) {
       change(updateNodeLayout(live.current, start.id, start.resize ? { width: Math.max(160, start.width + dx / viewport.zoom), height: Math.max(110, start.height + dy / viewport.zoom) } : { x: start.x + dx / viewport.zoom, y: start.y + dy / viewport.zoom }));
     }
@@ -277,7 +288,9 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
       moveViewport({ ...viewport, x: start.x + dx, y: start.y + dy });
   }
   function finish() {
+    const active = drag.current;
     drag.current = null;
+    if (active?.captureTarget.hasPointerCapture(active.pointerId)) active.captureTarget.releasePointerCapture(active.pointerId);
   }
   function editRelation(id: string) {
     const relation = doc.domainRelations.find(r => r.id === id);
@@ -351,6 +364,8 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
         onPointerMove={move}
         onPointerUp={finish}
         onPointerCancel={finish}
+        onLostPointerCapture={finish}
+        onPointerLeave={() => { if (drag.current?.pending) finish(); }}
         style={{ backgroundSize: `${40 * viewport.zoom}px ${40 * viewport.zoom}px`, backgroundPosition: `${viewport.x}px ${viewport.y}px`, backgroundImage: `radial-gradient(circle, var(--erd-grid-dot-color) ${1.05 * viewport.zoom}px, transparent ${1.15 * viewport.zoom}px)` }}>
         <div className="canvas-world" style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` }}>
           {viewId === 'overview' && <svg className="relations" aria-label="도메인 관계">
