@@ -141,7 +141,7 @@ export function TableInspector({ document: doc, tableId, onChange, readOnly, onS
                     {cols.map((c, at) => <PanelRow key={c.id}
                         active={c.id === columnId}
                         title={(at + 1) + '. ' + columnName(c)}
-                        meta={(c.physical.name || '이름 없음') + ' · ' + c.physical.type.name.toUpperCase() + (c.physical.type.isArray ? '[]' : '')}
+                        meta={c.physical.type.name.toUpperCase() + (c.physical.type.isArray ? '[]' : '')}
                         badge={marker(c) || undefined}
                         onSelect={() => setColumnId(value => value === c.id ? null : c.id)}/>)}
                 </PanelList>
@@ -181,12 +181,12 @@ function ColumnEditor({ document:doc, column: c, index, count, onChange, onMove,
     onClose: () => void;
 }) {
     const physical = (p: Partial<Column['physical']>) => onChange({ physical: { ...c.physical, ...p } });
-    return <div className="panel-detail"><div className="panel-detail-head"><strong>{index+1}. {columnName(c)}</strong><IconButton aria-label={`${columnName(c)} 위로`} disabled={index===0} onClick={()=>onMove(-1)}>↑</IconButton><IconButton aria-label={`${columnName(c)} 아래로`} disabled={index===count-1} onClick={()=>onMove(1)}>↓</IconButton><IconButton aria-label="컬럼 편집 닫기" onClick={onClose}>×</IconButton></div>
+    return <div className="panel-detail table-column-editor"><div className="panel-detail-head"><strong>컬럼 {index+1} / {count}</strong><IconButton aria-label={`${columnName(c)} 위로`} disabled={index===0} onClick={()=>onMove(-1)}>↑</IconButton><IconButton aria-label={`${columnName(c)} 아래로`} disabled={index===count-1} onClick={()=>onMove(1)}>↓</IconButton><IconButton aria-label="컬럼 편집 닫기" onClick={onClose}>×</IconButton></div>
     <TextField label="컬럼명" value={c.physical.name} max={120} onChange={name=>physical({name})}/>
     <label>ENUM<Select aria-label="ENUM" value={c.physical.type.enumId??''} onValueChange={value =>physical({type:{name:value?doc.enums?.find(t=>t.id===value)?.name??'text':'text',isArray:c.physical.type.isArray,enumId:value||undefined}})}><option value="">기본 타입</option>{doc.enums?.map(t=><option key={t.id} value={t.id}>{t.name.toUpperCase()}</option>)}</Select></label>
     <label>타입<SearchType label="타입" disabled={!!c.physical.type.enumId} value={c.physical.type.name} onValueChange={value=>physical({type:{name:value,isArray:c.physical.type.isArray}})} options={[...new Set([...physicalTypes,c.physical.type.name])].map(value=>({value,label:value.toUpperCase()}))}/></label>
-    <div className="table-type-params">{(['length','precision','scale'] as const).map(key=><label key={key}>{{length:'길이',precision:'정밀도',scale:'소수 자릿수'}[key]}<Input type="number" disabled={!typeParameterEnabled(c.physical.type,key)} step={1} min={key==='scale'?-1000:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?0:1} max={key==='length'?10485760:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?6:1000} value={c.physical.type[key]??''} onChange={e=>{const value=e.target.value===''?undefined:Number(e.target.value);if(value===undefined||(Number.isInteger(value)&&value>=(key==='scale'?-1000:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?0:1)&&value<=(key==='length'?10485760:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?6:1000)))physical({type:{...c.physical.type,[key]:value,...(key==='precision'&&value===undefined?{scale:undefined}:{})}});}}/></label>)}</div>
-    <Check label="배열 타입" value={c.physical.type.isArray} onChange={isArray=>physical({type:{...c.physical.type,isArray}})}/><Check label="NULL 허용" value={c.physical.nullable} onChange={nullable=>physical({nullable})}/><TextField label="컬럼 comment" value={c.physical.comment} onChange={comment=>physical({comment})}/><div className="panel-danger"><Button variant="danger" onClick={onDelete}>컬럼 삭제</Button></div></div>;
+    <div className="table-type-params">{(['length','precision','scale'] as const).map(key=><label key={key}>{{length:'길이',precision:'정밀도',scale:'소수'}[key]}<Input type="number" disabled={!typeParameterEnabled(c.physical.type,key)} step={1} min={key==='scale'?-1000:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?0:1} max={key==='length'?10485760:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?6:1000} value={c.physical.type[key]??''} onChange={e=>{const value=e.target.value===''?undefined:Number(e.target.value);if(value===undefined||(Number.isInteger(value)&&value>=(key==='scale'?-1000:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?0:1)&&value<=(key==='length'?10485760:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?6:1000)))physical({type:{...c.physical.type,[key]:value,...(key==='precision'&&value===undefined?{scale:undefined}:{})}});}}/></label>)}</div>
+    <div className="table-column-flags"><Check label="배열" value={c.physical.type.isArray} onChange={isArray=>physical({type:{...c.physical.type,isArray}})}/><Check label="NULL 허용" value={c.physical.nullable} onChange={nullable=>physical({nullable})}/></div><TextField label="설명" value={c.physical.comment} onChange={comment=>physical({comment})}/><div className="panel-danger"><Button variant="danger" onClick={onDelete}>컬럼 삭제</Button></div></div>;
 }
 
 function KeyEditor({ item: k, columns, onChange, onDelete }: {
@@ -210,10 +210,15 @@ function RelationEditor({ document: doc, item: r, onChange, onDelete }: {
 
 type RelationBounds = { x: number; y: number; width: number; height: number };
 /** Keep labels outside endpoint cards when their horizontal gap cannot fit the label. */
-export function relationGeometry(a: RelationBounds, b: RelationBounds, labelWidth: number, lane: number, offset = 0) {
+export function relationGeometry(a: RelationBounds, b: RelationBounds, labelWidth: number, lane: number, offset = 0, bend?: {x:number;y:number}) {
     const aw = Math.max(280, a.width), ah = Math.max(220, a.height);
     const bw = Math.max(280, b.width), bh = Math.max(220, b.height);
     const ax = a.x + aw, ay = a.y + ah / 2, bx = b.x, by = b.y + bh / 2;
+    if (bend) {
+        const finishX = a === b ? a.x + aw / 2 : bx - 24;
+        const finishY = a === b ? a.y - 8 : by;
+        return {path:`M ${ax + 5} ${ay} L ${bend.x} ${ay} L ${bend.x} ${bend.y} L ${finishX} ${bend.y} L ${finishX} ${finishY}${a === b ? '' : ` L ${bx - 8} ${by}`}`,labelX:bend.x,labelY:bend.y - 18};
+    }
     if (a === b) {
         const top = a.y - 54 - lane * 32 - offset, right = ax + 54;
         return {
@@ -234,13 +239,14 @@ export function relationGeometry(a: RelationBounds, b: RelationBounds, labelWidt
         labelX: (ax + bx) / 2, labelY: Math.min(ay,by) - 18 - lane*32 - offset,
     };
 }
-export function TableRelationsSvg({ document: doc, viewId, viewMode, onSelect, onChange, readOnly=false }: {
+export function TableRelationsSvg({ document: doc, viewId, viewMode, onSelect, onChange, readOnly=false, controlsOnly=false, hideControls=false, visibleNodeIds }: {
     document: DesignDocument;
     viewId: string;
     viewMode: ModelScope;
     onSelect: (id: string) => void;
-    onChange?: (d:DesignDocument)=>void;readOnly?:boolean;
+    onChange?: (d:DesignDocument)=>void;readOnly?:boolean;controlsOnly?:boolean;hideControls?:boolean;visibleNodeIds?:string[];
 }) {
+    const drag=useRef<{id:string;pointerId:number;start:{x:number;y:number};origin:{x:number;y:number}}|null>(null);
     const [menu,setMenu]=useState<{x:number;y:number;id:string}|null>(null);
     return <>{(doc.tableRelations ?? []).map((relation) => {
         const source = doc.tables?.find(table => table.id === relation.sourceTableId);
@@ -249,6 +255,7 @@ export function TableRelationsSvg({ document: doc, viewId, viewMode, onSelect, o
         const b = doc.layout.nodes.find(node => node.objectId === relation.targetTableId && node.viewId === viewId);
         if (!source || !target || !a || !b || !isVisibleInView(relation.scope, viewMode)
             || !isVisibleInView(source.scope, viewMode) || !isVisibleInView(target.scope, viewMode)) return null;
+        if (visibleNodeIds && (!visibleNodeIds.includes(a.id)||!visibleNodeIds.includes(b.id))) return null;
         if (viewMode === 'physical' && !relation.physical) return null;
         const combined=doc.views?.find(view=>view.id===viewId);
         if(combined&&(!combined.domainIds.includes(source.domainId)||!combined.domainIds.includes(target.domainId)))return null;
@@ -260,25 +267,38 @@ export function TableRelationsSvg({ document: doc, viewId, viewMode, onSelect, o
         const pair=(doc.tableRelations??[]).filter(r=>[r.sourceTableId,r.targetTableId].sort().join(':')===[relation.sourceTableId,relation.targetTableId].sort().join(':'));
         const sourceBounds={...a,...tableCardSize(doc,source.id,a.width,a.height)};
         const targetBounds=source.id===target.id?sourceBounds:{...b,...tableCardSize(doc,target.id,b.width,b.height)};
-        const offset=doc.layout.relations?.find(item=>item.relationId===relation.id&&item.viewId===viewId)?.offset??0;
-        const adjust=()=>onChange?.(upsertRelationLayout(doc,{relationId:relation.id,viewId,offset:offset>=192?0:offset+32}));
-        const geometry = relationGeometry(sourceBounds, targetBounds, labelWidth, pair.findIndex(r=>r.id===relation.id),offset);
+        const route=doc.layout.relations?.find(item=>item.relationId===relation.id&&item.viewId===viewId);
+        const offset=route?.offset??0;
+        const geometry = relationGeometry(sourceBounds, targetBounds, labelWidth, pair.findIndex(r=>r.id===relation.id),offset,route?.bend);
+        const origin=route?.bend??{x:geometry.labelX,y:geometry.labelY+18};
+        const adjust=(bend:{x:number;y:number})=>onChange?.(upsertRelationLayout(doc,{relationId:relation.id,viewId,offset,bend}));
+        const worldPoint=(element:SVGGElement,clientX:number,clientY:number)=>{
+            const matrix=element.getScreenCTM();
+            return matrix ? new DOMPoint(clientX,clientY).matrixTransform(matrix.inverse()) : null;
+        };
         const markerId = `table-crow-${relation.id}`;
         const endpoints=[relation.logical.sourceCardinality??{min:0,max:relation.logical.cardinality==='one-to-one'?1:'many'},relation.logical.targetCardinality??{min:relation.logical.required?1:0,max:relation.logical.cardinality==='many-to-many'?'many':1}];
         const stroke = physical ? 'var(--accent)' : 'var(--muted)';
-        return <g key={relation.id} className="table-relation-line" role="button" tabIndex={0}
-            aria-label={`테이블 관계 ${fullLabel}`} onContextMenu={event=>{if(readOnly||!onChange)return;event.preventDefault();event.stopPropagation();setMenu({x:event.clientX,y:event.clientY,id:relation.id});}}
+        return <g key={relation.id} className={controlsOnly?"table-route-control-group":"table-relation-line"} role={controlsOnly?undefined:"button"} tabIndex={controlsOnly?undefined:0}
+            aria-label={controlsOnly?undefined:`테이블 관계 ${fullLabel}`} onContextMenu={event=>{if(readOnly||!onChange)return;event.preventDefault();event.stopPropagation();setMenu({x:event.clientX,y:event.clientY,id:relation.id});}}
             onClick={event => { event.stopPropagation(); onSelect(relation.sourceTableId); }}
             onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(relation.sourceTableId); } }}>
-            <title>{`${fullLabel}${relation.logical.description?` — ${relation.logical.description}`:''}`}</title>
+            {!controlsOnly&&<><title>{`${fullLabel}${relation.logical.description?` — ${relation.logical.description}`:''}`}</title>
             <defs>{endpoints.map((endpoint,i)=><marker key={i} id={`${markerId}-${i}`} viewBox="0 0 32 24" refX="30" refY="12" markerWidth="32" markerHeight="24" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><g fill="none" stroke={stroke} strokeWidth="1.7">{endpoint.max==='many'?<path d="M 18 12 L 30 3 M 18 12 L 30 21 M 18 12 L 30 12"/>:<path d="M 27 4 L 27 20"/>}{endpoint.min===0?<circle cx="10" cy="12" r="5" fill="#fafbfc"/>:<path d="M 13 4 L 13 20"/>}</g></marker>)}</defs>
             <path d={geometry.path} fill="none" stroke="transparent" strokeWidth={18}/>
             <path d={geometry.path} fill="none" stroke={stroke} strokeWidth={2} strokeLinejoin="round"
                 strokeDasharray={physical ? undefined : '6 4'} markerStart={`url(#${markerId}-0)`} markerEnd={`url(#${markerId}-1)`}/>
             <rect x={geometry.labelX - labelWidth / 2} y={geometry.labelY - 13} width={labelWidth} height={28}
                 rx={9} fill="#fafbfc" stroke="#bdc8d8" strokeWidth={1}/>
-            <text x={geometry.labelX} y={geometry.labelY + 5} textAnchor="middle">{label}</text>
-            {!readOnly&&onChange&&<g className="table-route-adjust" data-export-hidden="true" role="button" tabIndex={0} aria-label={`관계 선 조절 ${fullLabel}`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();adjust();}} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();adjust();}}}><title>관계 선 조절 · 누를 때마다 경로를 이동합니다</title><rect x={geometry.labelX+labelWidth/2+6} y={geometry.labelY-13} width={28} height={28} rx={6}/><text x={geometry.labelX+labelWidth/2+20} y={geometry.labelY+6} textAnchor="middle">↕</text></g>}
+            <text x={geometry.labelX} y={geometry.labelY + 5} textAnchor="middle">{label}</text></>}
+            {!hideControls&&!readOnly&&onChange&&<g className="table-route-adjust" data-export-hidden="true" role="button" tabIndex={0} aria-label={`관계 선 조절 ${fullLabel}`}
+                onPointerDown={e=>{e.preventDefault();e.stopPropagation();if(e.button!==0)return;const point=worldPoint(e.currentTarget,e.clientX,e.clientY);if(!point)return;drag.current={id:relation.id,pointerId:e.pointerId,start:point,origin};e.currentTarget.setPointerCapture(e.pointerId);}}
+                onPointerMove={e=>{const active=drag.current;if(active?.id!==relation.id||active.pointerId!==e.pointerId)return;e.stopPropagation();const point=worldPoint(e.currentTarget,e.clientX,e.clientY);if(point)adjust({x:active.origin.x+point.x-active.start.x,y:active.origin.y+point.y-active.start.y});}}
+                onPointerUp={e=>{e.stopPropagation();if(drag.current?.pointerId===e.pointerId){drag.current=null;if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}}
+                onPointerCancel={()=>{drag.current=null;}} onLostPointerCapture={()=>{drag.current=null;}}
+                onClick={e=>e.stopPropagation()}
+                onKeyDown={e=>{const direction={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(direction){e.preventDefault();e.stopPropagation();const step=e.shiftKey?32:8;adjust({x:origin.x+direction[0]!*step,y:origin.y+direction[1]!*step});}}}>
+                <title>드래그하여 관계 선 이동 · 방향키로 미세 조절</title><rect x={geometry.labelX+labelWidth/2+6} y={geometry.labelY-13} width={28} height={28} rx={6}/><text x={geometry.labelX+labelWidth/2+20} y={geometry.labelY+6} textAnchor="middle">⤧</text></g>}
         </g>;
     })}{menu&&typeof document!=='undefined'&&createPortal(<ContextMenu position={menu} onClose={()=>setMenu(null)} label="테이블 관계" items={[{id:'delete',label:'관계 삭제',destructive:true,onAction:()=>{if(menu&&!readOnly)onChange?.(removeTableRelation(doc,menu.id));}}]}/>,document.body)}</>;
 }

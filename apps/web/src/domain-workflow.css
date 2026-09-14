@@ -46,3 +46,13 @@
 .domain-color-swatches { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
 .domain-color-swatches button { min-height:28px; width:28px; height:28px; border-radius:50%; padding:0; }
 .domain-color-swatches button[aria-pressed=true] { outline:2px solid var(--accent); outline-offset:3px; }
+
+.domain-view-popover{width:min(330px,calc(100vw - 24px));max-height:calc(100vh - 100px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:8px 8px 20px #25324720,-4px -4px 14px #ffffff99;z-index:200}
+.domain-view-popover .combined-view-picker{padding:12px;gap:10px;background:transparent;border:0;outline:none}
+.domain-view-popover .combined-domain-options{display:grid;gap:2px;max-height:220px;overflow:auto}
+.domain-view-popover .combined-domain-options label{padding:6px 4px;font-size:13px;overflow-wrap:anywhere;min-width:0}
+.domain-view-popover .actions{display:flex;flex-wrap:wrap;gap:6px}
+.domain-view-popover .ui-button{min-height:30px;font-size:12px;padding:5px 9px}
+.domain-view-list{display:grid;gap:3px;border-top:1px solid var(--line);padding-top:8px}
+.domain-view-list .ui-button{justify-content:flex-start;box-shadow:none;border-color:transparent;background:transparent;text-align:left}
+.domain-view-trigger [data-text]{display:flex;align-items:center;gap:6px}

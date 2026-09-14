@@ -364,3 +364,16 @@
 .panel-section[open]::details-content { block-size:auto; opacity:1; }
 @supports (interpolate-size:allow-keywords) { .panel-section { interpolate-size:allow-keywords; } }
 @media (prefers-reduced-motion:reduce) { .panel-section::details-content { transition:none; } }
+
+/* Column properties stay together in a compact two-column form. */
+.inspector .table-column-editor{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px;border-color:var(--line);box-shadow:none}
+.table-column-editor>label:first-of-type,.table-column-editor>.panel-detail-head,.table-column-editor>.table-type-params,.table-column-editor>.table-column-flags,.table-column-editor>.panel-danger,.table-column-editor>label:last-of-type{grid-column:1/-1}
+.table-column-editor>.panel-detail-head{gap:4px}
+.table-column-editor>.panel-detail-head strong{font-size:12px;color:var(--muted)}
+.table-column-editor>.panel-detail-head .ui-icon-button{width:26px;min-height:26px;height:26px;padding:0}
+.table-column-editor>.table-type-params{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.inspector .table-column-editor label{font-size:12px;gap:3px}
+.inspector .table-column-editor .ui-input,.inspector .table-column-editor .ui-select-trigger{min-height:30px;padding:5px 8px;font-size:13px}
+.table-column-editor>.table-column-flags{display:flex;gap:16px;align-items:center}
+.table-column-editor>.panel-danger{padding-top:6px;margin-top:0}
+.table-column-editor>.panel-danger>.ui-button{min-height:28px;padding:4px 8px;font-size:12px}

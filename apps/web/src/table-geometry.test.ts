@@ -33,3 +33,14 @@ it('every routed segment stays orthogonal including adjusted and self relations'
   for(let i=2;i<values.length;i+=2)expect(values[i]===values[i-2]||values[i+1]===values[i-1]).toBe(true);
  }
 });
+
+it('dragged two-dimensional bends remain orthogonal and affect the route independently',()=>{
+ const a={x:0,y:100,width:480,height:280},b={x:900,y:220,width:480,height:280};
+ for(const target of [a,b]){
+  const first=relationGeometry(a,target,160,0,0,{x:700,y:60});
+  expect(relationGeometry(a,target,160,0,0,{x:730,y:60}).path).not.toBe(first.path);
+  expect(relationGeometry(a,target,160,0,0,{x:700,y:90}).path).not.toBe(first.path);
+  const values=first.path.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+  for(let i=2;i<values.length;i+=2)expect(values[i]===values[i-2]||values[i+1]===values[i-1]).toBe(true);
+ }
+});

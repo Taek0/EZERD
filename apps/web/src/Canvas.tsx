@@ -1,3 +1,5 @@
+import { DialogTrigger, Dialog } from 'react-aria-components';
+import { UntitledPopover } from './components/ui/untitled.js';
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
 import { type DesignDocument, type Table, upsertCombinedView, removeCombinedView, isVisibleInView, autoLayoutView, removeTableReference, addTable, addTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
@@ -24,6 +26,7 @@ type Props = {
 export function Canvas({ document: doc, onChange, readOnly, onContextChange, focusTarget, pins, onCreatePin }: Props) {
   const confirm = useConfirm();
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
+  const [viewDraftId,setViewDraftId]=useState<string|null>(null);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [combinedName, setCombinedName] = useState('함께 보기');
   const [exporting, setExporting] = useState(false);
@@ -360,7 +363,17 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
           {viewId === 'overview'
             ? <Button disabled={readOnly} onClick={() => newDomain()}>＋ 도메인</Button>
             : <Button disabled={readOnly || !!activeCombined} onClick={() => newTable()}>＋ 테이블</Button>}
-          <Button onClick={() => {setViewPickerOpen(value => !value); setSelectedDomains(activeCombined?.domainIds ?? (activeDomain ? [activeDomain.id] : []));setCombinedName(activeCombined?.name ?? '함께 보기');}}>도메인 함께 보기</Button>
+          <DialogTrigger isOpen={viewPickerOpen} onOpenChange={open => {setViewPickerOpen(open);if(open){setViewDraftId(activeCombined?.id??null);setSelectedDomains(activeCombined?.domainIds ?? (activeDomain ? [activeDomain.id] : []));setCombinedName(activeCombined?.name ?? '도메인 뷰');}}}>
+            <Button className="domain-view-trigger"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>도메인 뷰</Button>
+<UntitledPopover className="domain-view-popover" placement="bottom start" shouldFlip={false} offset={8}><Dialog aria-label="도메인 뷰" className="combined-view-picker">
+        <Input aria-label="도메인 뷰 이름" value={combinedName} onChange={e => setCombinedName(e.target.value)} maxLength={120} />
+        <div className="combined-domain-options">{doc.domains.map(d => <label key={d.id}><Checkbox aria-label={d.name} checked={selectedDomains.includes(d.id)} onChange={e => setSelectedDomains(value => e.target.checked ? [...value,d.id] : value.filter(id => id !== d.id))}/><span style={{color:d.color ?? '#8993a3'}}>●</span>{d.name}</label>)}</div>
+        <div className="actions"><Button disabled={readOnly || !selectedDomains.length || !combinedName.trim()} onClick={() => {const id=viewDraftId ?? newId();let next=upsertCombinedView(doc,{id,name:combinedName.trim(),domainIds:selectedDomains});if(!viewDraftId){next={...next,layout:{...next.layout,nodes:next.layout.nodes.map(n=>n.viewId===id ? {...n,...tableCardSize(next,n.objectId,n.width,n.height)} : n)}};next=autoLayoutView(next,id);next=setViewport(next,{viewId:id,x:40,y:120,zoom:1});}change(next);navigate(id);setViewPickerOpen(false);}}>뷰 저장</Button>
+        {viewDraftId && <Button disabled={readOnly} onClick={async () => {if(await confirm({title:'도메인 뷰 삭제',description:'저장한 보기와 배치를 삭제합니다. 원본 테이블은 유지됩니다.',destructive:true,confirmLabel:'삭제'})){change(removeCombinedView(doc,viewDraftId));navigate('overview');setViewPickerOpen(false);}}}>보기 삭제</Button>}
+        <Button disabled={readOnly} onClick={()=>{setViewDraftId(null);setCombinedName('새 도메인 뷰');setSelectedDomains([]);}}>새 뷰</Button><Button onClick={() => setViewPickerOpen(false)}>닫기</Button></div>
+        {!!doc.views?.length && <div className="domain-view-list" aria-label="저장한 도메인 뷰">{doc.views.map(v => <Button key={v.id} onClick={() => {navigate(v.id);setViewPickerOpen(false);}}>{v.name}</Button>)}</div>}
+      </Dialog></UntitledPopover>
+          </DialogTrigger>
           <Button disabled={exporting || !nodes.length} onClick={async () => {const world = surface.current?.querySelector<HTMLElement>('.canvas-world'); if (!world) return; setExporting(true);setExportError('');try {await exportCanvasPng(world, nodes, activeCombined?.name ?? activeCombined?.name ?? activeDomain?.name ?? '도메인 맵');} catch {setExportError('이미지를 만들지 못했습니다. 다시 시도해 주세요.');} finally {setExporting(false);}}}>{exporting ? '이미지 생성 중…' : '고화질 PNG'}</Button>
           <Button disabled={readOnly} onClick={newNote}>＋ 텍스트</Button>
           {viewId !== 'overview' && <Button onClick={() => setEnumOpen(true)}>ENUM</Button>}
@@ -371,14 +384,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
         </div>
       </div>
       {exportError && <p role="alert">{exportError}</p>}
-      {viewPickerOpen && <div className="combined-view-picker">
-        <Input aria-label="함께 보기 이름" value={combinedName} onChange={e => setCombinedName(e.target.value)} maxLength={120} />
-        <div className="combined-domain-options">{doc.domains.map(d => <label key={d.id}><Checkbox checked={selectedDomains.includes(d.id)} onChange={e => setSelectedDomains(value => e.target.checked ? [...value,d.id] : value.filter(id => id !== d.id))}/><span style={{color:d.color ?? '#8993a3'}}>●</span>{d.name}</label>)}</div>
-        <div className="actions"><Button disabled={readOnly || !selectedDomains.length || !combinedName.trim()} onClick={() => {const id=activeCombined?.id ?? newId();let next=upsertCombinedView(doc,{id,name:combinedName.trim(),domainIds:selectedDomains});if(!activeCombined){next={...next,layout:{...next.layout,nodes:next.layout.nodes.map(n=>n.viewId===id ? {...n,...tableCardSize(next,n.objectId,n.width,n.height)} : n)}};next=autoLayoutView(next,id);}change(next);navigate(id);setViewPickerOpen(false);}}>함께 보기 저장</Button>
-        {activeCombined && <Button disabled={readOnly} onClick={async () => {if(await confirm({title:'함께 보기 삭제',description:'저장한 보기와 배치를 삭제합니다. 원본 테이블은 유지됩니다.',destructive:true,confirmLabel:'삭제'})){change(removeCombinedView(doc,activeCombined.id));navigate('overview');setViewPickerOpen(false);}}}>보기 삭제</Button>}
-        <Button onClick={() => setViewPickerOpen(false)}>닫기</Button></div>
-        {!!doc.views?.length && <div className="actions">{doc.views.map(v => <Button key={v.id} onClick={() => {navigate(v.id);setViewPickerOpen(false);}}>{v.name}</Button>)}</div>}
-      </div>}
+
       {viewId === 'overview' && filterDomain && <div className="domain-filter-status" role="status">{doc.domains.find(d => d.id === filterDomain)?.name} 연결 강조 <Button onClick={() => setFilterDomain('')}>강조 해제</Button></div>}
             <div
         ref={surface}
@@ -451,7 +457,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             })}
             {connectSource && connectPointer && (() => { const origin = nodes.find(n => n.objectId === connectSource); return origin ? <path className="domain-connection-preview" d={`M ${origin.x+origin.width/2} ${origin.y+origin.height/2} L ${connectPointer.x} ${connectPointer.y}`} markerEnd="url(#arrow-end)" /> : null; })()}
           </svg>}
-          {viewId !== 'overview' && <svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg document={activeCombined ? {...doc,layout:{...doc.layout,nodes:doc.layout.nodes.filter(n => n.viewId !== viewId || nodes.some(visible => visible.id === n.id))}} : doc} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg>}
+          {viewId !== 'overview' && <><svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg hideControls document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg><svg className="relations table-route-overlay" data-export-hidden="true" aria-label="관계 선 조절" onPointerDown={e=>e.stopPropagation()}><TableRelationsSvg controlsOnly document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg></>}
           {fkSource && !fkTarget && connectPointer && <svg className="relations connection-preview-layer" aria-hidden="true">{(() => {const column=doc.columns?.find(c => c.id===fkSource);const origin=nodes.find(n => n.objectId===column?.tableId);if(!origin)return null;const x=origin.x+origin.width,y=origin.y+origin.height/2,middle=(x+connectPointer.x)/2;return <path className="domain-connection-preview" d={`M ${x} ${y} H ${middle} V ${connectPointer.y} H ${connectPointer.x}`} />;})()}</svg>}
           {nodes.map(node => {
             const d = doc.domains.find(v => v.id === node.objectId),

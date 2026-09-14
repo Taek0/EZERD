@@ -261,3 +261,21 @@
 .table-route-adjust rect{fill:#fff;stroke:#8395ac;stroke-width:1}
 .table-route-adjust:hover rect,.table-route-adjust:focus rect{fill:#e7efff;stroke:var(--accent)}
 .table-route-adjust text{font-size:17px;stroke:none;fill:var(--accent)}
+
+/* Larger card text uses the same 25px row rhythm as tableCardMetrics. */
+.table-node-content header{height:52px;min-height:52px}
+.table-node-content header strong,.table-node-content header span{font-size:20px;line-height:28px}
+.table-node-content .table-column-row{font-size:17px;line-height:25px}
+.table-node-content .table-column-head{height:36px;min-height:36px;font-size:13px;line-height:24px}
+.table-node-content .table-key-marker{font-size:13px}
+.table-node-content .table-column-row .ui-input{font-size:17px}
+.table-fk-dialog{width:min(500px,calc(100vw - 32px));padding:18px;border-radius:12px}
+.table-fk-dialog h2{font-size:18px}
+.table-fk-dialog label{font-size:13px;margin:8px 0}
+
+.table-route-adjust{cursor:grab;touch-action:none;user-select:none}
+.table-route-adjust:active{cursor:grabbing}
+
+.canvas-world>.table-route-overlay{z-index:5;pointer-events:none}
+.table-route-overlay .table-route-control-group{pointer-events:none}
+.table-route-overlay .table-route-adjust{pointer-events:all}
