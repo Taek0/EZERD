@@ -1,0 +1,94 @@
+{
+  "project": "Untitled UI React",
+  "repository": "https://github.com/untitleduico/react",
+  "commit": "c981a73bcd6b6c68d2a54070f20f020191212828",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2025 Untitled UI",
+  "sources": [
+    {
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/LICENSE",
+      "sha256": "c4b824495f1d48ee0b257606dccdb9b0a442d565ce155fc1eb86f497172534e1"
+    },
+    {
+      "path": "components/base/buttons/button.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/buttons/button.tsx",
+      "sha256": "1eb74e3672d0f8c527d90afb4ad7ec95b5253574b5505866d23c91a54381c85a"
+    },
+    {
+      "path": "components/base/buttons/button-utility.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/buttons/button-utility.tsx",
+      "sha256": "33365a02e747433dcd6d24950542b42b869ced3585cd04475126553c6e6ad7df"
+    },
+    {
+      "path": "components/base/input/input.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/input/input.tsx",
+      "sha256": "efd3961f68eecd391857411fd28929d25639d9b779471bffa6e2bf4d68d5df4b"
+    },
+    {
+      "path": "components/base/input/label.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/input/label.tsx",
+      "sha256": "12c33452d3f864b5e254021b83de02b6874225c3c39d95db4e3befd5ec113a77"
+    },
+    {
+      "path": "components/base/input/hint-text.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/input/hint-text.tsx",
+      "sha256": "521941d440c71a807fc81ee50ee6262ea414ab5fc4a39f5ce5ea5ff16f3b3037"
+    },
+    {
+      "path": "components/base/textarea/textarea.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/textarea/textarea.tsx",
+      "sha256": "f89cf45750697eb5385b1fd20c828624686998f590daa95cf54efabd6a75de5c"
+    },
+    {
+      "path": "components/base/checkbox/checkbox.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/checkbox/checkbox.tsx",
+      "sha256": "4266edfa3562c505e869ba55c81a64e7bdd86962835aa0ea9c460fd7ffc89bd1"
+    },
+    {
+      "path": "components/base/select/select.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/select/select.tsx",
+      "sha256": "5c7f17225c9171c987fd632082a4909353e17a9087da452fc5fd345b2f406e10"
+    },
+    {
+      "path": "components/base/select/select-shared.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/select/select-shared.tsx",
+      "sha256": "abfd514facc4e3e32ff5421a54359bb6bc17f8a580f266799fc1c063c958c9d7"
+    },
+    {
+      "path": "components/base/select/select-item.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/select/select-item.tsx",
+      "sha256": "93a5e1ac3bc7a9ac4131ab9404d965d7d96e594ef18fbcd7abb0b556a070a2e1"
+    },
+    {
+      "path": "components/base/select/popover.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/select/popover.tsx",
+      "sha256": "a52e8f8f4537b2d1bca089a8ba726e17e1c4c25ce6e38b86af6855048aacf51f"
+    },
+    {
+      "path": "components/base/dropdown/dropdown.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/dropdown/dropdown.tsx",
+      "sha256": "867271bc38e7cb3fca0a795795ca5cbb7afeb05079991abd96c3ebdc1345a84d"
+    },
+    {
+      "path": "components/base/tooltip/tooltip.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/tooltip/tooltip.tsx",
+      "sha256": "7256ff4b994a14c4d2bb1363de0f90434a33b05944b55d1f9337ad0a2102ca59"
+    },
+    {
+      "path": "components/base/badges/badges.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/badges/badges.tsx",
+      "sha256": "3ba3b3a1da36b92154ae8f7e831b6fc8213e7d7ffd2bc73095b29d552e043333"
+    },
+    {
+      "path": "styles/theme.css",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/styles/theme.css",
+      "sha256": "52241a7d0d28f7022b59f11006d5f4b6b38e8173ef1ef2d81fb62cde520e344c"
+    },
+    {
+      "path": "styles/globals.css",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/styles/globals.css",
+      "sha256": "0c1fd5eebe0cb65dbf9e81d2e3950d6156a872acd187330cd79574f85c40883e"
+    }
+  ]
+}
