@@ -89,6 +89,11 @@
       "path": "styles/globals.css",
       "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/styles/globals.css",
       "sha256": "0c1fd5eebe0cb65dbf9e81d2e3950d6156a872acd187330cd79574f85c40883e"
+    },
+    {
+      "path": "components/base/select/combobox.tsx",
+      "url": "https://raw.githubusercontent.com/untitleduico/react/c981a73bcd6b6c68d2a54070f20f020191212828/components/base/select/combobox.tsx",
+      "sha256": "ae8996154967a26c4103ccd964ed00560804a76c7d39bacf5414064c9af3a787"
     }
   ]
 }

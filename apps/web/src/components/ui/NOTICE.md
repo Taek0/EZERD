@@ -51,3 +51,17 @@ and focus states, and entering/exiting overlay animations.
 
 This is an adapted source implementation, not a claim that every Untitled UI
 component or its full demo page is installed unchanged.
+
+## Searchable types and domain colors
+
+SearchType.tsx adapts the public `select/combobox.tsx` tree using React Aria ComboBox,
+Group/Input, ListBox and the existing local Untitled Popover/SelectItem recipes.
+Its source URL and hash are recorded in UPSTREAM.json. Type labels are uppercase;
+canonical model type names remain unchanged.
+
+DomainColorPicker.tsx is a local composition of public React Aria ColorArea,
+ColorSlider and color inputs, styled with the same shared controls. The published
+Untitled UI color-picker examples informed the layout; their Get the code link
+requires a paid product, so no paid Untitled UI color-picker source was imported.
+See https://www.untitledui.com/react/components/color-pickers and
+https://react-aria.adobe.com/ColorPicker.
