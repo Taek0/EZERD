@@ -1,0 +1,102 @@
+.review-workspace { position: relative; min-height: 0; flex: 1; display: flex; }
+.review-workspace > .workspace { flex: 1; min-width: 0; }
+.comments-panel { width: 380px; max-width: 100%; flex: 0 0 380px; background: #eef0f3; border-left: 1px solid #c9ced6; padding: 18px; overflow: auto; max-height: calc(100vh - 200px); font-size: 15px; }
+.comment-panel-heading,.comment-thread-heading,.comment-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.comment-panel-heading h2 { font-size: 21px; margin: 0; }
+.comment-filters { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; align-items: center; }
+.comment-filters label,.new-thread > label { display: flex; align-items: center; gap: 5px; }
+.comments-panel input[type=checkbox] { width: 17px; height: 17px; }
+.comment-thread { padding: 12px; margin-bottom: 14px; border: 1px solid #ccd1da; border-radius: 12px; background: var(--erd-background); }
+.comment-thread.active { border: 2px solid var(--accent); }
+.comment-thread-heading button { font-size: 14px; padding: 7px; }
+.comment-message { margin: 12px 0; overflow-wrap: anywhere; }
+.comment-message > div:first-child { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; }
+.comment-message time { font-size: 13px; color: var(--muted); }
+.comment-message p { white-space: pre-wrap; line-height: 1.6; margin: 8px 0; }
+.comment-composer label { display: block; font-weight: 600; }
+.comment-composer textarea { display: block; width: 100%; min-height: 90px; resize: vertical; margin: 8px 0; }
+.mention-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.mention-chips > * { padding: 4px 8px; border-radius: 8px; background: #e2e9ff; color: #254bbd; font-size: 14px; }
+.mention-picker { padding: 10px 0; }
+.mention-picker input { width: 100%; }
+.mention-picker button { display: block; width: 100%; margin-top: 6px; text-align: left; }
+.mention-picker small { float: right; }
+.new-thread { border-top: 1px solid #c9ced6; padding-top: 14px; }
+.new-thread h3 { margin: 0 0 12px; }
+.comment-save-hint,.comment-empty { line-height: 1.6; color: var(--muted); }
+.comment-pin { position: absolute; transform: translate(-50%, -50%); min-height: 36px; min-width: 36px; border-radius: 50% 50% 50% 4px; border: 2px solid white; background: var(--accent); color: white; box-shadow: 0 3px 10px #20232740; z-index: 15; pointer-events: auto; padding: 5px; }
+.notifications { position: relative; margin-left: auto; }
+.notification-count { display: inline-block; border-radius: 20px; padding: 1px 7px; background: var(--accent); color: white; }
+.notification-popover { position: absolute; z-index: 100; right: 0; top: calc(100% + 10px); width: 340px; max-height: 60vh; overflow: auto; padding: 18px; background: #eef0f3; border: 1px solid #c9ced6; border-radius: 14px; box-shadow: 0 12px 35px #20232730; }
+.notification-popover h2 { font-size: 20px; }
+.notification-popover > button { display: flex; flex-direction: column; align-items: start; text-align: left; width: 100%; gap: 6px; margin: 8px 0; }
+.notification-popover .unread { border-left: 4px solid var(--accent); }
+.notification-popover time { font-size: 13px; }
+.ddl-diagnostics { margin: 8px 0; padding: 14px 20px; background: #fff4dc; border: 1px solid #dbbd7b; max-height: 220px; overflow: auto; }
+.ddl-diagnostics ul { margin: 8px 0; padding-left: 20px; }
+@media (max-width: 1100px) { .comments-panel { position: absolute; z-index: 35; right: 0; top: 0; bottom: 0; box-shadow: -8px 0 30px #20232720; } }
+@media (max-width: 560px) { .comments-panel { width: min(100%,380px); } .notification-popover { position: fixed; left: 12px; right: 12px; top: 90px; width: auto; } }
+
+.comments-container:not([hidden]) { display: flex; min-height: 0; }
+.comments-container[hidden] { display: none; }
+
+/* Keep the identity and notification controls readable in one header row. */
+.app-header .notifications {
+  flex-shrink: 0;
+}
+.app-header .notifications > button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+.app-header .user-button {
+  min-width: 0;
+  min-height: 44px;
+  margin-left: 0;
+  white-space: nowrap;
+}
+.app-header .user-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-header .user-button .avatar,
+.app-header .user-button > [aria-hidden] {
+  flex-shrink: 0;
+}
+/* The home header keeps its original height with more compact account controls. */
+.app-shell:not(.editor-shell) .app-header .notifications > button,
+.app-shell:not(.editor-shell) .app-header .user-button {
+  min-height: 40px;
+  padding: 7px 12px;
+  font-size: 15px;
+  line-height: 24px;
+}
+.app-shell:not(.editor-shell) .app-header .user-button {
+  gap: 8px;
+}
+.app-shell:not(.editor-shell) .app-header .avatar {
+  width: 24px;
+  height: 24px;
+}
+@media (max-width: 700px) {
+  .app-shell .app-header {
+    gap: 10px;
+    padding-inline: 16px;
+  }
+  .app-header .brand {
+    flex-shrink: 0;
+  }
+  .app-header .user-button {
+    flex: 0 1 200px;
+    gap: 6px;
+    padding-inline: 10px;
+  }
+  .app-header .notifications > button {
+    padding-inline: 10px;
+  }
+  .app-shell:not(.editor-shell) .app-header .user-button {
+    flex: 0 1 auto;
+    max-width: 200px;
+  }
+}
