@@ -6,6 +6,7 @@ import { Canvas } from './Canvas.js';
 import { CommentsPanel, CommentPins, Notifications, type CommentContext } from './CommentsPanel.js';
 import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { LatestRequest } from './comments-state.js';
+import { DocumentHistory, documentEditGroup, mergeHistoryViewports } from './document-history.js';
 import {
   Avatar,
   Badge,
@@ -44,6 +45,7 @@ export function App() {
   const [opened, setOpened] = useState<OpenProject | null>(null), [revision, setRevision] = useState(0), [saved, setSaved] = useState(0);
   const [saving, setSaving] = useState(false), [saveError, setSaveError] = useState(''), [conflict, setConflict] = useState(false), [refresh, setRefresh] = useState(0);
   const current = useRef(opened), rev = useRef(revision), saveLock = useRef(new SaveGate());
+  const history = useRef<DocumentHistory<DesignDocument> | null>(null);
   current.current = opened;
   rev.current = revision;
   const dirty = revision !== saved;
@@ -58,6 +60,50 @@ export function App() {
     nonce: number;
   }>();
   const navigation = useRef(new LatestRequest());
+  function replaceProject(value: OpenProject | null) {
+    history.current = value ? new DocumentHistory(value.document) : null;
+    current.current = value;
+    rev.current = 0;
+    setOpened(value);
+    setRevision(0);
+    setSaved(0);
+  }
+  function restoreHistory(direction: 'undo' | 'redo') {
+    const value = current.current;
+    if (!value || value.project.status === 'archived' || busy) return;
+    const restored = history.current?.[direction]();
+    if (restored) {
+      const document = mergeHistoryViewports(restored, value.document);
+      history.current?.replaceCurrent(document);
+      applyDocument(document);
+    }
+  }
+  useEffect(() => {
+    const endGroup = () => history.current?.endGroup();
+    const keydown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const editable = target instanceof Element && !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+      if (editable || event.isComposing || event.defaultPrevented || document.querySelector('dialog[open], [aria-modal="true"]')) return;
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && (key === 'z' || key === 'y')) {
+        if (!current.current || current.current.project.status === 'archived' || busy) return;
+        event.preventDefault();
+        restoreHistory(key === 'y' || event.shiftKey ? 'redo' : 'undo');
+      } else if (!event.repeat) endGroup();
+    };
+    window.addEventListener('keydown', keydown);
+    window.addEventListener('pointerdown', endGroup, true);
+    window.addEventListener('pointerup', endGroup);
+    window.addEventListener('pointercancel', endGroup);
+    window.addEventListener('focusout', endGroup);
+    return () => {
+      window.removeEventListener('keydown', keydown);
+      window.removeEventListener('pointerdown', endGroup, true);
+      window.removeEventListener('pointerup', endGroup);
+      window.removeEventListener('pointercancel', endGroup);
+      window.removeEventListener('focusout', endGroup);
+    };
+  });
   function focusThread(thread: Thread) {
     setDraftTarget(undefined);
     setCommentsOpen(true);
@@ -92,7 +138,7 @@ export function App() {
       if (projectValue) {
         if (rev.current !== startingRevision && !await confirm({ title: '프로젝트 이동', description: '이동을 준비하는 동안 추가한 변경을 버리고 이동할까요?', confirmLabel: '이동', destructive: true }))
           return false;
-        setOpened(projectDocumentSchema.parse(projectValue));
+        replaceProject(projectDocumentSchema.parse(projectValue));
         setRevision(0);
         setSaved(0);
         setSaveError('');
@@ -199,7 +245,7 @@ export function App() {
       if (!navigation.current.isCurrent(ticket))
         return;
       resetReview();
-      setOpened(value);
+      replaceProject(value);
       setRevision(0);
       setSaved(0);
       setSaveError('');
@@ -227,7 +273,7 @@ export function App() {
       setSaveError('');
       setConflict(false);
       resetReview();
-      setOpened({ project, document: createEmptyDocument() });
+      replaceProject({ project, document: createEmptyDocument() });
       setRevision(0);
       setSaved(0);
     }
@@ -269,14 +315,27 @@ export function App() {
     } catch (e) { setError(message(e)); }
     finally { setBusy(false); }
   }
+  function applyDocument(document: DesignDocument) {
+    if (!current.current) return;
+    const next = { ...current.current, document };
+    current.current = next;
+    rev.current += 1;
+    setOpened(next);
+    setRevision(rev.current);
+  }
   function edit(document: DesignDocument) {
-    setOpened(value => value ? { ...value, document } : value);
-    setRevision(v => v + 1);
+    const previous = current.current?.document;
+    if (!previous || document === previous) return;
+    const group = documentEditGroup(previous, document);
+    if (group === '@viewport') history.current?.replaceCurrent(document);
+    else history.current?.record(document, group);
+    applyDocument(document);
   }
   async function save() {
     const snapshot = current.current;
     if (busy || !snapshot || !saveLock.current.begin())
       return;
+    history.current?.endGroup();
     setSaving(true);
     setSaveError('');
     const snapshotRevision = rev.current;
@@ -285,8 +344,14 @@ export function App() {
       if (!validation.success)
         throw new Error('저장할 수 없는 입력이 있습니다. 이름·텍스트 길이와 위치·크기를 확인해 주세요. 문서가 너무 크면 텍스트나 항목을 줄여 주세요.');
       const result = projectDocumentSchema.parse(await request(`/api/projects/${snapshot.project.id}/document`, body('PUT', { expectedVersion: snapshot.project.version, document: snapshot.document })));
-      setOpened(value => value && value.project.id === result.project.id ? acknowledgeSave({ document: value.document, revision: rev.current }, snapshotRevision, result) : value);
-      setSaved(snapshotRevision);
+      const value = current.current;
+      if (value?.project.id === result.project.id) {
+        const acknowledged = acknowledgeSave({ document: value.document, revision: rev.current }, snapshotRevision, result);
+        current.current = acknowledged;
+        history.current?.replaceCurrent(acknowledged.document);
+        setOpened(acknowledged);
+        setSaved(snapshotRevision);
+      }
     }
     catch (e) {
       setSaveError(message(e));
@@ -305,7 +370,7 @@ export function App() {
     navigation.current.begin();
     setBusy(false);
     resetReview();
-    setOpened(null);
+    replaceProject(null);
     setRevision(0);
     setSaved(0);
   }
@@ -379,6 +444,8 @@ export function App() {
           </div>
         </div>
         <div className="save-controls">
+          <Button aria-label="실행 취소" title="실행 취소 (Ctrl+Z / ⌘Z)" disabled={busy || opened.project.status === 'archived' || !history.current?.canUndo} onClick={() => restoreHistory('undo')}>↶</Button>
+          <Button aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)" disabled={busy || opened.project.status === 'archived' || !history.current?.canRedo} onClick={() => restoreHistory('redo')}>↷</Button>
           <Button aria-expanded={commentsOpen} onClick={() => setCommentsOpen(v => !v)}>핀</Button>
           <span role="status" className={saveError ? 'save-state failed' : 'save-state'}>
             {saving ? '◌ 저장 중' : conflict ? '! 저장 충돌' : saveError ? '! 저장 실패' : dirty ? '● 저장하지 않은 변경' : '✓ 저장 완료'}
