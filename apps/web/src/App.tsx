@@ -9,6 +9,7 @@ import {
   Avatar,
   Badge,
   Button,
+  Dropdown,
   Input,
   TabButton,
 } from './components/ui/index.js';
@@ -321,11 +322,10 @@ export function App() {
       </Button>
       <span className="header-caption">A SHARED SPACE<br />FOR CLEAR THINKING.</span>
       {user && <Notifications userId={user.id} onNavigate={visitNotification} />}
-      {user && <Button
+      {user && <Dropdown label="사용자 메뉴" items={[{id: 'rename', label: '이름 변경', onAction: () => setEditingName(true)}]} trigger={<Button
         className="user-button"
-        aria-label={`${user.username}, 이름 변경`}
-        title={user.username}
-        onClick={() => setEditingName(v => !v)}>
+        aria-label={`${user.username}, 사용자 메뉴`}
+        title={user.username}>
         <Avatar className="avatar">
           {user.username.slice(0, 1)}
         </Avatar>
@@ -333,7 +333,7 @@ export function App() {
           {user.username}
         </span>
         <span aria-hidden="true">⌄</span>
-      </Button>}
+      </Button>} />}
     </header>
     {editingName && <section className="identity-popover" aria-label="이름 변경">
       {userForm}

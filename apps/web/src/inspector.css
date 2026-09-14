@@ -222,13 +222,12 @@
   min-height: 30px;
   padding: 4px 9px;
   font-size: 12px;
-  box-shadow: none;
 }
 
 /* --- supporting blocks --- */
 .panel-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .panel-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.panel-actions > .ui-button { min-height: 34px; padding: 6px 11px; font-size: 13px; box-shadow: none; }
+.panel-actions > .ui-button { min-height: 34px; padding: 6px 11px; font-size: 13px; }
 .panel-empty {
   display: grid;
   gap: 6px;
@@ -250,7 +249,7 @@
 }
 .panel-summary > span > b { color: var(--ink); font-weight: var(--font-weight-label); }
 .panel-search { display: grid; gap: 8px; }
-.panel-search .ui-input { min-height: 38px; padding: 8px 11px; font-size: 14px; }
+
 .panel-danger {
   display: grid;
   gap: 8px;
@@ -258,7 +257,7 @@
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
-.panel-danger > .ui-button { justify-self: start; min-height: 34px; padding: 6px 12px; font-size: 13px; box-shadow: none; }
+.panel-danger > .ui-button { justify-self: start; min-height: 34px; padding: 6px 12px; font-size: 13px; }
 .panel-detail {
   display: grid;
   gap: 10px;
@@ -267,7 +266,7 @@
   border: 1px solid #c6cfdd;
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: var(--shadow-control);
+  box-shadow: 0 1px 2px #0a0d120d;
 }
 .panel-detail-head { display: flex; align-items: center; gap: 6px; }
 .panel-detail-head > strong { flex: 1; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
@@ -322,11 +321,9 @@
 .inspector .table-inspector { display: grid; gap: 10px; font-size: 14px; }
 .inspector .table-inspector > fieldset { gap: 10px; }
 .inspector .table-inspector label { font-size: 13px; gap: 5px; }
-.inspector .table-inspector .ui-input,
-.inspector .table-inspector .ui-select,
-.inspector .table-inspector .ui-textarea { min-height: 36px; padding: 7px 9px; font-size: 14px; }
+
 .inspector .table-inspector .ui-textarea { min-height: 72px; }
-.inspector .table-inspector .ui-checkbox { min-height: 16px; }
+
 .inspector .table-inspector p { font-size: 13px; line-height: 1.55; }
 
 /* the column form fits the panel instead of forcing a horizontal scrollbar */
@@ -337,7 +334,7 @@
   gap: 8px;
 }
 .table-create-grid > label { min-width: 0; }
-.table-create-grid .ui-checkbox { justify-self: start; }
+.table-create-grid .ui-checkbox-root { justify-self: start; }
 .table-type-params { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
 .table-mapping { grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1fr) 34px; }
 .table-fk-dialog .table-actions { justify-content: flex-end; margin-top: 14px; }
@@ -349,7 +346,6 @@
 .color-field .ui-input[type="color"] { height: 38px; min-height: 38px; padding: 3px; cursor: pointer; }
 .dimensions { gap: 8px; }
 .dimensions label { font-size: 12px; gap: 4px; }
-.dimensions .ui-input { min-height: 34px; padding: 6px 8px; font-size: 13px; }
 
 @container (max-width: 320px) {
   .panel-actions > .ui-button { flex: 1 1 100%; }
@@ -360,3 +356,4 @@
   .view-mode-switch > .ui-button { transition: background-color .14s ease, color .14s ease; }
 }
 
+.panel-row-main > [data-text] { flex: 1; min-width: 0; width: 100%; justify-content: flex-start; padding: 0; }

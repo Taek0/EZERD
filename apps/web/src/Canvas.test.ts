@@ -19,7 +19,7 @@ describe('editor sidebar structure', () => {
     const html = markup();
     expect(html).toContain('inspector-topbar');
     expect(html).toContain('inspector-tabs');
-    expect(html).toContain('>속성</button>');
+    expect(html.replace(/<[^>]*>/g, '')).toContain('속성');
     expect(html).toContain('panel-count');
     expect(html).not.toContain('02 / INSPECTOR');
   });

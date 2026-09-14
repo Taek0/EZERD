@@ -5,7 +5,7 @@
 .comment-panel-heading h2 { font-size: 21px; margin: 0; }
 .comment-filters { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; align-items: center; }
 .comment-filters label,.new-thread > label { display: flex; align-items: center; gap: 5px; }
-.comments-panel input[type=checkbox] { width: 17px; height: 17px; }
+
 .comment-thread { padding: 12px; margin-bottom: 14px; border: 1px solid #ccd1da; border-radius: 12px; background: var(--erd-background); }
 .comment-thread.active { border: 2px solid var(--accent); }
 .comment-thread-heading button { font-size: 14px; padding: 7px; }
@@ -100,3 +100,5 @@
     max-width: 200px;
   }
 }
+
+.notification-popover > button > [data-text] { min-width: 0; width: 100%; flex-direction: column; align-items: flex-start; white-space: normal; text-align: left; }

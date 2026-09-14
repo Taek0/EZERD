@@ -12,50 +12,9 @@ body {
 button, input, textarea, select {
   font: inherit;
 }
-button {
-  min-height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px 15px;
-  background: var(--surface);
-  color: var(--ink);
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: var(--shadow-control);
-}
-button:hover {
-  border-color: #8c97a5;
-}
-button:disabled {
-  opacity: .45;
-  cursor: default;
-}
-button.primary {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-  box-shadow: 0 4px 10px #305be725;
-}
-button.danger {
-  color: #9e3434;
-}
-button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+[tabindex]:not([class*="ui-"]):focus-visible {
   outline: 3px solid #305be775;
   outline-offset: 3px;
-}
-input, textarea, select {
-  width: 100%;
-  min-height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: #f7f8fa;
-  color: var(--ink);
-  padding: 11px 12px;
-}
-textarea {
-  min-height: 110px;
-  resize: vertical;
-  line-height: 1.5;
 }
 label {
   display: grid;
@@ -71,7 +30,7 @@ h1 {
   line-height: 1.1;
   letter-spacing: -2px;
 }
-h1 span, .brand span {
+h1 span, .brand > [data-text] > span {
   color: var(--accent);
 }
 h2 {
@@ -92,6 +51,7 @@ small {
   border-bottom: 1px solid var(--line);
 }
 .brand {
+  color: var(--ink);
   font-size: 34px;
   font-weight: 800;
   letter-spacing: -1.5px;
@@ -213,36 +173,19 @@ small {
   background: transparent;
   border-color: transparent;
 }
-.tabs button.selected {
-  color: var(--accent);
-  border-color: #bac7f1;
-  background: #e1e7f5;
-  box-shadow: var(--shadow-inset);
-}
+
 .search {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.search input {
-  width: 210px;
-  min-height: 40px;
-  height: 40px;
-  padding: 8px 12px;
-}
+.search .ui-input-group { width: 210px; }
 .create-project {
   display: flex;
   gap: 12px;
   margin: 20px 0;
 }
-.create-project input {
-  max-width: 280px;
-  min-height: 40px;
-  height: 40px;
-  padding: 8px 12px;
-  font-size: 16px;
-  background: transparent;
-}
+.create-project .ui-input-group { max-width: 280px; }
 .create-project > button {
   display: inline-flex;
   align-items: center;
@@ -305,7 +248,7 @@ small {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-open>span {
+.project-open > [data-text] > [aria-hidden="true"] {
   flex: none;
   font-size: 18px;
   line-height: 20px;
@@ -481,7 +424,6 @@ small {
   height: 69px;
 }
 .canvas-toolbar button {
-  box-shadow: none;
   font-size: 15px;
 }
 .breadcrumbs {
@@ -709,9 +651,7 @@ small {
 .inspector-fields label {
   font-size: 14px;
 }
-.inspector-fields input, .inspector-fields textarea, .inspector-fields select {
-  font-size: 15px;
-}
+
 .field-help {
   font-size: 14px;
   color: var(--muted);
@@ -808,7 +748,7 @@ small {
     flex-direction: column;
     gap: 16px;
   }
-  .search input {
+  .search .ui-input-group {
     width: 100%;
   }
   .search span {
@@ -817,7 +757,7 @@ small {
   .create-project {
     flex-direction: column;
   }
-  .create-project input {
+  .create-project .ui-input-group {
     max-width: none;
   }
   .welcome h1 {
@@ -891,9 +831,7 @@ small {
   }
 }
 @media(prefers-reduced-motion:no-preference) {
-  button {
-    transition: border-color .15s,background .15s;
-  }
+
   .canvas-column {
     animation: appear .2s ease-out;
   }
@@ -940,13 +878,13 @@ small {
 .resize-handle { width:24px; height:24px; }
 .project-card { background:linear-gradient(145deg,#f5f7fa,#e9ecef); border-color:#ffffff; box-shadow:7px 7px 18px #929ba744,-5px -5px 14px #ffffffd9,inset 1px 1px 0 #fff; }
 .project-card:hover,.project-card:focus-within { border-color:#9cafe9; box-shadow:10px 12px 22px #75839b52,-6px -6px 16px #fff,inset 1px 1px 0 #fff; }
-.project-card:hover .project-open>span { color:#204cd0; }
+.project-card:hover .project-open > [data-text] > [aria-hidden="true"] { color:#204cd0; }
 
 @media (prefers-reduced-motion:no-preference) {
   .project-card { transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease; }
   .project-card:hover,.project-card:focus-within { transform:translateY(-7px); }
-  .project-open>span { transition:transform .22s ease; }
-  .project-card:hover .project-open>span { transform:translate(3px,-3px); }
+  .project-open > [data-text] > [aria-hidden="true"] { transition:transform .22s ease; }
+  .project-card:hover .project-open > [data-text] > [aria-hidden="true"] { transform:translate(3px,-3px); }
   .canvas-column { animation:domain-enter .24s ease-out; }
   @keyframes domain-enter { from { opacity:.55; transform:scale(.985); } to { opacity:1; transform:scale(1); } }
 }
@@ -979,7 +917,7 @@ button.relation-disclosure:hover { color: var(--accent); background: #dce2eb66; 
 .relation-count { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--muted); }
 .relation-form { gap: 12px; }
 .relation-form label { display: grid; gap: 5px; }
-.relation-form input, .relation-form select, .relation-form textarea { min-height: 40px; margin: 0; width: 100%; min-width: 0; padding: 9px 10px; border-radius: 7px; }
+.relation-form .ui-input-group, .relation-form .ui-select-root, .relation-form .ui-textarea { margin: 0; width: 100%; min-width: 0; }
 .relation-form textarea { min-height: 68px; height: 68px; }
 .relation-form > button { padding: 9px 12px; }
 .relation-endpoints { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 12px; border: 1px solid #cfd6e0; border-radius: 10px; background: #e4e9f166; }
@@ -1019,3 +957,7 @@ button.relation-disclosure:hover { color: var(--accent); background: #dce2eb66; 
 .canvas-node.table-node,
 .canvas-node.table-node.selected { padding: 0; border-radius: 5px; background: #fff; box-shadow: 0 2px 7px #233d5a20; }
 .canvas-node.table-node.selected { box-shadow: 0 0 0 3px #305be71a, 0 2px 7px #233d5a20; }
+
+/* Source Button text wrappers preserve the product’s composed content layout. */
+.project-open > [data-text] { min-width: 0; width: 100%; justify-content: space-between; padding: 0; }
+.user-button > [data-text] { min-width: 0; max-width: 100%; }

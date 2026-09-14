@@ -569,7 +569,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               </PanelSection>
               <PanelSection title="도메인 관계" count={filteredRelations.length} defaultOpen>
                 <div className="inspector-fields">
-                  <label>연결 강조<Select value={filterDomain} onChange={e => setFilterDomain(e.target.value)}><option value="">모든 도메인</option>{doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></label>
+                  <label>연결 강조<Select aria-label="연결 강조" value={filterDomain} onValueChange={value => setFilterDomain(value)}><option value="">모든 도메인</option>{doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></label>
                 </div>
                 <PanelList empty="표시할 관계가 없습니다.">
                   {filteredRelations.map(r => <PanelRow key={r.id}
@@ -689,17 +689,17 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               }}>
                 <p className="field-help">도메인 사이의 업무 흐름을 연결합니다.</p>
                 <div className="relation-endpoints">
-                  <label>출발 도메인<Select aria-label="출발 도메인" required value={source} disabled={readOnly} onChange={e => setSource(e.target.value)}>
+                  <label>출발 도메인<Select aria-label="출발 도메인" required value={source} disabled={readOnly} onValueChange={value => setSource(value)}>
                     <option value="">도메인 선택</option>
                     {doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </Select></label>
-                  <label>도착 도메인<Select aria-label="도착 도메인" required value={target} disabled={readOnly} onChange={e => setTarget(e.target.value)}>
+                  <label>도착 도메인<Select aria-label="도착 도메인" required value={target} disabled={readOnly} onValueChange={value => setTarget(value)}>
                     <option value="">도메인 선택</option>
                     {doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </Select></label>
                 </div>
                 <label>관계 이름<Input aria-label="관계 이름" required maxLength={120} value={relationName} placeholder="예: 결제 요청" disabled={readOnly} onChange={e => setRelationName(e.target.value)} /></label>
-                <label>방향<Select aria-label="방향" value={direction} disabled={readOnly} onChange={e => setDirection(e.target.value as 'forward' | 'both')}>
+                <label>방향<Select aria-label="방향" value={direction} disabled={readOnly} onValueChange={value => setDirection(value as 'forward' | 'both')}>
                   <option value="forward">출발 → 도착</option>
                   <option value="both">출발 ↔ 도착</option>
                 </Select></label>
