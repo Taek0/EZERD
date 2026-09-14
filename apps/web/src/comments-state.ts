@@ -2,7 +2,7 @@ import type { DesignDocument } from '@ezerd/model';
 export type ReviewTarget = { viewId: string; objectId: string | null; x: number; y: number };
 export function pinPosition(document: DesignDocument, target: ReviewTarget) {
   const node = target.objectId ? document.layout.nodes.find(n => n.objectId === target.objectId && n.viewId === target.viewId) : undefined;
-  const missingView = target.viewId !== 'overview' && !document.domains.some(domain => domain.id === target.viewId);
+  const missingView = target.viewId !== 'overview' && !document.domains.some(domain => domain.id === target.viewId) && !document.views?.some(view => view.id === target.viewId);
   return { x: target.x + (node?.x ?? 0), y: target.y + (node?.y ?? 0), missing: missingView || (target.objectId !== null && !node) };
 }
 export function pinAttachment(document: DesignDocument, viewId: string, objectId: string | null, point: { x: number; y: number }) {

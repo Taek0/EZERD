@@ -17,7 +17,7 @@ async function operation<T>(callback: () => Promise<T>) {
   try { return await callback(); }
   catch (error) {
     if (error instanceof HttpException) throw error;
-    throw new ServiceUnavailableException('검토 대화를 저장할 수 없습니다. 잠시 후 다시 시도해주세요.');
+    throw new ServiceUnavailableException('핀을 저장할 수 없습니다. 잠시 후 다시 시도해주세요.');
   }
 }
 function notification(row: typeof notifications.$inferSelect) {
@@ -67,7 +67,7 @@ export class ReviewController {
       const [project] = await tx.select().from(projects).where(eq(projects.id, projectId)).for('update');
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
       const doc = project.document;
-      if (input.viewId !== 'overview' && !doc.domains.some(domain => domain.id === input.viewId)) throw new BadRequestException('댓글을 남길 화면을 찾을 수 없습니다.');
+      if (input.viewId !== 'overview' && !doc.domains.some(domain => domain.id === input.viewId) && !doc.views?.some(view => view.id === input.viewId)) throw new BadRequestException('댓글을 남길 화면을 찾을 수 없습니다.');
       if (input.objectId !== null) {
         const exists = (input.viewId === 'overview' && doc.domains.some(domain => domain.id === input.objectId)) || doc.notes.some(note => note.id === input.objectId && note.viewId === input.viewId) || (doc.tables ?? []).some(table => table.id === input.objectId);
         const placed = doc.layout.nodes.some(node => node.objectId === input.objectId && node.viewId === input.viewId);

@@ -135,6 +135,19 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect((await pool.query('SELECT count(*)::int AS count FROM review_messages WHERE thread_id=$1', [pin.data.id])).rows[0].count).toBe(0);
   });
 
+  it('stores blank pins in combined views and retains their threads after view removal', async () => {
+    const person = await request('/users', 'POST', { username: 'combined pin author' }); userIds.push(person.data.id);
+    const created = await request('/projects', 'POST', { name: 'combined pin fixture' }); const id = created.data.id; projectIds.push(id);
+    const opened = await request('/projects/' + id);
+    const document = { ...opened.data.document, domains: [{id:'d',name:'D',description:''}], views: [{id:'combined',name:'함께 보기',domainIds:['d']}] };
+    expect((await request('/projects/' + id + '/document', 'PUT', {expectedVersion:0, document})).status).toBe(200);
+    const pin = await request('/projects/' + id + '/threads', 'POST', {authorId:person.data.id,viewId:'combined',objectId:null,x:31,y:42,body:'combined pin',mentionIds:[]});
+    expect(pin.status).toBe(201); expect(pin.data.x).toBe(31); expect(pin.data.objectId).toBe(null);
+    expect((await request('/projects/' + id + '/document', 'PUT', {expectedVersion:1,document:{...document,views:[]}})).status).toBe(200);
+    const list = await request('/projects/' + id + '/threads'); expect(list.data[0].messages[0].body).toBe('combined pin');
+    expect((await request('/projects/' + id + '/threads', 'POST', {authorId:person.data.id,viewId:'combined',objectId:null,x:0,y:0,body:'missing view',mentionIds:[]})).status).toBe(400);
+  });
+
   it('accepts documents over 100 KB and rejects malformed edits without changing data', async () => {
     const created = await request('/projects', 'POST', { name: 'integration large document' });
     if (created.data.id) projectIds.push(created.data.id);
