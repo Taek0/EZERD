@@ -51,3 +51,14 @@ it('uses the established NOT NULL default and distinct FK constraint names for r
  expect(next.columns!.find(c=>c.id==='fk2')!.physical.nullable).toBe(false);
  expect(new Set(next.tableRelations!.map(r=>r.physical!.name)).size).toBe(2);
 });
+it('stores independent draggable bends and rejects invalid coordinates', () => {
+ let doc=createForeignKeyFromPrimaryKey(seed(),{primaryTableId:'ta',foreignTableId:'tb',primaryKeyId:'pk',relationId:'fk',columnIds:['fc']});
+ doc=upsertCombinedView(doc,{id:'combined',name:'도메인 뷰',domainIds:['a','b']});
+ const bend={x:125,y:-75};
+ const next=upsertRelationLayout(doc,{relationId:'fk',viewId:'combined',offset:0,bend});
+ bend.x=999;
+ expect(next.layout.relations![0]!.bend).toEqual({x:125,y:-75});
+ expect(doc.layout.relations).toBeUndefined();
+ expect(()=>upsertRelationLayout(doc,{relationId:'fk',viewId:'combined',offset:0,bend:{x:Infinity,y:0}})).toThrow();
+ expect(()=>upsertRelationLayout(doc,{relationId:'fk',viewId:'combined',offset:0,bend:{x:0,y:1e8}})).toThrow();
+});

@@ -59,7 +59,7 @@ export interface Position { x: number; y: number }
 export interface NodeLayout extends Position { id: string; objectId: string; viewId: string; width: number; height: number }
 export interface Viewport extends Position { viewId: string; zoom: number }
 export interface CombinedView { id: string; name: string; domainIds: string[] }
-export interface RelationLayout { relationId: string; viewId: string; offset: number }
+export interface RelationLayout { relationId: string; viewId: string; offset: number; bend?: Position | undefined }
 export interface DesignDocument {
   views?: CombinedView[] | undefined;
   schemaVersion: 1;
@@ -437,5 +437,6 @@ export function upsertRelationLayout(doc: DesignDocument, route: RelationLayout)
   const relation = doc.tableRelations?.find(r => r.id === route.relationId); requireObject(relation);
   if (![relation.sourceTableId, relation.targetTableId].every(id => doc.layout.nodes.some(n => n.objectId === id && n.viewId === route.viewId))) throw new Error('화면에서 관계의 양쪽 테이블을 찾을 수 없습니다.');
   if (!Number.isFinite(route.offset) || Math.abs(route.offset) > 1e7) throw new Error('관계 경로 위치가 올바르지 않습니다.');
-  return { ...doc, layout: { ...doc.layout, relations: [...(doc.layout.relations ?? []).filter(r => r.relationId !== route.relationId || r.viewId !== route.viewId), { ...route }] } };
+  if (route.bend) position(route.bend);
+  return { ...doc, layout: { ...doc.layout, relations: [...(doc.layout.relations ?? []).filter(r => r.relationId !== route.relationId || r.viewId !== route.viewId), cloneModel(route)] } };
 }

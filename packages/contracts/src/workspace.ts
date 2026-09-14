@@ -20,7 +20,7 @@ export const noteSchema = z.strictObject({ id: objectId, viewId: id, text: z.str
 export const nodeLayoutSchema = z.strictObject({ id, objectId: id, viewId: id, x: coordinate, y: coordinate, width: z.number().positive().max(10000), height: z.number().positive().max(10000) });
 export const viewportSchema = z.strictObject({ viewId: id, x: coordinate, y: coordinate, zoom: z.number().min(0.1).max(4) });
 export const combinedViewSchema = z.strictObject({ id: objectId, name, domainIds: z.array(id).min(1).max(2000).refine(ids => new Set(ids).size === ids.length) });
-export const relationLayoutSchema = z.strictObject({ relationId: id, viewId: id, offset: coordinate });
+export const relationLayoutSchema = z.strictObject({ relationId: id, viewId: id, offset: coordinate, bend: z.strictObject({ x: coordinate, y: coordinate }).optional() });
 export const designDocumentSchema = z.strictObject({
   schemaVersion: z.literal(1),
   views: z.array(combinedViewSchema).max(1000).optional(),

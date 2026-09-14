@@ -98,6 +98,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       tables: [{ id: 't', domainId: 'd', scope: 'both', logical: { name: '상태', definition: '' }, physical: { name: 'state', schema: 'public', comment: '' }, customProperties: properties }],
       columns: [{ id: 'c', tableId: 't', scope: 'both', logical: { name: '상태', definition: '', semanticType: '', required: false }, physical: { name: 'status', type: { name: 'status', enumId: 'enum', isArray: false }, nullable: false, defaultExpression: null, comment: '' }, customProperties: properties }],
       tableRelations: [{ id: 'r', sourceTableId: 't', targetTableId: 't', scope: 'logical', logical: { name: 'state.status:state', cardinality: 'one-to-many', required: false, description: '설명', sourceCardinality: { min: 0, max: 'many' }, targetCardinality: { min: 1, max: 1 } }, physical: null }],
+      layout: { ...opened.data.document.layout, relations: [{ relationId: 'r', viewId: 'd', offset: 0, bend: { x: -215.5, y: 345 } }] },
     };
     expect((await request('/projects/' + id + '/document', 'PUT', { expectedVersion: 0, document })).status).toBe(200);
     expect((await request('/projects/' + id)).data.document).toEqual(document);
