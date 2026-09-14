@@ -1,0 +1,4813 @@
+{
+  "family": "Apple SD Gothic Neo",
+  "source": "User-provided AppleSDGothicNeo font set",
+  "weights": {
+    "400": "Regular",
+    "500": "Medium",
+    "600": "SemiBold",
+    "700": "Bold",
+    "800": "ExtraBold"
+  },
+  "files": [
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.0.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.0.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 17576,
+      "sha256": "83f109bfe97caa81b34445fc3962acb42ff2bfd79317130877a9909d74cb7b04"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.1.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.1.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 30080,
+      "sha256": "739820ba0d2c9b4cdf7391db4ef81aef5f85b1c22e7818a616a8d676c73535a2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.2.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.2.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 20568,
+      "sha256": "788035d0936de3c2c84285711f97d1030ec563fd32ffdd4df648bbb7b58c433c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.3.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.3.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 15324,
+      "sha256": "af0aaff04979f93078eadf4859706688a4182c8bd4ba6d6fd78ee72cda1221d9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.4.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.4.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14160,
+      "sha256": "1ada3e7fe2c759c5eb737ae2a4cc4bd3437185dee9272efed49fc551ef72d81c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.5.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.5.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13540,
+      "sha256": "8fee4dd049b5513603bc411f79e6fcc91747515da0b1ad16e91fc8115c4b512d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.6.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.6.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13476,
+      "sha256": "96ce6a8cd3b40b8433910551fc4e2776fc653a16ea876b2d8b3fd22596c543c4"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.7.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.7.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13868,
+      "sha256": "1eb0770a49db0ad6e83155e037d76658fa3ef665c06550a3dc0148d4f266e664"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.8.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.8.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12172,
+      "sha256": "a61257b53ce3bd30529df05b87b3353008d0a8deec147d0cbd3b10d4cff395c6"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.9.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.9.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12700,
+      "sha256": "0499ef2e2852ea36cbfb7b455f5e4a60119a1433507111f017f5f1ce4fa4cd32"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.10.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.10.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12244,
+      "sha256": "80bb008843471901fc52d47facdffd57a6ffa0e1eb91aa5053f02c4027e4caf6"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.11.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.11.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 10980,
+      "sha256": "041038f39a99a1665bed2db7c042bb18c0bcf86121c3e782c52b3a71f6cdf391"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.12.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.12.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12652,
+      "sha256": "1c09ce4a3f69c8dcf53cde77f1d864798b57397f71e6ebe36350b7d3b0ffb6a0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.13.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.13.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13240,
+      "sha256": "14cbab82b632a47335c789704aa9d4fe2225a3dd1ef14c94ceb6517b345aac74"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.14.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.14.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12584,
+      "sha256": "c1507e269fe144a50c4c7791d3a668566db0077f8666de60846a9a6fc4032c45"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.15.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.15.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12132,
+      "sha256": "ab5f801b2204a54d00a45f77eddad5b96e14e79e12b9295615282f39828e6362"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.16.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.16.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13824,
+      "sha256": "2665a49f63fc8a6a4ff626ec4b40fdd3cc006a191728b90b3f59c53dc14fef88"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.17.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.17.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14140,
+      "sha256": "2bcb973fcf770b184fb4f7f93c48bde46879759c6ee85597de809d81451cd3fe"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.18.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.18.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12200,
+      "sha256": "53e8c4aeaf8f9136e0d9a6f34d65128672408f60aa5b4b00afe56231ef8bf133"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.19.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.19.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14436,
+      "sha256": "798ab0b6bcb4391840f5e580d5453b3ea8866ad3cf73d339d635dfcb78d74f76"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.20.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.20.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 15360,
+      "sha256": "7feefb95c38103df2c0d314516d3156ddeb97b3fc19e023f1ba7fca9c8fb443f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.21.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.21.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13676,
+      "sha256": "caf33355154103b22ed54e16fa00278cd956f1915ea1f5d03d4555b7c1fabc45"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.22.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.22.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13376,
+      "sha256": "63dbe3b5b311774faa669b9c8d28eeace16b9da61cd30c3564a9e20b36fc1685"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.23.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.23.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13228,
+      "sha256": "ac603cd5b4c1730fe9c571c17dff1b87cea6ec6d6864c86e655bea2dd4dc6902"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.24.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.24.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14308,
+      "sha256": "340dbd74f4e086f0d4179e43d16b5956479cc5807ed3a5cd9476a046a7fc7ca9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.25.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.25.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11600,
+      "sha256": "34aab108e113dd81ed5a81b258f21b76f71378280bb1879de900a55acd5c9979"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.26.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.26.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14908,
+      "sha256": "d2abfdf0f96c285dda482357510958c06a875bb086490f9dbdbcf8cbca4ccb19"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.27.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.27.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 15016,
+      "sha256": "2d23ffefd9d477d35e18abeb36afa6d5fdb97a90bef5d6a481d363b5babc6b83"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.28.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.28.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12532,
+      "sha256": "4c13624d249140143202e74da811698d740d6a511ac0d771a438a7d955a56cef"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.29.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.29.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14716,
+      "sha256": "05ba950cf0e752db43cce2a7b48d20f5152bf5423e334824093e52c918f23c23"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.30.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.30.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14616,
+      "sha256": "87ce0be90311e1e3208cec6129ded7571780c8cf7d48af40e14d14ad5097e38e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.31.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.31.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11976,
+      "sha256": "2134ca5b9746d7f52abc5d5e77028b48f9d933e32d440b61c0a671d76e1d0681"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.32.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.32.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13948,
+      "sha256": "f26e9fa58ea4d230217935046c77c2e443574797c075188a528f43d73d87b04b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.33.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.33.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14396,
+      "sha256": "4536d5c972cafca9c8c450598016ad9fd39ee5e56d5b9bfd80a10375f1d394a7"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.34.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.34.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12320,
+      "sha256": "c04c3578be6e3084fefeb97e65597f8be55b5f398e6b290d89a9abbf699b8d57"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.35.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.35.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12800,
+      "sha256": "668fc0006ec06393ec11d55a8e659882d830943adfb74190e12efc9b2253f15a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.36.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.36.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13228,
+      "sha256": "1054c9f6b52f007018a74517df091c58706e987db8f855efd4ad937875408569"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.37.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.37.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13464,
+      "sha256": "119c1d656ed57423b937d20625e64b0f468c1d277cf70cc9c5f1dcef6e844417"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.38.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.38.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11720,
+      "sha256": "bfd2fe4d5fd6afa9a29fa56286200451bbe0013c13c066644b0f52c206e8b9b9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.39.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.39.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13180,
+      "sha256": "fbaff5fc93dda3b7f636aea2a880431594038a902c26b0dbebaa4e8f1acd0d86"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.40.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.40.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13564,
+      "sha256": "08baccbc78ac110ade7f21baa492ef2022563065fa8ba70e70c0c8ba9750fed7"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.41.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.41.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11444,
+      "sha256": "2111998890c376c338a2b866c4e4d3d984c64a087b607b339e4aeb169a55753b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.42.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.42.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12880,
+      "sha256": "0e8e28a9a60c1af04b4113433511d8ac424aa5d835b6cb783e83165cb870536e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.43.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.43.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13724,
+      "sha256": "1e0fde68a061b89d66ad7302ba29d6ebf0cc0366746f8bb4456dd3d61d582a7f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.44.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.44.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11900,
+      "sha256": "bc02f291102fe566935f303a194ddf02a51f0b912c9208bbb8931030b499c0d6"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.45.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.45.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11688,
+      "sha256": "4c2fbce1a117459ba3c4f95a426acbd338b3ad38a80adb8800694b52e112d67b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.46.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.46.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12580,
+      "sha256": "d90b85a03081dd91929ab9682308dc665dc9a87629a91ababf26721bc519d739"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.47.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.47.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12456,
+      "sha256": "bd5c36fc3c28f64e37e793415c7dbbb24d56598d0be4dd0fedc1a61800e15f99"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.48.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.48.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11612,
+      "sha256": "b2507e3e389c6801fc83bdbe061c85aff7ca7440a29777b06ded95a2d2539e85"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.49.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.49.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13308,
+      "sha256": "08d284d8d21f4b758d99816b43f0b46c1a54bbeb0580a1a5f666cfe6361ee11d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.50.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.50.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12544,
+      "sha256": "4dec16a278864ad46da425ebc9c70c88feb74af0d49db92e14e2059612702505"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.51.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.51.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11664,
+      "sha256": "33525543165483f0ef398f2215fc08b08f21cc7338cab060f5e3e648f8c1533b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.52.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.52.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12900,
+      "sha256": "f3daa0e7c8e0b472c0d4faf2363f30e6b26993dc144ed6b507d81793ce3a927d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.53.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.53.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12948,
+      "sha256": "7956806345dd3e3e26f1de2d476681eeda1fc53f3f10bbcbc14ec226abbef35f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.54.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.54.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11832,
+      "sha256": "68ffd53857e59b6c0c7657c26e796ac2f809f49e4dc481f16a360137733e014d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.55.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.55.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12368,
+      "sha256": "512a61df6065238cfbd44f0bfad0e39bb694c0cc3d6e5ce8a16c84599aacceeb"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.56.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.56.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12616,
+      "sha256": "290e9cf4de387a91b0588a1bb081d0830737a2f8f1827295942a6c4ca57d11f1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.57.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.57.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11908,
+      "sha256": "af6f617c04edd905e73a652bd16a4e3992cfa018b015e729d1aaa775d92ed06d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.58.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.58.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12000,
+      "sha256": "2b33d409153105afbbc35b17659640565b382386ed76a67d8ee8dc3e4f01843a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.59.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.59.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14064,
+      "sha256": "6f13a05da2078522b56fa44bf5748aa945a9810561cf25722f80f488c7c89903"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.60.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.60.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14588,
+      "sha256": "a165a0795211a942736e9af8caa3cdb5f3ae5ca0956806ed935271107b1cc40b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.61.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.61.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11912,
+      "sha256": "0f58cde199cb93777979a9772ae2cf4586270b158f3d31936c4fa5c88ada406a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.62.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.62.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12964,
+      "sha256": "68d9ff0a5afb572300c6c0d89d1c859ba2aaab972bc37e6a405e1bf9f3804fa7"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.63.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.63.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13488,
+      "sha256": "b007f26290c68e90053bdcac426b7f237c1fa1376f48b40f67317ba407b17312"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.64.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.64.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11144,
+      "sha256": "1db4e3f9728bb068ee87b4ff812a446264714ef94d202bfd87743872685a8111"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.65.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.65.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 38104,
+      "sha256": "ebe74341ddef8f6cf1a37c31cc60c53f881dfa5efc15e5d8e5540b1a74a7e795"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.66.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.66.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 32696,
+      "sha256": "2dd49889c8f5a5718101d20b329edd9d06455a12bf1223ba156463db93004863"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.67.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.67.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 31676,
+      "sha256": "9218645d1e78dd59237f8ead926212db55442854350154280fa68263f2906961"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.68.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.68.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 31904,
+      "sha256": "b4c918edb2d7f3d310f9b4dc51ca9b609f2766947310e4b7239c93c4ba7f2af8"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.69.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.69.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 29548,
+      "sha256": "bb73984b74daa27bf1a0101a87653f6914881d0da79ff25157fb01f2f22541e7"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.70.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.70.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 29728,
+      "sha256": "198773311aa69bd426072d9140fa167d93c8d2c5ea4b0e285a450cbf86280984"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.71.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.71.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 32396,
+      "sha256": "d87f4734c88e92744ca1a24314a0a723097f9da25d64590402ff82482f9e37b1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.72.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.72.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 25636,
+      "sha256": "af8da3f557bff063f3f37c802b8377eedb4e8baca68c93458546705ac0eb01e9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.73.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.73.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 29272,
+      "sha256": "7fa79a45505ee70142a89cba52ab5f93424286df147a7b296b491b297c6ba89c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.74.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.74.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 36116,
+      "sha256": "a4a0603719a494bae124e18a785e86b31d97f81701f62da0159732270dbb69b0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.75.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.75.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 31724,
+      "sha256": "58a1e6311484cb3af11e00ceb11dd057a5040d44925779fe14f01fb5f71fc93d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.76.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.76.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 28280,
+      "sha256": "ec192e8d5f54bb555cd4ef7ddc94bb8f827f8656742a3d9657f45160eb33ec92"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.77.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.77.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 29272,
+      "sha256": "ba29a23a4f54e6f4389bae8609633ddee7a01c87b613eabce69d15bfba260594"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.78.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.78.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 27572,
+      "sha256": "f6c6bdf40197f89cf83d65844424c162b787e2024e9374f9b47344ead2107660"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.79.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.79.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 33912,
+      "sha256": "f776d1520376af55bb1a23d1b5605b4afdd696d62603d98fb99cc7d4b27ef671"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.80.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.80.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 29564,
+      "sha256": "3fdc4aac485166068075200524e5aafb9c9769787a45dbe31c11a7c64bbd9d5b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.81.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.81.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 26184,
+      "sha256": "124d71900f1bcdd78ed4d4f14b2118032558e92c5394902777a1ccf2f95c65c0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.82.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.82.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 29376,
+      "sha256": "67987d74cd60c32680de7e7c463babac4c3cf0ef9eb612f4b95d00dc01f13834"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.83.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.83.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 23496,
+      "sha256": "1218959356e2a1f1764dd3475e121691a6dfcd6ecb280aae4bd8f98d3728b64c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.84.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.84.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 31908,
+      "sha256": "7c0c66e740a6c7061369dfe70f00ee17d6efd2222ae97e1070cc8b67fb9bd202"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.85.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.85.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 31140,
+      "sha256": "da4685c26f135df14b90c632231d76f7a71b582181e28d61de40c58fcb02b92a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.86.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.86.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 28420,
+      "sha256": "3cf095c73374c37a0a5613e6b1482c2316be7c885bf19705e5a2b8d31260f5aa"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.87.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.87.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 25408,
+      "sha256": "fb074d41a37d59c44e9e09aa47650f8e494624e091e57bd1137b760bfc8c5a15"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.88.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.88.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 27044,
+      "sha256": "de5d90dd974bf2bb5e5323352fae4837ddde316696445b6e84065f14b3e8a771"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.89.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.89.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 25916,
+      "sha256": "cc5ac2c3e1f54594169c8cc733ee07b0dd65c2d67f7d8d7ddd0e2a578f2efa69"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.90.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.90.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 23548,
+      "sha256": "a9de3f1a270cb1ffeadf31e55bf0ddca89a0d23dc0f6e972c1ba2a054e97e887"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.91.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.91.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 24340,
+      "sha256": "e7897b88c18d00474f99b8a92b039623d975cc7f915c50801fef3e2ecf596ade"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.92.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.92.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 25324,
+      "sha256": "9514241ae7b2d833e1b707328cd091128ed5c68a4d6bfed40eeb4e17bf18e873"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.93.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.93.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 20340,
+      "sha256": "afd0045632f2ccdac968767cea7786a4b3fe59a29bb1ae1fdb73a9bcdbcc7413"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.94.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.94.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12924,
+      "sha256": "cb321ab5a65251f989eff3642e04d8b70bab655dd8555d37e10f0b774732ee58"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.95.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.95.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 18444,
+      "sha256": "f583bd60d97a2e84cbfed623b6ea8bd3ca069088cfd5607675816799f72a1202"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.96.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.96.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 14708,
+      "sha256": "bb00d4e6efadee2053d20d90a1d355377c36a5f8159a59ca47b9f76bb83c2015"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.97.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.97.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 9840,
+      "sha256": "505a36a3b1bb68c4d22af0ea2179870f2ff25485277b0de6651f3065582396d5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.98.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.98.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 9132,
+      "sha256": "bb5608f9241324bf9875ebe0294c6baf4deeb9ceea3f8260b63fa36456907e70"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.99.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.99.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 8488,
+      "sha256": "6150316e67f27910b2bcbe306b1a9efff84a9c6661d2e426c7ec57c2a7544ea7"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.100.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.100.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12796,
+      "sha256": "0a422e1635064ca4932a61fcd549ee10a05c9a140bc3c12780b2cb159d3200e1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.101.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.101.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 13064,
+      "sha256": "87d108d1f72f5026d518e297f61ecc4c552dbd1827da2a18f624e6ba54318827"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.102.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.102.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12348,
+      "sha256": "bfa114c5bf1daaaf04e7accc709e8aaf0bf01b0087c0ed248585e02586a718b0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.103.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.103.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 12376,
+      "sha256": "585f88d22924d24f8b86b947c74377c48f0ee1e01f385620e6dadc5e4a39e9f4"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.104.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.104.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11976,
+      "sha256": "4a6ff7733b418df5c6a92fd9fe1d65d808b6763e10a031c3e4aac045bc39e3e7"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.105.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.105.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11696,
+      "sha256": "7282aa513609aac1330a2ced618e95f14ebc4092bbc797e5b24c624dd85a7aca"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.106.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.106.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11112,
+      "sha256": "165b73ca5d1605182d515b570fa9b136803ef5bd7d1aa6fa6984800c70522da3"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.107.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.107.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 10720,
+      "sha256": "df7bd95fdaa6c6f381c7b44a388792bff791d416070a254fd3193e5736dc4c52"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.108.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.108.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 11404,
+      "sha256": "a44f041a7e17eb034a0749bb0637dae92f7f27b06054fb6ff82a92e7ab78b65c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.109.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.109.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 10688,
+      "sha256": "8cbc83de36573ef91b5086d04136f16ab702059921aa03fd668848f511f36096"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.110.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.110.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 10524,
+      "sha256": "c257cb2d16f4b54ef9c94ce7fe8bfbaa50de19e1b2fbc179bd51d9e8ef80cab4"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.111.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.111.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 10660,
+      "sha256": "58a15eaa816d0f82cced290c1295337c1172865dfd0f19f7a5f2e9aad1e1b47d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.112.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.112.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 9960,
+      "sha256": "15967d30f27ff84de7a0fc50fac4fda6cd46ebf9f7b6607dfbdc35332901cb84"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.113.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.113.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 10020,
+      "sha256": "ac56cdcaea8db24bb4df8433106b60144ccbf0df04ebe7822860bb765495864f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.114.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.114.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 10060,
+      "sha256": "d4d106daee0459709e88fcc3fb79621eecc38d0b00d577ef1153ed232454063b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.115.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.115.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 10040,
+      "sha256": "7e90bc346daa996969ec82c2d889feed193127e9f811a79f5bd4a8adc8683575"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.116.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.116.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 9972,
+      "sha256": "e850786e39d732a96df6c38796ce70be4f5612107814aeb0665e75142c8442cd"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.117.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.117.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 9072,
+      "sha256": "6532c8c15a5330109a2a2fa6307e111c386f4a629621a66d395582ad67af4899"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.118.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.118.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 8824,
+      "sha256": "f0a01e867a995ec8da143e7a5d5ddb1346e1e980cb3b98ed4388a9c0daf4cc69"
+    },
+    {
+      "file": "AppleSDGothicNeo-Regular.subset.119.woff",
+      "sourceFile": "AppleSDGothicNeo-Regular.subset.119.woff2",
+      "format": "woff",
+      "weight": 400,
+      "bytes": 6388,
+      "sha256": "a46be61986b19f0102bcefe4a7cfdde25b3a3957e5cefc5b8e6f13bd628b697d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.0.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.0.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 17628,
+      "sha256": "1fc6b0cce5162d1ce0b9f2f2be4a79668b680aa465488e47ee10a0cb5e1635b1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.1.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.1.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 30152,
+      "sha256": "f95cf35d4ff2f54e9043abc0ba20197eef266f32887f950936b816e543ed27fe"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.2.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.2.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 20112,
+      "sha256": "4b4bf20efc2284348be84047c0fb2b49c62d586885dcd184019574053762913f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.3.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.3.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 14792,
+      "sha256": "b39bcbf43f85aa10240c7bc9f927c0ddba10d51034498a5d67644c7283408f3a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.4.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.4.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13676,
+      "sha256": "9eb277a7d63824218a3a07fd551e8cd9e008c8448727ed2f744aab7413f90458"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.5.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.5.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12728,
+      "sha256": "f108627248b1f75bd872d0e1c8a1a5fd17873b294c90ba1090e56b776cd03d0e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.6.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.6.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12828,
+      "sha256": "49e8f57a62b1b6e58d3f27d76cdd3cb8bd086726c3a111e06fef9fe38e47f63f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.7.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.7.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13400,
+      "sha256": "5eda192ffeb94f6f50b6b7fec378344bda6844da71533662dc81638334b794db"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.8.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.8.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11576,
+      "sha256": "7acb3a36ab011ac6820864963dda54fe329c0ca3236efa428485cfc29b9188b1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.9.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.9.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12504,
+      "sha256": "31969b0df020df741bb423cec3f9edb795654bcb4192c48fba1091eb15a252f1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.10.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.10.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11928,
+      "sha256": "ca3bc11a81053acf727cefa85ef793cef052460b9f829c131c573bb3f245ef44"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.11.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.11.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 10772,
+      "sha256": "7d505f40f54fb5edb88748e0a2408485d8d1e79cb60f780a6a9eea9a1d4e97b5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.12.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.12.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12040,
+      "sha256": "b7f10241a0bd2a178f114b362583b5efdf4694c6ca778ca821ab82616a05f7d6"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.13.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.13.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12600,
+      "sha256": "dd9112f242205a59461912309b7dae7c0b8cac6da8b9c013262e1556d8dd4028"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.14.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.14.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12316,
+      "sha256": "e49d9d97a4dab02b820633fecc07b2938a2626bc07e7ca74c2d1f780945cd1ec"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.15.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.15.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11856,
+      "sha256": "6123a7d1e5236c5203a47a2a3e1b9343429bef700bd61b13e5570d50e66907a3"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.16.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.16.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13340,
+      "sha256": "8592dea3519b55d6c70c3d15283a966b3e600c451d11d9b69b3fcf3f55b45955"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.17.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.17.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13908,
+      "sha256": "432e20b15d326a45957bbcc382a8a25f57824ea61f18210127dbb135092ae6e3"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.18.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.18.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11668,
+      "sha256": "f3f1bff9ec26be4684133f0220b61750a5e247b216f81d1a90116ab0f586086f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.19.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.19.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 14252,
+      "sha256": "d0e31284e8748a42f93eec0852af6f9e25c946b8915ad8a14d85aec123986bc0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.20.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.20.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 15344,
+      "sha256": "49c804823c13436ca6d72d74f56b7d54b7de3f61c028fc587921667f41ae7571"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.21.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.21.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13396,
+      "sha256": "22af5c7bf951c24a4cd4a5aa7cebca03f20fadbbf7ea56c8253299684ad79575"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.22.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.22.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12788,
+      "sha256": "8eeabb0367a6b3cb77be024560554f8ef1de5d9e1c0ce61f5bfe19ac97d2c0fa"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.23.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.23.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12848,
+      "sha256": "4668064c77df7011c1f9be531121e4d85e2952bf6684d5d0c4776e2c724abbc9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.24.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.24.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13828,
+      "sha256": "add5a826a8bc087191bd050ee65e3bc72fe917b0817a48d80e6a3061675f1f7b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.25.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.25.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11000,
+      "sha256": "b88fa119d3e0e7e69c34d4aec9b97768bd44afcd544098d408414514dff6aca6"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.26.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.26.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 14308,
+      "sha256": "ae911eb87833bd957a3aae8e73a0b9c2027325248a7eedfa2bd3021688d52def"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.27.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.27.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 14624,
+      "sha256": "e9f894a9d726dbae78f91090f097e7dee22df2515378f1cfe507d0e44238bf90"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.28.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.28.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12160,
+      "sha256": "abe9e0b11681299ac825c5b16b8dad4e9f84f1c762abfe5858516616dfce79fc"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.29.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.29.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 14124,
+      "sha256": "1536abb2c35b0da20fa4d64540cb706e6a307e49f153c1a116eb7a0628d01fa0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.30.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.30.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 14128,
+      "sha256": "a34d376a8dc2c4c7101a2760c51d32ec5f3d81ee101ec9b497b38b1806082259"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.31.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.31.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11928,
+      "sha256": "f73883b6d0a8b1d9f2f6ede42c3f2a35a1d852ebae93c8b31c3abf882ca24b75"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.32.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.32.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13540,
+      "sha256": "bf0231211e5e7adb592916a8b2283ab6457880391af1f51e498bc383e0d06710"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.33.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.33.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 14048,
+      "sha256": "021200d05604a558e6183c2814868913c4089850b31b6ac10b49b41dfec34fc8"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.34.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.34.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11920,
+      "sha256": "60c51a358433907ab0d44f6d099e5936af7bb3684641e44cb6a270051f318de0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.35.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.35.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12628,
+      "sha256": "cf1e9b5f413a32104c90bbf31d0a5a9d70aa245df81bee3712fdd6883d23a0a3"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.36.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.36.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12880,
+      "sha256": "563c617dbe40f911b18a1443649720efccd4cb8611afd2aee49d16c5a37ba64a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.37.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.37.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13396,
+      "sha256": "d216c92c24fcc2b0e9eeac114e76412a91c7883190d3c9e22e65ebc1aef93493"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.38.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.38.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11524,
+      "sha256": "7ae94e2a53aaa7785769d9d014f9dac647dae5b691e002cd3b4a3c4ca30c7a0b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.39.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.39.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12844,
+      "sha256": "0cdb1e77006ad5084cdc5dcc2183791a9a6896d6760712c72a11e13e2ab063e9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.40.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.40.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12888,
+      "sha256": "666720c7a7a32dc32565adfd1c7c0dbc6f18e42e16e309b3dedc788979fa9552"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.41.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.41.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11060,
+      "sha256": "c26c881339789480b33751ea04c39cc87ae164a193aaa84e3b6f0d12e17577b1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.42.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.42.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12268,
+      "sha256": "4282dd2f9e37364b37c866ea88a9afefcee4c58101edc62eaac3b8ae8851b1ff"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.43.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.43.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13092,
+      "sha256": "2538fed3496c335813c23d41cfba18c9c21860bcfb99eb5bca81f58482a19686"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.44.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.44.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11464,
+      "sha256": "97c4b434702e16039553845a443877698344f51bc6a3fc350d4719681d860ada"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.45.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.45.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11364,
+      "sha256": "ae0e7bc5e4842b3a46ca3bda972f9180640e4908b5d95b236915e5b58647d044"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.46.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.46.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12184,
+      "sha256": "fd08ff7ae29dfd2e91ef971249cf2871fcd111890ec513d6b295fcaffa3c1973"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.47.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.47.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12136,
+      "sha256": "4b4a4993690d28340e37e1d48b42df96fe6939ed605d41cb6155b0fea810a366"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.48.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.48.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11284,
+      "sha256": "5697243505d76edb7f21a3d7de03b226ab8996fa961f364e1a982d574b56a54c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.49.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.49.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12928,
+      "sha256": "f90a4310ec9687301f9fdc4b675c80e084154077e36f872e410e8e8dd5388e8f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.50.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.50.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12592,
+      "sha256": "3db633a3ee89af136db7ed6f765c430a1b6679587d37ee38064b0cab4dfeca78"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.51.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.51.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11456,
+      "sha256": "40652960576365d84401ceb1fc276cb3b4c6394b103e0e68a2bdb74504a6ef04"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.52.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.52.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12360,
+      "sha256": "4e1f0daf4575ec73004635ab6c1c2e007ad5c3ee9eb4688184665ab953db6af0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.53.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.53.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12340,
+      "sha256": "fcdee29f0697fc8fbdf6e1a9116dd04b6b875bad3c510fe7d5ebfde531022a53"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.54.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.54.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11584,
+      "sha256": "d425c6c63f434a32e2ce7b13bab4784da434ebbdbdffa080913a45603b30a331"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.55.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.55.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12028,
+      "sha256": "6a744022fafcefb223ee843880fb7949a602dda4f263cc10c0f4ace30a4c2cdd"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.56.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.56.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12180,
+      "sha256": "cb994b3fb6dd7d16922317c7e449007e9b992ed0da30f58f1edda74398d9c717"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.57.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.57.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11756,
+      "sha256": "d5c453503deea49b88716c28467c30b53507ae5829fd1a55be999c3eb5a12db5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.58.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.58.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11812,
+      "sha256": "418e7ed389f72c21d416aedba52ffeeaf210e8ba9673fcaf564cdde590ed96e8"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.59.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.59.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12972,
+      "sha256": "81e0d785f7aca2836b691e76535ccd220ee70c98ef733791ee69bb0b671d276c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.60.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.60.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13952,
+      "sha256": "c553b3201db6c87fa20dbeb2a5a7c4b2b969337b91c88ecb849ce365c22e09f2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.61.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.61.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11512,
+      "sha256": "878a3641035b2eb1e2321ac92eb7273910ac3fe1f4b4fd7baa97e2b96bd0fa90"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.62.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.62.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12272,
+      "sha256": "ae5b3cbdb7d43f504431a18d348080d50f3ccdbb0a65dc66fc93b934d159df26"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.63.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.63.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12912,
+      "sha256": "16fbb4606374fc9a46bd68d927c20ae64303b0bc5a2352532c8b3b62b4ec2de5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.64.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.64.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 10760,
+      "sha256": "de6c54b21f71155876aa8e8d2506edd6fd4ddc86ac6d6e1973d7d2cb718a0b70"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.65.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.65.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 38108,
+      "sha256": "9f727689c72efdf1fafd720477480b99246ba3aff32f45ae8f3e6d20e7e84cec"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.66.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.66.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 32780,
+      "sha256": "a93b7e5984ad91fe1acc8f6379b3aa5e3f72b7681341654186f54fd59050d9dd"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.67.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.67.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 32312,
+      "sha256": "e80320c802248653a7a453c3c916eac31885328e40b2c2f165f668f5ac81147b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.68.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.68.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 32028,
+      "sha256": "78150574ff5423bc664dd3380ad7328997012af70bf52159e69aa656abd501ca"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.69.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.69.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 29484,
+      "sha256": "bd6bb7e5679bfbb8461ecb7a457f22d690db5e6469b4b184e59c49dd3e0260c0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.70.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.70.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 29628,
+      "sha256": "25b9ae62d073d69ef48d3087d28a55e810bf39029eb7f81bcb2b4b155f8cc875"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.71.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.71.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 32464,
+      "sha256": "75a92eec7e9541ae62d9dfc6afaf2c89c48aa746ebc40f8816ba9781ce72cbda"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.72.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.72.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 25784,
+      "sha256": "edc45891e8a4cd5f1dde46c91c7dd3cb4eff7a83d50b16b236b48d5ce2f5b3b2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.73.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.73.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 29340,
+      "sha256": "f5384e761d1d32478812dd54557d77890f736c9d79279e0ab6a36f95ed220cb0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.74.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.74.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 36284,
+      "sha256": "bcccba7923737a1a2257033b932856bda81c903536f83aec36b39145b27edfbb"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.75.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.75.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 32072,
+      "sha256": "92d05f48687c1a610e5a01cd03f4507c4b4e69bf0b72df9a8c0859a055db83e4"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.76.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.76.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 28264,
+      "sha256": "5cd1dd526f707a0d66cef1c18656548285e9b18bd5e686101d0a48189eb1c12d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.77.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.77.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 29272,
+      "sha256": "77e479cc666409da1fa58526f70cd5fb40931b4f23a79563e9c3f5aedc87b56d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.78.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.78.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 27692,
+      "sha256": "5fcc3245414413cf7cd86d592e52433b848953843ee772b7b38cbaefaf22af77"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.79.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.79.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 33960,
+      "sha256": "1ff7984173e8b51e882a28f2c532eb73170b8926ca0f3f3ae651a144c996640f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.80.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.80.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 29644,
+      "sha256": "2bb18df376435d56e3bd2165d181990e852906c07f6b47dee4e1dc3f96df26e9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.81.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.81.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 26300,
+      "sha256": "f9981883a225ff9ed9d635bee0f53fe88421c889eb9ba634a16a0fb4291f3f80"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.82.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.82.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 29436,
+      "sha256": "90e889a6934301102fcfbcc9349a40b1ad672931b76db0061f649f8b75f7576f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.83.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.83.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 23440,
+      "sha256": "f3fb5b22654bbcda64bc265768e146e655306f319f2dda4e9bc40647b635cb9a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.84.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.84.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 32120,
+      "sha256": "5d762e77d1ff136e672667c245f881d7e1c11e3f2224a978b51965c3e0e0ae7b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.85.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.85.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 31200,
+      "sha256": "7bd46371f4c65bcf794e900aa03fb83a86a708e05af70c98858cca2ac64adc67"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.86.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.86.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 28508,
+      "sha256": "1a81d6e84a9b6104018450f868c35b6c0eba92a359ce5ae5d736a70d04586d36"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.87.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.87.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 25348,
+      "sha256": "df9a9b7ba391de6c0f71217f5b6a6fe44ce89705ed10507fe6f6f395157118f2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.88.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.88.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 27116,
+      "sha256": "6ce7f776648fbe4b4823b14d7eae604a9eb65b0d97122450b93132db69dc8d9d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.89.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.89.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 25908,
+      "sha256": "7eb3eba5935e921ae4c2a55054edf956bac281354b801a133cb84072f953622b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.90.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.90.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 23524,
+      "sha256": "d1bafe31f9ec459f225afc637af24739f0aea9d398d7a494ba3ad36df1050d8d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.91.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.91.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 24220,
+      "sha256": "93643666d6cbe89c9831e3d09064baace6edd22fbc8a32bc2a3ed7105c1ac03e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.92.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.92.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 25388,
+      "sha256": "19001e5f50229b57c586b470893c224ed87cc8b7e689f5374c9375bb4f524b71"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.93.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.93.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 20188,
+      "sha256": "1a6fe03f3cedb46d522f5e5da6af801fece203e4ff07098900fb35debc5d1843"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.94.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.94.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12860,
+      "sha256": "bcfc092563806114c98655baee06835a2aa64d31e9779dca6f6613bffe30b2f2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.95.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.95.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 18360,
+      "sha256": "e3fea84eb78d0a142d91442acb850a0197a1bc60205eb25ab6bb6310d5b7b602"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.96.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.96.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 14676,
+      "sha256": "44068a0189c055b7c777d290241275223c9d3b786a7b8f585fcae358263389d1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.97.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.97.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 9732,
+      "sha256": "0b69d607a8cd0cce0ebbafc21e9889dde40da002517217a31d40e28822bcb912"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.98.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.98.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 9012,
+      "sha256": "6e80a4f711446a54ebd146d19025ea8fa7f3a1dd45d7d43a1439101305ed7bbb"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.99.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.99.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 8476,
+      "sha256": "6447ea77a289edcedcbb7099d27ff4c27fe6aeb08fe884be7cd974307c589efa"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.100.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.100.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12708,
+      "sha256": "71318f872f215226aa00deae6e0c174891e57036059bd29e45fb8da93d5eefe5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.101.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.101.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 13124,
+      "sha256": "84fb66019b73def14f87da706f26a488dfd3ab947f0dc4d9fd0238a494261b53"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.102.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.102.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12392,
+      "sha256": "1cf4dee389ebc8c516ec27462a5ddd7eabc695d5c8590b7d2282385cf3a7c624"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.103.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.103.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 12328,
+      "sha256": "fbd7bc7342317b275e65ec9a1656ba51fbb89b5065f3e28b592d0ee1db13bfb6"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.104.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.104.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11920,
+      "sha256": "59fbe5dcdccbf08df71cfb75028a0e6173acc3ac0d5241b6517e14c8728a443a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.105.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.105.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11660,
+      "sha256": "69f3490a67e81350cf940955f86f22d75bb93543f14d9e8ce0ff545a62d7629b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.106.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.106.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11016,
+      "sha256": "47a54ff5ec15fbed066713e95374c1977ed4154087831f7af15318b585fa3638"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.107.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.107.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 10676,
+      "sha256": "e4eda211a1b6f6446a1d0c69992bd56935ae02212fb64d5182e46964c53f4911"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.108.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.108.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 11312,
+      "sha256": "bf57fd49318553b166cd9f7dfcaa039a64a8f019a225cc8bb1700d92f9d08678"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.109.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.109.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 10492,
+      "sha256": "e8c52ee37a1b4caa7282aa5b644abdd81989407b6324008a0011a84c12c7b5d1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.110.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.110.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 10376,
+      "sha256": "6f27645798561a3c0767c7ffbe77de68d5447d9f7dd010e2e4471c0918ed3efc"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.111.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.111.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 10560,
+      "sha256": "3c166697df928e2c5a4b8a076c353447f3eb33f8b20226939d7b7cbbce974ef9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.112.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.112.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 9872,
+      "sha256": "dad7d2aae95493b2560466e38bf6550ae25ba8afded5855ad44b334743d0a86f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.113.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.113.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 9932,
+      "sha256": "22cd09514c2cd9db967cc143163027abed58da6bc31d141c77f2eae5fdb9964a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.114.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.114.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 10040,
+      "sha256": "fea23236fa6e752d59b4a5890fbeb9a54c9f81d7f5c0e994365537773304bb7e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.115.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.115.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 9888,
+      "sha256": "b8713655bc8da1a75dc8fb3c1f4d5e94dbdcabdce7678e70820325ca9e15ce0c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.116.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.116.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 9856,
+      "sha256": "d946488781a08b5cf745ab8dc174b4575b97d56b0ce560c8c0b2cfe7daf7e063"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.117.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.117.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 9044,
+      "sha256": "90428093a8d3536868cfb13496ac4806aec2f8b87f6185805cebbcddf4dcb898"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.118.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.118.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 8792,
+      "sha256": "8846f673574e91e6d6fa02b4228ce6981cc4e371510c15b86b1c195cb4c06be5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Medium.subset.119.woff",
+      "sourceFile": "AppleSDGothicNeo-Medium.subset.119.woff2",
+      "format": "woff",
+      "weight": 500,
+      "bytes": 6348,
+      "sha256": "3c47c6c46f112ec1f06ef868f2b2305268b3b6debb1688b7b08f9b94e7136677"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.0.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.0.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 17952,
+      "sha256": "3c8f0f19f0303cd0dfa4b7458882c3447539b2ab7eb377d10a55f678748f34f6"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.1.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.1.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 30712,
+      "sha256": "30505f78f74826cac06e7b880fad77dc7ab07c68ace49720da86a099bf7e2963"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.2.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.2.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 20432,
+      "sha256": "0816281d09f6d9e99ced464f948ef43405a24824a84ed91e6897578afd8f236d"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.3.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.3.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 15280,
+      "sha256": "d2d916e00d78e687c15ae639be89582cbb6e4cde34a068b000b4e9fb09a6aa22"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.4.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.4.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13252,
+      "sha256": "a677414ae5543d542f83d0e4a7d8d82eeaf1c7113112ec6151ba6a3a9b95f769"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.5.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.5.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12872,
+      "sha256": "3840f0287a449063e2c79b086150565478244878e2bd8d7fbd87f226a2585f91"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.6.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.6.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13960,
+      "sha256": "64219dadb7f000c451e7341d90cc2be17d149b7247fe71dd8a366a3ea7fc829a"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.7.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.7.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14536,
+      "sha256": "ee852e8907cd6c41797e0de195a08c0403511fdce12937a3ff89b5fcb096a506"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.8.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.8.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12420,
+      "sha256": "37382a74bbba91b0ee0f8d08d9f4efe77011802240b1a359ad3441dfc495f747"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.9.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.9.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12936,
+      "sha256": "d3c6de607e389079ea5c9aedcbf43264dcd72d51849194abed7320da545da56f"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.10.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.10.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12640,
+      "sha256": "bba67c598ba4b85c50d6a05cf8923429f1692b79e523e5db90121e9d1476fbf5"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.11.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.11.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11324,
+      "sha256": "8fe616c13fa69c30900681a356b72134e9c8f6fe3ea8f78e43de7991ab7d0ef5"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.12.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.12.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12652,
+      "sha256": "b8fae9daca6f85d78eae2e7f19bbad729ee2168d79c103663f69cf0dcd37f169"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.13.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.13.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13472,
+      "sha256": "ccbab32dcab272acc3783df6895d197fc90668bdb7e8fc9cc61040f7be54bf35"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.14.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.14.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12888,
+      "sha256": "d272b3ffd6e78c721a8029c87a569852ffee3c93c5a7ba5f0e3efe94432ca5b3"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.15.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.15.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12272,
+      "sha256": "0204c87b7cadfd6ed33f3569debdd64b05b5c2cf67551879353fbfdba4c63485"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.16.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.16.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13892,
+      "sha256": "5f3719c35716d8e0e97a3bf098c685e38025a960afe7d13dca9f7b4252a78e73"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.17.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.17.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14292,
+      "sha256": "adeeb0d6ba84539a6ee3dd4953c4db22b3f78815b18cef807c62167d50eb2cc6"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.18.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.18.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11992,
+      "sha256": "c02c4c2576f12a5cf68d6131ede035c94b1f691f83156a6795dffdfe770ebaf6"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.19.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.19.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14604,
+      "sha256": "80303dfc9c38dd4c211a207acce21a028acdbd0a04d00b3993ebe7a5edaa0b77"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.20.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.20.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 15848,
+      "sha256": "63df40505163a202d58c4e3987869047b87cd63c10df730774aaef80e426fe57"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.21.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.21.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14444,
+      "sha256": "89c27679fc75afac253cd4300f5de2d251005065dff8ab75f808205d7f0e788d"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.22.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.22.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13684,
+      "sha256": "87f1b7490e78aeee2abb720e95ce7c30ed4b283d48ab569cfe370d13a785ccf0"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.23.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.23.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13944,
+      "sha256": "5b283a9e319a16975d4858e1940631ef1944172cb0b9d5e51664f122e300fc20"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.24.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.24.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14928,
+      "sha256": "fd61914b38dde77adb55609d2b1ee68c5a999e2424960732fcff2b3c7068c0e0"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.25.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.25.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11720,
+      "sha256": "9785df7c0218f5b89bd61870969964242a15fab167834546fa041baad663ce66"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.26.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.26.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14560,
+      "sha256": "ad70afe852802cddfa0bbc5ab06093edc00cd2eac71eb45a4df63a404164517f"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.27.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.27.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 15032,
+      "sha256": "bd2cd948d81ed6dd555f377ae510bdbbd645990c178dc99a2dfd2880757e05ad"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.28.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.28.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12616,
+      "sha256": "8875e2de5e4668eb8afd079d6eac09bd072094b626b529be71b95177d2636cec"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.29.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.29.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14872,
+      "sha256": "9f63ff2385a4646e6e2b632815a9bd039e7abb5ac7a1c89a5d8d7b33846da463"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.30.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.30.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14904,
+      "sha256": "3b7de5629ba3c675d5924afd123e119a5410b2acc612d55ac045a86d02f4ba8b"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.31.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.31.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11512,
+      "sha256": "b4284018e04e70cbe9c0cc5f585607040e69eb3dccf78965808cf2001d0c2d48"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.32.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.32.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14232,
+      "sha256": "cf453e7c834808afbaab5ce285656fcf0f9477f39d2b726ed0c66cc35c803fa2"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.33.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.33.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 15048,
+      "sha256": "1f4bc29a60bc70dc38768a5980fad5ef0dcbee409b3d08fd694b79a8ef3a7159"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.34.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.34.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12120,
+      "sha256": "38c0de02b277c3047ea960c4094538671fb89e16982cdc79917f8750a2d229fb"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.35.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.35.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13568,
+      "sha256": "ab57768d27e47ff7e28809068265361fc7fbcc1904d72ce357cc302805fe0a2d"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.36.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.36.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13452,
+      "sha256": "848b1deeb4618f55edf83d4c30eef9ec5855d5372b2e01396d684e4349058863"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.37.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.37.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14744,
+      "sha256": "f8c9f73a29fd5227d178219dd1aa7c145ecf1d8de3ea49579fc5552d12d27756"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.38.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.38.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12316,
+      "sha256": "ea971de97672fc5aeb3396dc3595491abe47ddf543881bef5e2e7b1eb0858461"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.39.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.39.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13240,
+      "sha256": "e65799bc86bc688d5a65e97a7aaaa65d9747f7e5c736f6f2dd246a221e6030ef"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.40.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.40.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13716,
+      "sha256": "bbc421266554c9e74b651c4e2ffebe4467ce096d09ef5ec55cdc2669e82ae85c"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.41.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.41.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11976,
+      "sha256": "4932ee81eccc4124cf31ff550577821b94e425dce7f0218751571f35257cf855"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.42.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.42.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13312,
+      "sha256": "bcb64b527d867216b07275618d4c63ce602afb9539dfd1a32cc952a47fd3b763"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.43.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.43.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13896,
+      "sha256": "651dc4cce8f91aaff149e85b75fe020e17302274ab25d27d9bad723c947c0cf2"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.44.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.44.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12464,
+      "sha256": "fe62d641c6ee860a173d655df3206fb013dc2c2e5a862e3c7aa575d3592a6b01"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.45.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.45.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12180,
+      "sha256": "713f93de9b8391c4e4b10f60846434af08d6f965ffc0d6ac50258ee3d88fe36f"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.46.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.46.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12992,
+      "sha256": "eb57996482d6586db673369ffe2b1e7b39fd98d628171a8a5654381d0595cffa"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.47.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.47.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12960,
+      "sha256": "85ebd76ebfb9ee4f673938d4dca09851d2418a6d75b9e21a8f919d670614993d"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.48.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.48.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11548,
+      "sha256": "504ce6a071bf1aa7aee9c23e9b695a5825ba27b4705c7c70843b9cb118a16605"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.49.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.49.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13532,
+      "sha256": "2db2adf38b2f37f75d0e0e0fd6c228de63d1040f95a911ab444dcaf250a9dc07"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.50.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.50.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12940,
+      "sha256": "4366e3f174193b3254604fbcf9a0f88026c52abb4b0c71b2c39a0d7c5bf76888"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.51.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.51.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11356,
+      "sha256": "a77ad073c4c27dbfe1c129c6f415be431a1a95dc05973a3649bc05e9d63ae880"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.52.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.52.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13088,
+      "sha256": "be644af3efe54f9003e4c1286041e184c6751c6756591b21d1e8a778224968c6"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.53.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.53.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13308,
+      "sha256": "641259ddff046cb72df3e66b1015bdfe52f63e4a9852d2a6a911fb1dc3f6c20c"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.54.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.54.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11492,
+      "sha256": "0eef7a0948827ff8c8009f5c230ad94eff98ec220e96dbeac36fc3ec3fe90f70"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.55.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.55.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12744,
+      "sha256": "5a3ea090d09daaf137431b65482f1e4729f7f77bd2844adaea281b191733637b"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.56.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.56.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13088,
+      "sha256": "e1e636835ea2a08d58c2e4bbe49c7707c12481d7a97e78515c2bf9a01752004b"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.57.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.57.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12580,
+      "sha256": "8f52eabd75542d5a74fb6991b07dad8e855b875c8120a2c5429a4017a8c3e886"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.58.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.58.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12172,
+      "sha256": "053d2d8d941e8ab0d3ed4282f927fa807e29c4ac67e31f2d250427117350c5a0"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.59.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.59.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13452,
+      "sha256": "df5e8b47fe02f0a37be4f9bec23aa789a9aa628a66af85b92126021c069e2aaf"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.60.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.60.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14536,
+      "sha256": "83bf7b69c5ae17b23c1a870007d2ed8229b5c896ccf7b611508c93474ab1b1f2"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.61.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.61.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11912,
+      "sha256": "1b33474d7730c7dc01fc1ab45d7235668dab6bee46e863773867930916d39fb5"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.62.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.62.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13056,
+      "sha256": "34508b54896c7a32ee3fbe2fbd52f4f03c144e88472a39b6dbd113d6c89d4d6d"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.63.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.63.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13272,
+      "sha256": "a4c4f0042aa6dec1b2681186a483315266f503644a35fd2f63f34a97a86a44d2"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.64.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.64.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11432,
+      "sha256": "29993397fb43fcbf59cf3d61aab45c6b52881eb0e1d06cc3a08535c8105eaf49"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.65.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.65.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 38692,
+      "sha256": "ccda35101cf2fb42bed9db9758b6c7e57d0f4deeb678719ee61b63e5ce21d815"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.66.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.66.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 33160,
+      "sha256": "26ec9c199835950750368371cdeff15767c44712230879d5c15c0dc39bafbbf6"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.67.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.67.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 32784,
+      "sha256": "d56dfa1f6479b840e153fdd2f355e4aafabbd69f906d1cc5afff199209dcd8a5"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.68.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.68.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 32596,
+      "sha256": "762b11d024ca1d59a7a8bf135643d5e7c4a5674a2d0ed6d77cd02e38cb3002af"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.69.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.69.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 29868,
+      "sha256": "ffde4c27ba163f92288f4e2e94cfd78e9f1f27b3478e41e3916457cb4e3479e4"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.70.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.70.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 30072,
+      "sha256": "efeb16b8cb6260c729216c89a4bd11e123f71d10a55f6a9435cbabd1803f53f0"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.71.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.71.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 32872,
+      "sha256": "4e6682de35eaa502ec8dc9cd6f09b5a4c6b09a87727c17e471c1019334218ede"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.72.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.72.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 26192,
+      "sha256": "37ffcc0885b87c845cbcc4b043a1071746dc884d12232809152d23a9ee9a67a6"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.73.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.73.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 29532,
+      "sha256": "6f5bddc16550b9e87255446b99c2f2fd7b708dc6bc900d93f0a7396a3c3c6a0f"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.74.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.74.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 36800,
+      "sha256": "957780bf91336c90784a4dd149ec7ac555037d191e48a21f4c85aa28d52fe2d9"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.75.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.75.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 32460,
+      "sha256": "6d8061a8ec57032f2520843f435debe397cc696cf22e71a1b8f96e9a4a10cda3"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.76.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.76.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 28352,
+      "sha256": "d29bd592e0a0fb88167ab9a159704cce484e2fabaf0b4080b2cfbfb480efb816"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.77.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.77.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 29660,
+      "sha256": "c2d4fa5517bf8d05f62dc3ebea0dfb36aa69a036efada6ea09216e510a01ea61"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.78.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.78.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 28264,
+      "sha256": "2609cc637c43785902e84e9ec90631db27df8054f793fa9f67299501d8faef89"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.79.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.79.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 34508,
+      "sha256": "f6eeaf8124822e1fb0033b4b54a069ddd1f049a474412dc22e3dc3ddff17ee66"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.80.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.80.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 30160,
+      "sha256": "54bbf1105815dd22e4c5bdeca8dfc46110b30e889f68affab725778899741c2d"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.81.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.81.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 26644,
+      "sha256": "9549b0cc0a2658a5aa7eef36b2b514c5bef9317c707d934439af91edd8b3a8de"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.82.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.82.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 29608,
+      "sha256": "42cb5d5e247d7d7e6cd4b790bcdb06005c19067fe0ddc3aa0e9756f830115555"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.83.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.83.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 23696,
+      "sha256": "2a718ef3990c35f141381eed2f10552e4d08bdbefcce42d195421af33a2e39a1"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.84.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.84.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 32352,
+      "sha256": "481727d5f7655183b789a9205ec77024b32e7a902ebdcde4ead22f2503cbfdb5"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.85.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.85.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 31512,
+      "sha256": "3294ec158eb791069c1f6c1ac0d3939f2e9d10ba2bd24b38e4308a30a35403f7"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.86.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.86.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 28876,
+      "sha256": "e7710f8d970d6e3f0d91a140626cab378e717b0a16e1a03eda93b6c0ab924dac"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.87.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.87.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 25692,
+      "sha256": "6a42deb449afd1169aa29f487a3e56cd6ebc2e98b829a56d34307fe5a06929d7"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.88.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.88.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 27464,
+      "sha256": "cafb4e6d0912c7d3477fa5c1e182dc376918d589ea9f723d84253574c08fe51e"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.89.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.89.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 26456,
+      "sha256": "cced5649330d3726bced3cfb7963ee6c408e98d756b21f8c247e144be044efd7"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.90.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.90.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 23796,
+      "sha256": "fe81442b84cb7275fac38d985c859f3693e51ae019604ccb4a53f20a4d542cc2"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.91.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.91.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 24444,
+      "sha256": "b727abee0b6273603d37417b666846287c3b12286ca751577e3aeba14284e939"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.92.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.92.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 25744,
+      "sha256": "e31aab4ea31f96b034dbac3c55447903dcbf0e31c2dcd71183a007cf36d28239"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.93.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.93.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 20344,
+      "sha256": "20ed9bb60576b142afe753e546b6054ddeac1aa79ee014f0f28c73b6610b21a6"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.94.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.94.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12984,
+      "sha256": "ab7827fd56f23b9734ddcaef806a30ef179613b65681014513cf49b0c4acf024"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.95.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.95.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 18436,
+      "sha256": "41310b5319ffe8a70bd6f8af2c3e59b7cae7ec525afd1e8e91570d085e6f8ecf"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.96.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.96.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 14688,
+      "sha256": "18c4d54ed81885f04e674f8f65b653c8c7ef0f9d89403678e0f56ff92dea71e8"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.97.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.97.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 9796,
+      "sha256": "265932eb51c489f1a20cb9d6c7dd92f8d78af3928c5d9bc4aece40593b9351a0"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.98.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.98.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 8772,
+      "sha256": "9a23014f66f4cebe6c703a113b18507828857cf9600727fb1884de56f9b2d1ca"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.99.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.99.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 8476,
+      "sha256": "87bd6c116059d50b1c437d5e1f5fb0bedeadc6f14433ad34056b8ca4eeea7df4"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.100.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.100.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12692,
+      "sha256": "1c8adb80dbe200924b386a00cab8cebaf6a4d35a5f5c9da0d3cc4a1ebaa4b2d4"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.101.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.101.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 13176,
+      "sha256": "046693017bccb9e5a3cd8cd6c1cdbc5c84520cac9ff558228b1ce2cdd09f3ec2"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.102.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.102.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12368,
+      "sha256": "67684bf627135fceab812367709b9cecf3faebba7d392805155916293a6d8a11"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.103.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.103.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 12320,
+      "sha256": "67ec2308d58d7c88e86edbdd04f8a9e2675f5e78b8623d58f36735894359dc3c"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.104.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.104.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11872,
+      "sha256": "b8906127179911e6c627a3cb08b70fe8131f9920905fa98ec2cf86bdd338cd63"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.105.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.105.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11648,
+      "sha256": "7f537624ee1f0fed28d63ff252c2dc01e0dd74495b2d85bc8a035fc0ba85982d"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.106.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.106.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 10964,
+      "sha256": "f6b16ba15ae1db5a5b6c2b95139fe5b8649eced07e78e959605857ebe317659a"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.107.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.107.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 10640,
+      "sha256": "da467502d3c3413e81fce953cf20ab7b25feea48bb68aaebfd8baa902ae11190"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.108.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.108.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 11140,
+      "sha256": "5c08dd6f7776f1531ea3ecbf99ba6a4963735f9117076b5429f5f3366f18f668"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.109.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.109.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 10428,
+      "sha256": "c8296686ce00640a991161cd5795bb1582cc9131478d53e32f0c347c4615995a"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.110.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.110.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 10228,
+      "sha256": "c20c37050ed4e75394e0ccd090acd2ab97e164627cd708263232f6db591b0d3f"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.111.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.111.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 10424,
+      "sha256": "af2404f6bc6cc0b944571b377c4e0b0f14aa0bf2c17de573d57f5a0c7585f8be"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.112.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.112.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 9800,
+      "sha256": "4e2bc789a875536cf6a76b1e29385e6aa75893702f02fbec65cb17fbe0302606"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.113.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.113.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 9992,
+      "sha256": "33f3a0a6d15e4e999cc95d3f74ddf17714fb949153f8a5c6604bd2b434277272"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.114.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.114.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 9916,
+      "sha256": "f8ca4533677586887fa36a1bf65d4a42c9741125cb023f11ecf6ff0fb8a3dab3"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.115.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.115.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 9772,
+      "sha256": "38d434e702fd7689b285b3969ada4961197e6e749e55bdaf21f2fa36067c13d5"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.116.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.116.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 9796,
+      "sha256": "9e7b2f290d025c52a9d9d83fd1ba08dd03023d3b30bf32fbdda9d9f85c84a7c8"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.117.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.117.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 9004,
+      "sha256": "9c43c5f4ff34f924abbbf21298bbf77590b3bb9b15b846b2e66cb60e73e7e0bc"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.118.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.118.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 8656,
+      "sha256": "8451a5482742e46c0537537539a1c4ed2b6c886b642a74f8e56939f0387980db"
+    },
+    {
+      "file": "AppleSDGothicNeo-SemiBold.subset.119.woff",
+      "sourceFile": "AppleSDGothicNeo-SemiBold.subset.119.woff2",
+      "format": "woff",
+      "weight": 600,
+      "bytes": 6384,
+      "sha256": "44ecd6886e2472f42f4b4190494da9d36d368bee46a564e3ea715f985ee8a95d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.0.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.0.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 17952,
+      "sha256": "9796795ff0f0bda670cee8b24a1084b67795d5951debc5058d3403c2b2e8e625"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.1.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.1.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 30912,
+      "sha256": "458a8397fb56dbb0dc54c8d544c3fd6e219c270e7ed95110eaae3b41d8289380"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.2.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.2.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 20432,
+      "sha256": "5f333d40cc8e8f6b5a01844614401e2501ecca9eb2f7e222b31982b22dafbd46"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.3.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.3.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 16028,
+      "sha256": "d0d705b1003480b4371ada51fe7fa843148a8770597d1db8c95b89d4fc2052bc"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.4.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.4.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13992,
+      "sha256": "b225d9b7818b0833402d06fa708826ac8d8c049df1e1c7219d9e646f2096fa1a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.5.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.5.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13452,
+      "sha256": "354cddf644d5f93c08f9111f9dc1712e3fa9f8762aac6d372abd3b2e241c41d1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.6.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.6.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14172,
+      "sha256": "4af6b77e90cc29fad6101987faba7c138e4866287f524218547bea2318e958ef"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.7.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.7.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14500,
+      "sha256": "5707ad8e1f2a1c79cdba6483f3a072a890b10a74a63e5dfd0ada3170549cf8bb"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.8.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.8.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12704,
+      "sha256": "84e82a5f53e36fe5c4eb5178ef5340581caffc3d3c5e5ede797b9ca2b216b12f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.9.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.9.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13160,
+      "sha256": "32b9c495331c8d7dbf5b687bd6fe11b521b1012ebba956c6a055555683fea21a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.10.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.10.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12944,
+      "sha256": "3cbfc1b62e9426951c822072e25057bc5c71c498caa335dabca3a5b35a43c6ee"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.11.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.11.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 11544,
+      "sha256": "89ab5e3ff70ebdc8be819acd47b429aa6c0309ece8f9159ba735350b301df529"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.12.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.12.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13012,
+      "sha256": "e52c8c9a115f8ac6de8d02f880d79d55c75bda1f1abd46a674c5c8b4c24b5662"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.13.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.13.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13492,
+      "sha256": "d81034c15fb7fc88b1ff9801fa9a37f1ea844fd132c6fbfc73a671d1292b844d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.14.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.14.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13044,
+      "sha256": "ecbe1638e376f7993d900a79fef6709b95be52514df56cd33dda1b4a9a5c7880"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.15.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.15.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12632,
+      "sha256": "63275e75f2139c7385269fd047b69a6711991fcbe4a56f949ea0d436ea496959"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.16.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.16.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14472,
+      "sha256": "3b8e37e5cb833fa2cb5420806f65860dae693812738f81142f33b31c85669543"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.17.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.17.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14764,
+      "sha256": "18012b1fc00eda09490c69c943239a0e05ce16feb6bf624c72d3340a9d1d929c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.18.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.18.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12700,
+      "sha256": "dabea1dafb73f6f37e21e18066f0e36ff434919281382ca8e5846f2c7090e697"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.19.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.19.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14668,
+      "sha256": "80837641253c1ea22ad9a40e4b8e1d87945ae0ff99e8179b0dfca6ac9745f3d2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.20.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.20.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 15996,
+      "sha256": "1ed0498666960dffdb6ed7f1eda86cd5914a424e550e685892f93c7337f1adcb"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.21.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.21.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14484,
+      "sha256": "24705ed048fe2b9f320833fb012ca324abe305ac38293fd5e99fd50a3ec94af9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.22.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.22.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13616,
+      "sha256": "74af4fe0aca54f1a4a780a4eb278db8251c2fb85c0839ee6f70fdec5e9cc4840"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.23.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.23.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13868,
+      "sha256": "4462a3697e46b5255ca980c75150ba164fdae7132f4cfb5931e0d2df094f6eda"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.24.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.24.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 15176,
+      "sha256": "d90291637ea7ecba866762a786202b5e849f23c6462967fbdbb1683d2582c75e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.25.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.25.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 11632,
+      "sha256": "e2c553cf465887cd6902b6dff8bc026d4e5c95526d0e8f0b07a295daf63155a1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.26.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.26.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 15272,
+      "sha256": "eb3974ef82311699c1dc1be680477f61dd1a2bf55b1970be396235db8d72bdc6"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.27.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.27.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 15464,
+      "sha256": "c2d34fea15360191e5ca87e74312e7dce9018e107bcc1782d7290c18db10775e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.28.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.28.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12764,
+      "sha256": "15bbe87164b1768ee9eea46ae8a8f3dc55c5917442d4eed0f65963187ed53ac5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.29.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.29.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14984,
+      "sha256": "15fbee76fc9e32d800c9d4426545d3de03ebcd77e6fc80529155937fc212c604"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.30.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.30.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 15020,
+      "sha256": "c8e66293b5b5e67d339e9e46666d899f2ecb99b5fb5db3911dd17ed6f3038578"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.31.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.31.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12316,
+      "sha256": "eaf4180954b1e873a1934cb46b02a9e6dccc39273537260fb17fc3af0f445278"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.32.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.32.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13968,
+      "sha256": "761517cd00beccccdf16b4cd43d97411f23975ba9bb13fd427ae64d25542308c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.33.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.33.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 15032,
+      "sha256": "f786688465f80d5172f12b799f1a7ae5c70978798a889b0a5d6239c1e4d61539"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.34.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.34.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12624,
+      "sha256": "e3232782b925e22c82876c6249e28cb138340153d45629cf8fb1d9c1c74c26a4"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.35.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.35.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13292,
+      "sha256": "601de75f13bca122b436ba41a6e406f66775a613e393426eb62dead26be4de57"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.36.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.36.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14480,
+      "sha256": "4c199b32e9cf6bbfa15e0a3ab3b74a7d0e06a9647fd73da4fdb6cd3e0bf533f1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.37.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.37.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14632,
+      "sha256": "97991b76cb427841d23a199621ea85f70b1fc03bee94cba6aa2f6e162f623cf2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.38.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.38.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12092,
+      "sha256": "274ef2a0727eb1844bdc2227ba565a66026f74f6b6c21654d0b5a37bd10110eb"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.39.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.39.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13540,
+      "sha256": "636c60f6e3c9c304465fe5291fd4f28285fb3aac5e15d6fbf9172627eb50b0d4"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.40.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.40.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13880,
+      "sha256": "e2ce4b36d9244d4d80dd04203ebd3f6a2f0b633ca8c702f9d97d80784ef352e2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.41.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.41.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 11684,
+      "sha256": "bab14f0e34a79aa9a85fb9bdf7e931571936e9fd8a87be69801e15d76226915e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.42.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.42.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12924,
+      "sha256": "290ee6d7a2e97106a51857c6f3328db3576be61a9c555c361b7c25471e93a5f0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.43.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.43.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14140,
+      "sha256": "92a6251c1642a4598505a883625fd58a5d904fa88f61eef7283ac50d980f0c52"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.44.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.44.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12244,
+      "sha256": "8c560dc2a2f65c57eb8c4570d766b60f6db415cac5982424610497eb95442a7b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.45.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.45.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12060,
+      "sha256": "455fae90f2048a29c00c38f06f6707baaa1645ec29e309eb4cd6737960916b05"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.46.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.46.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12900,
+      "sha256": "b4f5b89084716031335209bc057c639a47e2f633a249ee16f8a25efe7f402615"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.47.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.47.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13288,
+      "sha256": "51d8993026b131d770ea03a67d81ce155e997c2112ee12a0884482090e900e57"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.48.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.48.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 11692,
+      "sha256": "b61d0a0a882b77834cf5a93cbcab80a15867979198de79b31502709eefe4cc0d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.49.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.49.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13996,
+      "sha256": "49b4360fd4d6542b092a3426ab70aa0c3ce94595c4c0749f4db73c112d3997dd"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.50.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.50.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13072,
+      "sha256": "0c9463b94aa189ab05698fec33889e9cb74f28e5f1ea1b9a5f208ebfed4668c0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.51.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.51.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12136,
+      "sha256": "79cf8bbee2145fe368d4ae39e52b8dedc3dbd8ef4e9e62c299bf53ccab891117"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.52.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.52.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12864,
+      "sha256": "8f8cde689eb7e23fcc539b2540589f9141288123153f9874dd969e4b6c9e4d0b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.53.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.53.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13168,
+      "sha256": "08d467a8051e1470278d32c40f54e456cce3287496602cdedf4c32a40cb74483"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.54.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.54.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12252,
+      "sha256": "1d97c94212f27bc57f833937f11a7f6f88381141ace379e73f48a7fa08e045cb"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.55.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.55.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12728,
+      "sha256": "df98117aa0d33206d61cf89339b727620a58ab9e1a7e2c187ab2b3d383c068c9"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.56.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.56.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13080,
+      "sha256": "b3cf0b5bbb97e555b3e3da97119425c185b67bbfb2c9746d6684363cfdfde5ea"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.57.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.57.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12528,
+      "sha256": "c612409221d7d3d6f570d7dbbd1f04258527bcdddbcc00860ffc9449db6647a7"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.58.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.58.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12220,
+      "sha256": "a147df10b0cd5acf4e425c1914f3c991eaa2800c53e076e463afe44e0c09c2ea"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.59.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.59.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13552,
+      "sha256": "1fa2a075750087de5738334332008005f6643e60c96bdd2ab57cab805ec958d2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.60.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.60.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14828,
+      "sha256": "d572f0be7f9bcda214dd429c84ec73a28cacac594d01bad966301d48d154202b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.61.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.61.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12020,
+      "sha256": "bd873629353dbb70fa907abc863b30844b423799c4dc053e943f734b174b087a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.62.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.62.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13032,
+      "sha256": "73cba8b74bf55170e232ab1586b0e0aea91349766a41fce99ef26349a7b9e5d2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.63.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.63.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13548,
+      "sha256": "522e8ce0e90d57093cd84ac2ca223fa2bda083b47bbfc923320dc8f173b67e25"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.64.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.64.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 11276,
+      "sha256": "ec2e04dd313fadbe7a603fb1af0703aeda1d4ee1db267cb01086a07d192107b0"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.65.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.65.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 38920,
+      "sha256": "42d43efc4455440076dc48da7b5a2de41ddbbc2f4b17a65af2db0d03c18c53c8"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.66.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.66.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 33304,
+      "sha256": "0330380d5d175a4ab292c3fdefa9e665dd93491afde6bf8a783ac3b0a5076485"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.67.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.67.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 32960,
+      "sha256": "213271eeb9dcd0e88da5836f6986dc0217ae86c3b55bc648717a85654c1c3384"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.68.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.68.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 32784,
+      "sha256": "3ce4904c7ffb3af1733c7560bccd7750f9fcb8a92f6f88ed75e5b7573e40ebde"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.69.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.69.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 30012,
+      "sha256": "1b4d85aa94c15666d393482bffe1e3cd0d668c4b44762d5d314456e5c084d0cc"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.70.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.70.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 30072,
+      "sha256": "99149d2e8b491ad103e21977076d29072737c49328d7565835a1390596236972"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.71.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.71.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 33112,
+      "sha256": "b585c58ed1f5c01aa91d4b1eb4651403a0992c18cee32da5e5a338ca8ee12e14"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.72.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.72.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 26408,
+      "sha256": "bbd5e578ce94c6731e33c9a8dbed14cd5d98608ecac5cbc72f04db45bf8e3fbf"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.73.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.73.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 29644,
+      "sha256": "3f35f8f9f6f7fad07c5f590eb38fd1aeb58da12506576881d19d059e67875dc1"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.74.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.74.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 37128,
+      "sha256": "4f083ba8553991bb3d2099b3b1a97478a5e49ba3e0feb1af953ad865b330ef7b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.75.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.75.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 32828,
+      "sha256": "5765f5c6fe6c7dcc0ed1ca4a38fc03b7eb511055adce9e9db1c854c5616495de"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.76.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.76.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 28536,
+      "sha256": "c753a381d8ecd2c929fa25b044e812255ff1d52daab34addc63d434b8326c466"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.77.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.77.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 29788,
+      "sha256": "81d77aa36e25e4911470fceb437221e1bc28091ed9a176de6418571f144fcfbd"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.78.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.78.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 28348,
+      "sha256": "64874a40f152acd7871952a6d8b075765ab890c77e1d917280743a2c61b03b9f"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.79.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.79.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 34820,
+      "sha256": "a16642fe8c1f2e5f66a02c87a35cb8bc770b36c6325c220364c735d851734e57"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.80.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.80.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 30356,
+      "sha256": "4106e8cbc1572a35833f7ee990697bf6f6fbd5939a6b3b05604b7bead38aefbe"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.81.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.81.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 26824,
+      "sha256": "b2cb6d5619f13088398ebc2e60443068e7978b57bf44c731d3a1226a667cbee4"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.82.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.82.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 29812,
+      "sha256": "2345cb685e611fdd96998a80dc8025df3ccec4d7a3cf987bcd2e0f0d0c0b1c05"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.83.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.83.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 23776,
+      "sha256": "96d72afa50012bc2d2c867c2807c052884cd2efaa812d4904650b746557b79a8"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.84.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.84.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 32580,
+      "sha256": "cf14cbf3654bc72cfca7bf06b733461dd8a629cadce078bb71b6fcf47f85498a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.85.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.85.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 31748,
+      "sha256": "fe20b81dbd2f91d682e6636cc8e65334b4eb8911356115875bc034e2b6b0f9eb"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.86.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.86.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 28952,
+      "sha256": "5ca4589124bb28adb07649cbbc2852301ec45a580b513d36438102f90778fcc8"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.87.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.87.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 25780,
+      "sha256": "bc3b71e1b74a5bff525669ed6268bc068accb53aba00fb387400a59356c06c38"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.88.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.88.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 27540,
+      "sha256": "ef25658a35ee5366c85fc53f55407558029e15f225251e5d49516edfefca77b7"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.89.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.89.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 26456,
+      "sha256": "b5860e2e16f2280ab7036e3808b810eaf7c8a6e785c10a96a623fbee9e278837"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.90.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.90.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 23836,
+      "sha256": "d3c0cbf0979d3bb7f6b6e9c00b2c22e5aa424d87bc648a83b1922b106057445a"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.91.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.91.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 24604,
+      "sha256": "aaba368311f3c69b1f935628c5bfe33b73c8d8246069449538521f6a06907838"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.92.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.92.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 25772,
+      "sha256": "c9c1194c8fc91a42655d0e59474ffcc098ff038c47e7583967b0e880d395387d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.93.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.93.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 20804,
+      "sha256": "e64407c49617616b018fac463244ffc06ee9b4c463f185d02d15a07896f2b378"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.94.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.94.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12928,
+      "sha256": "eb4e3f834d5b50641189ab9f596133e5bc4239b87825e0dbce1f66660712ce3d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.95.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.95.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 18556,
+      "sha256": "0508ed07d2ffec014b9db301f2751077c142e011cfdc2407cc43671918866c7e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.96.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.96.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 14784,
+      "sha256": "a6946a668115257d2b739c30844aa6d32b94d3a967e829994ef8cd7c32ca78ee"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.97.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.97.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 9828,
+      "sha256": "3d4626de77756bf74849f9eadfb364a77e17fb8cd2d7e5464958fc6c9ed0e18e"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.98.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.98.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 9204,
+      "sha256": "c3817f27367092006901d03ec316e9e8565b8a3fe5a88ac784f688ac6fcf702d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.99.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.99.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 8656,
+      "sha256": "9fc47ee555e32da8ca213e48147e28445951a8fe33912f0de5c4c9ea54f22f25"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.100.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.100.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12828,
+      "sha256": "d1223bbb8d2ce780f97d0b764b5b6f351ec02dbbc3c5c416a2b78f3432faa0d2"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.101.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.101.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 13400,
+      "sha256": "0e21085acb75fe7bf248ee2d48254e400d66cc458d1ef9c72de6fb7ee8c84cba"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.102.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.102.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12588,
+      "sha256": "8f53e88f57deb360ff15ad48b71cd738227dd32dbc39ae359eea429408941d87"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.103.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.103.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12408,
+      "sha256": "a2a3b200a4ee3a560e5862c9d6613513fa6f72e791027824c4ba1e04351e8c69"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.104.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.104.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 12048,
+      "sha256": "f22934fa4f502e09e26225560d90cbc8cfcbcf8f6c86a65d5695fabeaa7aaabc"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.105.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.105.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 11832,
+      "sha256": "8381ff1be3ab63912bbb7a3551cc39a1344e45b95ac2c2362de56a4cf385d39c"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.106.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.106.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 11140,
+      "sha256": "b0bf8e10303200730e22b4f5e4ea25d3a2fd7047aa904d70895cbeede4a18dda"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.107.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.107.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 10928,
+      "sha256": "a18239eebdf2037dd4eae9d0dae4c0a7c7634dfacd1d3d889bad465406d79884"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.108.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.108.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 11392,
+      "sha256": "dcdd7d9fed8562ba32547892e34a28e31bf98d36679baa3b4a06d17e2c1c5f99"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.109.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.109.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 10712,
+      "sha256": "13a849d785f7d3d9e73bef5b14ed011fad8eb98a5a7cd377fa693819d322cd0d"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.110.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.110.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 10464,
+      "sha256": "79a89eb17b338e983931100a590d372514e1f76be8d075666ae0503b083a2702"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.111.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.111.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 10756,
+      "sha256": "a367fa29b2e2ab6004bb520f7da16d7275b26ea5b7b2c7f4ad36cb391cefe60b"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.112.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.112.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 9996,
+      "sha256": "1d4ec26d2d679a9462fa2c02658f3ca2a60430d7eff348d2e4937d5de29b1cb5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.113.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.113.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 10136,
+      "sha256": "70095bb701babb97b8c9507a90e5a1f55f68da44750627f970232cc3ed7332be"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.114.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.114.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 10180,
+      "sha256": "7a719fc83ff9ef83ddfd1a628dd95abb3de399a57b503ecbeac50e485bcfcda5"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.115.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.115.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 10052,
+      "sha256": "02aa143506c9aa70cfaccac9ba838ab1743dd49a238505c6a98e401564e62c65"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.116.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.116.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 9988,
+      "sha256": "c92ac16a1b5b1bef21ae5ca529fab0f415eafd6fb39b08ded94ac18d5ae96637"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.117.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.117.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 9124,
+      "sha256": "940c35d5f42323766fb1af5c004361c6412f3b4675eb2445f42869d3afbed826"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.118.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.118.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 8812,
+      "sha256": "ee91876df1fb3c04035e63ea28f12e7af4087456ef23cf3e0d8c14d6c8feee64"
+    },
+    {
+      "file": "AppleSDGothicNeo-Bold.subset.119.woff",
+      "sourceFile": "AppleSDGothicNeo-Bold.subset.119.woff2",
+      "format": "woff",
+      "weight": 700,
+      "bytes": 6464,
+      "sha256": "47b8754228b163fb61f142002cfec0b6dc7bc81d857501a135a720518d3f1897"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.0.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.0.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 18136,
+      "sha256": "1ad52d83b8fdd7fa582523a8cadfe1b6d07280fb1adcd8b77aa16d4ef9b195cc"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.1.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.1.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 31096,
+      "sha256": "5521e70aaa05d06ff957c59f1cb629eb8d71b212d1837a88ffafd1cbec7e9ff3"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.2.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.2.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 20432,
+      "sha256": "69c90a4b3d11e09cb6a475925e37024600c3af3d231e4fdbb6f3e9448290d80e"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.3.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.3.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 15360,
+      "sha256": "8cab14c2b70191fcf5ddbbce237365407bd975e35dc5c0989da4935418cbe4fc"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.4.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.4.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13792,
+      "sha256": "0b36ded60d46eb54e7e5a1a2217e72abd566dfbc77eaa813daef6de0d1fc1835"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.5.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.5.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12308,
+      "sha256": "2b74cd3580e61d0c42563f2c62f183da13e8c72fb8316690a8df083660c759c8"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.6.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.6.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13644,
+      "sha256": "f95ca65eb089ff9aa8aaa5f8fa4b5e7ced403cf0c891579fde0a15ed6fabdcdb"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.7.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.7.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13396,
+      "sha256": "328b32e4a0af4f08b4b25a9e3ba17091b20fd8c9112c63a96c61122f16d9ce33"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.8.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.8.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11756,
+      "sha256": "ada79074baeac31f510f7ef8372f19d61bc2869ac6e1249e1041acf6c308c9a1"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.9.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.9.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13160,
+      "sha256": "235396e2d96b4384c9be562c7521746545547d2ddc1989afc6cc0792f763c7d9"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.10.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.10.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11708,
+      "sha256": "e18b868e1ae5b0176792de4603c8605965aa7250c91a25d7d52d845a6f812263"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.11.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.11.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11032,
+      "sha256": "6a238aa8f8e5214ccd58b8c8a5b81a56633eb425381fa73e97ab94dffb13db7b"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.12.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.12.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12800,
+      "sha256": "a603c73cd20ec84081bd0712c609527c94a4fa6c050dbf900997159d07cb1831"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.13.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.13.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13376,
+      "sha256": "dd589abc12676aa7a3e3c0543d2cbd78409cb36227a9b0a476985ccb09c56da8"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.14.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.14.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12568,
+      "sha256": "0c00cdaa4731035f2bdc045f819c6a03ecabbf00cf683d8f1e004c0e25781b53"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.15.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.15.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12076,
+      "sha256": "4af431376b82f49600ebc349b0e68db8ee4f82798e7fed2666664a8d7c82b673"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.16.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.16.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14116,
+      "sha256": "ffc4e45dc73a368bf4adf89b2b006e97ba376fd49b5e2e101ce1be515c854cf2"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.17.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.17.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13708,
+      "sha256": "13bb7d3396e57dbddaf1e24ceac77ec86762968cecc3740e6c51cc4b5ffda2a7"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.18.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.18.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12264,
+      "sha256": "3212f831ddc8cd7252a0b8822ec65d1f19485c95b75c4898acd2936af0651a51"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.19.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.19.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14428,
+      "sha256": "81a38d87ff619c4f69f4834e384c859e38f7dbe71e7c342bf2e14d6085c391a9"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.20.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.20.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14696,
+      "sha256": "fd60c19a1bf781570b2faeee51996171a76d9d58036e033d4b0f1a5c756872a0"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.21.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.21.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13848,
+      "sha256": "dd7255829a864860ba541f0fa7c381d0db71a5cd69e41475eabf36e3addfa0ef"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.22.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.22.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12948,
+      "sha256": "24453f91a95f59d9d0ba1400acfb46c535318ec7859c780f710f0ff951202725"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.23.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.23.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13572,
+      "sha256": "a9530322c88d443b4fc427568467ccb5686fcfaa3a4b09d7e623d5c045622568"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.24.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.24.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14584,
+      "sha256": "7372a3f1b98c3e566c1dc0d25cebf0fb054f66f52e4284c26aacb09230c04208"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.25.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.25.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11776,
+      "sha256": "2015066a1c0b0c474174caa66733eaefab8181aa4a8cc7148e833a142ad19bdf"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.26.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.26.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14968,
+      "sha256": "8d21f6ecea7d423d728e24a8b93901a3c2f2a7c5a6c0819ac8c72c783239dda8"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.27.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.27.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14760,
+      "sha256": "f1db7498e165a7215d14308ca8853f654e011005b499cc1c37afbee380c7e7d0"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.28.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.28.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12984,
+      "sha256": "eda4f55dbf81a9fd05a009177966cf82df5c031bdcd1ffdf032414e05093c5e4"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.29.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.29.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14508,
+      "sha256": "38b6eece00059a4baf44a93d0ec01f266b676779a641beafc0d0459bb3984fdd"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.30.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.30.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13260,
+      "sha256": "f0ca3a3233280aa32918eb7c08bd5968f9f8eb58f92b82fa077ac0a1cb925973"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.31.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.31.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11868,
+      "sha256": "f782120c0944d5f33fefa7133978e0efae0771ff79be04abe77ceb0fb35602a3"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.32.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.32.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13892,
+      "sha256": "b305f312e0cbc808aaf41c7176bcb93030043f49df81b0a70c610e168a9f5e3e"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.33.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.33.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14216,
+      "sha256": "012478a7a7d52fd698f493371092b2ab6b135599e2955025b25b667ed6167697"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.34.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.34.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12312,
+      "sha256": "eebad5421de76ad7ccb346693e6e5f6ee3bc7387d9ed854a135de00e0eec34d0"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.35.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.35.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12660,
+      "sha256": "ab4d7507b9b76267d280fb3051d8c9f52bf5ae85d432036b24dcd5760d417f1d"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.36.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.36.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13388,
+      "sha256": "a76a709a68a6e7a04717616b5cc6d9401bee70ee9dc52404b9d006eba2aee9bc"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.37.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.37.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13456,
+      "sha256": "a87d65b4b090722240694b6f7e4d641b06bf47898cbf5fbebad6c5337d16abc8"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.38.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.38.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11684,
+      "sha256": "d6b5b99fc46e3a192e53ed7651ffe616a5d386d59de0e2031b47f8c9ab55b66b"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.39.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.39.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13248,
+      "sha256": "59cea929e76fbdbae02404e1ad1113d8e762073bf7a81e31ef81362fa8ea5469"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.40.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.40.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12648,
+      "sha256": "da1e0cff4fd5d486d7f35b85a8c0e52ae31bafa62672a47f188d7674e3429011"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.41.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.41.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10888,
+      "sha256": "8df0befc1fef78f8bb4c2d0e962e99e042b2a3f774c67efe87a8fca4bf7f438c"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.42.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.42.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12852,
+      "sha256": "1b05f5000df37049bf152f01f5d9730b7c04349204cc382c1ed3da80ad333300"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.43.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.43.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13240,
+      "sha256": "0db6d9dbe1bd8f45d85c7b066235aa7237ae0196e8565d9b8fafc634a0e4b831"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.44.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.44.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11860,
+      "sha256": "14d8529063cc33ff828c4f66679712b4eabc94161b6e503163e8766e6ab169a0"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.45.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.45.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11628,
+      "sha256": "d2cd861c606bbcfa2f4b9894ddd6ad9fe33ee49fe70421fc633a7076421c50f3"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.46.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.46.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12796,
+      "sha256": "079b784d16f8872edc3d3181d27e8ff3c00e6c7a6f0ed851c4a236fdbb14cbe1"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.47.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.47.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12060,
+      "sha256": "24287bdc277fe064f85d5f14af07a538c93d14e224d22968722062876485f4e4"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.48.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.48.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11964,
+      "sha256": "7a63f22d7650b5eaf271b258d8a907fa7f493406f9ea2681c3079b8e4cff2062"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.49.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.49.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13676,
+      "sha256": "f0f9466a9cc20ff6a0baec3f0c2d68652732404aab6ad39616ff9bb132c8bcec"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.50.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.50.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11648,
+      "sha256": "d6d1ef40c65bba0b13187d2c50a908d05a1a904be385a01bf2b73c94461114eb"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.51.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.51.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11664,
+      "sha256": "e73c5e8778a9124667c7bf96bdeff7cd64bcc0459726bab9d44ef04b2b6e3396"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.52.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.52.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13040,
+      "sha256": "0ec058af55a06557756d3fd36dd2ecf793537da70c3e508f534079f8ed46fbc9"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.53.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.53.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12316,
+      "sha256": "e474a555e2edadda90be940518af59647f6a46bdb2e8679d6d8d820805592a14"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.54.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.54.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11808,
+      "sha256": "d3bf6e03a5e2f782ab51366085be9e5a02879f6d9fbfcdcbcb877d625462626a"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.55.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.55.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12436,
+      "sha256": "c1b414b1eca9758c8737a44429735b67b8a84fbe647f023fa21500f16d74b1fb"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.56.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.56.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12660,
+      "sha256": "e832aaa561d8f609be5f4a8bb6bd5373fc22c47c9d643ebd13c129a69ee4419a"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.57.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.57.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12056,
+      "sha256": "523b6f7292ae0a03f8facc7db8d7ec4ff05ded04f6a0a7cdbb47919a057531b7"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.58.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.58.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12156,
+      "sha256": "c5910bd8725e27a0278a1c6b10abc6c1899f68555d644a4b466817fb6952ab15"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.59.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.59.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13484,
+      "sha256": "3ee474c7c181b8a28a9f001f3dd75fc4c186670cc32ec54248fe8e9eae35c146"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.60.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.60.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14096,
+      "sha256": "9a8febf3fc168cb5ed3002de56d6ff2fe1c037c2f41c68365268cad91076710d"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.61.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.61.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11844,
+      "sha256": "c3ea17486cb78e344b8d3d6aa9480cc36d776a6ee9fdd448590820128be29184"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.62.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.62.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13420,
+      "sha256": "466e9af10f5a8bb93b60ef5b58201b4d814594e8d0a7b3c551e68f0ed22db32d"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.63.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.63.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13108,
+      "sha256": "78094463473400b20895a5913ea52c842958395e6d0e6067eb61b2e27b5579ca"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.64.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.64.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10868,
+      "sha256": "699d62662ca85a6985e6c447ea938f0bc15e32a000ad369f77178333aa5951b1"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.65.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.65.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 39204,
+      "sha256": "544df29038e805c26270f9a1223623e587f95b4e04892de686d8e9a1032e7f4c"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.66.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.66.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 33656,
+      "sha256": "6a82b7318a123ff34b2da5eddefa1f0f5e0bd3ecd0bccdc43432c11d69f7e716"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.67.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.67.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 33332,
+      "sha256": "a79360eaa921dc4dd9216d3442410dbad22e2adba0c2f59c002b2051586dc54e"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.68.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.68.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 32872,
+      "sha256": "b9e27ffc1283d0175adda5dca57f939f8eaa73daf6847a75fa8e72d94cb38c24"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.69.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.69.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 30008,
+      "sha256": "e1459824403a454989f0c7938edbfc815c031c202fbe9a88aa46e8c7806d18ad"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.70.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.70.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 30300,
+      "sha256": "00f1e1004c85edf954bd664370b75cdfbdd0039da575988495cff178be0c9637"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.71.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.71.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 33116,
+      "sha256": "26ff3ac4be489b1457da1bc807b3aba3b38cb3f9217f95a22a45e3bb96225af8"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.72.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.72.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 26440,
+      "sha256": "148f505c7ba9cb1194cdafe93c15124be226e976e0d14d55bcd9e09ff79b6c78"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.73.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.73.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 29924,
+      "sha256": "ef258467c76bfd21a5f2b4b1080d62c01295ba4e79a59dc1d4f7a2c7e152a934"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.74.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.74.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 37372,
+      "sha256": "d0a1b43a90babc656d170b4d3cb12c5e35620c49c7749f8e12473d8c032c823b"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.75.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.75.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 32948,
+      "sha256": "55ada0575bc36bf2298ffc6d18920091662dcd0c49b225732faeee803c827617"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.76.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.76.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 28572,
+      "sha256": "0d729b3ee5ae4b7ce77964f57f742e9fb01b198961e8fcaa9a7c1f56f294de16"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.77.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.77.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 29880,
+      "sha256": "33bfd23447890ec51ab19882d0c9b9aafb7bf9a3edba254d27b2aae953bbdea4"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.78.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.78.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 28588,
+      "sha256": "53d4d90f15788e26a5166804aaa3ab8e3935b6012d7ddb2321fef3823aa8878b"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.79.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.79.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 35080,
+      "sha256": "780aa5b0254aff7054803edc18c9c45182cf43224aaac23de06bf64c56675ff1"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.80.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.80.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 30732,
+      "sha256": "e276a0093d4784a41293235e3462e703d7b478080d3778a3a748a5ae50e3192c"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.81.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.81.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 27040,
+      "sha256": "a9ba1c47d33e1c173fc37a2c709f0d5c7f3ba74e7f1cc2e4fff3f14ec60a94a8"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.82.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.82.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 30072,
+      "sha256": "893f5492507bbccfca6903c521c13e8fa507868e8983af9a11f199d2fa4022f3"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.83.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.83.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 23876,
+      "sha256": "b89e585201aba8440aa966b6cd60ca56c792b55ff25db50d3b5dad8ba30fe9fc"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.84.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.84.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 32656,
+      "sha256": "f78d7569d2c60ce774a0042db621b29ebdc125f7072171a3b760389b60ac6485"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.85.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.85.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 31824,
+      "sha256": "aa5ab28e3d2c97ef6f9639c614cb86f178a62638741b2a6888587a4ae563d98c"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.86.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.86.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 29204,
+      "sha256": "d123fd915a82257421c6eeacf31e127442dd61ce4391e430ed2e52020dc109b2"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.87.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.87.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 25824,
+      "sha256": "dcef6e1b019662ea95896df56e7d52244b0ee81329f0be0c1ec451a384151a60"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.88.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.88.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 27508,
+      "sha256": "49d683237ab70c0b79116503d8183eb587733662d9cc79981f264249d387213b"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.89.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.89.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 26492,
+      "sha256": "4597dff43b6ff936e31652118145ce2aa7866ce804abdc66c0f6fb8533a407a0"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.90.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.90.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 23904,
+      "sha256": "519ef9fde9e0ca935745b0f0eea2e7b3cb50476bd368450df7ab11fba50bda28"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.91.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.91.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 24724,
+      "sha256": "a71a57e7b54494947aab19bb798fb185276640df0c420388884ad00346976b38"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.92.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.92.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 25836,
+      "sha256": "530bbc1c1b645d2d1a94f9462f47e50cab8d55204131203c9a21d4796a8448fa"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.93.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.93.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 21496,
+      "sha256": "fdc6445ac321975137fd58abf7de7a2a452439ccd9432f5bf820986f5fde5668"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.94.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.94.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13232,
+      "sha256": "55f1464482b77a0e202c9e484ff26bfe1a4aa86adfece2f16da9eda9c00ae3af"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.95.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.95.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 18944,
+      "sha256": "461867aec0125de990a9766811825acb61b6c12544d5303f09025899952fde1d"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.96.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.96.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 14776,
+      "sha256": "075e1f5fbcbc2c26ca0a2938af3bafe49232d48fd4b8ddbffa70222ed23695d3"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.97.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.97.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 9928,
+      "sha256": "d73f69b2e032cc2f54a6ac4350041a1d2c593516c9e2aa4d8224faef9146c7cc"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.98.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.98.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 9332,
+      "sha256": "ce71034fc3b1cfa6c781f165f462b010cf175a4ecb32f5c655ac91681fcddded"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.99.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.99.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 8692,
+      "sha256": "036cd8bf037b14f23f1e05ed8b6ed176047ba4d436422dc71384bac4c40377de"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.100.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.100.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12964,
+      "sha256": "43d08b5b7044fc62bec7cbb8eed00a5becbdd188670a883b8e226dd089f000a5"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.101.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.101.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 13492,
+      "sha256": "cf4eb937c97fea45f3d0a26c12741e5787eb8d4c8ab282d14df4ae6c040f8218"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.102.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.102.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12616,
+      "sha256": "e388a5ccce8d10e5177716f6da51b39a1ba291ec781990194aa49268993a7c5d"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.103.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.103.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12572,
+      "sha256": "ea708cd5d507ed2e0c75da72ac9d750b16f4eabe293c0649fcf0635295d0122b"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.104.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.104.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12084,
+      "sha256": "7be7299c02f47f216e8f9f786d6554be3009f9da916a662c83cb5b066e141995"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.105.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.105.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 12020,
+      "sha256": "35ccd357aa0db7afcfbc41a62eda26e3c21dba08ba764f87d7403e4661013e92"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.106.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.106.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11396,
+      "sha256": "cce69fd9d985a951ef10bdfcb4c1eaa3aa4465bcfbf6d0f12dcf0dd917751306"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.107.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.107.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11156,
+      "sha256": "83ff0568076f3221f2a49046b67fa22b38eef56c37cd2891975ad85dc5e0d2e7"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.108.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.108.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 11516,
+      "sha256": "4d04417dd167dcdacafe5c1eb7761b6bf21d2b6626c24d54d80488cb599ca3dd"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.109.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.109.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10876,
+      "sha256": "6a9802f3a742af7e24749b2f119afc43483102ca7f60eb603bf435b5f3952250"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.110.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.110.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10676,
+      "sha256": "c70362dad388c5479ba8138d8d61a7a419702b41d84ee050a5ca64b75c51ebde"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.111.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.111.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10936,
+      "sha256": "4364d99d489c05c2bc9f180b9c9efad253d40b8ece115568b1cac089c3856c45"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.112.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.112.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10248,
+      "sha256": "3d03483065ef00c151f9defe0fe8a0a446cce54a1f51e8ee289fac332c1dc6bb"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.113.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.113.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10408,
+      "sha256": "7cb73a5b67bbf534e81c8615ce23bdac3ab29db45cbb89a5c757501beadad0d2"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.114.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.114.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10344,
+      "sha256": "d7fe02366aaa8024095f949b0a941a756d451c1a77544e13b4cd605fb9c8b503"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.115.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.115.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10328,
+      "sha256": "e0934bbbf9e199702529229a3986bdc24527831931c0d36b7c4fb4e43a4fb234"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.116.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.116.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 10168,
+      "sha256": "06a6f2d5685e11d446e7f4ea7d01c75a6dd6f5312e0124d0f5f5b01b0a756673"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.117.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.117.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 9304,
+      "sha256": "c8753d34e110cd0a8447f15ac55667d513ea2539037c4a54e0e2a97e33e7f6b7"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.118.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.118.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 8944,
+      "sha256": "383484b096302438afa133332e9f70d79b2a52892981598414d2299fdb596f62"
+    },
+    {
+      "file": "AppleSDGothicNeo-ExtraBold.subset.119.woff",
+      "sourceFile": "AppleSDGothicNeo-ExtraBold.subset.119.woff2",
+      "format": "woff",
+      "weight": 800,
+      "bytes": 6476,
+      "sha256": "a9e01c2519c9c1be6f0f967ee1ee0f6461ec3b50e1439433b1639290d490d752"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+:root {
+  color-scheme: light;
+  --canvas: #e9ecef;
+  --surface: #e9ecef;
+  --erd-background: #fafbfc;
+  --erd-grid-dot-color: #818894;
+  --erd-grid-gap: 40px;
+  --erd-grid-dot-size: 1.5px;
+  --ink: #202327;
+  --muted: #59616b;
+  --line: #c8cdd4;
+  --accent: #305be7;
+  --success: #256247;
+  --warning: #89571c;
+  --shadow-raised: 8px 8px 20px #cdd1d6, -8px -8px 20px #ffffff;
+  --shadow-control: 4px 4px 9px #ccd1d7, -4px -4px 9px #ffffff;
+  --shadow-inset: inset 3px 3px 7px #cdd2d8, inset -3px -3px 7px #ffffff;
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --font-sans: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-weight-body: 400;
+  --font-weight-medium: 500;
+  --font-weight-label: 600;
+  --font-weight-title: 700;
+  --font-weight-brand: 800;
+  --font-mono: 'SFMono-Regular', Consolas, monospace;
+}
+
+/* Blue foundations shared by source-adapted Untitled UI controls. */
+:root {
+  --ui-brand-50: #eef3ff;
+  --ui-brand-100: #e1e9ff;
+  --ui-brand-200: #c3d2ff;
+  --ui-brand-500: #4775f0;
+  --ui-brand-600: #305be7;
+  --ui-brand-700: #2546c0;
+  --ui-brand-800: #243c98;
+  --ui-focus-ring: #305be775;
+  --ui-danger: #9e3434;
+}

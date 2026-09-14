@@ -1,0 +1,13 @@
+/* Tailwind v4 without preflight: existing document defaults remain authoritative. */
+@layer theme, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@theme inline {
+  --color-brand-50: var(--ui-brand-50);
+  --color-brand-100: var(--ui-brand-100);
+  --color-brand-200: var(--ui-brand-200);
+  --color-brand-500: var(--ui-brand-500);
+  --color-brand-600: var(--accent);
+  --color-brand-700: var(--ui-brand-700);
+  --color-primary: var(--surface);
+}
