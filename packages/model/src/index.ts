@@ -1,5 +1,4 @@
-export type ModelScope = 'both' | 'logical' | 'physical';
-export type ViewMode = ModelScope;
+import type { ModelScope, ViewMode } from './document.js';
 
 export interface ModelIdentity {
   id: string;
@@ -20,3 +19,5 @@ export function canExportPhysical(scope: ModelScope, parentScope: ModelScope = '
   return scope !== 'logical' && parentScope !== 'logical';
 }
 
+export * from './document.js';
+export * from './postgres.js';

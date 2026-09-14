@@ -1,0 +1,338 @@
+export type ModelScope = 'both' | 'logical' | 'physical';
+export type ViewMode = ModelScope;
+export interface CustomProperties {
+  common: Record<string, string>;
+  logical: Record<string, string>;
+  physical: Record<string, string>;
+}
+export interface Table {
+  id: string;
+  domainId: string;
+  scope: ModelScope;
+  logical: { name: string; definition: string };
+  physical: { name: string; schema: string; comment: string };
+  customProperties: CustomProperties;
+}
+export interface Column {
+  id: string;
+  tableId: string;
+  scope: ModelScope;
+  logical: { name: string; definition: string; semanticType: string; required: boolean };
+  physical: {
+    name: string;
+    type: { name: string; length?: number | undefined; precision?: number | undefined; scale?: number | undefined; isArray: boolean };
+    nullable: boolean;
+    defaultExpression: string | null;
+    comment: string;
+  };
+  customProperties: CustomProperties;
+}
+export interface TableKey {
+  id: string;
+  tableId: string;
+  scope: ModelScope;
+  kind: 'primary' | 'unique';
+  name: string;
+  columnIds: string[];
+}
+export type ReferentialAction = 'NO ACTION' | 'RESTRICT' | 'CASCADE' | 'SET NULL' | 'SET DEFAULT';
+export interface TableRelation {
+  id: string;
+  sourceTableId: string;
+  targetTableId: string;
+  scope: ModelScope;
+  logical: { name: string; cardinality: 'one-to-one' | 'one-to-many' | 'many-to-many'; required: boolean };
+  physical: null | {
+    name: string;
+    sourceColumnIds: string[];
+    targetColumnIds: string[];
+    onDelete: ReferentialAction;
+    onUpdate: ReferentialAction;
+  };
+}
+export interface Domain { id: string; name: string; description: string; color?: string | undefined }
+export interface DomainRelation { id: string; sourceDomainId: string; targetDomainId: string; name: string; direction: 'forward' | 'both'; description: string }
+export interface Note { id: string; viewId: string; text: string }
+export interface Position { x: number; y: number }
+export interface NodeLayout extends Position { id: string; objectId: string; viewId: string; width: number; height: number }
+export interface Viewport extends Position { viewId: string; zoom: number }
+export interface DesignDocument {
+  schemaVersion: 1;
+  domains: Domain[];
+  domainRelations: DomainRelation[];
+  notes: Note[];
+  tables?: Table[] | undefined;
+  columns?: Column[] | undefined;
+  keys?: TableKey[] | undefined;
+  tableRelations?: TableRelation[] | undefined;
+  layout: { nodes: NodeLayout[]; viewports: Viewport[] };
+}
+export function createEmptyDocument(): DesignDocument {
+  return { schemaVersion: 1, domains: [], domainRelations: [], notes: [], layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] } };
+}
+function requireObject(found: unknown): asserts found { if (!found) throw new Error('대상을 찾을 수 없습니다.'); }
+function requireView(doc: DesignDocument, viewId: string) { requireObject(viewId === 'overview' || doc.domains.some(d => d.id === viewId)); }
+function requireNewId(doc: DesignDocument, id: string) {
+  if (!id.trim() || id === 'overview' || [...doc.domains, ...doc.notes, ...doc.domainRelations, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? [])].some(o => o.id === id)) throw new Error('객체 ID는 고유해야 합니다.');
+}
+function position(value: Position) {
+  if (!Number.isFinite(value.x) || !Number.isFinite(value.y) || Math.abs(value.x) > 1e7 || Math.abs(value.y) > 1e7) throw new Error('좌표가 유효하지 않습니다.');
+}
+function attachNode(doc: DesignDocument, objectId: string, viewId: string, point: Position, height: number): DesignDocument {
+  position(point);
+  return { ...doc, layout: { ...doc.layout, nodes: [...doc.layout.nodes, { id: `node:${objectId}`, objectId, viewId, ...point, width: 240, height }] } };
+}
+export function addDomain(doc: DesignDocument, domain: Domain, point: Position): DesignDocument {
+  requireNewId(doc, domain.id);
+  return attachNode({ ...doc, domains: [...doc.domains, { ...domain }] }, domain.id, 'overview', point, 140);
+}
+export function updateDomain(doc: DesignDocument, id: string, patch: Partial<Pick<Domain, 'name' | 'description' | 'color'>>): DesignDocument {
+  requireObject(doc.domains.find(d => d.id === id));
+  return { ...doc, domains: doc.domains.map(d => d.id === id ? { ...d, ...patch, id } : d) };
+}
+export function removeDomain(doc: DesignDocument, id: string): DesignDocument {
+  for (const table of doc.tables ?? []) if (table.domainId === id) doc = removeTable(doc, table.id);
+  const removedNotes = new Set(doc.notes.filter(n => n.viewId === id).map(n => n.id));
+  return { ...doc, domains: doc.domains.filter(d => d.id !== id), domainRelations: doc.domainRelations.filter(r => r.sourceDomainId !== id && r.targetDomainId !== id), notes: doc.notes.filter(n => n.viewId !== id), layout: { nodes: doc.layout.nodes.filter(n => n.objectId !== id && n.viewId !== id && !removedNotes.has(n.objectId)), viewports: doc.layout.viewports.filter(v => v.viewId !== id) } };
+}
+export function upsertDomainRelation(doc: DesignDocument, relation: DomainRelation): DesignDocument {
+  requireObject(doc.domains.find(d => d.id === relation.sourceDomainId));
+  requireObject(doc.domains.find(d => d.id === relation.targetDomainId));
+  const exists = doc.domainRelations.some(r => r.id === relation.id);
+  if (!exists) requireNewId(doc, relation.id);
+  return { ...doc, domainRelations: exists ? doc.domainRelations.map(r => r.id === relation.id ? { ...relation } : r) : [...doc.domainRelations, { ...relation }] };
+}
+export function removeDomainRelation(doc: DesignDocument, id: string): DesignDocument {
+  return { ...doc, domainRelations: doc.domainRelations.filter(r => r.id !== id) };
+}
+export function addNote(doc: DesignDocument, note: Note, point: Position): DesignDocument {
+  requireNewId(doc, note.id); requireView(doc, note.viewId);
+  return attachNode({ ...doc, notes: [...doc.notes, { ...note }] }, note.id, note.viewId, point, 160);
+}
+export function updateNote(doc: DesignDocument, id: string, text: string): DesignDocument {
+  requireObject(doc.notes.find(n => n.id === id));
+  return { ...doc, notes: doc.notes.map(n => n.id === id ? { ...n, text } : n) };
+}
+export function removeNote(doc: DesignDocument, id: string): DesignDocument {
+  return { ...doc, notes: doc.notes.filter(n => n.id !== id), layout: { ...doc.layout, nodes: doc.layout.nodes.filter(n => n.objectId !== id) } };
+}
+export function updateNodeLayout(doc: DesignDocument, id: string, patch: Partial<Pick<NodeLayout, 'x' | 'y' | 'width' | 'height'>>): DesignDocument {
+  const node = doc.layout.nodes.find(n => n.id === id); requireObject(node);
+  const next = { ...node, ...patch, id }; position(next);
+  if (![next.width, next.height].every(n => Number.isFinite(n) && n > 0 && n <= 10000)) throw new Error('크기가 유효하지 않습니다.');
+  return { ...doc, layout: { ...doc.layout, nodes: doc.layout.nodes.map(n => n.id === id ? next : n) } };
+}
+export function setViewport(doc: DesignDocument, viewport: Viewport): DesignDocument {
+  requireView(doc, viewport.viewId); position(viewport);
+  if (!Number.isFinite(viewport.zoom) || viewport.zoom < 0.1 || viewport.zoom > 4) throw new Error('확대율이 유효하지 않습니다.');
+  const exists = doc.layout.viewports.some(v => v.viewId === viewport.viewId);
+  return { ...doc, layout: { ...doc.layout, viewports: exists ? doc.layout.viewports.map(v => v.viewId === viewport.viewId ? { ...viewport } : v) : [...doc.layout.viewports, { ...viewport }] } };
+}
+
+export interface DocumentDiagnostic { code: string; objectId: string; message: string }
+/** Incomplete references are persisted as drafts and diagnosed separately. */
+export function diagnoseDocument(doc: DesignDocument): DocumentDiagnostic[] {
+  const diagnostics: DocumentDiagnostic[] = [];
+  const report = (code: string, objectId: string, message: string) => diagnostics.push({ code, objectId, message });
+  const domains = new Set(doc.domains.map(domain => domain.id));
+  const tables = new Map((doc.tables ?? []).map(table => [table.id, table]));
+  const columns = new Map((doc.columns ?? []).map(column => [column.id, column]));
+  const objects = new Map([
+    ...doc.domains.map(domain => [domain.id, 'overview'] as const),
+    ...doc.notes.map(note => [note.id, note.viewId] as const),
+    ...(doc.tables ?? []).map(table => [table.id, table.domainId] as const),
+  ]);
+  const validView = (id: string) => id === 'overview' || domains.has(id);
+  const scopeConflict = (child: ModelScope, parent: ModelScope) => parent !== 'both' && child !== parent;
+  const seen = new Set<string>();
+  for (const object of [...doc.domains, ...doc.notes, ...doc.domainRelations, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? [])]) {
+    if (seen.has(object.id) || !object.id.trim() || object.id === 'overview') report('duplicate-id', object.id, '객체 ID가 비어 있거나 중복되었습니다.');
+    seen.add(object.id);
+  }
+  for (const domain of doc.domains) {
+    if (domain.color !== undefined && !/^#[0-9a-f]{6}$/i.test(domain.color)) report('invalid-domain-color', domain.id, '도메인 색상은 #RRGGBB 형식이어야 합니다.');
+  }
+  for (const relation of doc.domainRelations) {
+    if (!domains.has(relation.sourceDomainId) || !domains.has(relation.targetDomainId)) report('missing-domain', relation.id, '관계의 도메인을 찾을 수 없습니다.');
+  }
+  for (const note of doc.notes) if (!validView(note.viewId)) report('missing-view', note.id, '텍스트의 화면을 찾을 수 없습니다.');
+  const placements = new Set<string>();
+  const nodeIds = new Set<string>();
+  for (const node of doc.layout.nodes) {
+    const pair = JSON.stringify([node.objectId, node.viewId]);
+    const tablePlacement = tables.has(node.objectId) && domains.has(node.viewId);
+    if (!objects.has(node.objectId) || (!tablePlacement && objects.get(node.objectId) !== node.viewId)) report('invalid-layout-target', node.objectId, '배치 대상 또는 화면이 일치하지 않습니다.');
+    if (placements.has(pair) || nodeIds.has(node.id)) report('duplicate-layout', node.objectId, '같은 화면에 객체 배치가 중복되었습니다.');
+    placements.add(pair);
+    nodeIds.add(node.id);
+  }
+  for (const [id, viewId] of objects) {
+    if (!placements.has(JSON.stringify([id, viewId]))) report('missing-layout', id, '객체의 화면 배치가 없습니다.');
+  }
+  for (const viewport of doc.layout.viewports) if (!validView(viewport.viewId)) report('missing-viewport-domain', viewport.viewId, '화면 위치의 도메인을 찾을 수 없습니다.');
+  for (const table of tables.values()) {
+    if (!domains.has(table.domainId)) report('missing-table-domain', table.id, '테이블의 소유 도메인을 찾을 수 없습니다.');
+  }
+  for (const column of columns.values()) {
+    const table = tables.get(column.tableId);
+    if (!table) report('missing-column-table', column.id, '컬럼의 테이블을 찾을 수 없습니다.');
+    else if (scopeConflict(column.scope, table.scope)) report('scope-conflict', column.id, '컬럼의 모델 범위가 테이블 범위를 벗어납니다.');
+  }
+  const primaryTables = new Set<string>();
+  for (const key of doc.keys ?? []) {
+    const table = tables.get(key.tableId);
+    if (!table) report('missing-key-table', key.id, '키의 테이블을 찾을 수 없습니다.');
+    else if (scopeConflict(key.scope, table.scope)) report('scope-conflict', key.id, '키의 모델 범위가 테이블 범위를 벗어납니다.');
+    if (!key.columnIds.length) report('empty-key', key.id, '키에 컬럼을 추가해 주세요.');
+    if (new Set(key.columnIds).size !== key.columnIds.length) report('duplicate-key-column', key.id, '키의 컬럼이 중복되었습니다.');
+    if (key.kind === 'primary') {
+      if (primaryTables.has(key.tableId)) report('multiple-primary-keys', key.id, '테이블에는 기본 키를 하나만 설정할 수 있습니다.');
+      primaryTables.add(key.tableId);
+    }
+    for (const id of key.columnIds) {
+      const column = columns.get(id);
+      if (!column || column.tableId !== key.tableId) report('missing-key-column', key.id, '키의 컬럼이 테이블에 존재하지 않습니다.');
+      else if (scopeConflict(key.scope, column.scope)) report('scope-conflict', key.id, '키의 모델 범위가 컬럼 범위를 벗어납니다.');
+    }
+  }
+  for (const relation of doc.tableRelations ?? []) {
+    const source = tables.get(relation.sourceTableId);
+    const target = tables.get(relation.targetTableId);
+    if (!source || !target) report('missing-relation-table', relation.id, '관계의 테이블을 찾을 수 없습니다.');
+    else if (scopeConflict(relation.scope, source.scope) || scopeConflict(relation.scope, target.scope)) report('scope-conflict', relation.id, '관계의 모델 범위가 연결된 테이블 범위를 벗어납니다.');
+    const physical = relation.physical;
+    if (!physical) continue;
+    if (relation.scope === 'logical') report('logical-relation-fk', relation.id, '논리 전용 관계에는 물리 외래 키를 지정할 수 없습니다.');
+    if (!physical.sourceColumnIds.length || physical.sourceColumnIds.length !== physical.targetColumnIds.length) report('invalid-fk-arity', relation.id, '외래 키 양쪽에 같은 수의 컬럼을 지정해 주세요.');
+    for (const [ids, tableId] of [[physical.sourceColumnIds, relation.sourceTableId], [physical.targetColumnIds, relation.targetTableId]] as const) {
+      if (new Set(ids).size !== ids.length) report('duplicate-fk-column', relation.id, '외래 키 컬럼이 중복되었습니다.');
+      for (const id of ids) {
+        const column = columns.get(id);
+        if (!column || column.tableId !== tableId) report('missing-relation-column', relation.id, '외래 키 컬럼이 연결된 테이블에 존재하지 않습니다.');
+        else if (column.scope === 'logical') report('scope-conflict', relation.id, '외래 키는 물리 모델의 컬럼만 참조할 수 있습니다.');
+      }
+    }
+    const targetKey = (doc.keys ?? []).some(key => key.tableId === relation.targetTableId && key.scope !== 'logical' &&
+      key.columnIds.length === physical.targetColumnIds.length && key.columnIds.every((id, index) => id === physical.targetColumnIds[index]));
+    if (!targetKey) report('missing-reference-key', relation.id, '외래 키의 대상 컬럼에 기본 키 또는 고유 키가 필요합니다.');
+  }
+  return diagnostics;
+}
+
+
+
+/** Each placement points to one shared table identity; references never clone its model. */
+export function addTableReference(doc: DesignDocument, tableId: string, viewId: string, point: Position): DesignDocument {
+  requireObject(doc.tables?.find(table => table.id === tableId));
+  requireObject(doc.domains.find(domain => domain.id === viewId));
+  position(point);
+  if (doc.layout.nodes.some(node => node.objectId === tableId && node.viewId === viewId)) {
+    throw new Error('이 화면에 이미 배치된 테이블입니다.');
+  }
+  return {
+    ...doc,
+    layout: {
+      ...doc.layout,
+      nodes: [...doc.layout.nodes, { id: `node:${tableId}:${viewId}`, objectId: tableId, viewId, x: point.x, y: point.y, width: 320, height: 260 }],
+    },
+  };
+}
+
+export function removeTableReference(doc: DesignDocument, nodeId: string): DesignDocument {
+  const node = doc.layout.nodes.find(item => item.id === nodeId);
+  requireObject(node);
+  const table = doc.tables?.find(item => item.id === node.objectId);
+  requireObject(table);
+  if (table.domainId === node.viewId) throw new Error('소유 화면의 테이블은 테이블 삭제로 제거해 주세요.');
+  return { ...doc, layout: { ...doc.layout, nodes: doc.layout.nodes.filter(item => item.id !== nodeId) } };
+}
+
+export function addTable(doc: DesignDocument, table: Table, point: Position): DesignDocument {
+  requireNewId(doc, table.id);
+  requireObject(doc.domains.find(domain => domain.id === table.domainId));
+  return addTableReference({ ...doc, tables: [...(doc.tables ?? []), cloneModel(table)] }, table.id, table.domainId, point);
+}
+
+export function updateTable(doc: DesignDocument, id: string, patch: Partial<Omit<Table, 'id'>>): DesignDocument {
+  const current = doc.tables?.find(table => table.id === id);
+  requireObject(current);
+  const next = { ...current, ...cloneModel(patch), id };
+  requireObject(doc.domains.find(domain => domain.id === next.domainId));
+  let updated = { ...doc, tables: doc.tables!.map(table => table.id === id ? next : table) };
+  // Moving ownership preserves existing placements and creates a new owning placement if needed.
+  if (!updated.layout.nodes.some(node => node.objectId === id && node.viewId === next.domainId)) {
+    const previous = doc.layout.nodes.find(node => node.objectId === id && node.viewId === current.domainId);
+    updated = addTableReference(updated, id, next.domainId, previous ?? { x: 0, y: 0 }) as typeof updated;
+  }
+  return updated;
+}
+
+export function removeTable(doc: DesignDocument, id: string): DesignDocument {
+  return {
+    ...doc,
+    ...(doc.tables && { tables: doc.tables.filter(table => table.id !== id) }),
+    ...(doc.columns && { columns: doc.columns.filter(column => column.tableId !== id) }),
+    ...(doc.keys && { keys: doc.keys.filter(key => key.tableId !== id) }),
+    ...(doc.tableRelations && { tableRelations: doc.tableRelations.filter(relation => relation.sourceTableId !== id && relation.targetTableId !== id) }),
+    layout: { ...doc.layout, nodes: doc.layout.nodes.filter(node => node.objectId !== id) },
+  };
+}
+
+export function addColumn(doc: DesignDocument, column: Column): DesignDocument {
+  requireNewId(doc, column.id);
+  requireObject(doc.tables?.find(table => table.id === column.tableId));
+  return { ...doc, columns: [...(doc.columns ?? []), cloneModel(column)] };
+}
+
+export function updateColumn(doc: DesignDocument, id: string, patch: Partial<Omit<Column, 'id' | 'tableId'>>): DesignDocument {
+  const column = doc.columns?.find(item => item.id === id);
+  requireObject(column);
+  return { ...doc, columns: doc.columns!.map(item => item.id === id ? { ...item, ...cloneModel(patch), id, tableId: column.tableId } : item) };
+}
+
+export function removeColumn(doc: DesignDocument, id: string): DesignDocument {
+  return {
+    ...doc,
+    ...(doc.columns && { columns: doc.columns.filter(column => column.id !== id) }),
+    ...(doc.keys && { keys: doc.keys.filter(key => !key.columnIds.includes(id)) }),
+    ...(doc.tableRelations && {
+      tableRelations: doc.tableRelations.map(relation => relation.physical &&
+        [...relation.physical.sourceColumnIds, ...relation.physical.targetColumnIds].includes(id)
+        ? { ...relation, physical: null } : relation),
+    }),
+  };
+}
+
+export function upsertKey(doc: DesignDocument, key: TableKey): DesignDocument {
+  requireObject(doc.tables?.find(table => table.id === key.tableId));
+  const exists = doc.keys?.some(item => item.id === key.id);
+  if (!exists) requireNewId(doc, key.id);
+  return { ...doc, keys: exists ? doc.keys!.map(item => item.id === key.id ? cloneModel(key) : item) : [...(doc.keys ?? []), cloneModel(key)] };
+}
+
+export function removeKey(doc: DesignDocument, id: string): DesignDocument {
+  return { ...doc, ...(doc.keys && { keys: doc.keys.filter(key => key.id !== id) }) };
+}
+
+export function upsertTableRelation(doc: DesignDocument, relation: TableRelation): DesignDocument {
+  requireObject(doc.tables?.find(table => table.id === relation.sourceTableId));
+  requireObject(doc.tables?.find(table => table.id === relation.targetTableId));
+  const exists = doc.tableRelations?.some(item => item.id === relation.id);
+  if (!exists) requireNewId(doc, relation.id);
+  return {
+    ...doc,
+    tableRelations: exists
+      ? doc.tableRelations!.map(item => item.id === relation.id ? cloneModel(relation) : item)
+      : [...(doc.tableRelations ?? []), cloneModel(relation)],
+  };
+}
+
+export function removeTableRelation(doc: DesignDocument, id: string): DesignDocument {
+  return { ...doc, ...(doc.tableRelations && { tableRelations: doc.tableRelations.filter(relation => relation.id !== id) }) };
+}
+
+
+/** Document values are JSON data; copy inputs to keep caller mutations out of history. */
+function cloneModel<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
