@@ -357,3 +357,10 @@
 }
 
 .panel-row-main > [data-text] { flex: 1; min-width: 0; width: 100%; justify-content: flex-start; padding: 0; }
+
+/* Native details content interpolates both opening and closing in modern browsers. */
+.panel-section > summary { user-select:none; -webkit-user-select:none; }
+.panel-section::details-content { block-size:0; overflow:hidden; opacity:0; transition:block-size 180ms ease,opacity 180ms ease,content-visibility 180ms; transition-behavior:allow-discrete; }
+.panel-section[open]::details-content { block-size:auto; opacity:1; }
+@supports (interpolate-size:allow-keywords) { .panel-section { interpolate-size:allow-keywords; } }
+@media (prefers-reduced-motion:reduce) { .panel-section::details-content { transition:none; } }

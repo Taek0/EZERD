@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
-import { type DesignDocument, type Table, isVisibleInView, autoLayoutView, removeTableReference, addTable, addTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
+import { type DesignDocument, type Table, upsertCombinedView, removeCombinedView, isVisibleInView, autoLayoutView, removeTableReference, addTable, addTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
+import { tableCardSize } from './table-geometry.js';
+import { exportCanvasPng } from './canvas-export.js';
+import { DomainColorPicker } from './DomainColorPicker.js';
+import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { cardSize, connectedRelations } from './canvas-state.js';
 import { TableNodeContent, TableInspector, TableWorkspaceTools, TableRelationsSvg, ForeignKeyDialog, EnumDialog, emptyMetadata } from './TableEditor.js';
 import { clampLayoutPatch, newId, validViewId, viewportDestination } from './client.js';
-import { Button, ContextMenu, IconButton, Input, Select, TabButton, Textarea } from './components/ui/index.js';
+import { Button, Checkbox, ContextMenu, IconButton, Input, Select, TabButton, Textarea } from './components/ui/index.js';
 import { PanelList, PanelNote, PanelRow, PanelSection } from './panel.js';
 import './domain-workflow.css';
 export type CanvasContext = { viewId: string; selectedObjectId: string | null; position: { x: number; y: number } };
 type Props = {
+  onCreatePin?: (context: CanvasContext) => void;
   onContextChange?: (context: CanvasContext) => void;
   focusTarget?: { viewId: string; objectId: string | null; threadId?: string; x: number; y: number; nonce: number };
   pins?: ReactNode;
@@ -16,7 +21,13 @@ type Props = {
   onChange: (document: DesignDocument) => void;
   readOnly: boolean;
 };
-export function Canvas({ document: doc, onChange, readOnly, onContextChange, focusTarget, pins }: Props) {
+export function Canvas({ document: doc, onChange, readOnly, onContextChange, focusTarget, pins, onCreatePin }: Props) {
+  const confirm = useConfirm();
+  const [viewPickerOpen, setViewPickerOpen] = useState(false);
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [combinedName, setCombinedName] = useState('함께 보기');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const viewMode = 'physical' as const;
   const [inspectorOpen, setInspectorOpen] = useState(() => { try { return localStorage.getItem('ezerd.inspector') !== 'hidden'; } catch { return true; } });
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -51,6 +62,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   const [fkSource, setFkSource] = useState<string | null>(null);
   const [fkTarget, setFkTarget] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ source: string | null; x: number; y: number } | null>(null);
+  const menuPointer = useRef({x:0,y:0});
   const blankPosition = useRef<{viewId:string; x:number; y:number} | null>(null);
   const contextCallback = useRef(onContextChange);
   contextCallback.current = onContextChange;
@@ -63,7 +75,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     [relationName, setRelationName] = useState(''),
     [direction, setDirection] = useState<'forward' | 'both'>('forward'),
     [relationDescription, setRelationDescription] = useState('');
-  const viewId = validViewId(requestedViewId, doc.domains.map(d => d.id));
+  const viewId = validViewId(requestedViewId, [...doc.domains.map(d => d.id), ...(doc.views ?? []).map(v => v.id)]);
   const [localViewports, setLocalViewports] = useState<Record<string, {
     viewId: string;
     x: number;
@@ -87,12 +99,13 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     height: number;
   } | null>(null);
   const viewport = (readOnly ? localViewports[viewId] : undefined) ?? doc.layout.viewports.find(v => v.viewId === viewId) ?? { viewId, x: 40, y: 40, zoom: 1 };
+  const activeCombined = doc.views?.find(v => v.id === viewId);
   const nodes = doc.layout.nodes.filter(n => {
     const table = (doc.tables ?? []).find(t => t.id === n.objectId);
-    return n.viewId === viewId && (!table || isVisibleInView(table.scope,viewMode));
+    return n.viewId === viewId && (!table || (isVisibleInView(table.scope,viewMode) && (!activeCombined || activeCombined.domainIds.includes(table.domainId))));
   }).map(node => {
     const kind = doc.domains.some(d => d.id === node.objectId) ? 'domain' : (doc.tables ?? []).some(t => t.id === node.objectId) ? 'table' : 'note';
-    return {...node, ...cardSize(kind, node.width, node.height)};
+    return {...node, ...(kind === 'table' ? tableCardSize(doc, node.objectId, node.width, node.height) : cardSize(kind, node.width, node.height))};
   });
   const selectedNode = nodes.find(n => n.objectId === selected),
     domain = doc.domains.find(d => d.id === selected),
@@ -114,7 +127,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   }, [viewId, selected, selectedNode?.x, selectedNode?.y, selectedNode?.width, selectedNode?.height]);
   useEffect(() => {
     if (!focusTarget) return;
-    const destinationView = validViewId(focusTarget.viewId, doc.domains.map(d => d.id));
+    const destinationView = validViewId(focusTarget.viewId, [...doc.domains.map(d => d.id), ...(doc.views ?? []).map(v => v.id)]);
     setViewId(destinationView);
     setSelected(destinationView === focusTarget.viewId ? focusTarget.objectId : null);
     const node = doc.layout.nodes.find(n => n.viewId === focusTarget.viewId && n.objectId === focusTarget.objectId);
@@ -123,7 +136,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     if (readOnly) setLocalViewports(value => ({...value, [next.viewId]:next}));
     else change(setViewport(live.current, next));
   }, [focusTarget?.nonce]);
-  const relatedIds = new Set(filterDomain ? [filterDomain, ...connectedRelations(doc.domainRelations, filterDomain).flatMap(r => [r.sourceDomainId, r.targetDomainId])] : doc.domains.map(d => d.id));
+  const relatedIds = new Set(filterDomain ? [filterDomain, ...connectedRelations(doc.domainRelations, filterDomain).flatMap(r => [r.sourceDomainId, r.targetDomainId])] : [...doc.domains.map(d => d.id), ...(doc.views ?? []).map(v => v.id)]);
   const filteredRelations = doc.domainRelations.filter(r => (!filterDomain || r.sourceDomainId === filterDomain || r.targetDomainId === filterDomain) && [r.name, r.description, doc.domains.find(d => d.id === r.sourceDomainId)?.name, doc.domains.find(d => d.id === r.targetDomainId)?.name].join(' ').toLocaleLowerCase().includes(relationSearch.toLocaleLowerCase()));
   useEffect(() => {
     const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') { setConnectSource(null); setConnectPointer(null); setFkSource(null); setFkTarget(null); } };
@@ -137,20 +150,26 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   const activeDomain = doc.domains.find(d => d.id === viewId);
   const query = relationSearch.trim().toLocaleLowerCase();
   const matches = (...values: (string | undefined | null)[]) => !query || values.filter(Boolean).join(' ').toLocaleLowerCase().includes(query);
-  const viewTables = (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode) && doc.layout.nodes.some(n => n.viewId === viewId && n.objectId === t.id));
+  const viewTables = (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode) && nodes.some(n => n.objectId === t.id));
   const otherTables = (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode) && t.domainId !== viewId && !doc.layout.nodes.some(n => n.objectId === t.id && n.viewId === viewId));
-  const viewRelations = (doc.tableRelations ?? []).filter(r => isVisibleInView(r.scope, viewMode) && !!r.physical && (viewTables.some(t => t.id === r.sourceTableId) || viewTables.some(t => t.id === r.targetTableId)));
+  const viewRelations = (doc.tableRelations ?? []).filter(r => isVisibleInView(r.scope, viewMode) && !!r.physical && (viewTables.some(t => t.id === r.sourceTableId) && viewTables.some(t => t.id === r.targetTableId)));
   const tableLabel = (t: Table) => t.physical.name || t.logical.name || '이름 없는 테이블';
   const outlineCount = viewId === 'overview' ? doc.domains.length : viewTables.length;
   const selectionKind = table ? '테이블' : domain ? '도메인' : note ? '텍스트' : '';
   const selectionName = table ? tableLabel(table) : domain ? domain.name : note ? (note.text.slice(0, 40) || '자유 텍스트') : '';
+  function pinAt(clientX: number, clientY: number) {
+    const rect=surface.current?.getBoundingClientRect();
+    onCreatePin?.({viewId,selectedObjectId:null,position:{x:(clientX-(rect?.left ?? 0)-viewport.x)/viewport.zoom,y:(clientY-(rect?.top ?? 0)-viewport.y)/viewport.zoom}});
+    setMenu(null);
+  }
   function arrangeVisibleNodes() {
     const layoutSource = viewId === 'overview' ? doc : {
       ...doc,
       tables: (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode)),
       tableRelations: (doc.tableRelations ?? []).filter(r => isVisibleInView(r.scope, viewMode) && !!r.physical),
     };
-    const arranged = autoLayoutView(layoutSource, viewId);
+    const sized = {...layoutSource,layout:{...layoutSource.layout,nodes:layoutSource.layout.nodes.map(n => nodes.find(visible => visible.id === n.id) ?? n)}};
+    const arranged = autoLayoutView(sized, viewId);
     change({ ...doc, layout: arranged.layout });
   }
   function change(next: DesignDocument) {
@@ -161,7 +180,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     const node = document.layout.nodes.find(n => n.id === id);
     if (node && (patch.width !== undefined || patch.height !== undefined)) {
       const kind = document.domains.some(d => d.id === node.objectId) ? 'domain' : (document.tables ?? []).some(t => t.id === node.objectId) ? 'table' : 'note';
-      patch = {...patch, ...cardSize(kind, patch.width ?? node.width, patch.height ?? node.height)};
+      patch = {...patch, ...(kind === 'table' ? tableCardSize(document, node.objectId, patch.width ?? node.width, patch.height ?? node.height) : cardSize(kind, patch.width ?? node.width, patch.height ?? node.height))};
     }
     return modelUpdateNodeLayout(document, id, clampLayoutPatch(patch));
   }
@@ -195,7 +214,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     pick(id);
   }
   function newTable(name = '') {
-    if (readOnly || viewId === 'overview') return;
+    if (readOnly || viewId === 'overview' || activeCombined) return;
     const id = newId();
     change(addTable(doc, { id, domainId: viewId, scope: 'physical', logical: { name: '새 테이블', definition: '' }, physical: { name, schema: 'public', comment: '' }, customProperties: emptyMetadata() }, position()));
     pick(id);
@@ -265,7 +284,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     e.stopPropagation();
   }
   function move(e: PointerEvent<HTMLDivElement>) {
-    if (connectSource) {
+    if (connectSource || (fkSource && !fkTarget)) {
       const rect = surface.current?.getBoundingClientRect();
       setConnectPointer({x:(e.clientX-(rect?.left ?? 0)-viewport.x)/viewport.zoom,y:(e.clientY-(rect?.top ?? 0)-viewport.y)/viewport.zoom});
     }
@@ -328,7 +347,8 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     <div className="canvas-column" key={viewId}>
       <div className="canvas-toolbar">
         <div className="breadcrumbs">
-          <Button className={viewId === 'overview' ? 'current' : 'domain-map-return'} onClick={() => navigate('overview')}>{viewId === 'overview' ? '도메인 맵' : '← 도메인 맵으로'}</Button>
+          {viewId !== 'overview' && <Button className="domain-map-return" onClick={() => navigate('overview')}>← 도메인 맵으로</Button>}
+          {activeCombined && <strong>{activeCombined.name}</strong>}
           {activeDomain && <>
             <span aria-hidden="true">/</span>
             <strong title={activeDomain.name}>
@@ -339,7 +359,9 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
         <div className="actions">
           {viewId === 'overview'
             ? <Button disabled={readOnly} onClick={() => newDomain()}>＋ 도메인</Button>
-            : <Button disabled={readOnly} onClick={() => newTable()}>＋ 테이블</Button>}
+            : <Button disabled={readOnly || !!activeCombined} onClick={() => newTable()}>＋ 테이블</Button>}
+          <Button onClick={() => {setViewPickerOpen(value => !value); setSelectedDomains(activeCombined?.domainIds ?? (activeDomain ? [activeDomain.id] : []));setCombinedName(activeCombined?.name ?? '함께 보기');}}>도메인 함께 보기</Button>
+          <Button disabled={exporting || !nodes.length} onClick={async () => {const world = surface.current?.querySelector<HTMLElement>('.canvas-world'); if (!world) return; setExporting(true);setExportError('');try {await exportCanvasPng(world, nodes, activeCombined?.name ?? activeCombined?.name ?? activeDomain?.name ?? '도메인 맵');} catch {setExportError('이미지를 만들지 못했습니다. 다시 시도해 주세요.');} finally {setExporting(false);}}}>{exporting ? '이미지 생성 중…' : '고화질 PNG'}</Button>
           <Button disabled={readOnly} onClick={newNote}>＋ 텍스트</Button>
           {viewId !== 'overview' && <Button onClick={() => setEnumOpen(true)}>ENUM</Button>}
           <span className="toolbar-divider" aria-hidden="true" />
@@ -348,18 +370,28 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
           </IconButton>
         </div>
       </div>
+      {exportError && <p role="alert">{exportError}</p>}
+      {viewPickerOpen && <div className="combined-view-picker">
+        <Input aria-label="함께 보기 이름" value={combinedName} onChange={e => setCombinedName(e.target.value)} maxLength={120} />
+        <div className="combined-domain-options">{doc.domains.map(d => <label key={d.id}><Checkbox checked={selectedDomains.includes(d.id)} onChange={e => setSelectedDomains(value => e.target.checked ? [...value,d.id] : value.filter(id => id !== d.id))}/><span style={{color:d.color ?? '#8993a3'}}>●</span>{d.name}</label>)}</div>
+        <div className="actions"><Button disabled={readOnly || !selectedDomains.length || !combinedName.trim()} onClick={() => {const id=activeCombined?.id ?? newId();let next=upsertCombinedView(doc,{id,name:combinedName.trim(),domainIds:selectedDomains});if(!activeCombined){next={...next,layout:{...next.layout,nodes:next.layout.nodes.map(n=>n.viewId===id ? {...n,...tableCardSize(next,n.objectId,n.width,n.height)} : n)}};next=autoLayoutView(next,id);}change(next);navigate(id);setViewPickerOpen(false);}}>함께 보기 저장</Button>
+        {activeCombined && <Button disabled={readOnly} onClick={async () => {if(await confirm({title:'함께 보기 삭제',description:'저장한 보기와 배치를 삭제합니다. 원본 테이블은 유지됩니다.',destructive:true,confirmLabel:'삭제'})){change(removeCombinedView(doc,activeCombined.id));navigate('overview');setViewPickerOpen(false);}}}>보기 삭제</Button>}
+        <Button onClick={() => setViewPickerOpen(false)}>닫기</Button></div>
+        {!!doc.views?.length && <div className="actions">{doc.views.map(v => <Button key={v.id} onClick={() => {navigate(v.id);setViewPickerOpen(false);}}>{v.name}</Button>)}</div>}
+      </div>}
       {viewId === 'overview' && filterDomain && <div className="domain-filter-status" role="status">{doc.domains.find(d => d.id === filterDomain)?.name} 연결 강조 <Button onClick={() => setFilterDomain('')}>강조 해제</Button></div>}
             <div
         ref={surface}
         className={`canvas-surface ${connectSource || fkSource ? 'connection-target-mode' : ''}`}
         onContextMenu={e => {
           if ((e.target as HTMLElement).closest('.canvas-node, .relation, .table-relation-line, .zoom-controls')) return;
-          e.preventDefault(); if (readOnly) return;
+          e.preventDefault(); if (readOnly && !onCreatePin) return;
+          menuPointer.current={x:e.clientX,y:e.clientY};
           const rect = e.currentTarget.getBoundingClientRect();
           blankPosition.current = {viewId, x:(e.clientX-rect.left-viewport.x)/viewport.zoom, y:(e.clientY-rect.top-viewport.y)/viewport.zoom};
           setSelected(null); setMenu({source:null,x:Math.max(8,Math.min(e.clientX,window.innerWidth-290)),y:Math.max(8,Math.min(e.clientY,window.innerHeight-220))});
         }}
-        aria-label={viewId === 'overview' ? '도메인 맵 캔버스' : `${activeDomain?.name} 내부 캔버스`}
+        aria-label={viewId === 'overview' ? '도메인 맵 캔버스' : `${activeCombined?.name ?? activeDomain?.name} 내부 캔버스`}
         onPointerDown={e => begin(e, null)}
         onPointerMove={move}
         onPointerUp={finish}
@@ -419,7 +451,8 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             })}
             {connectSource && connectPointer && (() => { const origin = nodes.find(n => n.objectId === connectSource); return origin ? <path className="domain-connection-preview" d={`M ${origin.x+origin.width/2} ${origin.y+origin.height/2} L ${connectPointer.x} ${connectPointer.y}`} markerEnd="url(#arrow-end)" /> : null; })()}
           </svg>}
-          {viewId !== 'overview' && <svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg document={doc} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg>}
+          {viewId !== 'overview' && <svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg document={activeCombined ? {...doc,layout:{...doc.layout,nodes:doc.layout.nodes.filter(n => n.viewId !== viewId || nodes.some(visible => visible.id === n.id))}} : doc} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg>}
+          {fkSource && !fkTarget && connectPointer && <svg className="relations connection-preview-layer" aria-hidden="true">{(() => {const column=doc.columns?.find(c => c.id===fkSource);const origin=nodes.find(n => n.objectId===column?.tableId);if(!origin)return null;const x=origin.x+origin.width,y=origin.y+origin.height/2,middle=(x+connectPointer.x)/2;return <path className="domain-connection-preview" d={`M ${x} ${y} H ${middle} V ${connectPointer.y} H ${connectPointer.x}`} />;})()}</svg>}
           {nodes.map(node => {
             const d = doc.domains.find(v => v.id === node.objectId),
               n = doc.notes.find(v => v.id === node.objectId);
@@ -429,9 +462,9 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             return <div
               key={node.id}
               className={`canvas-node ${d ? 'domain-node' : t ? 'table-node' : 'note-node'} ${selected === node.objectId ? 'selected' : ''} ${d && filterDomain && !relatedIds.has(d.id) ? 'domain-dimmed' : ''} ${d && connectSource === d.id ? 'connection-source' : ''}`}
-              style={{ left: node.x, top: node.y, ...cardSize(d ? 'domain' : t ? 'table' : 'note', node.width, node.height), ...(d ? {'--domain-color':d.color ?? '#8993a3'} : {}) } as CSSProperties}
+              style={{ left: node.x, top: node.y, ...(t ? tableCardSize(doc,t.id,node.width,node.height) : cardSize(d ? 'domain' : 'note', node.width, node.height)), ...(d ? {'--domain-color':d.color ?? '#8993a3'} : {}) } as CSSProperties}
               onPointerDown={e => begin(e, node.id)}
-              onContextMenu={e => { if (!d || readOnly) return; e.preventDefault(); e.stopPropagation(); e.currentTarget.focus(); setSelected(d.id); setMenu({source:d.id, x:Math.max(8,Math.min(e.clientX, window.innerWidth-290)), y:Math.max(8,Math.min(e.clientY, window.innerHeight-320))}); }}
+              onContextMenu={e => { e.preventDefault(); if (!d || (readOnly && !onCreatePin)) return; menuPointer.current={x:e.clientX,y:e.clientY}; e.stopPropagation(); e.currentTarget.focus(); setSelected(d.id); setMenu({source:d.id, x:Math.max(8,Math.min(e.clientX, window.innerWidth-290)), y:Math.max(8,Math.min(e.clientY, window.innerHeight-320))}); }}
               onDoubleClick={() => d && navigate(d.id)}
               tabIndex={0}
               role="group"
@@ -467,7 +500,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                   onPointerDown={e => e.stopPropagation()}
                   onClick={() => navigate(d.id)}
                   aria-label={`${d.name} 도메인 열기`}>도메인 열기 ↗</Button>
-              </> : t ? <TableNodeContent document={doc} tableId={t.id} viewMode={viewMode} viewId={viewId} onChange={change} readOnly={readOnly} onStartForeignKey={columnId => {setFkSource(columnId); setFkTarget(null); setMenu(null);}} /> : <p className="note-content">
+              </> : t ? <TableNodeContent {...(onCreatePin ? {onCreatePin:(point:{clientX:number;clientY:number}) => pinAt(point.clientX,point.clientY)} : {})} document={doc} tableId={t.id} viewMode={viewMode} viewId={viewId} onChange={change} readOnly={readOnly} onStartForeignKey={columnId => {setFkSource(columnId); setFkTarget(null); setMenu(null);}} /> : <p className="note-content">
                 {n?.text}
               </p>}
               {!readOnly && <div
@@ -495,7 +528,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             onPointerDown={e => e.stopPropagation()}
             onClick={() => newDomain()}>첫 도메인 만들기</Button>}
         </div>}
-        <div className="canvas-hint" role={connectSource || fkSource ? 'status' : undefined}>{connectSource ? '연결할 도메인을 클릭하세요 · Escape 취소' : fkSource ? '참조할 테이블을 클릭하세요 · Escape 취소' : '드래그로 이동 · 우클릭으로 자동 배치'}</div>
+        <div className="canvas-hint" role={connectSource || fkSource ? 'status' : undefined}>{connectSource ? '연결할 도메인을 클릭하세요 · Escape 취소' : fkSource ? 'PK를 받을 테이블을 클릭하세요 · FK 컬럼 자동 추가 · Escape 취소' : '드래그로 이동 · 우클릭으로 자동 배치'}</div>
         <div className="zoom-controls" onPointerDown={e => e.stopPropagation()}>
           <IconButton aria-label="축소" onClick={() => zoom(viewport.zoom - .1)}>−</IconButton>
           <Button onClick={() => zoom(1)} aria-label="배율 100%로 초기화">
@@ -505,14 +538,14 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
       </div>
     </div>
     {fkSource && fkTarget && <ForeignKeyDialog document={doc} sourceColumnId={fkSource} targetTableId={fkTarget} onChange={change} onClose={() => {setFkSource(null);setFkTarget(null);}} />}
-    <ContextMenu position={menu ? {x: menu.x, y: menu.y} : null} label={menu?.source ? '도메인 관계 설정' : '캔버스 메뉴'} onClose={() => setMenu(null)} items={menu ? menu.source ? [
+    <ContextMenu position={menu ? {x: menu.x, y: menu.y} : null} label={menu?.source ? '도메인 관계 설정' : '캔버스 메뉴'} onClose={() => setMenu(null)} items={menu ? [...(onCreatePin ? [{id:'create-pin',label:'이 위치에 핀 남기기',onAction:() => pinAt(menuPointer.current.x,menuPointer.current.y)}] : []), ...(!readOnly ? menu.source ? [
       {id:'panel-relation',label:'새 도메인 관계',onAction:() => startRelation(menu.source!, '')},
       {id:'direct-relation',label:'도메인 직접 연결',disabled:doc.domains.length<2,onAction:() => {setConnectSource(menu.source);setConnectPointer(null);setMenu(null);}},
       {id:'filter',label:'연결된 도메인 강조',onAction:() => {setFilterDomain(menu.source!);setMenu(null);}},
     ] : [
       ...(viewId === 'overview' ? [{id:'new-domain',label:'새 도메인 생성',onAction:() => newDomain('새 도메인', blankPosition.current?.viewId === viewId ? blankPosition.current : undefined)}, {id:'new-relation',label:'새 도메인 관계',onAction:() => startRelation('', '')}] : []),
       {id:'auto-layout',label:'자동 배치',disabled:!nodes.length,onAction:() => {arrangeVisibleNodes();setMenu(null);}},
-    ] : []} />
+    ] : [])] : []} />
     {enumOpen && <EnumDialog document={doc} onChange={change} readOnly={readOnly} onClose={() => setEnumOpen(false)} />}
     <div className="inspector-shell" inert={!inspectorOpen} aria-hidden={!inspectorOpen}>
       <div className="inspector-resizer" role="separator" aria-label="속성 패널 너비 조절" aria-orientation="vertical" aria-valuemin={panelBounds.min} aria-valuemax={panelBounds.max} aria-valuenow={Math.round(panelWidth)} tabIndex={inspectorOpen && !stackedInspector ? 0 : -1}
@@ -538,7 +571,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
         <div className="inspector-topbar">
           <div className="inspector-place">
             <span>{viewId === 'overview' ? 'VIEW' : 'DOMAIN'}</span>
-            <strong title={activeDomain?.name ?? '도메인 맵'}>{activeDomain?.name ?? '도메인 맵'}</strong>
+            <strong title={activeCombined?.name ?? activeDomain?.name ?? '도메인 맵'}>{activeCombined?.name ?? activeDomain?.name ?? '도메인 맵'}</strong>
           </div>
           {selectionName && <div className="inspector-selection">
             <span className="selection-kind">{selectionKind}</span>
@@ -599,7 +632,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                     onSelect={() => pick(r.sourceTableId)} />)}
                 </PanelList>
               </PanelSection>
-              {!readOnly && <PanelSection title="다른 도메인 테이블" count={otherTables.length}>
+              {!readOnly && !activeCombined && <PanelSection title="다른 도메인 테이블" count={otherTables.length}>
                 <PanelNote>선택하면 이 화면에 원본 참조로 추가합니다. 참조 화면에서 편집해도 원본 테이블이 바뀝니다.</PanelNote>
                 <PanelList empty="참조할 수 있는 다른 도메인의 테이블이 없습니다.">
                   {otherTables.filter(t => matches(t.physical.name, t.logical.name)).map(t => <PanelRow key={t.id}
@@ -611,7 +644,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               </PanelSection>}
             </>}
           </> : table ? <>
-            {selectedNode && table.domainId !== viewId && <Button variant="danger" className="danger" disabled={readOnly} onClick={() => {
+            {selectedNode && !activeCombined && table.domainId !== viewId && <Button variant="danger" className="danger" disabled={readOnly} onClick={() => {
               change(removeTableReference(doc, selectedNode.id));
               setSelected(null);
             }}>이 화면의 참조 제거</Button>}
@@ -621,7 +654,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               {domain ? <>
                 <label>도메인 이름<Input value={domain.name} maxLength={120} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, { name: e.target.value }))} /></label>
                 <label>업무 설명<Textarea maxLength={10000} value={domain.description} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, { description: e.target.value }))} /></label>
-                <label className="color-field">도메인 색상<Input type="color" value={domain.color ?? '#8993a3'} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, { color: e.target.value }))} /></label>
+                <DomainColorPicker value={domain.color ?? '#8993a3'} disabled={readOnly} onChange={color => change(updateDomain(doc,domain.id,{color}))} />
                 <div className="panel-actions">
                   <Button onClick={() => navigate(domain.id)}>도메인 열기 →</Button>
                   <Button disabled={readOnly} onClick={() => startRelation(domain.id, '')}>＋ 관계</Button>
@@ -657,8 +690,8 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               </div>
             </PanelSection>
             <div className="panel-danger">
-              <Button variant="danger" className="danger" disabled={readOnly} onClick={() => {
-                if (!window.confirm(domain ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?' : '이 텍스트를 삭제할까요?'))
+              <Button variant="danger" className="danger" disabled={readOnly} onClick={async () => {
+                if (!await confirm({title:domain ? '도메인 삭제' : '텍스트 삭제', description:domain ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?' : '이 텍스트를 삭제할까요?',confirmLabel:'삭제',destructive:true}))
                   return;
                 change(domain ? removeDomain(doc, domain.id) : removeNote(doc, note!.id));
                 setSelected(null);
@@ -714,7 +747,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             <PanelNote>빈 캔버스를 우클릭하면 자동 배치와 생성 명령을 바로 사용할 수 있습니다.</PanelNote>
           </> : <>
             <div className="panel-empty">
-              <strong>{activeDomain?.name ?? '도메인'}</strong>
+              <strong>{activeCombined?.name ?? activeDomain?.name ?? '도메인'}</strong>
               <p>테이블을 선택하면 컬럼·키·관계를 여기에서 편집합니다.</p>
             </div>
             <div className="panel-summary">
@@ -722,9 +755,9 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               <span>관계 <b>{viewRelations.length}</b></span>
               <span>ENUM <b>{(doc.enums ?? []).length}</b></span>
             </div>
-            <PanelSection title="새 테이블 만들기" defaultOpen>
+            {!activeCombined && <PanelSection title="새 테이블 만들기" defaultOpen>
               <TableWorkspaceTools hideViewMode document={doc} viewId={viewId} viewMode={viewMode} onViewModeChange={() => {}} onChange={change} readOnly={readOnly} position={position()} onSelect={pick} />
-            </PanelSection>
+            </PanelSection>}
             <PanelNote>목록 탭에서 테이블을 찾고 다른 도메인의 테이블을 참조로 추가할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.</PanelNote>
           </>}
         </div>
