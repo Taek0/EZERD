@@ -2,7 +2,6 @@ import type { DesignDocument, NodeLayout } from './document.js';
 
 const HORIZONTAL_GAP = 100;
 const VERTICAL_GAP = 64;
-const MARGIN = 64;
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 
 /** Manual, deterministic flow layout; only placements in the requested view change. */
@@ -99,12 +98,12 @@ export function autoLayoutView(document: DesignDocument, viewId: string): Design
   const maximumHeight = Math.max(...heights);
   // Keep notes stationary and leave their occupied vertical area unobstructed.
   const noteIds = new Set(document.notes.filter(note => note.viewId === viewId).map(note => note.id));
-  let originY = MARGIN;
+  let originY = Math.min(...nodes.map(node => node.y));
   for (const node of document.layout.nodes) if (node.viewId === viewId && noteIds.has(node.objectId)) {
     originY = Math.max(originY, node.y + Math.max(110, node.height) + VERTICAL_GAP);
   }
   const positions = new Map<string, Pick<NodeLayout, 'x' | 'y'>>();
-  let x = MARGIN;
+  let x = Math.min(...nodes.map(node => node.x));
   orderedLayers.forEach((layer, layerIndex) => {
     let y = originY + Math.floor((maximumHeight - heights[layerIndex]!) / 2);
     for (const index of layer) {

@@ -58,6 +58,16 @@ describe('manual relationship flow layout', () => {
     noOverlap(after.layout.nodes.map(n => ({ ...n, width: 240, height: 210 })));
     expect(after.layout.nodes.every(n => n.width === 100 && n.height === 140)).toBe(true);
   });
+  it('keeps a panned layout anchored to its previous visible region', () => {
+    const before = fixture(['a', 'b'], [['a', 'b']]);
+    before.layout.nodes = before.layout.nodes.map((n, i) => ({ ...n, x: 5000 + i * 400, y: 3200 + i * 30 }));
+    before.layout.viewports = [{ viewId: 'overview', x: -4980, y: -3180, zoom: 1 }];
+    const after = autoLayoutView(before, 'overview');
+    expect(Math.min(...after.layout.nodes.map(n => n.x))).toBe(5000);
+    expect(Math.min(...after.layout.nodes.map(n => n.y))).toBe(3200);
+    expect(after.layout.viewports).toBe(before.layout.viewports);
+    expect(autoLayoutView(after, 'overview')).toEqual(after);
+  });
   it('returns unchanged empty views and rejects an unknown view', () => {
     const empty = createEmptyDocument();
     expect(autoLayoutView(empty, 'overview')).toBe(empty);
