@@ -65,3 +65,12 @@ Untitled UI color-picker examples informed the layout; their Get the code link
 requires a paid product, so no paid Untitled UI color-picker source was imported.
 See https://www.untitledui.com/react/components/color-pickers and
 https://react-aria.adobe.com/ColorPicker.
+
+## Current product skin
+
+The latest density feedback explicitly requests the EZERD neumorphic/Swiss visual
+concept. The product overrides at the end of untitled.css now intentionally use
+smaller text, softer gray/blue fills and raised/inset shadows. React Aria behavior
+and the adapted source trees remain; rendered styling is no longer claimed to be
+an unchanged Untitled UI appearance. This supersedes the earlier visual-fidelity
+preference while preserving the verified keyboard/form interactions.
