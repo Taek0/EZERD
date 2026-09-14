@@ -1,3 +1,4 @@
+import {chooseSelect,selectTrigger} from './browser-select.mjs';
 // Keep the response promise observed while a UI action is awaiting, so cleanup still runs on timeout.
 function responseWait(target, predicate) { const pending=target.waitForResponse(predicate); pending.catch(()=>{}); return pending; }
 import assert from 'node:assert/strict';
@@ -18,7 +19,7 @@ const button=(name,scope=page)=>scope.getByRole('button',{name,exact:true});
 const click=(name,scope=page)=>button(name,scope).click();
 const field=(name,scope=page)=>scope.getByRole('textbox',{name:new RegExp('^'+name)});
 const fill=(name,value,scope=page)=>field(name,scope).fill(value);
-const select=(name,label,scope=page)=>scope.getByRole('combobox',{name:new RegExp('^'+name)}).selectOption({label});
+const select=(name,label,scope=page)=>chooseSelect(page,scope,name,label);
 const api=async(path,method='GET',data)=>{const response=await fetch('http://127.0.0.1:3001/api'+path,{method,headers:{'content-type':'application/json'},...(data?{body:JSON.stringify(data)}:{})});assert(response.ok,`${method} ${path}: ${response.status}`);return response.json();};
 async function ready(){for(let attempt=0;attempt<30;attempt++){try{const checks=await Promise.all([3001,5173].map(port=>fetch(`http://127.0.0.1:${port}/api/health/ready`)));if(checks.every(r=>r.ok))return;}catch{}await new Promise(resolve=>setTimeout(resolve,500));}throw Error('Local API/Vite readiness failed');}
 async function identify(p,name){await ready();await p.goto('http://127.0.0.1:5173');await fill('함께 사용할 이름',name,p);const res=responseWait(p,r=>r.url().endsWith('/api/users')&&r.request().method()==='POST');await click('워크스페이스 시작하기 →',p);const response=await res;assert.equal(response.status(),201,'user creation response');const user=await response.json();ids.push(user.id);return user;}
@@ -34,18 +35,20 @@ async function makeTable(physical){
 
 try{
  await mkdir('.cache/verification',{recursive:true});const author=await identify(page,username);const recipient=await identify(other,reviewer);
+ const profile=button(username+', 사용자 메뉴');await profile.focus();await page.keyboard.press('Enter');await page.getByRole('menu').waitFor();await page.waitForFunction(()=>document.activeElement?.getAttribute('role')==='menuitem');await page.keyboard.press('Escape');await page.getByRole('menu').waitFor({state:'hidden'});assert(await profile.evaluate(el=>el===document.activeElement),'Dropdown Escape restores focus');
+ await profile.click();await page.getByRole('menuitem',{name:'이름 변경',exact:true}).click();const identity=page.getByRole('region',{name:'이름 변경',exact:true});await fill('함께 사용할 이름',username+' 수정',identity);const renamed=responseWait(page,r=>r.url().endsWith('/api/users/'+author.id)&&r.request().method()==='PATCH');await click('이름 저장',identity);const renamedUser=await(await renamed).json();assert.equal(renamedUser.id,author.id);await button(username+' 수정, 사용자 메뉴').waitFor();
  await fill('새 프로젝트 이름',projectName);const created=responseWait(page,r=>r.url().endsWith('/api/projects')&&r.request().method()==='POST');await click('프로젝트 만들기');const createdProject=await(await created).json();projectId=createdProject.id;
  const ordersDomainId=randomUUID(),paymentsDomainId=randomUUID();let seeded=createEmptyDocument();seeded=addDomain(seeded,{id:ordersDomainId,name:'주문',description:'주문 업무',color:'#e57638'},{x:80,y:80});seeded=addDomain(seeded,{id:paymentsDomainId,name:'결제',description:'결제 업무',color:'#628bd7'},{x:500,y:80});await api(`/projects/${projectId}/document`,'PUT',{expectedVersion:createdProject.version,document:seeded});
  await click('← 갤러리');await click(projectName);await page.getByRole('group',{name:'주문',exact:true}).waitFor();await page.screenshot({path:'.cache/verification/release-domain-map.png',fullPage:true});
  assert.equal(await button('PostgreSQL DDL ↓').count(),0,'DDL 내보내기 UI는 노출되지 않아야 함');
- await click('주문 도메인 열기');assert.equal(await page.getByRole('combobox',{name:/^표시 모드/}).count(),0,'논리/물리 표시 모드는 노출되지 않아야 함');await makeTable('orders');await save();
+ await click('주문 도메인 열기');assert.equal(await selectTrigger(page,/^표시 모드/).count(),0,'논리/물리 표시 모드는 노출되지 않아야 함');await makeTable('orders');await save();
  await click('← 도메인 맵으로');await click('결제 도메인 열기');await makeTable('payments');
  await reference();await button('이 화면의 참조 제거').waitFor();await click('이 화면의 참조 제거');assert.equal(await page.getByRole('group',{name:'orders',exact:true}).count(),0);
  await reference();
  // Place the external reference away from its source table, then edit the local table.
  const external=page.getByRole('group',{name:'orders',exact:true});await external.focus();for(let step=0;step<14;step++)await page.keyboard.press('Shift+ArrowRight');
  await page.getByRole('group',{name:'payments',exact:true}).click({position:{x:25,y:25}});await section('테이블 관계');assert(await button('+ 테이블 관계 추가').isDisabled(),'출발 컬럼 선택 전에는 관계 추가를 시작할 수 없어야 함');await select('FK 출발 컬럼','id');assert(!await button('+ 테이블 관계 추가').isDisabled());await click('+ 테이블 관계 추가');await external.click({position:{x:25,y:25}});
- const relation=page.getByRole('dialog',{name:'FK 컬럼 대응 확인',exact:true});await relation.waitFor();await select('대상 PK / UNIQUE','PK · orders_pk',relation);await fill('FK 제약조건 이름','payments_order_fk',relation);await fill('관계 설명','주문 결제',relation);assert.equal(await relation.getByRole('combobox',{name:'출발 컬럼 1',exact:true}).locator('option:checked').innerText(),'id · integer');await click('대응 확인 후 FK 생성',relation);await relation.waitFor({state:'hidden'});
+ const relation=page.getByRole('dialog',{name:'FK 컬럼 대응 확인',exact:true});await relation.waitFor();await selectTrigger(relation,'대상 PK / UNIQUE').click();await page.getByRole('option',{name:'PK · orders_pk',exact:true}).waitFor();await page.waitForFunction(()=>document.activeElement?.getAttribute('role')==='option');await page.keyboard.press('Escape');await page.getByRole('listbox').waitFor({state:'hidden'});assert(await relation.isVisible(),'First Escape closes only nested Select');await page.keyboard.press('Escape');await relation.waitFor({state:'hidden'});await select('FK 출발 컬럼','id');await click('+ 테이블 관계 추가');await external.click({position:{x:25,y:25}});await relation.waitFor();await select('대상 PK / UNIQUE','PK · orders_pk',relation);await fill('FK 제약조건 이름','payments_order_fk',relation);await fill('관계 설명','주문 결제',relation);assert((await selectTrigger(relation,/^출발 컬럼 1/).innerText()).includes('id · integer'));await click('대응 확인 후 FK 생성',relation);await relation.waitFor({state:'hidden'});
 
  const stored=await save();assert.equal(stored.document.tables.length,2);assert.equal(stored.document.tableRelations.length,1);assert.equal(stored.document.tables.find(t=>t.physical.name==='orders').scope,'physical');assert.equal(await button('PostgreSQL DDL ↓').count(),0);
  await page.screenshot({path:'.cache/verification/release-table-erd.png',fullPage:true});
