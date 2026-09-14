@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
-import { type DesignDocument, isVisibleInView, removeTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport, diagnoseDocument } from '@ezerd/model';
+import { type DesignDocument, isVisibleInView, autoLayoutView, removeTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport, diagnoseDocument } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
-import { cardSize, relationTargets, connectedRelations } from './canvas-state.js';
-import { TableNodeContent, TableInspector, TableWorkspaceTools, TableRelationsSvg } from './TableEditor.js';
+import { cardSize, connectedRelations } from './canvas-state.js';
+import { TableNodeContent, TableInspector, TableWorkspaceTools, TableRelationsSvg, ForeignKeyDialog } from './TableEditor.js';
 import { clampLayoutPatch, newId, validViewId, viewportDestination } from './client.js';
-import { Button, Collapse, ContextMenu, DisclosureButton, IconButton, Input, Select, Textarea } from './components/ui/index.js';
+import { Accordion, Button, Collapse, ContextMenu, DisclosureButton, IconButton, Input, Select, Textarea } from './components/ui/index.js';
+import './domain-workflow.css';
 export type CanvasContext = { viewId: string; selectedObjectId: string | null; position: { x: number; y: number } };
 type Props = {
   onContextChange?: (context: CanvasContext) => void;
@@ -37,8 +38,16 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   const panelWidth = clampInspectorWidth(inspectorWidth, workspaceWidth);
   const panelBounds = inspectorBounds(workspaceWidth);
   const stackedInspector = workspaceWidth < 620;
-  const [relationsOpen, setRelationsOpen] = useState(true);
-  const [menu, setMenu] = useState<{ source: string; x: number; y: number } | null>(null);
+  const [relationsOpen, setRelationsOpen] = useState(false);
+  const [connectedOpen, setConnectedOpen] = useState(true);
+  const [domainName, setDomainName] = useState('');
+  const [filterDomain, setFilterDomain] = useState('');
+  const [relationSearch, setRelationSearch] = useState('');
+  const [connectSource, setConnectSource] = useState<string | null>(null);
+  const [connectPointer, setConnectPointer] = useState<{x:number; y:number} | null>(null);
+  const [fkSource, setFkSource] = useState<string | null>(null);
+  const [fkTarget, setFkTarget] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ source: string | null; x: number; y: number } | null>(null);
   const blankPosition = useRef<{viewId:string; x:number; y:number} | null>(null);
   const contextCallback = useRef(onContextChange);
   contextCallback.current = onContextChange;
@@ -109,6 +118,17 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     if (readOnly) setLocalViewports(value => ({...value, [next.viewId]:next}));
     else change(setViewport(live.current, next));
   }, [focusTarget?.nonce]);
+  const relatedIds = new Set(filterDomain ? [filterDomain, ...connectedRelations(doc.domainRelations, filterDomain).flatMap(r => [r.sourceDomainId, r.targetDomainId])] : doc.domains.map(d => d.id));
+  const filteredRelations = doc.domainRelations.filter(r => (!filterDomain || r.sourceDomainId === filterDomain || r.targetDomainId === filterDomain) && [r.name, r.description, doc.domains.find(d => d.id === r.sourceDomainId)?.name, doc.domains.find(d => d.id === r.targetDomainId)?.name].join(' ').toLocaleLowerCase().includes(relationSearch.toLocaleLowerCase()));
+  useEffect(() => {
+    const cancel = (event: KeyboardEvent) => { if (event.key === 'Escape') { setConnectSource(null); setConnectPointer(null); setFkSource(null); setFkTarget(null); } };
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, []);
+  useEffect(() => {
+    if (filterDomain && !doc.domains.some(d => d.id === filterDomain)) setFilterDomain('');
+    if (connectSource && !doc.domains.some(d => d.id === connectSource)) setConnectSource(null);
+  }, [doc.domains, filterDomain, connectSource]);
   const diagnostics = diagnoseDocument(doc);
   const activeDomain = doc.domains.find(d => d.id === viewId);
   function change(next: DesignDocument) {
@@ -132,6 +152,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   }
   function navigate(id: string) {
     setMenu(null);
+    setConnectSource(null); setConnectPointer(null); setFkSource(null); setFkTarget(null);
     setViewId(id);
     setSelected(null);
   }
@@ -139,10 +160,11 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     const rect = surface.current?.getBoundingClientRect();
     return clampLayoutPatch({ x: ((rect?.width ?? 800) / 2 - viewport.x) / viewport.zoom - 120, y: ((rect?.height ?? 600) / 2 - viewport.y) / viewport.zoom - 70 });
   }
-  function newDomain() {
+  function newDomain(name = '새 도메인', at?: {x:number; y:number}) {
+    if (readOnly) return;
     const id = newId();
-    change(addDomain(doc, { id, name: '새 도메인', description: '' }, position()));
-    setSelected(id);
+    change(addDomain(doc, { id, name, description: '', color: '#8993a3' }, at ?? position()));
+    setSelected(id); setInspectorOpen(true); setDomainName(''); setMenu(null);
   }
   function newNote() {
     const id = newId();
@@ -171,11 +193,27 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     if (e.button !== 0)
       return;
     const node = nodes.find(n => n.id === id);
-    if (node)
-      setSelected(node.objectId);
+    if (!readOnly && node && connectSource) {
+      e.stopPropagation();
+      const destination = doc.domains.find(d => d.id === node.objectId);
+      const origin = doc.domains.find(d => d.id === connectSource);
+      if (origin && destination && origin.id !== destination.id) {
+        const relation = {id:newId(), sourceDomainId:origin.id, targetDomainId:destination.id, name:(origin.name + ' → ' + destination.name).slice(0,120), direction:'forward' as const, description:''};
+        change(upsertDomainRelation(doc, relation));
+        setConnectSource(null); setConnectPointer(null); setSelected(destination.id); setConnectedOpen(true); setInspectorOpen(true);
+      }
+      return;
+    }
+    if (!readOnly && node && fkSource && !fkTarget && (doc.tables ?? []).some(t => t.id === node.objectId)) {
+      e.stopPropagation(); setFkTarget(node.objectId); return;
+    }
+    if (node) {
+      setSelected(node.objectId); if (doc.domains.some(d => d.id === node.objectId)) { setInspectorOpen(true); setConnectedOpen(true); }
+    }
     else
       setSelected(null);
     setMenu(null);
+    if (node && !resize && (e.target as HTMLElement).closest('.table-inline,[data-inline-edit]')) { e.stopPropagation(); return; }
     if (readOnly && id) { e.stopPropagation(); return; }
     if (!node) {
       const rect = surface.current?.getBoundingClientRect();
@@ -187,6 +225,10 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     e.stopPropagation();
   }
   function move(e: PointerEvent<HTMLDivElement>) {
+    if (connectSource) {
+      const rect = surface.current?.getBoundingClientRect();
+      setConnectPointer({x:(e.clientX-(rect?.left ?? 0)-viewport.x)/viewport.zoom,y:(e.clientY-(rect?.top ?? 0)-viewport.y)/viewport.zoom});
+    }
     const start = drag.current;
     if (!start)
       return;
@@ -247,14 +289,22 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
           <IconButton className="inspector-toggle" aria-label={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'} title={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'} aria-expanded={inspectorOpen} aria-controls="canvas-inspector" onClick={() => setInspectorOpen(value => !value)}>
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="3" /><path className="sidebar-icon-divider" d="M12 4.5v11" /><path className="sidebar-icon-fill" d="M13 5h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1z" /></svg>
           </IconButton>
-          {viewId === 'overview' && <Button disabled={readOnly} onClick={newDomain}>＋ 도메인</Button>}
+          {viewId === 'overview' && <Button disabled={readOnly} onClick={() => newDomain()}>＋ 도메인</Button>}
           <Button disabled={readOnly} onClick={newNote}>T 텍스트</Button>
         </div>
       </div>
-      {viewId !== 'overview' && <TableWorkspaceTools document={doc} viewId={viewId} viewMode={viewMode} onViewModeChange={setViewMode} onChange={change} readOnly={readOnly} position={position()} onSelect={setSelected} />}
+      {viewId === 'overview' && filterDomain && <div className="domain-filter-status" role="status">{doc.domains.find(d => d.id === filterDomain)?.name} 연결 강조 <Button onClick={() => setFilterDomain('')}>강조 해제</Button></div>}
+      {viewId !== 'overview' && <div className="table-view-mode"><label>표시 모드<Select aria-label="표시 모드" value={viewMode} onChange={e => setViewMode(e.target.value as typeof viewMode)}><option value="both">논리 + 물리</option><option value="logical">논리</option><option value="physical">물리</option></Select></label></div>}
       <div
         ref={surface}
-        className="canvas-surface"
+        className={`canvas-surface ${connectSource || fkSource ? 'connection-target-mode' : ''}`}
+        onContextMenu={e => {
+          if ((e.target as HTMLElement).closest('.canvas-node, .relation, .table-relation-line, .zoom-controls')) return;
+          e.preventDefault(); if (readOnly) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          blankPosition.current = {viewId, x:(e.clientX-rect.left-viewport.x)/viewport.zoom, y:(e.clientY-rect.top-viewport.y)/viewport.zoom};
+          setSelected(null); setMenu({source:null,x:Math.max(8,Math.min(e.clientX,window.innerWidth-290)),y:Math.max(8,Math.min(e.clientY,window.innerHeight-220))});
+        }}
         aria-label={viewId === 'overview' ? '도메인 맵 캔버스' : `${activeDomain?.name} 내부 캔버스`}
         onPointerDown={e => begin(e, null)}
         onPointerMove={move}
@@ -288,28 +338,32 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                 dy = by - ay;
               const ratioA = Math.min(a.width / 2 / Math.max(Math.abs(dx), .001), a.height / 2 / Math.max(Math.abs(dy), .001)),
                 ratioB = Math.min(b.width / 2 / Math.max(Math.abs(dx), .001), b.height / 2 / Math.max(Math.abs(dy), .001));
+              const pair = doc.domainRelations.filter(item => [item.sourceDomainId,item.targetDomainId].sort().join('|') === [r.sourceDomainId,r.targetDomainId].sort().join('|'));
+              const offset = (pair.findIndex(item => item.id === r.id) - (pair.length-1)/2) * 54;
+              const length = Math.max(1, Math.hypot(dx,dy));
+              const sign = r.sourceDomainId < r.targetDomainId ? 1 : -1;
+              const cx = (ax+bx)/2 - dy/length*offset*sign;
+              const cy = (ay+by)/2 + dx/length*offset*sign;
               return <g
                 key={r.id}
                 onPointerDown={e => e.stopPropagation()}
                 onClick={() => editRelation(r.id)}
-                className={relationId === r.id ? 'relation selected' : 'relation'}>
-                <line
-                  x1={ax + dx * ratioA}
-                  y1={ay + dy * ratioA}
-                  x2={bx - dx * ratioB}
-                  y2={by - dy * ratioB}
+                className={`relation ${relationId === r.id ? 'selected' : ''} ${filterDomain && r.sourceDomainId !== filterDomain && r.targetDomainId !== filterDomain ? 'domain-dimmed' : ''}`}>
+                <path
+                  d={`M ${ax+dx*ratioA} ${ay+dy*ratioA} Q ${cx} ${cy} ${bx-dx*ratioB} ${by-dy*ratioB}`}
                   markerEnd="url(#arrow-end)"
                   markerStart={r.direction === 'both' ? 'url(#arrow-end)' : undefined} />
                 <text
-                  x={(ax + bx) / 2}
-                  y={(ay + by) / 2 - 10}
+                  x={(ax+bx)/4+cx/2}
+                  y={(ay+by)/4+cy/2-10}
                   textAnchor="middle">
                   {r.name}
                 </text>
               </g>;
             })}
+            {connectSource && connectPointer && (() => { const origin = nodes.find(n => n.objectId === connectSource); return origin ? <path className="domain-connection-preview" d={`M ${origin.x+origin.width/2} ${origin.y+origin.height/2} L ${connectPointer.x} ${connectPointer.y}`} markerEnd="url(#arrow-end)" /> : null; })()}
           </svg>}
-          {viewId !== 'overview' && <svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg document={doc} viewId={viewId} viewMode={viewMode} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg>}
+          {viewId !== 'overview' && <svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg document={doc} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true);}} /></svg>}
           {nodes.map(node => {
             const d = doc.domains.find(v => v.id === node.objectId),
               n = doc.notes.find(v => v.id === node.objectId);
@@ -318,15 +372,15 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               return null;
             return <div
               key={node.id}
-              className={`canvas-node ${d ? 'domain-node' : t ? 'table-node' : 'note-node'} ${selected === node.objectId ? 'selected' : ''}`}
-              style={{ left: node.x, top: node.y, ...cardSize(d ? 'domain' : t ? 'table' : 'note', node.width, node.height), ...(d?.color ? {'--domain-color':d.color} : {}) } as CSSProperties}
+              className={`canvas-node ${d ? 'domain-node' : t ? 'table-node' : 'note-node'} ${selected === node.objectId ? 'selected' : ''} ${d && filterDomain && !relatedIds.has(d.id) ? 'domain-dimmed' : ''} ${d && connectSource === d.id ? 'connection-source' : ''}`}
+              style={{ left: node.x, top: node.y, ...cardSize(d ? 'domain' : t ? 'table' : 'note', node.width, node.height), ...(d ? {'--domain-color':d.color ?? '#8993a3'} : {}) } as CSSProperties}
               onPointerDown={e => begin(e, node.id)}
               onContextMenu={e => { if (!d || readOnly) return; e.preventDefault(); e.stopPropagation(); e.currentTarget.focus(); setSelected(d.id); setMenu({source:d.id, x:Math.max(8,Math.min(e.clientX, window.innerWidth-290)), y:Math.max(8,Math.min(e.clientY, window.innerHeight-320))}); }}
               onDoubleClick={() => d && navigate(d.id)}
               tabIndex={0}
               role="group"
               aria-label={d?.name ?? t?.logical.name ?? '자유 텍스트'}
-              onFocus={() => setSelected(node.objectId)}
+              onFocus={e => { if (e.target === e.currentTarget) setSelected(node.objectId); }}
               onKeyDown={e => {
                 if (e.target !== e.currentTarget) return;
                 if (e.key === 'Enter' && d) { navigate(d.id); return; }
@@ -357,7 +411,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                   onPointerDown={e => e.stopPropagation()}
                   onClick={() => navigate(d.id)}
                   aria-label={`${d.name} 도메인 열기`}>도메인 열기 ↗</Button>
-              </> : t ? <TableNodeContent document={doc} tableId={t.id} viewMode={viewMode} viewId={viewId} /> : <p className="note-content">
+              </> : t ? <TableNodeContent document={doc} tableId={t.id} viewMode={viewMode} viewId={viewId} onChange={change} readOnly={readOnly} onStartForeignKey={columnId => {setFkSource(columnId); setFkTarget(null); setMenu(null);}} /> : <p className="note-content">
                 {n?.text}
               </p>}
               {!readOnly && <div
@@ -383,9 +437,9 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             variant="primary" className="primary"
             disabled={readOnly}
             onPointerDown={e => e.stopPropagation()}
-            onClick={newDomain}>첫 도메인 만들기</Button>}
+            onClick={() => newDomain()}>첫 도메인 만들기</Button>}
         </div>}
-        <div className="canvas-hint">드래그로 이동 · 노드 선택 후 방향키로 미세 조정</div>
+        <div className="canvas-hint" role={connectSource || fkSource ? 'status' : undefined}>{connectSource ? '연결할 도메인을 클릭하세요 · Escape 취소' : fkSource ? '참조할 테이블을 클릭하세요 · Escape 취소' : '드래그로 이동 · 우클릭으로 자동 배치'}</div>
         <div className="zoom-controls" onPointerDown={e => e.stopPropagation()}>
           <IconButton aria-label="축소" onClick={() => zoom(viewport.zoom - .1)}>−</IconButton>
           <Button onClick={() => zoom(1)} aria-label="배율 100%로 초기화">
@@ -394,10 +448,14 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
         </div>
       </div>
     </div>
-    <ContextMenu position={menu ? {x: menu.x, y: menu.y} : null} label="도메인 관계 설정" onClose={() => setMenu(null)} items={menu ? [
-      ...relationTargets(doc.domains, menu.source).map(d => ({id: d.id, label: `→ ${d.name}`, onAction: () => startRelation(menu.source, d.id)})),
-      ...(doc.domains.length < 2 ? [{id: 'empty', label: '연결할 도메인을 먼저 추가하세요.', disabled: true, onAction: () => {}}] : []),
-      {id: 'close', label: '닫기', onAction: () => surface.current?.querySelector<HTMLElement>('.canvas-node.selected')?.focus()},
+    {fkSource && fkTarget && <ForeignKeyDialog document={doc} sourceColumnId={fkSource} targetTableId={fkTarget} onChange={change} onClose={() => {setFkSource(null);setFkTarget(null);}} />}
+    <ContextMenu position={menu ? {x: menu.x, y: menu.y} : null} label={menu?.source ? '도메인 관계 설정' : '캔버스 메뉴'} onClose={() => setMenu(null)} items={menu ? menu.source ? [
+      {id:'panel-relation',label:'새 도메인 관계',onAction:() => startRelation(menu.source!, '')},
+      {id:'direct-relation',label:'도메인 직접 연결',disabled:doc.domains.length<2,onAction:() => {setConnectSource(menu.source);setConnectPointer(null);setMenu(null);}},
+      {id:'filter',label:'연결된 도메인 강조',onAction:() => {setFilterDomain(menu.source!);setMenu(null);}},
+    ] : [
+      ...(viewId === 'overview' ? [{id:'new-domain',label:'새 도메인 생성',onAction:() => newDomain('새 도메인', blankPosition.current?.viewId === viewId ? blankPosition.current : undefined)}, {id:'new-relation',label:'새 도메인 관계',onAction:() => startRelation('', '')}] : []),
+      {id:'auto-layout',label:'자동 배치',disabled:!nodes.length,onAction:() => {change(autoLayoutView(doc, viewId));setMenu(null);}},
     ] : []} />
     <div className="inspector-shell" inert={!inspectorOpen} aria-hidden={!inspectorOpen}>
       <div className="inspector-resizer" role="separator" aria-label="속성 패널 너비 조절" aria-orientation="vertical" aria-valuemin={panelBounds.min} aria-valuemax={panelBounds.max} aria-valuenow={Math.round(panelWidth)} tabIndex={inspectorOpen && !stackedInspector ? 0 : -1}
@@ -432,7 +490,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
       <div className="inspector-heading">
         <span>02 / INSPECTOR</span>
         <h2>
-          {selected ? '선택 항목' : viewId === 'overview' ? <DisclosureButton className="relation-disclosure" expanded={relationsOpen} controls="business-relations" onClick={() => setRelationsOpen(value => !value)}>도메인 관계</DisclosureButton> : '속성'}
+          {selected ? '선택 항목' : viewId === 'overview' ? '도메인 관계' : '속성'}
         </h2>
       </div>
       {table ? <>
@@ -440,7 +498,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
           change(removeTableReference(doc, selectedNode.id));
           setSelected(null);
         }}>이 화면의 참조 제거</Button>}
-        <TableInspector document={doc} tableId={table.id} onChange={change} readOnly={readOnly} />
+        <TableInspector document={doc} tableId={table.id} onChange={change} readOnly={readOnly} onStartForeignKey={columnId => {setFkSource(columnId);setFkTarget(null);}} />
       </> : selectedNode && (domain || note) ? <div className="inspector-fields">
         {domain ? <>
           <label>도메인 이름<Input
@@ -455,8 +513,13 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             disabled={readOnly}
             onChange={e => change(updateDomain(doc, domain.id, { description: e.target.value }))} />
           </label>
-          <label>도메인 색상<Input type="color" value={domain.color ?? '#305be7'} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, {color:e.target.value}))} /></label>
+        {domain && <div className="relation-list"><DisclosureButton className="relation-disclosure" expanded={connectedOpen} controls="selected-domain-relations" onClick={() => setConnectedOpen(value => !value)}>연결된 도메인 관계 <span className="relation-count">{connectedRelations(doc.domainRelations,domain.id).length}</span></DisclosureButton><Collapse id="selected-domain-relations" open={connectedOpen}>
+          {connectedRelations(doc.domainRelations,domain.id).map(r => <Button key={r.id} onClick={() => editRelation(r.id)}>{r.name}<small>{doc.domains.find(d => d.id === r.sourceDomainId)?.name} {r.direction === 'both' ? '↔' : '→'} {doc.domains.find(d => d.id === r.targetDomainId)?.name}</small></Button>)}
+          {!connectedRelations(doc.domainRelations,domain.id).length && <p className="field-help">연결된 관계가 없습니다. 카드에서 우클릭해 연결하세요.</p>}
+        </Collapse></div>}
+          <label>도메인 색상<Input type="color" value={domain.color ?? '#8993a3'} disabled={readOnly} onChange={e => change(updateDomain(doc, domain.id, {color:e.target.value}))} /></label>
           <Button onClick={() => navigate(domain.id)}>도메인 내부 열기 →</Button>
+          <Button disabled={readOnly} onClick={() => startRelation(domain.id, '')}>새 도메인 관계</Button>
         </> : <label>자유 텍스트<Textarea
           maxLength={20000}
           value={note?.text ?? ''}
@@ -489,11 +552,10 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             setSelected(null);
           }}>선택 항목 삭제</Button>
         <Button onClick={() => setSelected(null)}>선택 해제</Button>
-        {domain && <div className="relation-list"><DisclosureButton className="relation-disclosure" expanded={relationsOpen} controls="selected-domain-relations" onClick={() => setRelationsOpen(value => !value)}>연결된 도메인 관계 <span className="relation-count">{connectedRelations(doc.domainRelations,domain.id).length}</span></DisclosureButton><Collapse id="selected-domain-relations" open={relationsOpen}>
-          {connectedRelations(doc.domainRelations,domain.id).map(r => <Button key={r.id} onClick={() => editRelation(r.id)}>{r.name}<small>{doc.domains.find(d => d.id === r.sourceDomainId)?.name} {r.direction === 'both' ? '↔' : '→'} {doc.domains.find(d => d.id === r.targetDomainId)?.name}</small></Button>)}
-          {!connectedRelations(doc.domainRelations,domain.id).length && <p className="field-help">연결된 관계가 없습니다. 카드에서 우클릭해 연결하세요.</p>}
-        </Collapse></div>}
+
       </div> : viewId === 'overview' ? <>
+        <Accordion title="새 도메인 생성" className="domain-panel-section"><form className="inspector-fields" onSubmit={e => {e.preventDefault(); if (domainName.trim()) newDomain(domainName.trim());}}><label>새 도메인 이름<Input value={domainName} onChange={e => setDomainName(e.target.value)} maxLength={120} disabled={readOnly} required /></label><Button type="submit" variant="primary" disabled={readOnly || !domainName.trim()}>도메인 생성</Button></form></Accordion>
+        <DisclosureButton className="relation-disclosure domain-panel-heading" expanded={relationsOpen} controls="business-relations" onClick={() => setRelationsOpen(value => !value)}>{relationId ? '도메인 관계 수정' : '새 도메인 관계 생성'}</DisclosureButton>
         <Collapse id="business-relations" open={relationsOpen}><form className="inspector-fields relation-form" onSubmit={e => {
           e.preventDefault();
           if (!doc.domains.some(d => d.id === source) || !doc.domains.some(d => d.id === target) || source === target)
@@ -564,20 +626,22 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             <Button type="button" onClick={resetRelation}>취소</Button>
           </div>}
         </form>
-        <div className="relation-list">
+        </Collapse>
+        <Accordion title="연결된 관계 검색" className="domain-panel-section"><div className="inspector-fields"><label>관계 검색<Input placeholder="관계 이름, 도메인, 설명 검색" value={relationSearch} onChange={e => setRelationSearch(e.target.value)} /></label><label>연결된 도메인 강조<Select value={filterDomain} onChange={e => setFilterDomain(e.target.value)}><option value="">모든 도메인</option>{doc.domains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></label></div></Accordion>
+        <Accordion title={`도메인 관계 목록 (${filteredRelations.length})`} className="domain-panel-section"><div className="relation-list">
           <h3>연결된 관계 <span>
             {doc.domainRelations.length}
           </span>
           </h3>
-          {doc.domainRelations.map(r => <Button key={r.id} onClick={() => editRelation(r.id)}>
+          {filteredRelations.map(r => <Button key={r.id} onClick={() => editRelation(r.id)}>
             {r.name}
             <small>
               {doc.domains.find(d => d.id === r.sourceDomainId)?.name} {r.direction === 'both' ? '↔' : '→'} {doc.domains.find(d => d.id === r.targetDomainId)?.name}
             </small>
           </Button>)}
-        </div>
-        </Collapse>
-      </> : <p className="field-help">항목을 선택하면 이름, 내용, 위치와 크기를 편집할 수 있습니다.</p>}
+          {!filteredRelations.length && <p className="field-help">표시할 관계가 없습니다.</p>}
+        </div></Accordion>
+      </> : <TableWorkspaceTools hideViewMode document={doc} viewId={viewId} viewMode={viewMode} onViewModeChange={setViewMode} onChange={change} readOnly={readOnly} position={position()} onSelect={setSelected} />}
     </aside></div>
   </div>;
 }
