@@ -13,4 +13,6 @@
 
 ## 결과
 
-`pnpm exec vitest run apps/web/src/relation-routing.test.ts apps/web/src/relation-routing-adversarial.test.ts`를 실행해 테스트 파일 2개, 테스트 10개가 모두 통과했다.
+`pnpm exec vitest run apps/web/src/relation-routing.test.ts apps/web/src/relation-routing-adversarial.test.ts`를 실행해 테스트 파일 2개, 테스트 11개가 모두 통과했다.
+
+추가 수동 굴곡 (300,150)의 왕복 경로도 회귀 테스트로 보존했다. 전후 직각 후보 조합과 되돌아감 검사 후 동일 grid sweep의 중복 정점 사례는 58개에서 0개로 감소했다. 직접 L자 후보를 장애물 검색보다 먼저 평가하도록 추가 최적화했다.

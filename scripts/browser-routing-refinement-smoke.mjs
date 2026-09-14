@@ -23,7 +23,7 @@ try{
  await page.getByRole('button',{name:/출발 테이블/}).waitFor();
  const pathBefore=await hit.getAttribute('d');const adjust=page.getByRole('button',{name:'관계 선 조절 orders.id:payments'});const rect=await adjust.boundingBox();await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.down();await page.mouse.move(rect.x+rect.width/2-150,rect.y+rect.height/2+110,{steps:8});await page.mouse.up();assert.notEqual(await hit.getAttribute('d'),pathBefore);
  await relation.locator('.table-relation-label').click({button:'right'});await page.getByRole('menuitem',{name:'관계 선 자동 정리'}).click();assert.equal(await hit.getAttribute('d'),pathBefore);
- const gap=await relation.evaluate(g=>{const r=g.getBBox(),m=g.getScreenCTM();for(let x=r.x+20;x<r.x+r.width;x+=35)for(let y=r.y+25;y<r.y+r.height;y+=35){const p=new DOMPoint(x,y).matrixTransform(m),el=document.elementFromPoint(p.x,p.y);if(el?.classList.contains('canvas-surface'))return {x:p.x,y:p.y};}return null;});
- if(gap){await page.mouse.click(gap.x,gap.y);assert.equal(await relation.evaluate(e=>e.classList.contains('selected')),false);}
+ const gap=await relation.evaluate(g=>{const r=g.getBBox(),m=g.getScreenCTM();for(let x=r.x+20;x<r.x+r.width;x+=35)for(let y=r.y+25;y<r.y+r.height;y+=35){const p=new DOMPoint(x,y).matrixTransform(m),el=document.elementFromPoint(p.x,p.y);if(el?.classList.contains('canvas-surface')||el?.classList.contains('canvas-world'))return {x:p.x,y:p.y};}return null;});
+ assert(gap,'The empty area inside a bent relation must remain canvas background');if(gap){await page.mouse.click(gap.x,gap.y);assert.equal(await relation.evaluate(e=>e.classList.contains('selected')),false);}
  await page.screenshot({path:'.cache/routing-refinement.png',fullPage:true});assert.deepEqual(errors,[]);console.log('PASS independent relation selection, PK-first inspector, drag route, automatic reset, no browser errors');
 }finally{await browser?.close();await unlink(target);}

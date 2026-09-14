@@ -103,18 +103,22 @@ export function relationGeometry(a:RelationBounds,b:RelationBounds,labelWidth:nu
   // Simplification must not reverse an attachment into the table.
   if(!clear(points,raw)||retraces(points))return;
   const cost=score(points);if(cost<bestScore){best=points;bestScore=cost;}
+  return true;
  };
  const sourcePaths=new Map<Port,Point[]|null>(),targetPaths=new Map<Port,Point[]|null>();
  if(requested)candidates.sort((a,b)=>(distance(a.s.stub,requested)+distance(requested,a.t.stub))-(distance(b.s.stub,requested)+distance(requested,b.t.stub)));
  for(const {s,t} of candidates){
   if(requested){
    if(distance(s.stub,requested)+distance(requested,t.stub)+72>=bestScore)continue;
+   const firstDirect=[[s.stub,{x:s.stub.x,y:requested.y},requested],[s.stub,{x:requested.x,y:s.stub.y},requested]];
+   const lastDirect=[[requested,{x:requested.x,y:t.stub.y},t.stub],[requested,{x:t.stub.x,y:requested.y},t.stub]];
+   let direct=false;
+   for(const before of firstDirect)for(const after of lastDirect)direct=!!consider(s,t,[...before,...after])||direct;
+   if(direct||distance(s.stub,requested)+distance(requested,t.stub)+72>=bestScore)continue;
    if(!sourcePaths.has(s))sourcePaths.set(s,search(s.stub,requested,boxes));
    if(!targetPaths.has(t))targetPaths.set(t,search(requested,t.stub,boxes));
    const first=sourcePaths.get(s),last=targetPaths.get(t);
-   const firstOptions=[[s.stub,{x:s.stub.x,y:requested.y},requested],[s.stub,{x:requested.x,y:s.stub.y},requested],...(first?[first]:[])];
-   const lastOptions=[[requested,{x:requested.x,y:t.stub.y},t.stub],[requested,{x:t.stub.x,y:requested.y},t.stub],...(last?[last]:[])];
-   for(const before of firstOptions)for(const after of lastOptions)consider(s,t,[...before,...after]);
+   for(const before of [...firstDirect,...(first?[first]:[])])for(const after of [...lastDirect,...(last?[last]:[])])consider(s,t,[...before,...after]);
    continue;
   }
   consider(s,t,[s.stub,{x:s.stub.x,y:t.stub.y},t.stub]);
