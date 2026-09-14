@@ -56,3 +56,11 @@ it('round-trips populated designs and rejects ambiguous node/view identities', (
   expect(designDocumentSchema.safeParse({ ...doc, notes: [{ ...doc.notes[0], id: 'overview' }] }).success).toBe(false);
   expect(designDocumentSchema.safeParse({ ...doc, domainRelations: [{ ...doc.domainRelations[0], id: 'overview' }] }).success).toBe(false);
 });
+it('round trips optional combined views and per-view relation routes without changing old documents', () => {
+  const legacy = empty();
+  expect(designDocumentSchema.parse(legacy)).toEqual(legacy);
+  const doc = { ...legacy, views: [{ id: 'combined', name: '모아 보기', domainIds: ['domain'] }], layout: { ...legacy.layout, relations: [{ relationId: 'relation', viewId: 'combined', offset: 42 }] } };
+  expect(designDocumentSchema.parse(doc)).toEqual(doc);
+  expect(designDocumentSchema.safeParse({ ...doc, views: [{ ...doc.views[0], domainIds: ['domain', 'domain'] }] }).success).toBe(false);
+  expect(designDocumentSchema.safeParse({ ...doc, layout: { ...doc.layout, relations: [...doc.layout.relations, ...doc.layout.relations] } }).success).toBe(false);
+});

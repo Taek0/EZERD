@@ -6,7 +6,7 @@ const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 
 /** Manual, deterministic flow layout; only placements in the requested view change. */
 export function autoLayoutView(document: DesignDocument, viewId: string): DesignDocument {
-  if (viewId !== 'overview' && !document.domains.some(domain => domain.id === viewId)) {
+  if (viewId !== 'overview' && !document.domains.some(domain => domain.id === viewId) && !document.views?.some(view => view.id === viewId)) {
     throw new Error('자동 배치할 뷰를 찾을 수 없습니다.');
   }
   const objects = new Set((viewId === 'overview' ? document.domains : document.tables ?? []).map(object => object.id));

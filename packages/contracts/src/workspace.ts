@@ -19,8 +19,11 @@ export const domainRelationSchema = z.strictObject({ id: objectId, sourceDomainI
 export const noteSchema = z.strictObject({ id: objectId, viewId: id, text: z.string().max(20000) });
 export const nodeLayoutSchema = z.strictObject({ id, objectId: id, viewId: id, x: coordinate, y: coordinate, width: z.number().positive().max(10000), height: z.number().positive().max(10000) });
 export const viewportSchema = z.strictObject({ viewId: id, x: coordinate, y: coordinate, zoom: z.number().min(0.1).max(4) });
+export const combinedViewSchema = z.strictObject({ id: objectId, name, domainIds: z.array(id).min(1).max(2000).refine(ids => new Set(ids).size === ids.length) });
+export const relationLayoutSchema = z.strictObject({ relationId: id, viewId: id, offset: coordinate });
 export const designDocumentSchema = z.strictObject({
   schemaVersion: z.literal(1),
+  views: z.array(combinedViewSchema).max(1000).optional(),
   enums: z.array(projectEnumSchema).max(1000).optional(),
   tables: z.array(tableSchema).max(5000).optional(),
   columns: z.array(columnSchema).max(20000).optional(),
@@ -29,14 +32,15 @@ export const designDocumentSchema = z.strictObject({
   domains: z.array(domainSchema).max(2000),
   domainRelations: z.array(domainRelationSchema).max(10000),
   notes: z.array(noteSchema).max(10000),
-  layout: z.strictObject({ nodes: z.array(nodeLayoutSchema).max(12000), viewports: z.array(viewportSchema).max(2001) }),
+  layout: z.strictObject({ nodes: z.array(nodeLayoutSchema).max(12000), viewports: z.array(viewportSchema).max(3001), relations: z.array(relationLayoutSchema).max(20000).optional() }),
 }).superRefine((doc, ctx) => {
   if (!withinDocumentBudget(doc)) ctx.addIssue({ code: 'custom', message: '설계 문서는 UTF-8 JSON 기준 1.5 MB까지 저장할 수 있습니다.' });
   const unique = (values: string[], path: string[]) => { if (new Set(values).size !== values.length) ctx.addIssue({ code: 'custom', path, message: 'Duplicate identities are not allowed.' }); };
-  unique([...doc.domains, ...doc.domainRelations, ...doc.notes, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? []), ...(doc.enums ?? [])].map(o => o.id), ['domains']);
+  unique([...doc.domains, ...(doc.views ?? []), ...doc.domainRelations, ...doc.notes, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? []), ...(doc.enums ?? [])].map(o => o.id), ['domains']);
   unique(doc.layout.nodes.map(n => n.id), ['layout', 'nodes']);
   unique(doc.layout.nodes.map(n => JSON.stringify([n.viewId, n.objectId])), ['layout', 'nodes']);
   unique(doc.layout.viewports.map(v => v.viewId), ['layout', 'viewports']);
+  unique((doc.layout.relations ?? []).map(r => JSON.stringify([r.viewId, r.relationId])), ['layout', 'relations']);
 });
 const projectName = z.string().trim().min(1).max(120);
 const username = z.string().trim().min(1).max(40);
