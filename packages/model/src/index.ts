@@ -21,3 +21,4 @@ export function canExportPhysical(scope: ModelScope, parentScope: ModelScope = '
 
 export * from './document.js';
 export * from './postgres.js';
+export * from './layout.js';
