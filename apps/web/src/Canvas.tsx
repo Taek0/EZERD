@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
-import { type DesignDocument, type Table, isVisibleInView, autoLayoutView, removeTableReference, addTable, addTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport, diagnoseDocument } from '@ezerd/model';
+import { type DesignDocument, type Table, isVisibleInView, autoLayoutView, removeTableReference, addTable, addTableReference, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
 import { cardSize, connectedRelations } from './canvas-state.js';
 import { TableNodeContent, TableInspector, TableWorkspaceTools, TableRelationsSvg, ForeignKeyDialog, EnumDialog, emptyMetadata } from './TableEditor.js';
@@ -17,7 +17,7 @@ type Props = {
   readOnly: boolean;
 };
 export function Canvas({ document: doc, onChange, readOnly, onContextChange, focusTarget, pins }: Props) {
-  const [viewMode, setViewMode] = useState<'logical' | 'physical' | 'both'>('both');
+  const viewMode = 'physical' as const;
   const [inspectorOpen, setInspectorOpen] = useState(() => { try { return localStorage.getItem('ezerd.inspector') !== 'hidden'; } catch { return true; } });
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(1100);
@@ -113,7 +113,6 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     if (!focusTarget) return;
     const destinationView = validViewId(focusTarget.viewId, doc.domains.map(d => d.id));
     setViewId(destinationView);
-    setViewMode('both');
     setSelected(destinationView === focusTarget.viewId ? focusTarget.objectId : null);
     const node = doc.layout.nodes.find(n => n.viewId === focusTarget.viewId && n.objectId === focusTarget.objectId);
     const rect = surface.current?.getBoundingClientRect();
@@ -132,17 +131,25 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     if (filterDomain && !doc.domains.some(d => d.id === filterDomain)) setFilterDomain('');
     if (connectSource && !doc.domains.some(d => d.id === connectSource)) setConnectSource(null);
   }, [doc.domains, filterDomain, connectSource]);
-  const diagnostics = diagnoseDocument(doc);
   const activeDomain = doc.domains.find(d => d.id === viewId);
   const query = relationSearch.trim().toLocaleLowerCase();
   const matches = (...values: (string | undefined | null)[]) => !query || values.filter(Boolean).join(' ').toLocaleLowerCase().includes(query);
-  const viewTables = (doc.tables ?? []).filter(t => doc.layout.nodes.some(n => n.viewId === viewId && n.objectId === t.id));
-  const otherTables = (doc.tables ?? []).filter(t => t.domainId !== viewId && !doc.layout.nodes.some(n => n.objectId === t.id && n.viewId === viewId));
-  const viewRelations = (doc.tableRelations ?? []).filter(r => viewTables.some(t => t.id === r.sourceTableId) || viewTables.some(t => t.id === r.targetTableId));
+  const viewTables = (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode) && doc.layout.nodes.some(n => n.viewId === viewId && n.objectId === t.id));
+  const otherTables = (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode) && t.domainId !== viewId && !doc.layout.nodes.some(n => n.objectId === t.id && n.viewId === viewId));
+  const viewRelations = (doc.tableRelations ?? []).filter(r => isVisibleInView(r.scope, viewMode) && !!r.physical && (viewTables.some(t => t.id === r.sourceTableId) || viewTables.some(t => t.id === r.targetTableId)));
   const tableLabel = (t: Table) => t.physical.name || t.logical.name || '이름 없는 테이블';
   const outlineCount = viewId === 'overview' ? doc.domains.length : viewTables.length;
   const selectionKind = table ? '테이블' : domain ? '도메인' : note ? '텍스트' : '';
   const selectionName = table ? tableLabel(table) : domain ? domain.name : note ? (note.text.slice(0, 40) || '자유 텍스트') : '';
+  function arrangeVisibleNodes() {
+    const layoutSource = viewId === 'overview' ? doc : {
+      ...doc,
+      tables: (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode)),
+      tableRelations: (doc.tableRelations ?? []).filter(r => isVisibleInView(r.scope, viewMode) && !!r.physical),
+    };
+    const arranged = autoLayoutView(layoutSource, viewId);
+    change({ ...doc, layout: arranged.layout });
+  }
   function change(next: DesignDocument) {
     if (!readOnly)
       onChange(next);
@@ -187,7 +194,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   function newTable(name = '') {
     if (readOnly || viewId === 'overview') return;
     const id = newId();
-    change(addTable(doc, { id, domainId: viewId, scope: 'both', logical: { name: '새 테이블', definition: '' }, physical: { name, schema: 'public', comment: '' }, customProperties: emptyMetadata() }, position()));
+    change(addTable(doc, { id, domainId: viewId, scope: 'physical', logical: { name: '새 테이블', definition: '' }, physical: { name, schema: 'public', comment: '' }, customProperties: emptyMetadata() }, position()));
     pick(id);
   }
   function reference(tableId: string) {
@@ -308,7 +315,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     <div className="canvas-column" key={viewId}>
       <div className="canvas-toolbar">
         <div className="breadcrumbs">
-          <Button className={viewId === 'overview' ? 'current' : ''} onClick={() => navigate('overview')}>도메인 맵</Button>
+          <Button className={viewId === 'overview' ? 'current' : 'domain-map-return'} onClick={() => navigate('overview')}>{viewId === 'overview' ? '도메인 맵' : '← 도메인 맵으로'}</Button>
           {activeDomain && <>
             <span aria-hidden="true">/</span>
             <strong title={activeDomain.name}>
@@ -317,11 +324,6 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
           </>}
         </div>
         <div className="actions">
-          {viewId !== 'overview' && <div className="view-mode-switch" role="group" aria-label="표시 모드">
-            {(['both', 'logical', 'physical'] as const).map(mode => <TabButton key={mode} selected={viewMode === mode} onClick={() => setViewMode(mode)}>
-              {mode === 'both' ? '논리+물리' : mode === 'logical' ? '논리' : '물리'}
-            </TabButton>)}
-          </div>}
           {viewId === 'overview'
             ? <Button disabled={readOnly} onClick={() => newDomain()}>＋ 도메인</Button>
             : <Button disabled={readOnly} onClick={() => newTable()}>＋ 테이블</Button>}
@@ -349,7 +351,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
         onPointerMove={move}
         onPointerUp={finish}
         onPointerCancel={finish}
-        style={{ backgroundSize: `${40 * viewport.zoom}px ${40 * viewport.zoom}px`, backgroundPosition: `${viewport.x}px ${viewport.y}px`, backgroundImage: `radial-gradient(circle, var(--erd-grid-dot-color) ${.75 * viewport.zoom}px, transparent ${.8 * viewport.zoom}px)` }}>
+        style={{ backgroundSize: `${40 * viewport.zoom}px ${40 * viewport.zoom}px`, backgroundPosition: `${viewport.x}px ${viewport.y}px`, backgroundImage: `radial-gradient(circle, var(--erd-grid-dot-color) ${1.05 * viewport.zoom}px, transparent ${1.15 * viewport.zoom}px)` }}>
         <div className="canvas-world" style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` }}>
           {viewId === 'overview' && <svg className="relations" aria-label="도메인 관계">
             <defs>
@@ -418,7 +420,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               onDoubleClick={() => d && navigate(d.id)}
               tabIndex={0}
               role="group"
-              aria-label={d?.name ?? t?.logical.name ?? '자유 텍스트'}
+              aria-label={d?.name ?? (t ? tableLabel(t) : '자유 텍스트')}
               onFocus={e => { if (e.target === e.currentTarget) setSelected(node.objectId); }}
               onKeyDown={e => {
                 if (e.target !== e.currentTarget) return;
@@ -494,7 +496,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
       {id:'filter',label:'연결된 도메인 강조',onAction:() => {setFilterDomain(menu.source!);setMenu(null);}},
     ] : [
       ...(viewId === 'overview' ? [{id:'new-domain',label:'새 도메인 생성',onAction:() => newDomain('새 도메인', blankPosition.current?.viewId === viewId ? blankPosition.current : undefined)}, {id:'new-relation',label:'새 도메인 관계',onAction:() => startRelation('', '')}] : []),
-      {id:'auto-layout',label:'자동 배치',disabled:!nodes.length,onAction:() => {change(autoLayoutView(doc, viewId));setMenu(null);}},
+      {id:'auto-layout',label:'자동 배치',disabled:!nodes.length,onAction:() => {arrangeVisibleNodes();setMenu(null);}},
     ] : []} />
     {enumOpen && <EnumDialog document={doc} onChange={change} readOnly={readOnly} onClose={() => setEnumOpen(false)} />}
     <div className="inspector-shell" inert={!inspectorOpen} aria-hidden={!inspectorOpen}>
@@ -534,12 +536,6 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
           </div>
         </div>
         <div className="inspector-body">
-          {diagnostics.length > 0 && <PanelSection className="document-diagnostics" title="설계 확인" count={diagnostics.length}>
-            <PanelNote>저장은 가능하지만 아래 항목을 확인해 주세요.</PanelNote>
-            <ul>
-              {diagnostics.map((item, index) => <li key={item.code + '-' + item.objectId + '-' + index}>{item.message}</li>)}
-            </ul>
-          </PanelSection>}
           {panelTab === 'outline' ? <>
             <div className="panel-search">
               <Input aria-label="현재 화면 검색" placeholder={viewId === 'overview' ? '도메인·관계 검색' : '테이블·관계 검색'} value={relationSearch} onChange={e => setRelationSearch(e.target.value)} />
@@ -574,7 +570,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                   {viewTables.filter(t => matches(t.physical.name, t.logical.name)).map(t => <PanelRow key={t.id}
                     active={selected === t.id}
                     title={tableLabel(t)}
-                    meta={t.logical.name + ' · 컬럼 ' + (doc.columns ?? []).filter(c => c.tableId === t.id).length + '개'}
+                    meta={'컬럼 ' + (doc.columns ?? []).filter(c => c.tableId === t.id && isVisibleInView(c.scope, viewMode)).length + '개'}
                     badge={t.domainId === viewId ? undefined : '참조'}
                     onSelect={() => pick(t.id)} />)}
                 </PanelList>
@@ -583,7 +579,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
                 <PanelList empty="이 화면에 표시할 테이블 관계가 없습니다.">
                   {viewRelations.filter(r => matches(r.logical.name, r.physical?.name)).map(r => <PanelRow key={r.id}
                     title={((doc.tables ?? []).find(t => t.id === r.sourceTableId)?.physical.name || '?') + ' → ' + ((doc.tables ?? []).find(t => t.id === r.targetTableId)?.physical.name || '?')}
-                    meta={r.logical.name || (r.physical ? '물리 FK' : '논리 관계')}
+                    meta={r.physical?.name || 'FK'}
                     badge={r.physical ? 'FK' : undefined}
                     onSelect={() => pick(r.sourceTableId)} />)}
                 </PanelList>
@@ -712,7 +708,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               <span>ENUM <b>{(doc.enums ?? []).length}</b></span>
             </div>
             <PanelSection title="새 테이블 만들기" defaultOpen>
-              <TableWorkspaceTools hideViewMode document={doc} viewId={viewId} viewMode={viewMode} onViewModeChange={setViewMode} onChange={change} readOnly={readOnly} position={position()} onSelect={pick} />
+              <TableWorkspaceTools hideViewMode document={doc} viewId={viewId} viewMode={viewMode} onViewModeChange={() => {}} onChange={change} readOnly={readOnly} position={position()} onSelect={pick} />
             </PanelSection>
             <PanelNote>목록 탭에서 테이블을 찾고 다른 도메인의 테이블을 참조로 추가할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.</PanelNote>
           </>}

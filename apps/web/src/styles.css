@@ -1001,3 +1001,21 @@ button.relation-disclosure:hover { color: var(--accent); background: #dce2eb66; 
   .inspector-shell { transition: opacity .18s ease, visibility .22s; }
   .inspector-toggle, .sidebar-icon-fill, .sidebar-icon-divider { transition: background .16s ease, color .16s ease, opacity .18s ease, transform .2s ease; }
 }
+/* Compact project controls leave more room for the map. */
+.editor-shell .editor-heading { padding: 10px 3vw; gap: 14px; }
+.editor-shell .project-title { gap: 14px; }
+.editor-shell .project-title h1 { font-size: 21px; margin-top: 3px; }
+.editor-shell .project-title small { font-size: 10px; letter-spacing: 1.2px; }
+.editor-shell .save-controls { gap: 10px; }
+.editor-shell .save-state { font-size: 12px; }
+.editor-shell .editor-heading button,
+.app-shell .app-header .notifications > button { min-height: 32px; padding: 6px 11px; font-size: 13px; border-radius: 8px; }
+.canvas-toolbar .breadcrumbs .domain-map-return { padding: 8px 13px; border: 1px solid #99b9de; border-radius: 8px; background: #e0ecf9; color: #184e82; font-weight: 700; box-shadow: 0 1px 3px #234c7314; }
+.canvas-toolbar .breadcrumbs .domain-map-return:hover { background: #cbdff5; border-color: #6896c8; }
+@media (max-width: 700px) {
+  .editor-shell .editor-heading { gap: 10px; }
+  .editor-shell .save-controls { flex-wrap: wrap; gap: 8px; }
+}
+.canvas-node.table-node,
+.canvas-node.table-node.selected { padding: 0; border-radius: 5px; background: #fff; box-shadow: 0 2px 7px #233d5a20; }
+.canvas-node.table-node.selected { box-shadow: 0 0 0 3px #305be71a, 0 2px 7px #233d5a20; }

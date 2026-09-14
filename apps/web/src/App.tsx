@@ -1,16 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { type DesignDocument, createEmptyDocument, exportPostgres } from '@ezerd/model';
+import { type DesignDocument, createEmptyDocument } from '@ezerd/model';
 import { userSchema, projectSchema, projectDocumentSchema, designDocumentSchema, threadSchema, type Thread, type Notification } from '@ezerd/contracts';
 import { ApiError, SaveGate, body, message, request, acknowledgeSave } from './client.js';
 import { Canvas } from './Canvas.js';
 import { CommentsPanel, CommentPins, Notifications, type CommentContext } from './CommentsPanel.js';
 import { LatestRequest } from './comments-state.js';
-import { diagnosticTarget } from './ddl-diagnostics.js';
 import {
   Avatar,
   Badge,
   Button,
-  IconButton,
   Input,
   TabButton,
 } from './components/ui/index.js';
@@ -55,11 +53,6 @@ export function App() {
     y: number;
     nonce: number;
   }>();
-  const [ddlDiagnostics, setDdlDiagnostics] = useState<{
-    code: string;
-    objectId: string;
-    message: string;
-  }[] | null>(null);
   const navigation = useRef(new LatestRequest());
   function focusThread(thread: Thread) {
     setCommentsOpen(true);
@@ -68,7 +61,6 @@ export function App() {
   function resetReview() {
     setThreads([]);
     setFocusTarget(undefined);
-    setDdlDiagnostics(null);
     setCanvasContext({ viewId: 'overview', selectedObjectId: null, position: { x: 120, y: 120 } });
   }
   async function visitNotification(notification: Notification): Promise<boolean> {
@@ -113,22 +105,6 @@ export function App() {
       if (navigation.current.isCurrent(ticket))
         setBusy(false);
     }
-  }
-  function downloadDdl() {
-    if (!opened)
-      return;
-    const result = exportPostgres(opened.document);
-    setDdlDiagnostics(result.diagnostics);
-    if (!result.canExport)
-      return;
-    const url = URL.createObjectURL(new Blob([result.sql], { type: 'application/sql;charset=utf-8' }));
-    const link = window.document.createElement('a');
-    link.href = url;
-    link.download = `${opened.project.name.replace(/[<>:"/\\|?*]/g, '_') || 'design'}.sql`;
-    window.document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   useEffect(() => {
     let live = true;
@@ -387,7 +363,6 @@ export function App() {
         </div>
         <div className="save-controls">
           <Button aria-expanded={commentsOpen} onClick={() => setCommentsOpen(v => !v)}>검토 대화</Button>
-          <Button onClick={downloadDdl}>PostgreSQL DDL ↓</Button>
           <span role="status" className={saveError ? 'save-state failed' : 'save-state'}>
             {saving ? '◌ 저장 중' : conflict ? '! 저장 충돌' : saveError ? '! 저장 실패' : dirty ? '● 저장하지 않은 변경' : '✓ 저장 완료'}
           </span>
@@ -406,28 +381,6 @@ export function App() {
             void open(opened.project.id);
         }}>최신 내용 다시 열기</Button> : <Button disabled={saving} onClick={() => void save()}>다시 저장</Button>}
       </div>}
-      {ddlDiagnostics !== null && <section
-        className="ddl-diagnostics"
-        aria-label="DDL 내보내기 결과"
-        role="status">
-        <strong>
-          {ddlDiagnostics.length ? '내보내기 전에 다음 항목을 확인해 주세요.' : 'PostgreSQL DDL 파일을 다운로드했습니다.'}
-        </strong>
-        <IconButton onClick={() => setDdlDiagnostics(null)} aria-label="DDL 결과 닫기">×</IconButton>
-        <ul>
-          {ddlDiagnostics.map((diagnostic, index) => {
-            const resolved = diagnosticTarget(opened.document, diagnostic.objectId);
-            return <li key={`${diagnostic.code}-${diagnostic.objectId}-${index}`}>
-              {diagnostic.message}{' '}
-              {resolved.target
-                ? <Button onClick={() => {
-                  if (resolved.target) setFocusTarget({ ...resolved.target, nonce: Date.now() });
-                }}>{resolved.label}로 이동 ↗</Button>
-                : <span className="diagnostic-target">{resolved.label}</span>}
-            </li>;
-          })}
-        </ul>
-      </section>}
       <div className="review-workspace">
         <Canvas
           key={opened.project.id}
