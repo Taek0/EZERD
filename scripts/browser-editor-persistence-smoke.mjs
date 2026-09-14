@@ -27,7 +27,7 @@ seed = addDomain(seed, { id: 'alpha', name: 'Alpha', description: '' }, { x: 40,
 seed = addDomain(seed, { id: 'beta', name: 'Beta', description: '' }, { x: 440, y: 40 });
 seed = upsertEnum(seed, { id: 'status-enum', schema: 'public', name: 'order_status', values: ['draft', 'ready'] });
 for (const [id, domainId, logical, physical] of [['orders', 'alpha', '주문', 'orders'], ['customers', 'beta', '고객', 'customers']]) {
-  seed = addTable(seed, { id, domainId, scope: 'both', logical: { name: logical, definition: '' }, physical: { name: physical, schema: 'public', comment: '' }, customProperties: meta() }, { x: 40, y: 70 });
+  seed = addTable(seed, { id, domainId, scope: 'both', logical: { name: logical, definition: 'preserve logical definition' }, physical: { name: physical, schema: 'legacy_schema', comment: 'preserve table comment' }, customProperties: {common:{owner:'legacy owner'},logical:{intent:'keep'},physical:{hint:'keep'}} }, { x: 40, y: 70 });
   seed = addColumn(seed, { id: `${id}-id`, tableId: id, scope: 'both', logical: { name: '식별자', definition: '', semanticType: '', required: true }, physical: { name: 'id', type: { name: 'integer', isArray: false }, nullable: false, defaultExpression: null, comment: '' }, customProperties: meta() });
   seed = upsertKey(seed, { id: `${id}-pk`, tableId: id, scope: 'both', kind: 'primary', name: `${id}_pk`, columnIds: [`${id}-id`] });
 }
@@ -35,6 +35,7 @@ seed = addColumn(seed, { id: 'status', tableId: 'orders', scope: 'both', logical
 seed = addTableReference(seed, 'customers', 'alpha', { x: 580, y: 400 });
 seed = upsertTableRelation(seed, { id: 'order-customer', sourceTableId: 'orders', targetTableId: 'customers', scope: 'both', logical: { name: '고객별 주문', cardinality: 'one-to-many', required: true, description: '지속성 확인', sourceCardinality: { min: 0, max: 'many' }, targetCardinality: { min: 1, max: 1 } }, physical: { name: 'orders_customer_fk', sourceColumnIds: ['orders-id'], targetColumnIds: ['customers-id'], onDelete: 'NO ACTION', onUpdate: 'NO ACTION' } });
 seed.layout.nodes = seed.layout.nodes.map(n => n.objectId === 'orders' || n.objectId === 'customers' ? { ...n, width: 480, height: 270 } : n);
+seed = addTable(seed, { id: 'legacy-logical', domainId: 'alpha', scope: 'logical', logical: { name: '보존할 논리 전용 테이블', definition: 'unchanged' }, physical: { name: 'hidden_legacy', schema: 'private_schema', comment: 'keep' }, customProperties: meta() }, { x: 900, y: 900 });
 const browser = await chromium.launch({ channel: process.env.EZERD_BROWSER_CHANNEL || 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
 const errors = [];
@@ -66,18 +67,34 @@ try {
   const identity = page.waitForResponse(r => r.url().endsWith('/api/users') && r.request().method() === 'POST'); identity.catch(() => {});
   await button('워크스페이스 시작하기 →').click(); userId = (await (await identity).json()).id;
   await openProject();
-  const orders = page.getByRole('group', { name: '주문', exact: true });
+  assert.equal(await page.getByRole('button', { name: /DDL/ }).count(), 0);
+  assert.equal(await page.getByText('설계 확인', { exact: true }).count(), 0);
+  assert.equal(await page.getByText('모델 보기', { exact: true }).count(), 0);
+  assert.equal(await page.getByRole('group', { name: 'hidden_legacy', exact: true }).count(), 0);
+  const orders = page.locator('.table-node').first();
   await orders.locator('.table-inline[title^="물리 테이블명:"]').dblclick();
   await orders.getByRole('textbox', { name: '물리 테이블명', exact: true }).fill('orders_updated');
   await page.keyboard.press('Enter');
-  await orders.locator('.table-inline[title^="컬럼 주석: 주문 상태"]').dblclick();
-  await orders.getByRole('textbox', { name: '컬럼 주석', exact: true }).fill('저장 후에도 유지되는 상태');
+  await orders.locator('.table-inline[title^="컬럼 comment: 주문 상태"]').dblclick();
+  await orders.getByRole('textbox', { name: '컬럼 comment', exact: true }).fill('저장 후에도 유지되는 상태');
   await page.keyboard.press('Tab');
   const inline = await save();
   assert.equal(inline.document.tables.find(t => t.id === 'orders').physical.name, 'orders_updated');
   assert.equal(inline.document.columns.find(c => c.id === 'status').physical.comment, '저장 후에도 유지되는 상태');
   assert.equal(inline.document.columns.find(c => c.id === 'status').physical.type.enumId, 'status-enum');
   assert.deepEqual(inline.document.tableRelations[0].logical, seed.tableRelations[0].logical);
+  for (const table of inline.document.tables) {
+    const old = seed.tables.find(t => t.id === table.id);
+    assert.deepEqual(table.logical, old.logical);
+    assert.equal(table.physical.schema, old.physical.schema);
+    assert.equal(table.physical.comment, old.physical.comment);
+    assert.deepEqual(table.customProperties, old.customProperties);
+  }
+  for (const column of inline.document.columns) {
+    const old = seed.columns.find(c => c.id === column.id);
+    assert.deepEqual(column.logical, old.logical);
+    assert.equal(column.physical.defaultExpression, old.physical.defaultExpression);
+  }
   const canvas = page.getByLabel('Alpha 내부 캔버스', { exact: true });
   await canvas.click({ position: { x: 12, y: 12 }, button: 'right' });
   await page.getByRole('menuitem', { name: '자동 배치', exact: true }).click();
@@ -86,9 +103,10 @@ try {
   assert.deepEqual(arranged.document.layout.nodes.filter(n => n.viewId !== 'alpha'), inline.document.layout.nodes.filter(n => n.viewId !== 'alpha'));
   assert.equal(arranged.document.tables.find(t => t.id === 'customers').domainId, 'beta');
   assert.deepEqual(arranged.document.enums, seed.enums);
+  assert.deepEqual(arranged.document.layout.nodes.find(n => n.objectId === 'legacy-logical'), inline.document.layout.nodes.find(n => n.objectId === 'legacy-logical'));
   await page.reload(); await openProject();
   await orders.locator('.table-inline[title^="물리 테이블명: orders_updated"]').waitFor();
-  await orders.locator('.table-inline[title^="컬럼 주석: 저장 후에도 유지되는 상태"]').waitFor();
+  await orders.locator('.table-inline[title^="컬럼 comment: 저장 후에도 유지되는 상태"]').waitFor();
   const persisted = await api(`/projects/${projectId}`);
   assert.deepEqual(persisted.document, arranged.document);
   await page.screenshot({ path: '.cache/verification/editor-persistence-desktop.png', fullPage: true });
