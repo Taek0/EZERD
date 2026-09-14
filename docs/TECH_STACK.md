@@ -10,12 +10,20 @@
 
 ## 현재 적용된 개발 환경
 
+사용 방식과 개발 순서가 구체화되었다. 첫 출시는 로컬 PC 호스팅·사내 Wi-Fi 접속·username 입력 방식이며 인증·권한을 요구하지 않는다. 실시간 공동 편집과 이력 복원은 기본 기능 이후에 추가한다. 아래 협업 구조는 후속 단계의 제안이다.
+
+첫 출시 기능 묶음은 [RELEASE_SCOPE.md](./RELEASE_SCOPE.md)로 채택되었다. 갤러리·도메인·테이블 편집·서버 저장·기본 생성 DDL 내보내기·댓글·멘션이 첫 출시 대상이며, 실시간 ERD 동시 편집·복원·고급 기능은 후속 대상이다. 출시 범위 채택이 아직 적용하지 않은 라이브러리의 버전이나 상세 구현까지 확정한다는 의미는 아니다.
+
+첫 출시의 댓글·멘션·알림은 일반 API와 PostgreSQL 레코드로 제공한다. 설계 문서의 저장과 분리해 대화를 보존하고, 조회·갱신 방식은 ERD의 실시간 변경 병합과 별도로 결정한다.
+
+- username·갤러리·도메인/테이블 ERD·저장/재열기·댓글/멘션·알림·PostgreSQL DDL을 구현했다. 현재 캔버스는 React·SVG·CSS이며 React Flow 도입은 아직 제안이다. 구현 범위와 검증은 [구현 진행 기록](./IMPLEMENTATION_PROGRESS.md)을 참고한다.
 - pnpm workspace에 웹, 서버, 공통 모델, API 계약 패키지를 구성했다.
 - React·Vite, NestJS, Zod, Drizzle ORM·Kit, PostgreSQL 개발 컨테이너를 적용했다.
 - 공통 TypeScript strict 설정, lockfile, 모델 테스트, API·DB 상태 화면, 초기 마이그레이션과 DB 검증 스크립트를 제공한다.
-- Tailwind·shadcn/ui, React Flow, Yjs·Hocuspocus, Playwright는 아직 설치하지 않았다. 해당 기능을 구현하는 단계에서 추가한다.
-- PostgreSQL DDL 생성 패키지는 후속 단계에서 만든다.
-- 구체적인 버전과 실행 명령은 [README](./README.md), Drizzle 학습 예제는 [입문 문서](./docs/DRIZZLE_START.md)를 참고한다.
+- Tailwind CSS·React Aria와 무료 Untitled UI 기반 공통 컴포넌트를 적용했다. shadcn/ui, React Flow, Yjs·Hocuspocus, Playwright는 프로젝트 의존성에 추가하지 않았다. 공통 API와 테마는 [SHARED_UI.md](./SHARED_UI.md)를 참고한다.
+- PostgreSQL DDL 생성기는 packages/model/src/postgres.ts에 구현했고 지원 범위와 진단은 [DDL 문서](./POSTGRES_EXPORT.md)에 정리했다.
+- 구체적인 버전과 실행 명령은 [README](../README.md), Drizzle 학습 예제는 [입문 문서](./DRIZZLE_START.md)를 참고한다.
+- 실행 환경의 상세 버전은 [개발 환경 버전 기준](./DEVELOPMENT_VERSIONS.md), 모든 직접·간접 의존성은 [전체 버전 목록](./DEPENDENCY_VERSIONS.md)에 기록한다.
 
 ## 추천 구성
 
@@ -24,7 +32,7 @@
 | 언어 | TypeScript, strict 설정 | 화면·서버·공유 모델의 타입 검사 |
 | 프런트엔드 | React + Vite | 프로젝트 갤러리, 편집 화면, 댓글 패널과 개발·빌드 환경 |
 | 캔버스 | React Flow (@xyflow/react) | 도메인·테이블·텍스트 노드, 연결선, 이동·확대·선택 |
-| UI | Tailwind CSS + shadcn/ui | 입력 폼, 메뉴, 팝오버, 다이얼로그 등 수정 가능한 UI 기반 |
+| UI | Tailwind CSS + React Aria + Untitled UI 기반 공통 컴포넌트 | 입력 폼, 메뉴, 팝오버, 다이얼로그 등 수정 가능한 UI 기반 |
 | 서버 | Node.js LTS + NestJS | 인증, 프로젝트·권한, 댓글·멘션·알림, 내보내기 API |
 | 공동 편집 | Yjs + Hocuspocus | 공유 문서의 변경 병합, WebSocket 연결, 문서 인증·저장 연동 |
 | 앱 DB | PostgreSQL | 사용자·권한·댓글·알림, 협업 문서의 영속 상태 |
@@ -54,7 +62,9 @@ UI는 프로젝트, 캔버스, 도메인, 테이블 편집기, 댓글 등 사용
 - React Flow의 노드·연결선 형식을 설계 데이터의 저장 원본으로 삼지 않는다. 모델에서 화면 객체를 만드는 변환 계층을 둔다.
 - 큰 ERD에서는 컬럼 수, 관계선, 동시 편집 빈도를 반영한 성능 검증이 필요하다.
 
-### Tailwind CSS + shadcn/ui
+### 공통 UI 적용과 초기 제안
+
+현재는 무료 Untitled UI 기본 소스와 React Aria를 바탕으로 공통 UI를 적용했다. 다음 shadcn/ui 설명은 초기 검토 이력이다.
 
 shadcn/ui는 UI 소스 코드를 프로젝트에 가져와 수정하는 방식을 제공하므로, 팀이 테이블 속성 패널이나 댓글 입력 UI를 직접 바꾸기에 적합하다고 판단한다. 공통 색상·간격은 토큰으로 관리한다. 가져온 컴포넌트의 수정·업데이트도 팀이 관리해야 한다.
 
@@ -62,9 +72,11 @@ shadcn/ui는 UI 소스 코드를 프로젝트에 가져와 수정하는 방식�
 
 프로젝트, 멤버십, 댓글 등의 모듈 안에서 HTTP 요청 처리, 업무 규칙, 저장소 접근을 분리한다. 일관된 구조가 팀원의 코드 탐색에 도움이 된다는 판단이다. 모듈과 의존성 주입에 익숙해지는 초기 학습 비용은 있다.
 
-초기 서버는 하나의 앱으로 구성한다. Hocuspocus는 NestJS 서버 수명주기에서 관리하거나 같은 배포 안의 별도 프로세스로 실행할 수 있으며 연결 방식은 초기 구성에서 결정한다. 협업 문서 접속과 API 요청 모두 동일한 프로젝트 권한 정책을 사용한다.
+초기 서버는 하나의 앱으로 구성하고 username 기반 프로젝트·설계 저장 API를 먼저 구현한다. Hocuspocus 연결 방식과 향후 인증·권한 연동은 협업 기능을 추가할 때 결정한다.
 
 ### Yjs + Hocuspocus
+
+기본 기능 완성 이후의 제안이다. 첫 버전은 안정적인 객체 ID와 형식 버전을 가진 설계 데이터를 서버에 저장한다. 협업 도입 시 기존 저장 데이터에서 협업 문서로 이관하는 절차와 원본의 기준을 정한다. 첫 출시부터 CRDT 기반 저장을 필수로 두지 않는다.
 
 Yjs는 변경 병합을, Hocuspocus는 Yjs 문서의 WebSocket 연결과 인증·저장 연동을 담당한다. Hocuspocus 서버에는 대응하는 Hocuspocus provider를 사용한다.
 
@@ -122,7 +134,7 @@ packages/
 
 - 로컬 개발 명령, 예제 환경 변수 파일, 개발용 데이터와 마이그레이션 절차를 문서화한다.
 - 브라우저·API·협업 연결은 같은 사내 서비스 주소 아래에서 제공하는 안을 제안한다.
-- 인증은 사용자 ID·프로젝트 멤버십 모델을 먼저 정의하고 사내 SSO 연결 여부는 확인 후 결정한다.
+- 첫 출시는 username과 안정적인 내부 사용자 식별자를 사용하며, SSO·프로젝트 멤버십·역할별 권한은 추후 필요 시 도입한다.
 - DB 마이그레이션과 백업·복구를 배포 절차에 포함한다.
 - 검증 대상은 논리·물리 독립 편집, DDL, 두 브라우저 동시 수정, 삭제 충돌, 재접속, 서버 재시작 후 복원, 댓글 위치와 멘션 권한이다.
 
