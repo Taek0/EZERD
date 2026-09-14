@@ -112,3 +112,37 @@
 @keyframes ui-tooltip-in {from{opacity:0;transform:translateY(var(--ui-overlay-y,2px)) scale(.95);}to{opacity:1;transform:translateY(0) scale(1);}}
 @keyframes ui-tooltip-out {from{opacity:1;transform:translateY(0) scale(1);}to{opacity:0;transform:translateY(var(--ui-overlay-y,2px)) scale(.95);}}
 @media (prefers-reduced-motion:reduce) {.ui-button,.ui-input-group,.ui-textarea,.ui-select,.ui-menu-item-content,.ui-checkbox-indicator,.ui-checkbox-indicator svg{transition:none;}.ui-popover[data-entering],.ui-popover[data-exiting],.ui-tooltip[data-entering],.ui-tooltip[data-exiting],.ui-context-menu,.ui-spinner-circle{animation:none;}}
+
+/* EZERD theme, requested 2026-09-14. The source recipes above remain attributed;
+   these product overrides intentionally use our softer neumorphic/Swiss palette. */
+:root {
+  --ui-control-bg:#f7f8fa;
+  --ui-control-hover:#eef1f5;
+  --ui-control-border:#d8dee6;
+  --ui-product-raised:3px 3px 8px #aeb7c433,-3px -3px 8px #ffffffcc,inset 0 1px 0 #ffffffd9;
+}
+.ui-button--secondary {
+  background:linear-gradient(145deg,#f8f9fb,#e9edf2);
+  box-shadow:var(--ui-product-raised);
+}
+.ui-button--secondary:hover:not(:disabled) {
+  background:#edf1f5;
+  box-shadow:2px 2px 5px #aeb7c433,-2px -2px 5px #ffffffcc;
+}
+.ui-button--primary {
+  background:linear-gradient(145deg,#eaf0f7,#dce5ef);
+  color:#294f79;
+  box-shadow:var(--ui-product-raised);
+}
+.ui-button--primary::before {border-color:#ffffff99;}
+.ui-button--primary:hover:not(:disabled) {background:#d7e2ef;color:#24476d;}
+.ui-button--primary:active:not(:disabled),.ui-button--secondary:active:not(:disabled) {
+  box-shadow:inset 2px 2px 5px #aeb7c440,inset -2px -2px 5px #ffffffb3;
+}
+.ui-input,.ui-textarea,.ui-select-value {font-size:14px;line-height:20px;}
+.ui-select-value {min-height:40px;}
+.ui-popover {font-size:14px;}
+.ui-dropdown-popover {width:224px;}
+.ui-context-menu {min-width:224px;}
+.ui-select-item-content {padding:7px 10px 7px 8px;min-height:36px;}
+.ui-select-item-content [slot="label"] {font-size:14px;line-height:20px;}

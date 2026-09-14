@@ -3,7 +3,7 @@
 }
 body {
   margin: 0;
-  font-size: 17px;
+  font-size: 15px;
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-sans);
@@ -19,7 +19,7 @@ button, input, textarea, select {
 label {
   display: grid;
   gap: 8px;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
 }
 h1, h2, h3, p {
@@ -963,12 +963,18 @@ button.relation-disclosure:hover { color: var(--accent); background: #dce2eb66; 
 .user-button > [data-text] { min-width: 0; max-width: 100%; }
 
 /* Dashboard actions and shared interaction affordances. */
-.gallery-tools .tabs { border:1px solid #8997aa; border-radius:10px; padding:3px; }
-.gallery-tools .tabs button { border:1px solid #a2adbc; }
-.gallery .project-card { border:1px solid #8e9caf; }
-.gallery .project-card:hover,.gallery .project-card:focus-within { border-color:#526e9d; }
+.gallery-tools .tabs { border:0; border-radius:8px; padding:0; }
+.gallery-tools .tabs button { border:0; box-shadow:none; font-size:14px; }
+.gallery-tools .tabs button[aria-pressed="true"] { color:#355982; background:#e1e7ee; box-shadow:none; }
+.gallery-tools .tabs button:hover { background:#e4e8ed; }
+.gallery .project-card { border:1px solid #ffffffb3; }
+.gallery .project-card:hover,.gallery .project-card:focus-within { border-color:#c7d1df; }
 .card-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .card-actions .project-archive,.card-actions .project-delete { margin-left:auto; }
 .card-actions .project-archive:hover,.card-actions .project-delete:hover { background:#b63737; color:white; border-color:#a62b2b; }
 button,[role="button"],summary { user-select:none; }
-.editor-shell .save-controls button[aria-expanded] { font-size:15px; }
+.editor-shell .save-controls button[aria-expanded] { font-size:13px; }
+
+/* Product density: retain the display type scale; compact everyday controls. */
+.canvas-toolbar button, .breadcrumbs, .notice { font-size:14px; }
+.identity-popover { width:min(390px,90vw); padding:20px; }
