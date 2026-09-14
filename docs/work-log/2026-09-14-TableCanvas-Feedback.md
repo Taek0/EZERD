@@ -16,3 +16,8 @@
 - 긴 한글 설명을 포함한 9개 컬럼 카드: 688×665px. 컬럼 영역 scrollWidth=clientWidth=688, scrollHeight=clientHeight=561로 내부 스크롤 없음.
 - 스크린샷: `.cache/verification/table-feedback.png`. 이미지 열기 도구가 Windows sandbox 초기화 오류로 실패하여 이미지를 직접 육안 확인하지 못했다. DOM 크기·글꼴·동작 검증은 완료했다.
 - 도구 기본 샌드박스가 실행 전 초기화 실패하여 승인된 workspace 작업을 require_escalated 셸로 실행했다. 브라우저 Node 런타임도 같은 초기화 오류가 있어 격리된 Playwright Chrome으로 검증했다.
+
+## ENUM 이름 변경 후 크기 계산 보완
+- ENUM의 현재 이름을 대문자 및 배열 접미사까지 포함한 표시 문자열로 한 번 계산하고, 열 너비와 행 높이에 동일하게 사용한다. 컬럼에 남아 있는 이전 타입 이름 때문에 긴 ENUM 이름이 잘리는 문제를 수정했다.
+- 이전 타입 이름을 유지한 상태에서 ENUM을 긴 이름으로 변경하면 최소 높이가 늘어나고 최신 타입 이름을 가진 경우와 같은 크기가 계산되는 회귀 테스트를 추가했다.
+- `pnpm exec vitest run apps/web/src/table-geometry.test.ts`: 4개 통과.

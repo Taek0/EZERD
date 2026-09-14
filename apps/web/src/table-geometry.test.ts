@@ -12,6 +12,14 @@ describe('table content bounds',()=>{
   expect(tableCardSize(large,'t',1,1).width).toBeGreaterThan(empty.width);
   expect(tableCardSize(base,'t',1800,1500)).toEqual({width:1800,height:1500});
  });
+ it('grows for a renamed long ENUM while the column retains its stale type name',()=>{
+  const doc={...base,enums:[{id:'e',name:'old'}],columns:[{id:'c',tableId:'t',scope:'physical',physical:{name:'status',type:{name:'old',enumId:'e',isArray:true},comment:''}}]} as unknown as DesignDocument;
+  const renamed={...doc,enums:[{...doc.enums![0]!,name:'renamed_enum_'.repeat(12)}]};
+  expect(renamed.columns![0]!.physical.type.name).toBe('old');
+  expect(tableCardSize(renamed,'t',1,1).height).toBeGreaterThan(tableCardSize(doc,'t',1,1).height);
+  const matchingHint={...renamed,columns:renamed.columns!.map(c=>({...c,physical:{...c.physical,type:{...c.physical.type,name:renamed.enums[0]!.name}}}))};
+  expect(tableCardSize(renamed,'t',1,1)).toEqual(tableCardSize(matchingHint,'t',1,1));
+ });
  it('ignores hidden logical columns',()=>{
   const hidden={...base,columns:[{tableId:'t',scope:'logical',physical:{name:'x'.repeat(1000),type:{name:'text'},comment:'x'.repeat(1000)}}]} as unknown as DesignDocument;
   expect(tableCardSize(hidden,'t',1,1)).toEqual(tableCardSize(base,'t',1,1));
