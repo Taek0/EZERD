@@ -34,3 +34,12 @@ describe('PostgreSQL project ENUM DDL',()=>{
   const doc=fixture();doc.columns![0]!.physical.defaultExpression="'owner''s'";doc.columns![0]!.physical.type.name='json';doc.columns![1]!.physical.defaultExpression='NULL';expect(exportPostgres(doc).canExport).toBe(true);
  });
 });
+it('accepts standard string backslashes as enum label characters and re-escapes output',()=>{
+ const doc=fixture();doc.columns![0]!.physical.defaultExpression="'back\\slash'";
+ const result=exportPostgres(doc);expect(result.diagnostics).toEqual([]);expect(result.sql).toContain("DEFAULT E'back\\\\slash'");
+ doc.columns![0]!.physical.defaultExpression="E'back\\slash'";expect(exportPostgres(doc).canExport).toBe(false);
+});
+it('diagnoses duplicate enum IDs even when the type names differ',()=>{
+ const doc=fixture();doc.enums!.push({...doc.enums![0]!,name:'different_name'});
+ const result=exportPostgres(doc);expect(result.canExport).toBe(false);expect(result.sql).toBe('');expect(result.diagnostics.some(item=>item.code==='duplicate-enum-id')).toBe(true);
+});

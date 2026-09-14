@@ -18,6 +18,7 @@ const document={...createEmptyDocument(),domains:[{id:'d',name:'검증',descript
 document.enums=[{id:'state',schema,name:'state"kind',values:['ready',"owner's",'back\\slash','']}];
 document.columns.push(
  column('enum_default','types','state','stale',{type:{name:'stale',enumId:'state',isArray:false},defaultExpression:"'owner''s'"}),
+ column('enum_backslash','types','backslash_state','stale',{type:{name:'stale',enumId:'state',isArray:false},defaultExpression:"'back\\slash'"}),
  column('enum_array','types','states','stale',{type:{name:'stale',enumId:'state',isArray:true},nullable:true}),
  column('enum_source','payments','state','stale',{type:{name:'stale',enumId:'state',isArray:false},nullable:true}),
  column('enum_target','orders','state','other hint',{type:{name:'other hint',enumId:'state',isArray:false},nullable:true})
@@ -30,7 +31,7 @@ try{
  const constraints=await client.query('SELECT contype FROM pg_constraint c JOIN pg_namespace n ON c.connamespace=n.oid WHERE n.nspname=$1',[schema]);
  assert.equal(constraints.rows.filter(row=>row.contype==='f').length,3);
  await client.query(`INSERT INTO "${schema}"."types" DEFAULT VALUES`);
- const rows=await client.query(`SELECT amount, active, title, payload, state FROM "${schema}"."types"`);assert.equal(rows.rows[0].title,"owner's title");assert.deepEqual(rows.rows[0].payload,{valid:true});assert.equal(rows.rows[0].state,"owner's");
+ const rows=await client.query(`SELECT amount, active, title, payload, state, backslash_state FROM "${schema}"."types"`);assert.equal(rows.rows[0].title,"owner's title");assert.deepEqual(rows.rows[0].payload,{valid:true});assert.equal(rows.rows[0].state,"owner's");assert.equal(rows.rows[0].backslash_state,'back\\slash');
  await client.query(`UPDATE "${schema}"."types" SET states=ARRAY['ready', 'back\\slash']::"${schema}"."state""kind"[]`);
  const labels=await client.query('SELECT enumlabel FROM pg_enum e JOIN pg_type t ON e.enumtypid=t.oid JOIN pg_namespace n ON t.typnamespace=n.oid WHERE n.nspname=$1 ORDER BY enumsortorder',[schema]);
  assert.deepEqual(labels.rows.map(row=>row.enumlabel),document.enums[0].values);

@@ -51,7 +51,7 @@ function defaultSql(column:Column, enums:Map<string,ProjectEnum>):string|null|un
     const definition=enums.get(column.physical.type.enumId);
     if(!definition)return null;
     if(/^null$/i.test(value))return 'NULL';
-    if(column.physical.type.isArray || !/^'(?:[^'\\\0]|'')*'$/su.test(value))return null;
+    if(column.physical.type.isArray || !/^'(?:[^'\0]|'')*'$/su.test(value))return null;
     const label=value.slice(1,-1).replaceAll("''", "'");
     return definition.values.includes(label)?literal(label):null;
   }
