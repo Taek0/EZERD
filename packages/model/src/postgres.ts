@@ -1,4 +1,4 @@
-import type { Column, DesignDocument, Table, TableKey } from './document.js';
+import type { Column, DesignDocument, Table, TableKey, ProjectEnum } from './document.js';
 
 export interface PostgresDiagnostic { code: string; objectId: string; message: string }
 export interface PostgresExport { sql: string; diagnostics: PostgresDiagnostic[]; canExport: boolean }
@@ -12,8 +12,13 @@ const temporal = new Set(['time','timetz','timestamp','timestamptz']);
 const quote = (value: string) => '"'+value.replaceAll('"','""')+'"';
 const literal = (value: string) => "E'"+value.replaceAll('\\','\\\\').replaceAll("'","''")+"'";
 function bytes(value:string) { let count=0;for(const c of value){const cp=c.codePointAt(0)!;count+=cp<=127?1:cp<=2047?2:cp<=65535?3:4;}return count; }
-function typeSql(column: Column): string | null {
+function typeSql(column: Column, enums: Map<string, ProjectEnum>): string | null {
   const value=column.physical.type, name=canonical(value.name);
+  if(value.enumId !== undefined){
+    const definition=enums.get(value.enumId);
+    if(!definition || value.length!==undefined || value.precision!==undefined || value.scale!==undefined)return null;
+    return quote(definition.schema||'public')+'.'+quote(definition.name)+(value.isArray?'[]':'');
+  }
   if(!supported.has(name))return null;
   if(value.isArray && serials.has(name))return null;
   if(value.length !== undefined && (!['varchar','char'].includes(name)||!Number.isInteger(value.length)||value.length<1||value.length>10485760))return null;
@@ -38,10 +43,18 @@ function numericFits(value: string, precision: number, scale: number): boolean {
   const rounded = number / divisor + (number % divisor * 2n >= divisor ? 1n : 0n);
   return rounded < 10n ** BigInt(precision);
 }
-function defaultSql(column:Column):string|null|undefined {
+function defaultSql(column:Column, enums:Map<string,ProjectEnum>):string|null|undefined {
   const raw=column.physical.defaultExpression;
   if(raw===null||!raw.trim())return undefined;
   const value=raw.trim(),name=canonical(column.physical.type.name);
+  if(column.physical.type.enumId !== undefined){
+    const definition=enums.get(column.physical.type.enumId);
+    if(!definition)return null;
+    if(/^null$/i.test(value))return 'NULL';
+    if(column.physical.type.isArray || !/^'(?:[^'\\\0]|'')*'$/su.test(value))return null;
+    const label=value.slice(1,-1).replaceAll("''", "'");
+    return definition.values.includes(label)?literal(label):null;
+  }
   if(serials.has(name))return null;
   if(/^null$/i.test(value))return 'NULL';
   if(column.physical.type.isArray)return null;
@@ -77,6 +90,7 @@ function defaultSql(column:Column):string|null|undefined {
 }
 function compatible(left:Column,right:Column):boolean {
   if(left.physical.type.isArray!==right.physical.type.isArray)return false;
+  if(left.physical.type.enumId!==undefined || right.physical.type.enumId!==undefined)return left.physical.type.enumId!==undefined && left.physical.type.enumId===right.physical.type.enumId;
   const family=(value:string)=>{const name=canonical(value);if(integers.has(name))return 'integer';if(['char','varchar','text'].includes(name))return 'text';return name;};
   return family(left.physical.type.name)===family(right.physical.type.name);
 }
@@ -89,6 +103,8 @@ export function exportPostgres(doc:DesignDocument):PostgresExport {
     if(!name.trim()||name.includes('\0')||bytes(name)>63)error('invalid-identifier',id,`${label}: 비어 있거나 UTF-8 63바이트를 초과하는 이름입니다.`);
     return quote(name);
   };
+  const enumDefinitions=doc.enums??[];
+  const enums=new Map(enumDefinitions.map(item=>[item.id,item]));
   const tables=(doc.tables??[]).filter(t=>t.scope!=='logical');
   const allColumns=doc.columns??[],allKeys=doc.keys??[];
   const tableMap=new Map(tables.map(t=>[t.id,t]));
@@ -110,6 +126,16 @@ export function exportPostgres(doc:DesignDocument):PostgresExport {
     if(!doc.domains.some(d=>d.id===table.domainId))error('missing-domain',table.id,'소유 도메인이 없습니다.');
     keysByTable.set(table.id,allKeys.filter(k=>k.tableId===table.id&&k.scope!=='logical'));
   }
+  const enumNames=new Set<string>();
+  const enumIds=new Set<string>();
+  for(const definition of enumDefinitions){
+    identifier(definition.schema||'public',definition.id,'ENUM 스키마');identifier(definition.name,definition.id,'ENUM');
+    const key=JSON.stringify([definition.schema||'public',definition.name]);
+    if(enumNames.has(key)||tableNames.has(key))error('duplicate-enum-type',definition.id,'ENUM 이름이 같은 스키마의 타입 또는 테이블 이름과 충돌합니다.');
+    if(enumIds.has(definition.id))error('duplicate-enum-id',definition.id,'ENUM ID가 중복됩니다.');
+    enumNames.add(key);enumIds.add(definition.id);
+    if(!definition.values.length || new Set(definition.values).size!==definition.values.length || definition.values.some(value=>value.includes('\0')||bytes(value)>63))error('invalid-enum-values',definition.id,'ENUM 값은 중복과 NULL 문자 없이 UTF-8 63바이트 이하여야 하며 하나 이상 필요합니다.');
+  }
   let generated=0;
   const constraintName=(table:Table,name:string,id:string,index:boolean)=>{
     const actual=name.trim()?name:`ezerd_${index?'key':'fk'}_${++generated}`;
@@ -120,7 +146,8 @@ export function exportPostgres(doc:DesignDocument):PostgresExport {
     if(index){const key=JSON.stringify([schemaOf(table),actual]);if(indexNames.has(key)||tableNames.has(key))error('duplicate-index',id,'키의 인덱스 이름이 같은 스키마의 테이블·키 이름과 충돌합니다.');indexNames.add(key);}
     return quote(actual);
   };
-  for(const schema of new Set(tables.map(schemaOf)))if(schema!=='public')sql.push(`CREATE SCHEMA IF NOT EXISTS ${quote(schema)};`);
+  for(const schema of new Set([...tables.map(schemaOf),...enumDefinitions.map(item=>item.schema||'public')]))if(schema!=='public')sql.push(`CREATE SCHEMA IF NOT EXISTS ${quote(schema)};`);
+  for(const definition of enumDefinitions)sql.push(`CREATE TYPE ${quote(definition.schema||'public')}.${quote(definition.name)} AS ENUM (${definition.values.map(literal).join(', ')});`);
   for(const table of tables){
     const columns=allColumns.filter(c=>c.tableId===table.id&&c.scope!=='logical');
     const keys=keysByTable.get(table.id)!;
@@ -131,9 +158,9 @@ export function exportPostgres(doc:DesignDocument):PostgresExport {
       const name=identifier(column.physical.name,column.id,'컬럼');
       if(names.has(column.physical.name))error('duplicate-column',column.id,'물리 컬럼 이름이 중복됩니다.');names.add(column.physical.name);
       if(table.scope==='physical'&&column.scope!=='physical')error('scope-mismatch',column.id,'컬럼 범위가 물리 전용 테이블 범위를 넘어섭니다.');
-      const type=typeSql(column);
+      const type=typeSql(column,enums);
       if(!type)error('unsupported-type',column.id,`지원하지 않거나 매개변수가 잘못된 타입: ${column.physical.type.name}`);
-      const defaultExpression=defaultSql(column);
+      const defaultExpression=defaultSql(column,enums);
       if(defaultExpression===null)error('unsupported-default',column.id,'지원하지 않거나 타입과 맞지 않는 기본값입니다.');
       const primary=keys.some(k=>k.kind==='primary'&&k.columnIds.includes(column.id));
       parts.push(`  ${name} ${type??'text'}${!column.physical.nullable||primary?' NOT NULL':''}${defaultExpression?` DEFAULT ${defaultExpression}`:''}`);
@@ -145,7 +172,7 @@ export function exportPostgres(doc:DesignDocument):PostgresExport {
       if(!key.columnIds.length||new Set(key.columnIds).size!==key.columnIds.length)error('invalid-key',key.id,'키 컬럼은 하나 이상이며 중복이 없어야 합니다.');
       const columnsForKey=key.columnIds.map(id=>physicalColumn(id,table.id));
       if(columnsForKey.some(c=>!c))error('missing-key-column',key.id,'키의 컬럼이 없거나 물리 범위에 포함되지 않습니다.');
-      if(columnsForKey.some(c=>c&&canonical(c.physical.type.name)==='json'))error('unsupported-key-type',key.id,'json 타입은 기본 키/UNIQUE를 지원하지 않습니다. jsonb를 검토하세요.');
+      if(columnsForKey.some(c=>c&&c.physical.type.enumId===undefined&&canonical(c.physical.type.name)==='json'))error('unsupported-key-type',key.id,'json 타입은 기본 키/UNIQUE를 지원하지 않습니다. jsonb를 검토하세요.');
       parts.push(`  CONSTRAINT ${constraint} ${key.kind==='primary'?'PRIMARY KEY':'UNIQUE'} (${columnsForKey.map(c=>quote(c?.physical.name??'')).join(', ')})`);
     }
     sql.push(`CREATE TABLE ${qualified(table)} (\n${parts.join(',\n')}\n);`);
