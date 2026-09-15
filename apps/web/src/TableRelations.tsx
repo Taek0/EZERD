@@ -103,6 +103,7 @@ export function TableRelationsSvg({
     start: Point;
     points: Point[];
     kind: number | 'sourceAnchor' | 'targetAnchor';
+    hadRoute: boolean;
     original: RoutePatch;
     latest?: RoutePatch;
   } | null>(null);
@@ -114,12 +115,33 @@ export function TableRelationsSvg({
     drag.current = null;
     if (!active) return;
     if (active.latest) {
-      const next = applyRoutePatch(
+      let next = applyRoutePatch(
         live.current,
         active.id,
         viewId,
         commit ? active.latest : routePatchRollback(active.original, active.latest),
       );
+      if (!commit && !active.hadRoute) {
+        const restored = next.layout.relations?.find(
+          (item) => item.relationId === active.id && item.viewId === viewId,
+        );
+        if (
+          restored &&
+          restored.offset === 0 &&
+          !restored.bend &&
+          !restored.sourceAnchor &&
+          !restored.targetAnchor &&
+          !restored.waypoints?.length
+        ) {
+          next = {
+            ...next,
+            layout: {
+              ...next.layout,
+              relations: next.layout.relations?.filter((item) => item !== restored),
+            },
+          };
+        }
+      }
       (commit ? callbacks.current.onChange : callbacks.current.onPreviewChange)?.(next);
     }
     if (active.element.hasPointerCapture(active.pointerId))
@@ -129,6 +151,17 @@ export function TableRelationsSvg({
     if (readOnly || layoutReadOnly) finishDrag(false);
   }, [readOnly, layoutReadOnly]);
   useEffect(() => () => finishDrag(false), [viewId]);
+  useEffect(() => {
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && drag.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        finishDrag(false);
+      }
+    };
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, [viewId]);
   return (
     <>
       {(doc.tableRelations ?? []).map((relation) => {
@@ -237,6 +270,7 @@ export function TableRelationsSvg({
           if (event.button !== 0 || readOnly || layoutReadOnly) return;
           event.preventDefault();
           event.stopPropagation();
+          event.currentTarget.focus({ preventScroll: true });
           const element = event.currentTarget.closest('[data-route-controls]') as SVGGElement;
           const point = worldPoint(element, event.clientX, event.clientY);
           if (!point) return;
@@ -247,6 +281,7 @@ export function TableRelationsSvg({
             start: point,
             points: geometry.points,
             kind,
+            hadRoute: !!route,
             original: {
               bend: route?.bend,
               sourceAnchor: route?.sourceAnchor,

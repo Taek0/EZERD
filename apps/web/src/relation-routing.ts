@@ -1,3 +1,4 @@
+import type { RelationAnchor, RelationLayout } from '@ezerd/model';
 export type Point = { x: number; y: number };
 export type RelationBounds = Point & { width: number; height: number };
 type Port = { tip: Point; stub: Point; axis: 0 | 1 };
@@ -56,6 +57,133 @@ function ports(r: RelationBounds, lane: number): Port[] {
     { tip: { x, y: r.y - 8 }, stub: { x, y: r.y - 44 }, axis: 1 },
     { tip: { x, y: r.y + r.height + 8 }, stub: { x, y: r.y + r.height + 44 }, axis: 1 },
   ];
+}
+export function relationAnchorAtPoint(bounds: RelationBounds, point: Point): RelationAnchor {
+  const sides = [
+    ['left', Math.abs(point.x - bounds.x)],
+    ['right', Math.abs(point.x - bounds.x - bounds.width)],
+    ['top', Math.abs(point.y - bounds.y)],
+    ['bottom', Math.abs(point.y - bounds.y - bounds.height)],
+  ] as const;
+  const side = [...sides].sort((a, b) => a[1] - b[1])[0]![0];
+  const ratio =
+    side === 'left' || side === 'right'
+      ? (point.y - bounds.y) / bounds.height
+      : (point.x - bounds.x) / bounds.width;
+  return { side, ratio: Math.max(0, Math.min(1, ratio)) };
+}
+function anchorPort(bounds: RelationBounds, anchor: RelationAnchor): Port {
+  const horizontal = anchor.side === 'left' || anchor.side === 'right';
+  const extent = horizontal ? bounds.height : bounds.width;
+  const offset = Math.max(
+    Math.min(16, extent / 2),
+    Math.min(extent - Math.min(16, extent / 2), extent * anchor.ratio),
+  );
+  const x = horizontal
+    ? anchor.side === 'left'
+      ? bounds.x
+      : bounds.x + bounds.width
+    : bounds.x + offset;
+  const y = horizontal
+    ? bounds.y + offset
+    : anchor.side === 'top'
+      ? bounds.y
+      : bounds.y + bounds.height;
+  const dx = anchor.side === 'left' ? -1 : anchor.side === 'right' ? 1 : 0,
+    dy = anchor.side === 'top' ? -1 : anchor.side === 'bottom' ? 1 : 0;
+  return {
+    tip: { x: x + dx * 8, y: y + dy * 8 },
+    stub: { x: x + dx * 44, y: y + dy * 44 },
+    axis: horizontal ? 0 : 1,
+  };
+}
+function alignedTip(port: Port, neighbor: Point): Point {
+  const tip = { ...port.tip };
+  if (port.axis === 0 && Math.abs(tip.y - neighbor.y) < 1e-6) tip.y = neighbor.y;
+  if (port.axis === 1 && Math.abs(tip.x - neighbor.x) < 1e-6) tip.x = neighbor.x;
+  return tip;
+}
+function outward(port: Port, point: Point) {
+  const dx = port.stub.x - port.tip.x,
+    dy = port.stub.y - port.tip.y;
+  return (
+    (port.axis === 0 ? point.y === port.tip.y : point.x === port.tip.x) &&
+    (point.x - port.tip.x) * dx + (point.y - port.tip.y) * dy > 0
+  );
+}
+export function moveRelationSegment(
+  points: readonly Point[],
+  index: number,
+  delta: number,
+  obstacles: RelationBounds[] = [],
+): Point[] {
+  const original = points.map((p) => ({ ...p }));
+  if (
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= points.length - 1 ||
+    !Number.isFinite(delta) ||
+    delta === 0
+  )
+    return original;
+  const a = points[index]!,
+    b = points[index + 1]!,
+    horizontal = a.y === b.y;
+  if ((!horizontal && a.x !== b.x) || same(a, b)) return original;
+  const shift = (p: Point, d: number): Point =>
+    horizontal ? { x: p.x, y: p.y + d } : { x: p.x + d, y: p.y };
+  const cap = (tip: Point, other: Point): Point => {
+    const length = distance(tip, other),
+      amount = length > 72 ? 36 : length + 36;
+    return {
+      x: tip.x + Math.sign(other.x - tip.x) * amount,
+      y: tip.y + Math.sign(other.y - tip.y) * amount,
+    };
+  };
+  const candidate = (d: number) => {
+    const result = points.map((p) => ({ ...p }));
+    if (points.length === 2) {
+      const start = cap(a, b),
+        end = cap(b, a);
+      return [result[0]!, start, shift(start, d), shift(end, d), end, result[1]!];
+    }
+    if (index === 0) {
+      const start = cap(a, b);
+      return [result[0]!, start, shift(start, d), shift(b, d), ...result.slice(2)];
+    }
+    if (index === points.length - 2) {
+      const end = cap(b, a);
+      return [...result.slice(0, -2), shift(a, d), shift(end, d), end, result.at(-1)!];
+    }
+    result[index] = shift(a, d);
+    result[index + 1] = shift(b, d);
+    return result;
+  };
+  const valid = (p: Point[]) =>
+    p.length <= 130 &&
+    p.every(
+      (v) =>
+        Number.isFinite(v.x) &&
+        Number.isFinite(v.y) &&
+        Math.abs(v.x) <= 1e7 &&
+        Math.abs(v.y) <= 1e7,
+    ) &&
+    clear(p, obstacles) &&
+    !retraces(p);
+  const direct = candidate(delta);
+  if (valid(direct)) return direct;
+  let low = 0,
+    high = 1,
+    best = original;
+  for (let attempt = 0; attempt < 18; attempt++) {
+    const mid = (low + high) / 2,
+      next = candidate(delta * mid);
+    if (valid(next)) {
+      low = mid;
+      best = next;
+    } else high = mid;
+  }
+  return low > 0.001 ? best : original;
 }
 const clear = (points: Point[], boxes: RelationBounds[]) =>
   points.every((p, i) => !i || !boxes.some((r) => segmentCrossesBounds(points[i - 1]!, p, r)));
@@ -212,14 +340,15 @@ export function relationGeometry(
   offset = 0,
   bend?: Point,
   obstacles: RelationBounds[] = [],
+  options: Pick<RelationLayout, 'sourceAnchor' | 'targetAnchor' | 'waypoints'> = {},
 ) {
   const self =
     a === b || (a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
   const raw = [a, ...(self ? [] : [b]), ...obstacles];
   const boxes = raw.map((r) => expand(r, 18));
-  const source = ports(a, lane),
-    target = ports(b, lane);
-  const requested = bend ? outsidePoint(bend, boxes) : undefined;
+  const source = options.sourceAnchor ? [anchorPort(a, options.sourceAnchor)] : ports(a, lane),
+    target = options.targetAnchor ? [anchorPort(b, options.targetAnchor)] : ports(b, lane);
+  const requested = bend && !options.waypoints ? outsidePoint(bend, boxes) : undefined;
   const xs = [
     ...new Set([...boxes.flatMap((r) => [r.x, r.x + r.width]), (a.x + a.width + b.x) / 2]),
   ];
@@ -237,7 +366,7 @@ export function relationGeometry(
   const candidates: Array<{ s: Port; t: Port }> = [];
   for (const [si, s] of source.entries())
     for (const [ti, t] of target.entries()) {
-      if (self && si === ti) continue;
+      if (self && same(s.tip, t.tip)) continue;
       if (!clear([s.tip, s.stub], raw) || !clear([t.stub, t.tip], raw)) continue;
       if (boxes.some((r) => inside(s.stub, r) || inside(t.stub, r))) continue;
       candidates.push({ s, t });
@@ -255,6 +384,27 @@ export function relationGeometry(
     }
     return true;
   };
+  if (options.waypoints && options.waypoints.length <= 128) {
+    for (const { s, t } of candidates) {
+      const middle = options.waypoints.map((p) => ({ ...p }));
+      const startTip = alignedTip(s, middle[0] ?? t.tip),
+        endTip = alignedTip(t, middle.at(-1) ?? startTip);
+      const manual = [startTip, ...middle, endTip];
+      if (
+        manual.length < 2 ||
+        !outward({ ...s, tip: startTip }, manual[1]!) ||
+        !outward({ ...t, tip: endTip }, manual.at(-2)!)
+      )
+        continue;
+      if (!clear(manual, raw) || retraces(manual)) continue;
+      const cost = score(manual);
+      if (cost < bestScore) {
+        best = manual;
+        bestScore = cost;
+      }
+    }
+  }
+  const manualChosen = !!best;
   const sourcePaths = new Map<string, Point[] | null>(),
     targetPaths = new Map<string, Point[] | null>();
   if (requested)
@@ -265,6 +415,7 @@ export function relationGeometry(
         (distance(b.s.stub, requested) + distance(requested, b.t.stub)),
     );
   for (const { s, t } of candidates) {
+    if (manualChosen) break;
     if (requested) {
       if (distance(s.stub, requested) + distance(requested, t.stub) + 72 >= bestScore) continue;
       const firstDirect = [
@@ -307,8 +458,8 @@ export function relationGeometry(
     }
   // Overlapping cards can enclose every port; keep a visible exterior loop until they are separated.
   if (!best) {
-    const s = source[2]!,
-      t = target[self ? 0 : 2]!,
+    const s = source[2] ?? source[0]!,
+      t = target[self ? 0 : 2] ?? target[0]!,
       top = Math.min(...raw.map((r) => r.y)) - 64 - lane * 24;
     best = simplify([s.tip, { x: s.tip.x, y: top }, { x: t.stub.x, y: top }, t.stub, t.tip]);
   }

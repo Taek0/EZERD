@@ -65,11 +65,21 @@ export const combinedViewSchema = z.strictObject({
     .max(2000)
     .refine((ids) => new Set(ids).size === ids.length),
 });
+export const relationAnchorSchema = z.strictObject({
+  side: z.enum(['left', 'right', 'top', 'bottom']),
+  ratio: z.number().min(0).max(1),
+});
 export const relationLayoutSchema = z.strictObject({
   relationId: id,
   viewId: id,
   offset: coordinate,
   bend: z.strictObject({ x: coordinate, y: coordinate }).optional(),
+  sourceAnchor: relationAnchorSchema.optional(),
+  targetAnchor: relationAnchorSchema.optional(),
+  waypoints: z
+    .array(z.strictObject({ x: coordinate, y: coordinate }))
+    .max(128)
+    .optional(),
 });
 export const designDocumentSchema = z
   .strictObject({

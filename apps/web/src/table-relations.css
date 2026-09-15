@@ -50,7 +50,7 @@
 .table-route-endpoint.selected,
 .table-route-endpoint:hover,
 .table-route-endpoint:focus-visible {
-  fill: var(--surface, #fafbfc);
+  fill: transparent;
   stroke: var(--accent);
   stroke-width: 2;
 }

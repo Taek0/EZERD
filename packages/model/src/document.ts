@@ -115,11 +115,18 @@ export interface CombinedView {
   name: string;
   domainIds: string[];
 }
+export interface RelationAnchor {
+  side: 'left' | 'right' | 'top' | 'bottom';
+  ratio: number;
+}
 export interface RelationLayout {
   relationId: string;
   viewId: string;
   offset: number;
   bend?: Position | undefined;
+  sourceAnchor?: RelationAnchor | undefined;
+  targetAnchor?: RelationAnchor | undefined;
+  waypoints?: Position[] | undefined;
 }
 export interface DesignDocument {
   views?: CombinedView[] | undefined;
@@ -1005,6 +1012,19 @@ export function upsertRelationLayout(doc: DesignDocument, route: RelationLayout)
   if (!Number.isFinite(route.offset) || Math.abs(route.offset) > 1e7)
     throw new Error('관계 경로 위치가 올바르지 않습니다.');
   if (route.bend) position(route.bend);
+  for (const anchor of [route.sourceAnchor, route.targetAnchor])
+    if (
+      anchor &&
+      (!['left', 'right', 'top', 'bottom'].includes(anchor.side) ||
+        !Number.isFinite(anchor.ratio) ||
+        anchor.ratio < 0 ||
+        anchor.ratio > 1)
+    )
+      throw new Error('관계 접점이 올바르지 않습니다.');
+  if (route.waypoints) {
+    if (route.waypoints.length > 128) throw new Error('관계 꺾임점은 128개까지 가능합니다.');
+    for (const point of route.waypoints) position(point);
+  }
   return {
     ...doc,
     layout: {
