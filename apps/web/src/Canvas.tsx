@@ -14,6 +14,7 @@ import {
   type Table,
   upsertTableRelation,
   removeTableRelation,
+  removeTable,
   isVisibleInView,
   autoLayoutView,
   removeTableReference,
@@ -93,6 +94,9 @@ export function Canvas({
   onCreatePin,
 }: Props) {
   const confirm = useConfirm();
+  const latestDeletion = useRef({ doc, onChange, readOnly });
+  latestDeletion.current = { doc, onChange, readOnly };
+  const deletionPending = useRef(false);
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
   const [viewDraftId, setViewDraftId] = useState<string | null>(null);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
@@ -678,6 +682,59 @@ export function Canvas({
   return (
     <div
       ref={workspaceRef}
+      onKeyDown={async (event) => {
+        if (
+          event.key !== 'Delete' ||
+          event.repeat ||
+          event.nativeEvent.isComposing ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          event.shiftKey ||
+          readOnly ||
+          deletionPending.current ||
+          !selectedNode ||
+          (!domain && !table) ||
+          !(event.target instanceof Element) ||
+          event.target.closest(
+            'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"],[role="listbox"],[role="menu"],[role="dialog"],dialog',
+          )
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        const id = selectedNode.objectId;
+        const kind = domain ? 'domain' : 'table';
+        deletionPending.current = true;
+        try {
+          if (
+            !(await confirm({
+              title: kind === 'domain' ? '도메인 삭제' : '테이블 삭제',
+              description:
+                kind === 'domain'
+                  ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?'
+                  : '테이블과 소유 컬럼, 키, 관계 및 모든 외부 참조를 삭제할까요?',
+              confirmLabel: '삭제',
+              destructive: true,
+            }))
+          )
+            return;
+          const latest = latestDeletion.current;
+          if (latest.readOnly) return;
+          if (
+            kind === 'domain'
+              ? !latest.doc.domains.some((item) => item.id === id)
+              : !latest.doc.tables?.some((item) => item.id === id)
+          )
+            return;
+          latest.onChange(
+            kind === 'domain' ? removeDomain(latest.doc, id) : removeTable(latest.doc, id),
+          );
+          setSelected((current) => (current === id ? null : current));
+        } finally {
+          deletionPending.current = false;
+        }
+      }}
       style={{ '--inspector-width': `${panelWidth}px` } as CSSProperties}
       className={`workspace ${inspectorOpen ? '' : 'inspector-hidden'} ${resizingInspector ? 'inspector-resizing' : ''} ${stackedInspector ? 'inspector-stacked' : ''}`}
     >
