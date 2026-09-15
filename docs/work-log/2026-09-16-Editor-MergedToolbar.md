@@ -7,3 +7,4 @@
 - 헤더와 도구 그룹은 줄바꿈을 허용하며 좁은 화면에서는 그룹을 쌓는다.
 - `pnpm format`, `pnpm format:check`, `pnpm --filter @ezerd/web typecheck` 통과. 브라우저 검증은 상위 작업에서 이어서 수행한다.
 - `pnpm test -- apps/web/src/Canvas.test.ts apps/web/src/autosave-ui.test.ts`: 2개 파일, 8개 테스트 통과.
+- 브라우저 QA에서 inspector.css의 더 구체적인 선택자가 도구 버튼을 14px/약 34px로 유지하는 문제를 확인했다. 통합 헤더의 직접 도구 버튼 선택자를 강화하고 패딩을 4px/8px로 조정했으며 속성 토글은 30px 정사각형으로 맞췄다.
