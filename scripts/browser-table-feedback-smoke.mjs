@@ -1,105 +1,118 @@
 import assert from 'node:assert/strict';
-import { writeFile, unlink, mkdir } from 'node:fs/promises';
+import { writeFile, unlink } from 'node:fs/promises';
 const { chromium } = await import(process.env.EZERD_PLAYWRIGHT_MODULE || 'playwright');
-const filename = `__table-feedback-${Date.now()}.html`,
-  target = new URL('../apps/web/' + filename, import.meta.url);
+const filename = `__table-feedback-${Date.now()}.html`;
+const target = new URL('../apps/web/' + filename, import.meta.url);
 await writeFile(
   target,
-  `<!doctype html><div id="qa"></div><script type="module">
-import React,{useState} from 'react';import{createRoot}from'react-dom/client';
-import{TableNodeContent,TableInspector,ForeignKeyDialog,TableRelationsSvg}from'/src/TableEditor.tsx';
-import{tableCardSize}from'/src/table-geometry.ts';import{ConfirmProvider}from'/src/components/ui/ConfirmProvider.tsx';
-import'/src/tokens.css';import'/src/components/ui/ui.css';import'/src/styles.css';
-const h=React.createElement,m={common:{},logical:{},physical:{}};
-const table=id=>({id,domainId:'d',scope:'physical',logical:{name:id,definition:''},physical:{name:id,schema:'public',comment:''},customProperties:m});
-const column=(id,tableId,name,comment='')=>({id,tableId,scope:'physical',logical:{name,definition:'',semanticType:'',required:false},physical:{name,type:{name:'integer',isArray:false},nullable:false,defaultExpression:null,comment},customProperties:m});
-function Demo(){const[doc,D]=useState({schemaVersion:1,domains:[{id:'d',name:'도메인',description:''}],domainRelations:[],notes:[],tables:[table('users'),table('orders')],columns:[column('id','users','id'),...Array.from({length:8},(_,i)=>column('c'+i,'users','column_'+i,'설명을 충분히 길게 작성해도 컬럼 내용이 보이고 스크롤이 생기지 않아야 합니다.'))],keys:[{id:'pk',tableId:'users',scope:'physical',kind:'primary',name:'users_pk',columnIds:['id']}],tableRelations:[],layout:{nodes:[{id:'n1',objectId:'orders',viewId:'d',x:20,y:200,width:280,height:220},{id:'n2',objectId:'users',viewId:'d',x:900,y:200,width:280,height:220}],viewports:[]}}),[fk,F]=useState(null);window.qaDocument=doc;
-return h('main',{style:{padding:24,display:'flex',gap:24}},h('div',{},h('div',{'data-table':'users',style:tableCardSize(doc,'users',100,100)},h(TableNodeContent,{document:doc,tableId:'users',viewMode:'physical',onChange:D,onStartForeignKey:F})),h('div',{'data-table':'orders',style:{...tableCardSize(doc,'orders',100,100),marginTop:24}},h(TableNodeContent,{document:doc,tableId:'orders',viewMode:'physical',onChange:D})),h('svg',{width:1600,height:1000,style:{position:'absolute',top:1100,left:20,overflow:'visible'}},h(TableRelationsSvg,{document:doc,viewId:'d',viewMode:'physical',onSelect:()=>{},onChange:D}))),h('div',{style:{width:360}},h(TableInspector,{document:doc,tableId:'users',onChange:D,readOnly:false,onStartForeignKey:F})),fk&&h(ForeignKeyDialog,{document:doc,sourceColumnId:fk,targetTableId:'orders',onChange:D,onClose:()=>F(null)}));}createRoot(document.getElementById('qa')).render(h(ConfirmProvider,{},h(Demo)));
-</script>`,
+  `<!doctype html><html><head><link rel="stylesheet" href="/fonts/apple-sd-gothic-neo/fonts.css"></head><body><div id="qa"></div><script type="module">
+import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+import {Canvas} from '/src/Canvas.tsx';import {ConfirmProvider} from '/src/components/ui/ConfirmProvider.tsx';
+import {createEmptyDocument,addDomain,addTable,addColumn,upsertKey,createForeignKeyFromPrimaryKey,setViewport,upsertDomainRelation} from '@ezerd/model';
+import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';import '/src/inspector.css';
+const h=React.createElement,meta={common:{},logical:{},physical:{}};
+let seed=addDomain(createEmptyDocument(),{id:'d',name:'테스트',description:'',color:'#2e90fa'},{x:40,y:40});
+for(const [id,name,x,y] of [['user','user',0,0],['product','product',900,400]]){
+ seed=addTable(seed,{id,domainId:'d',scope:'physical',logical:{name,definition:''},physical:{name,schema:'public',comment:''},customProperties:meta},{x,y});
+ for(const [suffix,columnName,type] of [['id','id','uuid'],['note',id==='user'?'code':'note','text']])seed=addColumn(seed,{id:id+'-'+suffix,tableId:id,scope:'physical',logical:{name:columnName,definition:'',semanticType:'',required:false},physical:{name:columnName,type:{name:type,isArray:false},nullable:suffix!=='id',defaultExpression:null,comment:''},customProperties:meta});
+ seed=upsertKey(seed,{id:id+'-pk',tableId:id,scope:'physical',kind:'primary',name:'',columnIds:[id+'-id']});
+}
+seed=createForeignKeyFromPrimaryKey(seed,{relationId:'r1',primaryTableId:'user',foreignTableId:'product',primaryKeyId:'user-pk',columnIds:['fk-base']});
+seed=addDomain(seed,{id:'d2',name:'보조',description:''},{x:550,y:40}); seed=upsertDomainRelation(seed,{id:'dr',sourceDomainId:'d',targetDomainId:'d2',name:'흐름',description:'',direction:'forward'}); seed=setViewport(seed,{viewId:'d',x:70,y:140,zoom:.75});
+function Demo(){const [doc,setDoc]=useState(seed),[commits,setCommits]=useState(0);return h(ConfirmProvider,null,h('main',{style:{height:'96vh'}},h(Canvas,{document:doc,onChange:next=>{setDoc(next);setCommits(n=>n+1);},onPreviewChange:setDoc,readOnly:false}),h('button',{id:'fixture-isolate',onClick:()=>setDoc(d=>({...d,tableRelations:d.tableRelations.filter(r=>r.id==='r1')}))},'관계 격리'),h('button',{id:'fixture-reload',onClick:()=>setDoc(JSON.parse(JSON.stringify(doc)))} ,'문서 다시 읽기'),h('output',{id:'document-state',hidden:true},JSON.stringify(doc)),h('output',{id:'commits',hidden:true},commits)));}createRoot(document.getElementById('qa')).render(h(Demo));
+</script></body></html>`,
 );
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const page = await browser.newPage({ viewport: { width: 1800, height: 1100 } });
-page.setDefaultTimeout(8000);
-const errors = [];
-page.on('pageerror', (e) => errors.push(e.message));
-const state = () => page.evaluate(() => window.qaDocument);
+let browser;
 try {
-  await mkdir('.cache/verification', { recursive: true });
-  await page.goto('http://127.0.0.1:5173/' + filename);
-  await page.locator('[data-table="users"] .table-column-pk').waitFor();
-  const metrics = await page.locator('[data-table="users"]').evaluate((el) => {
-    const rows = el.querySelector('.table-columns');
-    return {
-      width: el.clientWidth,
-      height: el.clientHeight,
-      scrollWidth: rows.scrollWidth,
-      clientWidth: rows.clientWidth,
-      scrollHeight: rows.scrollHeight,
-      clientHeight: rows.clientHeight,
-      title: getComputedStyle(el.querySelector('header strong')).fontSize,
-      row: getComputedStyle(el.querySelector('.table-column-pk')).fontSize,
-    };
+  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  const errors = [];
+  page.on('pageerror', (error) => {
+    errors.push(error.message);
+    console.error(error.message);
   });
-  assert(metrics.scrollWidth <= metrics.clientWidth);
-  assert(metrics.scrollHeight <= metrics.clientHeight);
-  assert.equal(metrics.title, '20px');
-  assert.equal(metrics.row, '17px');
-  await page.locator('[data-table="users"] .table-column-pk').click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'PK에서 관계 연결' }).click();
-  await page.getByRole('dialog').waitFor();
-  assert.equal((await state()).columns.length, 9);
-  assert((await page.getByRole('dialog').innerText()).includes('자동 추가'));
-  await page.getByRole('button', { name: '컬럼 추가 및 관계 생성' }).click();
-  assert.equal((await state()).columns.length, 10);
-  const relation = (await state()).tableRelations[0];
-  assert.equal(relation.sourceTableId, 'orders');
-  assert.equal(relation.targetTableId, 'users');
-  assert.deepEqual(relation.physical.targetColumnIds, ['id']);
-  assert.equal((await state()).columns.at(-1).physical.name, 'id');
-  assert.equal(await page.locator('[data-table="orders"] .table-column-fk').count(), 1);
-  assert.equal(await page.locator('.table-relation-line>text').textContent(), 'users.id:orders');
-  assert(!/[CQ]/.test(await page.locator('.table-relation-line>path').last().getAttribute('d')));
-  const handle = page.getByRole('button', { name: '관계 선 조절 users.id:orders', exact: true });
-  await handle.scrollIntoViewIfNeeded();
-  const handleBox = await handle.boundingBox();
-  const beforePath = await page.locator('.table-relation-line>path').last().getAttribute('d');
-  await page.mouse.move(handleBox.x + 14, handleBox.y + 14);
-  await page.mouse.down();
-  await page.mouse.move(handleBox.x + 74, handleBox.y + 54, { steps: 6 });
-  await page.mouse.up();
-  const route = (await state()).layout.relations[0];
-  assert(route.bend && Number.isFinite(route.bend.x) && Number.isFinite(route.bend.y));
-  assert.notEqual(
-    await page.locator('.table-relation-line>path').last().getAttribute('d'),
-    beforePath,
-  );
-  await handle.focus();
-  await page.keyboard.press('ArrowRight');
-  assert.equal((await state()).layout.relations[0].bend.x, route.bend.x + 8);
-  await page.locator('[data-table="orders"] header').click({ button: 'right' });
-  await page.getByRole('menuitem', { name: '컬럼 추가', exact: true }).click();
-  assert.equal((await state()).columns.length, 11);
-  await page.getByRole('button', { name: /1\. id/ }).click();
-  const type = page.locator('.panel-detail').getByRole('combobox', { name: '타입', exact: true });
-  await type.fill('var');
-  await page.getByRole('option', { name: 'VARCHAR', exact: true }).click();
-  assert.equal((await state()).columns[0].physical.type.name, 'varchar');
-  assert.equal(await type.inputValue(), 'VARCHAR');
+  const state = async () => JSON.parse(await page.locator('#document-state').textContent());
+  const commits = async () => Number(await page.locator('#commits').textContent());
+  await page.goto((process.env.EZERD_WEB_URL || 'http://127.0.0.1:5175') + '/' + filename);
+  await page.locator('.relation').getByText('흐름').click();
+  await page.getByRole('textbox', { name: '관계 이름', exact: true }).fill('변경 흐름');
+  assert.equal((await state()).domainRelations[0].name, '변경 흐름');
+  assert.equal(await page.getByRole('button', { name: '관계 수정', exact: true }).count(), 0);
+  await page.getByRole('textbox', { name: '관계 이름', exact: true }).fill('');
+  assert.equal((await state()).domainRelations[0].name, '변경 흐름');
+  await page.getByRole('textbox', { name: '관계 이름', exact: true }).fill('완료 흐름');
+  await page.getByRole('button', { name: '테스트 도메인 열기' }).click();
+  const user = page.getByRole('group', { name: 'user', exact: true });
   assert.equal(
-    await page.locator('.panel-detail').getByLabel('길이', { exact: true }).isDisabled(),
-    false,
+    await user.locator('header strong').evaluate((e) => getComputedStyle(e).fontSize),
+    '28px',
+  );
+  await user.focus();
+  await page
+    .locator('.table-inspector .panel-row')
+    .filter({ hasText: 'code' })
+    .getByRole('button')
+    .click();
+  const controls = page.locator('.table-column-type-controls');
+  const typeBox = await controls.getByRole('combobox', { name: '타입', exact: true }).boundingBox();
+  const enumBox = await controls.getByRole('button', { name: /ENUM/ }).boundingBox();
+  assert(typeBox.x < enumBox.x);
+  let width = (await user.boundingBox()).width;
+  await user.locator('header').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'NULL 숨기기', exact: true }).click();
+  const noNull = (await user.boundingBox()).width;
+  assert(noNull < width);
+  await user.locator('header').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'comment 숨기기', exact: true }).click();
+  assert((await user.boundingBox()).width < noNull);
+  await page.getByRole('button', { name: 'ENUM', exact: true }).click();
+  assert.equal(
+    await page.locator('.enum-dialog').evaluate((e) => getComputedStyle(e).animationName),
+    'enum-dialog-enter',
+  );
+  await page.getByRole('button', { name: 'ENUM 관리 닫기' }).click();
+  await page.locator('.table-relation-line[data-relation-id="r1"]').press('Enter');
+  await page.getByRole('button', { name: /ON DELETE/ }).waitFor();
+  await page.getByRole('button', { name: /ON UPDATE/ }).waitFor();
+  const dot = page.locator('.table-route-endpoint-dot').first();
+  assert.equal(await dot.getAttribute('r'), '4');
+  assert.notEqual(await dot.evaluate((e) => getComputedStyle(e).fill), 'none');
+  await page.getByRole('button', { name: '도메인 뷰', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: '도메인 뷰' });
+  await picker.getByRole('checkbox', { name: '테스트', exact: true }).check();
+  await picker.getByRole('checkbox', { name: '보조', exact: true }).check();
+  await picker.getByRole('button', { name: '적용', exact: true }).click();
+  const before = (await state()).layout.nodes;
+  const userBox = await user.boundingBox();
+  await page.mouse.move(userBox.x + 20, userBox.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(userBox.x + 60, userBox.y + 50, { steps: 3 });
+  await page.mouse.up();
+  assert.deepEqual((await state()).layout.nodes, before);
+  const segment = page
+    .locator('.table-route-control-group[data-relation-id="r1"] .table-route-segment')
+    .nth(1);
+  const pos = await segment.evaluate((e) => {
+    const p = e.getPointAtLength(e.getTotalLength() / 2);
+    const q = new DOMPoint(p.x, p.y).matrixTransform(e.getScreenCTM());
+    return { x: q.x, y: q.y, h: e.classList.contains('horizontal') };
+  });
+  const count = await commits();
+  await page.mouse.move(pos.x, pos.y);
+  await page.mouse.down();
+  await page.mouse.move(pos.x + (pos.h ? 0 : 20), pos.y + (pos.h ? 20 : 0), { steps: 4 });
+  await page.mouse.up();
+  assert.equal(await commits(), count + 1);
+  assert.deepEqual((await state()).layout.nodes, before);
+  assert(
+    (await state()).layout.relations.some((r) => r.relationId === 'r1' && r.waypoints?.length),
   );
   assert.deepEqual(errors, []);
-  await page.screenshot({ path: '.cache/verification/table-feedback.png', fullPage: true });
+  await page.screenshot({ path: '.cache/table-feedback.png', fullPage: true });
   console.log(
-    'PASS: shared content bounds/no scroll; 20/17px fonts; PK→FK auto column; highlights; exact label; orthogonal persisted route; header context add; searchable uppercase canonical type.',
-    metrics,
+    'PASS domain live edits, type/ENUM order, hidden width, fonts, ENUM motion, FK actions, endpoint dots, fixed combined tables with draggable routes',
   );
-} catch (error) {
-  console.log('ERRORS', errors);
-  console.log(await page.locator('body').innerText());
-  throw error;
 } finally {
-  await browser.close();
+  await browser?.close();
   await unlink(target);
 }

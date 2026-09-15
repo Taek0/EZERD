@@ -27,14 +27,17 @@ try {
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   const errors = [];
-  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('pageerror', (error) => {
+    errors.push(error.message);
+    console.error(error.message);
+  });
   const state = async () => JSON.parse(await page.locator('#document-state').textContent());
   const commits = async () => Number(await page.locator('#commits').textContent());
-  await page.goto('http://127.0.0.1:5173/' + filename);
+  await page.goto((process.env.EZERD_WEB_URL || 'http://127.0.0.1:5173') + '/' + filename);
   await page.getByRole('button', { name: '테스트 도메인 열기' }).click();
   const user = page.getByRole('group', { name: 'user', exact: true });
   const product = page.getByRole('group', { name: 'product', exact: true });
-  const code = user.locator('.table-column-row').filter({ hasText: 'code' });
+  const code = user.locator('.table-column-row:not(.table-column-head)').nth(1);
   assert.equal(await code.getByRole('combobox').count(), 0);
   const typeFont = await code.locator('.table-type-trigger').evaluate((element) => {
     const style = getComputedStyle(element);
@@ -56,8 +59,9 @@ try {
   );
   assert.equal(await code.getByRole('combobox').count(), 0);
   const typeTrigger = code.getByRole('button', { name: 'code 타입 편집', exact: true });
-  await typeTrigger.focus();
-  await typeTrigger.press('Enter');
+  await code.locator('.table-inline').first().focus();
+  await code.getByRole('textbox', { name: '컬럼명', exact: true }).press('Tab');
+
   await code.getByRole('combobox').fill('VARCHAR');
   assert.equal(await code.locator('.ui-search-type svg').count(), 0);
   await code.getByRole('combobox').press('Escape');
