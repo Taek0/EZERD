@@ -1,6 +1,7 @@
 <p align = "center">
 <img width="1560" height="285" alt="Image" src="https://github.com/user-attachments/assets/fd3b48ca-e0c7-40cb-97e0-58823d1009bf" />
 </p>
+
 # EZERD
 
 도메인 관계도에서 시작해 논리·물리 ERD로 이어지는 팀 협업 설계 도구.
