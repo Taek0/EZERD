@@ -34,7 +34,7 @@ describe('table editor rendered controls',()=>{
   const logical=renderToStaticMarkup(createElement(ConfirmProvider,{children:createElement(TableNodeContent,{document:doc,tableId:'t',viewMode:'logical',viewId:'external'})}));
   expect(logical).toContain('외부 참조 · '); expect(logical).not.toContain('논리 전용 항목');
   const physical=renderToStaticMarkup(createElement(ConfirmProvider,{children:createElement(TableNodeContent,{document:doc,tableId:'t',viewMode:'physical'})}));
-  expect(physical).toContain('invoice'); expect(physical).not.toContain('hidden_column');
+  expect(physical).toContain('background:#8993a3'); expect(physical).toContain('invoice'); expect(physical).not.toContain('hidden_column');
  });
  it('keeps physical inspector mutations read-only without exposing model view controls',()=>{
   const doc=example();
