@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { syncEventSchema, syncOperationInputSchema } from './sync.js';
 
-const document = { schemaVersion: 1, domains: [], domainRelations: [], notes: [], layout: { nodes: [], viewports: [] } };
+const document = {
+  schemaVersion: 1,
+  domains: [],
+  domainRelations: [],
+  notes: [],
+  layout: { nodes: [], viewports: [] },
+};
 const operation = {
   operationId: '00000000-0000-4000-8000-000000000001',
   groupId: '00000000-0000-4000-8000-000000000002',
@@ -19,27 +25,46 @@ const operation = {
 describe('sync contracts', () => {
   it('accepts a complete operation without a client-supplied actor', () => {
     expect(syncOperationInputSchema.parse(operation)).toEqual(operation);
-    expect(syncOperationInputSchema.safeParse({ ...operation, actor: { id: operation.clientId } }).success).toBe(false);
+    expect(
+      syncOperationInputSchema.safeParse({ ...operation, actor: { id: operation.clientId } })
+        .success,
+    ).toBe(false);
   });
 
   it('requires server actor and ordering metadata on events', () => {
-    expect(syncEventSchema.safeParse({
-      operationId: operation.operationId,
-      groupId: operation.groupId,
-      sequence: 1,
-      status: 'accepted',
-      actor: { id: operation.clientId, username: '사용자', color: '#123abc' },
-      changes: operation.changes,
-      changedPaths: ['/domains/domain/name'],
-      createdAt: '2026-09-15T00:00:01.000Z',
-      nextBaseline: { baselineId: operation.baselineId, baseSequence: 1, baselineIssuedAt: '2026-09-15T00:00:01.000Z' },
-      document,
-    }).success).toBe(true);
+    expect(
+      syncEventSchema.safeParse({
+        operationId: operation.operationId,
+        groupId: operation.groupId,
+        sequence: 1,
+        status: 'accepted',
+        actor: { id: operation.clientId, username: '사용자', color: '#123abc' },
+        changes: operation.changes,
+        changedPaths: ['/domains/domain/name'],
+        createdAt: '2026-09-15T00:00:01.000Z',
+        nextBaseline: {
+          baselineId: operation.baselineId,
+          baseSequence: 1,
+          baselineIssuedAt: '2026-09-15T00:00:01.000Z',
+        },
+        document,
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects duplicate and malformed paths', () => {
-    expect(syncOperationInputSchema.safeParse({ ...operation, changes: [...operation.changes, ...operation.changes] }).success).toBe(false);
-    expect(syncOperationInputSchema.safeParse({ ...operation, changes: [{ ...operation.changes[0], path: '/domains//name' }] }).success).toBe(false);
+    expect(
+      syncOperationInputSchema.safeParse({
+        ...operation,
+        changes: [...operation.changes, ...operation.changes],
+      }).success,
+    ).toBe(false);
+    expect(
+      syncOperationInputSchema.safeParse({
+        ...operation,
+        changes: [{ ...operation.changes[0], path: '/domains//name' }],
+      }).success,
+    ).toBe(false);
   });
 
   it('requires a server-issued baseline identity and baseline document', () => {

@@ -9,7 +9,8 @@ describe('inspector geometry and preference', () => {
     expect(clampInspectorWidth(200, 720)).toBe(280);
   });
   it('recovers invalid storage and retains a valid requested width independently of available space', () => {
-    for (const value of [null, '', 'broken', 'Infinity', '-2']) expect(readInspectorWidth(value)).toBe(320);
+    for (const value of [null, '', 'broken', 'Infinity', '-2'])
+      expect(readInspectorWidth(value)).toBe(320);
     expect(readInspectorWidth('480')).toBe(480);
     expect(clampInspectorWidth(readInspectorWidth('480'), 720)).toBe(400);
     expect(clampInspectorWidth(readInspectorWidth('480'), 1000)).toBe(480);

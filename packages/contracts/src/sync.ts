@@ -4,18 +4,28 @@ import { designDocumentSchema } from './workspace.js';
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
 /** JSON-pointer-like paths. Segments are object ids or property names, never array indexes. */
-export const syncPathSchema = z.string().min(1).max(1000).refine(
-  value => value.startsWith('/') && value !== '/' && !value.endsWith('/') && !value.includes('//'),
-  '변경 경로가 올바르지 않습니다.',
-);
+export const syncPathSchema = z
+  .string()
+  .min(1)
+  .max(1000)
+  .refine(
+    (value) =>
+      value.startsWith('/') && value !== '/' && !value.endsWith('/') && !value.includes('//'),
+    '변경 경로가 올바르지 않습니다.',
+  );
 
-export const syncChangeSchema = z.strictObject({
-  path: syncPathSchema,
-  before: z.unknown(),
-  after: z.unknown(),
-  beforeExists: z.boolean().optional(),
-  afterExists: z.boolean().optional(),
-}).refine(change => Object.hasOwn(change, 'before') && Object.hasOwn(change, 'after'), '변경 전후 값이 필요합니다.');
+export const syncChangeSchema = z
+  .strictObject({
+    path: syncPathSchema,
+    before: z.unknown(),
+    after: z.unknown(),
+    beforeExists: z.boolean().optional(),
+    afterExists: z.boolean().optional(),
+  })
+  .refine(
+    (change) => Object.hasOwn(change, 'before') && Object.hasOwn(change, 'after'),
+    '변경 전후 값이 필요합니다.',
+  );
 
 export const syncOperationInputSchema = z.strictObject({
   operationId: z.uuid(),
@@ -26,10 +36,14 @@ export const syncOperationInputSchema = z.strictObject({
   baselineIssuedAt: z.iso.datetime(),
   kind: z.enum(['online', 'reconnect']),
   dependencyPaths: z.array(syncPathSchema).max(1000).default([]),
-  changes: z.array(syncChangeSchema).min(1).max(1000).refine(
-    changes => new Set(changes.map(change => change.path)).size === changes.length,
-    '한 작업에 같은 변경 경로가 중복되었습니다.',
-  ),
+  changes: z
+    .array(syncChangeSchema)
+    .min(1)
+    .max(1000)
+    .refine(
+      (changes) => new Set(changes.map((change) => change.path)).size === changes.length,
+      '한 작업에 같은 변경 경로가 중복되었습니다.',
+    ),
   baselineDocument: designDocumentSchema,
   document: designDocumentSchema,
 });
@@ -37,7 +51,10 @@ export const syncOperationInputSchema = z.strictObject({
 export const syncActorSchema = z.strictObject({
   id: z.uuid(),
   username: z.string().trim().min(1).max(40),
-  color: z.string().length(7).regex(/^#[0-9a-f]{6}$/i),
+  color: z
+    .string()
+    .length(7)
+    .regex(/^#[0-9a-f]{6}$/i),
 });
 
 export const syncOperationStatusSchema = z.enum(['accepted', 'rejected']);

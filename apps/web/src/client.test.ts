@@ -9,18 +9,39 @@ describe('document save acknowledgements', () => {
 describe('API failures', () => {
   it('preserves the conflict status without requiring a JSON body', async () => {
     const fetcher = async () => new Response('Conflict', { status: 409 });
-    await expect(request('/api/projects/a', undefined, fetcher as typeof fetch)).rejects.toMatchObject({ status: 409 });
+    await expect(
+      request('/api/projects/a', undefined, fetcher as typeof fetch),
+    ).rejects.toMatchObject({ status: 409 });
   });
   it('returns successful responses and handles empty proxy errors', async () => {
-    expect(await request('/api/users', undefined, (async () => Response.json([{ id: 'a' }])) as typeof fetch)).toEqual([{ id: 'a' }]);
-    await expect(request('/api/users', undefined, (async () => new Response('', { status: 502 })) as typeof fetch)).rejects.toBeInstanceOf(ApiError);
+    expect(
+      await request('/api/users', undefined, (async () =>
+        Response.json([{ id: 'a' }])) as typeof fetch),
+    ).toEqual([{ id: 'a' }]);
+    await expect(
+      request(
+        '/api/users',
+        undefined,
+        (async () => new Response('', { status: 502 })) as typeof fetch,
+      ),
+    ).rejects.toBeInstanceOf(ApiError);
   });
 });
 describe('authenticated API requests', () => {
   it('uses only a current stored session token', () => {
-    const storage = (value: unknown) => ({ getItem: () => value === undefined ? null : JSON.stringify(value) });
-    expect(storedAuthorization(storage({ token: 'session-token', expiresAt: new Date(Date.now() + 60_000).toISOString() }))).toBe('Bearer session-token');
-    expect(storedAuthorization(storage({ token: 'expired', expiresAt: new Date(Date.now() - 1).toISOString() }))).toBeUndefined();
+    const storage = (value: unknown) => ({
+      getItem: () => (value === undefined ? null : JSON.stringify(value)),
+    });
+    expect(
+      storedAuthorization(
+        storage({ token: 'session-token', expiresAt: new Date(Date.now() + 60_000).toISOString() }),
+      ),
+    ).toBe('Bearer session-token');
+    expect(
+      storedAuthorization(
+        storage({ token: 'expired', expiresAt: new Date(Date.now() - 1).toISOString() }),
+      ),
+    ).toBeUndefined();
     expect(storedAuthorization(storage(undefined))).toBeUndefined();
     expect(storedAuthorization({ getItem: () => '{' })).toBeUndefined();
   });
@@ -43,15 +64,25 @@ describe('save response reconciliation', () => {
       project: {
         version: number;
       };
-    }>(done => {
+    }>((done) => {
       resolve = done;
     });
     const current = { revision: 2, document: { name: 'edited during save' } };
     resolve({ document: { name: 'snapshot' }, project: { version: 8 } });
-    expect(acknowledgeSave(current, 1, await pending)).toEqual({ document: current.document, project: { version: 8 }, saved: 1, dirty: true });
+    expect(acknowledgeSave(current, 1, await pending)).toEqual({
+      document: current.document,
+      project: { version: 8 },
+      saved: 1,
+      dirty: true,
+    });
   });
   it('marks an unchanged snapshot saved and accepts the server document', () => {
-    expect(acknowledgeSave({ revision: 1, document: 'local' }, 1, { document: 'server', project: { version: 2 } })).toEqual({ document: 'server', project: { version: 2 }, saved: 1, dirty: false });
+    expect(
+      acknowledgeSave({ revision: 1, document: 'local' }, 1, {
+        document: 'server',
+        project: { version: 2 },
+      }),
+    ).toEqual({ document: 'server', project: { version: 2 }, saved: 1, dirty: false });
   });
 });
 it('returns from a deleted domain on reload and keeps archived navigation local', () => {
@@ -66,7 +97,7 @@ it('generates UUID v4 on HTTP contexts without randomUUID', () => {
     getRandomValues: (bytes: Uint8Array) => {
       bytes.fill(255);
       return bytes;
-    }
+    },
   };
   expect(newId(cryptoLike)).toBe('ffffffff-ffff-4fff-bfff-ffffffffffff');
 });
@@ -77,10 +108,14 @@ it('rejects overlapping saves and releases the gate after a failed request', asy
   expect(gate.begin()).toBe(false);
   const document = { name: 'unsaved edits' };
   try {
-    await request('/save', undefined, (async () => new Response('', { status: 503 })) as typeof fetch);
-  }
-  catch { /* keep local document */ }
-  finally {
+    await request(
+      '/save',
+      undefined,
+      (async () => new Response('', { status: 503 })) as typeof fetch,
+    );
+  } catch {
+    /* keep local document */
+  } finally {
     gate.finish();
   }
   expect(document).toEqual({ name: 'unsaved edits' });
@@ -88,6 +123,11 @@ it('rejects overlapping saves and releases the gate after a failed request', asy
 });
 import { clampLayoutPatch } from './client.js';
 it('clamps typed and dragged dimensions and coordinates to valid model bounds', () => {
-  expect(clampLayoutPatch({ x: -10000001, y: 10000001, width: 10001, height: -20 })).toEqual({ x: -10000000, y: 10000000, width: 10000, height: 40 });
+  expect(clampLayoutPatch({ x: -10000001, y: 10000001, width: 10001, height: -20 })).toEqual({
+    x: -10000000,
+    y: 10000000,
+    width: 10000,
+    height: 40,
+  });
   expect(clampLayoutPatch({ x: 1.5, width: 240 })).toEqual({ x: 1.5, width: 240 });
 });

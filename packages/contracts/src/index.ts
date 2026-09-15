@@ -6,7 +6,11 @@ export const healthSchema = z.object({
 });
 
 export const readinessSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('ready'), database: z.literal('connected'), schema: z.literal('ready') }),
+  z.object({
+    status: z.literal('ready'),
+    database: z.literal('connected'),
+    schema: z.literal('ready'),
+  }),
   z.object({ status: z.literal('unavailable'), message: z.string() }),
 ]);
 

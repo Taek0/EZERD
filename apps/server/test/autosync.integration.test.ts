@@ -4,55 +4,133 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
-import { addDomain, deriveOperationChanges, removeKey, removeTable, sharedDocument, updateDomain } from '@ezerd/model';
+import {
+  addDomain,
+  deriveOperationChanges,
+  removeKey,
+  removeTable,
+  sharedDocument,
+  updateDomain,
+} from '@ezerd/model';
 import type { DesignDocument } from '@ezerd/model';
 
 describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => {
-  let app: NestExpressApplication; let pool: pg.Pool; let base: string; let token = ''; let projectId = ''; let userId = '';
-  const request = async (path: string, method = 'GET', body?: unknown, authentication: boolean | string = true) => {
-    const requestToken = typeof authentication === 'string' ? authentication : authentication ? token : '';
-    const response = await fetch(`${base}/api${path}`, { method, headers: { 'content-type': 'application/json', ...(requestToken ? { authorization: `Bearer ${requestToken}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const text = await response.text(); return { status: response.status, data: response.headers.get('content-type')?.includes('json') ? JSON.parse(text) : text };
+  let app: NestExpressApplication;
+  let pool: pg.Pool;
+  let base: string;
+  let token = '';
+  let projectId = '';
+  let userId = '';
+  const request = async (
+    path: string,
+    method = 'GET',
+    body?: unknown,
+    authentication: boolean | string = true,
+  ) => {
+    const requestToken =
+      typeof authentication === 'string' ? authentication : authentication ? token : '';
+    const response = await fetch(`${base}/api${path}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        ...(requestToken ? { authorization: `Bearer ${requestToken}` } : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    return {
+      status: response.status,
+      data: response.headers.get('content-type')?.includes('json') ? JSON.parse(text) : text,
+    };
   };
   beforeAll(async () => {
-    const { AppModule } = await import('../dist/app.module.js'); const { readConfig } = await import('../dist/config.js'); const config = readConfig();
-    if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(config.DATABASE_URL).hostname)) throw new Error('Integration tests require a local database.');
-    pool = new pg.Pool({ connectionString: config.DATABASE_URL }); app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
-    const { configureApplication } = await import('../dist/application.js'); configureApplication(app); await app.listen(0, '127.0.0.1'); base = await app.getUrl();
-    const user = await request('/users', 'POST', { username: `sync-${randomUUID().slice(0, 24)}`, pin: '0424' }, false); userId = user.data.id;
+    const { AppModule } = await import('../dist/app.module.js');
+    const { readConfig } = await import('../dist/config.js');
+    const config = readConfig();
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(config.DATABASE_URL).hostname))
+      throw new Error('Integration tests require a local database.');
+    pool = new pg.Pool({ connectionString: config.DATABASE_URL });
+    app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
+    const { configureApplication } = await import('../dist/application.js');
+    configureApplication(app);
+    await app.listen(0, '127.0.0.1');
+    base = await app.getUrl();
+    const user = await request(
+      '/users',
+      'POST',
+      { username: `sync-${randomUUID().slice(0, 24)}`, pin: '0424' },
+      false,
+    );
+    userId = user.data.id;
     expect(user.status).toBe(201);
-    const session = await request('/sessions', 'POST', { userId, pin: '0424' }, false); token = session.data.token;
+    const session = await request('/sessions', 'POST', { userId, pin: '0424' }, false);
+    token = session.data.token;
     expect(session.status).toBe(201);
-    const project = await request('/projects', 'POST', { name: `sync-${randomUUID()}` }); projectId = project.data.id;
+    const project = await request('/projects', 'POST', { name: `sync-${randomUUID()}` });
+    projectId = project.data.id;
     expect(project.status).toBe(201);
   });
-  afterAll(async () => { if (pool) { if (projectId) await pool.query('DELETE FROM projects WHERE id=$1', [projectId]); if (userId) await pool.query('DELETE FROM users WHERE id=$1', [userId]); await pool.end(); } if (app) await app.close(); });
+  afterAll(async () => {
+    if (pool) {
+      if (projectId) await pool.query('DELETE FROM projects WHERE id=$1', [projectId]);
+      if (userId) await pool.query('DELETE FROM users WHERE id=$1', [userId]);
+      await pool.end();
+    }
+    if (app) await app.close();
+  });
 
   it('accepts the canonical shared baseline returned to a browser', async () => {
-    const isolated = await request('/projects', 'POST', { name: `browser-baseline-${randomUUID()}` });
+    const isolated = await request('/projects', 'POST', {
+      name: `browser-baseline-${randomUUID()}`,
+    });
     expect(isolated.status).toBe(201);
     try {
       const clientId = randomUUID();
-      const baseline = (await request(`/projects/${isolated.data.id}/sync-baseline`, 'POST', { clientId })).data;
+      const baseline = (
+        await request(`/projects/${isolated.data.id}/sync-baseline`, 'POST', { clientId })
+      ).data;
       const browserBaseline = sharedDocument(baseline.document);
 
-      const document = addDomain(browserBaseline, { id: randomUUID(), name: '브라우저 기준', description: '' }, { x: 12, y: 34 });
+      const document = addDomain(
+        browserBaseline,
+        { id: randomUUID(), name: '브라우저 기준', description: '' },
+        { x: 12, y: 34 },
+      );
       const operation = {
-        operationId: randomUUID(), groupId: randomUUID(), clientId,
-        baselineId: baseline.baselineId, baseSequence: baseline.sequence, baselineIssuedAt: baseline.baselineIssuedAt,
-        kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(browserBaseline, document),
-        baselineDocument: browserBaseline, document,
+        operationId: randomUUID(),
+        groupId: randomUUID(),
+        clientId,
+        baselineId: baseline.baselineId,
+        baseSequence: baseline.sequence,
+        baselineIssuedAt: baseline.baselineIssuedAt,
+        kind: 'online',
+        dependencyPaths: [],
+        changes: deriveOperationChanges(browserBaseline, document),
+        baselineDocument: browserBaseline,
+        document,
       };
       const response = await request(`/projects/${isolated.data.id}/operations`, 'POST', operation);
       expect(response.status).toBe(201);
       expect(response.data.status, response.data.reason).toBe('accepted');
       expect(baseline.document).toEqual(browserBaseline);
 
-      const alteredBaseline = addDomain(browserBaseline, { id: randomUUID(), name: '위조 기준', description: '' }, { x: 1, y: 2 });
-      const alteredDocument = addDomain(alteredBaseline, { id: randomUUID(), name: '위조 기준 작업', description: '' }, { x: 3, y: 4 });
+      const alteredBaseline = addDomain(
+        browserBaseline,
+        { id: randomUUID(), name: '위조 기준', description: '' },
+        { x: 1, y: 2 },
+      );
+      const alteredDocument = addDomain(
+        alteredBaseline,
+        { id: randomUUID(), name: '위조 기준 작업', description: '' },
+        { x: 3, y: 4 },
+      );
       const rejected = await request(`/projects/${isolated.data.id}/operations`, 'POST', {
-        ...operation, operationId: randomUUID(), groupId: randomUUID(),
-        changes: deriveOperationChanges(alteredBaseline, alteredDocument), baselineDocument: alteredBaseline, document: alteredDocument,
+        ...operation,
+        operationId: randomUUID(),
+        groupId: randomUUID(),
+        changes: deriveOperationChanges(alteredBaseline, alteredDocument),
+        baselineDocument: alteredBaseline,
+        document: alteredDocument,
       });
       expect(rejected.status).toBe(201);
       expect(rejected.data.status).toBe('rejected');
@@ -64,265 +142,888 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
 
   it('merges disjoint edits, replays duplicates, rejects mismatches and protects reconnect/deletion', async () => {
     expect((await request(`/projects/${projectId}/operations`, 'POST', {})).status).toBe(400);
-    const initial = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId: randomUUID() })).data;
+    const initial = (
+      await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId: randomUUID() })
+    ).data;
     const clientId = randomUUID();
-    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
-    const make = (document: DesignDocument, operationId = randomUUID()) => ({ operationId, groupId: randomUUID(), clientId, baselineId: baseline.baselineId, baseSequence: baseline.sequence, baselineIssuedAt: baseline.baselineIssuedAt, kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(baseline.document, document), baselineDocument: baseline.document, document });
-    const firstDoc = addDomain(baseline.document, { id: 'first', name: 'First', description: '' }, { x: 0, y: 0 });
-    const firstInput = make(firstDoc); const first = await request(`/projects/${projectId}/operations`, 'POST', firstInput);
-    expect(first.status).toBe(201); expect(first.data.status).toBe('accepted');
-    expect((await request(`/projects/${projectId}/operations`, 'POST', firstInput)).data).toEqual(first.data);
-    expect((await request(`/projects/${projectId}/operations`, 'POST', { ...firstInput, groupId: randomUUID() })).status).toBe(409);
+    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId }))
+      .data;
+    const make = (document: DesignDocument, operationId = randomUUID()) => ({
+      operationId,
+      groupId: randomUUID(),
+      clientId,
+      baselineId: baseline.baselineId,
+      baseSequence: baseline.sequence,
+      baselineIssuedAt: baseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(baseline.document, document),
+      baselineDocument: baseline.document,
+      document,
+    });
+    const firstDoc = addDomain(
+      baseline.document,
+      { id: 'first', name: 'First', description: '' },
+      { x: 0, y: 0 },
+    );
+    const firstInput = make(firstDoc);
+    const first = await request(`/projects/${projectId}/operations`, 'POST', firstInput);
+    expect(first.status).toBe(201);
+    expect(first.data.status).toBe('accepted');
+    expect((await request(`/projects/${projectId}/operations`, 'POST', firstInput)).data).toEqual(
+      first.data,
+    );
+    expect(
+      (
+        await request(`/projects/${projectId}/operations`, 'POST', {
+          ...firstInput,
+          groupId: randomUUID(),
+        })
+      ).status,
+    ).toBe(409);
 
-    const secondDoc = addDomain(baseline.document, { id: 'second', name: 'Second', description: '' }, { x: 20, y: 20 });
+    const secondDoc = addDomain(
+      baseline.document,
+      { id: 'second', name: 'Second', description: '' },
+      { x: 20, y: 20 },
+    );
     const second = await request(`/projects/${projectId}/operations`, 'POST', make(secondDoc));
     expect(second.data.status).toBe('accepted');
     const current = (await request(`/projects/${projectId}`)).data.document as DesignDocument;
-    expect(current.domains.map(domain => domain.id).sort()).toEqual(['first', 'second']);
+    expect(current.domains.map((domain) => domain.id).sort()).toEqual(['first', 'second']);
 
-    const sameBase = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
-    const sameInput = (name: string) => { const document = updateDomain(sameBase.document, 'first', { name }); return { operationId: randomUUID(), groupId: randomUUID(), clientId, baselineId: sameBase.baselineId, baseSequence: sameBase.sequence, baselineIssuedAt: sameBase.baselineIssuedAt, kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(sameBase.document, document), baselineDocument: sameBase.document, document }; };
-    const earlier = sameInput('Earlier'); const later = sameInput('Later');
-    expect((await request(`/projects/${projectId}/operations`, 'POST', earlier)).data.status).toBe('accepted');
-    expect((await request(`/projects/${projectId}/operations`, 'POST', later)).data.status).toBe('accepted');
-    expect(((await request(`/projects/${projectId}`)).data.document as DesignDocument).domains.find(domain => domain.id === 'first')?.name).toBe('Later');
-    const guardedUndo = await request(`/projects/${projectId}/operations/${earlier.operationId}/undo`, 'POST', { operationId: randomUUID(), groupId: randomUUID(), clientId });
+    const sameBase = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId }))
+      .data;
+    const sameInput = (name: string) => {
+      const document = updateDomain(sameBase.document, 'first', { name });
+      return {
+        operationId: randomUUID(),
+        groupId: randomUUID(),
+        clientId,
+        baselineId: sameBase.baselineId,
+        baseSequence: sameBase.sequence,
+        baselineIssuedAt: sameBase.baselineIssuedAt,
+        kind: 'online',
+        dependencyPaths: [],
+        changes: deriveOperationChanges(sameBase.document, document),
+        baselineDocument: sameBase.document,
+        document,
+      };
+    };
+    const earlier = sameInput('Earlier');
+    const later = sameInput('Later');
+    expect((await request(`/projects/${projectId}/operations`, 'POST', earlier)).data.status).toBe(
+      'accepted',
+    );
+    expect((await request(`/projects/${projectId}/operations`, 'POST', later)).data.status).toBe(
+      'accepted',
+    );
+    expect(
+      ((await request(`/projects/${projectId}`)).data.document as DesignDocument).domains.find(
+        (domain) => domain.id === 'first',
+      )?.name,
+    ).toBe('Later');
+    const guardedUndo = await request(
+      `/projects/${projectId}/operations/${earlier.operationId}/undo`,
+      'POST',
+      { operationId: randomUUID(), groupId: randomUUID(), clientId },
+    );
     expect(guardedUndo.status, JSON.stringify(guardedUndo.data)).toBe(201);
     expect(guardedUndo.data.status).toBe('rejected');
 
-    const reconnect = { ...make(updateDomain(firstDoc, 'first', { name: 'offline' })), operationId: randomUUID(), groupId: randomUUID(), kind: 'reconnect' };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', reconnect)).data.status).toBe('rejected');
-    const deletionBase = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
-    const deletedDoc = { ...deletionBase.document, domains: deletionBase.document.domains.filter((domain: { id: string }) => domain.id !== 'first'), layout: { ...deletionBase.document.layout, nodes: deletionBase.document.layout.nodes.filter((node: { objectId: string }) => node.objectId !== 'first') } };
-    const deletionInput = { operationId: randomUUID(), groupId: randomUUID(), clientId, baselineId: deletionBase.baselineId, baseSequence: deletionBase.sequence, baselineIssuedAt: deletionBase.baselineIssuedAt, kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(deletionBase.document, deletedDoc), baselineDocument: deletionBase.document, document: deletedDoc };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', deletionInput)).data.status).toBe('accepted');
-    const late = { ...deletionInput, operationId: randomUUID(), groupId: randomUUID(), document: updateDomain(deletionBase.document, 'first', { name: 'late' }), changes: deriveOperationChanges(deletionBase.document, updateDomain(deletionBase.document, 'first', { name: 'late' })) };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', late)).data.status).toBe('rejected');
-    const restored = await request(`/projects/${projectId}/deletions/${deletionInput.operationId}/restore`, 'POST', { operationId: randomUUID(), groupId: randomUUID(), clientId });
+    const reconnect = {
+      ...make(updateDomain(firstDoc, 'first', { name: 'offline' })),
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      kind: 'reconnect',
+    };
+    expect(
+      (await request(`/projects/${projectId}/operations`, 'POST', reconnect)).data.status,
+    ).toBe('rejected');
+    const deletionBase = (
+      await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })
+    ).data;
+    const deletedDoc = {
+      ...deletionBase.document,
+      domains: deletionBase.document.domains.filter(
+        (domain: { id: string }) => domain.id !== 'first',
+      ),
+      layout: {
+        ...deletionBase.document.layout,
+        nodes: deletionBase.document.layout.nodes.filter(
+          (node: { objectId: string }) => node.objectId !== 'first',
+        ),
+      },
+    };
+    const deletionInput = {
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      clientId,
+      baselineId: deletionBase.baselineId,
+      baseSequence: deletionBase.sequence,
+      baselineIssuedAt: deletionBase.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(deletionBase.document, deletedDoc),
+      baselineDocument: deletionBase.document,
+      document: deletedDoc,
+    };
+    expect(
+      (await request(`/projects/${projectId}/operations`, 'POST', deletionInput)).data.status,
+    ).toBe('accepted');
+    const late = {
+      ...deletionInput,
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      document: updateDomain(deletionBase.document, 'first', { name: 'late' }),
+      changes: deriveOperationChanges(
+        deletionBase.document,
+        updateDomain(deletionBase.document, 'first', { name: 'late' }),
+      ),
+    };
+    expect((await request(`/projects/${projectId}/operations`, 'POST', late)).data.status).toBe(
+      'rejected',
+    );
+    const restored = await request(
+      `/projects/${projectId}/deletions/${deletionInput.operationId}/restore`,
+      'POST',
+      { operationId: randomUUID(), groupId: randomUUID(), clientId },
+    );
     expect(restored.data.result.status).toBe('accepted');
-    expect(restored.data.result.document.domains.some((domain: { id: string; name: string }) => domain.id !== 'first' && domain.name === 'Later')).toBe(true);
-    const events = await request(`/projects/${projectId}/events?since=${initial.sequence}`); expect(events.data.sequence).toBeGreaterThan(initial.sequence); expect(events.data.events.length).toBeGreaterThan(0);
+    expect(
+      restored.data.result.document.domains.some(
+        (domain: { id: string; name: string }) => domain.id !== 'first' && domain.name === 'Later',
+      ),
+    ).toBe(true);
+    const events = await request(`/projects/${projectId}/events?since=${initial.sequence}`);
+    expect(events.data.sequence).toBeGreaterThan(initial.sequence);
+    expect(events.data.events.length).toBeGreaterThan(0);
   });
 
   it('serializes duplicate requests and makes undo and restore retries idempotent', async () => {
     const clientId = randomUUID();
-    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
-    const createdDocument = addDomain(baseline.document, { id: randomUUID(), name: '동시 작업', description: '' }, { x: 1, y: 2 });
+    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId }))
+      .data;
+    const createdDocument = addDomain(
+      baseline.document,
+      { id: randomUUID(), name: '동시 작업', description: '' },
+      { x: 1, y: 2 },
+    );
     const operationId = randomUUID();
-    const input = { operationId, groupId: randomUUID(), clientId, baselineId: baseline.baselineId, baseSequence: baseline.sequence, baselineIssuedAt: baseline.baselineIssuedAt, kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(baseline.document, createdDocument), baselineDocument: baseline.document, document: createdDocument };
+    const input = {
+      operationId,
+      groupId: randomUUID(),
+      clientId,
+      baselineId: baseline.baselineId,
+      baseSequence: baseline.sequence,
+      baselineIssuedAt: baseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(baseline.document, createdDocument),
+      baselineDocument: baseline.document,
+      document: createdDocument,
+    };
     const [left, right] = await Promise.all([
       request(`/projects/${projectId}/operations`, 'POST', input),
       request(`/projects/${projectId}/operations`, 'POST', input),
     ]);
-    expect(left.status).toBe(201); expect(right.status).toBe(201); expect(left.data).toEqual(right.data);
-    expect((await pool.query('select count(*)::int count from sync_operations where project_id=$1 and operation_id=$2', [projectId, operationId])).rows[0].count).toBe(1);
+    expect(left.status).toBe(201);
+    expect(right.status).toBe(201);
+    expect(left.data).toEqual(right.data);
+    expect(
+      (
+        await pool.query(
+          'select count(*)::int count from sync_operations where project_id=$1 and operation_id=$2',
+          [projectId, operationId],
+        )
+      ).rows[0].count,
+    ).toBe(1);
 
-    const deleteBaseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
-    const domainId = createdDocument.domains.find((domain: { name: string }) => domain.name === '동시 작업')!.id;
-    const deletedDocument = { ...deleteBaseline.document, domains: deleteBaseline.document.domains.filter((domain: { id: string }) => domain.id !== domainId), layout: { ...deleteBaseline.document.layout, nodes: deleteBaseline.document.layout.nodes.filter((node: { objectId: string }) => node.objectId !== domainId) } };
+    const deleteBaseline = (
+      await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })
+    ).data;
+    const domainId = createdDocument.domains.find(
+      (domain: { name: string }) => domain.name === '동시 작업',
+    )!.id;
+    const deletedDocument = {
+      ...deleteBaseline.document,
+      domains: deleteBaseline.document.domains.filter(
+        (domain: { id: string }) => domain.id !== domainId,
+      ),
+      layout: {
+        ...deleteBaseline.document.layout,
+        nodes: deleteBaseline.document.layout.nodes.filter(
+          (node: { objectId: string }) => node.objectId !== domainId,
+        ),
+      },
+    };
     const deleteId = randomUUID();
-    const deleteInput = { operationId: deleteId, groupId: randomUUID(), clientId, baselineId: deleteBaseline.baselineId, baseSequence: deleteBaseline.sequence, baselineIssuedAt: deleteBaseline.baselineIssuedAt, kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(deleteBaseline.document, deletedDocument), baselineDocument: deleteBaseline.document, document: deletedDocument };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', deleteInput)).data.status).toBe('accepted');
+    const deleteInput = {
+      operationId: deleteId,
+      groupId: randomUUID(),
+      clientId,
+      baselineId: deleteBaseline.baselineId,
+      baseSequence: deleteBaseline.sequence,
+      baselineIssuedAt: deleteBaseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(deleteBaseline.document, deletedDocument),
+      baselineDocument: deleteBaseline.document,
+      document: deletedDocument,
+    };
+    expect(
+      (await request(`/projects/${projectId}/operations`, 'POST', deleteInput)).data.status,
+    ).toBe('accepted');
     const undoRequest = { operationId: randomUUID(), groupId: randomUUID(), clientId };
-    const undo1 = await request(`/projects/${projectId}/operations/${deleteId}/undo`, 'POST', undoRequest);
-    const undo2 = await request(`/projects/${projectId}/operations/${deleteId}/undo`, 'POST', undoRequest);
-    expect(undo1.status).toBe(201); expect(undo2.status).toBe(201); expect(undo2.data).toEqual(undo1.data); expect(undo1.data.status).toBe('accepted');
-    expect((await pool.query('select count(*)::int count from sync_operations where project_id=$1 and operation_id=$2', [projectId, undoRequest.operationId])).rows[0].count).toBe(1);
-    expect(undo1.data.document.domains.some((domain: { id: string; name: string }) => domain.name === '동시 작업' && domain.id !== domainId)).toBe(true);
+    const undo1 = await request(
+      `/projects/${projectId}/operations/${deleteId}/undo`,
+      'POST',
+      undoRequest,
+    );
+    const undo2 = await request(
+      `/projects/${projectId}/operations/${deleteId}/undo`,
+      'POST',
+      undoRequest,
+    );
+    expect(undo1.status).toBe(201);
+    expect(undo2.status).toBe(201);
+    expect(undo2.data).toEqual(undo1.data);
+    expect(undo1.data.status).toBe('accepted');
+    expect(
+      (
+        await pool.query(
+          'select count(*)::int count from sync_operations where project_id=$1 and operation_id=$2',
+          [projectId, undoRequest.operationId],
+        )
+      ).rows[0].count,
+    ).toBe(1);
+    expect(
+      undo1.data.document.domains.some(
+        (domain: { id: string; name: string }) =>
+          domain.name === '동시 작업' && domain.id !== domainId,
+      ),
+    ).toBe(true);
 
-    const other = await request('/users', 'POST', { username: `other-${randomUUID().slice(0, 20)}`, pin: '0424' }, false);
-    const otherSession = await request('/sessions', 'POST', { userId: other.data.id, pin: '0424' }, false);
-    expect((await request(`/projects/${projectId}/operations/${operationId}/undo`, 'POST', { operationId: randomUUID(), groupId: randomUUID(), clientId: randomUUID() }, otherSession.data.token)).status).toBe(409);
+    const other = await request(
+      '/users',
+      'POST',
+      { username: `other-${randomUUID().slice(0, 20)}`, pin: '0424' },
+      false,
+    );
+    const otherSession = await request(
+      '/sessions',
+      'POST',
+      { userId: other.data.id, pin: '0424' },
+      false,
+    );
+    expect(
+      (
+        await request(
+          `/projects/${projectId}/operations/${operationId}/undo`,
+          'POST',
+          { operationId: randomUUID(), groupId: randomUUID(), clientId: randomUUID() },
+          otherSession.data.token,
+        )
+      ).status,
+    ).toBe(409);
     await pool.query('delete from users where id=$1', [other.data.id]);
   });
 
   it('replays an accepted result before validating an expired server baseline', async () => {
     const clientId = randomUUID();
-    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
+    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId }))
+      .data;
     const acceptedId = randomUUID();
-    const acceptedDocument = addDomain(baseline.document, { id: acceptedId, name: '만료 전 승인', description: '' }, { x: 7, y: 8 });
+    const acceptedDocument = addDomain(
+      baseline.document,
+      { id: acceptedId, name: '만료 전 승인', description: '' },
+      { x: 7, y: 8 },
+    );
     const acceptedInput = {
-      operationId: randomUUID(), groupId: randomUUID(), clientId,
-      baselineId: baseline.baselineId, baseSequence: baseline.sequence, baselineIssuedAt: baseline.baselineIssuedAt,
-      kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(baseline.document, acceptedDocument),
-      baselineDocument: baseline.document, document: acceptedDocument,
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      clientId,
+      baselineId: baseline.baselineId,
+      baseSequence: baseline.sequence,
+      baselineIssuedAt: baseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(baseline.document, acceptedDocument),
+      baselineDocument: baseline.document,
+      document: acceptedDocument,
     };
     const accepted = await request(`/projects/${projectId}/operations`, 'POST', acceptedInput);
-    expect(accepted.status).toBe(201); expect(accepted.data.status).toBe('accepted');
+    expect(accepted.status).toBe(201);
+    expect(accepted.data.status).toBe('accepted');
 
     const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000 - 60_000);
-    await pool.query('update sync_client_baselines set last_successful_sync_at=$1 where project_id=$2 and baseline_id=$3', [expiredAt, projectId, baseline.baselineId]);
+    await pool.query(
+      'update sync_client_baselines set last_successful_sync_at=$1 where project_id=$2 and baseline_id=$3',
+      [expiredAt, projectId, baseline.baselineId],
+    );
     const replay = await request(`/projects/${projectId}/operations`, 'POST', acceptedInput);
-    expect(replay.status).toBe(201); expect(replay.data).toEqual(accepted.data);
-    expect((await request(`/projects/${projectId}/operations/${acceptedInput.operationId}`)).data).toEqual(accepted.data);
+    expect(replay.status).toBe(201);
+    expect(replay.data).toEqual(accepted.data);
+    expect(
+      (await request(`/projects/${projectId}/operations/${acceptedInput.operationId}`)).data,
+    ).toEqual(accepted.data);
 
     const expiredId = randomUUID();
-    const expiredDocument = addDomain(baseline.document, { id: expiredId, name: '만료 뒤 신규 작업', description: '' }, { x: 9, y: 10 });
+    const expiredDocument = addDomain(
+      baseline.document,
+      { id: expiredId, name: '만료 뒤 신규 작업', description: '' },
+      { x: 9, y: 10 },
+    );
     const expiredInput = {
-      ...acceptedInput, operationId: randomUUID(), groupId: randomUUID(), baselineIssuedAt: expiredAt.toISOString(),
-      changes: deriveOperationChanges(baseline.document, expiredDocument), document: expiredDocument,
+      ...acceptedInput,
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      baselineIssuedAt: expiredAt.toISOString(),
+      changes: deriveOperationChanges(baseline.document, expiredDocument),
+      document: expiredDocument,
     };
     const rejected = await request(`/projects/${projectId}/operations`, 'POST', expiredInput);
-    expect(rejected.status).toBe(201); expect(rejected.data.status).toBe('rejected');
+    expect(rejected.status).toBe(201);
+    expect(rejected.data.status).toBe('rejected');
     const current = (await request(`/projects/${projectId}`)).data.document as DesignDocument;
-    expect(current.domains.some(domain => domain.id === acceptedId)).toBe(true);
-    expect(current.domains.some(domain => domain.id === expiredId)).toBe(false);
+    expect(current.domains.some((domain) => domain.id === acceptedId)).toBe(true);
+    expect(current.domains.some((domain) => domain.id === expiredId)).toBe(false);
   });
 
   it('restores deletion history just inside seven days and rejects it just outside', async () => {
     const clientId = randomUUID();
     const createDeletedDomain = async (name: string) => {
-      const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
+      const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId }))
+        .data;
       const id = randomUUID();
-      const document = addDomain(baseline.document, { id, name, description: '' }, { x: 11, y: 12 });
+      const document = addDomain(
+        baseline.document,
+        { id, name, description: '' },
+        { x: 11, y: 12 },
+      );
       const input = {
-        operationId: randomUUID(), groupId: randomUUID(), clientId,
-        baselineId: baseline.baselineId, baseSequence: baseline.sequence, baselineIssuedAt: baseline.baselineIssuedAt,
-        kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(baseline.document, document),
-        baselineDocument: baseline.document, document,
+        operationId: randomUUID(),
+        groupId: randomUUID(),
+        clientId,
+        baselineId: baseline.baselineId,
+        baseSequence: baseline.sequence,
+        baselineIssuedAt: baseline.baselineIssuedAt,
+        kind: 'online',
+        dependencyPaths: [],
+        changes: deriveOperationChanges(baseline.document, document),
+        baselineDocument: baseline.document,
+        document,
       };
-      expect((await request(`/projects/${projectId}/operations`, 'POST', input)).data.status).toBe('accepted');
-      const deletionBaseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
+      expect((await request(`/projects/${projectId}/operations`, 'POST', input)).data.status).toBe(
+        'accepted',
+      );
+      const deletionBaseline = (
+        await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })
+      ).data;
       const deletedDocument = {
         ...deletionBaseline.document,
-        domains: deletionBaseline.document.domains.filter((domain: { id: string }) => domain.id !== id),
-        layout: { ...deletionBaseline.document.layout, nodes: deletionBaseline.document.layout.nodes.filter((node: { objectId: string }) => node.objectId !== id) },
+        domains: deletionBaseline.document.domains.filter(
+          (domain: { id: string }) => domain.id !== id,
+        ),
+        layout: {
+          ...deletionBaseline.document.layout,
+          nodes: deletionBaseline.document.layout.nodes.filter(
+            (node: { objectId: string }) => node.objectId !== id,
+          ),
+        },
       };
       const deletion = {
-        operationId: randomUUID(), groupId: randomUUID(), clientId,
-        baselineId: deletionBaseline.baselineId, baseSequence: deletionBaseline.sequence, baselineIssuedAt: deletionBaseline.baselineIssuedAt,
-        kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(deletionBaseline.document, deletedDocument),
-        baselineDocument: deletionBaseline.document, document: deletedDocument,
+        operationId: randomUUID(),
+        groupId: randomUUID(),
+        clientId,
+        baselineId: deletionBaseline.baselineId,
+        baseSequence: deletionBaseline.sequence,
+        baselineIssuedAt: deletionBaseline.baselineIssuedAt,
+        kind: 'online',
+        dependencyPaths: [],
+        changes: deriveOperationChanges(deletionBaseline.document, deletedDocument),
+        baselineDocument: deletionBaseline.document,
+        document: deletedDocument,
       };
-      expect((await request(`/projects/${projectId}/operations`, 'POST', deletion)).data.status).toBe('accepted');
+      expect(
+        (await request(`/projects/${projectId}/operations`, 'POST', deletion)).data.status,
+      ).toBe('accepted');
       return { id, deletionId: deletion.operationId };
     };
 
     const inside = await createDeletedDomain('7일 안쪽');
-    await pool.query('update sync_operations set created_at=$1 where project_id=$2 and operation_id=$3', [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 + 60_000), projectId, inside.deletionId]);
-    const insideRestore = await request(`/projects/${projectId}/deletions/${inside.deletionId}/restore`, 'POST', { operationId: randomUUID(), groupId: randomUUID(), clientId });
-    expect(insideRestore.status).toBe(201); expect(insideRestore.data.result.status).toBe('accepted');
-    expect(insideRestore.data.result.document.domains.some((domain: { id: string; name: string }) => domain.id !== inside.id && domain.name === '7일 안쪽')).toBe(true);
+    await pool.query(
+      'update sync_operations set created_at=$1 where project_id=$2 and operation_id=$3',
+      [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 + 60_000), projectId, inside.deletionId],
+    );
+    const insideRestore = await request(
+      `/projects/${projectId}/deletions/${inside.deletionId}/restore`,
+      'POST',
+      { operationId: randomUUID(), groupId: randomUUID(), clientId },
+    );
+    expect(insideRestore.status).toBe(201);
+    expect(insideRestore.data.result.status).toBe('accepted');
+    expect(
+      insideRestore.data.result.document.domains.some(
+        (domain: { id: string; name: string }) =>
+          domain.id !== inside.id && domain.name === '7일 안쪽',
+      ),
+    ).toBe(true);
 
     const outside = await createDeletedDomain('7일 바깥쪽');
-    await pool.query('update sync_operations set created_at=$1 where project_id=$2 and operation_id=$3', [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 60_000), projectId, outside.deletionId]);
-    const outsideRestore = await request(`/projects/${projectId}/deletions/${outside.deletionId}/restore`, 'POST', { operationId: randomUUID(), groupId: randomUUID(), clientId });
+    await pool.query(
+      'update sync_operations set created_at=$1 where project_id=$2 and operation_id=$3',
+      [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 60_000), projectId, outside.deletionId],
+    );
+    const outsideRestore = await request(
+      `/projects/${projectId}/deletions/${outside.deletionId}/restore`,
+      'POST',
+      { operationId: randomUUID(), groupId: randomUUID(), clientId },
+    );
     expect(outsideRestore.status).toBe(404);
-    expect(((await request(`/projects/${projectId}`)).data.document as DesignDocument).domains.some(domain => domain.id === outside.id)).toBe(false);
+    expect(
+      ((await request(`/projects/${projectId}`)).data.document as DesignDocument).domains.some(
+        (domain) => domain.id === outside.id,
+      ),
+    ).toBe(false);
   });
 
   it('rejects an FK bundle atomically when a concurrent change removed its referenced key', async () => {
     const clientId = randomUUID();
-    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
+    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId }))
+      .data;
     const suffix = randomUUID();
-    const domainId = `atomic-domain-${suffix}`, parentId = `atomic-parent-${suffix}`, childId = `atomic-child-${suffix}`;
-    const parentColumnId = `atomic-parent-column-${suffix}`, childColumnId = `atomic-child-column-${suffix}`, keyId = `atomic-key-${suffix}`;
+    const domainId = `atomic-domain-${suffix}`,
+      parentId = `atomic-parent-${suffix}`,
+      childId = `atomic-child-${suffix}`;
+    const parentColumnId = `atomic-parent-column-${suffix}`,
+      childColumnId = `atomic-child-column-${suffix}`,
+      keyId = `atomic-key-${suffix}`;
     const metadata = { common: {}, logical: {}, physical: {} };
     const graph: DesignDocument = {
       ...baseline.document,
-      domains: [...baseline.document.domains, { id: domainId, name: '원자성 기준', description: '' }],
-      tables: [...(baseline.document.tables ?? []),
-        { id: parentId, domainId, scope: 'both', logical: { name: '부모', definition: '' }, physical: { name: 'atomic_parent', schema: 'public', comment: '' }, customProperties: metadata },
-        { id: childId, domainId, scope: 'both', logical: { name: '자식', definition: '' }, physical: { name: 'atomic_child', schema: 'public', comment: '' }, customProperties: metadata },
+      domains: [
+        ...baseline.document.domains,
+        { id: domainId, name: '원자성 기준', description: '' },
       ],
-      columns: [...(baseline.document.columns ?? []),
-        { id: parentColumnId, tableId: parentId, scope: 'both', logical: { name: 'id', definition: '', semanticType: '', required: true }, physical: { name: 'id', type: { name: 'uuid', isArray: false }, nullable: false, defaultExpression: null, comment: '' }, customProperties: metadata },
-        { id: childColumnId, tableId: childId, scope: 'both', logical: { name: '부모', definition: '', semanticType: '', required: true }, physical: { name: 'parent_id', type: { name: 'uuid', isArray: false }, nullable: false, defaultExpression: null, comment: '' }, customProperties: metadata },
+      tables: [
+        ...(baseline.document.tables ?? []),
+        {
+          id: parentId,
+          domainId,
+          scope: 'both',
+          logical: { name: '부모', definition: '' },
+          physical: { name: 'atomic_parent', schema: 'public', comment: '' },
+          customProperties: metadata,
+        },
+        {
+          id: childId,
+          domainId,
+          scope: 'both',
+          logical: { name: '자식', definition: '' },
+          physical: { name: 'atomic_child', schema: 'public', comment: '' },
+          customProperties: metadata,
+        },
       ],
-      keys: [...(baseline.document.keys ?? []), { id: keyId, tableId: parentId, scope: 'both', kind: 'primary', name: 'atomic_parent_pk', columnIds: [parentColumnId] }],
+      columns: [
+        ...(baseline.document.columns ?? []),
+        {
+          id: parentColumnId,
+          tableId: parentId,
+          scope: 'both',
+          logical: { name: 'id', definition: '', semanticType: '', required: true },
+          physical: {
+            name: 'id',
+            type: { name: 'uuid', isArray: false },
+            nullable: false,
+            defaultExpression: null,
+            comment: '',
+          },
+          customProperties: metadata,
+        },
+        {
+          id: childColumnId,
+          tableId: childId,
+          scope: 'both',
+          logical: { name: '부모', definition: '', semanticType: '', required: true },
+          physical: {
+            name: 'parent_id',
+            type: { name: 'uuid', isArray: false },
+            nullable: false,
+            defaultExpression: null,
+            comment: '',
+          },
+          customProperties: metadata,
+        },
+      ],
+      keys: [
+        ...(baseline.document.keys ?? []),
+        {
+          id: keyId,
+          tableId: parentId,
+          scope: 'both',
+          kind: 'primary',
+          name: 'atomic_parent_pk',
+          columnIds: [parentColumnId],
+        },
+      ],
       tableRelations: [...(baseline.document.tableRelations ?? [])],
-      layout: { ...baseline.document.layout, nodes: [...baseline.document.layout.nodes,
-        { id: `node-${parentId}`, objectId: parentId, viewId: domainId, x: 0, y: 0, width: 240, height: 200 },
-        { id: `node-${childId}`, objectId: childId, viewId: domainId, x: 300, y: 0, width: 240, height: 200 },
-        { id: `node-${domainId}`, objectId: domainId, viewId: 'overview', x: 0, y: 0, width: 240, height: 140 },
-      ] },
+      layout: {
+        ...baseline.document.layout,
+        nodes: [
+          ...baseline.document.layout.nodes,
+          {
+            id: `node-${parentId}`,
+            objectId: parentId,
+            viewId: domainId,
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 200,
+          },
+          {
+            id: `node-${childId}`,
+            objectId: childId,
+            viewId: domainId,
+            x: 300,
+            y: 0,
+            width: 240,
+            height: 200,
+          },
+          {
+            id: `node-${domainId}`,
+            objectId: domainId,
+            viewId: 'overview',
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 140,
+          },
+        ],
+      },
     };
     const create = {
-      operationId: randomUUID(), groupId: randomUUID(), clientId,
-      baselineId: baseline.baselineId, baseSequence: baseline.sequence, baselineIssuedAt: baseline.baselineIssuedAt,
-      kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(baseline.document, graph), baselineDocument: baseline.document, document: graph,
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      clientId,
+      baselineId: baseline.baselineId,
+      baseSequence: baseline.sequence,
+      baselineIssuedAt: baseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(baseline.document, graph),
+      baselineDocument: baseline.document,
+      document: graph,
     };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', create)).data.status).toBe('accepted');
+    expect((await request(`/projects/${projectId}/operations`, 'POST', create)).data.status).toBe(
+      'accepted',
+    );
 
-    const sharedBaseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
+    const sharedBaseline = (
+      await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })
+    ).data;
     const withoutKey = removeKey(sharedBaseline.document, keyId);
     const deleteKey = {
-      operationId: randomUUID(), groupId: randomUUID(), clientId,
-      baselineId: sharedBaseline.baselineId, baseSequence: sharedBaseline.sequence, baselineIssuedAt: sharedBaseline.baselineIssuedAt,
-      kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(sharedBaseline.document, withoutKey), baselineDocument: sharedBaseline.document, document: withoutKey,
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      clientId,
+      baselineId: sharedBaseline.baselineId,
+      baseSequence: sharedBaseline.sequence,
+      baselineIssuedAt: sharedBaseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(sharedBaseline.document, withoutKey),
+      baselineDocument: sharedBaseline.document,
+      document: withoutKey,
     };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', deleteKey)).data.status).toBe('accepted');
+    expect(
+      (await request(`/projects/${projectId}/operations`, 'POST', deleteKey)).data.status,
+    ).toBe('accepted');
 
     const relationId = `atomic-relation-${suffix}`;
     const bundledDocument: DesignDocument = {
       ...sharedBaseline.document,
-      domains: sharedBaseline.document.domains.map((domain: { id: string }) => domain.id === domainId ? { ...domain, name: '반영되면 안 됨' } : domain),
-      tableRelations: [...(sharedBaseline.document.tableRelations ?? []), {
-        id: relationId, sourceTableId: childId, targetTableId: parentId, scope: 'both',
-        logical: { name: '부모', cardinality: 'one-to-many', required: true },
-        physical: { name: 'atomic_parent_fk', sourceColumnIds: [childColumnId], targetColumnIds: [parentColumnId], onDelete: 'NO ACTION', onUpdate: 'NO ACTION' },
-      }],
+      domains: sharedBaseline.document.domains.map((domain: { id: string }) =>
+        domain.id === domainId ? { ...domain, name: '반영되면 안 됨' } : domain,
+      ),
+      tableRelations: [
+        ...(sharedBaseline.document.tableRelations ?? []),
+        {
+          id: relationId,
+          sourceTableId: childId,
+          targetTableId: parentId,
+          scope: 'both',
+          logical: { name: '부모', cardinality: 'one-to-many', required: true },
+          physical: {
+            name: 'atomic_parent_fk',
+            sourceColumnIds: [childColumnId],
+            targetColumnIds: [parentColumnId],
+            onDelete: 'NO ACTION',
+            onUpdate: 'NO ACTION',
+          },
+        },
+      ],
     };
     const bundle = {
-      operationId: randomUUID(), groupId: randomUUID(), clientId,
-      baselineId: sharedBaseline.baselineId, baseSequence: sharedBaseline.sequence, baselineIssuedAt: sharedBaseline.baselineIssuedAt,
-      kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(sharedBaseline.document, bundledDocument),
-      baselineDocument: sharedBaseline.document, document: bundledDocument,
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      clientId,
+      baselineId: sharedBaseline.baselineId,
+      baseSequence: sharedBaseline.sequence,
+      baselineIssuedAt: sharedBaseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(sharedBaseline.document, bundledDocument),
+      baselineDocument: sharedBaseline.document,
+      document: bundledDocument,
     };
     const rejected = await request(`/projects/${projectId}/operations`, 'POST', bundle);
-    expect(rejected.status).toBe(201); expect(rejected.data.status).toBe('rejected');
+    expect(rejected.status).toBe(201);
+    expect(rejected.data.status).toBe('rejected');
     expect(rejected.data.reason).toContain('변경 대상이 삭제되었거나 현재 문서에 없습니다.');
     const current = (await request(`/projects/${projectId}`)).data.document as DesignDocument;
-    expect(current.domains.find(domain => domain.id === domainId)?.name).toBe('원자성 기준');
-    expect(current.tableRelations?.some(relation => relation.id === relationId) ?? false).toBe(false);
+    expect(current.domains.find((domain) => domain.id === domainId)?.name).toBe('원자성 기준');
+    expect(current.tableRelations?.some((relation) => relation.id === relationId) ?? false).toBe(
+      false,
+    );
   });
 
   it('restores deleted table structure with new ids while omitting an invalid external FK and its route', async () => {
     const clientId = randomUUID();
-    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
+    const baseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId }))
+      .data;
     const suffix = randomUUID();
-    const domainId = `domain-${suffix}`, parentId = `parent-${suffix}`, childId = `child-${suffix}`, parentColumnId = `parent-column-${suffix}`, childColumnId = `child-column-${suffix}`, keyId = `key-${suffix}`, relationId = `relation-${suffix}`;
+    const domainId = `domain-${suffix}`,
+      parentId = `parent-${suffix}`,
+      childId = `child-${suffix}`,
+      parentColumnId = `parent-column-${suffix}`,
+      childColumnId = `child-column-${suffix}`,
+      keyId = `key-${suffix}`,
+      relationId = `relation-${suffix}`;
     const metadata = { common: {}, logical: {}, physical: {} };
     const graph: DesignDocument = {
       ...baseline.document,
       domains: [...baseline.document.domains, { id: domainId, name: '그래프', description: '' }],
-      tables: [...(baseline.document.tables ?? []),
-        { id: parentId, domainId, scope: 'both', logical: { name: '부모', definition: '' }, physical: { name: 'parent', schema: 'public', comment: '' }, customProperties: metadata },
-        { id: childId, domainId, scope: 'both', logical: { name: '자식', definition: '' }, physical: { name: 'child', schema: 'public', comment: childId }, customProperties: metadata },
+      tables: [
+        ...(baseline.document.tables ?? []),
+        {
+          id: parentId,
+          domainId,
+          scope: 'both',
+          logical: { name: '부모', definition: '' },
+          physical: { name: 'parent', schema: 'public', comment: '' },
+          customProperties: metadata,
+        },
+        {
+          id: childId,
+          domainId,
+          scope: 'both',
+          logical: { name: '자식', definition: '' },
+          physical: { name: 'child', schema: 'public', comment: childId },
+          customProperties: metadata,
+        },
       ],
-      columns: [...(baseline.document.columns ?? []),
-        { id: parentColumnId, tableId: parentId, scope: 'both', logical: { name: 'id', definition: '', semanticType: '', required: true }, physical: { name: 'id', type: { name: 'uuid', isArray: false }, nullable: false, defaultExpression: null, comment: '' }, customProperties: metadata },
-        { id: childColumnId, tableId: childId, scope: 'both', logical: { name: 'parent', definition: '', semanticType: '', required: true }, physical: { name: 'parent_id', type: { name: 'uuid', isArray: false }, nullable: false, defaultExpression: null, comment: '' }, customProperties: metadata },
+      columns: [
+        ...(baseline.document.columns ?? []),
+        {
+          id: parentColumnId,
+          tableId: parentId,
+          scope: 'both',
+          logical: { name: 'id', definition: '', semanticType: '', required: true },
+          physical: {
+            name: 'id',
+            type: { name: 'uuid', isArray: false },
+            nullable: false,
+            defaultExpression: null,
+            comment: '',
+          },
+          customProperties: metadata,
+        },
+        {
+          id: childColumnId,
+          tableId: childId,
+          scope: 'both',
+          logical: { name: 'parent', definition: '', semanticType: '', required: true },
+          physical: {
+            name: 'parent_id',
+            type: { name: 'uuid', isArray: false },
+            nullable: false,
+            defaultExpression: null,
+            comment: '',
+          },
+          customProperties: metadata,
+        },
       ],
-      keys: [...(baseline.document.keys ?? []), { id: keyId, tableId: parentId, scope: 'both', kind: 'primary', name: 'pk_parent', columnIds: [parentColumnId] }],
-      tableRelations: [...(baseline.document.tableRelations ?? []), { id: relationId, sourceTableId: childId, targetTableId: parentId, scope: 'both', logical: { name: '부모', cardinality: 'one-to-many', required: true }, physical: { name: 'fk_parent', sourceColumnIds: [childColumnId], targetColumnIds: [parentColumnId], onDelete: 'NO ACTION', onUpdate: 'NO ACTION' } }],
-      layout: { ...baseline.document.layout, nodes: [...baseline.document.layout.nodes,
-        { id: `node-${parentId}`, objectId: parentId, viewId: domainId, x: 0, y: 0, width: 240, height: 200 },
-        { id: `node-${childId}`, objectId: childId, viewId: domainId, x: 300, y: 0, width: 240, height: 200 },
-        { id: `node-${domainId}`, objectId: domainId, viewId: 'overview', x: 0, y: 0, width: 240, height: 140 },
-      ], viewports: baseline.document.layout.viewports, relations: [...(baseline.document.layout.relations ?? []), { relationId, viewId: domainId, offset: 0 }] },
+      keys: [
+        ...(baseline.document.keys ?? []),
+        {
+          id: keyId,
+          tableId: parentId,
+          scope: 'both',
+          kind: 'primary',
+          name: 'pk_parent',
+          columnIds: [parentColumnId],
+        },
+      ],
+      tableRelations: [
+        ...(baseline.document.tableRelations ?? []),
+        {
+          id: relationId,
+          sourceTableId: childId,
+          targetTableId: parentId,
+          scope: 'both',
+          logical: { name: '부모', cardinality: 'one-to-many', required: true },
+          physical: {
+            name: 'fk_parent',
+            sourceColumnIds: [childColumnId],
+            targetColumnIds: [parentColumnId],
+            onDelete: 'NO ACTION',
+            onUpdate: 'NO ACTION',
+          },
+        },
+      ],
+      layout: {
+        ...baseline.document.layout,
+        nodes: [
+          ...baseline.document.layout.nodes,
+          {
+            id: `node-${parentId}`,
+            objectId: parentId,
+            viewId: domainId,
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 200,
+          },
+          {
+            id: `node-${childId}`,
+            objectId: childId,
+            viewId: domainId,
+            x: 300,
+            y: 0,
+            width: 240,
+            height: 200,
+          },
+          {
+            id: `node-${domainId}`,
+            objectId: domainId,
+            viewId: 'overview',
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 140,
+          },
+        ],
+        viewports: baseline.document.layout.viewports,
+        relations: [
+          ...(baseline.document.layout.relations ?? []),
+          { relationId, viewId: domainId, offset: 0 },
+        ],
+      },
     };
-    const createInput = { operationId: randomUUID(), groupId: randomUUID(), clientId, baselineId: baseline.baselineId, baseSequence: baseline.sequence, baselineIssuedAt: baseline.baselineIssuedAt, kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(baseline.document, graph), baselineDocument: baseline.document, document: graph };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', createInput)).data.status).toBe('accepted');
-    const deleteBaseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
+    const createInput = {
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      clientId,
+      baselineId: baseline.baselineId,
+      baseSequence: baseline.sequence,
+      baselineIssuedAt: baseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(baseline.document, graph),
+      baselineDocument: baseline.document,
+      document: graph,
+    };
+    expect(
+      (await request(`/projects/${projectId}/operations`, 'POST', createInput)).data.status,
+    ).toBe('accepted');
+    const deleteBaseline = (
+      await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })
+    ).data;
     const withoutChild = removeTable(deleteBaseline.document, childId);
     const deletionId = randomUUID();
-    const deletion = { operationId: deletionId, groupId: randomUUID(), clientId, baselineId: deleteBaseline.baselineId, baseSequence: deleteBaseline.sequence, baselineIssuedAt: deleteBaseline.baselineIssuedAt, kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(deleteBaseline.document, withoutChild), baselineDocument: deleteBaseline.document, document: withoutChild };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', deletion)).data.status).toBe('accepted');
-    const keyBaseline = (await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })).data;
+    const deletion = {
+      operationId: deletionId,
+      groupId: randomUUID(),
+      clientId,
+      baselineId: deleteBaseline.baselineId,
+      baseSequence: deleteBaseline.sequence,
+      baselineIssuedAt: deleteBaseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(deleteBaseline.document, withoutChild),
+      baselineDocument: deleteBaseline.document,
+      document: withoutChild,
+    };
+    expect((await request(`/projects/${projectId}/operations`, 'POST', deletion)).data.status).toBe(
+      'accepted',
+    );
+    const keyBaseline = (
+      await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId })
+    ).data;
     const withoutKey = removeKey(keyBaseline.document, keyId);
-    const keyDelete = { operationId: randomUUID(), groupId: randomUUID(), clientId, baselineId: keyBaseline.baselineId, baseSequence: keyBaseline.sequence, baselineIssuedAt: keyBaseline.baselineIssuedAt, kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(keyBaseline.document, withoutKey), baselineDocument: keyBaseline.document, document: withoutKey };
-    expect((await request(`/projects/${projectId}/operations`, 'POST', keyDelete)).data.status).toBe('accepted');
+    const keyDelete = {
+      operationId: randomUUID(),
+      groupId: randomUUID(),
+      clientId,
+      baselineId: keyBaseline.baselineId,
+      baseSequence: keyBaseline.sequence,
+      baselineIssuedAt: keyBaseline.baselineIssuedAt,
+      kind: 'online',
+      dependencyPaths: [],
+      changes: deriveOperationChanges(keyBaseline.document, withoutKey),
+      baselineDocument: keyBaseline.document,
+      document: withoutKey,
+    };
+    expect(
+      (await request(`/projects/${projectId}/operations`, 'POST', keyDelete)).data.status,
+    ).toBe('accepted');
     const restoreRequest = { operationId: randomUUID(), groupId: randomUUID(), clientId };
-    const restored = await request(`/projects/${projectId}/deletions/${deletionId}/restore`, 'POST', restoreRequest);
-    expect(restored.status).toBe(201); expect(restored.data.result.status).toBe('accepted');
-    const restoredChild = restored.data.result.document.tables.find((table: { physical: { name: string } }) => table.physical.name === 'child');
-    expect(restoredChild.id).not.toBe(childId); expect(restoredChild.physical.comment).toBe(childId);
-    expect(restored.data.result.document.tableRelations.some((relation: { logical: { name: string } }) => relation.logical.name === '부모')).toBe(false);
-    expect(restored.data.result.document.layout.relations?.some((route: { relationId: string }) => route.relationId === relationId)).toBe(false);
-    expect(restored.data.omittedRelations.some((path: string) => path.startsWith('/tableRelations/'))).toBe(true);
-    expect(restored.data.omittedRelations.some((path: string) => path.startsWith('/layout/relations/'))).toBe(true);
-    expect((await request(`/projects/${projectId}/deletions/${deletionId}/restore`, 'POST', restoreRequest)).data).toEqual(restored.data);
-    expect((await request(`/projects/${projectId}/deletions/${randomUUID()}/restore`, 'POST', restoreRequest)).status).toBe(409);
+    const restored = await request(
+      `/projects/${projectId}/deletions/${deletionId}/restore`,
+      'POST',
+      restoreRequest,
+    );
+    expect(restored.status).toBe(201);
+    expect(restored.data.result.status).toBe('accepted');
+    const restoredChild = restored.data.result.document.tables.find(
+      (table: { physical: { name: string } }) => table.physical.name === 'child',
+    );
+    expect(restoredChild.id).not.toBe(childId);
+    expect(restoredChild.physical.comment).toBe(childId);
+    expect(
+      restored.data.result.document.tableRelations.some(
+        (relation: { logical: { name: string } }) => relation.logical.name === '부모',
+      ),
+    ).toBe(false);
+    expect(
+      restored.data.result.document.layout.relations?.some(
+        (route: { relationId: string }) => route.relationId === relationId,
+      ),
+    ).toBe(false);
+    expect(
+      restored.data.omittedRelations.some((path: string) => path.startsWith('/tableRelations/')),
+    ).toBe(true);
+    expect(
+      restored.data.omittedRelations.some((path: string) => path.startsWith('/layout/relations/')),
+    ).toBe(true);
+    expect(
+      (
+        await request(
+          `/projects/${projectId}/deletions/${deletionId}/restore`,
+          'POST',
+          restoreRequest,
+        )
+      ).data,
+    ).toEqual(restored.data);
+    expect(
+      (
+        await request(
+          `/projects/${projectId}/deletions/${randomUUID()}/restore`,
+          'POST',
+          restoreRequest,
+        )
+      ).status,
+    ).toBe(409);
   });
 });

@@ -1,1 +1,27 @@
-.user-color-editor h2{margin:0 0 14px;font-size:17px}.user-color-preview{display:flex;align-items:center;gap:10px;margin-bottom:14px;min-width:0}.user-color-preview>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.user-color-editor>form>p{font-size:12px;line-height:1.5;color:var(--muted)}.user-color-editor>form>p[role=alert]{color:var(--danger,#b42318)}.user-color-editor .actions{margin-top:14px}
+.user-color-editor h2 {
+  margin: 0 0 14px;
+  font-size: 17px;
+}
+.user-color-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+.user-color-preview > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-color-editor > form > p {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.user-color-editor > form > p[role='alert'] {
+  color: var(--danger, #b42318);
+}
+.user-color-editor .actions {
+  margin-top: 14px;
+}

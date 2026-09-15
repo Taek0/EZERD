@@ -10,7 +10,11 @@ describe('autosave UI draft preservation', () => {
   });
 
   it('keeps an uncommitted text field while accepting an independent remote field', () => {
-    const base = addDomain(createEmptyDocument(), { id: 'orders', name: '주문', description: '' }, { x: 10, y: 20 });
+    const base = addDomain(
+      createEmptyDocument(),
+      { id: 'orders', name: '주문', description: '' },
+      { x: 10, y: 20 },
+    );
     const draft = updateDomain(base, 'orders', { name: '주문 관리' });
     const server = updateDomain(base, 'orders', { color: '#445566' });
 
@@ -20,11 +24,14 @@ describe('autosave UI draft preservation', () => {
   });
 
   it('keeps the local field value when a remote snapshot changed that same field before debounce', () => {
-    const base = addDomain(createEmptyDocument(), { id: 'orders', name: '주문', description: '' }, { x: 10, y: 20 });
+    const base = addDomain(
+      createEmptyDocument(),
+      { id: 'orders', name: '주문', description: '' },
+      { x: 10, y: 20 },
+    );
     const draft = updateDomain(base, 'orders', { name: '내 주문' });
     const server = updateDomain(base, 'orders', { name: '팀 주문' });
 
     expect(rebaseAutosaveDraft(base, draft, server).domains[0]?.name).toBe('내 주문');
   });
-
 });

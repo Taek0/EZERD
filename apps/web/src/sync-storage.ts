@@ -33,9 +33,9 @@ export class MemorySyncOperationStore<T> implements SyncOperationStore<T> {
 
   async list(projectId: string) {
     return [...this.values.values()]
-      .filter(value => value.projectId === projectId)
+      .filter((value) => value.projectId === projectId)
       .sort((left, right) => left.order - right.order)
-      .map(value => structuredClone(value));
+      .map((value) => structuredClone(value));
   }
 }
 
@@ -64,16 +64,33 @@ export class IndexedDbSyncOperationStore<T> implements SyncOperationStore<T> {
     return this.database;
   }
 
-  private async transaction<R>(mode: IDBTransactionMode, run: (store: IDBObjectStore, resolve: (value: R) => void, reject: (reason?: unknown) => void) => void) {
+  private async transaction<R>(
+    mode: IDBTransactionMode,
+    run: (
+      store: IDBObjectStore,
+      resolve: (value: R) => void,
+      reject: (reason?: unknown) => void,
+    ) => void,
+  ) {
     const database = await this.open();
     return new Promise<R>((resolve, reject) => {
       const transaction = database.transaction(storeName, mode);
       let result: R;
       let hasResult = false;
-      transaction.onerror = () => reject(transaction.error ?? new Error('로컬 변경을 저장할 수 없습니다.'));
-      transaction.onabort = () => reject(transaction.error ?? new Error('로컬 변경 저장이 취소되었습니다.'));
-      transaction.oncomplete = () => hasResult ? resolve(result) : reject(new Error('로컬 변경 저장 결과가 없습니다.'));
-      run(transaction.objectStore(storeName), value => { result = value; hasResult = true; }, reject);
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error('로컬 변경을 저장할 수 없습니다.'));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error('로컬 변경 저장이 취소되었습니다.'));
+      transaction.oncomplete = () =>
+        hasResult ? resolve(result) : reject(new Error('로컬 변경 저장 결과가 없습니다.'));
+      run(
+        transaction.objectStore(storeName),
+        (value) => {
+          result = value;
+          hasResult = true;
+        },
+        reject,
+      );
     });
   }
 
@@ -96,13 +113,21 @@ export class IndexedDbSyncOperationStore<T> implements SyncOperationStore<T> {
   async list(projectId: string) {
     return this.transaction<StoredSyncOperation<T>[]>('readonly', (store, resolve, reject) => {
       const request = store.index('projectId').getAll(projectId);
-      request.onsuccess = () => resolve((request.result as StoredSyncOperation<T>[]).sort((left, right) => left.order - right.order));
+      request.onsuccess = () =>
+        resolve(
+          (request.result as StoredSyncOperation<T>[]).sort(
+            (left, right) => left.order - right.order,
+          ),
+        );
       request.onerror = () => reject(request.error);
     });
   }
 }
 
-export async function createSyncOperationStore<T>(): Promise<{ store: SyncOperationStore<T>; failure?: string }> {
+export async function createSyncOperationStore<T>(): Promise<{
+  store: SyncOperationStore<T>;
+  failure?: string;
+}> {
   try {
     if (typeof indexedDB === 'undefined') throw new Error('IndexedDB unavailable');
     const store = new IndexedDbSyncOperationStore<T>();
@@ -111,7 +136,8 @@ export async function createSyncOperationStore<T>(): Promise<{ store: SyncOperat
   } catch {
     return {
       store: new MemorySyncOperationStore<T>(),
-      failure: '이 브라우저에서는 편집 내용을 영구 보관할 수 없습니다. 이 탭을 닫기 전에 연결을 복구해 주세요.',
+      failure:
+        '이 브라우저에서는 편집 내용을 영구 보관할 수 없습니다. 이 탭을 닫기 전에 연결을 복구해 주세요.',
     };
   }
 }

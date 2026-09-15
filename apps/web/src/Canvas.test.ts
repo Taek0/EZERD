@@ -6,13 +6,26 @@ import { ConfirmProvider } from './components/ui/ConfirmProvider.js';
 import { Canvas } from './Canvas.js';
 
 function example() {
-  let doc = addDomain(createEmptyDocument(), { id: 'a', name: '결제', description: '결제 업무 영역' }, { x: 0, y: 0 });
+  let doc = addDomain(
+    createEmptyDocument(),
+    { id: 'a', name: '결제', description: '결제 업무 영역' },
+    { x: 0, y: 0 },
+  );
   doc = addDomain(doc, { id: 'b', name: '주문', description: '' }, { x: 400, y: 0 });
-  return upsertDomainRelation(doc, { id: 'r', sourceDomainId: 'a', targetDomainId: 'b', name: '주문 결제', direction: 'forward', description: '' });
+  return upsertDomainRelation(doc, {
+    id: 'r',
+    sourceDomainId: 'a',
+    targetDomainId: 'b',
+    name: '주문 결제',
+    direction: 'forward',
+    description: '',
+  });
 }
 
 function markup(readOnly = false) {
-  return render(h(ConfirmProvider, null, h(Canvas, { document: example(), onChange: () => {}, readOnly })));
+  return render(
+    h(ConfirmProvider, null, h(Canvas, { document: example(), onChange: () => {}, readOnly })),
+  );
 }
 
 describe('editor sidebar structure', () => {
@@ -44,11 +57,12 @@ describe('editor sidebar structure', () => {
   it('keeps the same frame while archived projects stay read-only', () => {
     const html = markup(true);
     expect(html).toContain('inspector-tabs');
-    const create = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find(match => match[2]?.includes('＋ 도메인'));
+    const create = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find((match) =>
+      match[2]?.includes('＋ 도메인'),
+    );
     expect(create?.[1]).toMatch(/\bdisabled=""/);
   });
 });
-
 
 import { referencedDomainTables } from './Canvas.js';
 import type { DesignDocument } from '@ezerd/model';
@@ -56,24 +70,24 @@ describe('saved view reference table list', () => {
   it('lists only physical cross-domain relations shared through a saved domain view, in either direction', () => {
     const doc = {
       ...example(),
-      views: [{id:'view',name:'함께',domainIds:['a','b']}],
+      views: [{ id: 'view', name: '함께', domainIds: ['a', 'b'] }],
       tables: [
-        {id:'own',domainId:'a',scope:'physical'},
-        {id:'parent',domainId:'b',scope:'physical'},
-        {id:'child',domainId:'b',scope:'physical'},
-        {id:'unrelated',domainId:'b',scope:'physical'},
-        {id:'not-shared',domainId:'c',scope:'physical'},
-        {id:'logical',domainId:'b',scope:'logical'},
+        { id: 'own', domainId: 'a', scope: 'physical' },
+        { id: 'parent', domainId: 'b', scope: 'physical' },
+        { id: 'child', domainId: 'b', scope: 'physical' },
+        { id: 'unrelated', domainId: 'b', scope: 'physical' },
+        { id: 'not-shared', domainId: 'c', scope: 'physical' },
+        { id: 'logical', domainId: 'b', scope: 'logical' },
       ],
       tableRelations: [
-        {sourceTableId:'own',targetTableId:'parent',scope:'physical',physical:{}},
-        {sourceTableId:'child',targetTableId:'own',scope:'physical',physical:{}},
-        {sourceTableId:'own',targetTableId:'not-shared',scope:'physical',physical:{}},
-        {sourceTableId:'own',targetTableId:'logical',scope:'both',physical:{}},
+        { sourceTableId: 'own', targetTableId: 'parent', scope: 'physical', physical: {} },
+        { sourceTableId: 'child', targetTableId: 'own', scope: 'physical', physical: {} },
+        { sourceTableId: 'own', targetTableId: 'not-shared', scope: 'physical', physical: {} },
+        { sourceTableId: 'own', targetTableId: 'logical', scope: 'both', physical: {} },
       ],
     } as unknown as DesignDocument;
-    expect(referencedDomainTables(doc,'a').map(t => t.id)).toEqual(['parent','child']);
-    expect(referencedDomainTables({...doc,views:[]},'a')).toEqual([]);
-    expect(referencedDomainTables({...doc,tableRelations:[]},'a')).toEqual([]);
+    expect(referencedDomainTables(doc, 'a').map((t) => t.id)).toEqual(['parent', 'child']);
+    expect(referencedDomainTables({ ...doc, views: [] }, 'a')).toEqual([]);
+    expect(referencedDomainTables({ ...doc, tableRelations: [] }, 'a')).toEqual([]);
   });
 });

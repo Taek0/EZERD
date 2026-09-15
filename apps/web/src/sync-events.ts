@@ -10,7 +10,9 @@ export class SyncEventCursor<T extends Sequenced> {
     private readonly apply: (event: T) => void,
   ) {}
 
-  get current() { return this.sequence; }
+  get current() {
+    return this.sequence;
+  }
 
   async receive(event: T) {
     if (event.sequence <= this.sequence) return;
@@ -30,12 +32,18 @@ export class SyncEventCursor<T extends Sequenced> {
   private async catchUp() {
     if (this.fetching) return this.fetching;
     this.fetching = (async () => {
-      const events = (await this.fetchSince(this.sequence)).sort((left, right) => left.sequence - right.sequence);
+      const events = (await this.fetchSince(this.sequence)).sort(
+        (left, right) => left.sequence - right.sequence,
+      );
       for (const event of events) {
         if (event.sequence === this.sequence + 1) this.accept(event);
       }
     })();
-    try { await this.fetching; } finally { this.fetching = undefined; }
+    try {
+      await this.fetching;
+    } finally {
+      this.fetching = undefined;
+    }
   }
 
   private accept(event: T) {

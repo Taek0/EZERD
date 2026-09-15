@@ -7,12 +7,41 @@ import type { SyncSnapshot } from './sync-client.js';
 describe('unified sync history panel', () => {
   it('offers copy for unresolved edits and preview plus restore for deletions', () => {
     const snapshot = {
-      document: {} as SyncSnapshot['document'], status: 'action-needed', canUndo: false, canRedo: false,
-      pending: [{ operationId: 'pending', createdAt: 1, state: 'unresolved', reason: '충돌', operation: { changes: [{ path: '/domains/a/name', before: '기존', after: '초안' }] } }],
-      history: [{ operationId: 'deleted', createdAt: new Date(0).toISOString(), actor: { username: '설계자' }, changes: [{ path: '/domains/a', before: { name: '주문' }, after: null, afterExists: false }], changedPaths: ['/domains/a'] }],
+      document: {} as SyncSnapshot['document'],
+      status: 'action-needed',
+      canUndo: false,
+      canRedo: false,
+      pending: [
+        {
+          operationId: 'pending',
+          createdAt: 1,
+          state: 'unresolved',
+          reason: '충돌',
+          operation: { changes: [{ path: '/domains/a/name', before: '기존', after: '초안' }] },
+        },
+      ],
+      history: [
+        {
+          operationId: 'deleted',
+          createdAt: new Date(0).toISOString(),
+          actor: { username: '설계자' },
+          changes: [
+            { path: '/domains/a', before: { name: '주문' }, after: null, afterExists: false },
+          ],
+          changedPaths: ['/domains/a'],
+        },
+      ],
     } as unknown as SyncSnapshot;
 
-    const html = renderToStaticMarkup(h(SyncHistoryPanel, { snapshot, notice: '관계·배치 2개는 제외했습니다.', onRestore: () => {}, onReapply: () => {}, onDiscard: () => {} }));
+    const html = renderToStaticMarkup(
+      h(SyncHistoryPanel, {
+        snapshot,
+        notice: '관계·배치 2개는 제외했습니다.',
+        onRestore: () => {},
+        onReapply: () => {},
+        onDiscard: () => {},
+      }),
+    );
 
     expect(html).toContain('재적용');
     expect(html).toContain('변경 내용 복사');

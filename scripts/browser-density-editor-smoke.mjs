@@ -1,24 +1,153 @@
 import assert from 'node:assert/strict';
-import {writeFile,unlink,mkdir} from 'node:fs/promises';
-const {chromium}=await import(process.env.EZERD_PLAYWRIGHT_MODULE||'playwright');
-const filename=`__density-editor-${Date.now()}.html`,target=new URL('../apps/web/'+filename,import.meta.url);
-await writeFile(target,`<!doctype html><div id="qa"></div><script type="module">
+import { writeFile, unlink, mkdir } from 'node:fs/promises';
+const { chromium } = await import(process.env.EZERD_PLAYWRIGHT_MODULE || 'playwright');
+const filename = `__density-editor-${Date.now()}.html`,
+  target = new URL('../apps/web/' + filename, import.meta.url);
+await writeFile(
+  target,
+  `<!doctype html><div id="qa"></div><script type="module">
 import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Canvas}from'/src/Canvas.tsx';import{ConfirmProvider}from'/src/components/ui/ConfirmProvider.tsx';import{createEmptyDocument,addDomain,addTable,addColumn,upsertKey,upsertTableRelation,setViewport}from'@ezerd/model';
 import'/src/components/ui/tailwind.css';import'/src/tokens.css';import'/src/components/ui/ui.css';import'/src/styles.css';import'/src/inspector.css';
 const h=React.createElement,m={common:{},logical:{},physical:{}};let seed=createEmptyDocument();for(let i=0;i<20;i++)seed=addDomain(seed,{id:'d'+i,name:i===0?'Alpha':i===1?'Beta':'Domain '+i,description:''},{x:40+i*350,y:40});
 for(const [id,x] of [['users',40],['orders',780]]){seed=addTable(seed,{id,domainId:'d0',scope:'physical',logical:{name:id,definition:''},physical:{name:id,schema:'public',comment:''},customProperties:m},{x,y:120});seed=addColumn(seed,{id:id+'-id',tableId:id,scope:'physical',logical:{name:'id',definition:'',semanticType:'',required:false},physical:{name:'id',type:{name:'integer',isArray:false},nullable:false,defaultExpression:null,comment:''},customProperties:m});}
 seed=upsertKey(seed,{id:'pk',tableId:'users',scope:'physical',kind:'primary',name:'users_pk',columnIds:['users-id']});seed=upsertTableRelation(seed,{id:'r',scope:'physical',sourceTableId:'orders',targetTableId:'users',logical:{name:'orders_users',cardinality:'one-to-many',required:false},physical:{name:'orders_users_fk',sourceColumnIds:['orders-id'],targetColumnIds:['users-id'],onDelete:'NO ACTION',onUpdate:'NO ACTION'},customProperties:m});seed=setViewport(seed,{viewId:'d0',x:40,y:80,zoom:.7});
 function Demo(){const[doc,D]=useState(()=>JSON.parse(sessionStorage.getItem('density-fixture')||'null')||seed);const change=next=>{D(next);sessionStorage.setItem('density-fixture',JSON.stringify(next));};return h('main',{style:{height:'100vh'}},h(Canvas,{document:doc,onChange:change,readOnly:false}),h('output',{id:'document-state',hidden:true},JSON.stringify(doc)));}createRoot(document.getElementById('qa')).render(h(ConfirmProvider,{},h(Demo)));
-</script>`);
-const browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1600,height:1000}});page.setDefaultTimeout(8000);const errors=[];page.on('pageerror',e=>errors.push(e.message));const state=async()=>JSON.parse(await page.locator('#document-state').textContent());
-const drag=async(viewId)=>{const handle=page.locator('.table-route-overlay .table-route-adjust');await handle.waitFor();const box=await handle.boundingBox();assert(box&&box.x>=0&&box.y>=0);const path=page.locator('svg[aria-label="테이블 관계"] .table-relation-line>path').last();const before=await path.getAttribute('d');const label=page.locator('svg[aria-label="테이블 관계"] .table-relation-line>text');const origin={x:Number(await label.getAttribute('x')),y:Number(await label.getAttribute('y'))+13};const viewport=(await state()).layout.viewports.find(v=>v.viewId===viewId);const zoom=viewport?.zoom??1;await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+42,box.y+box.height/2+28,{steps:7});await page.mouse.up();const route=(await state()).layout.relations.find(r=>r.viewId===viewId);if(!route?.bend){await page.screenshot({path:".cache/verification/density-drag-failure.png"});console.log("failed handle",box,"viewport",viewport,"hit",await page.evaluate(({x,y})=>document.elementFromPoint(x,y)?.outerHTML,{x:box.x+box.width/2,y:box.y+box.height/2}));}assert(route?.bend);assert.notEqual(await path.getAttribute('d'),before);assert(Math.abs(route.bend.x-origin.x-42/zoom)<2);assert(Math.abs(route.bend.y-origin.y-28/zoom)<2);const first={...route.bend};await handle.focus();await page.keyboard.press('ArrowRight');assert.equal((await state()).layout.relations.find(r=>r.viewId===viewId).bend.x,first.x+8);console.log('drag',viewId,zoom,route.bend);return (await state()).layout.relations.find(r=>r.viewId===viewId);};
-try{
- await page.goto('http://127.0.0.1:5173/'+filename);await page.getByRole('button',{name:'Alpha 도메인 열기',exact:true}).click();const normal=await drag('d0');
- const trigger=page.getByRole('button',{name:'도메인 뷰',exact:true});await trigger.click();const popup=page.getByRole('dialog',{name:'도메인 뷰',exact:true});await popup.waitFor();const a=await trigger.boundingBox(),b=await popup.boundingBox();assert(b.y>=a.y+a.height);const bounds=await page.locator('.combined-domain-options').evaluate(e=>({scroll:e.scrollHeight,height:e.clientHeight,width:e.scrollWidth,client:e.clientWidth}));assert(bounds.scroll>bounds.height);assert(bounds.width<=bounds.client);await page.screenshot({path:'.cache/verification/density-domain-menu.png'});await page.keyboard.press('Escape');await popup.waitFor({state:'hidden'});assert.equal(await trigger.evaluate(e=>e===document.activeElement),true);
- await trigger.click();await popup.getByLabel('도메인 뷰 이름',{exact:true}).fill('Alpha + Beta');await popup.getByLabel('Beta',{exact:true}).check();await popup.getByRole('button',{name:'뷰 저장',exact:true}).click();await popup.waitFor({state:'hidden'});let doc=await state();const view=doc.views[0];assert.deepEqual(view.domainIds,['d0','d1']);const count=doc.layout.nodes.length;
- const combined=await drag(view.id);assert.equal((await state()).layout.nodes.length,count);assert.deepEqual((await state()).layout.relations.find(r=>r.viewId==='d0'),normal);
- await page.locator('.table-node').first().click();await page.getByRole('button',{name:/1\. id/}).click();const editor=page.locator('.table-column-editor');await editor.getByLabel('컬럼명',{exact:true}).fill('identifier');const type=editor.getByRole('combobox',{name:'타입',exact:true});await type.fill('var');await page.getByRole('option',{name:'VARCHAR',exact:true}).click();await editor.getByLabel('길이',{exact:true}).fill('120');await editor.getByLabel('NULL 허용',{exact:true}).check();await editor.getByLabel('설명',{exact:true}).fill('compact edit');const updated=(await state()).columns.find(c=>c.physical.name==='identifier');assert.equal(updated.physical.type.length,120);assert.equal(updated.physical.nullable,true);assert.equal(updated.physical.comment,'compact edit');const size=await editor.evaluate(e=>({height:e.clientHeight,width:e.clientWidth,scroll:e.scrollWidth,columns:getComputedStyle(e).gridTemplateColumns}));assert(size.scroll<=size.width);assert(size.height<380);console.log('editor',size);
- await mkdir('.cache/verification',{recursive:true});await page.screenshot({path:'.cache/verification/density-editor.png',fullPage:true});await page.reload();await page.getByRole('button',{name:'도메인 뷰',exact:true}).click();await page.getByRole('button',{name:'Alpha + Beta',exact:true}).click();assert.deepEqual((await state()).layout.relations.find(r=>r.viewId===view.id),combined);assert.equal((await state()).columns.find(c=>c.id===updated.id).physical.type.length,120);
- await page.getByRole('button',{name:'도메인 뷰',exact:true}).click();await page.getByRole('button',{name:'보기 삭제',exact:true}).click();await page.getByRole('button',{name:'취소',exact:true}).click();assert.equal((await state()).views.length,1);await page.keyboard.press('Escape');
- assert.deepEqual(errors,[]);console.log('PASS domain dropdown anchored, Escape/focus, scroll bounds, combined creation, 2D drags at zoom, per-view route preservation, compact column edits and reload');
-}finally{await browser.close();await unlink(target);}
+</script>`,
+);
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+page.setDefaultTimeout(8000);
+const errors = [];
+page.on('pageerror', (e) => errors.push(e.message));
+const state = async () => JSON.parse(await page.locator('#document-state').textContent());
+const drag = async (viewId) => {
+  const handle = page.locator('.table-route-overlay .table-route-adjust');
+  await handle.waitFor();
+  const box = await handle.boundingBox();
+  assert(box && box.x >= 0 && box.y >= 0);
+  const path = page.locator('svg[aria-label="테이블 관계"] .table-relation-line>path').last();
+  const before = await path.getAttribute('d');
+  const label = page.locator('svg[aria-label="테이블 관계"] .table-relation-line>text');
+  const origin = {
+    x: Number(await label.getAttribute('x')),
+    y: Number(await label.getAttribute('y')) + 13,
+  };
+  const viewport = (await state()).layout.viewports.find((v) => v.viewId === viewId);
+  const zoom = viewport?.zoom ?? 1;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 42, box.y + box.height / 2 + 28, { steps: 7 });
+  await page.mouse.up();
+  const route = (await state()).layout.relations.find((r) => r.viewId === viewId);
+  if (!route?.bend) {
+    await page.screenshot({ path: '.cache/verification/density-drag-failure.png' });
+    console.log(
+      'failed handle',
+      box,
+      'viewport',
+      viewport,
+      'hit',
+      await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.outerHTML, {
+        x: box.x + box.width / 2,
+        y: box.y + box.height / 2,
+      }),
+    );
+  }
+  assert(route?.bend);
+  assert.notEqual(await path.getAttribute('d'), before);
+  assert(Math.abs(route.bend.x - origin.x - 42 / zoom) < 2);
+  assert(Math.abs(route.bend.y - origin.y - 28 / zoom) < 2);
+  const first = { ...route.bend };
+  await handle.focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(
+    (await state()).layout.relations.find((r) => r.viewId === viewId).bend.x,
+    first.x + 8,
+  );
+  console.log('drag', viewId, zoom, route.bend);
+  return (await state()).layout.relations.find((r) => r.viewId === viewId);
+};
+try {
+  await page.goto('http://127.0.0.1:5173/' + filename);
+  await page.getByRole('button', { name: 'Alpha 도메인 열기', exact: true }).click();
+  const normal = await drag('d0');
+  const trigger = page.getByRole('button', { name: '도메인 뷰', exact: true });
+  await trigger.click();
+  const popup = page.getByRole('dialog', { name: '도메인 뷰', exact: true });
+  await popup.waitFor();
+  const a = await trigger.boundingBox(),
+    b = await popup.boundingBox();
+  assert(b.y >= a.y + a.height);
+  const bounds = await page.locator('.combined-domain-options').evaluate((e) => ({
+    scroll: e.scrollHeight,
+    height: e.clientHeight,
+    width: e.scrollWidth,
+    client: e.clientWidth,
+  }));
+  assert(bounds.scroll > bounds.height);
+  assert(bounds.width <= bounds.client);
+  await page.screenshot({ path: '.cache/verification/density-domain-menu.png' });
+  await page.keyboard.press('Escape');
+  await popup.waitFor({ state: 'hidden' });
+  assert.equal(await trigger.evaluate((e) => e === document.activeElement), true);
+  await trigger.click();
+  await popup.getByLabel('도메인 뷰 이름', { exact: true }).fill('Alpha + Beta');
+  await popup.getByLabel('Beta', { exact: true }).check();
+  await popup.getByRole('button', { name: '뷰 저장', exact: true }).click();
+  await popup.waitFor({ state: 'hidden' });
+  let doc = await state();
+  const view = doc.views[0];
+  assert.deepEqual(view.domainIds, ['d0', 'd1']);
+  const count = doc.layout.nodes.length;
+  const combined = await drag(view.id);
+  assert.equal((await state()).layout.nodes.length, count);
+  assert.deepEqual(
+    (await state()).layout.relations.find((r) => r.viewId === 'd0'),
+    normal,
+  );
+  await page.locator('.table-node').first().click();
+  await page.getByRole('button', { name: /1\. id/ }).click();
+  const editor = page.locator('.table-column-editor');
+  await editor.getByLabel('컬럼명', { exact: true }).fill('identifier');
+  const type = editor.getByRole('combobox', { name: '타입', exact: true });
+  await type.fill('var');
+  await page.getByRole('option', { name: 'VARCHAR', exact: true }).click();
+  await editor.getByLabel('길이', { exact: true }).fill('120');
+  await editor.getByLabel('NULL 허용', { exact: true }).check();
+  await editor.getByLabel('설명', { exact: true }).fill('compact edit');
+  const updated = (await state()).columns.find((c) => c.physical.name === 'identifier');
+  assert.equal(updated.physical.type.length, 120);
+  assert.equal(updated.physical.nullable, true);
+  assert.equal(updated.physical.comment, 'compact edit');
+  const size = await editor.evaluate((e) => ({
+    height: e.clientHeight,
+    width: e.clientWidth,
+    scroll: e.scrollWidth,
+    columns: getComputedStyle(e).gridTemplateColumns,
+  }));
+  assert(size.scroll <= size.width);
+  assert(size.height < 380);
+  console.log('editor', size);
+  await mkdir('.cache/verification', { recursive: true });
+  await page.screenshot({ path: '.cache/verification/density-editor.png', fullPage: true });
+  await page.reload();
+  await page.getByRole('button', { name: '도메인 뷰', exact: true }).click();
+  await page.getByRole('button', { name: 'Alpha + Beta', exact: true }).click();
+  assert.deepEqual(
+    (await state()).layout.relations.find((r) => r.viewId === view.id),
+    combined,
+  );
+  assert.equal((await state()).columns.find((c) => c.id === updated.id).physical.type.length, 120);
+  await page.getByRole('button', { name: '도메인 뷰', exact: true }).click();
+  await page.getByRole('button', { name: '보기 삭제', exact: true }).click();
+  await page.getByRole('button', { name: '취소', exact: true }).click();
+  assert.equal((await state()).views.length, 1);
+  await page.keyboard.press('Escape');
+  assert.deepEqual(errors, []);
+  console.log(
+    'PASS domain dropdown anchored, Escape/focus, scroll bounds, combined creation, 2D drags at zoom, per-view route preservation, compact column edits and reload',
+  );
+} finally {
+  await browser.close();
+  await unlink(target);
+}

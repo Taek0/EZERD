@@ -1,9 +1,12 @@
-import {chooseSelect,selectTrigger,stablePopover} from './browser-select.mjs';
+import { chooseSelect, selectTrigger, stablePopover } from './browser-select.mjs';
 import assert from 'node:assert/strict';
-import {writeFile,unlink,mkdir} from 'node:fs/promises';
-const {chromium}=await import(process.env.EZERD_PLAYWRIGHT_MODULE||'playwright');
-const filename=`__table-workflow-${Date.now()}.html`,target=new URL('../apps/web/'+filename,import.meta.url);
-await writeFile(target,`<!doctype html><div id="qa"></div><script type="module">
+import { writeFile, unlink, mkdir } from 'node:fs/promises';
+const { chromium } = await import(process.env.EZERD_PLAYWRIGHT_MODULE || 'playwright');
+const filename = `__table-workflow-${Date.now()}.html`,
+  target = new URL('../apps/web/' + filename, import.meta.url);
+await writeFile(
+  target,
+  `<!doctype html><div id="qa"></div><script type="module">
 import React,{useState} from 'react';import{createRoot}from'react-dom/client';
 import{TableNodeContent,TableInspector,TableWorkspaceTools,ForeignKeyDialog,TableRelationsSvg}from'/src/TableEditor.tsx';
 import'/src/tokens.css';import'/src/components/ui/ui.css';import'/src/styles.css';
@@ -12,18 +15,104 @@ const table=(id)=>({id,domainId:'d',scope:'both',logical:{name:id+' 논리',defi
 const column=(id,tableId,name)=>({id,tableId,scope:'both',logical:{name:name+' 논리',definition:'',semanticType:'',required:false},physical:{name,type:{name:'integer',isArray:false},nullable:false,defaultExpression:null,comment:''},customProperties:m});
 function Demo(){const[doc,D]=useState({schemaVersion:1,domains:[{id:'d',name:'도메인',description:''}],domainRelations:[],notes:[],tables:[table('orders'),table('users')],columns:[column('a','orders','user_id'),column('b','users','id')],keys:[{id:'pk',tableId:'users',scope:'both',kind:'primary',name:'users_pk',columnIds:['b']}],tableRelations:[],layout:{nodes:[{id:'n1',objectId:'orders',viewId:'d',x:0,y:0,width:280,height:220},{id:'n2',objectId:'users',viewId:'d',x:600,y:0,width:280,height:220}],viewports:[]}}),[fk,F]=useState(null);window.qaDocument=doc;
 return h('main',{style:{padding:24,display:'flex',gap:20}},h('div',{style:{width:480,height:280}},h(TableNodeContent,{document:doc,tableId:'orders',viewMode:'both',onChange:D,onStartForeignKey:F}),h('svg',{width:900,height:300,style:{position:'absolute',top:1500,left:20,overflow:'visible'}},h(TableRelationsSvg,{document:doc,viewId:'d',viewMode:'both',onSelect:()=>{},onChange:D}))),h('div',{style:{width:360}},h(TableInspector,{document:doc,tableId:'orders',onChange:D,readOnly:false,onStartForeignKey:F})),h('div',{style:{width:320}},h(TableWorkspaceTools,{document:doc,viewId:'d',viewMode:'both',onViewModeChange:()=>{},onChange:D,readOnly:false,position:{x:0,y:0},onSelect:()=>{}})),fk&&h(ForeignKeyDialog,{document:doc,sourceColumnId:fk,targetTableId:'users',onChange:D,onClose:()=>F(null)}));}createRoot(document.getElementById('qa')).render(h(Demo));
-</script>`);
-const browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1600,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
-const state=()=>page.evaluate(()=>window.qaDocument);
-try{
- await mkdir('.cache/verification',{recursive:true});await page.goto('http://127.0.0.1:5173/'+filename);await page.locator('.table-node-content').waitFor();
- assert.equal(await page.locator('.table-node-content strong').innerText(),'orders');
- await page.locator('.table-node-content strong .table-inline').dblclick();await page.getByLabel('물리 테이블명',{exact:true}).first().fill('order_entries');await page.getByLabel('물리 테이블명',{exact:true}).first().press('Enter');assert.equal((await state()).tables[0].physical.name,'order_entries');
- await page.locator('.table-node-content strong .table-inline').dblclick();await page.getByLabel('물리 테이블명',{exact:true}).first().fill('cancelled');await page.getByLabel('물리 테이블명',{exact:true}).first().press('Escape');assert.equal((await state()).tables[0].physical.name,'order_entries');
- await page.getByRole('button',{name:'컬럼 추가',exact:true}).click();assert.equal((await state()).columns.at(-1).physical.nullable,false);
- await page.locator('.table-column-row').nth(1).click({button:'right'});await page.getByRole('menuitem',{name:'FK 관계 연결'}).click();await page.getByRole('dialog').waitFor();assert.equal((await state()).tableRelations.length,0);await chooseSelect(page,page.getByRole('dialog'),/^출발 끝점/,'1');await chooseSelect(page,page.getByRole('dialog'),/^대상 끝점/,'0..N');await selectTrigger(page.getByRole('dialog'),/^대상 끝점/).click();await page.getByRole('option',{name:'1..N',exact:true}).waitFor();await stablePopover(page);await page.screenshot({path:'.cache/verification/untitled-fk-select.png'});await page.keyboard.press('Escape');await page.getByRole('button',{name:'대응 확인 후 FK 생성'}).click();assert.equal((await state()).tableRelations.length,1);assert.deepEqual((await state()).tableRelations[0].physical.targetColumnIds,['b']);assert.deepEqual((await state()).tableRelations[0].logical.sourceCardinality,{min:1,max:1});assert.deepEqual((await state()).tableRelations[0].logical.targetCardinality,{min:0,max:'many'});
- await page.locator('summary').filter({hasText:'키 · PK / UNIQUE'}).click();await page.getByRole('button',{name:'+ 키 추가',exact:true}).click();assert.equal((await state()).keys.filter(k=>k.kind==='unique').length,0);assert.equal(await page.getByRole('button',{name:'+ 키 추가',exact:true}).isDisabled(),true);assert.equal(await page.getByRole('button',{name:'키 생성',exact:true}).isDisabled(),true);const key=page.locator('.table-key-options');await key.getByRole('checkbox').nth(0).check();await key.getByRole('checkbox').nth(1).check();await page.getByRole('button',{name:'키 생성',exact:true}).click();const unique=(await state()).keys.find(k=>k.kind==='unique');assert.equal(unique.columnIds.length,2);assert.equal((await state()).keys.filter(k=>k.kind==='unique').length,1);
- await page.locator('summary').filter({hasText:'테이블 관계'}).click();assert.equal(await page.getByRole('button',{name:'+ 테이블 관계 추가',exact:true}).isDisabled(),true);await chooseSelect(page,page,/^FK 출발 컬럼/,'user_id');await page.getByRole('button',{name:'+ 테이블 관계 추가',exact:true}).click();assert.equal((await state()).tableRelations.length,1);await page.getByRole('button',{name:'취소',exact:true}).click();assert.equal(await page.getByRole('button',{name:'+ 테이블 관계 추가',exact:true}).isDisabled(),true);
- await page.getByRole('button',{name:/1\. user_id/}).click();const detail=page.locator('.panel-detail');assert.equal(await selectTrigger(detail,/^타입/).evaluate(el=>el.tagName),'BUTTON');assert.equal(await detail.getByLabel('길이',{exact:true}).isDisabled(),true);await chooseSelect(page,detail,/^타입/,'varchar');assert.equal(await detail.getByLabel('길이',{exact:true}).isDisabled(),false);assert.equal(await detail.getByLabel('정밀도',{exact:true}).isDisabled(),true);await chooseSelect(page,detail,/^타입/,'numeric');assert.equal(await detail.getByLabel('소수 자릿수',{exact:true}).isDisabled(),true);await detail.getByLabel('정밀도',{exact:true}).fill('10');assert.equal(await detail.getByLabel('소수 자릿수',{exact:true}).isDisabled(),false);await chooseSelect(page,detail,/^타입/,'timestamp');await detail.getByLabel('정밀도',{exact:true}).fill('7');assert.equal((await state()).columns[0].physical.type.precision,undefined);await detail.getByLabel('정밀도',{exact:true}).fill('6');assert.equal((await state()).columns[0].physical.type.precision,6);
- await page.locator('.table-relation-line rect').click({button:'right'});await page.getByRole('menuitem',{name:'관계 삭제',exact:true}).click();assert.equal((await state()).tableRelations.length,0);assert.deepEqual(errors,[]);await page.screenshot({path:'.cache/table-workflow.png',fullPage:true});console.log('PASS: physical-first inline Enter/Escape, NOT NULL new column, FK confirmation, draft guards, source-required FK, composite UNIQUE, physical type dropdown and parameter bounds.');
-}catch(error){console.log('URL',page.url(),'ERRORS',errors);console.log(await page.locator('body').innerText());throw error;}finally{await browser.close();await unlink(target);}
+</script>`,
+);
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+const errors = [];
+page.on('pageerror', (e) => errors.push(e.message));
+const state = () => page.evaluate(() => window.qaDocument);
+try {
+  await mkdir('.cache/verification', { recursive: true });
+  await page.goto('http://127.0.0.1:5173/' + filename);
+  await page.locator('.table-node-content').waitFor();
+  assert.equal(await page.locator('.table-node-content strong').innerText(), 'orders');
+  await page.locator('.table-node-content strong .table-inline').dblclick();
+  await page.getByLabel('물리 테이블명', { exact: true }).first().fill('order_entries');
+  await page.getByLabel('물리 테이블명', { exact: true }).first().press('Enter');
+  assert.equal((await state()).tables[0].physical.name, 'order_entries');
+  await page.locator('.table-node-content strong .table-inline').dblclick();
+  await page.getByLabel('물리 테이블명', { exact: true }).first().fill('cancelled');
+  await page.getByLabel('물리 테이블명', { exact: true }).first().press('Escape');
+  assert.equal((await state()).tables[0].physical.name, 'order_entries');
+  await page.getByRole('button', { name: '컬럼 추가', exact: true }).click();
+  assert.equal((await state()).columns.at(-1).physical.nullable, false);
+  await page.locator('.table-column-row').nth(1).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'FK 관계 연결' }).click();
+  await page.getByRole('dialog').waitFor();
+  assert.equal((await state()).tableRelations.length, 0);
+  await chooseSelect(page, page.getByRole('dialog'), /^출발 끝점/, '1');
+  await chooseSelect(page, page.getByRole('dialog'), /^대상 끝점/, '0..N');
+  await selectTrigger(page.getByRole('dialog'), /^대상 끝점/).click();
+  await page.getByRole('option', { name: '1..N', exact: true }).waitFor();
+  await stablePopover(page);
+  await page.screenshot({ path: '.cache/verification/untitled-fk-select.png' });
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '대응 확인 후 FK 생성' }).click();
+  assert.equal((await state()).tableRelations.length, 1);
+  assert.deepEqual((await state()).tableRelations[0].physical.targetColumnIds, ['b']);
+  assert.deepEqual((await state()).tableRelations[0].logical.sourceCardinality, { min: 1, max: 1 });
+  assert.deepEqual((await state()).tableRelations[0].logical.targetCardinality, {
+    min: 0,
+    max: 'many',
+  });
+  await page.locator('summary').filter({ hasText: '키 · PK / UNIQUE' }).click();
+  await page.getByRole('button', { name: '+ 키 추가', exact: true }).click();
+  assert.equal((await state()).keys.filter((k) => k.kind === 'unique').length, 0);
+  assert.equal(
+    await page.getByRole('button', { name: '+ 키 추가', exact: true }).isDisabled(),
+    true,
+  );
+  assert.equal(await page.getByRole('button', { name: '키 생성', exact: true }).isDisabled(), true);
+  const key = page.locator('.table-key-options');
+  await key.getByRole('checkbox').nth(0).check();
+  await key.getByRole('checkbox').nth(1).check();
+  await page.getByRole('button', { name: '키 생성', exact: true }).click();
+  const unique = (await state()).keys.find((k) => k.kind === 'unique');
+  assert.equal(unique.columnIds.length, 2);
+  assert.equal((await state()).keys.filter((k) => k.kind === 'unique').length, 1);
+  await page.locator('summary').filter({ hasText: '테이블 관계' }).click();
+  assert.equal(
+    await page.getByRole('button', { name: '+ 테이블 관계 추가', exact: true }).isDisabled(),
+    true,
+  );
+  await chooseSelect(page, page, /^FK 출발 컬럼/, 'user_id');
+  await page.getByRole('button', { name: '+ 테이블 관계 추가', exact: true }).click();
+  assert.equal((await state()).tableRelations.length, 1);
+  await page.getByRole('button', { name: '취소', exact: true }).click();
+  assert.equal(
+    await page.getByRole('button', { name: '+ 테이블 관계 추가', exact: true }).isDisabled(),
+    true,
+  );
+  await page.getByRole('button', { name: /1\. user_id/ }).click();
+  const detail = page.locator('.panel-detail');
+  assert.equal(await selectTrigger(detail, /^타입/).evaluate((el) => el.tagName), 'BUTTON');
+  assert.equal(await detail.getByLabel('길이', { exact: true }).isDisabled(), true);
+  await chooseSelect(page, detail, /^타입/, 'varchar');
+  assert.equal(await detail.getByLabel('길이', { exact: true }).isDisabled(), false);
+  assert.equal(await detail.getByLabel('정밀도', { exact: true }).isDisabled(), true);
+  await chooseSelect(page, detail, /^타입/, 'numeric');
+  assert.equal(await detail.getByLabel('소수 자릿수', { exact: true }).isDisabled(), true);
+  await detail.getByLabel('정밀도', { exact: true }).fill('10');
+  assert.equal(await detail.getByLabel('소수 자릿수', { exact: true }).isDisabled(), false);
+  await chooseSelect(page, detail, /^타입/, 'timestamp');
+  await detail.getByLabel('정밀도', { exact: true }).fill('7');
+  assert.equal((await state()).columns[0].physical.type.precision, undefined);
+  await detail.getByLabel('정밀도', { exact: true }).fill('6');
+  assert.equal((await state()).columns[0].physical.type.precision, 6);
+  await page.locator('.table-relation-line rect').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '관계 삭제', exact: true }).click();
+  assert.equal((await state()).tableRelations.length, 0);
+  assert.deepEqual(errors, []);
+  await page.screenshot({ path: '.cache/table-workflow.png', fullPage: true });
+  console.log(
+    'PASS: physical-first inline Enter/Escape, NOT NULL new column, FK confirmation, draft guards, source-required FK, composite UNIQUE, physical type dropdown and parameter bounds.',
+  );
+} catch (error) {
+  console.log('URL', page.url(), 'ERRORS', errors);
+  console.log(await page.locator('body').innerText());
+  throw error;
+} finally {
+  await browser.close();
+  await unlink(target);
+}

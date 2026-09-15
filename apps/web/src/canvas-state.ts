@@ -3,8 +3,13 @@ export function cardSize(kind: 'domain' | 'table' | 'note', width: number, heigh
   return { width: Math.max(min[0]!, width), height: Math.max(min[1]!, height) };
 }
 export function relationTargets<T extends { id: string }>(domains: T[], source: string): T[] {
-  return domains.filter(domain => domain.id !== source);
+  return domains.filter((domain) => domain.id !== source);
 }
-export function connectedRelations<T extends { sourceDomainId: string; targetDomainId: string }>(relations: T[], selected: string): T[] {
-  return relations.filter(relation => relation.sourceDomainId === selected || relation.targetDomainId === selected);
+export function connectedRelations<T extends { sourceDomainId: string; targetDomainId: string }>(
+  relations: T[],
+  selected: string,
+): T[] {
+  return relations.filter(
+    (relation) => relation.sourceDomainId === selected || relation.targetDomainId === selected,
+  );
 }

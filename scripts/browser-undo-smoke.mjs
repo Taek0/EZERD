@@ -12,29 +12,52 @@ const pool = new (require('pg').Pool)({ connectionString: config.DATABASE_URL })
 const base = process.env.EZERD_WEB_URL || 'http://127.0.0.1:5173';
 const apiBase = process.env.EZERD_API_URL || 'http://127.0.0.1:3001';
 async function api(path, method = 'GET', body) {
-  const response = await fetch(apiBase + '/api' + path, { method, headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const response = await fetch(apiBase + '/api' + path, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
   assert(response.ok, `${method} ${path}: ${response.status} ${await response.clone().text()}`);
   return response.json();
 }
 async function ready() {
   for (let attempt = 0; attempt < 40; attempt++) {
-    try { await api('/projects'); return; } catch (error) { if (attempt === 39) throw error; await delay(500); }
+    try {
+      await api('/projects');
+      return;
+    } catch (error) {
+      if (attempt === 39) throw error;
+      await delay(500);
+    }
   }
 }
 
-let seed = addDomain(createEmptyDocument(), { id: 'alpha', name: 'Alpha', description: '' }, { x: 100, y: 100 });
-const browser = await chromium.launch({ channel: process.env.EZERD_BROWSER_CHANNEL || 'chrome', headless: true });
+let seed = addDomain(
+  createEmptyDocument(),
+  { id: 'alpha', name: 'Alpha', description: '' },
+  { x: 100, y: 100 },
+);
+const browser = await chromium.launch({
+  channel: process.env.EZERD_BROWSER_CHANNEL || 'chrome',
+  headless: true,
+});
 const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
 const errors = [];
-page.on('pageerror', error => errors.push(error.message));
+page.on('pageerror', (error) => errors.push(error.message));
 let projectId, userId;
-const stamp = Date.now(), name = `실행 취소 QA ${stamp}`;
-const button = label => page.getByRole('button', { name: label, exact: true });
+const stamp = Date.now(),
+  name = `실행 취소 QA ${stamp}`;
+const button = (label) => page.getByRole('button', { name: label, exact: true });
 async function countNodes(expected) {
-  await page.waitForFunction(n => document.querySelectorAll('.domain-node').length === n, expected);
+  await page.waitForFunction(
+    (n) => document.querySelectorAll('.domain-node').length === n,
+    expected,
+  );
 }
 async function save() {
-  const response = page.waitForResponse(r => r.url().endsWith('/document') && r.request().method() === 'PUT');
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith('/document') && r.request().method() === 'PUT',
+  );
   await button('저장').click();
   assert.equal((await response).status(), 200);
   await page.getByText('✓ 저장 완료', { exact: true }).waitFor();
@@ -48,36 +71,58 @@ async function openProject() {
 try {
   await mkdir('.cache/verification', { recursive: true });
   await ready();
-  const project = await api('/projects', 'POST', { name }); projectId = project.id;
-  await api(`/projects/${projectId}/document`, 'PUT', { expectedVersion: project.version, document: seed });
+  const project = await api('/projects', 'POST', { name });
+  projectId = project.id;
+  await api(`/projects/${projectId}/document`, 'PUT', {
+    expectedVersion: project.version,
+    document: seed,
+  });
   await page.goto(base);
   await page.getByRole('textbox', { name: /^함께 사용할 이름/ }).fill(`취소검증${stamp}`);
-  const identity = page.waitForResponse(r => r.url().endsWith('/api/users') && r.request().method() === 'POST');
-  await button('워크스페이스 시작하기 →').click(); userId = (await (await identity).json()).id;
+  const identity = page.waitForResponse(
+    (r) => r.url().endsWith('/api/users') && r.request().method() === 'POST',
+  );
+  await button('워크스페이스 시작하기 →').click();
+  userId = (await (await identity).json()).id;
   await openProject();
   assert(await button('실행 취소').isDisabled());
-  await button('＋ 도메인').click(); await countNodes(2);
-  await page.keyboard.press('Control+z'); await countNodes(1);
-  await page.keyboard.press('Control+Shift+z'); await countNodes(2);
-  await button('실행 취소').click(); await countNodes(1);
-  await page.keyboard.press('Control+y'); await countNodes(2);
+  await button('＋ 도메인').click();
+  await countNodes(2);
+  await page.keyboard.press('Control+z');
+  await countNodes(1);
+  await page.keyboard.press('Control+Shift+z');
+  await countNodes(2);
+  await button('실행 취소').click();
+  await countNodes(1);
+  await page.keyboard.press('Control+y');
+  await countNodes(2);
   await save();
   // Save is a boundary, but never clears editing history.
-  await button('실행 취소').click(); await countNodes(1);
+  await button('실행 취소').click();
+  await countNodes(1);
   await page.getByText('● 저장하지 않은 변경', { exact: true }).waitFor();
-  await button('다시 실행').click(); await countNodes(2);
+  await button('다시 실행').click();
+  await countNodes(2);
   // A delayed acknowledgement must not overwrite a subsequent undo.
   let release;
-  const held = new Promise(resolve => { release = resolve; });
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
   let seen;
-  const intercepted = new Promise(resolve => { seen = resolve; });
-  await page.route('**/api/projects/*/document', async route => {
+  const intercepted = new Promise((resolve) => {
+    seen = resolve;
+  });
+  await page.route('**/api/projects/*/document', async (route) => {
     if (route.request().method() !== 'PUT') return route.continue();
     const response = await route.fetch();
-    seen(); await held; await route.fulfill({ response });
+    seen();
+    await held;
+    await route.fulfill({ response });
   });
-  await button('저장').click(); await intercepted;
-  await button('실행 취소').click(); await countNodes(1);
+  await button('저장').click();
+  await intercepted;
+  await button('실행 취소').click();
+  await countNodes(1);
   release();
   await page.getByText('● 저장하지 않은 변경', { exact: true }).waitFor();
   await countNodes(1);
@@ -102,7 +147,8 @@ try {
   await node.click({ position: { x: 100, y: 35 } });
   const input = page.getByRole('textbox', { name: '도메인 이름', exact: true });
   await input.fill('Alpha');
-  await input.press('End'); await input.pressSequentially(' updated');
+  await input.press('End');
+  await input.pressSequentially(' updated');
   await input.press('Control+z');
   assert.equal(await input.inputValue(), 'Alpha');
   assert.equal(await page.locator('.domain-node').count(), 1);
@@ -113,13 +159,16 @@ try {
   await button('다시 실행').click();
   assert.equal(await input.inputValue(), 'Alpha renamed');
   const persisted = await save();
-  await page.reload(); await openProject();
+  await page.reload();
+  await openProject();
   assert(await button('실행 취소').isDisabled());
   assert(await button('다시 실행').isDisabled());
   assert.deepEqual((await api(`/projects/${projectId}`)).document, persisted.document);
   await page.screenshot({ path: '.cache/verification/undo-desktop.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('PASS: create undo/redo shortcuts, save history, delayed save versus undo, grouped pointer drag, native text input undo isolation, grouped text undo/redo, persisted reload and history reset.');
+  console.log(
+    'PASS: create undo/redo shortcuts, save history, delayed save versus undo, grouped pointer drag, native text input undo isolation, grouped text undo/redo, persisted reload and history reset.',
+  );
 } catch (error) {
   console.log('PAGE ERRORS', errors);
   console.log(await page.locator('body').innerText());

@@ -8,5 +8,10 @@ import './components/ui/ui.css';
 import './styles.css';
 import './inspector.css';
 
-createRoot(document.getElementById('root')!).render(<StrictMode><ConfirmProvider><App /></ConfirmProvider></StrictMode>);
-
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <ConfirmProvider>
+      <App />
+    </ConfirmProvider>
+  </StrictMode>,
+);

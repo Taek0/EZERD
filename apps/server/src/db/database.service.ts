@@ -22,7 +22,14 @@ export class DatabaseService implements OnApplicationShutdown {
 
   async checkReady(): Promise<void> {
     // Verify every migration needed by the current application.
-    await this.db.select({ id: schema.projects.id, version: schema.projects.version, document: schema.projects.document }).from(schema.projects).limit(1);
+    await this.db
+      .select({
+        id: schema.projects.id,
+        version: schema.projects.version,
+        document: schema.projects.document,
+      })
+      .from(schema.projects)
+      .limit(1);
     await this.db.select({ id: schema.users.id }).from(schema.users).limit(1);
     await this.db.select().from(schema.threads).limit(1);
     await this.db.select().from(schema.messages).limit(1);

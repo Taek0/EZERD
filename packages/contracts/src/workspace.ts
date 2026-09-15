@@ -1,4 +1,10 @@
-import { tableSchema, columnSchema, tableKeySchema, tableRelationSchema, projectEnumSchema } from './relational.js';
+import {
+  tableSchema,
+  columnSchema,
+  tableKeySchema,
+  tableRelationSchema,
+  projectEnumSchema,
+} from './relational.js';
 import { z } from 'zod';
 export const MAX_DOCUMENT_BYTES = 1_500_000;
 function withinDocumentBudget(doc: unknown): boolean {
@@ -11,55 +17,176 @@ function withinDocumentBudget(doc: unknown): boolean {
   return true;
 }
 const id = z.string().trim().min(1).max(160);
-const objectId = id.refine(value => value !== 'overview', 'overview is reserved for the domain map');
+const objectId = id.refine(
+  (value) => value !== 'overview',
+  'overview is reserved for the domain map',
+);
 const name = z.string().max(120);
 const coordinate = z.number().min(-1e7).max(1e7);
-export const domainSchema = z.strictObject({ id: objectId, name, description: z.string().max(10000), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional() });
-export const domainRelationSchema = z.strictObject({ id: objectId, sourceDomainId: id, targetDomainId: id, name, direction: z.enum(['forward', 'both']), description: z.string().max(10000) });
-export const noteSchema = z.strictObject({ id: objectId, viewId: id, text: z.string().max(20000) });
-export const nodeLayoutSchema = z.strictObject({ id, objectId: id, viewId: id, x: coordinate, y: coordinate, width: z.number().positive().max(10000), height: z.number().positive().max(10000) });
-export const viewportSchema = z.strictObject({ viewId: id, x: coordinate, y: coordinate, zoom: z.number().min(0.1).max(4) });
-export const combinedViewSchema = z.strictObject({ id: objectId, name, domainIds: z.array(id).min(1).max(2000).refine(ids => new Set(ids).size === ids.length) });
-export const relationLayoutSchema = z.strictObject({ relationId: id, viewId: id, offset: coordinate, bend: z.strictObject({ x: coordinate, y: coordinate }).optional() });
-export const designDocumentSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  views: z.array(combinedViewSchema).max(1000).optional(),
-  enums: z.array(projectEnumSchema).max(1000).optional(),
-  tables: z.array(tableSchema).max(5000).optional(),
-  columns: z.array(columnSchema).max(20000).optional(),
-  keys: z.array(tableKeySchema).max(10000).optional(),
-  tableRelations: z.array(tableRelationSchema).max(10000).optional(),
-  domains: z.array(domainSchema).max(2000),
-  domainRelations: z.array(domainRelationSchema).max(10000),
-  notes: z.array(noteSchema).max(10000),
-  layout: z.strictObject({ nodes: z.array(nodeLayoutSchema).max(12000), viewports: z.array(viewportSchema).max(3001), relations: z.array(relationLayoutSchema).max(20000).optional() }),
-}).superRefine((doc, ctx) => {
-  if (!withinDocumentBudget(doc)) ctx.addIssue({ code: 'custom', message: '설계 문서는 UTF-8 JSON 기준 1.5 MB까지 저장할 수 있습니다.' });
-  const unique = (values: string[], path: string[]) => { if (new Set(values).size !== values.length) ctx.addIssue({ code: 'custom', path, message: 'Duplicate identities are not allowed.' }); };
-  unique([...doc.domains, ...(doc.views ?? []), ...doc.domainRelations, ...doc.notes, ...(doc.tables ?? []), ...(doc.columns ?? []), ...(doc.keys ?? []), ...(doc.tableRelations ?? []), ...(doc.enums ?? [])].map(o => o.id), ['domains']);
-  unique(doc.layout.nodes.map(n => n.id), ['layout', 'nodes']);
-  unique(doc.layout.nodes.map(n => JSON.stringify([n.viewId, n.objectId])), ['layout', 'nodes']);
-  unique(doc.layout.viewports.map(v => v.viewId), ['layout', 'viewports']);
-  unique((doc.layout.relations ?? []).map(r => JSON.stringify([r.viewId, r.relationId])), ['layout', 'relations']);
+export const domainSchema = z.strictObject({
+  id: objectId,
+  name,
+  description: z.string().max(10000),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
 });
+export const domainRelationSchema = z.strictObject({
+  id: objectId,
+  sourceDomainId: id,
+  targetDomainId: id,
+  name,
+  direction: z.enum(['forward', 'both']),
+  description: z.string().max(10000),
+});
+export const noteSchema = z.strictObject({ id: objectId, viewId: id, text: z.string().max(20000) });
+export const nodeLayoutSchema = z.strictObject({
+  id,
+  objectId: id,
+  viewId: id,
+  x: coordinate,
+  y: coordinate,
+  width: z.number().positive().max(10000),
+  height: z.number().positive().max(10000),
+});
+export const viewportSchema = z.strictObject({
+  viewId: id,
+  x: coordinate,
+  y: coordinate,
+  zoom: z.number().min(0.1).max(4),
+});
+export const combinedViewSchema = z.strictObject({
+  id: objectId,
+  name,
+  domainIds: z
+    .array(id)
+    .min(1)
+    .max(2000)
+    .refine((ids) => new Set(ids).size === ids.length),
+});
+export const relationLayoutSchema = z.strictObject({
+  relationId: id,
+  viewId: id,
+  offset: coordinate,
+  bend: z.strictObject({ x: coordinate, y: coordinate }).optional(),
+});
+export const designDocumentSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    views: z.array(combinedViewSchema).max(1000).optional(),
+    enums: z.array(projectEnumSchema).max(1000).optional(),
+    tables: z.array(tableSchema).max(5000).optional(),
+    columns: z.array(columnSchema).max(20000).optional(),
+    keys: z.array(tableKeySchema).max(10000).optional(),
+    tableRelations: z.array(tableRelationSchema).max(10000).optional(),
+    domains: z.array(domainSchema).max(2000),
+    domainRelations: z.array(domainRelationSchema).max(10000),
+    notes: z.array(noteSchema).max(10000),
+    layout: z.strictObject({
+      nodes: z.array(nodeLayoutSchema).max(12000),
+      viewports: z.array(viewportSchema).max(3001),
+      relations: z.array(relationLayoutSchema).max(20000).optional(),
+    }),
+  })
+  .superRefine((doc, ctx) => {
+    if (!withinDocumentBudget(doc))
+      ctx.addIssue({
+        code: 'custom',
+        message: '설계 문서는 UTF-8 JSON 기준 1.5 MB까지 저장할 수 있습니다.',
+      });
+    const unique = (values: string[], path: string[]) => {
+      if (new Set(values).size !== values.length)
+        ctx.addIssue({ code: 'custom', path, message: 'Duplicate identities are not allowed.' });
+    };
+    unique(
+      [
+        ...doc.domains,
+        ...(doc.views ?? []),
+        ...doc.domainRelations,
+        ...doc.notes,
+        ...(doc.tables ?? []),
+        ...(doc.columns ?? []),
+        ...(doc.keys ?? []),
+        ...(doc.tableRelations ?? []),
+        ...(doc.enums ?? []),
+      ].map((o) => o.id),
+      ['domains'],
+    );
+    unique(
+      doc.layout.nodes.map((n) => n.id),
+      ['layout', 'nodes'],
+    );
+    unique(
+      doc.layout.nodes.map((n) => JSON.stringify([n.viewId, n.objectId])),
+      ['layout', 'nodes'],
+    );
+    unique(
+      doc.layout.viewports.map((v) => v.viewId),
+      ['layout', 'viewports'],
+    );
+    unique(
+      (doc.layout.relations ?? []).map((r) => JSON.stringify([r.viewId, r.relationId])),
+      ['layout', 'relations'],
+    );
+  });
 const projectName = z.string().trim().min(1).max(120);
 const username = z.string().trim().min(1).max(40);
 const version = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-export const userColorSchema=z.string().length(7).regex(/^#[0-9a-f]{6}$/i).transform(value=>value.toLowerCase());
-export const usernameInputSchema = z.strictObject({ username, pin:z.string().length(4).regex(/^[0-9]{4}$/) });
-export const updateUserSchema=z.strictObject({username:username.optional(),color:userColorSchema.optional()}).refine(value=>value.username!==undefined||value.color!==undefined,'변경할 이름 또는 색상을 입력하세요.');
-export const userSchema = z.strictObject({ id: z.uuid(), username, color:userColorSchema, createdAt: z.iso.datetime(), updatedAt: z.iso.datetime() });
+export const userColorSchema = z
+  .string()
+  .length(7)
+  .regex(/^#[0-9a-f]{6}$/i)
+  .transform((value) => value.toLowerCase());
+export const usernameInputSchema = z.strictObject({
+  username,
+  pin: z
+    .string()
+    .length(4)
+    .regex(/^[0-9]{4}$/),
+});
+export const updateUserSchema = z
+  .strictObject({ username: username.optional(), color: userColorSchema.optional() })
+  .refine(
+    (value) => value.username !== undefined || value.color !== undefined,
+    '변경할 이름 또는 색상을 입력하세요.',
+  );
+export const userSchema = z.strictObject({
+  id: z.uuid(),
+  username,
+  color: userColorSchema,
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
 export const createProjectSchema = z.strictObject({ name: projectName });
-export const updateProjectSchema = z.strictObject({ expectedVersion: version, name: projectName.optional(), status: z.enum(['active', 'archived']).optional() }).refine(input => input.name !== undefined || input.status !== undefined, 'No update supplied.');
-export const projectQuerySchema = z.strictObject({ status: z.enum(['active', 'archived']).default('active'), search: z.string().trim().max(120).default('') });
-export const projectSchema = z.strictObject({ id: z.uuid(), name: projectName, status: z.enum(['active', 'archived']), version, createdAt: z.iso.datetime(), updatedAt: z.iso.datetime() });
-export const projectDocumentSchema = z.strictObject({ project: projectSchema, document: designDocumentSchema });
-export const saveDocumentSchema = z.strictObject({ expectedVersion: version, document: designDocumentSchema });
+export const updateProjectSchema = z
+  .strictObject({
+    expectedVersion: version,
+    name: projectName.optional(),
+    status: z.enum(['active', 'archived']).optional(),
+  })
+  .refine((input) => input.name !== undefined || input.status !== undefined, 'No update supplied.');
+export const projectQuerySchema = z.strictObject({
+  status: z.enum(['active', 'archived']).default('active'),
+  search: z.string().trim().max(120).default(''),
+});
+export const projectSchema = z.strictObject({
+  id: z.uuid(),
+  name: projectName,
+  status: z.enum(['active', 'archived']),
+  version,
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export const projectDocumentSchema = z.strictObject({
+  project: projectSchema,
+  document: designDocumentSchema,
+});
+export const saveDocumentSchema = z.strictObject({
+  expectedVersion: version,
+  document: designDocumentSchema,
+});
 export type User = z.infer<typeof userSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type ProjectDocument = z.infer<typeof projectDocumentSchema>;
 export type DesignDocument = z.infer<typeof designDocumentSchema>;
-
-
-
-

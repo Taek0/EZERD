@@ -8,15 +8,30 @@ import { WorkspaceController } from '../src/workspace.controller.js';
 const actor = { id: randomUUID(), username: 'actor', color: '#4169e1' };
 
 function rejectingSession() {
-  return { authenticateHeader: vi.fn(async () => { throw new UnauthorizedException('로그인이 필요합니다.'); }) };
+  return {
+    authenticateHeader: vi.fn(async () => {
+      throw new UnauthorizedException('로그인이 필요합니다.');
+    }),
+  };
 }
 
 describe('authenticated write paths', () => {
   it('authenticates every project, review, and notification mutation before database access', async () => {
-    const database = new Proxy({}, { get: () => { throw new Error('database must not be accessed'); } });
+    const database = new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('database must not be accessed');
+        },
+      },
+    );
     const session = rejectingSession();
     const workspace = new WorkspaceController(database as never, session as never);
-    const review = new ReviewController(database as never, session as never, { publish: vi.fn() } as never);
+    const review = new ReviewController(
+      database as never,
+      session as never,
+      { publish: vi.fn() } as never,
+    );
     const id = randomUUID();
 
     const writes = [
@@ -25,7 +40,14 @@ describe('authenticated write paths', () => {
       workspace.updateProject(undefined, id, { expectedVersion: 0, name: 'changed' }),
       workspace.deleteProject(undefined, id, { expectedVersion: 0 }),
       workspace.saveDocument(undefined, id, {}),
-      review.create(undefined, id, { viewId: 'overview', objectId: null, x: 0, y: 0, body: 'pin', mentionIds: [] }),
+      review.create(undefined, id, {
+        viewId: 'overview',
+        objectId: null,
+        x: 0,
+        y: 0,
+        body: 'pin',
+        mentionIds: [],
+      }),
       review.reply(undefined, id, { body: 'reply', mentionIds: [] }),
       review.update(undefined, id, { resolved: true }),
       review.remove(undefined, id, { expectedUpdatedAt: new Date().toISOString() }),
@@ -39,7 +61,9 @@ describe('authenticated write paths', () => {
   it('returns 410 for authenticated whole-document replacement attempts', async () => {
     const session = { authenticateHeader: vi.fn(async () => actor) };
     const controller = new WorkspaceController({} as never, session as never);
-    await expect(controller.saveDocument('Bearer valid-token', randomUUID(), {})).rejects.toBeInstanceOf(GoneException);
+    await expect(
+      controller.saveDocument('Bearer valid-token', randomUUID(), {}),
+    ).rejects.toBeInstanceOf(GoneException);
   });
 
   it('rejects a spoofed body author and derives authorship from the session', async () => {
@@ -47,21 +71,31 @@ describe('authenticated write paths', () => {
     const insertedMessages: Array<Record<string, unknown>> = [];
     let selectIndex = 0;
     const project = {
-      id: randomUUID(), status: 'active',
+      id: randomUUID(),
+      status: 'active',
       document: { domains: [], notes: [], layout: { nodes: [] } },
     };
     const thread = {
-      id: randomUUID(), projectId: project.id, viewId: 'overview', objectId: null,
-      x: 0, y: 0, resolved: false, createdAt: new Date(), updatedAt: new Date(),
+      id: randomUUID(),
+      projectId: project.id,
+      viewId: 'overview',
+      objectId: null,
+      x: 0,
+      y: 0,
+      resolved: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
     const tx = {
       select: vi.fn(() => {
         const index = selectIndex++;
-        return { from: () => {
-          if (index === 0) return { where: () => ({ for: async () => [project] }) };
-          if (index === 1) return { where: async () => [thread] };
-          return { where: () => ({ orderBy: async () => [] }) };
-        } };
+        return {
+          from: () => {
+            if (index === 0) return { where: () => ({ for: async () => [project] }) };
+            if (index === 1) return { where: async () => [thread] };
+            return { where: () => ({ orderBy: async () => [] }) };
+          },
+        };
       }),
       insert: vi.fn((table: unknown) => ({
         values: (value: Record<string, unknown>) => {
@@ -74,26 +108,49 @@ describe('authenticated write paths', () => {
       update: vi.fn(() => ({ set: () => ({ where: async () => undefined }) })),
     };
     let committed = false;
-    const database = { db: { transaction: async (callback: (value: typeof tx) => unknown) => {
-      const value = await callback(tx);
-      committed = true;
-      return value;
-    } } };
+    const database = {
+      db: {
+        transaction: async (callback: (value: typeof tx) => unknown) => {
+          const value = await callback(tx);
+          committed = true;
+          return value;
+        },
+      },
+    };
     const session = { authenticateHeader: vi.fn(async () => actor) };
     const gateway = { publishReview: vi.fn(() => expect(committed).toBe(true)) };
     const controller = new ReviewController(database as never, session as never, gateway as never);
 
-    await expect(controller.create('Bearer valid-token', project.id, {
-      authorId: spoofedAuthorId,
-      viewId: 'overview', objectId: null, x: 0, y: 0, body: 'message', mentionIds: [],
-    })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.create('Bearer valid-token', project.id, {
+        authorId: spoofedAuthorId,
+        viewId: 'overview',
+        objectId: null,
+        x: 0,
+        y: 0,
+        body: 'message',
+        mentionIds: [],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
     const result = await controller.create('Bearer valid-token', project.id, {
-      viewId: 'overview', objectId: null, x: 0, y: 0, body: 'message', mentionIds: [],
+      viewId: 'overview',
+      objectId: null,
+      x: 0,
+      y: 0,
+      body: 'message',
+      mentionIds: [],
     });
 
     expect(result.messages).toEqual([]);
-    expect(insertedMessages).toContainEqual(expect.objectContaining({ authorId: actor.id, body: 'message' }));
-    expect(insertedMessages).not.toContainEqual(expect.objectContaining({ authorId: spoofedAuthorId }));
-    expect(gateway.publishReview).toHaveBeenCalledWith(project.id, expect.objectContaining({ action: 'thread-created', actorId: actor.id }));
+    expect(insertedMessages).toContainEqual(
+      expect.objectContaining({ authorId: actor.id, body: 'message' }),
+    );
+    expect(insertedMessages).not.toContainEqual(
+      expect.objectContaining({ authorId: spoofedAuthorId }),
+    );
+    expect(gateway.publishReview).toHaveBeenCalledWith(
+      project.id,
+      expect.objectContaining({ action: 'thread-created', actorId: actor.id }),
+    );
   });
 });

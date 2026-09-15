@@ -3,20 +3,23 @@ import { writeFile, unlink } from 'node:fs/promises';
 const { chromium } = await import(process.env.EZERD_PLAYWRIGHT_MODULE || 'playwright');
 const filename = `__table-header-${Date.now()}.html`;
 const target = new URL('../apps/web/' + filename, import.meta.url);
-await writeFile(target, `<!doctype html><div id="qa"></div><script type="module">
+await writeFile(
+  target,
+  `<!doctype html><div id="qa"></div><script type="module">
 import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Canvas}from'/src/Canvas.tsx';
 import{createEmptyDocument,addDomain,addTable}from'@ezerd/model';
 import'/src/components/ui/tailwind.css';import'/src/tokens.css';import'/src/components/ui/ui.css';import'/src/styles.css';import'/src/inspector.css';
 const h=React.createElement;let seed=addDomain(createEmptyDocument(),{id:'d',name:'Orders',description:''},{x:40,y:40});
 seed=addTable(seed,{id:'t',domainId:'d',scope:'physical',logical:{name:'주문',definition:''},physical:{name:'orders',schema:'public',comment:''},customProperties:{common:{},logical:{},physical:{}}},{x:80,y:80});
 function Demo(){const[doc,D]=useState(seed);return h('main',null,h(Canvas,{document:doc,onChange:D,readOnly:new URLSearchParams(location.search).has('readonly')}),h('output',{id:'document-state',hidden:true},JSON.stringify(doc)));}createRoot(document.getElementById('qa')).render(h(Demo));
-</script>`);
+</script>`,
+);
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const errors = [];
-page.on('pageerror', error => errors.push(error.message));
+page.on('pageerror', (error) => errors.push(error.message));
 const state = async () => JSON.parse(await page.locator('#document-state').textContent());
-const node = async () => (await state()).layout.nodes.find(n => n.objectId === 't');
+const node = async () => (await state()).layout.nodes.find((n) => n.objectId === 't');
 const title = () => page.locator('.table-node header .table-inline');
 async function dragTitle(dx, dy) {
   const box = await title().boundingBox();
@@ -35,12 +38,17 @@ try {
   assert.deepEqual(await node(), initial, 'small movement must remain a click');
   await dragTitle(95, 55);
   const dragged = await node();
-  assert(Math.abs(dragged.x - initial.x - 95) < .01 && Math.abs(dragged.y - initial.y - 55) < .01, 'drag title text moves the table');
+  assert(
+    Math.abs(dragged.x - initial.x - 95) < 0.01 && Math.abs(dragged.y - initial.y - 55) < 0.01,
+    'drag title text moves the table',
+  );
   assert.equal(dragged.width, initial.width);
   assert.equal(dragged.height, initial.height);
   const moved = await node();
   await title().dblclick();
-  const input = page.locator('.table-node').getByRole('textbox', { name: '물리 테이블명', exact: true });
+  const input = page
+    .locator('.table-node')
+    .getByRole('textbox', { name: '물리 테이블명', exact: true });
   await input.fill('order_entries');
   await input.press('Enter');
   assert.equal((await state()).tables[0].physical.name, 'order_entries');
@@ -64,7 +72,9 @@ try {
   assert.deepEqual(await state(), readOnlyBefore, 'read-only titles neither drag nor edit');
   assert.equal(await page.locator('.table-node input').count(), 0);
   assert.deepEqual(errors, []);
-  console.log('PASS: title text drag, small-motion click, double-click Enter/Escape edit, input selection, read-only preservation.');
+  console.log(
+    'PASS: title text drag, small-motion click, double-click Enter/Escape edit, input selection, read-only preservation.',
+  );
 } finally {
   await browser.close();
   await unlink(target);

@@ -10,4 +10,3 @@ try {
   if (error.code !== 'EEXIST') throw error;
   console.log('Existing .env preserved.');
 }
-

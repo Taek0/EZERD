@@ -9,11 +9,13 @@ export type QueueTransport<T, R> = {
   lookup(operationId: string): Promise<R | null>;
 };
 
-export type QueueListener<T, R> = (event:
-  | { type: 'changed'; items: StoredSyncOperation<T>[] }
-  | { type: 'ack'; item: StoredSyncOperation<T>; result: R }
-  | { type: 'expired'; item: StoredSyncOperation<T> }
-  | { type: 'error'; item: StoredSyncOperation<T>; error: unknown }) => void;
+export type QueueListener<T, R> = (
+  event:
+    | { type: 'changed'; items: StoredSyncOperation<T>[] }
+    | { type: 'ack'; item: StoredSyncOperation<T>; result: R }
+    | { type: 'expired'; item: StoredSyncOperation<T> }
+    | { type: 'error'; item: StoredSyncOperation<T>; error: unknown },
+) => void;
 
 export class DurableSyncQueue<T, R> {
   private pumping: Promise<void> | undefined;
@@ -34,7 +36,7 @@ export class DurableSyncQueue<T, R> {
 
   async load() {
     let items = await this.store.list(this.projectId);
-    for (const item of items.filter(value => this.now() - value.createdAt >= localRetentionMs)) {
+    for (const item of items.filter((value) => this.now() - value.createdAt >= localRetentionMs)) {
       if (item.state === 'sending' || item.state === 'unknown') {
         try {
           const known = await this.transport.lookup(item.operationId);
@@ -138,16 +140,22 @@ export class DurableSyncQueue<T, R> {
         }
       }
     })();
-    try { await this.pumping; } finally {
+    try {
+      await this.pumping;
+    } finally {
       this.pumping = undefined;
       await this.emitChanged();
     }
   }
 
-  async items() { return this.store.list(this.projectId); }
+  async items() {
+    return this.store.list(this.projectId);
+  }
 
   async discard(operationId: string) {
-    const item = (await this.store.list(this.projectId)).find(value => value.operationId === operationId);
+    const item = (await this.store.list(this.projectId)).find(
+      (value) => value.operationId === operationId,
+    );
     if (item?.state === 'sending' || item?.state === 'unknown') return false;
     this.cancelled.add(operationId);
     await this.store.delete(operationId);
@@ -156,7 +164,9 @@ export class DurableSyncQueue<T, R> {
   }
 
   async markUnresolved(operationId: string, reason: string) {
-    const item = (await this.store.list(this.projectId)).find(value => value.operationId === operationId);
+    const item = (await this.store.list(this.projectId)).find(
+      (value) => value.operationId === operationId,
+    );
     if (!item) return;
     await this.update(item, 'unresolved', reason);
   }
@@ -169,7 +179,9 @@ export class DurableSyncQueue<T, R> {
       // then look the predecessor up and repeat this step without losing intent.
       this.listener({ type: 'ack', item, result });
       if (this.transport.prepare) {
-        const successor = (await this.store.list(this.projectId)).find(value => value.order > item.order);
+        const successor = (await this.store.list(this.projectId)).find(
+          (value) => value.order > item.order,
+        );
         if (successor?.state === 'queued') {
           const operation = await this.transport.prepare(successor.operation);
           await this.store.put({ ...successor, operation });
@@ -177,13 +189,21 @@ export class DurableSyncQueue<T, R> {
       }
       await this.store.delete(item.operationId);
     } else {
-      await this.store.put({ ...item, state: 'unresolved', reason: outcome.reason ?? '서버가 변경을 반영하지 않았습니다.' });
+      await this.store.put({
+        ...item,
+        state: 'unresolved',
+        reason: outcome.reason ?? '서버가 변경을 반영하지 않았습니다.',
+      });
       this.listener({ type: 'ack', item, result });
     }
     await this.emitChanged();
   }
 
-  private async update(item: StoredSyncOperation<T>, state: StoredSyncOperation<T>['state'], reason?: string) {
+  private async update(
+    item: StoredSyncOperation<T>,
+    state: StoredSyncOperation<T>['state'],
+    reason?: string,
+  ) {
     const next = { ...item, state, ...(reason ? { reason } : {}) };
     await this.store.put(next);
     await this.emitChanged();

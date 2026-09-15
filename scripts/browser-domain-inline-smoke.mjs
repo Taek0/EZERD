@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {writeFile, unlink} from 'node:fs/promises';
-const {chromium} = await import(process.env.EZERD_PLAYWRIGHT_MODULE || 'playwright');
+import { writeFile, unlink } from 'node:fs/promises';
+const { chromium } = await import(process.env.EZERD_PLAYWRIGHT_MODULE || 'playwright');
 const filename = `__domain-inline-${Date.now()}.html`;
 const target = new URL('../apps/web/' + filename, import.meta.url);
 const html = `<!doctype html><html><body><div id="qa"></div><script type="module">
@@ -11,49 +11,121 @@ for(const [id,sourceDomainId,targetDomainId,direction] of [['r1','a','b','forwar
 function Demo(){const [doc,setDoc]=useState(seed);const [readOnly,setReadOnly]=useState(false);const [changes,setChanges]=useState(0);return h(ConfirmProvider,null,h('main',{style:{height:'95vh'}},h('button',{id:'toggle-readonly',onClick:()=>setReadOnly(v=>!v)},'Toggle read only'),h(Canvas,{document:doc,onChange:next=>{setDoc(next);setChanges(n=>n+1)},readOnly}),h('output',{id:'document-state',hidden:true},JSON.stringify({doc,changes}))));}createRoot(document.getElementById('qa')).render(h(Demo));
 </script></body></html>`;
 await writeFile(target, html);
-const browser = await chromium.launch({channel:'chrome', headless:true});
-const page = await browser.newPage({viewport:{width:1600,height:1050}});
-const errors = [];page.on('pageerror', error=>errors.push(error.message));
-const state = async()=>JSON.parse(await page.locator('#document-state').textContent());
-const description = ()=>page.locator('.domain-node').filter({has:page.getByRole('heading',{name:'Alpha',exact:true})}).locator('.domain-description');
-const editor = ()=>page.getByRole('textbox',{name:'Alpha 업무 설명',exact:true});
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1600, height: 1050 } });
+const errors = [];
+page.on('pageerror', (error) => errors.push(error.message));
+const state = async () => JSON.parse(await page.locator('#document-state').textContent());
+const description = () =>
+  page
+    .locator('.domain-node')
+    .filter({ has: page.getByRole('heading', { name: 'Alpha', exact: true }) })
+    .locator('.domain-description');
+const editor = () => page.getByRole('textbox', { name: 'Alpha 업무 설명', exact: true });
 try {
-  await page.goto((process.env.EZERD_WEB_URL || 'http://127.0.0.1:5173')+'/'+filename);
+  await page.goto((process.env.EZERD_WEB_URL || 'http://127.0.0.1:5173') + '/' + filename);
   await description().waitFor();
   const before = await state();
   await description().dblclick();
-  await editor().fill('First line');await editor().press('End');await editor().press('Enter');await editor().pressSequentially('Second line');
-  assert.equal(await editor().inputValue(),'First line\nSecond line');
-  assert.equal((await state()).doc.domains[0].description,'Initial','typing remains a local draft');
+  await editor().fill('First line');
+  await editor().press('End');
+  await editor().press('Enter');
+  await editor().pressSequentially('Second line');
+  assert.equal(await editor().inputValue(), 'First line\nSecond line');
+  assert.equal(
+    (await state()).doc.domains[0].description,
+    'Initial',
+    'typing remains a local draft',
+  );
   await editor().press('Control+Enter');
-  assert.equal((await state()).doc.domains[0].description,'First line\nSecond line');
-  assert.equal((await state()).changes,before.changes+1,'commit updates document once');
-  assert.equal(await description().innerText(),'First line\nSecond line');
-  assert.equal(await description().evaluate(node=>getComputedStyle(node).whiteSpace),'pre-wrap');
-  assert.deepEqual((await state()).doc.layout.nodes,before.doc.layout.nodes,'double click does not move the card');
-  await description().dblclick();await editor().fill('Discard me');await editor().press('Escape');
-  assert.equal((await state()).doc.domains[0].description,'First line\nSecond line');
-  await description().dblclick();await editor().fill('Saved on blur\nAnother line');await page.locator('#toggle-readonly').click();
-  assert.equal((await state()).doc.domains[0].description,'Saved on blur\nAnother line');
-  await description().dblclick();assert.equal(await editor().count(),0,'read-only description cannot enter editing');
+  assert.equal((await state()).doc.domains[0].description, 'First line\nSecond line');
+  assert.equal((await state()).changes, before.changes + 1, 'commit updates document once');
+  assert.equal(await description().innerText(), 'First line\nSecond line');
+  assert.equal(
+    await description().evaluate((node) => getComputedStyle(node).whiteSpace),
+    'pre-wrap',
+  );
+  assert.deepEqual(
+    (await state()).doc.layout.nodes,
+    before.doc.layout.nodes,
+    'double click does not move the card',
+  );
+  await description().dblclick();
+  await editor().fill('Discard me');
+  await editor().press('Escape');
+  assert.equal((await state()).doc.domains[0].description, 'First line\nSecond line');
+  await description().dblclick();
+  await editor().fill('Saved on blur\nAnother line');
   await page.locator('#toggle-readonly').click();
-  await description().focus();await description().press('Enter');await editor().fill('');await editor().press('Meta+Enter');
-  assert.equal((await state()).doc.domains[0].description,'');
-  await description().dblclick();await editor().fill('A'.repeat(10000));assert.equal(await editor().getAttribute('maxlength'),'10000');await editor().press('Control+Enter');
-  const rects=await page.locator('.domain-node').first().evaluate(node=>{const p=node.querySelector('.domain-description').getBoundingClientRect(), button=node.querySelector('.enter-domain').getBoundingClientRect();return {descriptionBottom:p.bottom,buttonTop:button.top};});
-  assert(rects.descriptionBottom<=rects.buttonTop,'long description stays above the open button');
-  const inspector=page.locator('.inspector').getByRole('textbox',{name:'업무 설명',exact:true});
-  await inspector.fill('Inspector line');await inspector.press('End');await inspector.press('Enter');await inspector.pressSequentially('continued');
-  assert.equal((await state()).doc.domains[0].description,'Inspector line\ncontinued');
-  assert.equal(await description().innerText(),'Inspector line\ncontinued');
-  const handle=await page.locator('.domain-node').first().locator('.resize-handle').boundingBox();
-  await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);await page.mouse.down();await page.mouse.move(handle.x+handle.width/2+70,handle.y+handle.height/2+45,{steps:5});await page.mouse.up();
-  const resized=(await state()).doc.layout.nodes.find(node=>node.objectId==='a');
-  assert(resized.width>before.doc.layout.nodes.find(node=>node.objectId==='a').width,'resize updates node width');
-  const paths=await page.locator('g.relation > path').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('d')));
-  const endpoints=paths.map(path=>{const values=path.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g).map(Number);return {start:values.slice(0,2),end:values.slice(-2)};});
-  const alphaEndpoints=[endpoints[0].start,endpoints[1].start,endpoints[2].end,endpoints[3].start].map(JSON.stringify);
-  assert.equal(new Set(alphaEndpoints).size,4,'outgoing and incoming relations use distinct card endpoints');
-  assert.deepEqual(errors,[]);
-  console.log('PASS: multiline typing/rendering, single document commit, Ctrl/Meta+Enter, Escape, blur, read-only, keyboard access, length bound, footer separation, inspector Enter, resize, distinct endpoints.');
-} finally {await browser.close();await unlink(target);}
+  assert.equal((await state()).doc.domains[0].description, 'Saved on blur\nAnother line');
+  await description().dblclick();
+  assert.equal(await editor().count(), 0, 'read-only description cannot enter editing');
+  await page.locator('#toggle-readonly').click();
+  await description().focus();
+  await description().press('Enter');
+  await editor().fill('');
+  await editor().press('Meta+Enter');
+  assert.equal((await state()).doc.domains[0].description, '');
+  await description().dblclick();
+  await editor().fill('A'.repeat(10000));
+  assert.equal(await editor().getAttribute('maxlength'), '10000');
+  await editor().press('Control+Enter');
+  const rects = await page
+    .locator('.domain-node')
+    .first()
+    .evaluate((node) => {
+      const p = node.querySelector('.domain-description').getBoundingClientRect(),
+        button = node.querySelector('.enter-domain').getBoundingClientRect();
+      return { descriptionBottom: p.bottom, buttonTop: button.top };
+    });
+  assert(
+    rects.descriptionBottom <= rects.buttonTop,
+    'long description stays above the open button',
+  );
+  const inspector = page
+    .locator('.inspector')
+    .getByRole('textbox', { name: '업무 설명', exact: true });
+  await inspector.fill('Inspector line');
+  await inspector.press('End');
+  await inspector.press('Enter');
+  await inspector.pressSequentially('continued');
+  assert.equal((await state()).doc.domains[0].description, 'Inspector line\ncontinued');
+  assert.equal(await description().innerText(), 'Inspector line\ncontinued');
+  const handle = await page.locator('.domain-node').first().locator('.resize-handle').boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 70, handle.y + handle.height / 2 + 45, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  const resized = (await state()).doc.layout.nodes.find((node) => node.objectId === 'a');
+  assert(
+    resized.width > before.doc.layout.nodes.find((node) => node.objectId === 'a').width,
+    'resize updates node width',
+  );
+  const paths = await page
+    .locator('g.relation > path')
+    .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('d')));
+  const endpoints = paths.map((path) => {
+    const values = path.match(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/g).map(Number);
+    return { start: values.slice(0, 2), end: values.slice(-2) };
+  });
+  const alphaEndpoints = [
+    endpoints[0].start,
+    endpoints[1].start,
+    endpoints[2].end,
+    endpoints[3].start,
+  ].map(JSON.stringify);
+  assert.equal(
+    new Set(alphaEndpoints).size,
+    4,
+    'outgoing and incoming relations use distinct card endpoints',
+  );
+  assert.deepEqual(errors, []);
+  console.log(
+    'PASS: multiline typing/rendering, single document commit, Ctrl/Meta+Enter, Escape, blur, read-only, keyboard access, length bound, footer separation, inspector Enter, resize, distinct endpoints.',
+  );
+} finally {
+  await browser.close();
+  await unlink(target);
+}
