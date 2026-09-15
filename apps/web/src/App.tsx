@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { userColorStyle } from './user-color-style.js';
+import { UserColorEditor } from './UserColorEditor.js';
+import { clampCommentsPanelWidth } from './comments-panel-size.js';
+import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
 import { type DesignDocument, createEmptyDocument } from '@ezerd/model';
 import { userSchema, projectSchema, projectDocumentSchema, designDocumentSchema, threadSchema, type Thread, type Notification } from '@ezerd/contracts';
 import { ApiError, SaveGate, body, message, request, acknowledgeSave } from './client.js';
@@ -20,6 +23,7 @@ import {
 type User = {
   id: string;
   username: string;
+  color: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -41,6 +45,11 @@ export function App() {
   const [renamingProject, setRenamingProject] = useState<Project | null>(null);
   const [draftTarget, setDraftTarget] = useState<(CommentContext & { nonce: number })>();
   const [user, setUser] = useState<User | null>(null), [checking, setChecking] = useState(true);
+  const [editingColor,setEditingColor]=useState(false);
+  const [registrationPin,setRegistrationPin]=useState('');
+  const [members,setMembers]=useState<Array<{id:string;username:string;color?:string}>>([]);
+  const [commentsPanelWidth,setCommentsPanelWidth]=useState(()=>{try{return clampCommentsPanelWidth(localStorage.getItem('ezerd.commentsPanelWidth'));}catch{return 340;}});
+  function resizeCommentsPanel(width:number){const next=clampCommentsPanelWidth(width);setCommentsPanelWidth(next);try{localStorage.setItem('ezerd.commentsPanelWidth',String(next));}catch{}}
   const [username, setUsername] = useState(''), [editingName, setEditingName] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]), [search, setSearch] = useState(''), [status, setStatus] = useState<'active' | 'archived'>('active');
   const [projectName, setProjectName] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(false);
@@ -220,8 +229,9 @@ export function App() {
     setBusy(true);
     setError('');
     try {
-      const value = userSchema.parse(await request(user ? `/api/users/${user.id}` : '/api/users', body(user ? 'PATCH' : 'POST', { username: username.trim() })));
+      const value = userSchema.parse(await request(user ? `/api/users/${user.id}` : '/api/users', body(user ? 'PATCH' : 'POST', { username: username.trim(), ...(!user?{pin:registrationPin}:{}) })));
       setUser(value);
+      setRegistrationPin('');
       setUsername(value.username);
       setEditingName(false);
       try {
@@ -390,9 +400,10 @@ export function App() {
       autoComplete="nickname"
       autoFocus
       placeholder="예: 김설계" />
-    <p>이 이름으로 팀에 표시됩니다. 나중에 변경할 수 있어요.</p>
+    {!user&&<><label htmlFor="registration-pin">사용자 PIN (숫자 4자리)</label><Input id="registration-pin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} minLength={4} required autoComplete="new-password" value={registrationPin} onChange={e=>setRegistrationPin(e.target.value.replace(/[^0-9]/g,''))} placeholder="숫자 4자리"/></>}
+    <p>{user?'이 이름으로 팀에 표시됩니다. 기존 PIN은 유지됩니다.':'이름과 PIN 조합으로 사용자를 구분합니다.'}</p>
     <div className="actions">
-      <Button type="submit" variant="primary" className="primary" disabled={busy || !username.trim()}>
+      <Button type="submit" variant="primary" className="primary" disabled={busy || !username.trim() || (!user&&!/^[0-9]{4}$/.test(registrationPin))}>
         {busy ? '저장 중…' : user ? '이름 저장' : '워크스페이스 시작하기 →'}
       </Button>
       {user && <Button type="button" onClick={() => setEditingName(false)}>취소</Button>}
@@ -409,11 +420,11 @@ export function App() {
       </Button>
       <span className="header-caption">A SHARED SPACE<br />FOR CLEAR THINKING.</span>
       {user && <Notifications userId={user.id} onNavigate={visitNotification} />}
-      {user && <Dropdown label="사용자 메뉴" items={[{id: 'rename', label: '이름 변경', onAction: () => setEditingName(true)}]} trigger={<Button
+      {user && <Dropdown label="사용자 메뉴" items={[{id:'rename',label:'이름 변경',onAction:()=>{setEditingColor(false);setEditingName(true);}},{id:'color',label:'색상 변경',onAction:()=>{setEditingName(false);setEditingColor(true);}}]} trigger={<Button
         className="user-button"
         aria-label={`${user.username}, 사용자 메뉴`}
         title={user.username}>
-        <Avatar className="avatar">
+        <Avatar className="avatar" style={userColorStyle(user.color)}>
           {user.username.slice(0, 1)}
         </Avatar>
         <span className="user-name">
@@ -422,6 +433,7 @@ export function App() {
         <span aria-hidden="true">⌄</span>
       </Button>} />}
     </header>
+    {editingColor&&user&&<UserColorEditor key={user.id} user={user} onSaved={setUser} onClose={()=>setEditingColor(false)}/>}
     {editingName && <section className="identity-popover" aria-label="이름 변경">
       {userForm}
     </section>}
@@ -484,13 +496,13 @@ export function App() {
             setCommentsOpen(true);
           }}
           {...(focusTarget ? { focusTarget } : {})}
-          pins={<CommentPins
+          pins={<CommentPins memberColors={Object.fromEntries([...members.map(member=>[member.id,member.color??'#4169e1']),[user.id,user.color]])}
             threads={threads}
             document={opened.document}
             viewId={canvasContext.viewId}
             onOpen={focusThread} />} />
-        <div data-open={commentsOpen} aria-hidden={!commentsOpen} inert={!commentsOpen} className="comments-container">
-          <CommentsPanel
+        <div data-open={commentsOpen} aria-hidden={!commentsOpen} inert={!commentsOpen} className="comments-container" style={{'--comments-panel-width':commentsPanelWidth+'px'} as CSSProperties}>
+          <CommentsPanel panelWidth={commentsPanelWidth} onPanelWidthChange={resizeCommentsPanel} onMembers={setMembers} currentUserColor={user.color}
             key={opened.project.id}
             projectId={opened.project.id}
             userId={user.id}

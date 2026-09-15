@@ -1,3 +1,4 @@
+import { userColorStyle } from './user-color-style.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { DesignDocument } from '@ezerd/model';
 import { notificationSchema, threadSchema, userSchema, type Thread, type Notification } from '@ezerd/contracts';
@@ -17,6 +18,7 @@ import './comments.css';
 type Member = {
   id: string;
   username: string;
+  color?: string;
 };
 export type CommentContext = {
   viewId: string;
@@ -26,8 +28,9 @@ export type CommentContext = {
     y: number;
   };
 };
-export function CommentPins({ threads, document, viewId, onOpen }: {
+export function CommentPins({ threads, document, viewId, onOpen, memberColors = {} }: {
   threads: Thread[];
+  memberColors?:Record<string,string>;
   document: DesignDocument;
   viewId: string;
   onOpen: (thread: Thread) => void;
@@ -39,7 +42,7 @@ export function CommentPins({ threads, document, viewId, onOpen }: {
     return <IconButton
       key={thread.id}
       className="comment-pin"
-      style={{ left: point.x, top: point.y }}
+      style={{ left: point.x, top: point.y,...userColorStyle(memberColors[thread.messages[0]?.authorId??'']) }}
       onPointerDown={e => e.stopPropagation()}
       onClick={e => {
         e.stopPropagation();
@@ -50,8 +53,9 @@ export function CommentPins({ threads, document, viewId, onOpen }: {
     </IconButton>;
   })}</>;
 }
-function Composer({ users, busy, label, onSend, focusNonce, authorName }: {
+function Composer({ users, busy, label, onSend, focusNonce, authorName, authorColor }: {
   authorName: string;
+  authorColor?:string|undefined;
   focusNonce?: number;
   users: Member[];
   busy: boolean;
@@ -76,7 +80,7 @@ function Composer({ users, busy, label, onSend, focusNonce, authorName }: {
   }
   return <form ref={composerRef} className={`comment-composer ${text || picking ? 'has-draft' : ''}`} onSubmit={e => void submit(e)}>
     <div className="comment-composer-row">
-      <Avatar size="xs" aria-hidden="true">{authorName.slice(0, 1)}</Avatar>
+      <Avatar size="xs" aria-hidden="true" style={userColorStyle(authorColor)}>{authorName.slice(0, 1)}</Avatar>
       <Textarea
         aria-label={label}
         rows={1}
@@ -130,7 +134,8 @@ function Composer({ users, busy, label, onSend, focusNonce, authorName }: {
     </div>}
   </form>;
 }
-export function CommentsPanel({ projectId, userId, document, context, activeThreadId, onThreads, onNavigate, onClose, onCancelPinDraft, draftTarget }: {
+export function CommentsPanel({ projectId, userId, document, context, activeThreadId, onThreads, onNavigate, onClose, onCancelPinDraft, draftTarget , panelWidth=340,onPanelWidthChange,onMembers,currentUserColor }: {
+  panelWidth?:number;onPanelWidthChange?:(width:number)=>void;onMembers?:(members:Member[])=>void;currentUserColor?:string;
   draftTarget?: CommentContext & { nonce: number };
   projectId: string;
   userId: string;
@@ -143,6 +148,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
   onCancelPinDraft: () => void;
 }) {
   const [threads, setThreads] = useState<Thread[]>([]), [users, setUsers] = useState<Member[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [showResolved, setShowResolved] = useState(false), [allViews, setAllViews] = useState(true), [refresh, setRefresh] = useState(0);
+  useEffect(()=>{onMembers?.(users);},[users,onMembers]);
   const confirm = useConfirm();
   const draftContext = draftTarget?.viewId === context.viewId ? draftTarget : undefined;
   const mounted = useRef(true), mutation = useRef(false), threadRevision = useRef(0);
@@ -173,7 +179,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
         setError(message(e));
     });
     return () => controller.abort();
-  }, [projectId, refresh, activeThreadId]);
+  }, [projectId, refresh, activeThreadId, currentUserColor]);
   useEffect(() => {
     const timer = window.setInterval(() => { if (!mutation.current && !window.document.hidden) setRefresh(value => value + 1); }, 15000);
     return () => window.clearInterval(timer);
@@ -261,6 +267,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
       </Badge></h2>
       <IconButton onClick={onClose} aria-label="핀 닫기">×</IconButton>
     </div>
+    <label className="comment-panel-size"><span>너비</span><input aria-label="핀 사이드탭 너비" aria-valuetext={panelWidth+'px'} type="range" min={280} max={560} step={20} value={panelWidth} onChange={event=>onPanelWidthChange?.(Number(event.target.value))}/><output>{panelWidth}px</output></label>
     <div className="comment-filters">
       <label><Checkbox
         checked={allViews}
@@ -288,7 +295,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
           <Button disabled={busy} aria-label="핀 삭제" onClick={() => void deleteThread(thread)}>삭제</Button>
         </div>
         {thread.messages.map((entry, index) => <div className={`comment-message ${index > 0 ? 'comment-reply' : 'comment-root'}`} key={entry.id}>
-          <Avatar size="xs" aria-hidden="true">{(users.find(u => u.id === entry.authorId)?.username ?? '사용자').slice(0, 1)}</Avatar>
+          <Avatar size="xs" aria-hidden="true" style={userColorStyle(entry.authorId===userId?currentUserColor:users.find(u=>u.id===entry.authorId)?.color)}>{(users.find(u => u.id === entry.authorId)?.username ?? '사용자').slice(0, 1)}</Avatar>
           <div className="comment-message-content">
           <div className="comment-message-meta">
             <strong>
@@ -307,8 +314,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
           </div>
         </div>)}
         {activeThreadId !== thread.id && <Button className="thread-reply-open" onClick={() => onNavigate(thread)}>답글 {Math.max(0, thread.messages.length - 1)}개 · 답글 남기기</Button>}
-        <div hidden={activeThreadId !== thread.id}><Composer
-          key={thread.id}
+        <div hidden={activeThreadId !== thread.id}><Composer authorColor={currentUserColor} key={thread.id}
           users={users}
           authorName={users.find(u => u.id === userId)?.username ?? '나'}
           busy={busy}
@@ -319,8 +325,7 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
     </div>
     {draftContext && <div className="new-thread" aria-label="선택한 위치에 핀 작성">
       <Button type="button" disabled={busy} onClick={onCancelPinDraft}>작성 취소</Button>
-      <Composer
-        key={draftContext.nonce}
+      <Composer authorColor={currentUserColor} key={draftContext.nonce}
         users={users}
         authorName={users.find(u => u.id === userId)?.username ?? '나'}
         busy={busy}
