@@ -2,9 +2,9 @@
    Keep this scope more specific than the legacy styles imported by main.tsx. */
 .app-shell.editor-shell {
   --editor-gutter: clamp(12px, 1.6vw, 30px);
-  --editor-gap: clamp(6px, 0.7vw, 12px);
-  --editor-control-height: clamp(30px, 3.9vh, 36px);
-  --editor-control-font: clamp(13px, 0.9vw, 14px);
+  --editor-gap: clamp(6px, 0.5vw, 8px);
+  --editor-control-height: 30px;
+  --editor-control-font: 13px;
   --editor-row-padding: clamp(6px, 1vh, 10px);
   display: flex;
   flex-direction: column;
@@ -55,6 +55,9 @@
 }
 
 .app-shell.editor-shell .editor-heading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   flex: none;
   flex-wrap: wrap;
   padding: var(--editor-row-padding) var(--editor-gutter);
@@ -62,6 +65,7 @@
 }
 
 .app-shell.editor-shell .project-title {
+  flex: 0 1 320px;
   min-width: 0;
   max-width: 100%;
   gap: var(--editor-gap);
@@ -71,18 +75,34 @@
   min-width: 0;
 }
 
+.app-shell.editor-shell .project-title > button {
+  flex-shrink: 0;
+}
+
 .app-shell.editor-shell .project-title h1 {
   font-size: clamp(18px, 1.35vw, 22px);
   line-height: 1.2;
   margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .app-shell.editor-shell .project-title small {
-  font-size: 12px;
-  letter-spacing: 0.8px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.app-shell.editor-shell .editor-toolbar-host {
+  flex: 1 1 420px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .app-shell.editor-shell .save-controls {
+  flex: 0 0 auto;
+  margin-left: auto;
   min-width: 0;
   flex-wrap: wrap;
   gap: var(--editor-gap);
@@ -99,7 +119,43 @@
   min-height: var(--editor-control-height);
   padding: 5px 9px;
   font-size: var(--editor-control-font);
+  font-weight: 650;
   line-height: 1.4;
+  border: 1px solid #9bb1cf;
+  border-radius: 8px;
+  color: #244b7b;
+  background: linear-gradient(145deg, #f5f8fd, #dce5f1);
+  box-shadow:
+    2px 2px 5px #a8b8cf66,
+    -2px -2px 5px #ffffffd9;
+}
+
+.app-shell.editor-shell .editor-heading button:hover:not(:disabled),
+.app-shell.editor-shell .canvas-toolbar button:hover:not(:disabled) {
+  color: #153f74;
+  border-color: #6389b9;
+  background: linear-gradient(145deg, #edf4ff, #cedef2);
+}
+
+.app-shell.editor-shell .editor-heading button:focus-visible,
+.app-shell.editor-shell .canvas-toolbar button:focus-visible {
+  outline: 2px solid #346dc1;
+  outline-offset: 3px;
+}
+
+.app-shell.editor-shell .editor-heading button[aria-expanded='true'],
+.app-shell.editor-shell .canvas-toolbar button[aria-expanded='true'] {
+  border-color: #648cc1;
+  background: #dce9fa;
+  box-shadow:
+    inset 2px 2px 4px #a8b8cf80,
+    inset -2px -2px 4px #ffffffb3;
+}
+
+.app-shell.editor-shell .editor-heading button:disabled,
+.app-shell.editor-shell .canvas-toolbar button:disabled {
+  opacity: 0.55;
+  box-shadow: none;
 }
 
 .app-shell.editor-shell .review-workspace > .workspace {
@@ -116,10 +172,31 @@
 }
 
 .app-shell.editor-shell .canvas-toolbar .breadcrumbs {
+  min-width: 0;
   max-width: 100%;
   flex-wrap: wrap;
   gap: var(--editor-gap);
   font-size: var(--editor-control-font);
+}
+
+.app-shell.editor-shell .canvas-toolbar .breadcrumbs:empty {
+  display: none;
+}
+
+.app-shell.editor-shell .canvas-toolbar .breadcrumbs strong {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell.editor-shell .editor-toolbar-host .canvas-toolbar {
+  min-height: 0;
+  padding: 0;
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .app-shell.editor-shell .canvas-toolbar .actions {
@@ -156,6 +233,11 @@
   .app-shell.editor-shell .review-workspace > .workspace {
     min-height: clamp(420px, 70dvh, 680px);
   }
+
+  .app-shell.editor-shell .editor-toolbar-host {
+    order: 3;
+    flex-basis: 100%;
+  }
 }
 
 @media (max-width: 700px) {
@@ -165,6 +247,16 @@
 
   .app-shell.editor-shell .save-controls {
     justify-content: flex-start;
+    margin-left: 0;
+    max-width: 100%;
+  }
+
+  .app-shell.editor-shell .project-title {
+    flex: 1 1 100%;
+  }
+
+  .app-shell.editor-shell .editor-toolbar-host {
+    flex-basis: 100%;
   }
 
   .app-shell.editor-shell .canvas-toolbar {

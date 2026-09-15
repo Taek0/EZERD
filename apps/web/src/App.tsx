@@ -65,6 +65,7 @@ type OpenProject = {
 const identityKey = 'ezerd.userId';
 export function App() {
   const confirm = useConfirm();
+  const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const [renamingProject, setRenamingProject] = useState<Project | null>(null);
   const [draftTarget, setDraftTarget] = useState<CommentContext & { nonce: number }>();
   const [user, setUser] = useState<User | null>(null),
@@ -702,9 +703,10 @@ export function App() {
               <Button onClick={leave}>← 갤러리</Button>
               <div>
                 <small>PROJECT / DOMAIN WORKSPACE</small>
-                <h1>{opened.project.name}</h1>
+                <h1 title={opened.project.name}>{opened.project.name}</h1>
               </div>
             </div>
+            <div className="editor-toolbar-host" ref={setToolbarHost} />
             <div className="save-controls">
               <Button
                 aria-label="실행 취소"
@@ -788,6 +790,7 @@ export function App() {
             <Canvas
               key={opened.project.id}
               document={opened.document}
+              toolbarHost={toolbarHost}
               onChange={edit}
               onPreviewChange={previewEdit}
               readOnly={opened.project.status === 'archived'}
