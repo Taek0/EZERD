@@ -88,6 +88,21 @@ describe('shared document sync model', () => {
     expect(applyChanges(fixture(), operation.changes).tables![0]!.logical.name).toBe('새 주문');
   });
 
+  it('guards online structural dependencies without conflicting on its direct writes', () => {
+    const operation = {
+      kind: 'online' as const,
+      baseSequence: 4,
+      dependencyPaths: ['/keys/key/columnIds'],
+      changes: [{ path: '/tables/table/logical/name', before: '주문', after: '새 주문' }],
+    };
+    expect(
+      findFieldVersionConflicts(operation, {
+        '/tables/table/logical/name': 5,
+        '/keys/key': 6,
+      }),
+    ).toEqual(['/keys/key/columnIds']);
+  });
+
   it('rejects reconnect edits when their field changed after the baseline', () => {
     const operation = {
       kind: 'reconnect' as const,

@@ -240,12 +240,16 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           Date.now() - baseline.lastSuccessfulSyncAt.getTime() > RECONNECT_MAX_AGE_MS)
       ) {
         reason = '서버가 발급한 동기화 기준이 만료되었거나 일치하지 않습니다.';
-      } else if (!reason && input.kind === 'reconnect') {
+      } else if (!reason) {
         const conflicts = findFieldVersionConflicts(
           { kind: input.kind, baseSequence: input.baseSequence, changes: derived, dependencyPaths },
           versions,
         );
-        if (conflicts.length) reason = `다른 변경과 겹친 속성입니다: ${conflicts.join(', ')}`;
+        if (conflicts.length)
+          reason =
+            input.kind === 'online'
+              ? '변경 대상이 삭제되었거나 현재 문서에 없습니다.'
+              : `다른 변경과 겹친 속성입니다: ${conflicts.join(', ')}`;
       }
 
       if (!reason)

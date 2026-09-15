@@ -400,13 +400,16 @@ function hasNewerOverlap(path: string, baseSequence: number, versions: FieldVers
   );
 }
 
-/** Online requests are ordered by the server. Reconnect requests protect their baseline. */
+/** Online writes are ordered by the server, while structural reads still protect their baseline. */
 export function findFieldVersionConflicts(
   operation: Pick<DocumentOperation, 'kind' | 'baseSequence' | 'changes' | 'dependencyPaths'>,
   versions: FieldVersions,
 ): string[] {
-  if (operation.kind === 'online') return [];
-  return [...operation.changes.map((change) => change.path), ...(operation.dependencyPaths ?? [])]
+  const guardedPaths = [
+    ...(operation.kind === 'reconnect' ? operation.changes.map((change) => change.path) : []),
+    ...(operation.dependencyPaths ?? []),
+  ];
+  return guardedPaths
     .map(normalizeSyncPath)
     .filter((path) => hasNewerOverlap(path, operation.baseSequence, versions));
 }
