@@ -1,4 +1,5 @@
 import { applyDomainSelection } from './domain-view.js';
+import { applyDomainRelationPatch, type DomainRelationPatch } from './domain-relation-edit.js';
 import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from './components/ui/untitled.js';
 import {
@@ -171,6 +172,17 @@ export function Canvas({
     [relationName, setRelationName] = useState(''),
     [direction, setDirection] = useState<'forward' | 'both'>('forward'),
     [relationDescription, setRelationDescription] = useState('');
+  const [relationNameDraft, setRelationNameDraft] = useState<{
+    id: string;
+    base: string;
+    value: string;
+  } | null>(null);
+  const editingDomainRelation = doc.domainRelations.find((relation) => relation.id === relationId);
+  const displayedRelationName = editingDomainRelation
+    ? relationNameDraft?.id === relationId && relationNameDraft.base === editingDomainRelation.name
+      ? relationNameDraft.value
+      : editingDomainRelation.name
+    : relationName;
   const viewId = validViewId(requestedViewId, [
     ...doc.domains.map((d) => d.id),
     ...(doc.views ?? []).map((v) => v.id),
@@ -638,6 +650,7 @@ export function Canvas({
     setPanelTab('properties');
     setRelationsOpen(true);
     setRelationId(id);
+    setRelationNameDraft(null);
     setSource(relation.sourceDomainId);
     setTarget(relation.targetDomainId);
     setRelationName(relation.name);
@@ -646,9 +659,15 @@ export function Canvas({
     setSelected(null);
   }
   function resetRelation() {
+    setRelationNameDraft(null);
     setRelationId('');
     setRelationName('');
     setRelationDescription('');
+  }
+  function editDomainRelation(patch: DomainRelationPatch) {
+    if (readOnly || !relationId) return;
+    const next = applyDomainRelationPatch(live.current, relationId, patch);
+    if (next !== live.current) change(next);
   }
   function startRelation(sourceId: string, targetId: string) {
     resetRelation();
@@ -1762,6 +1781,9 @@ export function Canvas({
                     onSubmit={(e) => {
                       e.preventDefault();
                       if (
+                        readOnly ||
+                        relationId ||
+                        !relationName.trim() ||
                         !doc.domains.some((d) => d.id === source) ||
                         !doc.domains.some((d) => d.id === target) ||
                         source === target
@@ -1787,13 +1809,24 @@ export function Canvas({
                         <Select
                           aria-label="출발 도메인"
                           required
-                          value={source}
+                          value={editingDomainRelation?.sourceDomainId ?? source}
                           disabled={readOnly}
-                          onValueChange={(value) => setSource(value)}
+                          onValueChange={(value) =>
+                            relationId
+                              ? editDomainRelation({ sourceDomainId: value })
+                              : setSource(value)
+                          }
                         >
                           <option value="">도메인 선택</option>
                           {doc.domains.map((d) => (
-                            <option key={d.id} value={d.id}>
+                            <option
+                              key={d.id}
+                              value={d.id}
+                              disabled={
+                                !!editingDomainRelation &&
+                                d.id === editingDomainRelation.targetDomainId
+                              }
+                            >
                               {d.name}
                             </option>
                           ))}
@@ -1804,13 +1837,24 @@ export function Canvas({
                         <Select
                           aria-label="도착 도메인"
                           required
-                          value={target}
+                          value={editingDomainRelation?.targetDomainId ?? target}
                           disabled={readOnly}
-                          onValueChange={(value) => setTarget(value)}
+                          onValueChange={(value) =>
+                            relationId
+                              ? editDomainRelation({ targetDomainId: value })
+                              : setTarget(value)
+                          }
                         >
                           <option value="">도메인 선택</option>
                           {doc.domains.map((d) => (
-                            <option key={d.id} value={d.id}>
+                            <option
+                              key={d.id}
+                              value={d.id}
+                              disabled={
+                                !!editingDomainRelation &&
+                                d.id === editingDomainRelation.sourceDomainId
+                              }
+                            >
                               {d.name}
                             </option>
                           ))}
@@ -1823,19 +1867,41 @@ export function Canvas({
                         aria-label="관계 이름"
                         required
                         maxLength={120}
-                        value={relationName}
+                        value={displayedRelationName}
                         placeholder="예: 결제 요청"
                         disabled={readOnly}
-                        onChange={(e) => setRelationName(e.target.value)}
+                        aria-invalid={!displayedRelationName.trim()}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (!editingDomainRelation) {
+                            setRelationName(value);
+                            return;
+                          }
+                          setRelationNameDraft({
+                            id: relationId,
+                            base: editingDomainRelation.name,
+                            value,
+                          });
+                          editDomainRelation({ name: value });
+                        }}
                       />
+                      {editingDomainRelation && !displayedRelationName.trim() && (
+                        <span className="field-help" role="status">
+                          관계 이름을 입력하면 저장됩니다. 기존 이름은 유지됩니다.
+                        </span>
+                      )}
                     </label>
                     <label>
                       방향
                       <Select
                         aria-label="방향"
-                        value={direction}
+                        value={editingDomainRelation?.direction ?? direction}
                         disabled={readOnly}
-                        onValueChange={(value) => setDirection(value as 'forward' | 'both')}
+                        onValueChange={(value) =>
+                          relationId
+                            ? editDomainRelation({ direction: value as 'forward' | 'both' })
+                            : setDirection(value as 'forward' | 'both')
+                        }
                       >
                         <option value="forward">출발 → 도착</option>
                         <option value="both">출발 ↔ 도착</option>
@@ -1845,21 +1911,31 @@ export function Canvas({
                       설명
                       <Textarea
                         maxLength={10000}
-                        value={relationDescription}
+                        value={editingDomainRelation?.description ?? relationDescription}
                         disabled={readOnly}
-                        onChange={(e) => setRelationDescription(e.target.value)}
+                        onChange={(e) =>
+                          relationId
+                            ? editDomainRelation({ description: e.target.value })
+                            : setRelationDescription(e.target.value)
+                        }
                       />
                     </label>
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      className="primary"
-                      disabled={
-                        readOnly || !source || !target || source === target || !relationName.trim()
-                      }
-                    >
-                      {relationId ? '관계 수정' : '관계 연결'}
-                    </Button>
+                    {!relationId && (
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        className="primary"
+                        disabled={
+                          readOnly ||
+                          !source ||
+                          !target ||
+                          source === target ||
+                          !relationName.trim()
+                        }
+                      >
+                        관계 연결
+                      </Button>
+                    )}
                     {relationId && (
                       <div className="actions">
                         <Button
@@ -1875,7 +1951,7 @@ export function Canvas({
                           관계 삭제
                         </Button>
                         <Button type="button" onClick={resetRelation}>
-                          취소
+                          편집 닫기
                         </Button>
                       </div>
                     )}
