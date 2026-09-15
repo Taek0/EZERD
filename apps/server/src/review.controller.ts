@@ -1,9 +1,11 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpException, Inject, NotFoundException, Param, Patch, Post, ServiceUnavailableException } from '@nestjs/common';
-import { asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, Headers, HttpException, Inject, NotFoundException, Param, Patch, Post, ServiceUnavailableException } from '@nestjs/common';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { createThreadSchema, createMessageSchema, deleteThreadSchema, updateThreadSchema, updateNotificationSchema } from '@ezerd/contracts';
 import { DatabaseService } from './db/database.service.js';
 import { messages, notifications, projects, threads, users } from './db/schema.js';
+import { requireSession, SessionService } from './session.js';
+import { SyncGateway } from './sync.gateway.js';
 
 type Transaction = Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0];
 type Store = DatabaseService['db'] | Transaction;
@@ -31,23 +33,44 @@ async function loadThread(db: Store, id: string) {
   const replies = await db.select().from(messages).where(eq(messages.threadId, id)).orderBy(asc(messages.createdAt), asc(messages.id));
   return { ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), messages: replies.map(message => ({ ...message, createdAt: message.createdAt.toISOString() })) };
 }
-async function validatePeople(db: Store, authorId: string, mentionIds: string[]) {
-  const ids = [...new Set([authorId, ...mentionIds])];
+async function validatePeople(db: Store, mentionIds: string[]) {
+  const ids = [...new Set(mentionIds)];
+  if (!ids.length) return;
   const found = await db.select({ id: users.id }).from(users).where(inArray(users.id, ids));
-  if (found.length !== ids.length) throw new BadRequestException('작성자 또는 멘션 사용자를 찾을 수 없습니다.');
+  if (found.length !== ids.length) throw new BadRequestException('멘션 사용자를 찾을 수 없습니다.');
 }
-async function addMessage(db: Transaction, threadId: string, projectId: string, input: { authorId: string; body: string; mentionIds: string[] }) {
+async function addMessage(db: Transaction, threadId: string, projectId: string, authorId: string, input: { body: string; mentionIds: string[] }) {
   const mentionIds = [...new Set(input.mentionIds)];
-  await validatePeople(db, input.authorId, mentionIds);
-  await db.insert(messages).values({ threadId, authorId: input.authorId, body: input.body, mentionIds });
-  const recipientIds = mentionIds.filter(id => id !== input.authorId);
+  await validatePeople(db, mentionIds);
+  await db.insert(messages).values({ threadId, authorId, body: input.body, mentionIds });
+  const recipientIds = mentionIds.filter(id => id !== authorId);
   if (recipientIds.length) await db.insert(notifications).values(recipientIds.map(userId => ({ userId, projectId, threadId })));
   await db.update(threads).set({ updatedAt: nextThreadTimestamp }).where(eq(threads.id, threadId));
 }
 
+async function lockActiveProject(db: Transaction, projectId: string) {
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).for('update');
+  if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+  if (project.status === 'archived') throw new ConflictException('보관된 프로젝트는 변경할 수 없습니다.');
+  return project;
+}
+
+async function lockActiveThread(db: Transaction, id: string) {
+  const [reference] = await db.select({ projectId: threads.projectId }).from(threads).where(eq(threads.id, id));
+  if (!reference) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+  await lockActiveProject(db, reference.projectId);
+  const [thread] = await db.select().from(threads).where(eq(threads.id, id)).for('update');
+  if (!thread) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+  return thread;
+}
+
 @Controller()
 export class ReviewController {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(SyncGateway) private readonly gateway: SyncGateway,
+  ) {}
 
   @Get('projects/:projectId/threads')
   list(@Param('projectId') rawId: string) {
@@ -61,61 +84,76 @@ export class ReviewController {
   }
 
   @Post('projects/:projectId/threads')
-  create(@Param('projectId') rawId: string, @Body() body: unknown) {
+  async create(@Headers('authorization') authorization: string | undefined, @Param('projectId') rawId: string, @Body() body: unknown) {
+    const actor = await requireSession(this.sessions, authorization);
     const projectId = parse(idSchema, rawId);
     const input = parse(createThreadSchema, body);
-    return operation(() => this.database.db.transaction(async tx => {
-      // Serialize target validation with document writes; later deletion preserves this thread.
-      const [project] = await tx.select().from(projects).where(eq(projects.id, projectId)).for('update');
-      if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      const doc = project.document;
-      if (input.viewId !== 'overview' && !doc.domains.some(domain => domain.id === input.viewId) && !doc.views?.some(view => view.id === input.viewId)) throw new BadRequestException('댓글을 남길 화면을 찾을 수 없습니다.');
-      if (input.objectId !== null) {
-        const exists = (input.viewId === 'overview' && doc.domains.some(domain => domain.id === input.objectId)) || doc.notes.some(note => note.id === input.objectId && note.viewId === input.viewId) || (doc.tables ?? []).some(table => table.id === input.objectId);
-        const placed = doc.layout.nodes.some(node => node.objectId === input.objectId && node.viewId === input.viewId);
-        if (!exists || !placed) throw new BadRequestException('이 화면에서 댓글 대상을 찾을 수 없습니다.');
-      }
-      await validatePeople(tx, input.authorId, input.mentionIds);
-      const [row] = await tx.insert(threads).values({ projectId, viewId: input.viewId, objectId: input.objectId, x: input.x, y: input.y }).returning();
-      await addMessage(tx, row!.id, projectId, input);
-      return loadThread(tx, row!.id);
-    }));
+    return operation(async () => {
+      const result = await this.database.db.transaction(async tx => {
+        const project = await lockActiveProject(tx, projectId);
+        const doc = project.document;
+        if (input.viewId !== 'overview' && !doc.domains.some(domain => domain.id === input.viewId) && !doc.views?.some(view => view.id === input.viewId)) throw new BadRequestException('댓글을 남길 화면을 찾을 수 없습니다.');
+        if (input.objectId !== null) {
+          const exists = (input.viewId === 'overview' && doc.domains.some(domain => domain.id === input.objectId)) || doc.notes.some(note => note.id === input.objectId && note.viewId === input.viewId) || (doc.tables ?? []).some(table => table.id === input.objectId);
+          const placed = doc.layout.nodes.some(node => node.objectId === input.objectId && node.viewId === input.viewId);
+          if (!exists || !placed) throw new BadRequestException('이 화면에서 댓글 대상을 찾을 수 없습니다.');
+        }
+        const [row] = await tx.insert(threads).values({ projectId, viewId: input.viewId, objectId: input.objectId, x: input.x, y: input.y }).returning();
+        await addMessage(tx, row!.id, projectId, actor.id, input);
+        return loadThread(tx, row!.id);
+      });
+      this.gateway.publishReview(projectId, { action: 'thread-created', projectId, actorId: actor.id, data: result });
+      return result;
+    });
   }
 
   @Delete('threads/:id')
-  remove(@Param('id') rawId: string, @Body() body: unknown) {
+  async remove(@Headers('authorization') authorization: string | undefined, @Param('id') rawId: string, @Body() body: unknown) {
+    const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
     const input = parse(deleteThreadSchema, body);
-    return operation(() => this.database.db.transaction(async tx => {
-      const [thread] = await tx.select().from(threads).where(eq(threads.id, id)).for('update');
-      if (!thread) throw new NotFoundException('핀을 찾을 수 없습니다.');
-      if (thread.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) throw new ConflictException('새 답글 또는 상태 변경이 있습니다. 최신 핀을 확인한 후 삭제해주세요.');
-      await tx.delete(threads).where(eq(threads.id, id));
-      return { id, deleted: true };
-    }));
+    return operation(async () => {
+      const result = await this.database.db.transaction(async tx => {
+        const thread = await lockActiveThread(tx, id);
+        if (thread.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) throw new ConflictException('새 답글 또는 상태 변경이 있습니다. 최신 핀을 확인한 후 삭제해주세요.');
+        await tx.delete(threads).where(eq(threads.id, id));
+        return { projectId: thread.projectId, response: { id, deleted: true } };
+      });
+      this.gateway.publishReview(result.projectId, { action: 'thread-deleted', projectId: result.projectId, actorId: actor.id, data: result.response });
+      return result.response;
+    });
   }
 
   @Post('threads/:id/messages')
-  reply(@Param('id') rawId: string, @Body() body: unknown) {
+  async reply(@Headers('authorization') authorization: string | undefined, @Param('id') rawId: string, @Body() body: unknown) {
+    const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
     const input = parse(createMessageSchema, body);
-    return operation(() => this.database.db.transaction(async tx => {
-      const [thread] = await tx.select().from(threads).where(eq(threads.id, id)).for('update');
-      if (!thread) throw new NotFoundException('댓글을 찾을 수 없습니다.');
-      await addMessage(tx, id, thread.projectId, input);
-      return loadThread(tx, id);
-    }));
+    return operation(async () => {
+      const result = await this.database.db.transaction(async tx => {
+        const thread = await lockActiveThread(tx, id);
+        await addMessage(tx, id, thread.projectId, actor.id, input);
+        return { projectId: thread.projectId, thread: await loadThread(tx, id) };
+      });
+      this.gateway.publishReview(result.projectId, { action: 'message-created', projectId: result.projectId, actorId: actor.id, data: result.thread });
+      return result.thread;
+    });
   }
 
   @Patch('threads/:id')
-  update(@Param('id') rawId: string, @Body() body: unknown) {
+  async update(@Headers('authorization') authorization: string | undefined, @Param('id') rawId: string, @Body() body: unknown) {
+    const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
     const input = parse(updateThreadSchema, body);
-    return operation(() => this.database.db.transaction(async tx => {
-      const [row] = await tx.update(threads).set({ ...input, updatedAt: nextThreadTimestamp }).where(eq(threads.id, id)).returning();
-      if (!row) throw new NotFoundException('댓글을 찾을 수 없습니다.');
-      return loadThread(tx, id);
-    }));
+    return operation(async () => {
+      const result = await this.database.db.transaction(async tx => {
+        const thread = await lockActiveThread(tx, id);
+        await tx.update(threads).set({ ...input, updatedAt: nextThreadTimestamp }).where(eq(threads.id, id));
+        return { projectId: thread.projectId, thread: await loadThread(tx, id) };
+      });
+      this.gateway.publishReview(result.projectId, { action: 'thread-updated', projectId: result.projectId, actorId: actor.id, data: result.thread });
+      return result.thread;
+    });
   }
 
   @Get('users/:id/notifications')
@@ -129,13 +167,17 @@ export class ReviewController {
   }
 
   @Patch('notifications/:id')
-  updateNotification(@Param('id') rawId: string, @Body() body: unknown) {
+  async updateNotification(@Headers('authorization') authorization: string | undefined, @Param('id') rawId: string, @Body() body: unknown) {
+    const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
     const input = parse(updateNotificationSchema, body);
-    return operation(async () => {
-      const [row] = await this.database.db.update(notifications).set(input).where(eq(notifications.id, id)).returning();
+    return operation(() => this.database.db.transaction(async tx => {
+      const [reference] = await tx.select({ projectId: notifications.projectId }).from(notifications).where(and(eq(notifications.id, id), eq(notifications.userId, actor.id)));
+      if (!reference) throw new NotFoundException('알림을 찾을 수 없습니다.');
+      await lockActiveProject(tx, reference.projectId);
+      const [row] = await tx.update(notifications).set(input).where(and(eq(notifications.id, id), eq(notifications.userId, actor.id))).returning();
       if (!row) throw new NotFoundException('알림을 찾을 수 없습니다.');
       return notification(row);
-    });
+    }));
   }
 }

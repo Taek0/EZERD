@@ -36,3 +36,16 @@
 사용자가 세션 중단 상태를 유지하고 짧은 작업부터 직접 진행하도록 요청했다. 서브에이전트는 재시작하지 않았으며, 위 모델 역할 기록은 기존 병렬 작업에 대한 기록으로 유지한다.
 
 2026-09-15 15:33 KST에 공유 참조 의존성 보강을 직접 검증했다. `node node_modules/vitest/vitest.mjs run packages/model/src/sync.test.ts`는 1개 파일/18개 테스트 통과, `pnpm --filter @ezerd/model typecheck`는 종료 코드 0이었다. FK 참조 키 변경 감지와 무관한 테이블 이름 변경의 충돌 제외를 포함한 기존 리뷰 승인 범위를 확인했다. 이번 커밋은 모델 두 파일과 해당 계획·체크포인트만 포함한다. 서버·웹 미완성 변경과 위 재개 시 우선 확인 목록은 그대로 남는다.
+
+## 서버 구현 재개 결과
+
+2026-09-15에 서버 세션 인증, 객체 단위 작업 저장·조회·이력·복원·실행 취소, WebSocket 전파, 7일 보존용 스키마와 마이그레이션을 다시 검증했다. 삭제 작업 undo는 restore와 같은 `undo` 명령 지문을 사용해 동일 요청 재시도 결과를 반환하며, 유효하지 않은 외부 FK를 복원에서 제외할 때 그 FK의 레이아웃 경로도 함께 제외한다. 실제 요청의 인증 사용자와 다른 사용자가 undo를 시도하는 경우도 거부한다. Astra low 읽기 전용 검토에서 이 범위가 승인됐다.
+
+기존 HTTP 통합 검사는 종료된 전체 문서 PUT 대신 동기화 작업 API로 문서를 준비하도록 전환했다. 동기화 요청에는 최대 1.5 MB인 기준 문서와 최종 문서, 의미 변경 목록이 함께 들어가므로 JSON 전송 한도를 8 MB로 조정했다. 각 문서의 1.5 MB 계약 검증은 그대로 유지한다. 개인 뷰포트가 서버 공유 문서에 저장되지 않는 정책도 회귀 검사에 반영했다.
+
+- `pnpm --filter @ezerd/server build`: 통과.
+- `node apps/server/scripts/test-integration.mjs`: 실제 PostgreSQL 2개 파일, 18개 테스트 통과. 만료 baseline의 기존 승인 결과 재조회, 7일 복원 경계, 동시 키 삭제와 FK 생성의 원자적 거부를 포함한다.
+- `node node_modules/vitest/vitest.mjs run packages/contracts/src/relational.test.ts apps/server/test/write-auth.test.ts`: 2개 파일, 7개 테스트 통과.
+- `pnpm --filter @ezerd/contracts typecheck`: 통과.
+- `pnpm --filter @ezerd/server typecheck`: 통과.
+- `pnpm --filter @ezerd/server db:migrate`: 기존 적용 상태에서 재실행 통과.

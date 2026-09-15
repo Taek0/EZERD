@@ -14,11 +14,15 @@ describe('relational and review API contracts',()=>{
   expect(designDocumentSchema.safeParse({...base,domains:[{...base.domains[0],color:'url(evil)'}]}).success).toBe(false);
   expect(designDocumentSchema.safeParse({...base,tables:[{...table,physical:{...table.physical,injected:true}}]}).success).toBe(false);
  });
- it('requires stable authors and finite pin coordinates, limits bodies, and normalizes mention IDs',()=>{
+ it('derives authors server-side, requires finite pin coordinates, and normalizes mention IDs',()=>{
   const id='00000000-0000-4000-8000-000000000001';
-  expect(createThreadSchema.parse({authorId:id,viewId:'overview',objectId:null,x:1.5,y:-2,body:' hello ',mentionIds:[id,id]}).mentionIds).toEqual([id]);
-  expect(createMessageSchema.safeParse({authorId:id,body:' ',mentionIds:[]}).success).toBe(false);
-  expect(createThreadSchema.safeParse({authorId:id,viewId:'overview',objectId:null,x:Infinity,y:0,body:'hi',mentionIds:[]}).success).toBe(false);
+  const thread={viewId:'overview',objectId:null,x:1.5,y:-2,body:' hello ',mentionIds:[id,id]};
+  expect(createThreadSchema.parse(thread).mentionIds).toEqual([id]);
+  expect(createMessageSchema.parse({body:' reply ',mentionIds:[]}).body).toBe('reply');
+  expect(createThreadSchema.safeParse({...thread,authorId:id}).success).toBe(false);
+  expect(createMessageSchema.safeParse({authorId:id,body:'reply',mentionIds:[]}).success).toBe(false);
+  expect(createMessageSchema.safeParse({body:' ',mentionIds:[]}).success).toBe(false);
+  expect(createThreadSchema.safeParse({...thread,x:Infinity}).success).toBe(false);
  });
 });
 

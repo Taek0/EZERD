@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpException, Inject, NotFoundException, Param, Patch, Post, Put, Query, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, GoneException, Headers, HttpException, Inject, NotFoundException, Param, Patch, Post, Put, Query, ServiceUnavailableException } from '@nestjs/common';
 import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { createProjectSchema, deleteProjectSchema, projectQuerySchema, saveDocumentSchema, updateProjectSchema, usernameInputSchema, updateUserSchema } from '@ezerd/contracts';
+import { createProjectSchema, deleteProjectSchema, projectQuerySchema, updateProjectSchema, usernameInputSchema, updateUserSchema } from '@ezerd/contracts';
 import type { Project, User } from '@ezerd/contracts';
 import { DatabaseService } from './db/database.service.js';
 import { projects, users } from './db/schema.js';
 import { isUsernameConflict } from './user-conflicts.js';
 import type { ProjectRow } from './db/schema.js';
+import { requireSession, SessionService } from './session.js';
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -32,7 +33,10 @@ async function databaseOperation<T>(operation: () => Promise<T>): Promise<T> {
 
 @Controller()
 export class WorkspaceController {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(SessionService) private readonly sessions: SessionService,
+  ) {}
 
   @Post('users')
   createUser(@Body() body: unknown) {
@@ -61,8 +65,10 @@ export class WorkspaceController {
   }
 
   @Patch('users/:id')
-  updateUser(@Param('id') rawId: string, @Body() body: unknown) {
+  async updateUser(@Headers('authorization') authorization: string | undefined, @Param('id') rawId: string, @Body() body: unknown) {
+    const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
+    if (actor.id !== id) throw new ForbiddenException('본인의 프로필만 변경할 수 있습니다.');
     const input = parse(updateUserSchema, body);
     return databaseOperation(async () => {
       const [row] = await this.database.db.update(users).set({ ...input, updatedAt: new Date() }).where(eq(users.id, id)).returning();
@@ -72,7 +78,8 @@ export class WorkspaceController {
   }
 
   @Post('projects')
-  createProject(@Body() body: unknown) {
+  async createProject(@Headers('authorization') authorization: string | undefined, @Body() body: unknown) {
+    await requireSession(this.sessions, authorization);
     const input = parse(createProjectSchema, body);
     return databaseOperation(async () => {
       const [row] = await this.database.db.insert(projects).values(input).returning();
@@ -110,19 +117,22 @@ export class WorkspaceController {
   }
 
   @Patch('projects/:id')
-  updateProject(@Param('id') rawId: string, @Body() body: unknown) {
+  async updateProject(@Headers('authorization') authorization: string | undefined, @Param('id') rawId: string, @Body() body: unknown) {
+    await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
     const { expectedVersion, ...changes } = parse(updateProjectSchema, body);
     return databaseOperation(async () => {
+      const unarchivesWithoutOtherEdits = changes.status === 'active' && changes.name === undefined;
       const [row] = await this.database.db.update(projects).set({ ...changes, version: sql`${projects.version} + 1`, updatedAt: new Date() })
-        .where(and(eq(projects.id, id), eq(projects.version, expectedVersion))).returning();
+        .where(and(eq(projects.id, id), eq(projects.version, expectedVersion), unarchivesWithoutOtherEdits ? undefined : eq(projects.status, 'active'))).returning();
       if (!row) return this.missingOrConflict(id);
       return project(row);
     });
   }
 
   @Delete('projects/:id')
-  deleteProject(@Param('id') rawId: string, @Body() body: unknown) {
+  async deleteProject(@Headers('authorization') authorization: string | undefined, @Param('id') rawId: string, @Body() body: unknown) {
+    await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
     const { expectedVersion } = parse(deleteProjectSchema, body);
     return databaseOperation(async () => {
@@ -138,16 +148,9 @@ export class WorkspaceController {
   }
 
   @Put('projects/:id/document')
-  saveDocument(@Param('id') rawId: string, @Body() body: unknown) {
-    const id = parse(idSchema, rawId);
-    const input = parse(saveDocumentSchema, body);
-    return databaseOperation(async () => {
-      // A single UPDATE atomically compares the version and replaces the document.
-      const [row] = await this.database.db.update(projects).set({ document: input.document, version: sql`${projects.version} + 1`, updatedAt: new Date() })
-        .where(and(eq(projects.id, id), eq(projects.version, input.expectedVersion), eq(projects.status, 'active'))).returning();
-      if (!row) return this.missingOrConflict(id);
-      return { project: project(row), document: row.document };
-    });
+  async saveDocument(@Headers('authorization') authorization: string | undefined, @Param('id') rawId: string, @Body() _body: unknown) {
+    await requireSession(this.sessions, authorization);
+    parse(idSchema, rawId);
+    throw new GoneException('전체 문서 교체 API는 종료되었습니다. 동기화 작업 API를 사용해주세요.');
   }
 }
-
