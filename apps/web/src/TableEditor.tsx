@@ -13,6 +13,7 @@ import {
   type ReferentialAction,
   addTable,
   updateTable,
+  updateNodeLayout,
   removeTable,
   addColumn,
   updateColumn,
@@ -311,6 +312,25 @@ const freshColumn = (tableId: string, scope: ModelScope = 'physical'): Column =>
   },
   customProperties: emptyMeta(),
 });
+export function updateTableCanvasDisplay(
+  doc: DesignDocument,
+  tableId: string,
+  viewId: string | undefined,
+  patch: NonNullable<Table['canvasDisplay']>,
+): DesignDocument {
+  const table = doc.tables?.find((item) => item.id === tableId);
+  if (!table) return doc;
+  const next = updateTable(doc, tableId, {
+    canvasDisplay: { ...table.canvasDisplay, ...patch },
+  });
+  const node = doc.layout.nodes.find((item) => item.objectId === tableId && item.viewId === viewId);
+  if (!node) return next;
+  const before = tableCardMetrics(doc, tableId).width;
+  const after = tableCardMetrics(next, tableId).width;
+  const extraWidth = Math.max(0, node.width - before);
+  return updateNodeLayout(next, node.id, { width: Math.min(10000, after + extraWidth) });
+}
+
 export function TableNodeContent({
   document: doc,
   tableId,
@@ -336,7 +356,7 @@ export function TableNodeContent({
   const showNullable = table.canvasDisplay?.showNullable !== false,
     showComment = table.canvasDisplay?.showComment !== false;
   const display = (patch: NonNullable<Table['canvasDisplay']>) =>
-    onChange?.(updateTable(doc, tableId, { canvasDisplay: { ...table.canvasDisplay, ...patch } }));
+    onChange?.(updateTableCanvasDisplay(doc, tableId, viewId, patch));
   const columns = (doc.columns ?? []).filter(
     (c) => c.tableId === tableId && isVisibleInView(c.scope, 'physical', table.scope),
   );

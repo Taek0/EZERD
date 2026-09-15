@@ -323,3 +323,30 @@ it('renders directly editable card type and NULL controls with a PK NULL lock', 
   expect(html).toContain('PK 컬럼은 NULL을 허용하지 않습니다.');
   expect(html).not.toContain('더블클릭하여 NULL');
 });
+
+import { updateTableCanvasDisplay } from './TableEditor.js';
+import { tableCardMetrics } from './table-geometry.js';
+it('shrinks the current view card and restores width while keeping manually added space', () => {
+  for (const extra of [0, 300]) {
+    const doc = example();
+    const minimum = tableCardMetrics(doc, 't').width;
+    const node = doc.layout.nodes.find((item) => item.objectId === 't')!;
+    node.width = minimum + extra;
+    const other = { ...node, id: 'other-view', viewId: 'other', width: 950 };
+    doc.layout.nodes.push(other);
+    const hidden = updateTableCanvasDisplay(doc, 't', node.viewId, {
+      showNullable: false,
+      showComment: false,
+    });
+    const resized = hidden.layout.nodes.find((item) => item.id === node.id)!;
+    expect(resized.width).toBe(tableCardMetrics(hidden, 't').width + extra);
+    expect(resized.width).toBeLessThan(node.width);
+    expect({ ...resized, width: node.width }).toEqual(node);
+    expect(hidden.layout.nodes.find((item) => item.id === other.id)).toEqual(other);
+    const restored = updateTableCanvasDisplay(hidden, 't', node.viewId, {
+      showNullable: true,
+      showComment: true,
+    });
+    expect(restored.layout.nodes.find((item) => item.id === node.id)!.width).toBe(node.width);
+  }
+});
