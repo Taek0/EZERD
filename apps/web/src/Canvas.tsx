@@ -1009,7 +1009,7 @@ export function Canvas({
                     onChange={change}
                     onPreviewChange={preview}
                     readOnly={readOnly}
-                    layoutReadOnly={!!activeCombined}
+                    layoutReadOnly={!layoutPolicy.editRoutes}
                     onSelect={(id: string) => {
                       setSelected(id);
                       setInspectorOpen(true);
@@ -1033,7 +1033,7 @@ export function Canvas({
                     onChange={change}
                     onPreviewChange={preview}
                     readOnly={readOnly}
-                    layoutReadOnly={!!activeCombined}
+                    layoutReadOnly={!layoutPolicy.editRoutes}
                     onSelect={(id: string) => {
                       setSelected(id);
                       setInspectorOpen(true);
