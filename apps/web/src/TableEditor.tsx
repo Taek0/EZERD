@@ -1,5 +1,6 @@
 import { EnumManager } from './EnumManager.js';
 import { columnTypeDisplay } from './column-type-display.js';
+import { primaryKeyChangeReason, setColumnPrimaryKey } from './column-primary-key.js';
 import { useRef, useEffect, useState, type CSSProperties } from 'react';
 import {
   type DesignDocument,
@@ -180,14 +181,16 @@ function Check({
   label,
   value,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: boolean;
+  disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
     <label className="table-check">
-      <Checkbox checked={value} onChange={(e) => onChange(e.target.checked)} />
+      <Checkbox disabled={disabled} checked={value} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
   );
@@ -370,19 +373,78 @@ export function TableNodeContent({
                   .join(' ')}
               </span>
               {cell(c.physical.name, '컬럼명', (name) => patch({ name }))}
-              <span className="table-type-label">
-                {columnTypeDisplay(c.physical.type, doc.enums)}
+              <span
+                className="table-type-label table-direct-control"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                {editable ? (
+                  <SearchType
+                    label={`${columnName(c)} 타입`}
+                    value={
+                      c.physical.type.enumId
+                        ? `enum:${c.physical.type.enumId}`
+                        : c.physical.type.name
+                    }
+                    options={[
+                      ...[...new Set([...physicalTypes, c.physical.type.name])].map((value) => ({
+                        value,
+                        label:
+                          value === c.physical.type.name && !c.physical.type.enumId
+                            ? columnTypeDisplay(c.physical.type, doc.enums)
+                            : value.toUpperCase(),
+                      })),
+                      ...(doc.enums ?? []).map((type) => ({
+                        value: `enum:${type.id}`,
+                        label: type.name.toUpperCase(),
+                      })),
+                    ]}
+                    onValueChange={(value) => {
+                      if (
+                        value ===
+                        (c.physical.type.enumId
+                          ? `enum:${c.physical.type.enumId}`
+                          : c.physical.type.name)
+                      )
+                        return;
+                      onChange?.(
+                        patch({
+                          type: {
+                            name: value.startsWith('enum:')
+                              ? (doc.enums?.find((type) => type.id === value.slice(5))?.name ??
+                                'text')
+                              : value,
+                            ...(value.startsWith('enum:') ? { enumId: value.slice(5) } : {}),
+                            isArray: c.physical.type.isArray,
+                          },
+                        }),
+                      );
+                    }}
+                  />
+                ) : (
+                  columnTypeDisplay(c.physical.type, doc.enums)
+                )}
               </span>
               {showNullable && (
                 <span
                   data-inline-edit="true"
-                  title="더블클릭하여 NULL 설정 변경"
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    if (editable) onChange?.(patch({ nullable: !c.physical.nullable }));
-                  }}
+                  className="table-direct-control"
+                  title={
+                    keys.some((k) => k.kind === 'primary')
+                      ? 'PK 컬럼은 NULL을 허용하지 않습니다.'
+                      : 'NULL 허용'
+                  }
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
                 >
-                  {c.physical.nullable ? '' : 'NN'}
+                  <Checkbox
+                    aria-label={`${columnName(c)} NULL 허용`}
+                    checked={c.physical.nullable}
+                    disabled={!editable || keys.some((k) => k.kind === 'primary')}
+                    onChange={(e) => onChange?.(patch({ nullable: e.target.checked }))}
+                  />
                 </span>
               )}
               {showComment &&
@@ -406,6 +468,35 @@ export function TableNodeContent({
         onClose={() => setMenu(null)}
         label="컬럼"
         items={[
+          {
+            id: 'primary-key',
+            label:
+              primaryKeyChangeReason(doc, menu?.id ?? '') ??
+              (doc.keys?.some(
+                (k) =>
+                  k.kind === 'primary' &&
+                  k.scope !== 'logical' &&
+                  k.columnIds.includes(menu?.id ?? ''),
+              )
+                ? '기본 키(PK)에서 해제'
+                : '기본 키(PK)로 지정'),
+            disabled: !menu?.id || !!primaryKeyChangeReason(doc, menu.id),
+            onAction: () => {
+              if (menu?.id)
+                onChange?.(
+                  setColumnPrimaryKey(
+                    doc,
+                    menu.id,
+                    !doc.keys?.some(
+                      (k) =>
+                        k.kind === 'primary' &&
+                        k.scope !== 'logical' &&
+                        k.columnIds.includes(menu.id),
+                    ),
+                  ),
+                );
+            },
+          },
           {
             id: 'delete-column',
             label: '컬럼 삭제',
@@ -646,6 +737,7 @@ export function TableInspector({
               index={index}
               count={cols.length}
               onChange={(p) => change(updateColumn(doc, active.id, p))}
+              onPrimaryKeyChange={(checked) => change(setColumnPrimaryKey(doc, active.id, checked))}
               onMove={(dir) => change(moveColumn(doc, active.id, dir))}
               onDelete={() => {
                 change(removeColumn(doc, active.id));
@@ -779,6 +871,7 @@ function ColumnEditor({
   index,
   count,
   onChange,
+  onPrimaryKeyChange,
   onMove,
   onDelete,
   onClose,
@@ -788,6 +881,7 @@ function ColumnEditor({
   index: number;
   count: number;
   onChange: (p: Partial<Column>) => void;
+  onPrimaryKeyChange: (checked: boolean) => void;
   onMove: (d: number) => void;
   onDelete: () => void;
   onClose: () => void;
@@ -921,6 +1015,19 @@ function ColumnEditor({
         ))}
       </div>
       <div className="table-column-flags">
+        <label className="table-check" title={primaryKeyChangeReason(doc, c.id)}>
+          <Checkbox
+            aria-label="기본 키 (PK)"
+            checked={
+              !!doc.keys?.some(
+                (k) => k.kind === 'primary' && k.scope !== 'logical' && k.columnIds.includes(c.id),
+              )
+            }
+            disabled={!!primaryKeyChangeReason(doc, c.id)}
+            onChange={(e) => onPrimaryKeyChange(e.target.checked)}
+          />
+          기본 키 (PK)
+        </label>
         <Check
           label="배열"
           value={c.physical.type.isArray}
@@ -928,10 +1035,26 @@ function ColumnEditor({
         />
         <Check
           label="NULL 허용"
+          disabled={
+            !!doc.keys?.some(
+              (k) => k.kind === 'primary' && k.scope !== 'logical' && k.columnIds.includes(c.id),
+            )
+          }
           value={c.physical.nullable}
-          onChange={(nullable) => physical({ nullable })}
+          onChange={(nullable) => {
+            if (
+              !nullable ||
+              !doc.keys?.some(
+                (k) => k.kind === 'primary' && k.scope !== 'logical' && k.columnIds.includes(c.id),
+              )
+            )
+              physical({ nullable });
+          }}
         />
       </div>
+      {primaryKeyChangeReason(doc, c.id) && (
+        <PanelNote>{primaryKeyChangeReason(doc, c.id)}</PanelNote>
+      )}
       <TextField
         label="설명"
         value={c.physical.comment}
@@ -1035,30 +1158,19 @@ export function RelationEditor({
         </>
       }
     >
-      {(['targetTableId', 'sourceTableId'] as const).map((key) => (
-        <label key={key}>
-          {key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}
-          <Select
-            aria-label={key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}
-            value={r[key]}
-            onValueChange={(value) =>
-              onChange({
-                ...r,
-                [key]: value,
-                physical: physical
-                  ? { ...physical, sourceColumnIds: [], targetColumnIds: [] }
-                  : null,
-              })
-            }
-          >
-            {doc.tables?.map((t) => (
-              <option key={t.id} value={t.id}>
-                {doc.domains.find((d) => d.id === t.domainId)?.name} / {tableName(t)}
-              </option>
-            ))}
-          </Select>
-        </label>
-      ))}
+      <div className="table-relation-summary">
+        {physical ? (
+          physical.targetColumnIds.map((id, index) => (
+            <span key={`${id}:${index}`}>
+              {target.find((c) => c.id === id)?.physical.name || 'PK 컬럼'} →{' '}
+              {source.find((c) => c.id === physical.sourceColumnIds[index])?.physical.name ||
+                'FK 컬럼'}
+            </span>
+          ))
+        ) : (
+          <span>물리 FK 없음</span>
+        )}
+      </div>
       <TextField
         label="관계명"
         value={r.logical.name}
@@ -1087,11 +1199,6 @@ export function RelationEditor({
           </Select>
         </label>
       )}
-      <TextField
-        label="관계 설명"
-        value={r.logical.description ?? ''}
-        onChange={(description) => onChange({ ...r, logical: { ...r.logical, description } })}
-      />
       {(['targetCardinality', 'sourceCardinality'] as const).map((side) => {
         const endpoint = r.logical[side] ?? {
           min: side === 'sourceCardinality' ? 0 : r.logical.required ? 1 : 0,
@@ -1136,93 +1243,125 @@ export function RelationEditor({
           onChange={(required) => onChange({ ...r, logical: { ...r.logical, required } })}
         />
       )}
-      {physical ? (
-        <Button onClick={() => onChange({ ...r, physical: null })}>FK 정의 제거</Button>
-      ) : (
-        <p>새 FK는 출발 PK 컬럼을 선택한 뒤 도착 테이블을 클릭하여 생성합니다.</p>
-      )}
-      {physical && (
-        <>
-          <TextField
-            label="FK 이름"
-            value={physical.name}
-            max={120}
-            onChange={(name) => onChange({ ...r, physical: { ...physical, name } })}
-          />
-          <p>출발 PK / UNIQUE 컬럼 → 대상 FK 컬럼 순서로 대응합니다.</p>
-          {physical.sourceColumnIds.map((id, i) => (
-            <div className="table-mapping" key={i}>
-              <span>{i + 1}</span>
-              {(['target', 'source'] as const).map((side) => (
-                <label key={side}>
-                  {side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼
-                  <Select
-                    aria-label={`${side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼 ${i + 1}`}
-                    value={side === 'source' ? id : (physical.targetColumnIds[i] ?? '')}
-                    onValueChange={(value) => {
-                      if (value)
-                        onChange({ ...r, physical: setMappingPair(physical, i, side, value) });
-                    }}
-                  >
-                    <option value="">선택</option>
-                    {(side === 'source' ? source : target).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {columnName(c)}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
+      <details className="table-relation-advanced">
+        <summary>고급 설정 · 테이블, FK 매핑, 참조 동작</summary>
+        {(['targetTableId', 'sourceTableId'] as const).map((key) => (
+          <label key={key}>
+            {key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}
+            <Select
+              aria-label={key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}
+              value={r[key]}
+              onValueChange={(value) =>
+                onChange({
+                  ...r,
+                  [key]: value,
+                  physical: physical
+                    ? { ...physical, sourceColumnIds: [], targetColumnIds: [] }
+                    : null,
+                })
+              }
+            >
+              {doc.tables?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {doc.domains.find((d) => d.id === t.domainId)?.name} / {tableName(t)}
+                </option>
               ))}
-              <IconButton
-                aria-label={`매핑 ${i + 1} 삭제`}
-                onClick={() =>
-                  onChange({
-                    ...r,
-                    physical: {
-                      ...physical,
-                      sourceColumnIds: physical.sourceColumnIds.filter((_, at) => at !== i),
-                      targetColumnIds: physical.targetColumnIds.filter((_, at) => at !== i),
-                    },
-                  })
-                }
-              >
-                ×
-              </IconButton>
-            </div>
-          ))}
-          <Button
-            disabled={!source.length || !target.length}
-            onClick={() =>
-              onChange({
-                ...r,
-                physical: {
-                  ...physical,
-                  sourceColumnIds: [...physical.sourceColumnIds, source[0]?.id ?? ''],
-                  targetColumnIds: [...physical.targetColumnIds, target[0]?.id ?? ''],
-                },
-              })
-            }
-          >
-            + 컬럼 매핑
-          </Button>
-          {(['onDelete', 'onUpdate'] as const).map((key) => (
-            <label key={key}>
-              {key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
-              <Select
-                aria-label={key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
-                value={physical[key]}
-                onValueChange={(value) =>
-                  onChange({ ...r, physical: { ...physical, [key]: value as ReferentialAction } })
-                }
-              >
-                {['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT'].map((action) => (
-                  <option key={action}>{action}</option>
+            </Select>
+          </label>
+        ))}
+        <TextField
+          label="관계 설명"
+          value={r.logical.description ?? ''}
+          onChange={(description) => onChange({ ...r, logical: { ...r.logical, description } })}
+        />
+        {physical ? (
+          <Button onClick={() => onChange({ ...r, physical: null })}>FK 정의 제거</Button>
+        ) : (
+          <p>새 FK는 출발 PK 컬럼을 선택한 뒤 도착 테이블을 클릭하여 생성합니다.</p>
+        )}
+        {physical && (
+          <>
+            <TextField
+              label="FK 이름"
+              value={physical.name}
+              max={120}
+              onChange={(name) => onChange({ ...r, physical: { ...physical, name } })}
+            />
+            <p>출발 PK / UNIQUE 컬럼 → 대상 FK 컬럼 순서로 대응합니다.</p>
+            {physical.sourceColumnIds.map((id, i) => (
+              <div className="table-mapping" key={i}>
+                <span>{i + 1}</span>
+                {(['target', 'source'] as const).map((side) => (
+                  <label key={side}>
+                    {side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼
+                    <Select
+                      aria-label={`${side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼 ${i + 1}`}
+                      value={side === 'source' ? id : (physical.targetColumnIds[i] ?? '')}
+                      onValueChange={(value) => {
+                        if (value)
+                          onChange({ ...r, physical: setMappingPair(physical, i, side, value) });
+                      }}
+                    >
+                      <option value="">선택</option>
+                      {(side === 'source' ? source : target).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {columnName(c)}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
                 ))}
-              </Select>
-            </label>
-          ))}
-        </>
-      )}
+                <IconButton
+                  aria-label={`매핑 ${i + 1} 삭제`}
+                  onClick={() =>
+                    onChange({
+                      ...r,
+                      physical: {
+                        ...physical,
+                        sourceColumnIds: physical.sourceColumnIds.filter((_, at) => at !== i),
+                        targetColumnIds: physical.targetColumnIds.filter((_, at) => at !== i),
+                      },
+                    })
+                  }
+                >
+                  ×
+                </IconButton>
+              </div>
+            ))}
+            <Button
+              disabled={!source.length || !target.length}
+              onClick={() =>
+                onChange({
+                  ...r,
+                  physical: {
+                    ...physical,
+                    sourceColumnIds: [...physical.sourceColumnIds, source[0]?.id ?? ''],
+                    targetColumnIds: [...physical.targetColumnIds, target[0]?.id ?? ''],
+                  },
+                })
+              }
+            >
+              + 컬럼 매핑
+            </Button>
+            {(['onDelete', 'onUpdate'] as const).map((key) => (
+              <label key={key}>
+                {key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
+                <Select
+                  aria-label={key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
+                  value={physical[key]}
+                  onValueChange={(value) =>
+                    onChange({ ...r, physical: { ...physical, [key]: value as ReferentialAction } })
+                  }
+                >
+                  {['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT'].map((action) => (
+                    <option key={action}>{action}</option>
+                  ))}
+                </Select>
+              </label>
+            ))}
+          </>
+        )}
+      </details>
       <Button variant="danger" className="danger" onClick={onDelete}>
         관계 삭제
       </Button>
@@ -1232,136 +1371,7 @@ export function RelationEditor({
 
 export { relationGeometry, TableRelationsSvg } from './TableRelations.js';
 
-export function ForeignKeyDialog({
-  document: doc,
-  sourceColumnId,
-  targetTableId,
-  onChange,
-  onClose,
-}: {
-  document: DesignDocument;
-  sourceColumnId: string;
-  targetTableId: string;
-  onChange: (d: DesignDocument) => void;
-  onClose: () => void;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const source = doc.columns?.find((c) => c.id === sourceColumnId);
-  const sourceTable = doc.tables?.find((t) => t.id === source?.tableId),
-    target = doc.tables?.find((t) => t.id === targetTableId);
-  const keys = (doc.keys ?? []).filter(
-    (k) =>
-      k.tableId === source?.tableId &&
-      k.kind === 'primary' &&
-      k.scope !== 'logical' &&
-      k.columnIds.includes(sourceColumnId),
-  );
-  const [keyId, setKeyId] = useState(keys[0]?.id ?? ''),
-    [error, setError] = useState('');
-  const key = keys.find((k) => k.id === keyId);
-  const [relationId] = useState(newId),
-    [columnIds] = useState(() =>
-      Array.from({ length: Math.max(0, ...keys.map((k) => k.columnIds.length)) }, () => newId()),
-    );
-  let preview: DesignDocument | undefined;
-  let previewError = '';
-  if (sourceTable && target && key)
-    try {
-      preview = createForeignKeyFromPrimaryKey(doc, {
-        primaryTableId: sourceTable.id,
-        foreignTableId: target.id,
-        primaryKeyId: key.id,
-        relationId,
-        columnIds: columnIds.slice(0, key.columnIds.length),
-      });
-    } catch (e) {
-      previewError = e instanceof Error ? e.message : '관계를 생성할 수 없습니다.';
-    }
-  useEffect(() => {
-    const previous = document.activeElement;
-    dialog.current?.showModal();
-    return () => {
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-    };
-  }, []);
-  return createPortal(
-    <dialog
-      ref={dialog}
-      className="table-fk-dialog"
-      aria-labelledby="fk-dialog-title"
-      onCancel={onClose}
-      onClick={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      <h2 id="fk-dialog-title">PK → FK 관계 만들기</h2>
-      <p>
-        {sourceTable?.physical.name || '출발 테이블'} → {target?.physical.name || '도착 테이블'}
-      </p>
-      <label>
-        출발 PK
-        <Select aria-label="출발 PK" value={keyId} onValueChange={setKeyId}>
-          {!keys.length && <option value="">참조 가능한 PK 없음</option>}
-          {keys.map((k) => (
-            <option key={k.id} value={k.id}>
-              {k.name ||
-                k.columnIds
-                  .map((id) => doc.columns?.find((c) => c.id === id)?.physical.name)
-                  .join(', ')}
-            </option>
-          ))}
-        </Select>
-      </label>
-      <PanelNote>
-        도착 테이블에 아래 FK 컬럼을 자동으로 추가합니다. 복합 PK는 순서대로 연결하며, 같은 이름이
-        있으면 새 이름으로 만듭니다.
-      </PanelNote>
-      <div className="table-fk-pairs">
-        {key?.columnIds.map((id, index) => {
-          const primary = doc.columns?.find((c) => c.id === id),
-            foreign = preview?.columns?.find((c) => c.id === columnIds[index]);
-          return (
-            <div key={id}>
-              <span>
-                {primary?.physical.name || '이름 없는 컬럼'}
-                <small>{primary?.physical.type.name.toUpperCase()}</small>
-              </span>
-              <span aria-hidden="true">→</span>
-              <span>
-                {foreign?.physical.name || '새 FK 컬럼'}
-                <small>{foreign?.physical.type.name.toUpperCase()} · 자동 추가</small>
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      {(error || previewError || !keys.length) && (
-        <p role="alert" className="table-error">
-          {error || previewError || '출발 테이블에 PK를 먼저 정의하세요.'}
-        </p>
-      )}
-      <div className="table-actions">
-        <Button onClick={onClose}>취소</Button>
-        <Button
-          variant="primary"
-          disabled={!preview}
-          onClick={() => {
-            try {
-              if (preview) {
-                onChange(preview);
-                onClose();
-              }
-            } catch (e) {
-              setError(e instanceof Error ? e.message : '관계를 생성할 수 없습니다.');
-            }
-          }}
-        >
-          컬럼 추가 및 관계 생성
-        </Button>
-      </div>
-    </dialog>,
-    document.body,
-  );
-}
+export { ForeignKeyDialog } from './ForeignKeyDialog.js';
 
 function ColumnCreationForm({
   document: doc,
@@ -1382,7 +1392,15 @@ function ColumnCreationForm({
       <div className="table-create-grid">
         <label>
           PK
-          <Checkbox checked={pk} onChange={(e) => setPk(e.target.checked)} />
+          <Checkbox
+            checked={pk}
+            disabled={
+              !!(doc.columns ?? [])
+                .filter((c) => c.tableId === tableId && c.scope !== 'logical')
+                .find((c) => primaryKeyChangeReason(doc, c.id))
+            }
+            onChange={(e) => setPk(e.target.checked)}
+          />
         </label>
         <TextField label="속성" value={name} max={120} onChange={setName} />
         <label>
@@ -1424,22 +1442,7 @@ function ColumnCreationForm({
               }
             : { name: type, isArray: false };
           let next = addColumn(doc, column);
-          if (pk) {
-            const existing = doc.keys?.find((k) => k.tableId === tableId && k.kind === 'primary');
-            next = upsertKey(
-              next,
-              existing
-                ? { ...existing, columnIds: [...existing.columnIds, column.id] }
-                : {
-                    id: newId(),
-                    tableId,
-                    scope: column.scope,
-                    kind: 'primary',
-                    name: '',
-                    columnIds: [column.id],
-                  },
-            );
-          }
+          if (pk) next = setColumnPrimaryKey(next, column.id, true);
           onChange(next);
           setName('');
           setComment('');

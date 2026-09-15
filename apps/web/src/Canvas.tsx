@@ -461,7 +461,7 @@ export function Canvas({
     change(addNote(doc, { id, viewId, text: '업무 설명을 입력하세요.' }, position()));
     pick(id);
   }
-  function newTable(name = '') {
+  function newTable(name = '', at?: { x: number; y: number }) {
     if (readOnly || viewId === 'overview' || activeCombined) return;
     const id = newId();
     change(
@@ -475,7 +475,7 @@ export function Canvas({
           physical: { name, schema: 'public', comment: '' },
           customProperties: emptyMetadata(),
         },
-        position(),
+        at ?? position(),
       ),
     );
     pick(id);
@@ -1260,7 +1260,22 @@ export function Canvas({
                                 onAction: () => startRelation('', ''),
                               },
                             ]
-                          : []),
+                          : [
+                              {
+                                id: 'new-table',
+                                label: activeCombined
+                                  ? '새 테이블은 소유 도메인 화면에서 생성하세요'
+                                  : '새 테이블 생성',
+                                disabled: !!activeCombined || !activeDomain,
+                                onAction: () =>
+                                  newTable(
+                                    '',
+                                    blankPosition.current?.viewId === viewId
+                                      ? clampLayoutPatch(blankPosition.current)
+                                      : undefined,
+                                  ),
+                              },
+                            ]),
                         {
                           id: 'auto-layout',
                           label: '자동 배치',

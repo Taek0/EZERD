@@ -696,3 +696,30 @@
     animation: none;
   }
 }
+.table-direct-control {
+  min-width: 0;
+}
+.table-direct-control .ui-search-type,
+.table-direct-control .ui-input-group {
+  width: 100%;
+  min-width: 0;
+}
+.table-direct-control .ui-input {
+  min-height: 30px;
+  height: 30px;
+  font-size: 13px;
+  padding-block: 3px;
+}
+.table-relation-summary {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.table-inspector .table-relation-advanced {
+  padding: 8px;
+}
+.table-inspector .table-relation-advanced summary {
+  font-size: 13px;
+}

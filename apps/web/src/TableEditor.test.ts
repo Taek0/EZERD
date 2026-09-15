@@ -301,3 +301,23 @@ it('presents existing relations before creation with PK first for every endpoint
   expect(html.indexOf('FK 이름')).toBeLessThan(html.indexOf('PK 출발 컬럼'));
   expect(html).not.toContain('속성명');
 });
+import { setColumnPrimaryKey } from './column-primary-key.js';
+it('renders directly editable card type and NULL controls with a PK NULL lock', () => {
+  let doc = example();
+  doc.columns![0]!.scope = 'physical';
+  doc = setColumnPrimaryKey(doc, 'c', true);
+  const html = renderToStaticMarkup(
+    createElement(ConfirmProvider, {
+      children: createElement(TableNodeContent, {
+        document: doc,
+        tableId: 't',
+        viewMode: 'physical',
+        onChange: () => {},
+      }),
+    }),
+  );
+  expect(html).toContain('role="combobox"');
+  expect(html).toContain('hidden_column NULL 허용');
+  expect(html).toContain('PK 컬럼은 NULL을 허용하지 않습니다.');
+  expect(html).not.toContain('더블클릭하여 NULL');
+});
