@@ -1,7 +1,7 @@
 # 자동 저장·동기화 구현 계획
 
 작성일: 2026-09-15
-상태: 구현 진행 중
+상태: 초기 구현 및 로컬 검증 완료. 결과는 docs/work-log/2026-09-15-Collaboration-AutosyncCheckpoint.md와 2026-09-15-Collaboration-BrowserAutosyncVerification.md 참조.
 
 ## 구현 범위
 
