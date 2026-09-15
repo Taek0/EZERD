@@ -45,8 +45,10 @@ export const designDocumentSchema = z.strictObject({
 const projectName = z.string().trim().min(1).max(120);
 const username = z.string().trim().min(1).max(40);
 const version = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-export const usernameInputSchema = z.strictObject({ username });
-export const userSchema = z.strictObject({ id: z.uuid(), username, createdAt: z.iso.datetime(), updatedAt: z.iso.datetime() });
+export const userColorSchema=z.string().length(7).regex(/^#[0-9a-f]{6}$/i).transform(value=>value.toLowerCase());
+export const usernameInputSchema = z.strictObject({ username, pin:z.string().length(4).regex(/^[0-9]{4}$/) });
+export const updateUserSchema=z.strictObject({username:username.optional(),color:userColorSchema.optional()}).refine(value=>value.username!==undefined||value.color!==undefined,'변경할 이름 또는 색상을 입력하세요.');
+export const userSchema = z.strictObject({ id: z.uuid(), username, color:userColorSchema, createdAt: z.iso.datetime(), updatedAt: z.iso.datetime() });
 export const createProjectSchema = z.strictObject({ name: projectName });
 export const updateProjectSchema = z.strictObject({ expectedVersion: version, name: projectName.optional(), status: z.enum(['active', 'archived']).optional() }).refine(input => input.name !== undefined || input.status !== undefined, 'No update supplied.');
 export const projectQuerySchema = z.strictObject({ status: z.enum(['active', 'archived']).default('active'), search: z.string().trim().max(120).default('') });

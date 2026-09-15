@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto';
 import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpException, Inject, NotFoundException, Param, Patch, Post, Put, Query, ServiceUnavailableException } from '@nestjs/common';
 import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { createProjectSchema, deleteProjectSchema, projectQuerySchema, saveDocumentSchema, updateProjectSchema, usernameInputSchema } from '@ezerd/contracts';
+import { createProjectSchema, deleteProjectSchema, projectQuerySchema, saveDocumentSchema, updateProjectSchema, usernameInputSchema, updateUserSchema } from '@ezerd/contracts';
 import type { Project, User } from '@ezerd/contracts';
 import { DatabaseService } from './db/database.service.js';
 import { projects, users } from './db/schema.js';
@@ -18,13 +19,13 @@ function project(row: ProjectRow): Project {
   return { id: row.id, name: row.name, status: row.status, version: row.version, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
 }
 function user(row: typeof users.$inferSelect): User {
-  return { ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
+  return { id:row.id,username:row.username,color:row.color,createdAt:row.createdAt.toISOString(),updatedAt:row.updatedAt.toISOString() };
 }
 async function databaseOperation<T>(operation: () => Promise<T>): Promise<T> {
   try { return await operation(); }
   catch (error) {
     if (error instanceof HttpException) throw error;
-    if (isUsernameConflict(error)) throw new ConflictException('이미 사용 중인 사용자 이름입니다. 다른 이름을 입력해주세요.');
+    if (isUsernameConflict(error)) throw new ConflictException('이미 사용 중인 이름과 PIN 조합입니다. 다른 이름 또는 PIN을 입력해주세요.');
     throw new ServiceUnavailableException('저장소에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.');
   }
 }
@@ -37,7 +38,7 @@ export class WorkspaceController {
   createUser(@Body() body: unknown) {
     const input = parse(usernameInputSchema, body);
     return databaseOperation(async () => {
-      const [row] = await this.database.db.insert(users).values(input).returning();
+      const [row] = await this.database.db.insert(users).values({username:input.username,pinHash:createHash('sha256').update(input.pin).digest('hex')}).returning();
       return user(row!);
     });
   }
@@ -60,7 +61,7 @@ export class WorkspaceController {
   @Patch('users/:id')
   updateUser(@Param('id') rawId: string, @Body() body: unknown) {
     const id = parse(idSchema, rawId);
-    const input = parse(usernameInputSchema, body);
+    const input = parse(updateUserSchema, body);
     return databaseOperation(async () => {
       const [row] = await this.database.db.update(users).set({ ...input, updatedAt: new Date() }).where(eq(users.id, id)).returning();
       if (!row) throw new NotFoundException('사용자를 찾을 수 없습니다.');

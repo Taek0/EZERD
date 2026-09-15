@@ -3,7 +3,7 @@ import { designDocumentSchema, usernameInputSchema, createProjectSchema, updateP
 const empty = () => ({ schemaVersion: 1, domains: [], domainRelations: [], notes: [], layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] } });
 describe('API input boundaries', () => {
   it('normalizes names and rejects blanks, oversized input and empty updates', () => {
-    expect(usernameInputSchema.parse({ username: '  태경  ' })).toEqual({ username: '태경' });
+    expect(usernameInputSchema.parse({ username: '  태경  ', pin: '0012' })).toEqual({ username: '태경', pin: '0012' });
     expect(createProjectSchema.parse({ name: ' 주문 ' })).toEqual({ name: '주문' });
     expect(usernameInputSchema.safeParse({ username: '  ' }).success).toBe(false);
     expect(createProjectSchema.safeParse({ name: 'x'.repeat(121) }).success).toBe(false);

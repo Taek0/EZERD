@@ -43,21 +43,29 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     }
     if (app) await app.close();
   });
-  it('enforces unique trimmed usernames on registration rename and concurrent creation', async () => {
+  it('enforces composite trimmed username and four-digit PIN identity with private PINs', async () => {
     const name='사용자'+randomUUID().slice(0,8);
-    const first=await request('/users','POST',{username:'  '+name+'  '});if(first.data.id)userIds.push(first.data.id);
+    const first=await request('/users','POST',{pin:'0012',username:'  '+name+'  '});if(first.data.id)userIds.push(first.data.id);
     expect(first.status).toBe(201);expect(first.data.username).toBe(name);
-    const duplicate=await request('/users','POST',{username:name});if(duplicate.data.id)userIds.push(duplicate.data.id);
+    const duplicate=await request('/users','POST',{pin:'0012',username:name});if(duplicate.data.id)userIds.push(duplicate.data.id);
     expect(duplicate.status).toBe(409);
-    const other=await request('/users','POST',{username:name+'-other'});if(other.data.id)userIds.push(other.data.id);
+    const sameName=await request('/users','POST',{username:name,pin:'9876'});if(sameName.data.id)userIds.push(sameName.data.id);expect(sameName.status).toBe(201);
+    expect(first.data.color).toBe('#4169e1');expect(first.data).not.toHaveProperty('pin');expect(first.data).not.toHaveProperty('pinHash');
+    expect((await request('/users','POST',{username:name+'-missing'})).status).toBe(400);
+    for(const pin of ['123','12345','abcd'])expect((await request('/users','POST',{username:name+'-invalid',pin})).status).toBe(400);
+    const recolored=await request('/users/'+first.data.id,'PATCH',{color:'#12ABEF'});expect(recolored.status).toBe(200);expect(recolored.data.color).toBe('#12abef');
+    expect((await request('/users/'+first.data.id,'PATCH',{color:'red'})).status).toBe(400);
+    expect((await request('/users/'+first.data.id)).data.color).toBe('#12abef');
+    const other=await request('/users','POST',{pin:'0012',username:name+'-other'});if(other.data.id)userIds.push(other.data.id);
     expect((await request('/users/'+other.data.id,'PATCH',{username:name})).status).toBe(409);
     expect((await request('/users/'+other.data.id)).data.username).toBe(name+'-other');
     expect((await request('/users/'+first.data.id,'PATCH',{username:name})).status).toBe(200);
-    expect((await request('/users/'+first.data.id,'PATCH',{username:name+'-new'})).data.username).toBe(name+'-new');
+    const renamed=await request('/users/'+first.data.id,'PATCH',{username:name+'-new'});expect(renamed.data.username).toBe(name+'-new');expect(renamed.data.color).toBe('#12abef');
+    const listed=await request('/users');expect(listed.data.every((u:Record<string,unknown>)=>!('pin' in u)&&!('pinHash' in u))).toBe(true);
     const raceName='동시'+randomUUID().slice(0,8);
-    const raced=await Promise.all([request('/users','POST',{username:raceName}),request('/users','POST',{username:raceName})]);
+    const raced=await Promise.all([request('/users','POST',{pin:'0012',username:raceName}),request('/users','POST',{pin:'0012',username:raceName})]);
     raced.forEach(value=>{if(value.data.id)userIds.push(value.data.id);});expect(raced.map(value=>value.status).sort()).toEqual([201,409]);
-    expect((await request('/users','POST',{username:' '})).status).toBe(400);
+    expect((await request('/users','POST',{pin:'0012',username:' '})).status).toBe(400);
     expect((await request('/users/invalid')).status).toBe(400);
     expect((await request('/users/'+randomUUID())).status).toBe(404);
   });
@@ -113,8 +121,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   });
 
   it('deletes only version-matched archived projects and cascades pins without deleting people', async () => {
-    const author = await request('/users', 'POST', { username: 'delete fixture author' });
-    const recipient = await request('/users', 'POST', { username: 'delete fixture recipient' });
+    const author = await request('/users','POST',{pin:'0012',username: 'delete fixture author' });
+    const recipient = await request('/users','POST',{pin:'0012',username: 'delete fixture recipient' });
     userIds.push(author.data.id, recipient.data.id);
     const created = await request('/projects', 'POST', { name: 'delete fixture project' });
     const other = await request('/projects', 'POST', { name: 'retained fixture project' });
@@ -140,7 +148,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   });
 
   it('stores blank pins in combined views and retains their threads after view removal', async () => {
-    const person = await request('/users', 'POST', { username: 'combined pin author' }); userIds.push(person.data.id);
+    const person = await request('/users','POST',{pin:'0012',username: 'combined pin author' }); userIds.push(person.data.id);
     const created = await request('/projects', 'POST', { name: 'combined pin fixture' }); const id = created.data.id; projectIds.push(id);
     const opened = await request('/projects/' + id);
     const document = { ...opened.data.document, domains: [{id:'d',name:'D',description:''}], views: [{id:'combined',name:'함께 보기',domainIds:['d']}] };
@@ -153,8 +161,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   });
 
   it('deletes a pin and replies atomically but rejects deletion after a new reply', async () => {
-    const author=await request('/users','POST',{username:'pin delete author'});userIds.push(author.data.id);
-    const recipient=await request('/users','POST',{username:'pin delete recipient'});userIds.push(recipient.data.id);
+    const author=await request('/users','POST',{pin:'0012',username:'pin delete author'});userIds.push(author.data.id);
+    const recipient=await request('/users','POST',{pin:'0012',username:'pin delete recipient'});userIds.push(recipient.data.id);
     const created=await request('/projects','POST',{name:'pin delete fixture'});const id=created.data.id;projectIds.push(id);
     const payload={authorId:author.data.id,viewId:'overview',objectId:null,x:10,y:20,body:'delete me',mentionIds:[recipient.data.id]};
     const first=await request('/projects/'+id+'/threads','POST',payload);
@@ -197,7 +205,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     const brokenDatabase = { db: { insert: () => { throw new Error('postgresql://user:secret@private-host/database'); } } };
     const controller = new WorkspaceController(brokenDatabase as never);
     try {
-      await controller.createUser({ username: 'test' });
+      await controller.createUser({ username: 'test', pin: '0012' });
       throw new Error('Expected a storage failure');
     } catch (error) {
       const failure = error as { getStatus(): number; getResponse(): unknown };
@@ -275,8 +283,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(reopened.data.document).toEqual(document);
   });
   it('keeps review threads independent from design saves and atomically validates mentions', async () => {
-    const author = (await request('/users', 'POST', { username: 'review author' })).data;
-    const mentioned = (await request('/users', 'POST', { username: 'review teammate' })).data;
+    const author = (await request('/users','POST',{pin:'0012',username: 'review author' })).data;
+    const mentioned = (await request('/users','POST',{pin:'0012',username: 'review teammate' })).data;
     userIds.push(author.id, mentioned.id);
     const project = (await request('/projects', 'POST', { name: 'review integration' })).data;
     projectIds.push(project.id);

@@ -1,4 +1,4 @@
-import { boolean, doublePrecision, index, text, integer, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, doublePrecision, unique, index, text, integer, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import type { DesignDocument } from '@ezerd/model';
 
 export const projectStatus = pgEnum('project_status', ['active', 'archived']);
@@ -14,13 +14,15 @@ export const projects = pgTable('projects', {
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 
-// Display names are unique after API trimming; stable IDs identify returning teammates.
+// Registration is unique by trimmed name and PIN digest; public users keep stable IDs.
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  username: varchar('username', { length: 40 }).notNull().unique('users_username_unique'),
+  username: varchar('username', { length: 40 }).notNull(),
+  pinHash: varchar('pin_hash', { length: 64 }).notNull(),
+  color: varchar('color', { length: 7 }).notNull().default('#4169e1'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, table => [unique('users_username_pin_unique').on(table.username,table.pinHash)]);
 
 export const threads = pgTable('review_threads', {
   id: uuid('id').primaryKey().defaultRandom(),
