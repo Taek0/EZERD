@@ -2,7 +2,7 @@
 
 ## 현재 구현과 아래 제안의 관계
 
-현재 저장 형식은 `schemaVersion: 1`이며 도메인·업무 관계·자유 텍스트·화면 배치와 선택적인 테이블·컬럼·키·테이블 관계 배열을 포함한다. 코드 원본은 packages/model/src/document.ts, 런타임 계약은 packages/contracts/src/workspace.ts다. 테이블·컬럼·키·관계의 논리/물리 독립 편집은 구현했다. 아래 고급 타입 사전·자동 추천·실시간 편집 항목은 후속 제안이며 실제 타입 필드는 코드 계약을 기준으로 한다. 구현 상태와 저장 검증은 [구현 진행 기록](./IMPLEMENTATION_PROGRESS.md)에 정리한다.
+현재 저장 형식은 `schemaVersion: 1`이며 도메인·업무 관계·자유 텍스트·화면 배치와 선택적인 테이블·컬럼·키·테이블 관계 배열을 포함한다. 코드 원본은 packages/model/src/document.ts, 런타임 계약은 packages/contracts/src/workspace.ts다. 테이블·컬럼·키·관계의 논리/물리 독립 편집은 구현했다. 아래 고급 타입 사전·자동 추천·실시간 편집 항목은 후속 제안이며 실제 타입 필드는 코드 계약을 기준으로 한다. 구현 상태와 저장 검증은 [구현 진행 기록](../work-log/IMPLEMENTATION_PROGRESS.md)에 정리한다.
 
 ## 결정된 방향
 

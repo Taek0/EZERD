@@ -57,7 +57,7 @@ output +=
 output += '## 직접 의존성과 내부 패키지\n\n';
 for (const path of manifests) {
   const manifest = JSON.parse(await readFile(new URL(path, root), 'utf8'));
-  output += `### ${manifest.name} · ${manifest.version}\n\n정의: [${path}](../${path})\n\n`;
+  output += `### ${manifest.name} · ${manifest.version}\n\n정의: [${path}](../../${path})\n\n`;
   output += '| 패키지 | 고정 버전 / 연결 규칙 | 구분 |\n| --- | --- | --- |\n';
   let count = 0;
   for (const field of ['dependencies', 'devDependencies']) {
@@ -77,7 +77,7 @@ for (const entry of entries) {
   if (separator < 1) throw new Error(`Unexpected package key: ${entry}`);
   output += `| \`${entry.slice(0, separator)}\` | \`${entry.slice(separator + 1)}\` | ${installed.has(entry) ? '확인' : '잠금 목록만'} |\n`;
 }
-await writeFile(new URL('docs/DEPENDENCY_VERSIONS.md', root), output);
+await writeFile(new URL('docs/work-log/DEPENDENCY_VERSIONS.md', root), output);
 console.log(
   `Documented ${entries.length} locked package versions and ${manifests.length} workspace manifests.`,
 );
