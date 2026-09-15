@@ -36,7 +36,18 @@ try {
   const product = page.getByRole('group', { name: 'product', exact: true });
   const code = user.locator('.table-column-row').filter({ hasText: 'code' });
   assert.equal(await code.getByRole('combobox').count(), 0);
+  const typeFont = await code.locator('.table-type-trigger').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return [style.fontFamily, style.fontSize, style.fontWeight, style.letterSpacing];
+  });
   await code.getByRole('button', { name: 'code 타입 편집', exact: true }).click();
+  assert.deepEqual(
+    await code.getByRole('combobox').evaluate((element) => {
+      const style = getComputedStyle(element);
+      return [style.fontFamily, style.fontSize, style.fontWeight, style.letterSpacing];
+    }),
+    typeFont,
+  );
   await code.getByRole('combobox', { name: 'code 타입', exact: true }).fill('INTEGER');
   await page.getByRole('option', { name: 'INTEGER', exact: true }).click();
   assert.equal(
