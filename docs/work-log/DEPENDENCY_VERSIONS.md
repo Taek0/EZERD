@@ -11,7 +11,7 @@
 
 ### ezerd · 0.1.0
 
-정의: [package.json](../package.json)
+정의: [package.json](../../package.json)
 
 | 패키지 | 고정 버전 / 연결 규칙 | 구분 |
 | --- | --- | --- |
@@ -22,7 +22,7 @@
 
 ### @ezerd/web · 0.1.0
 
-정의: [apps/web/package.json](../apps/web/package.json)
+정의: [apps/web/package.json](../../apps/web/package.json)
 
 | 패키지 | 고정 버전 / 연결 규칙 | 구분 |
 | --- | --- | --- |
@@ -41,7 +41,7 @@
 
 ### @ezerd/server · 0.1.0
 
-정의: [apps/server/package.json](../apps/server/package.json)
+정의: [apps/server/package.json](../../apps/server/package.json)
 
 | 패키지 | 고정 버전 / 연결 규칙 | 구분 |
 | --- | --- | --- |
@@ -62,7 +62,7 @@
 
 ### @ezerd/model · 0.1.0
 
-정의: [packages/model/package.json](../packages/model/package.json)
+정의: [packages/model/package.json](../../packages/model/package.json)
 
 | 패키지 | 고정 버전 / 연결 규칙 | 구분 |
 | --- | --- | --- |
@@ -70,7 +70,7 @@
 
 ### @ezerd/contracts · 0.1.0
 
-정의: [packages/contracts/package.json](../packages/contracts/package.json)
+정의: [packages/contracts/package.json](../../packages/contracts/package.json)
 
 | 패키지 | 고정 버전 / 연결 규칙 | 구분 |
 | --- | --- | --- |

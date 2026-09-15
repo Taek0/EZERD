@@ -16,14 +16,14 @@
 
 첫 출시의 댓글·멘션·알림은 일반 API와 PostgreSQL 레코드로 제공한다. 설계 문서의 저장과 분리해 대화를 보존하고, 조회·갱신 방식은 ERD의 실시간 변경 병합과 별도로 결정한다.
 
-- username·갤러리·도메인/테이블 ERD·저장/재열기·댓글/멘션·알림·PostgreSQL DDL을 구현했다. 현재 캔버스는 React·SVG·CSS이며 React Flow 도입은 아직 제안이다. 구현 범위와 검증은 [구현 진행 기록](./IMPLEMENTATION_PROGRESS.md)을 참고한다.
+- username·갤러리·도메인/테이블 ERD·저장/재열기·댓글/멘션·알림·PostgreSQL DDL을 구현했다. 현재 캔버스는 React·SVG·CSS이며 React Flow 도입은 아직 제안이다. 구현 범위와 검증은 [구현 진행 기록](../work-log/IMPLEMENTATION_PROGRESS.md)을 참고한다.
 - pnpm workspace에 웹, 서버, 공통 모델, API 계약 패키지를 구성했다.
 - React·Vite, NestJS, Zod, Drizzle ORM·Kit, PostgreSQL 개발 컨테이너를 적용했다.
 - 공통 TypeScript strict 설정, lockfile, 모델 테스트, API·DB 상태 화면, 초기 마이그레이션과 DB 검증 스크립트를 제공한다.
-- Tailwind CSS·React Aria와 무료 Untitled UI 기반 공통 컴포넌트를 적용했다. shadcn/ui, React Flow, Yjs·Hocuspocus, Playwright는 프로젝트 의존성에 추가하지 않았다. 공통 API와 테마는 [SHARED_UI.md](./SHARED_UI.md)를 참고한다.
-- PostgreSQL DDL 생성기는 packages/model/src/postgres.ts에 구현했고 지원 범위와 진단은 [DDL 문서](./POSTGRES_EXPORT.md)에 정리했다.
-- 구체적인 버전과 실행 명령은 [README](../README.md), Drizzle 학습 예제는 [입문 문서](./DRIZZLE_START.md)를 참고한다.
-- 실행 환경의 상세 버전은 [개발 환경 버전 기준](./DEVELOPMENT_VERSIONS.md), 모든 직접·간접 의존성은 [전체 버전 목록](./DEPENDENCY_VERSIONS.md)에 기록한다.
+- Tailwind CSS·React Aria와 무료 Untitled UI 기반 공통 컴포넌트를 적용했다. shadcn/ui, React Flow, Yjs·Hocuspocus, Playwright는 프로젝트 의존성에 추가하지 않았다. 공통 API와 테마는 [SHARED_UI.md](../work-log/SHARED_UI.md)를 참고한다.
+- PostgreSQL DDL 생성기는 packages/model/src/postgres.ts에 구현했고 지원 범위와 진단은 [DDL 문서](../work-log/POSTGRES_EXPORT.md)에 정리했다.
+- 구체적인 버전과 실행 명령은 [README](../../README.md), Drizzle 학습 예제는 [입문 문서](../work-log/DRIZZLE_START.md)를 참고한다.
+- 실행 환경의 상세 버전은 [개발 환경 버전 기준](../work-log/DEVELOPMENT_VERSIONS.md), 모든 직접·간접 의존성은 [전체 버전 목록](../work-log/DEPENDENCY_VERSIONS.md)에 기록한다.
 
 ## 추천 구성
 

@@ -120,7 +120,7 @@ Windows·PowerShell·Git·Docker Desktop의 동일한 패치 버전을 팀 전�
 ## 간접 의존성과 lockfile
 
 - 직접·간접 의존성 전체: [패키지 버전 전체 목록](./DEPENDENCY_VERSIONS.md)
-- 설치의 기준: [pnpm-lock.yaml](../pnpm-lock.yaml), lockfile 형식 9.0
+- 설치의 기준: [pnpm-lock.yaml](../../pnpm-lock.yaml), lockfile 형식 9.0
 - 전체 목록에는 OS별 선택 의존성과 동일 패키지의 여러 버전을 포함한다. 실제 현재 의존성 그래프에서 확인된 항목도 표시한다.
 - 무결성 해시, 의존 관계, peer 조합의 상세 정보는 lockfile에 보존한다.
 - lockfile을 유지한 설치는 `pnpm install --frozen-lockfile`로 실행한다.
