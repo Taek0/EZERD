@@ -148,6 +148,83 @@ export function diffSharedDocument(before: DesignDocument, after: DesignDocument
 /** Semantic ID-based changes derived from the trusted baseline and validated final candidate. */
 export const deriveOperationChanges = diffSharedDocument;
 
+type StructuralEntity = NonNullable<DesignDocument['tableRelations']>[number] |
+  NonNullable<DesignDocument['keys']>[number] |
+  NonNullable<DesignDocument['columns']>[number];
+
+function changedEntity<T extends StructuralEntity>(
+  candidateItems: readonly T[] | undefined,
+  collection: string,
+  id: string,
+  changes: readonly DocumentChange[],
+): T | undefined {
+  const current = candidateItems?.find(item => item.id === id);
+  if (current) return current;
+  const entityChange = changes.find(change => {
+    const segments = normalizeSyncPath(change.path).split('/').slice(1).map(unescapeSegment);
+    return segments.length === 2 && segments[0] === collection && segments[1] === id;
+  });
+  const snapshot = entityChange?.afterExists === false ? entityChange.before : entityChange?.after ?? entityChange?.before;
+  return snapshot && typeof snapshot === 'object' ? snapshot as T : undefined;
+}
+
+/**
+ * Derives the structural read-set from the validated candidate and server-derived writes.
+ * Returned entity paths cover object existence as well as every descendant field version.
+ */
+export function deriveStructuralDependencyPaths(
+  candidate: DesignDocument,
+  changes: readonly DocumentChange[],
+): string[] {
+  const dependencies = new Set<string>();
+  const add = (collection: string, id: string | undefined, property = '@exists') => {
+    if (id) dependencies.add(`/${collection}/${escapeSegment(id)}/${property}`);
+  };
+  const changed = new Map<string, Set<string>>();
+  for (const change of changes) {
+    const [collection, id] = normalizeSyncPath(change.path).split('/').slice(1).map(unescapeSegment);
+    if (!collection || !id || !['tableRelations', 'keys', 'columns'].includes(collection)) continue;
+    const ids = changed.get(collection) ?? new Set<string>(); ids.add(id); changed.set(collection, ids);
+  }
+
+  for (const id of changed.get('tableRelations') ?? []) {
+    const relation = changedEntity(candidate.tableRelations, 'tableRelations', id, changes);
+    if (!relation || !('sourceTableId' in relation) || !('targetTableId' in relation)) continue;
+    add('tables', relation.sourceTableId); add('tables', relation.targetTableId);
+    for (const columnId of [...(relation.physical?.sourceColumnIds ?? []), ...(relation.physical?.targetColumnIds ?? [])]) {
+      add('columns', columnId);
+      add('columns', columnId, 'tableId');
+      add('columns', columnId, 'physical/type');
+    }
+    if (relation.physical) {
+      for (const key of candidate.keys ?? []) {
+        if (key.tableId !== relation.targetTableId || !['primary', 'unique'].includes(key.kind)) continue;
+        if (key.columnIds.length !== relation.physical.targetColumnIds.length || key.columnIds.some((columnId, index) => columnId !== relation.physical!.targetColumnIds[index])) continue;
+        add('keys', key.id);
+        add('keys', key.id, 'tableId');
+        add('keys', key.id, 'kind');
+        add('keys', key.id, 'columnIds');
+      }
+    }
+  }
+  for (const id of changed.get('keys') ?? []) {
+    const key = changedEntity(candidate.keys, 'keys', id, changes);
+    if (!key || !('tableId' in key) || !('columnIds' in key)) continue;
+    add('tables', key.tableId);
+    for (const columnId of key.columnIds) {
+      add('columns', columnId);
+      add('columns', columnId, 'tableId');
+    }
+  }
+  for (const id of changed.get('columns') ?? []) {
+    const column = changedEntity(candidate.columns, 'columns', id, changes);
+    if (!column || !('tableId' in column) || !('physical' in column)) continue;
+    add('tables', column.tableId);
+    add('enums', column.physical.type.enumId);
+  }
+  return [...dependencies].sort();
+}
+
 export function claimedChangesMatch(derived: readonly DocumentChange[], claimed: readonly DocumentChange[]): boolean {
   return requestFingerprint(derived) === requestFingerprint(claimed);
 }

@@ -6,6 +6,7 @@ import {
   canApplyInverse,
   claimedChangesMatch,
   diffSharedDocument,
+  deriveStructuralDependencyPaths,
   findFieldVersionConflicts,
   inverseChanges,
   isDeletionChange,
@@ -168,5 +169,42 @@ describe('shared document sync model', () => {
     after.layout.relations = [{ relationId: 'relation', viewId: 'domain', offset: 12, bend: { x: 5, y: 6 } }];
     const result = applyChanges(before, diffSharedDocument(before, after));
     expect(sharedDocument(result)).toEqual(sharedDocument(after));
+  });
+
+  it('derives structural dependencies from candidate FK, key, and enum references', () => {
+    const candidate = fixture();
+    candidate.tables!.push({ ...structuredClone(candidate.tables![0]!), id: 'parent' });
+    const column = (id: string, tableId: string, enumId?: string) => ({ id, tableId, scope: 'both' as const, logical: { name: id, definition: '', semanticType: '', required: false }, physical: { name: id, type: { name: enumId ? 'status' : 'uuid', ...(enumId && { enumId }), isArray: false }, nullable: false, defaultExpression: null, comment: '' }, customProperties: { common: {}, logical: {}, physical: {} } });
+    candidate.columns = [column('child-id', 'table'), column('parent-id', 'parent', 'status')];
+    candidate.keys = [{ id: 'parent-key', tableId: 'parent', scope: 'both', kind: 'primary', name: 'pk', columnIds: ['parent-id'] }];
+    candidate.tableRelations = [{ id: 'fk', sourceTableId: 'table', targetTableId: 'parent', scope: 'both', logical: { name: '', cardinality: 'one-to-many', required: false }, physical: { name: 'fk', sourceColumnIds: ['child-id'], targetColumnIds: ['parent-id'], onDelete: 'NO ACTION', onUpdate: 'NO ACTION' } }];
+    const changes = [
+      { path: '/tableRelations/fk/physical', before: null, after: candidate.tableRelations[0]!.physical },
+      { path: '/keys/parent-key/columnIds', before: [], after: ['parent-id'] },
+      { path: '/columns/parent-id/physical/type', before: { name: 'uuid', isArray: false }, after: candidate.columns[1]!.physical.type },
+    ];
+    expect(deriveStructuralDependencyPaths(candidate, changes)).toEqual([
+      '/columns/child-id/@exists', '/columns/child-id/physical/type', '/columns/child-id/tableId',
+      '/columns/parent-id/@exists', '/columns/parent-id/physical/type', '/columns/parent-id/tableId',
+      '/enums/status/@exists', '/keys/parent-key/@exists', '/keys/parent-key/columnIds',
+      '/keys/parent-key/kind', '/keys/parent-key/tableId', '/tables/parent/@exists', '/tables/table/@exists',
+    ]);
+    const fkOnly = [changes[0]!];
+    const dependencies = deriveStructuralDependencyPaths(candidate, fkOnly);
+    expect(dependencies).toContain('/keys/parent-key/columnIds');
+    expect(findFieldVersionConflicts({ kind: 'reconnect', baseSequence: 4, changes: fkOnly, dependencyPaths: dependencies }, {
+      '/keys/parent-key/columnIds': 5,
+    })).toContain('/keys/parent-key/columnIds');
+  });
+
+  it('does not make unrelated table labels a dependency of structural edits', () => {
+    const candidate = fixture();
+    candidate.columns = [{ id: 'commented', tableId: 'table', scope: 'both', logical: { name: '', definition: '', semanticType: '', required: false }, physical: { name: 'commented', type: { name: 'text', isArray: false }, nullable: true, defaultExpression: null, comment: 'mine' }, customProperties: { common: {}, logical: {}, physical: {} } }];
+    const changes = [{ path: '/columns/commented/physical/comment', before: '', after: 'mine' }];
+    const dependencies = deriveStructuralDependencyPaths(candidate, changes);
+    expect(dependencies).toContain('/tables/table/@exists');
+    expect(findFieldVersionConflicts({ kind: 'reconnect', baseSequence: 1, changes, dependencyPaths: dependencies }, {
+      '/tables/table/logical/name': 2,
+    })).toEqual([]);
   });
 });
