@@ -304,7 +304,12 @@ export function CommentsPanel({
     );
     return () => clearTimeout(timer);
   }, [activeThreadId, showResolved, allViews, threads]);
-  async function mutate(url: string, method: string, value: unknown): Promise<boolean> {
+  async function mutate(
+    url: string,
+    method: string,
+    value: unknown,
+    navigate = true,
+  ): Promise<boolean> {
     if (mutation.current) return false;
     mutation.current = true;
     ++threadRevision.current;
@@ -318,7 +323,7 @@ export function CommentsPanel({
             ? items.map((t) => (t.id === thread.id ? thread : t))
             : [...items, thread],
         );
-        onNavigate(thread);
+        if (navigate) onNavigate(thread);
       }
       return true;
     } catch (e) {
@@ -417,7 +422,12 @@ export function CommentsPanel({
               <Button
                 disabled={busy}
                 onClick={() =>
-                  void mutate(`/api/threads/${thread.id}`, 'PATCH', { resolved: !thread.resolved })
+                  void mutate(
+                    `/api/threads/${thread.id}`,
+                    'PATCH',
+                    { resolved: !thread.resolved },
+                    false,
+                  )
                 }
               >
                 {thread.resolved ? '다시 열기' : '해결'}
