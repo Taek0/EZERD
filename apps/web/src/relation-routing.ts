@@ -43,7 +43,7 @@ function retraces(points:Point[]){
 }
 function score(points:Point[]){return points.reduce((n,p,i)=>n+(i?distance(points[i-1]!,p):0),0)+Math.max(0,points.length-2)*48;}
 /** Sparse visibility grid, with a direction penalty to prefer fewer orthogonal bends. */
-function search(start:Point,end:Point,boxes:RelationBounds[]):Point[]|null{
+function search(start:Point,end:Point,boxes:RelationBounds[],startAxis?:0|1,endAxis?:0|1):Point[]|null{
  if(same(start,end))return [start];
  const xs=[...new Set([start.x,end.x,...boxes.flatMap(r=>[r.x,r.x+r.width])])].sort((a,b)=>a-b);
  const ys=[...new Set([start.y,end.y,...boxes.flatMap(r=>[r.y,r.y+r.height])])].sort((a,b)=>a-b);
@@ -58,10 +58,11 @@ function search(start:Point,end:Point,boxes:RelationBounds[]):Point[]|null{
  while(heap.length){
   const current=pop();if(current.cost!==costs.get(current.key))continue;
   const at=Math.floor(current.key/2),axis=current.key%2,p=point(at);
-  if(at===to){const result:Point[]=[];let key:number|undefined=current.key;while(key!==undefined){result.push(point(Math.floor(key/2)));key=previous.get(key);}return simplify(result.reverse());}
+  if(at===to&&(endAxis===undefined||axis===endAxis)){const result:Point[]=[];let key:number|undefined=current.key;while(key!==undefined){result.push(point(Math.floor(key/2)));key=previous.get(key);}return simplify(result.reverse());}
   const x=at%xs.length,y=Math.floor(at/xs.length);
   for(const [nx,ny,nextAxis] of [[x-1,y,0],[x+1,y,0],[x,y-1,1],[x,y+1,1]]){
    if(nx!<0||ny!<0||nx!>=xs.length||ny!>=ys.length)continue;
+   if(at===from&&startAxis!==undefined&&nextAxis!==startAxis)continue;
    const next=ny!*xs.length+nx!,q=point(next);
    if(boxes.some(r=>inside(q,r)||segmentCrossesBounds(p,q,r)))continue;
    const key=next*2+nextAxis!,cost=current.cost+distance(p,q)+(axis===nextAxis?0:48);
@@ -102,10 +103,11 @@ export function relationGeometry(a:RelationBounds,b:RelationBounds,labelWidth:nu
   const points=simplify([s.tip,...middle,t.tip]);
   // Simplification must not reverse an attachment into the table.
   if(!clear(points,raw)||retraces(points))return;
+  if(requested&&!points.slice(1,-1).some(p=>same(p,requested)))return;
   const cost=score(points);if(cost<bestScore){best=points;bestScore=cost;}
   return true;
  };
- const sourcePaths=new Map<Port,Point[]|null>(),targetPaths=new Map<Port,Point[]|null>();
+ const sourcePaths=new Map<string,Point[]|null>(),targetPaths=new Map<string,Point[]|null>();
  if(requested)candidates.sort((a,b)=>(distance(a.s.stub,requested)+distance(requested,a.t.stub))-(distance(b.s.stub,requested)+distance(requested,b.t.stub)));
  for(const {s,t} of candidates){
   if(requested){
@@ -115,10 +117,13 @@ export function relationGeometry(a:RelationBounds,b:RelationBounds,labelWidth:nu
    let direct=false;
    for(const before of firstDirect)for(const after of lastDirect)direct=!!consider(s,t,[...before,...after])||direct;
    if(direct||distance(s.stub,requested)+distance(requested,t.stub)+72>=bestScore)continue;
-   if(!sourcePaths.has(s))sourcePaths.set(s,search(s.stub,requested,boxes));
-   if(!targetPaths.has(t))targetPaths.set(t,search(requested,t.stub,boxes));
-   const first=sourcePaths.get(s),last=targetPaths.get(t);
-   for(const before of [...firstDirect,...(first?[first]:[])])for(const after of [...lastDirect,...(last?[last]:[])])consider(s,t,[...before,...after]);
+   for(const axis of [0,1] as const){
+    const sk=s.stub.x+','+s.stub.y+':'+axis,tk=t.stub.x+','+t.stub.y+':'+axis;
+    if(!sourcePaths.has(sk))sourcePaths.set(sk,search(s.stub,requested,boxes,undefined,axis));
+    if(!targetPaths.has(tk))targetPaths.set(tk,search(requested,t.stub,boxes,axis===0?1:0));
+    const first=sourcePaths.get(sk),last=targetPaths.get(tk);
+    for(const before of [...firstDirect,...(first?[first]:[])])for(const after of [...lastDirect,...(last?[last]:[])])consider(s,t,[...before,...after]);
+   }
    continue;
   }
   consider(s,t,[s.stub,{x:s.stub.x,y:t.stub.y},t.stub]);
