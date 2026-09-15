@@ -6,3 +6,5 @@
 - 타입 폭에 입력 여유를 추가하고 긴 타입 텍스트에 줄바꿈을 허용한다.
 - 웹 타입 검사 및 TableEditor/table-geometry 테스트 18개 통과. 기존 브라우저 스크립트에 열기, 선택 종료, Escape 취소, Tab 종료 확인을 추가했다. 브라우저 실행은 부모 작업의 검증 단계에서 진행한다.
 - 개발 서버는 시작하지 않았다. 기존 무관한 변경은 커밋에서 제외한다.
+
+최종 브라우저 검증: browser-direct-editing-smoke.mjs 및 browser-delete-shortcut-smoke.mjs 통과. 타입 클릭 열기, 선택/Escape/Tab 종료, 기존 FK/관계선 조작과 Delete 삭제 동작을 확인했다. 최종 format:check 통과. 검증 서버 종료 완료.
