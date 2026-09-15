@@ -155,6 +155,12 @@ export class DurableSyncQueue<T, R> {
     return true;
   }
 
+  async markUnresolved(operationId: string, reason: string) {
+    const item = (await this.store.list(this.projectId)).find(value => value.operationId === operationId);
+    if (!item) return;
+    await this.update(item, 'unresolved', reason);
+  }
+
   private async ack(item: StoredSyncOperation<T>, result: R) {
     const outcome = this.outcome(result);
     if (outcome.accepted) {

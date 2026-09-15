@@ -324,6 +324,167 @@ describe('sync client personal state', () => {
     }
   });
 
+  it('refreshes the recipient baseline before retrying an offline unresolved remote-object edit', async () => {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: { protocol: 'http:', host: 'test.local' } });
+    const initial = createEmptyDocument();
+    const remote = structuredClone(initial);
+    remote.domains = [{ id: 'remote', name: 'remote', description: '' }];
+    const edited = structuredClone(remote);
+    edited.domains[0]!.description = 'mine';
+    const store = new MemorySyncOperationStore<SyncOperationInput>();
+    let baselineCalls = 0;
+    let submitted!: (operation: SyncOperationInput) => void;
+    const submittedPromise = new Promise<SyncOperationInput>(resolve => { submitted = resolve; });
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith('/sync-baseline')) {
+        baselineCalls++;
+        if (baselineCalls === 1) return json({ baselineId: ids.baseline, sequence: 0, baselineIssuedAt: issuedAt, document: initial });
+        if (baselineCalls === 2) return json({}, 503);
+        return json({ baselineId: ids.nextBaseline, sequence: 1, baselineIssuedAt: '2026-09-15T00:01:00.000Z', document: remote });
+      }
+      if (path.includes('/history?') || path.includes('/events?')) return json([]);
+      if (path.endsWith('/operations') && init?.method === 'POST') {
+        const operation = JSON.parse(String(init.body)) as SyncOperationInput;
+        submitted(operation);
+        return json({ operationId: operation.operationId, groupId: operation.groupId, sequence: 2, status: 'accepted', actor: { id: ids.actor, username: 'tester', color: '#112233' }, changedPaths: operation.changes.map(change => change.path), createdAt: issuedAt, nextBaseline: { baselineId: ids.baseline, baseSequence: 2, baselineIssuedAt: issuedAt }, document: operation.document });
+      }
+      return json({}, 404);
+    }) as typeof fetch;
+    const runtime = new ProjectSyncRuntime({ projectId: ids.project, userId: ids.user, clientId: ids.client, session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt }, initialDocument: initial, onChange: () => {}, fetcher, socketFactory: socketStub, store });
+    try {
+      await runtime.start();
+      (runtime as unknown as { applyEvent(event: unknown): void }).applyEvent({ operationId: '00000000-0000-4000-8000-000000000050', groupId: '00000000-0000-4000-8000-000000000051', sequence: 1, status: 'accepted', actor: { id: ids.actor, username: 'remote', color: '#112233' }, changes: [{ path: '/domains/remote', before: null, after: remote.domains[0], beforeExists: false }], changedPaths: ['/domains/remote'], createdAt: issuedAt, nextBaseline: { baselineId: '00000000-0000-4000-8000-000000000052', baseSequence: 1, baselineIssuedAt: issuedAt }, document: remote });
+      await runtime.edit(edited);
+      const unresolved = (await store.list(`${ids.user}:${ids.project}`))[0]!;
+      expect(unresolved.state).toBe('unresolved');
+      await runtime.reapply(unresolved.operationId);
+      const replay = await submittedPromise;
+      expect(baselineCalls).toBe(3);
+      expect(replay.baselineId).toBe(ids.nextBaseline);
+      expect(replay.changes).toEqual([{ path: '/domains/remote/description', before: '', after: 'mine' }]);
+      expect((await store.list(`${ids.user}:${ids.project}`)).some(item => item.operationId === unresolved.operationId)).toBe(false);
+    } finally {
+      runtime.stop();
+      Object.defineProperty(globalThis, 'location', { configurable: true, value: originalLocation });
+    }
+  });
+
+  it('carries a pending creator baseline through recipient refresh before editing its object', async () => {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: { protocol: 'http:', host: 'test.local' } });
+    const initial = createEmptyDocument();
+    const created = structuredClone(initial);
+    created.domains = [{ id: 'mine', name: 'mine', description: '' }];
+    const remote = structuredClone(initial);
+    remote.domains = [{ id: 'theirs', name: 'theirs', description: '' }];
+    const edited = structuredClone(created);
+    edited.domains.push(remote.domains[0]!);
+    edited.domains[0]!.description = 'edited';
+    let firstOperation!: SyncOperationInput;
+    let releaseFirst!: (response: Response) => void;
+    const firstResponse = new Promise<Response>(resolve => { releaseFirst = resolve; });
+    let submitCount = 0;
+    let secondSubmitted!: (operation: SyncOperationInput) => void;
+    const secondPromise = new Promise<SyncOperationInput>(resolve => { secondSubmitted = resolve; });
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith('/sync-baseline')) {
+        return submitCount === 0
+          ? json({ baselineId: ids.baseline, sequence: 0, baselineIssuedAt: issuedAt, document: initial })
+          : json({ baselineId: '00000000-0000-4000-8000-000000000060', sequence: 1, baselineIssuedAt: issuedAt, document: remote });
+      }
+      if (path.includes('/history?') || path.includes('/events?')) return json([]);
+      if (path.endsWith('/operations') && init?.method === 'POST') {
+        const operation = JSON.parse(String(init.body)) as SyncOperationInput;
+        submitCount++;
+        if (submitCount === 1) { firstOperation = operation; return firstResponse; }
+        secondSubmitted(operation);
+        return json({ operationId: operation.operationId, groupId: operation.groupId, sequence: 3, status: 'accepted', actor: { id: ids.actor, username: 'tester', color: '#112233' }, changedPaths: operation.changes.map(change => change.path), createdAt: issuedAt, nextBaseline: { baselineId: ids.baseline, baseSequence: 3, baselineIssuedAt: issuedAt }, document: operation.document });
+      }
+      return json({}, 404);
+    }) as typeof fetch;
+    const runtime = new ProjectSyncRuntime({ projectId: ids.project, userId: ids.user, clientId: ids.client, session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt }, initialDocument: initial, onChange: () => {}, fetcher, socketFactory: socketStub, store: new MemorySyncOperationStore() });
+    try {
+      await runtime.start();
+      await runtime.edit(created);
+      while (!firstOperation) await Promise.resolve();
+      (runtime as unknown as { applyEvent(event: unknown): void }).applyEvent({ operationId: '00000000-0000-4000-8000-000000000061', groupId: '00000000-0000-4000-8000-000000000062', sequence: 1, status: 'accepted', actor: { id: ids.actor, username: 'remote', color: '#112233' }, changes: [{ path: '/domains/theirs', before: null, after: remote.domains[0], beforeExists: false }], changedPaths: ['/domains/theirs'], createdAt: issuedAt, nextBaseline: { baselineId: '00000000-0000-4000-8000-000000000063', baseSequence: 1, baselineIssuedAt: issuedAt }, document: remote });
+      await runtime.edit(edited);
+      const acceptedFirst = structuredClone(edited);
+      acceptedFirst.domains[0]!.description = '';
+      releaseFirst(json({ operationId: firstOperation.operationId, groupId: firstOperation.groupId, sequence: 2, status: 'accepted', actor: { id: ids.actor, username: 'tester', color: '#112233' }, changedPaths: firstOperation.changes.map(change => change.path), createdAt: issuedAt, nextBaseline: { baselineId: ids.nextBaseline, baseSequence: 2, baselineIssuedAt: issuedAt }, document: acceptedFirst }));
+      const second = await secondPromise;
+      expect(second.baselineId).toBe(ids.nextBaseline);
+      expect(second.baselineDocument.domains).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'mine', description: '' }), expect.objectContaining({ id: 'theirs' })]));
+      expect(second.changes).toEqual([{ path: '/domains/mine/description', before: '', after: 'edited' }]);
+      expect(second.document.domains).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'mine', description: 'edited' }), expect.objectContaining({ id: 'theirs' })]));
+      expect(second).not.toHaveProperty('rebaseAncestors');
+    } finally {
+      runtime.stop();
+      Object.defineProperty(globalThis, 'location', { configurable: true, value: originalLocation });
+    }
+  });
+
+  it('keeps a newer recipient baseline when an older pending ACK arrives before submit', async () => {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: { protocol: 'http:', host: 'test.local' } });
+    const initial = createEmptyDocument();
+    initial.domains = [{ id: 'local', name: 'old', description: '' }];
+    const localEdit = structuredClone(initial);
+    localEdit.domains[0]!.name = 'pending';
+    const recipient = structuredClone(initial);
+    recipient.domains.push({ id: 'remote', name: 'remote', description: '' });
+    const remoteEdit = structuredClone(recipient);
+    remoteEdit.domains[1]!.description = 'mine';
+    let baselineCalls = 0;
+    let firstOperation!: SyncOperationInput;
+    let releaseFirst!: (response: Response) => void;
+    const firstResponse = new Promise<Response>(resolve => { releaseFirst = resolve; });
+    let submitCount = 0;
+    let secondSubmitted!: (operation: SyncOperationInput) => void;
+    const secondPromise = new Promise<SyncOperationInput>(resolve => { secondSubmitted = resolve; });
+    const recipientBaselineId = '00000000-0000-4000-8000-000000000070';
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith('/sync-baseline')) {
+        baselineCalls++;
+        return baselineCalls === 1
+          ? json({ baselineId: ids.baseline, sequence: 0, baselineIssuedAt: issuedAt, document: initial })
+          : json({ baselineId: recipientBaselineId, sequence: 2, baselineIssuedAt: '2026-09-15T00:02:00.000Z', document: recipient });
+      }
+      if (path.includes('/history?') || path.includes('/events?')) return json([]);
+      if (path.endsWith('/operations') && init?.method === 'POST') {
+        const operation = JSON.parse(String(init.body)) as SyncOperationInput;
+        submitCount++;
+        if (submitCount === 1) { firstOperation = operation; return firstResponse; }
+        secondSubmitted(operation);
+        return json({ operationId: operation.operationId, groupId: operation.groupId, sequence: 3, status: 'accepted', actor: { id: ids.actor, username: 'tester', color: '#112233' }, changedPaths: operation.changes.map(change => change.path), createdAt: issuedAt, nextBaseline: { baselineId: ids.baseline, baseSequence: 3, baselineIssuedAt: issuedAt }, document: operation.document });
+      }
+      return json({}, 404);
+    }) as typeof fetch;
+    const runtime = new ProjectSyncRuntime({ projectId: ids.project, userId: ids.user, clientId: ids.client, session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt }, initialDocument: initial, onChange: () => {}, fetcher, socketFactory: socketStub, store: new MemorySyncOperationStore() });
+    try {
+      await runtime.start();
+      await runtime.edit(localEdit);
+      while (!firstOperation) await Promise.resolve();
+      (runtime as unknown as { applyEvent(event: unknown): void }).applyEvent({ operationId: '00000000-0000-4000-8000-000000000071', groupId: '00000000-0000-4000-8000-000000000072', sequence: 2, status: 'accepted', actor: { id: ids.actor, username: 'remote', color: '#112233' }, changes: [{ path: '/domains/remote', before: null, after: recipient.domains[1], beforeExists: false }], changedPaths: ['/domains/remote'], createdAt: issuedAt, nextBaseline: { baselineId: '00000000-0000-4000-8000-000000000073', baseSequence: 2, baselineIssuedAt: issuedAt }, document: recipient });
+      await runtime.edit(remoteEdit);
+      const olderAccepted = structuredClone(localEdit);
+      releaseFirst(json({ operationId: firstOperation.operationId, groupId: firstOperation.groupId, sequence: 1, status: 'accepted', actor: { id: ids.actor, username: 'tester', color: '#112233' }, changedPaths: firstOperation.changes.map(change => change.path), createdAt: issuedAt, nextBaseline: { baselineId: ids.nextBaseline, baseSequence: 1, baselineIssuedAt: '2026-09-15T00:01:00.000Z' }, document: olderAccepted }));
+      const second = await secondPromise;
+      expect(second.baselineId).toBe(recipientBaselineId);
+      expect(second.baseSequence).toBe(2);
+      expect(second.baselineDocument.domains).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'remote', description: '' })]));
+      expect(second.changes).toEqual([{ path: '/domains/remote/description', before: '', after: 'mine' }]);
+      expect(second).not.toHaveProperty('rebaseAncestors');
+    } finally {
+      runtime.stop();
+      Object.defineProperty(globalThis, 'location', { configurable: true, value: originalLocation });
+    }
+  });
+
   it('discards an unresolved edit from durable storage', async () => {
     const originalLocation = globalThis.location;
     Object.defineProperty(globalThis, 'location', { configurable: true, value: { protocol: 'http:', host: 'test.local' } });
@@ -490,6 +651,150 @@ describe('sync client personal state', () => {
       await expect(runtime.undo()).rejects.toThrow('409');
       expect(snapshots.at(-1)).toMatchObject({ canUndo: true, canRedo: false });
       expect(snapshots.at(-1)?.document.domains[0]?.name).toBe('mine');
+    } finally {
+      runtime.stop();
+      Object.defineProperty(globalThis, 'location', { configurable: true, value: originalLocation });
+    }
+  });
+
+  it('refreshes a recipient-bound baseline before editing an object created by another client', async () => {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: { protocol: 'http:', host: 'test.local' } });
+    const initial = createEmptyDocument();
+    const remote = structuredClone(initial);
+    remote.domains = [{ id: 'remote-domain', name: 'remote', description: '' }];
+    const edited = structuredClone(remote);
+    edited.domains[0]!.description = 'mine';
+    const foreignBaseline = '00000000-0000-4000-8000-000000000020';
+    const recipientBaseline = '00000000-0000-4000-8000-000000000021';
+    let baselineCalls = 0;
+    let submitted!: (operation: SyncOperationInput) => void;
+    const submittedOperation = new Promise<SyncOperationInput>(resolve => { submitted = resolve; });
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith('/sync-baseline')) {
+        expect(JSON.parse(String(init?.body))).toEqual({ clientId: ids.client });
+        baselineCalls++;
+        return baselineCalls === 1
+          ? json({ baselineId: ids.baseline, sequence: 0, baselineIssuedAt: issuedAt, document: initial })
+          : json({ baselineId: recipientBaseline, sequence: 1, baselineIssuedAt: '2026-09-15T00:01:00.000Z', document: remote });
+      }
+      if (path.includes('/history?') || path.includes('/events?')) return json([]);
+      if (path.endsWith('/operations') && init?.method === 'POST') {
+        const operation = JSON.parse(String(init.body)) as SyncOperationInput;
+        submitted(operation);
+        return json({ operationId: operation.operationId, groupId: operation.groupId, sequence: 2, status: 'accepted', actor: { id: ids.actor, username: 'tester', color: '#112233' }, changedPaths: operation.changes.map(change => change.path), createdAt: issuedAt, nextBaseline: { baselineId: ids.nextBaseline, baseSequence: 2, baselineIssuedAt: issuedAt }, document: operation.document });
+      }
+      return json({}, 404);
+    }) as typeof fetch;
+    const runtime = new ProjectSyncRuntime({ projectId: ids.project, userId: ids.user, clientId: ids.client, session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt }, initialDocument: initial, onChange: () => {}, fetcher, socketFactory: socketStub, store: new MemorySyncOperationStore() });
+    try {
+      await runtime.start();
+      (runtime as unknown as { applyEvent(event: unknown): void }).applyEvent({
+        operationId: '00000000-0000-4000-8000-000000000022', groupId: '00000000-0000-4000-8000-000000000023',
+        sequence: 1, status: 'accepted', actor: { id: ids.actor, username: 'remote', color: '#112233' },
+        changes: [{ path: '/domains/remote-domain', before: null, after: remote.domains[0], beforeExists: false }],
+        changedPaths: ['/domains/remote-domain'], createdAt: issuedAt,
+        nextBaseline: { baselineId: foreignBaseline, baseSequence: 1, baselineIssuedAt: issuedAt }, document: remote,
+      });
+      await runtime.edit(edited);
+      const operation = await submittedOperation;
+      expect(baselineCalls).toBe(2);
+      expect(operation.baselineId).toBe(recipientBaseline);
+      expect(operation.baselineId).not.toBe(foreignBaseline);
+      expect(operation.baselineDocument.domains[0]).toMatchObject({ id: 'remote-domain', description: '' });
+      expect(operation.document.domains[0]).toMatchObject({ id: 'remote-domain', description: 'mine' });
+      expect(operation.changes).toEqual([{ path: '/domains/remote-domain/description', before: '', after: 'mine' }]);
+    } finally {
+      runtime.stop();
+      Object.defineProperty(globalThis, 'location', { configurable: true, value: originalLocation });
+    }
+  });
+
+  it('waits for a second recipient baseline when another remote event arrives during refresh', async () => {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: { protocol: 'http:', host: 'test.local' } });
+    const initial = createEmptyDocument();
+    const firstRemote = structuredClone(initial);
+    firstRemote.domains = [{ id: 'first', name: 'first', description: '' }];
+    const secondRemote = structuredClone(firstRemote);
+    secondRemote.domains.push({ id: 'second', name: 'second', description: '' });
+    const edited = structuredClone(firstRemote);
+    edited.domains[0]!.description = 'mine';
+    let baselineCalls = 0;
+    let releaseRefresh!: (response: Response) => void;
+    const refreshResponse = new Promise<Response>(resolve => { releaseRefresh = resolve; });
+    let refreshStarted!: () => void;
+    const refreshStartedPromise = new Promise<void>(resolve => { refreshStarted = resolve; });
+    let submitted!: (operation: SyncOperationInput) => void;
+    const submittedOperation = new Promise<SyncOperationInput>(resolve => { submitted = resolve; });
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith('/sync-baseline')) {
+        baselineCalls++;
+        if (baselineCalls === 1) return json({ baselineId: ids.baseline, sequence: 0, baselineIssuedAt: issuedAt, document: initial });
+        if (baselineCalls === 2) { refreshStarted(); return refreshResponse; }
+        return json({ baselineId: '00000000-0000-4000-8000-000000000032', sequence: 2, baselineIssuedAt: issuedAt, document: secondRemote });
+      }
+      if (path.includes('/history?') || path.includes('/events?')) return json([]);
+      if (path.endsWith('/operations') && init?.method === 'POST') {
+        const operation = JSON.parse(String(init.body)) as SyncOperationInput;
+        submitted(operation);
+        return json({ operationId: operation.operationId, groupId: operation.groupId, sequence: 3, status: 'accepted', actor: { id: ids.actor, username: 'tester', color: '#112233' }, changedPaths: operation.changes.map(change => change.path), createdAt: issuedAt, nextBaseline: { baselineId: ids.nextBaseline, baseSequence: 3, baselineIssuedAt: issuedAt }, document: operation.document });
+      }
+      return json({}, 404);
+    }) as typeof fetch;
+    const runtime = new ProjectSyncRuntime({ projectId: ids.project, userId: ids.user, clientId: ids.client, session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt }, initialDocument: initial, onChange: () => {}, fetcher, socketFactory: socketStub, store: new MemorySyncOperationStore() });
+    const applyEvent = (runtime as unknown as { applyEvent(event: unknown): void }).applyEvent.bind(runtime);
+    const event = (sequence: number, operationId: string, document: typeof initial, changes: SyncOperationInput['changes']) => ({ operationId, groupId: '00000000-0000-4000-8000-000000000034', sequence, status: 'accepted', actor: { id: ids.actor, username: 'remote', color: '#112233' }, changes, changedPaths: changes.map(change => change.path), createdAt: issuedAt, nextBaseline: { baselineId: '00000000-0000-4000-8000-000000000035', baseSequence: sequence, baselineIssuedAt: issuedAt }, document });
+    try {
+      await runtime.start();
+      applyEvent(event(1, '00000000-0000-4000-8000-000000000030', firstRemote, [{ path: '/domains/first', before: null, after: firstRemote.domains[0], beforeExists: false }]));
+      const editing = runtime.edit(edited);
+      await refreshStartedPromise;
+      applyEvent(event(2, '00000000-0000-4000-8000-000000000031', secondRemote, [{ path: '/domains/second', before: null, after: secondRemote.domains[1], beforeExists: false }]));
+      releaseRefresh(json({ baselineId: '00000000-0000-4000-8000-000000000033', sequence: 1, baselineIssuedAt: issuedAt, document: firstRemote }));
+      await editing;
+      const operation = await submittedOperation;
+      expect(baselineCalls).toBe(3);
+      expect(operation.baseSequence).toBe(2);
+      expect(operation.document.domains).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'first', description: 'mine' }), expect.objectContaining({ id: 'second' })]));
+    } finally {
+      runtime.stop();
+      Object.defineProperty(globalThis, 'location', { configurable: true, value: originalLocation });
+    }
+  });
+
+  it('keeps an unrepresentable remote-object edit unresolved when baseline refresh fails', async () => {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: { protocol: 'http:', host: 'test.local' } });
+    const initial = createEmptyDocument();
+    const remote = structuredClone(initial);
+    remote.domains = [{ id: 'remote', name: 'remote', description: '' }];
+    const edited = structuredClone(remote);
+    edited.domains[0]!.description = 'mine';
+    const store = new MemorySyncOperationStore<SyncOperationInput>();
+    let baselineCalls = 0;
+    let submits = 0;
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith('/sync-baseline')) {
+        baselineCalls++;
+        return baselineCalls === 1 ? json({ baselineId: ids.baseline, sequence: 0, baselineIssuedAt: issuedAt, document: initial }) : json({}, 503);
+      }
+      if (path.includes('/history?') || path.includes('/events?')) return json([]);
+      if (path.endsWith('/operations') && init?.method === 'POST') { submits++; return json({}, 500); }
+      return json({}, 404);
+    }) as typeof fetch;
+    const runtime = new ProjectSyncRuntime({ projectId: ids.project, userId: ids.user, clientId: ids.client, session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt }, initialDocument: initial, onChange: () => {}, fetcher, socketFactory: socketStub, store });
+    try {
+      await runtime.start();
+      (runtime as unknown as { applyEvent(event: unknown): void }).applyEvent({ operationId: '00000000-0000-4000-8000-000000000040', groupId: '00000000-0000-4000-8000-000000000041', sequence: 1, status: 'accepted', actor: { id: ids.actor, username: 'remote', color: '#112233' }, changes: [{ path: '/domains/remote', before: null, after: remote.domains[0], beforeExists: false }], changedPaths: ['/domains/remote'], createdAt: issuedAt, nextBaseline: { baselineId: '00000000-0000-4000-8000-000000000042', baseSequence: 1, baselineIssuedAt: issuedAt }, document: remote });
+      await runtime.edit(edited);
+      const items = await store.list(`${ids.user}:${ids.project}`);
+      expect(submits).toBe(0);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ state: 'unresolved', baselineAt: Date.parse(issuedAt), operation: { baselineId: ids.baseline, baselineIssuedAt: issuedAt } });
     } finally {
       runtime.stop();
       Object.defineProperty(globalThis, 'location', { configurable: true, value: originalLocation });

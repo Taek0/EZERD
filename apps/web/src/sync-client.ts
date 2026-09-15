@@ -34,6 +34,7 @@ export type SyncSnapshot = {
 
 type OwnEdit = { operation: SyncOperationInput; acceptedSequence?: number; commandSourceId?: string };
 type RebasedSyncOperation = SyncOperationInput & { rebaseAncestors?: string[] };
+type IssuedBaseline = { baselineId: string; sequence: number; baselineIssuedAt: string; document: DesignDocument };
 type RuntimeOptions = {
   projectId: string;
   userId: string;
@@ -119,6 +120,8 @@ export class ProjectSyncRuntime {
   private baselineIssuedAt: string;
   private baselineId = newId();
   private baselineDocument: DesignDocument;
+  private baselineRefresh: Promise<void> | undefined;
+  private baselineRefreshFailed = false;
   private cursor: SyncEventCursor<SyncEvent>;
   private readonly rebases = new Map<string, { baselineId: string; baseSequence: number; baselineIssuedAt: string; document: DesignDocument }>();
 
@@ -171,7 +174,7 @@ export class ProjectSyncRuntime {
           const local = operation as RebasedSyncOperation;
           const rebase = [operation.baselineId, ...(local.rebaseAncestors ?? [])]
             .map(baselineId => this.rebases.get(baselineId))
-            .filter((value): value is NonNullable<typeof value> => !!value)
+            .filter((value): value is NonNullable<typeof value> => !!value && value.baseSequence >= operation.baseSequence)
             .sort((left, right) => right.baseSequence - left.baseSequence)[0];
           if (!rebase) return operation;
           const candidate = applyChanges(rebase.document, modelChanges(operation.changes));
@@ -188,7 +191,8 @@ export class ProjectSyncRuntime {
         },
         submit: operation => {
           if (this.stopped) return Promise.reject(new Error('동기화가 중지되었습니다.'));
-          return this.api(`/operations`, { method: 'POST', body: JSON.stringify(operation) }).then(syncOperationResultSchema.parse);
+          const { rebaseAncestors: _localAncestry, ...wireOperation } = operation as RebasedSyncOperation;
+          return this.api(`/operations`, { method: 'POST', body: JSON.stringify(wireOperation) }).then(syncOperationResultSchema.parse);
         },
         lookup: operationId => this.lookup(operationId),
       },
@@ -218,6 +222,8 @@ export class ProjectSyncRuntime {
     if (!changes.length) { this.publish(); return; }
     await this.starting;
     if (this.stopped) return;
+    await this.ensureCurrentBaseline();
+    if (this.stopped) return;
     if (!this.queue) {
       this.error = '동기화 대기열이 준비되지 않아 편집을 보관하지 못했습니다.';
       this.publish();
@@ -226,15 +232,22 @@ export class ProjectSyncRuntime {
     const operationBaseline = sharedDocument(this.baselineDocument);
     let candidate: DesignDocument;
     let claimed = changes;
+    let representable = true;
     try {
       candidate = applyChanges(operationBaseline, changes);
       claimed = diffSharedDocument(operationBaseline, candidate);
     } catch {
-      // A create→edit dependency cannot be represented on the older baseline;
-      // queue the local intent and rebase it after its predecessor ACK.
+      // Keep intent durable without sending a partial claim/full-document mismatch.
       candidate = sharedDocument(next);
+      representable = false;
     }
-    const operation: SyncOperationInput = {
+    const predecessorBaselines = this.pending
+      .filter(item => item.state !== 'unresolved')
+      .flatMap(item => {
+        const predecessor = item.operation as RebasedSyncOperation;
+        return [predecessor.baselineId, ...(predecessor.rebaseAncestors ?? [])];
+      });
+    const operation: RebasedSyncOperation = {
       operationId: newId(),
       groupId: newId(),
       clientId: this.options.clientId,
@@ -246,11 +259,19 @@ export class ProjectSyncRuntime {
       changes: claimed,
       baselineDocument: operationBaseline,
       document: candidate,
+      ...(predecessorBaselines.length ? { rebaseAncestors: [...new Set(predecessorBaselines)] } : {}),
     };
+    const hasPendingPredecessor = this.pending.some(item => item.state !== 'unresolved');
     this.ownPast.push({ operation });
     this.ownFuture = [];
     try {
       await this.queue.enqueue(operation);
+      if (!representable && !hasPendingPredecessor) {
+        await this.queue.markUnresolved(operation.operationId, '현재 서버 기준에서 변경 대상을 찾을 수 없습니다. 연결을 복구한 뒤 재적용해 주세요.');
+        this.error = '편집 의도는 로컬에 보관했지만 현재 서버 기준에 자동 반영할 수 없습니다.';
+        this.publish();
+        return;
+      }
       void this.queue.pump();
     } catch (error) {
       this.error = error instanceof Error ? error.message : '로컬 변경을 보관하지 못했습니다.';
@@ -263,6 +284,8 @@ export class ProjectSyncRuntime {
     if (this.stopped || !this.queue) return;
     const source = (await this.queue.items()).find(item => item.operationId === operationId && item.state === 'unresolved');
     if (!source) return;
+    await this.ensureCurrentBaseline();
+    if (this.stopped) return;
     const operationBaseline = sharedDocument(this.baselineDocument);
     let candidate: DesignDocument;
     try {
@@ -460,6 +483,39 @@ export class ProjectSyncRuntime {
   private async fetchEvents(since: number) {
     const payload = await this.api(`/events?since=${since}`);
     return arrayPayload(payload, 'events').map(value => syncEventSchema.parse(value));
+  }
+
+  private async ensureCurrentBaseline() {
+    while (!this.stopped && this.baselineSequence < this.sequence) {
+      if (!this.baselineRefresh) {
+        this.baselineRefreshFailed = false;
+        const refresh = (async () => {
+          try {
+            const value = await this.api('/sync-baseline', { method: 'POST', body: JSON.stringify({ clientId: this.options.clientId }) }) as IssuedBaseline;
+            if (this.stopped || typeof value.sequence !== 'number' || typeof value.baselineId !== 'string' || typeof value.baselineIssuedAt !== 'string' || !value.document) return;
+            if (value.sequence < this.sequence) return;
+            this.baselineId = value.baselineId;
+            this.baselineSequence = value.sequence;
+            this.baselineIssuedAt = value.baselineIssuedAt;
+            this.baselineDocument = sharedDocument(value.document);
+            this.serverDocument = sharedDocument(value.document);
+            this.sequence = Math.max(this.sequence, value.sequence);
+            this.error = undefined;
+            this.rebuildVisible();
+          } catch (error) {
+            if (this.stopped) return;
+            this.baselineRefreshFailed = true;
+            this.connected = false;
+            this.error = error instanceof Error ? error.message : '최신 동기화 기준을 받지 못했습니다.';
+            this.publish();
+          }
+        })();
+        this.baselineRefresh = refresh;
+        void refresh.finally(() => { if (this.baselineRefresh === refresh) this.baselineRefresh = undefined; });
+      }
+      await this.baselineRefresh;
+      if (this.baselineSequence < this.sequence && this.baselineRefreshFailed) break;
+    }
   }
 
   private applyEvent(event: SyncEvent) {
