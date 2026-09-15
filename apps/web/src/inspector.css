@@ -127,6 +127,9 @@
   overflow: auto;
   display: grid;
   align-content: start;
+  /* Keep collapsed and expanded groups at their content height when the panel
+     is shorter than its contents; overflow belongs to this scrolling body. */
+  grid-auto-rows: max-content;
   gap: 10px;
   padding: 12px 14px 24px;
 }

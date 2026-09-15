@@ -314,6 +314,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         ref={popoverRef}
         shouldSkipAnimation={skipExitAnimation}
         className="ui-select-popover"
+        maxHeight={256}
         {...(portalContainer ? { UNSTABLE_portalContainer: portalContainer } : {})}
       >
         <ListBox className="ui-select-listbox" aria-label={props['aria-label'] ?? '선택 항목'}>

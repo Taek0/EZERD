@@ -441,7 +441,6 @@
   width: var(--trigger-width);
   min-width: 140px;
   max-width: calc(100vw - 16px);
-  max-height: 256px !important;
   padding: 4px 0;
 }
 .ui-select-listbox {
