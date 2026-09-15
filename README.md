@@ -1,5 +1,5 @@
 <p align = "center">
-<img width="3000" height="1200" alt="Image" src="https://github.com/user-attachments/assets/f4353855-cdde-4e53-b40e-97a3d0cd7e15" />
+<img width="1560" height="285" alt="Image" src="https://github.com/user-attachments/assets/fd3b48ca-e0c7-40cb-97e0-58823d1009bf" />
 </p>
 # EZERD
 
