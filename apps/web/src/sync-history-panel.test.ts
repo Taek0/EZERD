@@ -1,10 +1,88 @@
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { SyncHistoryContent, SyncHistoryPanel } from './sync-history-panel.js';
+import { filterHistory, SyncHistoryContent, SyncHistoryPanel } from './sync-history-panel.js';
 import type { SyncSnapshot } from './sync-client.js';
 
 const entityId = '11111111-2222-4333-8444-555555555555';
+
+it('filters each effective change in mixed operations and keeps distinct IDs with equal labels', () => {
+  const changes = [
+    { path: '/layout/nodes/n/position', before: { x: 0, y: 0 }, after: { x: 1, y: 0 } },
+    { path: '/keys/k/columnIds', before: ['a'], after: ['a'] },
+    { path: '/keys/other/columnIds', before: ['a'], after: ['b'] },
+    { path: '/layout/nodes/n/size', before: { width: 1 }, after: { width: 2 } },
+    { path: '/columns/@move/a', before: 0, after: 1 },
+    { path: '/tables/new', before: null, after: { name: 'new' }, beforeExists: false },
+    { path: '/tables/old', before: { name: 'old' }, after: null, afterExists: false },
+  ];
+  const history = [
+    { operationId: 'mixed', changes },
+    { operationId: 'noop', changes: [changes[1]!] },
+  ];
+  expect(filterHistory(history, 'all')).toEqual([
+    { operationId: 'mixed', changes: changes.filter((_, i) => i !== 1) },
+  ]);
+  for (const [filter, index] of [
+    ['move', 0],
+    ['edit', 2],
+    ['resize', 3],
+    ['reorder', 4],
+    ['add', 5],
+    ['delete', 6],
+  ] as const) {
+    expect(filterHistory(history, filter)).toEqual([
+      { operationId: 'mixed', changes: [changes[index]] },
+    ]);
+  }
+});
+
+it('hides historic no-ops and exposes compact operation filters', () => {
+  const snapshot = {
+    document: {},
+    pending: [],
+    history: [
+      {
+        operationId: 'noop',
+        actor: { username: 'hidden actor' },
+        createdAt: 0,
+        changes: [{ path: '/keys/k/columnIds', before: ['a'], after: ['a'] }],
+      },
+    ],
+  } as unknown as SyncSnapshot;
+  const html = renderToStaticMarkup(h(SyncHistoryContent, { snapshot }));
+  expect(html).not.toContain('hidden actor');
+  expect(html).not.toContain('키 컬럼 변경');
+  expect(html).toContain('히스토리 동작 필터');
+  for (const label of ['전체', '추가', '수정', '이동', '크기 변경', '순서 변경', '삭제'])
+    expect(html).toContain(label);
+});
+
+it('shows real edits alongside deletion in the same operation', () => {
+  const snapshot = {
+    document: {},
+    pending: [],
+    history: [
+      {
+        operationId: 'mixed',
+        actor: { username: '설계자' },
+        createdAt: 0,
+        changes: [
+          {
+            path: '/tables/deleted',
+            before: { physical: { name: 'old' } },
+            after: null,
+            afterExists: false,
+          },
+          { path: '/domains/renamed/name', before: '이전', after: '이후' },
+        ],
+      },
+    ],
+  } as unknown as SyncSnapshot;
+  const html = renderToStaticMarkup(h(SyncHistoryContent, { snapshot, onRestore: () => {} }));
+  expect(html).toContain('이전 → 이후');
+  expect(html).toContain('새 객체로 복원');
+});
 
 describe('unified sync history panel', () => {
   it('offers copy for unresolved edits and preview plus restore for deletions', () => {

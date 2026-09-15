@@ -1,9 +1,52 @@
 import { Dialog, DialogTrigger } from 'react-aria-components';
+import { useState } from 'react';
+import { isEffectiveChange } from '@ezerd/model';
 import { UntitledPopover } from './components/ui/untitled.js';
 import { describeChanges, describeDeletedValues, historyMessage } from './sync-history-labels.js';
 import './sync-history-panel.css';
 import type { SyncSnapshot } from './sync-client.js';
-import { Button } from './components/ui/index.js';
+import { Button, TabButton } from './components/ui/index.js';
+import type { HistoryChange } from './sync-history-labels.js';
+
+const historyFilters = [
+  ['all', '전체'],
+  ['add', '추가'],
+  ['edit', '수정'],
+  ['move', '이동'],
+  ['resize', '크기 변경'],
+  ['reorder', '순서 변경'],
+  ['delete', '삭제'],
+] as const;
+type HistoryFilter = (typeof historyFilters)[number][0];
+
+function changeAction(change: HistoryChange): Exclude<HistoryFilter, 'all'> {
+  const path = change.path.replace(/^\/layout/, '');
+  if (/\/\@move\//.test(path)) return 'reorder';
+  if (/^\/[^/]+\/[^/]+$/.test(path)) {
+    if (change.afterExists === false || (change.after === null && change.before !== null))
+      return 'delete';
+    if (change.beforeExists === false || (change.before === null && change.after !== null))
+      return 'add';
+  }
+  if (/^\/nodes\/[^/]+\/position(?:\/|$)/.test(path)) return 'move';
+  if (/^\/nodes\/[^/]+\/size(?:\/|$)/.test(path)) return 'resize';
+  return 'edit';
+}
+
+export function filterHistory<T extends { changes: readonly HistoryChange[] }>(
+  history: readonly T[],
+  filter: HistoryFilter,
+): (T & { changes: HistoryChange[] })[] {
+  return history
+    .map((entry) => ({
+      ...entry,
+      changes: entry.changes.filter(
+        (change) =>
+          isEffectiveChange(change) && (filter === 'all' || changeAction(change) === filter),
+      ),
+    }))
+    .filter((entry) => entry.changes.length > 0);
+}
 
 const date = (value: string | number) =>
   new Date(value).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
@@ -53,8 +96,10 @@ export function SyncHistoryContent({
   notice,
   onClose,
 }: SyncHistoryPanelProps & { onClose?: () => void }) {
-  const deletions = snapshot?.history.filter((entry) => entry.changes.some(isDeletion)) ?? [];
-  const changes = snapshot?.history.filter((entry) => !entry.changes.some(isDeletion)) ?? [];
+  const [filter, setFilter] = useState<HistoryFilter>('all');
+  const history = filterHistory(snapshot?.history ?? [], filter);
+  const deletions = history.filter((entry) => entry.changes.some(isDeletion));
+  const changes = history.filter((entry) => !entry.changes.some(isDeletion));
   const unresolved = snapshot?.pending.filter((item) => item.state === 'unresolved') ?? [];
   return (
     <div className="sync-history-panel sync-history-content">
@@ -109,6 +154,16 @@ export function SyncHistoryContent({
           ))
         )}
       </section>
+      <div className="sync-history-filters" role="group" aria-label="히스토리 동작 필터">
+        {historyFilters.map(([value, label]) => (
+          <TabButton key={value} selected={filter === value} onClick={() => setFilter(value)}>
+            {label}
+          </TabButton>
+        ))}
+      </div>
+      <p className="sync-history-filter-summary" role="status">
+        {historyFilters.find(([value]) => value === filter)![1]} · {history.length}건
+      </p>
       <section>
         <h3>
           삭제 <span>{deletions.length}</span>
@@ -122,11 +177,7 @@ export function SyncHistoryContent({
             .map((entry) => (
               <article key={entry.operationId}>
                 <strong>
-                  {describeChanges(
-                    entry.changes.filter(isDeletion),
-                    snapshot!.document,
-                    snapshot!.history,
-                  ).join(', ')}
+                  {describeChanges(entry.changes, snapshot!.document, snapshot!.history).join(', ')}
                 </strong>
                 <small>
                   {entry.actor.username} · {date(entry.createdAt)}
@@ -141,6 +192,9 @@ export function SyncHistoryContent({
                     </p>
                   ))}
                 </details>
+                {filter !== 'all' && (
+                  <small>복원은 이 편집에서 삭제된 객체 전체에 적용됩니다.</small>
+                )}
                 <div className="sync-history-actions">
                   <Button
                     disabled={!onRestore || activeOperationId === entry.operationId}

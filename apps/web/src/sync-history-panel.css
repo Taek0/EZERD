@@ -29,3 +29,22 @@
 .sync-history-content small {
   overflow-wrap: anywhere;
 }
+
+.sync-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.sync-history-filters .ui-tab-button {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sync-history-filter-summary {
+  margin: 8px 0;
+  font-size: 12px;
+}
