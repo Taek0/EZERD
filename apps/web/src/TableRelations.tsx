@@ -1,3 +1,4 @@
+import { tableRelationLabel } from './table-relation-label.js';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -109,10 +110,7 @@ export function TableRelationsSvg({
           return null;
         const physical =
           viewMode !== 'logical' && !!relation.physical && relation.scope !== 'logical';
-        const attribute = (relation.physical?.targetColumnIds ?? [])
-          .map((id) => doc.columns?.find((c) => c.id === id)?.physical.name || '?')
-          .join(', ');
-        const fullLabel = `${target.physical.name || target.logical.name}.${attribute || relation.logical.name || '관계'}:${source.physical.name || source.logical.name}`;
+        const fullLabel = tableRelationLabel(doc, relation);
         const label = fullLabel;
         const labelWidth = Math.max(
           90,
@@ -203,7 +201,7 @@ export function TableRelationsSvg({
           >
             {!controlsOnly && (
               <>
-                <title>{`${fullLabel}${relation.logical.description ? ` — ${relation.logical.description}` : ''}`}</title>
+                <title>{`${relation.logical.name ? relation.logical.name + ' — ' : ''}${fullLabel}${relation.logical.description ? ` — ${relation.logical.description}` : ''}`}</title>
                 <defs>
                   {endpoints.map((endpoint, i) => (
                     <marker

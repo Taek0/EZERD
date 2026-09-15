@@ -208,7 +208,8 @@ it('renders explicit endpoint cardinality consistently with crowfoot markers rat
       onSelect: () => {},
     }),
   );
-  expect(markup).toContain('invoice.연결:invoice');
+  expect(markup).toContain('?:?');
+  expect(markup).not.toContain('invoice.연결:invoice');
   expect(markup).not.toContain('1..1 → 0..N');
   expect(markup).not.toContain(' · 1:N');
   expect(markup).toContain('marker-start="url(#table-crow-explicit-0)"');

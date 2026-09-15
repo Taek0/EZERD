@@ -43,7 +43,7 @@ try {
   });
   await page.getByRole('button', { name: /출발 테이블/ }).waitFor();
   const pathBefore = await hit.getAttribute('d');
-  const adjust = page.getByRole('button', { name: '관계 선 조절 orders.id:payments' });
+  const adjust = page.getByRole('button', { name: '관계 선 조절 id:id_2' });
   const rect = await adjust.boundingBox();
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
   await page.mouse.down();
