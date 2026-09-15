@@ -20,3 +20,4 @@ export * from './review.js';
 export * from './project-actions.js';
 
 export * from './pin-actions.js';
+export * from './sync.js';
