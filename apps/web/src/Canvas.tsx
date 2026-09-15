@@ -2,7 +2,7 @@ import { applyDomainSelection } from './domain-view.js';
 import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from './components/ui/untitled.js';
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
-import { type DesignDocument, type Table, upsertTableRelation, removeTableRelation, isVisibleInView, autoLayoutView, removeTableReference, addTable, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
+import { type DesignDocument, type Table, upsertTableRelation, removeTableRelation, isVisibleInView, autoLayoutView, removeTableReference, addTable, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
 import { tableCardSize } from './table-geometry.js';
 import { exportCanvasPng } from './canvas-export.js';
@@ -12,9 +12,10 @@ import { DomainColorPicker } from './DomainColorPicker.js';
 import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { cardSize, connectedRelations } from './canvas-state.js';
 import { TableNodeContent, TableInspector, RelationEditor, TableWorkspaceTools, TableRelationsSvg, ForeignKeyDialog, EnumDialog, emptyMetadata } from './TableEditor.js';
-import { clampLayoutPatch, newId, validViewId, viewportDestination } from './client.js';
+import { clampLayoutPatch, newId, validViewId } from './client.js';
 import { Button, Checkbox, ContextMenu, IconButton, Input, Select, TabButton, Textarea } from './components/ui/index.js';
 import { PanelList, PanelNote, PanelRow, PanelSection } from './panel.js';
+import { syncLayoutPolicy } from './sync-layout-policy.js';
 import './domain-workflow.css';
 export type CanvasContext = { viewId: string; selectedObjectId: string | null; position: { x: number; y: number } };
 type Props = {
@@ -24,9 +25,10 @@ type Props = {
   pins?: ReactNode;
   document: DesignDocument;
   onChange: (document: DesignDocument) => void;
+  onPreviewChange?: (document: DesignDocument) => void;
   readOnly: boolean;
 };
-export function Canvas({ document: doc, onChange, readOnly, onContextChange, focusTarget, pins, onCreatePin }: Props) {
+export function Canvas({ document: doc, onChange, onPreviewChange, readOnly, onContextChange, focusTarget, pins, onCreatePin }: Props) {
   const confirm = useConfirm();
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
   const [viewDraftId,setViewDraftId]=useState<string|null>(null);
@@ -104,8 +106,9 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     width: number;
     height: number;
   } | null>(null);
-  const viewport = (readOnly ? localViewports[viewId] : undefined) ?? doc.layout.viewports.find(v => v.viewId === viewId) ?? { viewId, x: 40, y: 40, zoom: 1 };
+  const viewport = localViewports[viewId] ?? doc.layout.viewports.find(v => v.viewId === viewId) ?? { viewId, x: 40, y: 40, zoom: 1 };
   const activeCombined = doc.views?.find(v => v.id === viewId);
+  const layoutPolicy = syncLayoutPolicy(readOnly, !!activeCombined);
   const nodes = doc.layout.nodes.filter(n => {
     const table = (doc.tables ?? []).find(t => t.id === n.objectId);
     return n.viewId === viewId && (!table || (isVisibleInView(table.scope,viewMode) && (!activeCombined || activeCombined.domainIds.includes(table.domainId))));
@@ -141,8 +144,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     const node = doc.layout.nodes.find(n => n.viewId === focusTarget.viewId && n.objectId === focusTarget.objectId);
     const rect = surface.current?.getBoundingClientRect();
     const next = clampLayoutPatch({viewId:destinationView, zoom:1, x:(rect?.width ?? 800)/2 - (node?.x ?? 0) - focusTarget.x, y:(rect?.height ?? 600)/2 - (node?.y ?? 0) - focusTarget.y});
-    if (readOnly) setLocalViewports(value => ({...value, [next.viewId]:next}));
-    else change(setViewport(live.current, next));
+    setLocalViewports(value => ({...value, [next.viewId]:next}));
   }, [focusTarget?.nonce]);
   const relatedIds = new Set(filterDomain ? [filterDomain, ...connectedRelations(doc.domainRelations, filterDomain).flatMap(r => [r.sourceDomainId, r.targetDomainId])] : [...doc.domains.map(d => d.id), ...(doc.views ?? []).map(v => v.id)]);
   const filteredRelations = doc.domainRelations.filter(r => (!filterDomain || r.sourceDomainId === filterDomain || r.targetDomainId === filterDomain) && [r.name, r.description, doc.domains.find(d => d.id === r.sourceDomainId)?.name, doc.domains.find(d => d.id === r.targetDomainId)?.name].join(' ').toLocaleLowerCase().includes(relationSearch.toLocaleLowerCase()));
@@ -171,6 +173,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     setMenu(null);
   }
   function arrangeVisibleNodes() {
+    if (!layoutPolicy.autoLayout) return;
     const layoutSource = viewId === 'overview' ? doc : {
       ...doc,
       tables: (doc.tables ?? []).filter(t => isVisibleInView(t.scope, viewMode)),
@@ -184,6 +187,10 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     if (!readOnly)
       onChange(next);
   }
+  function preview(next: DesignDocument) {
+    if (!readOnly)
+      (onPreviewChange ?? onChange)(next);
+  }
   function updateNodeLayout(document: DesignDocument, id: string, patch: Parameters<typeof modelUpdateNodeLayout>[2]) {
     const node = document.layout.nodes.find(n => n.id === id);
     if (node && (patch.width !== undefined || patch.height !== undefined)) {
@@ -194,10 +201,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
   }
   function moveViewport(next: typeof viewport) {
     next = clampLayoutPatch(next);
-    if (viewportDestination(readOnly) === 'local')
-      setLocalViewports(value => ({ ...value, [viewId]: next }));
-    else
-      change(setViewport(live.current, next));
+    setLocalViewports(value => ({ ...value, [viewId]: next }));
   }
   function navigate(id: string) {
     setMenu(null);
@@ -276,6 +280,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     setMenu(null);
     if (node && !resize && (e.target as HTMLElement).closest('input,textarea,select,button,[data-inline-edit]')) { e.stopPropagation(); return; }
     if (readOnly && id) { e.stopPropagation(); return; }
+    if (!layoutPolicy.moveNodes && node) { e.stopPropagation(); return; }
     if (!node) {
       const rect = surface.current?.getBoundingClientRect();
       blankPosition.current = {viewId, x:(e.clientX-(rect?.left ?? 0)-viewport.x)/viewport.zoom, y:(e.clientY-(rect?.top ?? 0)-viewport.y)/viewport.zoom};
@@ -304,7 +309,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
       start.captureTarget.setPointerCapture(start.pointerId);
     }
     if (start.id) {
-      change(updateNodeLayout(live.current, start.id, start.resize ? { width: Math.max(160, start.width + dx / viewport.zoom), height: Math.max(110, start.height + dy / viewport.zoom) } : { x: start.x + dx / viewport.zoom, y: start.y + dy / viewport.zoom }));
+      preview(updateNodeLayout(live.current, start.id, start.resize ? { width: Math.max(160, start.width + dx / viewport.zoom), height: Math.max(110, start.height + dy / viewport.zoom) } : { x: start.x + dx / viewport.zoom, y: start.y + dy / viewport.zoom }));
     }
     else
       moveViewport({ ...viewport, x: start.x + dx, y: start.y + dy });
@@ -313,6 +318,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
     const active = drag.current;
     drag.current = null;
     if (active?.captureTarget.hasPointerCapture(active.pointerId)) active.captureTarget.releasePointerCapture(active.pointerId);
+    if (active?.id && !active.pending) change(live.current);
   }
   function editRelation(id: string) {
     const relation = doc.domainRelations.find(r => r.id === id);
@@ -438,7 +444,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
             })}
             {connectSource && connectPointer && (() => { const origin = nodes.find(n => n.objectId === connectSource); return origin ? <path className="domain-connection-preview" d={`M ${origin.x+origin.width/2} ${origin.y+origin.height/2} L ${connectPointer.x} ${connectPointer.y}`} markerEnd="url(#arrow-end)" /> : null; })()}
           </svg>}
-          {viewId !== 'overview' && <><svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg hideControls selectedId={selected} document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true); setPanelTab('properties');}} /></svg><svg className="relations table-route-overlay" data-export-hidden="true" aria-label="관계 선 조절" onPointerDown={e=>e.stopPropagation()}><TableRelationsSvg controlsOnly selectedId={selected} document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} readOnly={readOnly} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true); setPanelTab('properties');}} /></svg></>}
+          {viewId !== 'overview' && <><svg className="relations" aria-label="테이블 관계" onPointerDown={e => e.stopPropagation()}><TableRelationsSvg hideControls selectedId={selected} document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} onPreviewChange={preview} readOnly={readOnly} layoutReadOnly={!!activeCombined} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true); setPanelTab('properties');}} /></svg><svg className="relations table-route-overlay" data-export-hidden="true" aria-label="관계 선 조절" onPointerDown={e=>e.stopPropagation()}><TableRelationsSvg controlsOnly selectedId={selected} document={doc} visibleNodeIds={nodes.map(node=>node.id)} viewId={viewId} viewMode={viewMode} onChange={change} onPreviewChange={preview} readOnly={readOnly} layoutReadOnly={!!activeCombined} onSelect={(id: string) => {setSelected(id); setInspectorOpen(true); setPanelTab('properties');}} /></svg></>}
           {fkSource && !fkTarget && connectPointer && <svg className="relations connection-preview-layer" aria-hidden="true">{(() => {const column=doc.columns?.find(c => c.id===fkSource);const origin=nodes.find(n => n.objectId===column?.tableId);if(!origin)return null;const x=origin.x+origin.width,y=origin.y+origin.height/2,middle=(x+connectPointer.x)/2;return <path className="domain-connection-preview" d={`M ${x} ${y} H ${middle} V ${connectPointer.y} H ${connectPointer.x}`} />;})()}</svg>}
           {nodes.map(node => {
             const d = doc.domains.find(v => v.id === node.objectId),
@@ -460,7 +466,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               onKeyDown={e => {
                 if (e.target !== e.currentTarget) return;
                 if (e.key === 'Enter' && d) { navigate(d.id); return; }
-                if (readOnly) return;
+                if (!layoutPolicy.moveNodes) return;
                 if (d && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) { e.preventDefault(); const rect = e.currentTarget.getBoundingClientRect(); setMenu({source:d.id,x:Math.max(8,Math.min(rect.left,window.innerWidth-290)),y:Math.max(8,Math.min(rect.top+40,window.innerHeight-320))}); return; }
                 const delta = e.shiftKey ? 10 : 1;
                 const offsets: Record<string, [
@@ -488,7 +494,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
               </> : t ? <TableNodeContent {...(onCreatePin ? {onCreatePin:(point:{clientX:number;clientY:number}) => pinAt(point.clientX,point.clientY)} : {})} document={doc} tableId={t.id} viewMode={viewMode} viewId={viewId} onChange={change} readOnly={readOnly} onStartForeignKey={columnId => {setFkSource(columnId); setFkTarget(null); setMenu(null);}} /> : <p className="note-content">
                 {n?.text}
               </p>}
-              {!readOnly && <div
+              {layoutPolicy.resizeNodes && <div
                 className="resize-handle"
                 title="크기 조절"
                 onPointerDown={e => begin(e, node.id, true)} />}
@@ -529,7 +535,7 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
       {id:'filter',label:'연결된 도메인 강조',onAction:() => {setFilterDomain(menu.source!);setMenu(null);}},
     ] : [
       ...(viewId === 'overview' ? [{id:'new-domain',label:'새 도메인 생성',onAction:() => newDomain('새 도메인', blankPosition.current?.viewId === viewId ? blankPosition.current : undefined)}, {id:'new-relation',label:'새 도메인 관계',onAction:() => startRelation('', '')}] : []),
-      {id:'auto-layout',label:'자동 배치',disabled:!nodes.length,onAction:() => {arrangeVisibleNodes();setMenu(null);}},
+      {id:'auto-layout',label:'자동 배치',disabled:!nodes.length||!layoutPolicy.autoLayout,onAction:() => {arrangeVisibleNodes();setMenu(null);}},
     ] : [])] : []} />
     {enumOpen && <EnumDialog document={doc} onChange={change} readOnly={readOnly} onClose={() => setEnumOpen(false)} />}
     <div className="inspector-shell" inert={!inspectorOpen} aria-hidden={!inspectorOpen}>

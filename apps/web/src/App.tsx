@@ -3,15 +3,16 @@ import { userColorStyle } from './user-color-style.js';
 import { UserColorEditor } from './UserColorEditor.js';
 import { clampCommentsPanelWidth } from './comments-panel-size.js';
 import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
-import { type DesignDocument, createEmptyDocument } from '@ezerd/model';
-import { userSchema, projectSchema, projectDocumentSchema, designDocumentSchema, threadSchema, type Thread, type Notification } from '@ezerd/contracts';
-import { ApiError, SaveGate, body, message, request, acknowledgeSave } from './client.js';
+import { applyChanges, diffSharedDocument, type DesignDocument, createEmptyDocument } from '@ezerd/model';
+import { userSchema, projectSchema, projectDocumentSchema, threadSchema, type Thread, type Notification } from '@ezerd/contracts';
+import { body, message, newId, request } from './client.js';
 import { Canvas } from './Canvas.js';
 import { CommentsPanel, CommentPins, Notifications, type CommentContext } from './CommentsPanel.js';
 import { RenameDialog } from './components/ui/RenameDialog.js';
 import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { LatestRequest } from './comments-state.js';
-import { DocumentHistory, documentEditGroup, mergeHistoryViewports } from './document-history.js';
+import { ProjectSyncRuntime, stableClientId, type SyncSession, type SyncSnapshot } from './sync-client.js';
+import { SyncHistoryPanel } from './sync-history-panel.js';
 import {
   Avatar,
   Badge,
@@ -36,6 +37,12 @@ export type Project = {
   createdAt: string;
   updatedAt: string;
 };
+export function rebaseAutosaveDraft(base: DesignDocument, draft: DesignDocument, server: DesignDocument) {
+  return applyChanges(server, diffSharedDocument(base, draft));
+}
+export function autosaveDelay(textEditing: boolean, composing: boolean): 0 | 500 | null {
+  return composing ? null : textEditing ? 500 : 0;
+}
 type OpenProject = {
   project: Project;
   document: DesignDocument;
@@ -46,6 +53,7 @@ export function App() {
   const [renamingProject, setRenamingProject] = useState<Project | null>(null);
   const [draftTarget, setDraftTarget] = useState<(CommentContext & { nonce: number })>();
   const [user, setUser] = useState<User | null>(null), [checking, setChecking] = useState(true);
+  const [session, setSession] = useState<SyncSession | null>(null);
   const [editingColor,setEditingColor]=useState(false);
   const [registrationPin,setRegistrationPin]=useState('');
   const [members,setMembers]=useState<Array<{id:string;username:string;color?:string}>>([]);
@@ -55,13 +63,18 @@ export function App() {
   const [username, setUsername] = useState(''), [editingName, setEditingName] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]), [search, setSearch] = useState(''), [status, setStatus] = useState<'active' | 'archived'>('active');
   const [projectName, setProjectName] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(false);
-  const [opened, setOpened] = useState<OpenProject | null>(null), [revision, setRevision] = useState(0), [saved, setSaved] = useState(0);
-  const [saving, setSaving] = useState(false), [saveError, setSaveError] = useState(''), [conflict, setConflict] = useState(false), [refresh, setRefresh] = useState(0);
-  const current = useRef(opened), rev = useRef(revision), saveLock = useRef(new SaveGate());
-  const history = useRef<DocumentHistory<DesignDocument> | null>(null);
+  const [opened, setOpened] = useState<OpenProject | null>(null), [refresh, setRefresh] = useState(0);
+  const [sync, setSync] = useState<SyncSnapshot | null>(null);
+  const [historyAction, setHistoryAction] = useState<string | null>(null);
+  const [historyNotice, setHistoryNotice] = useState('');
+  const current = useRef(opened), runtime = useRef<ProjectSyncRuntime | null>(null);
+  const autosave = useRef<{
+    base?: DesignDocument;
+    document?: DesignDocument;
+    timer?: ReturnType<typeof setTimeout>;
+    composing: boolean;
+  }>({ composing: false });
   current.current = opened;
-  rev.current = revision;
-  const dirty = revision !== saved;
   const [commentsOpen, setCommentsOpen] = useState(false), [threads, setThreads] = useState<Thread[]>([]);
   const [canvasContext, setCanvasContext] = useState<CommentContext>({ viewId: 'overview', selectedObjectId: null, position: { x: 120, y: 120 } });
   const [focusTarget, setFocusTarget] = useState<{
@@ -74,25 +87,19 @@ export function App() {
   }>();
   const navigation = useRef(new LatestRequest());
   function replaceProject(value: OpenProject | null) {
-    history.current = value ? new DocumentHistory(value.document) : null;
+    if (autosave.current.timer) clearTimeout(autosave.current.timer);
+    autosave.current = { composing: false };
+    runtime.current?.stop();
+    runtime.current = null;
+    setSync(null);
     current.current = value;
-    rev.current = 0;
     setOpened(value);
-    setRevision(0);
-    setSaved(0);
   }
   function restoreHistory(direction: 'undo' | 'redo') {
-    const value = current.current;
-    if (!value || value.project.status === 'archived' || busy) return;
-    const restored = history.current?.[direction]();
-    if (restored) {
-      const document = mergeHistoryViewports(restored, value.document);
-      history.current?.replaceCurrent(document);
-      applyDocument(document);
-    }
+    if (!current.current || current.current.project.status === 'archived' || busy) return;
+    void runtime.current?.[direction]().catch(cause => setError(message(cause)));
   }
   useEffect(() => {
-    const endGroup = () => history.current?.endGroup();
     const keydown = (event: KeyboardEvent) => {
       const target = event.target;
       const editable = target instanceof Element && !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
@@ -102,19 +109,11 @@ export function App() {
         if (!current.current || current.current.project.status === 'archived' || busy) return;
         event.preventDefault();
         restoreHistory(key === 'y' || event.shiftKey ? 'redo' : 'undo');
-      } else if (!event.repeat) endGroup();
+      }
     };
     window.addEventListener('keydown', keydown);
-    window.addEventListener('pointerdown', endGroup, true);
-    window.addEventListener('pointerup', endGroup);
-    window.addEventListener('pointercancel', endGroup);
-    window.addEventListener('focusout', endGroup);
     return () => {
       window.removeEventListener('keydown', keydown);
-      window.removeEventListener('pointerdown', endGroup, true);
-      window.removeEventListener('pointerup', endGroup);
-      window.removeEventListener('pointercancel', endGroup);
-      window.removeEventListener('focusout', endGroup);
     };
   });
   function focusThread(thread: Thread) {
@@ -129,13 +128,10 @@ export function App() {
     setCanvasContext({ viewId: 'overview', selectedObjectId: null, position: { x: 120, y: 120 } });
   }
   async function visitNotification(notification: Notification): Promise<boolean> {
-    if (saving || busy)
+    if (busy)
       return false;
     const sameProject = current.current?.project.id === notification.projectId;
-    if (!sameProject && dirty && !await confirm({ title: '프로젝트 이동', description: '저장하지 않은 변경을 버리고 알림의 프로젝트로 이동할까요?', confirmLabel: '이동', destructive: true }))
-      return false;
     const ticket = navigation.current.begin();
-    const startingRevision = rev.current;
     setBusy(true);
     setError('');
     try {
@@ -149,13 +145,7 @@ export function App() {
       if (!thread)
         throw new Error('알림의 댓글을 찾을 수 없습니다.');
       if (projectValue) {
-        if (rev.current !== startingRevision && !await confirm({ title: '프로젝트 이동', description: '이동을 준비하는 동안 추가한 변경을 버리고 이동할까요?', confirmLabel: '이동', destructive: true }))
-          return false;
         replaceProject(projectDocumentSchema.parse(projectValue));
-        setRevision(0);
-        setSaved(0);
-        setSaveError('');
-        setConflict(false);
         resetReview();
       }
       focusThread(thread);
@@ -176,6 +166,11 @@ export function App() {
     let id: string | null = null;
     try {
       id = localStorage.getItem(identityKey);
+      const storedSession = sessionStorage.getItem('ezerd.sync.session');
+      if (storedSession) {
+        const parsed = JSON.parse(storedSession) as SyncSession;
+        if (Date.parse(parsed.expiresAt) > Date.now()) setSession(parsed);
+      }
     }
     catch { /* private browser storage may be unavailable */ }
     if (!id) {
@@ -218,20 +213,50 @@ export function App() {
     return () => controller.abort();
   }, [user, opened, status, search, refresh]);
   useEffect(() => {
-    if (!dirty && !saving)
-      return;
-    const prevent = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-    };
-    window.addEventListener('beforeunload', prevent);
-    return () => window.removeEventListener('beforeunload', prevent);
-  }, [dirty, saving]);
+    if (!opened || !user || !session || opened.project.status === 'archived') return;
+    const projectId = opened.project.id;
+    const instance = new ProjectSyncRuntime({
+      projectId, userId: user.id, clientId: stableClientId(), session,
+      initialDocument: opened.document,
+      onChange: snapshot => {
+        setSync(snapshot);
+        const value = current.current;
+        if (!value || value.project.id !== projectId) return;
+        let document = snapshot.document;
+        const draft = autosave.current;
+        if (draft.base && draft.document) {
+          try {
+            document = rebaseAutosaveDraft(draft.base, draft.document, snapshot.document);
+            draft.base = snapshot.document;
+            draft.document = document;
+          } catch {
+            document = draft.document;
+          }
+        }
+        const next = { ...value, document };
+        current.current = next;
+        setOpened(next);
+      },
+    });
+    runtime.current = instance;
+    void instance.start();
+    return () => { instance.stop(); if (runtime.current === instance) runtime.current = null; };
+  }, [opened?.project.id, opened?.project.status, user?.id, session?.token]);
   async function identify(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
-      const value = userSchema.parse(await request(user ? `/api/users/${user.id}` : '/api/users', body(user ? 'PATCH' : 'POST', { username: username.trim(), ...(!user?{pin:registrationPin}:{}) })));
+      const value = user && session
+        ? userSchema.parse(await request(`/api/users/${user.id}`, body('PATCH', { username: username.trim() })))
+        : user ?? userSchema.parse(await request('/api/users', body('POST', { username: username.trim(), pin: registrationPin })));
+      let nextSession = session;
+      if (!nextSession) {
+        const result = await request<{ token: string; expiresAt: string; baselineIssuedAt: string }>('/api/sessions', body('POST', { userId: value.id, pin: registrationPin }));
+        nextSession = { token: result.token, expiresAt: result.expiresAt, baselineIssuedAt: result.baselineIssuedAt };
+        setSession(nextSession);
+        try { sessionStorage.setItem('ezerd.sync.session', JSON.stringify(nextSession)); } catch { /* Login remains valid in this tab. */ }
+      }
       setUser(value);
       setRegistrationPin('');
       setUsername(value.username);
@@ -260,10 +285,6 @@ export function App() {
         return;
       resetReview();
       replaceProject(value);
-      setRevision(0);
-      setSaved(0);
-      setSaveError('');
-      setConflict(false);
     }
     catch (e) {
       if (navigation.current.isCurrent(ticket))
@@ -284,12 +305,8 @@ export function App() {
       if (!navigation.current.isCurrent(ticket))
         return;
       setProjectName('');
-      setSaveError('');
-      setConflict(false);
       resetReview();
       replaceProject({ project, document: createEmptyDocument() });
-      setRevision(0);
-      setSaved(0);
     }
     catch (e) {
       if (navigation.current.isCurrent(ticket))
@@ -336,60 +353,90 @@ export function App() {
     if (!current.current) return;
     const next = { ...current.current, document };
     current.current = next;
-    rev.current += 1;
     setOpened(next);
-    setRevision(rev.current);
+  }
+  function scheduleAutosave() {
+    const draft = autosave.current;
+    if (draft.composing || !draft.document) return;
+    if (draft.timer) clearTimeout(draft.timer);
+    draft.timer = setTimeout(() => { void flushAutosave(); }, 500);
+  }
+  async function flushAutosave() {
+    const draft = autosave.current;
+    if (draft.composing || !draft.document) return;
+    if (draft.timer) clearTimeout(draft.timer);
+    const document = draft.document;
+    autosave.current = { composing: draft.composing };
+    await runtime.current?.edit(document);
+  }
+  function previewEdit(document: DesignDocument) {
+    const previous = current.current?.document;
+    if (!previous || document === previous) return;
+    const draft = autosave.current;
+    draft.base ??= previous;
+    draft.document = document;
+    applyDocument(document);
   }
   function edit(document: DesignDocument) {
     const previous = current.current?.document;
-    if (!previous || document === previous) return;
-    const group = documentEditGroup(previous, document);
-    if (group === '@viewport') history.current?.replaceCurrent(document);
-    else history.current?.record(document, group);
-    applyDocument(document);
-  }
-  async function save() {
-    const snapshot = current.current;
-    if (busy || !snapshot || !saveLock.current.begin())
+    if (!previous || (document === previous && autosave.current.document !== document)) return;
+    if (document !== previous) applyDocument(document);
+    const active = globalThis.document?.activeElement;
+    const textEditing = active instanceof Element && !!active.closest('input, textarea, [contenteditable]:not([contenteditable="false"])');
+    const delay = autosaveDelay(textEditing, autosave.current.composing);
+    if (delay !== 0) {
+      const draft = autosave.current;
+      draft.base ??= previous;
+      draft.document = document;
+      if (delay === 500) scheduleAutosave();
       return;
-    history.current?.endGroup();
-    setSaving(true);
-    setSaveError('');
-    const snapshotRevision = rev.current;
-    try {
-      const validation = designDocumentSchema.safeParse(snapshot.document);
-      if (!validation.success)
-        throw new Error('저장할 수 없는 입력이 있습니다. 이름·텍스트 길이와 위치·크기를 확인해 주세요. 문서가 너무 크면 텍스트나 항목을 줄여 주세요.');
-      const result = projectDocumentSchema.parse(await request(`/api/projects/${snapshot.project.id}/document`, body('PUT', { expectedVersion: snapshot.project.version, document: snapshot.document })));
-      const value = current.current;
-      if (value?.project.id === result.project.id) {
-        const acknowledged = acknowledgeSave({ document: value.document, revision: rev.current }, snapshotRevision, result);
-        current.current = acknowledged;
-        history.current?.replaceCurrent(acknowledged.document);
-        setOpened(acknowledged);
-        setSaved(snapshotRevision);
-      }
     }
-    catch (e) {
-      setSaveError(message(e));
-      setConflict(e instanceof ApiError && e.status === 409);
-    }
-    finally {
-      saveLock.current.finish();
-      setSaving(false);
-    }
+    if (autosave.current.timer) clearTimeout(autosave.current.timer);
+    autosave.current = { composing: false };
+    void runtime.current?.edit(document);
   }
   async function leave() {
-    if (saving)
-      return;
-    if (dirty && !await confirm({ title: '갤러리로 이동', description: '저장하지 않은 변경을 버리고 갤러리로 이동할까요?', confirmLabel: '이동', destructive: true }))
-      return;
+    await flushAutosave();
     navigation.current.begin();
     setBusy(false);
     resetReview();
     replaceProject(null);
-    setRevision(0);
-    setSaved(0);
+  }
+  async function restoreDeletion(operationId: string) {
+    const value = current.current;
+    if (!value || !session || historyAction) return;
+    setHistoryAction(operationId);
+    setHistoryNotice('');
+    setError('');
+    try {
+      const outcome = await request<{ result: { status: 'accepted' | 'rejected'; reason?: string }; omittedRelations: string[] }>(`/api/projects/${value.project.id}/deletions/${operationId}/restore`, {
+        ...body('POST', { operationId: newId(), groupId: newId(), clientId: stableClientId() }),
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (outcome.result.status !== 'accepted') throw new Error(outcome.result.reason ?? '삭제 항목을 복원하지 못했습니다.');
+      setHistoryNotice(outcome.omittedRelations.length
+        ? `삭제 항목을 새 객체로 복원했습니다. 현재 구조에서 유효하지 않은 관계·배치 ${outcome.omittedRelations.length}개는 제외했습니다: ${outcome.omittedRelations.join(', ')}`
+        : '삭제 항목을 새 객체로 복원했습니다.');
+      await runtime.current?.refreshHistory();
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setHistoryAction(null);
+    }
+  }
+  async function resolvePendingEdit(action: 'reapply' | 'discard', operationId: string) {
+    const instance = runtime.current;
+    if (!instance || historyAction) return;
+    setHistoryAction(operationId);
+    setError('');
+    try {
+      if (action === 'reapply') await instance.reapply(operationId);
+      else await instance.discard(operationId);
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setHistoryAction(null);
+    }
   }
   const userForm = <form className="identity-form" onSubmit={e => void identify(e)}>
     <label htmlFor="username">함께 사용할 이름</label>
@@ -402,11 +449,11 @@ export function App() {
       autoComplete="nickname"
       autoFocus
       placeholder="예: 김설계" />
-    {!user&&<><label htmlFor="registration-pin">사용자 PIN (숫자 4자리)</label><Input id="registration-pin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} minLength={4} required autoComplete="new-password" value={registrationPin} onChange={e=>setRegistrationPin(e.target.value.replace(/[^0-9]/g,''))} placeholder="숫자 4자리"/></>}
-    <p>{user?'이 이름으로 팀에 표시됩니다. 기존 PIN은 유지됩니다.':'이름과 PIN 조합으로 사용자를 구분합니다.'}</p>
+    {(!user||!session)&&<><label htmlFor="registration-pin">사용자 PIN (숫자 4자리)</label><Input id="registration-pin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} minLength={4} required autoComplete={user?'current-password':'new-password'} value={registrationPin} onChange={e=>setRegistrationPin(e.target.value.replace(/[^0-9]/g,''))} placeholder="숫자 4자리"/></>}
+    <p>{user&&!session?'동기화를 계속하려면 기존 PIN으로 로그인해 주세요.':user?'이 이름으로 팀에 표시됩니다. 기존 PIN은 유지됩니다.':'이름과 PIN 조합으로 사용자를 구분합니다.'}</p>
     <div className="actions">
-      <Button type="submit" variant="primary" className="primary" disabled={busy || !username.trim() || (!user&&!/^[0-9]{4}$/.test(registrationPin))}>
-        {busy ? '저장 중…' : user ? '이름 저장' : '워크스페이스 시작하기 →'}
+      <Button type="submit" variant="primary" className="primary" disabled={busy || !username.trim() || ((!user||!session)&&!/^[0-9]{4}$/.test(registrationPin))}>
+        {busy ? '확인 중…' : user&&!session ? '로그인 →' : user ? '이름 저장' : '워크스페이스 시작하기 →'}
       </Button>
       {user && <Button type="button" onClick={() => setEditingName(false)}>취소</Button>}
     </div>
@@ -417,7 +464,6 @@ export function App() {
       <Button
         className="brand"
         onClick={leave}
-        disabled={saving}
         aria-label="EZERD 프로젝트 갤러리">EZERD<span>.</span>
       </Button>
       <span className="header-caption">A SHARED SPACE<br />FOR CLEAR THINKING.</span>
@@ -445,7 +491,7 @@ export function App() {
     </div>}
     {checking ? <main id="main" className="gallery">
       <p role="status">워크스페이스를 여는 중…</p>
-    </main> : !user ? <main id="main" className="welcome">
+    </main> : !user || !session ? <main id="main" className="welcome">
       <p className="eyebrow">01 / WELCOME TO EZERD</p>
       <h1>명확한 구조.<br />함께 만드는 설계<span>.</span>
       </h1>
@@ -454,7 +500,7 @@ export function App() {
     </main> : opened ? <main id="main" className="editor">
       <div className="editor-heading">
         <div className="project-title">
-          <Button onClick={leave} disabled={saving}>← 갤러리</Button>
+          <Button onClick={leave}>← 갤러리</Button>
           <div>
             <small>PROJECT / DOMAIN WORKSPACE</small>
             <h1>
@@ -463,32 +509,38 @@ export function App() {
           </div>
         </div>
         <div className="save-controls">
-          <Button aria-label="실행 취소" title="실행 취소 (Ctrl+Z / ⌘Z)" disabled={busy || opened.project.status === 'archived' || !history.current?.canUndo} onClick={() => restoreHistory('undo')}>↶</Button>
-          <Button aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)" disabled={busy || opened.project.status === 'archived' || !history.current?.canRedo} onClick={() => restoreHistory('redo')}>↷</Button>
+          <Button aria-label="실행 취소" title="실행 취소 (Ctrl+Z / ⌘Z)" disabled={busy || opened.project.status === 'archived' || !sync?.canUndo} onClick={() => restoreHistory('undo')}>↶</Button>
+          <Button aria-label="다시 실행" title="다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)" disabled={busy || opened.project.status === 'archived' || !sync?.canRedo} onClick={() => restoreHistory('redo')}>↷</Button>
           <Button aria-expanded={commentsOpen} onClick={() => { setDraftTarget(undefined); setCommentsOpen(v => !v); }}>핀</Button>
-          <span role="status" className={saveError ? 'save-state failed' : 'save-state'}>
-            {saving ? '◌ 저장 중' : conflict ? '! 저장 충돌' : saveError ? '! 저장 실패' : dirty ? '● 저장하지 않은 변경' : '✓ 저장 완료'}
+          <span role="status" className={`save-state ${sync?.status === 'action-needed' ? 'failed' : ''}`}>
+            {sync?.status === 'syncing' ? '◌ 동기화 중' : sync?.status === 'offline' ? '○ 오프라인' : sync?.status === 'action-needed' ? '! 확인 필요' : '✓ 동기화됨'}
           </span>
-          <Button
-            variant="primary"
-            className="primary"
-            disabled={busy || saving || !dirty || conflict || opened.project.status === 'archived'}
-            onClick={() => void save()}>저장</Button>
+          <SyncHistoryPanel
+            snapshot={sync}
+            activeOperationId={historyAction}
+            notice={historyNotice}
+            onRestore={operationId => { void restoreDeletion(operationId); }}
+            onReapply={operationId => { void resolvePendingEdit('reapply', operationId); }}
+            onDiscard={operationId => { void resolvePendingEdit('discard', operationId); }} />
         </div>
       </div>
       {opened.project.status === 'archived' && <div className="notice">보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.</div>}
-      {saveError && <div className="notice error" role="alert">
-        {saveError}
-        {conflict ? <Button disabled={saving} onClick={async () => {
-          if (await confirm({ title: '최신 내용 다시 열기', description: '내 변경을 버리고 최신 저장 내용을 다시 열까요?', confirmLabel: '다시 열기', destructive: true }))
-            void open(opened.project.id);
-        }}>최신 내용 다시 열기</Button> : <Button disabled={saving} onClick={() => void save()}>다시 저장</Button>}
-      </div>}
-      <div className="review-workspace">
+      {(sync?.storageFailure || sync?.error) && <div className="notice error" role="alert">{sync.storageFailure ?? sync.error}</div>}
+      <div className="review-workspace"
+        onCompositionStartCapture={() => {
+          autosave.current.composing = true;
+          if (autosave.current.timer) clearTimeout(autosave.current.timer);
+        }}
+        onCompositionEndCapture={() => {
+          autosave.current.composing = false;
+          queueMicrotask(scheduleAutosave);
+        }}
+        onBlurCapture={() => { queueMicrotask(() => { void flushAutosave(); }); }}>
         <Canvas
           key={opened.project.id}
           document={opened.document}
           onChange={edit}
+          onPreviewChange={previewEdit}
           readOnly={opened.project.status === 'archived'}
           onContextChange={setCanvasContext}
           onCreatePin={context => {
