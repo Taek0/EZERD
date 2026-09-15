@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD CONSTRAINT "users_username_normalized" CHECK ("users"."username" = lower(btrim("users"."username")));

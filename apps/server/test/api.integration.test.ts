@@ -105,6 +105,68 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     }
     if (app) await app.close();
   });
+  it('normalizes case across registration, login, rename and concurrent creation', async () => {
+    const name = 'CaseUser-' + randomUUID().slice(0, 8);
+    const first = await request('/users', 'POST', { username: name, pin: '0012' });
+    userIds.push(first.data.id);
+    expect(first.status).toBe(201);
+    expect(first.data.username).toBe(name.toLowerCase());
+    const duplicate = await request('/users', 'POST', {
+      username: name.toUpperCase(),
+      pin: '0012',
+    });
+    expect(duplicate.data.id).toBe(first.data.id);
+    expect(
+      (await request('/users', 'POST', { username: name.toUpperCase(), pin: '9999' })).status,
+    ).toBe(409);
+    const session = await request(
+      '/sessions',
+      'POST',
+      { username: name.toUpperCase(), pin: '0012' },
+      null,
+    );
+    expect(session.status).toBe(201);
+    expect((await request('/sessions', 'POST', { username: name, pin: '9999' }, null)).status).toBe(
+      401,
+    );
+    const renamed = await request(
+      '/users/' + first.data.id,
+      'PATCH',
+      { username: name.toUpperCase() + '-NEW' },
+      session.data.token,
+    );
+    expect(renamed.data.username).toBe(name.toLowerCase() + '-new');
+    const other = await request('/users', 'POST', { username: name + '-other', pin: '9999' });
+    userIds.push(other.data.id);
+    const token = await login(other.data.id, '9999');
+    expect(
+      (
+        await request(
+          '/users/' + other.data.id,
+          'PATCH',
+          { username: renamed.data.username.toUpperCase() },
+          token,
+        )
+      ).status,
+    ).toBe(409);
+    const raceName = name + '-race';
+    const raced = await Promise.all([
+      request('/users', 'POST', { username: raceName.toUpperCase(), pin: '1234' }),
+      request('/users', 'POST', { username: raceName.toLowerCase(), pin: '5678' }),
+    ]);
+    raced.forEach((result) => {
+      if (result.data.id) userIds.push(result.data.id);
+    });
+    expect(raced.map((result) => result.status).sort()).toEqual([201, 409]);
+    const rows = await pool.query('select username from users where id = $1', [first.data.id]);
+    expect(rows.rows[0].username).toBe(renamed.data.username);
+    await expect(
+      pool.query('update users set username = $1 where id = $2', [
+        name.toUpperCase(),
+        first.data.id,
+      ]),
+    ).rejects.toMatchObject({ code: '23514' });
+  });
   it('reconnects existing username and PIN identities while preserving profiles and uniqueness', async () => {
     const name = '사용자' + randomUUID().slice(0, 8);
     const first = await request('/users', 'POST', { pin: '0012', username: '  ' + name + '  ' });
@@ -118,7 +180,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(duplicate.data).toEqual(first.data);
     const sameName = await request('/users', 'POST', { username: name, pin: '9876' });
     if (sameName.data.id) userIds.push(sameName.data.id);
-    expect(sameName.status).toBe(201);
+    expect(sameName.status).toBe(409);
     expect(first.data.color).toBe('#4169e1');
     expect(first.data).not.toHaveProperty('pin');
     expect(first.data).not.toHaveProperty('pinHash');

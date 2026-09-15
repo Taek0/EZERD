@@ -141,7 +141,8 @@ export const designDocumentSchema = z
     );
   });
 const projectName = z.string().trim().min(1).max(120);
-const username = z.string().trim().min(1).max(40);
+export const usernameSchema = z.string().trim().toLowerCase().min(1).max(40);
+const username = usernameSchema;
 const version = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const userColorSchema = z
   .string()

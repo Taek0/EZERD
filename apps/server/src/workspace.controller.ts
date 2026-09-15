@@ -68,7 +68,7 @@ async function databaseOperation<T>(operation: () => Promise<T>): Promise<T> {
     if (error instanceof HttpException) throw error;
     if (isUsernameConflict(error))
       throw new ConflictException(
-        '이미 사용 중인 이름과 PIN 조합입니다. 다른 이름 또는 PIN을 입력해주세요.',
+        '이미 사용 중인 이름입니다. 기존 PIN으로 접속하거나 다른 이름을 입력해주세요.',
       );
     throw new ServiceUnavailableException(
       '저장소에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.',
@@ -87,18 +87,21 @@ export class WorkspaceController {
   createUser(@Body() body: unknown) {
     const input = parse(usernameInputSchema, body);
     return databaseOperation(async () => {
+      const pinHash = createHash('sha256').update(input.pin).digest('hex');
       const [row] = await this.database.db
         .insert(users)
         .values({
           username: input.username,
-          pinHash: createHash('sha256').update(input.pin).digest('hex'),
+          pinHash,
         })
         .onConflictDoUpdate({
-          target: [users.username, users.pinHash],
+          target: users.username,
           set: { username: input.username },
+          setWhere: eq(users.pinHash, pinHash),
         })
         .returning();
-      return user(row!);
+      if (!row) throw new ConflictException('사용자 이름과 PIN을 확인해주세요.');
+      return user(row);
     });
   }
 

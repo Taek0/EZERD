@@ -10,13 +10,14 @@ import {
 } from '@nestjs/common';
 import { and, eq, gt } from 'drizzle-orm';
 import { z } from 'zod';
+import { usernameSchema } from '@ezerd/contracts';
 import { DatabaseService } from './db/database.service.js';
 import { sessions, users } from './db/schema.js';
 
 const pinSchema = z.string().regex(/^\d{4}$/);
 const createSessionSchema = z.union([
   z.strictObject({ userId: z.uuid(), pin: pinSchema }),
-  z.strictObject({ username: z.string().trim().min(1).max(40), pin: pinSchema }),
+  z.strictObject({ username: usernameSchema, pin: pinSchema }),
 ]);
 const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 export type AuthenticatedUser = { id: string; username: string; color: string };

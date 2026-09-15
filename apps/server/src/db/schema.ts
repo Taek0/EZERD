@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   doublePrecision,
   unique,
   uniqueIndex,
@@ -14,6 +15,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import type { DesignDocument } from '@ezerd/model';
+import { sql } from 'drizzle-orm';
 
 export const projectStatus = pgEnum('project_status', ['active', 'archived']);
 export const projects = pgTable('projects', {
@@ -38,7 +40,7 @@ export const projects = pgTable('projects', {
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 
-// Registration is unique by trimmed name and PIN digest; public users keep stable IDs.
+// Names are stored normalized and unique independently of the PIN.
 export const users = pgTable(
   'users',
   {
@@ -49,7 +51,10 @@ export const users = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique('users_username_pin_unique').on(table.username, table.pinHash)],
+  (table) => [
+    unique('users_username_unique').on(table.username),
+    check('users_username_normalized', sql`${table.username} = lower(btrim(${table.username}))`),
+  ],
 );
 
 export const threads = pgTable(

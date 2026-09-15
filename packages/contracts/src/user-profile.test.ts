@@ -33,3 +33,8 @@ it('does not expose PIN or its hash in public user contracts', () => {
   expect(userSchema.safeParse({ ...user, pin: '0012' }).success).toBe(false);
   expect(userSchema.safeParse({ ...user, pinHash: 'hash' }).success).toBe(false);
 });
+
+it('normalizes mixed-case usernames for registration and profile updates', () => {
+  expect(usernameInputSchema.parse({ username: '  TaEk  ', pin: '0012' }).username).toBe('taek');
+  expect(updateUserSchema.parse({ username: 'TAEK' }).username).toBe('taek');
+});
