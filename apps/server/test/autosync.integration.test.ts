@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
-import { addDomain, deriveOperationChanges, removeKey, removeTable, updateDomain } from '@ezerd/model';
+import { addDomain, deriveOperationChanges, removeKey, removeTable, sharedDocument, updateDomain } from '@ezerd/model';
 import type { DesignDocument } from '@ezerd/model';
 
 describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => {
@@ -27,6 +27,40 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
     expect(project.status).toBe(201);
   });
   afterAll(async () => { if (pool) { if (projectId) await pool.query('DELETE FROM projects WHERE id=$1', [projectId]); if (userId) await pool.query('DELETE FROM users WHERE id=$1', [userId]); await pool.end(); } if (app) await app.close(); });
+
+  it('accepts the canonical shared baseline returned to a browser', async () => {
+    const isolated = await request('/projects', 'POST', { name: `browser-baseline-${randomUUID()}` });
+    expect(isolated.status).toBe(201);
+    try {
+      const clientId = randomUUID();
+      const baseline = (await request(`/projects/${isolated.data.id}/sync-baseline`, 'POST', { clientId })).data;
+      const browserBaseline = sharedDocument(baseline.document);
+
+      const document = addDomain(browserBaseline, { id: randomUUID(), name: '브라우저 기준', description: '' }, { x: 12, y: 34 });
+      const operation = {
+        operationId: randomUUID(), groupId: randomUUID(), clientId,
+        baselineId: baseline.baselineId, baseSequence: baseline.sequence, baselineIssuedAt: baseline.baselineIssuedAt,
+        kind: 'online', dependencyPaths: [], changes: deriveOperationChanges(browserBaseline, document),
+        baselineDocument: browserBaseline, document,
+      };
+      const response = await request(`/projects/${isolated.data.id}/operations`, 'POST', operation);
+      expect(response.status).toBe(201);
+      expect(response.data.status, response.data.reason).toBe('accepted');
+      expect(baseline.document).toEqual(browserBaseline);
+
+      const alteredBaseline = addDomain(browserBaseline, { id: randomUUID(), name: '위조 기준', description: '' }, { x: 1, y: 2 });
+      const alteredDocument = addDomain(alteredBaseline, { id: randomUUID(), name: '위조 기준 작업', description: '' }, { x: 3, y: 4 });
+      const rejected = await request(`/projects/${isolated.data.id}/operations`, 'POST', {
+        ...operation, operationId: randomUUID(), groupId: randomUUID(),
+        changes: deriveOperationChanges(alteredBaseline, alteredDocument), baselineDocument: alteredBaseline, document: alteredDocument,
+      });
+      expect(rejected.status).toBe(201);
+      expect(rejected.data.status).toBe('rejected');
+      expect(rejected.data.reason).toContain('동기화 기준');
+    } finally {
+      await pool.query('delete from projects where id=$1', [isolated.data.id]);
+    }
+  });
 
   it('merges disjoint edits, replays duplicates, rejects mismatches and protects reconnect/deletion', async () => {
     expect((await request(`/projects/${projectId}/operations`, 'POST', {})).status).toBe(400);

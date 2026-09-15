@@ -4,7 +4,7 @@ import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { and, asc, eq, gt, lt, sql } from 'drizzle-orm';
 import { designDocumentSchema, syncEventSchema, syncOperationResultSchema } from '@ezerd/contracts';
 import type { SyncActor, SyncEvent, SyncHistoryEntry, SyncOperationInput, SyncOperationResult } from '@ezerd/contracts';
-import { applyChanges, claimedChangesMatch, deletionSnapshots, deriveOperationChanges, deriveStructuralDependencyPaths, diagnoseDocument, findFieldVersionConflicts, findInverseConflicts, inverseChanges, requestFingerprint } from '@ezerd/model';
+import { applyChanges, claimedChangesMatch, deletionSnapshots, deriveOperationChanges, deriveStructuralDependencyPaths, diagnoseDocument, findFieldVersionConflicts, findInverseConflicts, inverseChanges, requestFingerprint, sharedDocument } from '@ezerd/model';
 import type { DesignDocument, DocumentChange } from '@ezerd/model';
 import { DatabaseService } from './db/database.service.js';
 import { projects, syncClientBaselines, syncFieldVersions, syncOperations, syncTombstones } from './db/schema.js';
@@ -105,7 +105,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         eq(syncClientBaselines.clientId, input.clientId), eq(syncClientBaselines.userId, user.id),
       ));
       const issuedAt = new Date(input.baselineIssuedAt);
-      if (!reason && (!baseline || baseline.lastSuccessfulSyncAt.getTime() !== issuedAt.getTime() || baseline.lastSequence !== input.baseSequence || input.baseSequence > project.syncSequence || requestFingerprint(baseline.document) !== requestFingerprint(input.baselineDocument) || Date.now() - baseline.lastSuccessfulSyncAt.getTime() > RECONNECT_MAX_AGE_MS)) {
+      if (!reason && (!baseline || baseline.lastSuccessfulSyncAt.getTime() !== issuedAt.getTime() || baseline.lastSequence !== input.baseSequence || input.baseSequence > project.syncSequence || requestFingerprint(sharedDocument(baseline.document)) !== requestFingerprint(input.baselineDocument) || Date.now() - baseline.lastSuccessfulSyncAt.getTime() > RECONNECT_MAX_AGE_MS)) {
         reason = '서버가 발급한 동기화 기준이 만료되었거나 일치하지 않습니다.';
       } else if (!reason && input.kind === 'reconnect') {
           const conflicts = findFieldVersionConflicts({ kind: input.kind, baseSequence: input.baseSequence, changes: derived, dependencyPaths }, versions);
@@ -160,7 +160,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
             .onConflictDoUpdate({ target: [syncTombstones.projectId, syncTombstones.objectId], set: { operationId: input.operationId, sequence, snapshot: item as Record<string, unknown>, createdAt, expiresAt } });
         }
       }
-      if (!reason) await tx.insert(syncClientBaselines).values({ baselineId: nextBaselineId, projectId, clientId: input.clientId, userId: user.id, lastSuccessfulSyncAt: createdAt, lastSequence: sequence, document: nextDocument! });
+      if (!reason) await tx.insert(syncClientBaselines).values({ baselineId: nextBaselineId, projectId, clientId: input.clientId, userId: user.id, lastSuccessfulSyncAt: createdAt, lastSequence: sequence, document: sharedDocument(nextDocument!) });
       const event = syncEventSchema.parse({ ...result, changes: acceptedChanges });
       return { result, event };
     });
@@ -200,8 +200,9 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
       const now = new Date();
       const baselineId = randomUUID();
-      await tx.insert(syncClientBaselines).values({ baselineId, projectId, clientId, userId: user.id, lastSuccessfulSyncAt: now, lastSequence: project.sequence, document: project.document });
-      return { baselineId, sequence: project.sequence, baselineIssuedAt: now.toISOString(), document: project.document };
+      const document = sharedDocument(project.document);
+      await tx.insert(syncClientBaselines).values({ baselineId, projectId, clientId, userId: user.id, lastSuccessfulSyncAt: now, lastSequence: project.sequence, document });
+      return { baselineId, sequence: project.sequence, baselineIssuedAt: now.toISOString(), document };
     });
   }
 
