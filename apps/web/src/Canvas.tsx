@@ -146,7 +146,6 @@ export function Canvas({
   const [panelTab, setPanelTab] = useState<'properties' | 'outline'>('properties');
   const [enumOpen, setEnumOpen] = useState(false);
   const [domainName, setDomainName] = useState('');
-  const [filterDomain, setFilterDomain] = useState('');
   const [relationSearch, setRelationSearch] = useState('');
   const [connectSource, setConnectSource] = useState<string | null>(null);
   const [connectPointer, setConnectPointer] = useState<{ x: number; y: number } | null>(null);
@@ -286,29 +285,16 @@ export function Canvas({
     });
     setLocalViewports((value) => ({ ...value, [next.viewId]: next }));
   }, [focusTarget?.nonce]);
-  const relatedIds = new Set(
-    filterDomain
-      ? [
-          filterDomain,
-          ...connectedRelations(doc.domainRelations, filterDomain).flatMap((r) => [
-            r.sourceDomainId,
-            r.targetDomainId,
-          ]),
-        ]
-      : [...doc.domains.map((d) => d.id), ...(doc.views ?? []).map((v) => v.id)],
-  );
-  const filteredRelations = doc.domainRelations.filter(
-    (r) =>
-      (!filterDomain || r.sourceDomainId === filterDomain || r.targetDomainId === filterDomain) &&
-      [
-        r.name,
-        r.description,
-        doc.domains.find((d) => d.id === r.sourceDomainId)?.name,
-        doc.domains.find((d) => d.id === r.targetDomainId)?.name,
-      ]
-        .join(' ')
-        .toLocaleLowerCase()
-        .includes(relationSearch.toLocaleLowerCase()),
+  const filteredRelations = doc.domainRelations.filter((r) =>
+    [
+      r.name,
+      r.description,
+      doc.domains.find((d) => d.id === r.sourceDomainId)?.name,
+      doc.domains.find((d) => d.id === r.targetDomainId)?.name,
+    ]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(relationSearch.toLocaleLowerCase()),
   );
   useEffect(() => {
     const cancel = (event: KeyboardEvent) => {
@@ -323,9 +309,8 @@ export function Canvas({
     return () => window.removeEventListener('keydown', cancel);
   }, []);
   useEffect(() => {
-    if (filterDomain && !doc.domains.some((d) => d.id === filterDomain)) setFilterDomain('');
     if (connectSource && !doc.domains.some((d) => d.id === connectSource)) setConnectSource(null);
-  }, [doc.domains, filterDomain, connectSource]);
+  }, [doc.domains, connectSource]);
   const activeDomain = doc.domains.find((d) => d.id === viewId);
   const query = relationSearch.trim().toLocaleLowerCase();
   const matches = (...values: (string | undefined | null)[]) =>
@@ -887,12 +872,6 @@ export function Canvas({
         </div>
         {exportError && <p role="alert">{exportError}</p>}
 
-        {viewId === 'overview' && filterDomain && (
-          <div className="domain-filter-status" role="status">
-            {doc.domains.find((d) => d.id === filterDomain)?.name} 연결 강조{' '}
-            <Button onClick={() => setFilterDomain('')}>강조 해제</Button>
-          </div>
-        )}
         <div
           ref={surface}
           className={`canvas-surface ${connectSource || fkSource ? 'connection-target-mode' : ''}`}
@@ -967,7 +946,7 @@ export function Canvas({
                       key={r.id}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => editRelation(r.id)}
-                      className={`relation ${relationId === r.id ? 'selected' : ''} ${filterDomain && r.sourceDomainId !== filterDomain && r.targetDomainId !== filterDomain ? 'domain-dimmed' : ''}`}
+                      className={`relation ${relationId === r.id ? 'selected' : ''}`}
                     >
                       <path
                         d={route.path}
@@ -1071,7 +1050,7 @@ export function Canvas({
               return (
                 <div
                   key={node.id}
-                  className={`canvas-node ${d ? 'domain-node' : t ? 'table-node' : 'note-node'} ${selected === node.objectId ? 'selected' : ''} ${d && filterDomain && !relatedIds.has(d.id) ? 'domain-dimmed' : ''} ${d && connectSource === d.id ? 'connection-source' : ''}`}
+                  className={`canvas-node ${d ? 'domain-node' : t ? 'table-node' : 'note-node'} ${selected === node.objectId ? 'selected' : ''} ${d && connectSource === d.id ? 'connection-source' : ''}`}
                   style={
                     {
                       left: node.x,
@@ -1288,14 +1267,6 @@ export function Canvas({
                             setMenu(null);
                           },
                         },
-                        {
-                          id: 'filter',
-                          label: '연결된 도메인 강조',
-                          onAction: () => {
-                            setFilterDomain(menu.source!);
-                            setMenu(null);
-                          },
-                        },
                       ]
                     : [
                         ...(viewId === 'overview'
@@ -1475,23 +1446,6 @@ export function Canvas({
                       </PanelList>
                     </PanelSection>
                     <PanelSection title="도메인 관계" count={filteredRelations.length} defaultOpen>
-                      <div className="inspector-fields">
-                        <label>
-                          연결 강조
-                          <Select
-                            aria-label="연결 강조"
-                            value={filterDomain}
-                            onValueChange={(value) => setFilterDomain(value)}
-                          >
-                            <option value="">모든 도메인</option>
-                            {doc.domains.map((d) => (
-                              <option key={d.id} value={d.id}>
-                                {d.name}
-                              </option>
-                            ))}
-                          </Select>
-                        </label>
-                      </div>
                       <PanelList empty="표시할 관계가 없습니다.">
                         {filteredRelations.map((r) => (
                           <PanelRow
@@ -1664,14 +1618,6 @@ export function Canvas({
                         <Button onClick={() => navigate(domain.id)}>도메인 열기 →</Button>
                         <Button disabled={readOnly} onClick={() => startRelation(domain.id, '')}>
                           ＋ 관계
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            setFilterDomain(domain.id);
-                            setPanelTab('outline');
-                          }}
-                        >
-                          연결 강조
                         </Button>
                       </div>
                     </>
