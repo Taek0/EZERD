@@ -134,8 +134,8 @@ function Composer({ users, busy, label, onSend, focusNonce, authorName, authorCo
     </div>}
   </form>;
 }
-export function CommentsPanel({ projectId, userId, document, context, activeThreadId, onThreads, onNavigate, onClose, onCancelPinDraft, draftTarget , panelWidth=340,onPanelWidthChange,onMembers,currentUserColor }: {
-  panelWidth?:number;onPanelWidthChange?:(width:number)=>void;onMembers?:(members:Member[])=>void;currentUserColor?:string;
+export function CommentsPanel({ projectId, userId, document, context, activeThreadId, onThreads, onNavigate, onClose, onCancelPinDraft, draftTarget , onMembers,currentUserColor }: {
+  onMembers?:(members:Member[])=>void;currentUserColor?:string;
   draftTarget?: CommentContext & { nonce: number };
   projectId: string;
   userId: string;
@@ -267,7 +267,6 @@ export function CommentsPanel({ projectId, userId, document, context, activeThre
       </Badge></h2>
       <IconButton onClick={onClose} aria-label="핀 닫기">×</IconButton>
     </div>
-    <label className="comment-panel-size"><span>너비</span><input aria-label="핀 사이드탭 너비" aria-valuetext={panelWidth+'px'} type="range" min={280} max={560} step={20} value={panelWidth} onChange={event=>onPanelWidthChange?.(Number(event.target.value))}/><output>{panelWidth}px</output></label>
     <div className="comment-filters">
       <label><Checkbox
         checked={allViews}

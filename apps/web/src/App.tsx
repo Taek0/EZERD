@@ -1,3 +1,4 @@
+import { PinPanelResizer } from './PinPanelResizer.js';
 import { userColorStyle } from './user-color-style.js';
 import { UserColorEditor } from './UserColorEditor.js';
 import { clampCommentsPanelWidth } from './comments-panel-size.js';
@@ -48,6 +49,7 @@ export function App() {
   const [editingColor,setEditingColor]=useState(false);
   const [registrationPin,setRegistrationPin]=useState('');
   const [members,setMembers]=useState<Array<{id:string;username:string;color?:string}>>([]);
+  const [resizingComments,setResizingComments]=useState(false);
   const [commentsPanelWidth,setCommentsPanelWidth]=useState(()=>{try{return clampCommentsPanelWidth(localStorage.getItem('ezerd.commentsPanelWidth'));}catch{return 340;}});
   function resizeCommentsPanel(width:number){const next=clampCommentsPanelWidth(width);setCommentsPanelWidth(next);try{localStorage.setItem('ezerd.commentsPanelWidth',String(next));}catch{}}
   const [username, setUsername] = useState(''), [editingName, setEditingName] = useState(false);
@@ -501,8 +503,9 @@ export function App() {
             document={opened.document}
             viewId={canvasContext.viewId}
             onOpen={focusThread} />} />
-        <div data-open={commentsOpen} aria-hidden={!commentsOpen} inert={!commentsOpen} className="comments-container" style={{'--comments-panel-width':commentsPanelWidth+'px'} as CSSProperties}>
-          <CommentsPanel panelWidth={commentsPanelWidth} onPanelWidthChange={resizeCommentsPanel} onMembers={setMembers} currentUserColor={user.color}
+        <div data-open={commentsOpen} data-resizing={resizingComments} aria-hidden={!commentsOpen} inert={!commentsOpen} className="comments-container" style={{'--comments-panel-width':commentsPanelWidth+'px'} as CSSProperties}>
+          {commentsOpen&&<PinPanelResizer width={commentsPanelWidth} onWidthChange={resizeCommentsPanel} onResizingChange={setResizingComments}/>}
+          <CommentsPanel onMembers={setMembers} currentUserColor={user.color}
             key={opened.project.id}
             projectId={opened.project.id}
             userId={user.id}
