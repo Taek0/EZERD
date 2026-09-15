@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 export function configureApplication(app: NestExpressApplication): void {
   app.setGlobalPrefix('api');
-  app.useBodyParser('json', { limit: '2mb' });
+  // Sync requests carry a validated baseline, final candidate, and semantic diff.
+  // Each document is capped at 1.5 MB by the shared contract, so the transport
+  // envelope must allow the bounded duplicated representation.
+  app.useBodyParser('json', { limit: '8mb' });
   const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));
   if (existsSync(`${webRoot}/index.html`)) {
     // UI and API share one origin/port for LAN hosting. Only public build assets are served.

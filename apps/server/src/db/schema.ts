@@ -1,4 +1,4 @@
-import { boolean, doublePrecision, unique, index, text, integer, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { boolean, doublePrecision, unique, uniqueIndex, index, text, integer, jsonb, pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import type { DesignDocument } from '@ezerd/model';
 
 export const projectStatus = pgEnum('project_status', ['active', 'archived']);
@@ -7,6 +7,7 @@ export const projects = pgTable('projects', {
   name: varchar('name', { length: 120 }).notNull(),
   status: projectStatus('status').notNull().default('active'),
   version: integer('version').notNull().default(0),
+  syncSequence: integer('sync_sequence').notNull().default(0),
   document: jsonb('document').$type<DesignDocument>().notNull().default({ schemaVersion: 1, domains: [], domainRelations: [], notes: [], layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] } }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -51,3 +52,63 @@ export const notifications = pgTable('review_notifications', {
   read: boolean('read').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, table => [index('review_notifications_user_idx').on(table.userId)]);
+
+export const sessions = pgTable('sessions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash), index('sessions_user_idx').on(table.userId)]);
+
+export const syncOperations = pgTable('sync_operations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  operationId: uuid('operation_id').notNull(),
+  groupId: uuid('group_id').notNull(),
+  clientId: uuid('client_id').notNull(),
+  actorId: uuid('actor_id').notNull().references(() => users.id),
+  sequence: integer('sequence').notNull(),
+  baseSequence: integer('base_sequence').notNull(),
+  baselineIssuedAt: timestamp('baseline_issued_at', { withTimezone: true }).notNull(),
+  baselineId: uuid('baseline_id').notNull(),
+  kind: varchar('kind', { length: 16 }).notNull(),
+  fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+  changes: jsonb('changes').$type<unknown[]>().notNull(),
+  result: jsonb('result').$type<Record<string, unknown>>().notNull(),
+  deletionSnapshot: jsonb('deletion_snapshot').$type<Record<string, unknown> | null>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  unique('sync_operations_project_operation_unique').on(table.projectId, table.operationId),
+  unique('sync_operations_project_sequence_unique').on(table.projectId, table.sequence),
+  index('sync_operations_project_created_idx').on(table.projectId, table.createdAt),
+]);
+
+export const syncFieldVersions = pgTable('sync_field_versions', {
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  path: text('path').notNull(),
+  sequence: integer('sequence').notNull(),
+  operationId: uuid('operation_id').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [unique('sync_field_versions_project_path_unique').on(table.projectId, table.path)]);
+
+export const syncClientBaselines = pgTable('sync_client_baselines', {
+  baselineId: uuid('baseline_id').notNull(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  clientId: uuid('client_id').notNull(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  lastSuccessfulSyncAt: timestamp('last_successful_sync_at', { withTimezone: true }).notNull(),
+  lastSequence: integer('last_sequence').notNull(),
+  document: jsonb('document').$type<DesignDocument>().notNull(),
+}, table => [unique('sync_client_baselines_id_unique').on(table.projectId, table.baselineId), index('sync_client_baselines_identity_idx').on(table.projectId, table.clientId, table.userId)]);
+
+export const syncTombstones = pgTable('sync_tombstones', {
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  objectId: text('object_id').notNull(),
+  operationId: uuid('operation_id').notNull(),
+  sequence: integer('sequence').notNull(),
+  snapshot: jsonb('snapshot').$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, table => [unique('sync_tombstones_project_object_unique').on(table.projectId, table.objectId), index('sync_tombstones_expiry_idx').on(table.expiresAt)]);

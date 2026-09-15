@@ -24,10 +24,12 @@
     "pg": "8.23.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
+    "ws": "8.18.3",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",
+    "@types/ws": "8.18.1",
     "drizzle-kit": "0.31.10",
     "tsx": "4.23.13"
   }
