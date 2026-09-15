@@ -1,0 +1,31 @@
+.ui-popover.sync-history-popover {
+  width: min(390px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  max-height: min(680px, calc(100dvh - 16px), var(--available-height));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0;
+}
+
+.sync-history-dialog {
+  outline: none;
+  min-width: 0;
+}
+
+.sync-history-panel.sync-history-content {
+  position: static;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  box-shadow: none;
+  padding: clamp(12px, 4vw, 20px);
+}
+
+.sync-history-trigger {
+  white-space: nowrap;
+}
+
+.sync-history-content small {
+  overflow-wrap: anywhere;
+}
