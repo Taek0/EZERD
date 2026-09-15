@@ -38,7 +38,9 @@ export class WorkspaceController {
   createUser(@Body() body: unknown) {
     const input = parse(usernameInputSchema, body);
     return databaseOperation(async () => {
-      const [row] = await this.database.db.insert(users).values({username:input.username,pinHash:createHash('sha256').update(input.pin).digest('hex')}).returning();
+      const [row] = await this.database.db.insert(users).values({username:input.username,pinHash:createHash('sha256').update(input.pin).digest('hex')})
+        .onConflictDoUpdate({target:[users.username,users.pinHash],set:{username:input.username}})
+        .returning();
       return user(row!);
     });
   }

@@ -43,12 +43,13 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     }
     if (app) await app.close();
   });
-  it('enforces composite trimmed username and four-digit PIN identity with private PINs', async () => {
+  it('reconnects existing username and PIN identities while preserving profiles and uniqueness', async () => {
     const name='사용자'+randomUUID().slice(0,8);
     const first=await request('/users','POST',{pin:'0012',username:'  '+name+'  '});if(first.data.id)userIds.push(first.data.id);
     expect(first.status).toBe(201);expect(first.data.username).toBe(name);
     const duplicate=await request('/users','POST',{pin:'0012',username:name});if(duplicate.data.id)userIds.push(duplicate.data.id);
-    expect(duplicate.status).toBe(409);
+    expect(duplicate.status).toBe(201);
+    expect(duplicate.data).toEqual(first.data);
     const sameName=await request('/users','POST',{username:name,pin:'9876'});if(sameName.data.id)userIds.push(sameName.data.id);expect(sameName.status).toBe(201);
     expect(first.data.color).toBe('#4169e1');expect(first.data).not.toHaveProperty('pin');expect(first.data).not.toHaveProperty('pinHash');
     expect((await request('/users','POST',{username:name+'-missing'})).status).toBe(400);
@@ -56,6 +57,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     const recolored=await request('/users/'+first.data.id,'PATCH',{color:'#12ABEF'});expect(recolored.status).toBe(200);expect(recolored.data.color).toBe('#12abef');
     expect((await request('/users/'+first.data.id,'PATCH',{color:'red'})).status).toBe(400);
     expect((await request('/users/'+first.data.id)).data.color).toBe('#12abef');
+    const returning=await request('/users','POST',{username:'  '+name+'  ',pin:'0012'});
+    expect(returning.status).toBe(201);
+    expect(returning.data).toEqual(recolored.data);
     const other=await request('/users','POST',{pin:'0012',username:name+'-other'});if(other.data.id)userIds.push(other.data.id);
     expect((await request('/users/'+other.data.id,'PATCH',{username:name})).status).toBe(409);
     expect((await request('/users/'+other.data.id)).data.username).toBe(name+'-other');
@@ -64,7 +68,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     const listed=await request('/users');expect(listed.data.every((u:Record<string,unknown>)=>!('pin' in u)&&!('pinHash' in u))).toBe(true);
     const raceName='동시'+randomUUID().slice(0,8);
     const raced=await Promise.all([request('/users','POST',{pin:'0012',username:raceName}),request('/users','POST',{pin:'0012',username:raceName})]);
-    raced.forEach(value=>{if(value.data.id)userIds.push(value.data.id);});expect(raced.map(value=>value.status).sort()).toEqual([201,409]);
+    raced.forEach(value=>{if(value.data.id)userIds.push(value.data.id);});expect(raced.map(value=>value.status).sort()).toEqual([201,201]);
+    expect(new Set(raced.map(value=>value.data.id)).size).toBe(1);
     expect((await request('/users','POST',{pin:'0012',username:' '})).status).toBe(400);
     expect((await request('/users/invalid')).status).toBe(400);
     expect((await request('/users/'+randomUUID())).status).toBe(404);
