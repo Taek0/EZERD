@@ -121,11 +121,18 @@ function diffValue(before: unknown, after: unknown, path: string, output: Docume
     Array.isArray(before) &&
     Array.isArray(after) &&
     [...before, ...after].every((item) => routeKey(item) !== null);
+  const keyedItems =
+    Array.isArray(before) &&
+    Array.isArray(after) &&
+    ((keyedArray(before) && keyedArray(after)) || routes);
   if (
     Array.isArray(before) &&
     Array.isArray(after) &&
-    ((keyedArray(before) && keyedArray(after)) || routes)
-  ) {
+    !keyedItems &&
+    stable(before) === stable(after)
+  )
+    return;
+  if (Array.isArray(before) && Array.isArray(after) && keyedItems) {
     const itemKey = routes
       ? (item: unknown) => routeKey(item)!
       : (item: unknown) => (item as { id: string }).id;
@@ -345,6 +352,20 @@ function stable(value: unknown): string {
     .sort()
     .map((key) => `${JSON.stringify(key)}:${stable(object[key])}`)
     .join(',')}}`;
+}
+
+/** Returns whether a stored change changes either value or property existence. */
+export function isEffectiveChange(change: {
+  before: unknown;
+  after: unknown;
+  beforeExists?: boolean | undefined;
+  afterExists?: boolean | undefined;
+}): boolean {
+  const beforeExists = change.beforeExists !== false;
+  const afterExists = change.afterExists !== false;
+  if (beforeExists !== afterExists) return true;
+  if (!beforeExists) return false;
+  return stable(change.before) !== stable(change.after);
 }
 
 /** Canonical, hash-free request identity; server-authenticated actor data is intentionally absent. */

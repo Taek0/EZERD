@@ -9,6 +9,7 @@ import {
   deriveStructuralDependencyPaths,
   findFieldVersionConflicts,
   inverseChanges,
+  isEffectiveChange,
   isDeletionChange,
   mergeCandidateOntoDocument,
   requestFingerprint,
@@ -140,6 +141,104 @@ describe('shared document sync model', () => {
     expect(diffSharedDocument(before, after).map((change) => change.path)).toContain(
       '/layout/nodes/node:table:domain/position',
     );
+  });
+
+  it('emits only node position when moving a table with unchanged primary keys', () => {
+    const baseline = fixture();
+    baseline.tables!.push({ ...structuredClone(baseline.tables![0]!), id: 'second-table' });
+    baseline.keys = [
+      {
+        id: 'first-pk',
+        tableId: 'table',
+        scope: 'both',
+        kind: 'primary',
+        name: 'first_pk',
+        columnIds: ['first-id'],
+      },
+      {
+        id: 'second-pk',
+        tableId: 'second-table',
+        scope: 'both',
+        kind: 'primary',
+        name: 'second_pk',
+        columnIds: ['second-id'],
+      },
+    ];
+    baseline.layout.nodes.push({
+      ...structuredClone(baseline.layout.nodes[0]!),
+      id: 'node:second-table:domain',
+      objectId: 'second-table',
+      x: 400,
+    });
+    const candidate = structuredClone(baseline);
+    candidate.layout.nodes[2]!.x = 450;
+
+    expect(diffSharedDocument(baseline, candidate)).toEqual([
+      {
+        path: '/layout/nodes/node:second-table:domain/position',
+        before: { x: 400, y: 20 },
+        after: { x: 450, y: 20 },
+      },
+    ]);
+  });
+
+  it('treats structurally equal primitive arrays as unchanged', () => {
+    const baseline = fixture();
+    baseline.keys = [
+      {
+        id: 'pk',
+        tableId: 'table',
+        scope: 'both',
+        kind: 'primary',
+        name: 'pk',
+        columnIds: ['first-id', 'second-id'],
+      },
+    ];
+    baseline.enums = [{ id: 'status', name: 'status', schema: 'public', values: ['new', 'done'] }];
+
+    expect(diffSharedDocument(baseline, structuredClone(baseline))).toEqual([]);
+
+    const reorderedKey = structuredClone(baseline);
+    reorderedKey.keys![0]!.columnIds.reverse();
+    expect(diffSharedDocument(baseline, reorderedKey)).toContainEqual(
+      expect.objectContaining({
+        path: '/keys/pk/columnIds',
+        before: ['first-id', 'second-id'],
+        after: ['second-id', 'first-id'],
+      }),
+    );
+
+    const changedEnum = structuredClone(baseline);
+    changedEnum.enums![0]!.values[1] = 'archived';
+    expect(diffSharedDocument(baseline, changedEnum)).toContainEqual(
+      expect.objectContaining({
+        path: '/enums/status/values',
+        before: ['new', 'done'],
+        after: ['new', 'archived'],
+      }),
+    );
+  });
+
+  it('keeps keyed-array reorder moves while ignoring structurally equal clones', () => {
+    const baseline = fixture();
+    baseline.tables!.push({ ...structuredClone(baseline.tables![0]!), id: 'second-table' });
+    const reordered = structuredClone(baseline);
+    reordered.tables!.reverse();
+
+    expect(diffSharedDocument(baseline, reordered)).toContainEqual(
+      expect.objectContaining({ path: '/tables/@move/second-table' }),
+    );
+  });
+
+  it('recognizes effective changes while preserving property existence semantics', () => {
+    expect(isEffectiveChange({ before: ['id'], after: ['id'] })).toBe(false);
+    expect(isEffectiveChange({ before: ['id'], after: ['other-id'] })).toBe(true);
+    expect(
+      isEffectiveChange({ before: null, after: null, beforeExists: false, afterExists: true }),
+    ).toBe(true);
+    expect(
+      isEffectiveChange({ before: null, after: null, beforeExists: false, afterExists: false }),
+    ).toBe(false);
   });
 
   it('creates deterministic fingerprints and field-scoped inverse edits', () => {
