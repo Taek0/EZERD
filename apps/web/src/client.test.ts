@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, request, savedRevision } from './client.js';
+import { ApiError, request, savedRevision, storedAuthorization } from './client.js';
 describe('document save acknowledgements', () => {
   it('keeps changes made while a snapshot is saving dirty', () => {
     expect(savedRevision(4, 3)).toBe(false);
@@ -14,6 +14,15 @@ describe('API failures', () => {
   it('returns successful responses and handles empty proxy errors', async () => {
     expect(await request('/api/users', undefined, (async () => Response.json([{ id: 'a' }])) as typeof fetch)).toEqual([{ id: 'a' }]);
     await expect(request('/api/users', undefined, (async () => new Response('', { status: 502 })) as typeof fetch)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+describe('authenticated API requests', () => {
+  it('uses only a current stored session token', () => {
+    const storage = (value: unknown) => ({ getItem: () => value === undefined ? null : JSON.stringify(value) });
+    expect(storedAuthorization(storage({ token: 'session-token', expiresAt: new Date(Date.now() + 60_000).toISOString() }))).toBe('Bearer session-token');
+    expect(storedAuthorization(storage({ token: 'expired', expiresAt: new Date(Date.now() - 1).toISOString() }))).toBeUndefined();
+    expect(storedAuthorization(storage(undefined))).toBeUndefined();
+    expect(storedAuthorization({ getItem: () => '{' })).toBeUndefined();
   });
 });
 import { acknowledgeSave, validViewId, viewportDestination } from './client.js';

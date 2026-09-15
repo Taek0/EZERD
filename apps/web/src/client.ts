@@ -3,8 +3,22 @@ export class ApiError extends Error {
     super(message);
   }
 }
+export function storedAuthorization(storage?: Pick<Storage, 'getItem'>): string | undefined {
+  const source = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
+  if (!source) return undefined;
+  try {
+    const raw = source.getItem('ezerd.sync.session');
+    if (!raw) return undefined;
+    const session = JSON.parse(raw) as { token?: unknown; expiresAt?: unknown };
+    if (typeof session.token !== 'string' || typeof session.expiresAt !== 'string' || Date.parse(session.expiresAt) <= Date.now()) return undefined;
+    return `Bearer ${session.token}`;
+  } catch {
+    return undefined;
+  }
+}
 export async function request<T>(url: string, init?: RequestInit, fetcher: typeof fetch = fetch): Promise<T> {
-  const response = await fetcher(url, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } });
+  const authorization = storedAuthorization();
+  const response = await fetcher(url, { ...init, headers: { 'Content-Type': 'application/json', ...(authorization ? { Authorization: authorization } : {}), ...init?.headers } });
   if (!response.ok)
     throw new ApiError(response.status, response.status === 409 ? '다른 저장 내용이 있습니다. 최신 내용을 다시 열어 주세요.' : `요청을 완료하지 못했습니다 (${response.status}). 다시 시도해 주세요.`);
   return await response.json() as T;
