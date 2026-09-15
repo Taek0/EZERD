@@ -485,11 +485,8 @@ export function TableRelationsSvg({
                       ? geometry.points[0]!
                       : geometry.points[geometry.points.length - 1]!;
                   return (
-                    <circle
+                    <g
                       key={kind}
-                      cx={point.x}
-                      cy={point.y}
-                      r={10}
                       className={`table-route-endpoint${selectedId === relation.id ? ' selected' : ''}`}
                       role="button"
                       tabIndex={0}
@@ -519,8 +516,20 @@ export function TableRelationsSvg({
                         );
                       }}
                     >
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r={10}
+                        className="table-route-endpoint-hit"
+                      />
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r={4}
+                        className="table-route-endpoint-dot"
+                      />
                       <title>연결 끝점을 카드 테두리로 드래그 · 방향키로 미세 조절</title>
-                    </circle>
+                    </g>
                   );
                 })}
               </g>

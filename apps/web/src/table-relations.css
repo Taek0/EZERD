@@ -47,12 +47,19 @@
   stroke: transparent;
   outline: none;
 }
-.table-route-endpoint.selected,
-.table-route-endpoint:hover,
-.table-route-endpoint:focus-visible {
+.table-route-endpoint-hit {
   fill: transparent;
-  stroke: var(--accent);
-  stroke-width: 2;
+  stroke: none;
+}
+.table-route-endpoint-dot {
+  pointer-events: none;
+  fill: transparent;
+  stroke: none;
+}
+.table-route-endpoint.selected .table-route-endpoint-dot,
+.table-route-endpoint:hover .table-route-endpoint-dot,
+.table-route-endpoint:focus-visible .table-route-endpoint-dot {
+  fill: var(--accent);
 }
 .table-route-endpoint:active {
   cursor: grabbing;
