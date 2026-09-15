@@ -316,7 +316,9 @@ it('renders directly editable card type and NULL controls with a PK NULL lock', 
       }),
     }),
   );
-  expect(html).toContain('role="combobox"');
+  expect(html).not.toContain('role="combobox"');
+  expect(html).toContain('aria-label="hidden_column 타입 편집"');
+  expect(html).toContain('NUMERIC');
   expect(html).toContain('hidden_column NULL 허용');
   expect(html).toContain('PK 컬럼은 NULL을 허용하지 않습니다.');
   expect(html).not.toContain('더블클릭하여 NULL');

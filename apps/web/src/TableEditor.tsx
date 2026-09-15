@@ -261,6 +261,32 @@ function InlineCell({
     </span>
   );
 }
+function InlineType({ display, ...props }: Parameters<typeof SearchType>[0] & { display: string }) {
+  const [editing, setEditing] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  return editing ? (
+    <SearchType
+      {...props}
+      autoFocus
+      showSearchIcon={false}
+      onEditEnd={(reason) => {
+        setEditing(false);
+        if (reason !== 'blur') requestAnimationFrame(() => trigger.current?.focus());
+      }}
+    />
+  ) : (
+    <Button
+      ref={trigger}
+      className="table-type-trigger"
+      aria-label={`${props.label} 편집`}
+      aria-haspopup="listbox"
+      title={display}
+      onClick={() => setEditing(true)}
+    >
+      {display}
+    </Button>
+  );
+}
 const freshColumn = (tableId: string, scope: ModelScope = 'physical'): Column => ({
   id: newId(),
   tableId,
@@ -380,7 +406,8 @@ export function TableNodeContent({
                 onKeyDown={(e) => e.stopPropagation()}
               >
                 {editable ? (
-                  <SearchType
+                  <InlineType
+                    display={columnTypeDisplay(c.physical.type, doc.enums)}
                     label={`${columnName(c)} 타입`}
                     value={
                       c.physical.type.enumId

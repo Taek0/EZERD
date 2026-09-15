@@ -1,7 +1,7 @@
 import { columnTypeDisplay } from './column-type-display.js';
 import { type DesignDocument, isVisibleInView } from '@ezerd/model';
 const textWidth = (value: string) =>
-  [...value].reduce((n, c) => n + (c.charCodeAt(0) > 255 ? 17 : 10.5), 0);
+  [...value].reduce((n, c) => n + (c.charCodeAt(0) > 255 ? 18 : 11.2), 0);
 export function tableCardMetrics(doc: DesignDocument, tableId: string) {
   const table = doc.tables?.find((t) => t.id === tableId);
   const columns = (doc.columns ?? []).filter(
@@ -13,7 +13,7 @@ export function tableCardMetrics(doc: DesignDocument, tableId: string) {
   const widths = [
     58,
     Math.max(110, ...columns.map((c) => Math.min(240, textWidth(c.physical.name)))),
-    Math.max(100, ...typeDisplays.map((typeDisplay) => Math.min(220, textWidth(typeDisplay)))),
+    Math.max(120, ...typeDisplays.map((typeDisplay) => Math.min(260, textWidth(typeDisplay) + 18))),
     44,
     Math.max(110, ...columns.map((c) => Math.min(320, textWidth(c.physical.comment)))),
   ];
@@ -27,7 +27,7 @@ export function tableCardMetrics(doc: DesignDocument, tableId: string) {
         lines(typeDisplays[index]!, widths[2]!),
         showComment ? lines(c.physical.comment, widths[4]!) : 1,
       ) *
-        25 +
+        27 +
       17,
   );
   const visibleWidths = widths.filter(
@@ -42,10 +42,10 @@ export function tableCardMetrics(doc: DesignDocument, tableId: string) {
     width,
     height: Math.max(
       240,
-      52 +
-        36 +
+      54 +
+        38 +
         Math.max(
-          42,
+          44,
           rows.reduce((a, b) => a + b, 0),
         ) +
         56,

@@ -35,12 +35,29 @@ try {
   const user = page.getByRole('group', { name: 'user', exact: true });
   const product = page.getByRole('group', { name: 'product', exact: true });
   const code = user.locator('.table-column-row').filter({ hasText: 'code' });
+  assert.equal(await code.getByRole('combobox').count(), 0);
+  await code.getByRole('button', { name: 'code 타입 편집', exact: true }).click();
   await code.getByRole('combobox', { name: 'code 타입', exact: true }).fill('INTEGER');
   await page.getByRole('option', { name: 'INTEGER', exact: true }).click();
   assert.equal(
     (await state()).columns.find((c) => c.id === 'user-note').physical.type.name,
     'integer',
   );
+  assert.equal(await code.getByRole('combobox').count(), 0);
+  const typeTrigger = code.getByRole('button', { name: 'code 타입 편집', exact: true });
+  await typeTrigger.focus();
+  await typeTrigger.press('Enter');
+  await code.getByRole('combobox').fill('VARCHAR');
+  assert.equal(await code.locator('.ui-search-type svg').count(), 0);
+  await code.getByRole('combobox').press('Escape');
+  assert.equal(await code.getByRole('combobox').count(), 0);
+  assert.equal(
+    (await state()).columns.find((c) => c.id === 'user-note').physical.type.name,
+    'integer',
+  );
+  await typeTrigger.click();
+  await code.getByRole('combobox').press('Tab');
+  assert.equal(await code.getByRole('combobox').count(), 0);
   await code.getByRole('checkbox', { name: 'code NULL 허용', exact: true }).uncheck();
   assert.equal((await state()).columns.find((c) => c.id === 'user-note').physical.nullable, false);
   const note = product.locator('.table-column-row').filter({ hasText: 'note' });
