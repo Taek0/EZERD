@@ -4,9 +4,27 @@
 
 # EZERD
 
-도메인 관계도에서 시작해 논리·물리 ERD로 이어지는 팀 협업 설계 도구.
+도메인 관계도에서 시작해 테이블과 컬럼을 설계하는 팀 협업 ERD 도구.
 
-현재 username 입장, 프로젝트 갤러리, 도메인·테이블 ERD, 댓글·멘션·알림, 서버 저장과 PostgreSQL DDL 내보내기를 구현했습니다. LAN 실행 설정은 준비했으며 실제 Wi-Fi 공개 실행은 별도 확인 단계입니다. 상세 동작과 검증은 [구현 진행 기록](./docs/work-log/IMPLEMENTATION_PROGRESS.md)에 있습니다. 첫 출시는 username 입장, 프로젝트 갤러리, 점 격자 캔버스의 도메인·테이블 설계, 서버 저장, 기본 PostgreSQL 생성 DDL 내보내기와 댓글·멘션을 포함하기로 확정했습니다. 실시간 ERD 공동 편집·복원과 고급 기능은 후속 단계에서 다룹니다. 확장 인증은 추후 결정합니다.
+파란색 계열의 뉴모피즘·스위스 디자인을 바탕으로, 도메인 흐름과 테이블 구조를 하나의 워크스페이스에서 편집합니다. 현재 편집 UI는 물리 테이블·컬럼명을 중심으로 구성되어 있습니다.
+
+## 주요 기능
+
+- **프로젝트 갤러리**: 프로젝트 생성·검색·이름 변경·보관·삭제.
+- **도메인 캔버스**: 도메인 색상과 설명, 관계 목록과 즉시 편집, 우클릭 자동 배치.
+- **테이블 캔버스**: 카드에서 컬럼명·타입·NULL 직접 편집, Tab으로 타입 검색, PK/복합 UNIQUE, 프로젝트 ENUM, 컬럼 순서 변경, NULL/comment 숨김, 이미지 내보내기.
+- **테이블 관계**: PK → FK 연결과 FK 컬럼 자동 생성, 컬럼명·대응관계 설정, ON UPDATE/ON DELETE, 직각 선분과 까마귀발 접점 조절.
+- **도메인 뷰**: 여러 도메인의 테이블을 기존 상대 배치대로 함께 보기. 카드 위치는 고정하며 관계선은 조절할 수 있습니다. 개인 뷰의 경로는 현재 프로젝트 세션에서 유지됩니다.
+- **핀 대화**: 캔버스 우클릭으로 위치에 핀 작성, 답글·멘션·알림, 해결 처리와 삭제.
+- **자동 저장·협업**: 객체 속성 단위 변경과 WebSocket 기반 동기화, 변경자·일시 및 동작 필터를 제공하는 히스토리, 실행 취소와 복원.
+
+PostgreSQL DDL 생성 모델과 검증 스크립트는 저장소에 남아 있으나, 현재 화면에서는 DDL 내보내기를 제공하지 않습니다. 최근 변경과 검증 결과는 [피드백 통합 QA 기록](./docs/work-log/2026-09-15-Workspace-FeedbackQA.md)을 참고하세요.
+
+## 사용자와 인증
+
+사용자명과 숫자 네 자리 PIN으로 접속합니다. 사용자명은 대소문자 입력을 허용하지만 앞뒤 공백 제거·소문자 정규화 후 저장하며, PIN과 무관하게 이름 자체가 고유합니다. 같은 이름·PIN으로 다시 접속하면 기존 계정을 사용합니다.
+
+API 쓰기 요청은 세션 토큰으로 인증하며, 핀 작성자도 서버가 세션에서 결정합니다. PIN은 현재 서버에서 SHA-256 해시로 저장하고 브라우저 저장소에는 보관하지 않습니다. 이 방식은 salt 기반 비밀번호 전용 해싱과 다르며, 현재 기본 실행 구성은 HTTP입니다. 외부 접속에 사용할 HTTPS·로그인 시도 제한과 세분화된 역할 권한은 별도 보완 대상입니다.
 
 ## 개발 환경
 
@@ -30,7 +48,7 @@
 Docker Desktop이 정상 실행 중이어야 DB 컨테이너를 시작할 수 있습니다. 아래 명령은 저장소 루트에서 실행합니다.
 
 ```powershell
-cd D:\ChatGPT\ERD
+# 저장소 디렉터리에서 실행
 pnpm install --frozen-lockfile
 pnpm setup
 pnpm db:up
@@ -47,19 +65,20 @@ pnpm dev
 - DB 데이터는 `.data/postgres`에 보존하며 Git에서 제외합니다.
 - 이후 실행에서는 Docker가 켜진 상태에서 `pnpm db:up`, `pnpm dev`를 사용합니다. 새 마이그레이션이 있으면 `pnpm db:migrate`도 실행합니다.
 
-현재 개발 설정의 웹·API·DB는 로컬 주소에만 바인딩합니다. 목표 배포는 사용자의 PC에서 호스팅하고 사내 Wi-Fi에서 웹에 접속하는 방식이며, LAN 접속 설정과 실행 스크립트는 [호스팅 문서](./docs/work-log/LAN_HOSTING.md)에 준비했습니다. 실제 공개 실행 및 다른 장치 접속 확인은 별도 단계입니다. username 기반 사용에 인증·역할별 권한을 요구하지 않습니다. `.env.example`의 DB 계정은 로컬 개발 전용입니다.
+현재 개발 설정의 웹·API·DB는 로컬 주소에만 바인딩합니다. PC에서 호스팅해 사내 Wi-Fi로 접속하는 설정과 실행 스크립트는 [호스팅 문서](./docs/work-log/LAN_HOSTING.md)에 있습니다. 실제 외부 장치 연결은 네트워크·방화벽 설정에 따라 확인해야 합니다. `.env.example`의 DB 계정은 로컬 개발 전용입니다.
 
 ## 명령어
 
 | 명령 | 동작 |
 | --- | --- |
 | `pnpm dev` | 공통 패키지·웹·서버를 변경 감지 모드로 실행 |
-| `pnpm check` | 타입 검사, 공유 모델·계약·클라이언트 테스트, 전체 빌드 |
+| `pnpm check` | Prettier 검사, 전체 타입 검사, 단위 테스트, 전체 빌드 |
+| `pnpm format` / `pnpm format:check` | 루트 Prettier 설정으로 포맷 적용 / 검사 |
 | `pnpm docs:ui-licenses` | 브라우저 런타임 라이선스 고지와 배포용 사본 생성 |
 | `pnpm docs:versions` | manifest·lockfile·설치 그래프에서 패키지 버전 문서 생성 |
 | `pnpm typecheck` | 공유 패키지를 준비한 뒤 전체 타입 검사 |
 | `pnpm test` | 모델·계약·클라이언트 테스트 (DB 통합 테스트 제외) |
-| `pnpm test:integration` | 현재 코드를 빌드한 후 실제 PostgreSQL HTTP 통합 테스트 |
+| `pnpm test:integration` | 현재 코드를 빌드한 후 설정된 PostgreSQL에서 HTTP·WebSocket 통합 테스트 |
 | `pnpm build` | 의존 순서대로 공유 패키지·서버·웹 빌드 |
 | `pnpm test:ddl` | 생성 SQL을 실제 PostgreSQL에서 실행·롤백 |
 | `pnpm host:start` | 빌드·마이그레이션 후 웹/API LAN 서비스 실행 |
@@ -70,7 +89,16 @@ pnpm dev
 | `pnpm db:migrate` | 생성된 마이그레이션 적용 |
 | `pnpm db:check` | Drizzle 저장·조회와 롤백 검증, 테스트 데이터 미보존 |
 
-개발 서버는 실행한 터미널에서 `Ctrl+C`로 종료합니다. `pnpm db:stop`은 DB를 별도로 정지합니다. 기존 프로젝트 데이터 폴더를 지우는 초기화 명령은 제공하지 않습니다.
+개발 서버는 실행한 터미널에서 `Ctrl+C`로 종료합니다. `pnpm db:stop`은 DB를 별도로 정지하며 데이터를 보존합니다.
+
+기존 DB와 분리해 통합 테스트를 실행하려면 다음 명령을 사용합니다. 로컬 PostgreSQL에 임시 DB를 생성할 권한이 필요하며, 실행 후 임시 DB를 삭제합니다.
+
+```powershell
+pnpm build
+pnpm --filter @ezerd/server exec tsx scripts/test-isolated.ts
+```
+
+`apps/server/scripts/reset-users.ts`는 사용자·세션·핀 대화·사용자 히스토리를 삭제하는 운영용 스크립트입니다. 일반 설치·실행 과정에 포함하지 않으며, 명시적인 확인 플래그가 있어야 실행됩니다. 프로젝트 문서는 보존 여부를 검증합니다.
 
 마이그레이션 이름을 지정할 때:
 
@@ -90,7 +118,7 @@ apps/
     drizzle/                SQL 마이그레이션과 메타데이터
     scripts/db-check.ts     실제 DB 연결 검증
 packages/
-  model/                    논리·물리 적용 범위와 공통 모델 규칙
+  model/                    설계 모델, 관계 검증, 배치, 변경 병합과 복원
   contracts/                API 스키마와 타입
 scripts/setup.mjs            로컬 환경 파일 준비
 ```
@@ -99,12 +127,13 @@ scripts/setup.mjs            로컬 환경 파일 준비
 
 프런트엔드 `/api` 요청은 Vite가 API 서버에 프록시합니다. 브라우저에 DB 접속 정보를 전달하지 않습니다. 개발 서버 포트가 사용 중이면 자동으로 다른 포트로 이동하지 않고 오류를 표시합니다.
 
-현재 마이그레이션은 사용자, 프로젝트 메타데이터, 버전과 JSONB 설계 문서를 저장합니다. 사용자가 캔버스에서 설계할 테이블을 앱 DB에 실제 테이블로 생성하는 기능은 아닙니다.
+앱 DB에는 사용자·세션, 프로젝트와 JSONB 설계 문서, 핀 대화·알림, 동기화 이력을 저장합니다. 캔버스에서 만든 테이블이 앱 DB에 실제 테이블로 생성되지는 않습니다.
 
 ## 연결 문제 확인
 
 - API 요청에 실패하면 `/api/health` 응답, `pnpm dev`의 서버 로그, `.env`의 `PORT`를 확인합니다.
 - DB 연결에 실패하면 `pnpm db:up`과 `pnpm db:migrate`를 실행한 뒤 다시 시도합니다.
+- 사용자명 정규화 마이그레이션은 기존에 대소문자만 다른 중복 계정이 있으면 실패할 수 있습니다. 계정 정리 방침을 결정한 뒤 적용해야 하며 자동으로 병합하지 않습니다.
 - API 실행 확인은 DB가 없어도 200을 반환합니다. 준비 확인은 DB나 마이그레이션이 준비되지 않았으면 503을 반환합니다.
 - `DATABASE_URL`이나 서버 설정을 수정한 경우 개발 서버를 재시작합니다. DB 계정 정보를 바꾸면 Compose 설정과 URL을 함께 맞춰야 합니다. 이미 초기화된 DB의 비밀번호는 환경 변수 변경만으로 바뀌지 않습니다.
 - Docker 자체가 시작되지 않으면 앱과 별도의 문제입니다. 이번 Windows 소켓 오류의 확인·복구 기록은 [개발 환경 검증 기록](./docs/work-log/SETUP_VERIFICATION.md)을 참고합니다.
@@ -115,11 +144,13 @@ scripts/setup.mjs            로컬 환경 파일 준비
 
 UI 폰트는 Apple SD Gothic Neo이며, 제공받은 폰트의 프로젝트 내부 서브셋을 사용합니다. 굵기별 용도와 자산 위치는 [디자인 문서](./docs/planning/DESIGN_SYSTEM.md)에 있습니다.
 
-- [첫 출시 기능 사용법](./docs/work-log/USER_GUIDE.md)
-- [PostgreSQL DDL 지원 범위](./docs/work-log/POSTGRES_EXPORT.md)
+- [최근 피드백 구현·QA](./docs/work-log/2026-09-15-Workspace-FeedbackQA.md)
+- [사용자명 정규화와 고유성](./docs/work-log/2026-09-15-Auth-NormalizedUsernames.md)
+- [기존 기능 사용 안내](./docs/work-log/USER_GUIDE.md)
+- [PostgreSQL DDL 모델 지원 범위 · 현재 UI 제외](./docs/work-log/POSTGRES_EXPORT.md)
 - [사내 Wi-Fi 호스팅](./docs/work-log/LAN_HOSTING.md)
 - [구현 진행 기록과 다음 단계](./docs/work-log/IMPLEMENTATION_PROGRESS.md)
-- [편집 워크플로우 개선 결정 사항 · 다음 구현 대상](./docs/planning/EDITOR_WORKFLOW_DECISIONS.md)
+- [편집 워크플로우 설계 결정 기록](./docs/planning/EDITOR_WORKFLOW_DECISIONS.md)
 - [요구사항](./docs/planning/REQUIREMENTS.md)
 - [첫 출시 범위와 완료 기준](./docs/planning/RELEASE_SCOPE.md)
 - [논리·물리 통합 데이터 모델](./docs/planning/DATA_MODEL.md)
