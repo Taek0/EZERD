@@ -31,6 +31,7 @@ import {
 } from './sync-client.js';
 import { SyncHistoryPanel } from './sync-history-panel.js';
 import { Avatar, Badge, Button, Dropdown, Input, TabButton } from './components/ui/index.js';
+import './responsive-shell.css';
 
 type User = {
   id: string;

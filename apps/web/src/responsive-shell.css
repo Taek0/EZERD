@@ -1,0 +1,170 @@
+/* Editor density follows CSS viewport space, independently of display pixel density.
+   Keep this scope more specific than the legacy styles imported by main.tsx. */
+.app-shell.editor-shell {
+  --editor-gutter: clamp(12px, 1.6vw, 30px);
+  --editor-gap: clamp(6px, 0.7vw, 12px);
+  --editor-control-height: clamp(30px, 3.9vh, 36px);
+  --editor-control-font: clamp(13px, 0.9vw, 14px);
+  --editor-row-padding: clamp(6px, 1vh, 10px);
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 100dvh;
+}
+
+.app-shell.editor-shell > .app-header {
+  height: auto;
+  min-height: clamp(52px, 7.25vh, 76px);
+  flex: none;
+  gap: clamp(10px, 1.6vw, 28px);
+  padding: var(--editor-row-padding) var(--editor-gutter);
+  flex-wrap: wrap;
+}
+
+.app-shell.editor-shell .app-header .brand {
+  font-size: clamp(26px, 2vw, 32px);
+  min-height: 32px;
+  padding: 0;
+  flex: none;
+}
+
+.app-shell.editor-shell .header-caption {
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.app-shell.editor-shell .app-header .user-button,
+.app-shell.editor-shell .app-header .notifications > button {
+  min-height: var(--editor-control-height);
+  padding: 5px 9px;
+  font-size: var(--editor-control-font);
+}
+
+.app-shell.editor-shell .app-header .user-button {
+  max-width: min(240px, 40vw);
+  min-width: 0;
+  gap: 6px;
+}
+
+.app-shell.editor-shell > .editor {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.app-shell.editor-shell .editor-heading {
+  flex: none;
+  flex-wrap: wrap;
+  padding: var(--editor-row-padding) var(--editor-gutter);
+  gap: var(--editor-gap);
+}
+
+.app-shell.editor-shell .project-title {
+  min-width: 0;
+  max-width: 100%;
+  gap: var(--editor-gap);
+}
+
+.app-shell.editor-shell .project-title > div {
+  min-width: 0;
+}
+
+.app-shell.editor-shell .project-title h1 {
+  font-size: clamp(18px, 1.35vw, 22px);
+  line-height: 1.2;
+  margin: 2px 0 0;
+}
+
+.app-shell.editor-shell .project-title small {
+  font-size: 12px;
+  letter-spacing: 0.8px;
+}
+
+.app-shell.editor-shell .save-controls {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--editor-gap);
+}
+
+.app-shell.editor-shell .save-state {
+  font-size: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.app-shell.editor-shell .editor-heading button,
+.app-shell.editor-shell .canvas-toolbar button {
+  min-height: var(--editor-control-height);
+  padding: 5px 9px;
+  font-size: var(--editor-control-font);
+  line-height: 1.4;
+}
+
+.app-shell.editor-shell .review-workspace > .workspace {
+  min-height: 0;
+}
+
+.app-shell.editor-shell .canvas-toolbar {
+  height: auto;
+  min-height: clamp(44px, 6vh, 58px);
+  flex: none;
+  flex-wrap: wrap;
+  gap: var(--editor-gap);
+  padding: var(--editor-row-padding) clamp(10px, 1vw, 18px);
+}
+
+.app-shell.editor-shell .canvas-toolbar .breadcrumbs {
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: var(--editor-gap);
+  font-size: var(--editor-control-font);
+}
+
+.app-shell.editor-shell .canvas-toolbar .actions {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: var(--editor-gap);
+}
+
+.app-shell.editor-shell .canvas-surface {
+  height: auto;
+  min-height: clamp(240px, 40dvh, 400px);
+}
+
+@media (max-height: 700px) {
+  .app-shell.editor-shell {
+    --editor-row-padding: 5px;
+    --editor-control-height: 30px;
+  }
+}
+
+@media (max-width: 700px) {
+  .app-shell.editor-shell .editor-heading {
+    align-items: stretch;
+  }
+
+  .app-shell.editor-shell .save-controls {
+    justify-content: flex-start;
+  }
+
+  .app-shell.editor-shell .canvas-toolbar {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 420px) {
+  .app-shell.editor-shell .app-header {
+    gap: 8px;
+  }
+
+  .app-shell.editor-shell .app-header .user-button {
+    max-width: 120px;
+  }
+
+  .app-shell.editor-shell .project-title {
+    flex-wrap: wrap;
+  }
+}
