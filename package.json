@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.24.0",
-  "engines": { "node": ">=24.18.1 <25", "pnpm": "11.24.0" },
+  "engines": {
+    "node": ">=24.18.1 <25",
+    "pnpm": "11.24.0"
+  },
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "docs:versions": "node scripts/document-versions.mjs",
@@ -18,16 +21,19 @@
     "host:serve": "node scripts/host-lan.mjs",
     "test:ddl": "pnpm build:shared && pnpm --filter @ezerd/server build && node scripts/verify-postgres-export.mjs",
     "test:integration": "pnpm --filter @ezerd/server test:integration",
-    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build",
     "db:up": "docker compose up -d --wait postgres",
     "db:stop": "docker compose stop postgres",
     "db:generate": "pnpm --filter @ezerd/server db:generate",
     "db:migrate": "pnpm --filter @ezerd/server db:migrate",
-    "db:check": "pnpm --filter @ezerd/server db:check"
+    "db:check": "pnpm --filter @ezerd/server db:check",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@types/node": "24.13.4",
     "concurrently": "10.0.5",
+    "prettier": "3.9.6",
     "typescript": "6.0.3",
     "vitest": "5.0.0"
   }

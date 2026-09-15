@@ -1,0 +1,24 @@
+# Dependencies, build products and local/private state.
+**/node_modules/
+**/dist/
+coverage/
+.cache/
+.data/
+.codex/
+.agents/
+.env*
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Generated migrations, dependency lock and imported assets/metadata.
+apps/server/drizzle/
+pnpm-lock.yaml
+apps/web/public/
+apps/web/third-party/
+apps/web/src/components/ui/UPSTREAM.json
+artifacts/
+
+# Documentation is maintained separately from code formatting.
+docs/
+**/*.md
