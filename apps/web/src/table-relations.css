@@ -23,3 +23,37 @@
   stroke: var(--accent);
   fill: #edf2ff;
 }
+
+.table-route-segment {
+  pointer-events: stroke;
+  touch-action: none;
+  outline: none;
+}
+.table-route-segment.horizontal {
+  cursor: ns-resize;
+}
+.table-route-segment.vertical {
+  cursor: ew-resize;
+}
+.table-route-segment:hover,
+.table-route-segment:focus-visible {
+  stroke: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.table-route-endpoint {
+  pointer-events: all;
+  touch-action: none;
+  cursor: grab;
+  fill: transparent;
+  stroke: transparent;
+  outline: none;
+}
+.table-route-endpoint.selected,
+.table-route-endpoint:hover,
+.table-route-endpoint:focus-visible {
+  fill: var(--surface, #fafbfc);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.table-route-endpoint:active {
+  cursor: grabbing;
+}

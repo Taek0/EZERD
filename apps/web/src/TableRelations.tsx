@@ -1,18 +1,46 @@
 import { tableRelationLabel } from './table-relation-label.js';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
   type DesignDocument,
   type ModelScope,
+  type RelationLayout,
   isVisibleInView,
   upsertRelationLayout,
   removeTableRelation,
 } from '@ezerd/model';
 import { tableCardSize } from './table-geometry.js';
 import { ContextMenu } from './components/ui/index.js';
-import { relationGeometry } from './relation-routing.js';
+import {
+  relationGeometry,
+  relationAnchorAtPoint,
+  moveRelationSegment,
+  type Point,
+} from './relation-routing.js';
 export { relationGeometry } from './relation-routing.js';
 import './table-relations.css';
+type RoutePatch = Partial<
+  Pick<RelationLayout, 'bend' | 'sourceAnchor' | 'targetAnchor' | 'waypoints'>
+>;
+export function applyRoutePatch(
+  document: DesignDocument,
+  relationId: string,
+  viewId: string,
+  patch: RoutePatch,
+) {
+  const relation = document.tableRelations?.find((item) => item.id === relationId);
+  if (
+    !relation ||
+    ![relation.sourceTableId, relation.targetTableId].every((id) =>
+      document.layout.nodes.some((node) => node.objectId === id && node.viewId === viewId),
+    )
+  )
+    return document;
+  const route = document.layout.relations?.find(
+    (item) => item.relationId === relationId && item.viewId === viewId,
+  );
+  return upsertRelationLayout(document, { relationId, viewId, offset: 0, ...route, ...patch });
+}
 export function applyRouteBend(
   document: DesignDocument,
   relationId: string,
@@ -66,17 +94,36 @@ export function TableRelationsSvg({
   const drag = useRef<{
     id: string;
     pointerId: number;
-    start: { x: number; y: number };
-    origin: { x: number; y: number };
-    latestBend?: { x: number; y: number };
+    element: SVGGElement;
+    start: Point;
+    points: Point[];
+    kind: number | 'sourceAnchor' | 'targetAnchor';
+    original: RoutePatch;
+    latest?: RoutePatch;
   } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
-  const commitDrag = () => {
+  const callbacks = useRef({ onChange, onPreviewChange });
+  callbacks.current = { onChange, onPreviewChange };
+  const finishDrag = (commit: boolean) => {
     const active = drag.current;
     drag.current = null;
-    if (active?.latestBend)
-      onChange?.(applyRouteBend(live.current, active.id, viewId, active.latestBend));
+    if (!active) return;
+    if (active.latest) {
+      const next = applyRoutePatch(
+        live.current,
+        active.id,
+        viewId,
+        commit ? active.latest : active.original,
+      );
+      (commit ? callbacks.current.onChange : callbacks.current.onPreviewChange)?.(next);
+    }
+    if (active.element.hasPointerCapture(active.pointerId))
+      active.element.releasePointerCapture(active.pointerId);
   };
+  useEffect(() => {
+    if (readOnly || layoutReadOnly) finishDrag(false);
+  }, [readOnly, layoutReadOnly]);
+  useEffect(() => () => finishDrag(false), [viewId]);
   return (
     <>
       {(doc.tableRelations ?? []).map((relation) => {
@@ -130,6 +177,16 @@ export function TableRelationsSvg({
           (item) => item.relationId === relation.id && item.viewId === viewId,
         );
         const offset = route?.offset ?? 0;
+        const obstacles = doc.layout.nodes
+          .filter(
+            (n) =>
+              n.viewId === viewId &&
+              n.objectId !== source.id &&
+              n.objectId !== target.id &&
+              doc.tables?.some((t) => t.id === n.objectId) &&
+              (!visibleNodeIds || visibleNodeIds.includes(n.id)),
+          )
+          .map((n) => ({ ...n, ...tableCardSize(doc, n.objectId, n.width, n.height) }));
         const geometry = relationGeometry(
           sourceBounds,
           targetBounds,
@@ -137,26 +194,59 @@ export function TableRelationsSvg({
           pair.findIndex((r) => r.id === relation.id),
           offset,
           route?.bend,
-          doc.layout.nodes
-            .filter(
-              (n) =>
-                n.viewId === viewId &&
-                n.objectId !== source.id &&
-                n.objectId !== target.id &&
-                doc.tables?.some((t) => t.id === n.objectId) &&
-                (!visibleNodeIds || visibleNodeIds.includes(n.id)),
-            )
-            .map((n) => ({ ...n, ...tableCardSize(doc, n.objectId, n.width, n.height) })),
+          obstacles,
+          route,
         );
-        const origin = route?.bend ?? geometry.handle;
-        const adjust = (bend: { x: number; y: number }, preview = false) => {
-          const next = applyRouteBend(live.current, relation.id, viewId, bend);
-          if (preview && drag.current?.id === relation.id) drag.current.latestBend = bend;
-          (preview ? (onPreviewChange ?? onChange) : onChange)?.(next);
-        };
-        const worldPoint = (element: SVGGElement, clientX: number, clientY: number) => {
+        const worldPoint = (element: SVGGraphicsElement, clientX: number, clientY: number) => {
           const matrix = element.getScreenCTM();
           return matrix ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse()) : null;
+        };
+        const segmentPatch = (points: Point[], index: number, delta: number): RoutePatch => {
+          const next = moveRelationSegment(points, index, delta, obstacles);
+          return {
+            sourceAnchor: relationAnchorAtPoint(sourceBounds, next[0]!),
+            targetAnchor: relationAnchorAtPoint(targetBounds, next[next.length - 1]!),
+            waypoints: next.slice(1, -1),
+            bend: undefined,
+          };
+        };
+        const endpointPatch = (
+          kind: 'sourceAnchor' | 'targetAnchor',
+          point: Point,
+        ): RoutePatch => ({
+          [kind]: relationAnchorAtPoint(
+            kind === 'sourceAnchor' ? sourceBounds : targetBounds,
+            point,
+          ),
+          bend: undefined,
+          waypoints: undefined,
+        });
+        const beginDrag = (
+          event: ReactPointerEvent<SVGElement>,
+          kind: number | 'sourceAnchor' | 'targetAnchor',
+        ) => {
+          if (event.button !== 0 || readOnly || layoutReadOnly) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const element = event.currentTarget.closest('[data-route-controls]') as SVGGElement;
+          const point = worldPoint(element, event.clientX, event.clientY);
+          if (!point) return;
+          drag.current = {
+            id: relation.id,
+            pointerId: event.pointerId,
+            element,
+            start: point,
+            points: geometry.points,
+            kind,
+            original: {
+              bend: route?.bend,
+              sourceAnchor: route?.sourceAnchor,
+              targetAnchor: route?.targetAnchor,
+              waypoints: route?.waypoints,
+            },
+          };
+          element.setPointerCapture(event.pointerId);
+          onSelect(relation.id);
         };
         const markerId = `table-crow-${relation.id}`;
         const endpoints = [
@@ -266,78 +356,129 @@ export function TableRelationsSvg({
             )}
             {!hideControls && !readOnly && !layoutReadOnly && onChange && (
               <g
-                className="table-route-adjust"
+                data-route-controls="true"
                 data-export-hidden="true"
-                role="button"
-                tabIndex={0}
-                aria-label={`관계 선 조절 ${fullLabel}`}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (e.button !== 0) return;
-                  const point = worldPoint(e.currentTarget, e.clientX, e.clientY);
-                  if (!point) return;
-                  drag.current = { id: relation.id, pointerId: e.pointerId, start: point, origin };
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }}
-                onPointerMove={(e) => {
+                onPointerMove={(event) => {
                   const active = drag.current;
-                  if (active?.id !== relation.id || active.pointerId !== e.pointerId) return;
-                  e.stopPropagation();
-                  const point = worldPoint(e.currentTarget, e.clientX, e.clientY);
-                  if (point)
-                    adjust(
-                      {
-                        x: active.origin.x + point.x - active.start.x,
-                        y: active.origin.y + point.y - active.start.y,
-                      },
-                      true,
-                    );
+                  if (!active || active.id !== relation.id || active.pointerId !== event.pointerId)
+                    return;
+                  event.stopPropagation();
+                  const point = worldPoint(event.currentTarget, event.clientX, event.clientY);
+                  if (!point) return;
+                  if (point.x === active.start.x && point.y === active.start.y && !active.latest)
+                    return;
+                  const patch =
+                    typeof active.kind === 'number'
+                      ? segmentPatch(
+                          active.points,
+                          active.kind,
+                          active.points[active.kind]!.y === active.points[active.kind + 1]!.y
+                            ? point.y - active.start.y
+                            : point.x - active.start.x,
+                        )
+                      : endpointPatch(active.kind, point);
+                  active.latest = patch;
+                  onPreviewChange?.(applyRoutePatch(live.current, relation.id, viewId, patch));
                 }}
-                onPointerUp={(e) => {
-                  e.stopPropagation();
-                  if (drag.current?.pointerId === e.pointerId) {
-                    commitDrag();
-                    if (e.currentTarget.hasPointerCapture(e.pointerId))
-                      e.currentTarget.releasePointerCapture(e.pointerId);
-                  }
+                onPointerUp={(event) => {
+                  event.stopPropagation();
+                  if (drag.current?.pointerId === event.pointerId)
+                    finishDrag(!readOnly && !layoutReadOnly);
                 }}
-                onPointerCancel={commitDrag}
-                onLostPointerCapture={commitDrag}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  const direction = {
-                    ArrowLeft: [-1, 0],
-                    ArrowRight: [1, 0],
-                    ArrowUp: [0, -1],
-                    ArrowDown: [0, 1],
-                  }[e.key];
-                  if (direction) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const step = e.shiftKey ? 32 : 8;
-                    adjust({
-                      x: origin.x + direction[0]! * step,
-                      y: origin.y + direction[1]! * step,
-                    });
+                onPointerCancel={() => finishDrag(false)}
+                onLostPointerCapture={() => finishDrag(false)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape' && drag.current) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    finishDrag(false);
                   }
                 }}
               >
-                <title>드래그하여 관계 선 이동 · 방향키로 미세 조절</title>
-                <rect
-                  x={geometry.labelX + labelWidth / 2 + 6}
-                  y={geometry.labelY - 13}
-                  width={28}
-                  height={28}
-                  rx={6}
-                />
-                <text
-                  x={geometry.labelX + labelWidth / 2 + 20}
-                  y={geometry.labelY + 6}
-                  textAnchor="middle"
-                >
-                  ⤧
-                </text>
+                {geometry.points.slice(0, -1).map((point, index) => {
+                  const end = geometry.points[index + 1]!;
+                  const horizontal = point.y === end.y;
+                  return (
+                    <path
+                      key={`segment-${index}`}
+                      className={`table-route-segment ${horizontal ? 'horizontal' : 'vertical'}`}
+                      d={`M ${point.x} ${point.y} L ${end.x} ${end.y}`}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={14}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`관계 선 구간 ${index + 1} 조절 ${fullLabel}`}
+                      onPointerDown={(event) => beginDrag(event, index)}
+                      onKeyDown={(event) => {
+                        const direction = horizontal
+                          ? { ArrowUp: -1, ArrowDown: 1 }[event.key]
+                          : { ArrowLeft: -1, ArrowRight: 1 }[event.key];
+                        if (!direction) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onChange(
+                          applyRoutePatch(
+                            live.current,
+                            relation.id,
+                            viewId,
+                            segmentPatch(
+                              geometry.points,
+                              index,
+                              direction * (event.shiftKey ? 32 : 8),
+                            ),
+                          ),
+                        );
+                      }}
+                    >
+                      <title>직선 구간을 드래그하여 이동 · 방향키로 미세 조절</title>
+                    </path>
+                  );
+                })}
+                {(['sourceAnchor', 'targetAnchor'] as const).map((kind, index) => {
+                  const point =
+                    index === 0
+                      ? geometry.points[0]!
+                      : geometry.points[geometry.points.length - 1]!;
+                  return (
+                    <circle
+                      key={kind}
+                      cx={point.x}
+                      cy={point.y}
+                      r={10}
+                      className={`table-route-endpoint${selectedId === relation.id ? ' selected' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`관계 ${index === 0 ? 'FK' : 'PK'} 연결 위치 조절 ${fullLabel}`}
+                      onPointerDown={(event) => beginDrag(event, kind)}
+                      onKeyDown={(event) => {
+                        const direction = {
+                          ArrowLeft: [-1, 0],
+                          ArrowRight: [1, 0],
+                          ArrowUp: [0, -1],
+                          ArrowDown: [0, 1],
+                        }[event.key];
+                        if (!direction) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const step = event.shiftKey ? 32 : 8;
+                        onChange(
+                          applyRoutePatch(
+                            live.current,
+                            relation.id,
+                            viewId,
+                            endpointPatch(kind, {
+                              x: point.x + direction[0]! * step,
+                              y: point.y + direction[1]! * step,
+                            }),
+                          ),
+                        );
+                      }}
+                    >
+                      <title>연결 끝점을 카드 테두리로 드래그 · 방향키로 미세 조절</title>
+                    </circle>
+                  );
+                })}
               </g>
             )}
           </g>
