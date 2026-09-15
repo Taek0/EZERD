@@ -30,7 +30,12 @@ import {
   removeNote,
   updateNodeLayout as modelUpdateNodeLayout,
 } from '@ezerd/model';
-import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
+import {
+  inspectorBounds,
+  clampInspectorWidth,
+  readInspectorWidth,
+  shouldStackInspector,
+} from './inspector-state.js';
 import { tableCardSize } from './table-geometry.js';
 import { exportCanvasPng } from './canvas-export.js';
 import { layoutDomainRelations } from './domain-relations.js';
@@ -141,7 +146,7 @@ export function Canvas({
   }, [inspectorWidth]);
   const panelWidth = clampInspectorWidth(inspectorWidth, workspaceWidth);
   const panelBounds = inspectorBounds(workspaceWidth);
-  const stackedInspector = workspaceWidth < 620;
+  const stackedInspector = shouldStackInspector(workspaceWidth);
   const [relationsOpen, setRelationsOpen] = useState(false);
   const [connectedOpen, setConnectedOpen] = useState(true);
   const [panelTab, setPanelTab] = useState<'properties' | 'outline'>('properties');

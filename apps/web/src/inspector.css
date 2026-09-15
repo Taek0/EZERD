@@ -12,7 +12,17 @@
   container-type: inline-size;
 }
 .inspector-stacked .inspector {
-  max-height: 62vh;
+  height: clamp(240px, 36dvh, 340px);
+  max-height: none;
+}
+.workspace.inspector-stacked {
+  grid-template-rows: auto auto;
+}
+.workspace.inspector-stacked.inspector-hidden {
+  grid-template-rows: auto 0;
+}
+.inspector-body {
+  overscroll-behavior: contain;
 }
 
 .inspector-topbar {

@@ -1,6 +1,9 @@
 export function inspectorBounds(workspaceWidth: number) {
-  const max = Math.max(280, Math.min(520, workspaceWidth - 320));
+  const max = Math.max(280, Math.min(520, workspaceWidth - 420));
   return { min: 280, max };
+}
+export function shouldStackInspector(workspaceWidth: number) {
+  return workspaceWidth < 700;
 }
 export function clampInspectorWidth(width: number, workspaceWidth: number) {
   const { min, max } = inspectorBounds(workspaceWidth);
