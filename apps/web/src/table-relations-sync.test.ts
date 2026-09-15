@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addDomain, createEmptyDocument } from '@ezerd/model';
-import { applyRouteBend, applyRoutePatch } from './TableRelations.js';
+import { applyRouteBend, applyRoutePatch, routePatchRollback } from './TableRelations.js';
 
 describe('relation route autosave', () => {
   it('applies only the final bend intent to the latest document on drag release', () => {
@@ -193,4 +193,37 @@ it('does not restore a relation deleted remotely during a drag', () => {
   expect(
     applyRoutePatch(latest, 'deleted', 'orders', { sourceAnchor: { side: 'left', ratio: 0.5 } }),
   ).toBe(latest);
+});
+
+it('cancels only the dragged endpoint fields while retaining a concurrent opposite anchor edit', () => {
+  const latest = routeDocument();
+  latest.layout.relations = [
+    {
+      relationId: 'relation',
+      viewId: 'orders',
+      offset: 32,
+      sourceAnchor: { side: 'top', ratio: 0.4 },
+      targetAnchor: { side: 'bottom', ratio: 0.9 },
+    },
+  ];
+  const rollback = routePatchRollback(
+    {
+      sourceAnchor: { side: 'left', ratio: 0.2 },
+      targetAnchor: { side: 'right', ratio: 0.5 },
+      bend: { x: 80, y: 90 },
+      waypoints: undefined,
+    },
+    { sourceAnchor: { side: 'top', ratio: 0.4 }, bend: undefined, waypoints: undefined },
+  );
+  const cancelled = applyRoutePatch(latest, 'relation', 'orders', rollback);
+  expect(cancelled.layout.relations![0]).toEqual({
+    relationId: 'relation',
+    viewId: 'orders',
+    offset: 32,
+    sourceAnchor: { side: 'left', ratio: 0.2 },
+    targetAnchor: { side: 'bottom', ratio: 0.9 },
+    bend: { x: 80, y: 90 },
+    waypoints: undefined,
+  });
+  expect(Object.hasOwn(rollback, 'targetAnchor')).toBe(false);
 });

@@ -22,6 +22,11 @@ import './table-relations.css';
 type RoutePatch = Partial<
   Pick<RelationLayout, 'bend' | 'sourceAnchor' | 'targetAnchor' | 'waypoints'>
 >;
+export function routePatchRollback(original: RoutePatch, changed: RoutePatch): RoutePatch {
+  return Object.fromEntries(
+    Object.keys(changed).map((key) => [key, original[key as keyof RoutePatch]]),
+  );
+}
 export function applyRoutePatch(
   document: DesignDocument,
   relationId: string,
@@ -113,7 +118,7 @@ export function TableRelationsSvg({
         live.current,
         active.id,
         viewId,
-        commit ? active.latest : active.original,
+        commit ? active.latest : routePatchRollback(active.original, active.latest),
       );
       (commit ? callbacks.current.onChange : callbacks.current.onPreviewChange)?.(next);
     }
@@ -202,7 +207,11 @@ export function TableRelationsSvg({
           return matrix ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse()) : null;
         };
         const segmentPatch = (points: Point[], index: number, delta: number): RoutePatch => {
-          const next = moveRelationSegment(points, index, delta, obstacles);
+          const next = moveRelationSegment(points, index, delta, [
+            sourceBounds,
+            targetBounds,
+            ...obstacles,
+          ]);
           return {
             sourceAnchor: relationAnchorAtPoint(sourceBounds, next[0]!),
             targetAnchor: relationAnchorAtPoint(targetBounds, next[next.length - 1]!),
