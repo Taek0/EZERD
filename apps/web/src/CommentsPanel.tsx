@@ -9,6 +9,7 @@ import {
   type Notification,
 } from '@ezerd/contracts';
 import { body, message, request } from './client.js';
+import { pinRequest, replyRequest } from './pin-request.js';
 import { pinAttachment, pinPosition, selectedMentions } from './comments-state.js';
 import {
   Avatar,
@@ -485,11 +486,11 @@ export function CommentsPanel({
                 busy={busy}
                 label="답글 등록"
                 onSend={(text, mentionIds) =>
-                  mutate(`/api/threads/${thread.id}/messages`, 'POST', {
-                    authorId: userId,
-                    body: text,
-                    mentionIds,
-                  })
+                  mutate(
+                    `/api/threads/${thread.id}/messages`,
+                    'POST',
+                    replyRequest(text, mentionIds),
+                  )
                 }
               />
             </div>
@@ -515,13 +516,18 @@ export function CommentsPanel({
             label="핀 등록"
             focusNonce={draftContext.nonce}
             onSend={(text, mentionIds) =>
-              mutate(`/api/projects/${projectId}/threads`, 'POST', {
-                authorId: userId,
-                viewId: draftContext.viewId,
-                ...pinAttachment(document, draftContext.viewId, null, draftContext.position),
-                body: text,
-                mentionIds,
-              })
+              mutate(
+                `/api/projects/${projectId}/threads`,
+                'POST',
+                pinRequest(
+                  {
+                    viewId: draftContext.viewId,
+                    ...pinAttachment(document, draftContext.viewId, null, draftContext.position),
+                  },
+                  text,
+                  mentionIds,
+                ),
+              )
             }
           />
         </div>
