@@ -1,7 +1,8 @@
+import { applyDomainSelection } from './domain-view.js';
 import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from './components/ui/untitled.js';
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type PointerEvent } from 'react';
-import { type DesignDocument, type Table, upsertTableRelation, removeTableRelation, upsertCombinedView, removeCombinedView, isVisibleInView, autoLayoutView, removeTableReference, addTable, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
+import { type DesignDocument, type Table, upsertTableRelation, removeTableRelation, isVisibleInView, autoLayoutView, removeTableReference, addTable, addDomain, updateDomain, removeDomain, upsertDomainRelation, removeDomainRelation, addNote, updateNote, removeNote, updateNodeLayout as modelUpdateNodeLayout, setViewport } from '@ezerd/model';
 import { inspectorBounds, clampInspectorWidth, readInspectorWidth } from './inspector-state.js';
 import { tableCardSize } from './table-geometry.js';
 import { exportCanvasPng } from './canvas-export.js';
@@ -362,15 +363,12 @@ export function Canvas({ document: doc, onChange, readOnly, onContextChange, foc
           {viewId === 'overview'
             ? <Button disabled={readOnly} onClick={() => newDomain()}>＋ 도메인</Button>
             : <Button disabled={readOnly || !!activeCombined} onClick={() => newTable()}>＋ 테이블</Button>}
-          <DialogTrigger isOpen={viewPickerOpen} onOpenChange={open => {setViewPickerOpen(open);if(open){setViewDraftId(activeCombined?.id??null);setSelectedDomains(activeCombined?.domainIds ?? (activeDomain ? [activeDomain.id] : []));setCombinedName(activeCombined?.name ?? '도메인 뷰');}}}>
+          <DialogTrigger isOpen={viewPickerOpen} onOpenChange={open => {setViewPickerOpen(open);if(open){setSelectedDomains(activeCombined?.domainIds ?? (activeDomain ? [activeDomain.id] : doc.views?.[0]?.domainIds ?? []));}}}>
             <Button className="domain-view-trigger"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>도메인 뷰</Button>
 <UntitledPopover className="domain-view-popover" placement="bottom start" shouldFlip={false} offset={8}><Dialog aria-label="도메인 뷰" className="combined-view-picker">
-        <Input aria-label="도메인 뷰 이름" value={combinedName} onChange={e => setCombinedName(e.target.value)} maxLength={120} />
+        <strong>도메인 선택</strong><p className="panel-note">함께 볼 도메인을 선택하세요. 각 도메인의 테이블 배치를 유지해 나란히 표시합니다.</p>
         <div className="combined-domain-options">{doc.domains.map(d => <label key={d.id}><Checkbox aria-label={d.name} checked={selectedDomains.includes(d.id)} onChange={e => setSelectedDomains(value => e.target.checked ? [...value,d.id] : value.filter(id => id !== d.id))}/><span style={{color:d.color ?? '#8993a3'}}>●</span>{d.name}</label>)}</div>
-        <div className="actions"><Button disabled={readOnly || !selectedDomains.length || !combinedName.trim()} onClick={() => {const id=viewDraftId ?? newId();let next=upsertCombinedView(doc,{id,name:combinedName.trim(),domainIds:selectedDomains});if(!viewDraftId){next={...next,layout:{...next.layout,nodes:next.layout.nodes.map(n=>n.viewId===id ? {...n,...tableCardSize(next,n.objectId,n.width,n.height)} : n)}};next=autoLayoutView(next,id);next=setViewport(next,{viewId:id,x:40,y:120,zoom:1});}change(next);navigate(id);setViewPickerOpen(false);}}>적용</Button>
-        {viewDraftId && <Button disabled={readOnly} onClick={async () => {if(await confirm({title:'도메인 뷰 삭제',description:'저장한 보기와 배치를 삭제합니다. 원본 테이블은 유지됩니다.',destructive:true,confirmLabel:'삭제'})){change(removeCombinedView(doc,viewDraftId));navigate('overview');setViewPickerOpen(false);}}}>보기 삭제</Button>}
-        <Button disabled={readOnly} onClick={()=>{setViewDraftId(null);setCombinedName('새 도메인 뷰');setSelectedDomains([]);}}>새 뷰</Button><Button onClick={() => setViewPickerOpen(false)}>닫기</Button></div>
-        {!!doc.views?.length && <div className="domain-view-list" aria-label="저장한 도메인 뷰">{doc.views.map(v => <Button key={v.id} onClick={() => {navigate(v.id);setViewPickerOpen(false);}}>{v.name}</Button>)}</div>}
+        <div className="actions"><Button disabled={readOnly || !selectedDomains.length} onClick={() => {const result=applyDomainSelection(doc,selectedDomains,activeCombined?.id??null,newId);change(result.document);navigate(result.viewId);setViewPickerOpen(false);}}>적용</Button><Button onClick={()=>setViewPickerOpen(false)}>닫기</Button></div>
       </Dialog></UntitledPopover>
           </DialogTrigger>
           <Button disabled={exporting || !nodes.length} onClick={async () => {const world = surface.current?.querySelector<HTMLElement>('.canvas-world'); if (!world) return; setExporting(true);setExportError('');try {await exportCanvasPng(world, nodes, activeCombined?.name ?? activeCombined?.name ?? activeDomain?.name ?? '도메인 맵');} catch {setExportError('이미지를 만들지 못했습니다. 다시 시도해 주세요.');} finally {setExporting(false);}}}>{exporting ? '이미지 생성 중…' : '고화질 PNG'}</Button>
