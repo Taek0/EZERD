@@ -96,3 +96,23 @@ it('dragged two-dimensional bends remain orthogonal and affect the route indepen
       expect(values[i] === values[i - 2] || values[i + 1] === values[i - 1]).toBe(true);
   }
 });
+
+it('reclaims both optional column widths without a fixed 480px floor', () => {
+  const compact = (showNullable: boolean, showComment: boolean) =>
+    tableCardSize(
+      {
+        ...base,
+        tables: base.tables!.map((table) => ({
+          ...table,
+          canvasDisplay: { showNullable, showComment },
+        })),
+      },
+      't',
+      1,
+      1,
+    ).width;
+  expect(compact(false, true)).toBeLessThan(compact(true, true));
+  expect(compact(true, false)).toBeLessThan(compact(true, true));
+  expect(compact(false, false)).toBeLessThan(compact(true, false));
+  expect(compact(false, false)).toBeLessThan(480);
+});

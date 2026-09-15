@@ -760,3 +760,71 @@
 .table-inspector .table-relation-advanced summary {
   font-size: 13px;
 }
+
+/* Keep larger card typography and content bounds in table-geometry.ts aligned. */
+.table-node-content header {
+  height: 62px;
+  min-height: 62px;
+}
+.table-node-content header strong,
+.table-node-content header span {
+  font-size: 28px;
+  line-height: 38px;
+}
+.table-node-content .table-column-row {
+  font-size: 20px;
+  line-height: 30px;
+}
+.table-node-content .table-column-head {
+  height: 42px;
+  min-height: 42px;
+  font-size: 16px;
+  line-height: 30px;
+}
+.table-node-content .table-key-marker {
+  font-size: 16px;
+}
+.table-node-content .table-column-row .ui-input {
+  font-size: 20px;
+}
+.table-column-type-controls,
+.table-referential-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.table-referential-actions > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+}
+.enum-dialog[open] {
+  animation: enum-dialog-enter 180ms ease-out;
+}
+.enum-dialog[open]::backdrop {
+  animation: enum-backdrop-enter 180ms ease-out;
+}
+@keyframes enum-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes enum-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enum-dialog[open],
+  .enum-dialog[open]::backdrop {
+    animation: none;
+  }
+}

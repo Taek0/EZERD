@@ -1,7 +1,7 @@
 import { columnTypeDisplay } from './column-type-display.js';
 import { type DesignDocument, isVisibleInView } from '@ezerd/model';
 const textWidth = (value: string) =>
-  [...value].reduce((n, c) => n + (c.charCodeAt(0) > 255 ? 18 : 11.2), 0);
+  [...value].reduce((n, c) => n + (c.charCodeAt(0) > 255 ? 20 : 12.4), 0);
 export function tableCardMetrics(doc: DesignDocument, tableId: string) {
   const table = doc.tables?.find((t) => t.id === tableId);
   const columns = (doc.columns ?? []).filter(
@@ -27,25 +27,25 @@ export function tableCardMetrics(doc: DesignDocument, tableId: string) {
         lines(typeDisplays[index]!, widths[2]!),
         showComment ? lines(c.physical.comment, widths[4]!) : 1,
       ) *
-        27 +
+        30 +
       17,
   );
   const visibleWidths = widths.filter(
     (_, i) => (i !== 3 && i !== 4) || (i === 3 && showNullable) || (i === 4 && showComment),
   );
   const width = Math.max(
-    480,
+    320,
     visibleWidths.reduce((a, b) => a + b, 0) + 24 + (visibleWidths.length - 1) * 8,
-    textWidth(table?.physical.name ?? '') * 1.2 + 32,
+    textWidth(table?.physical.name ?? '') * 1.4 + 32,
   );
   return {
     width,
     height: Math.max(
       240,
-      54 +
-        38 +
+      62 +
+        42 +
         Math.max(
-          44,
+          47,
           rows.reduce((a, b) => a + b, 0),
         ) +
         56,

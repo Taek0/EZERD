@@ -264,6 +264,7 @@ function InlineCell({
 function InlineType({ display, ...props }: Parameters<typeof SearchType>[0] & { display: string }) {
   const [editing, setEditing] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  const restoringFocus = useRef(false);
   return editing ? (
     <SearchType
       {...props}
@@ -271,7 +272,13 @@ function InlineType({ display, ...props }: Parameters<typeof SearchType>[0] & { 
       showSearchIcon={false}
       onEditEnd={(reason) => {
         setEditing(false);
-        if (reason !== 'blur') requestAnimationFrame(() => trigger.current?.focus());
+        if (reason !== 'blur') {
+          restoringFocus.current = true;
+          requestAnimationFrame(() => {
+            trigger.current?.focus();
+            restoringFocus.current = false;
+          });
+        }
       }}
     />
   ) : (
@@ -281,6 +288,9 @@ function InlineType({ display, ...props }: Parameters<typeof SearchType>[0] & { 
       aria-label={`${props.label} 편집`}
       aria-haspopup="listbox"
       title={display}
+      onFocus={() => {
+        if (!restoringFocus.current) setEditing(true);
+      }}
       onClick={() => setEditing(true)}
     >
       {display}
@@ -945,47 +955,49 @@ function ColumnEditor({
         max={120}
         onChange={(name) => physical({ name })}
       />
-      <label>
-        ENUM
-        <Select
-          aria-label="ENUM"
-          value={c.physical.type.enumId ?? ''}
-          onValueChange={(value) =>
-            physical({
-              type: {
-                name: value ? (doc.enums?.find((t) => t.id === value)?.name ?? 'text') : 'text',
-                isArray: c.physical.type.isArray,
-                enumId: value || undefined,
-              },
-            })
-          }
-        >
-          <option value="">기본 타입</option>
-          {doc.enums?.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name.toUpperCase()}
-            </option>
-          ))}
-        </Select>
-      </label>
-      <label>
-        타입
-        <SearchType
-          label="타입"
-          disabled={!!c.physical.type.enumId}
-          value={c.physical.type.name}
-          onValueChange={(value) =>
-            physical({ type: { name: value, isArray: c.physical.type.isArray } })
-          }
-          options={[...new Set([...physicalTypes, c.physical.type.name])].map((value) => ({
-            value,
-            label:
-              value === c.physical.type.name
-                ? columnTypeDisplay(c.physical.type, doc.enums)
-                : value.toUpperCase(),
-          }))}
-        />
-      </label>
+      <div className="table-column-type-controls">
+        <label>
+          타입
+          <SearchType
+            label="타입"
+            disabled={!!c.physical.type.enumId}
+            value={c.physical.type.name}
+            onValueChange={(value) =>
+              physical({ type: { name: value, isArray: c.physical.type.isArray } })
+            }
+            options={[...new Set([...physicalTypes, c.physical.type.name])].map((value) => ({
+              value,
+              label:
+                value === c.physical.type.name
+                  ? columnTypeDisplay(c.physical.type, doc.enums)
+                  : value.toUpperCase(),
+            }))}
+          />
+        </label>
+        <label>
+          ENUM
+          <Select
+            aria-label="ENUM"
+            value={c.physical.type.enumId ?? ''}
+            onValueChange={(value) =>
+              physical({
+                type: {
+                  name: value ? (doc.enums?.find((t) => t.id === value)?.name ?? 'text') : 'text',
+                  isArray: c.physical.type.isArray,
+                  enumId: value || undefined,
+                },
+              })
+            }
+          >
+            <option value="">기본 타입</option>
+            {doc.enums?.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name.toUpperCase()}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </div>
       <div className="table-type-params">
         {(['length', 'precision', 'scale'] as const).map((key) => (
           <label key={key}>
@@ -1270,8 +1282,29 @@ export function RelationEditor({
           onChange={(required) => onChange({ ...r, logical: { ...r.logical, required } })}
         />
       )}
+      {physical && (
+        <div className="table-referential-actions">
+          <p>참조 키 변경·삭제 시 FK 처리</p>
+          {(['onDelete', 'onUpdate'] as const).map((key) => (
+            <label key={key}>
+              {key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
+              <Select
+                aria-label={key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
+                value={physical[key]}
+                onValueChange={(value) =>
+                  onChange({ ...r, physical: { ...physical, [key]: value as ReferentialAction } })
+                }
+              >
+                {['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT'].map((action) => (
+                  <option key={action}>{action}</option>
+                ))}
+              </Select>
+            </label>
+          ))}
+        </div>
+      )}
       <details className="table-relation-advanced">
-        <summary>고급 설정 · 테이블, FK 매핑, 참조 동작</summary>
+        <summary>고급 설정 · 테이블, FK 매핑</summary>
         {(['targetTableId', 'sourceTableId'] as const).map((key) => (
           <label key={key}>
             {key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}
@@ -1370,22 +1403,6 @@ export function RelationEditor({
             >
               + 컬럼 매핑
             </Button>
-            {(['onDelete', 'onUpdate'] as const).map((key) => (
-              <label key={key}>
-                {key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
-                <Select
-                  aria-label={key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
-                  value={physical[key]}
-                  onValueChange={(value) =>
-                    onChange({ ...r, physical: { ...physical, [key]: value as ReferentialAction } })
-                  }
-                >
-                  {['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DEFAULT'].map((action) => (
-                    <option key={action}>{action}</option>
-                  ))}
-                </Select>
-              </label>
-            ))}
           </>
         )}
       </details>

@@ -65,6 +65,7 @@ export function SearchType({
           className="ui-input"
           placeholder="타입 검색"
           autoFocus={autoFocus}
+          onFocus={(event) => event.currentTarget.select()}
           onKeyDown={(event) => {
             if (event.key === 'Escape' && onEditEnd) {
               event.stopPropagation();
