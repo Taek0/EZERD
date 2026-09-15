@@ -1,3 +1,5 @@
+import { EnumManager } from './EnumManager.js';
+import { columnTypeDisplay } from './column-type-display.js';
 import { useRef, useEffect, useState, type CSSProperties } from 'react';
 import { type DesignDocument, type ModelScope, type Table, type Column, type CustomProperties, type TableRelation, type TableKey, type ReferentialAction, addTable, updateTable, removeTable, addColumn, updateColumn, removeColumn, upsertKey, removeKey, upsertTableRelation, removeTableRelation, isVisibleInView } from '@ezerd/model';
 import { createPortal } from 'react-dom';
@@ -40,6 +42,13 @@ export function moveColumn(doc: DesignDocument, id: string, direction: number): 
     [cols[at], cols[to]] = [cols[to]!, cols[at]!];
     return { ...doc, columns: cols };
 }
+export function reorderColumn(doc:DesignDocument,sourceId:string,targetId:string):DesignDocument {
+ const columns=[...(doc.columns??[])],source=columns.find(c=>c.id===sourceId),target=columns.find(c=>c.id===targetId);
+ if(!source||!target||source.id===target.id||source.tableId!==target.tableId)return doc;
+ const ordered=columns.filter(c=>c.tableId===source.tableId),from=ordered.findIndex(c=>c.id===sourceId),to=ordered.findIndex(c=>c.id===targetId);
+ ordered.splice(to,0,ordered.splice(from,1)[0]!);let at=0;
+ return {...doc,columns:columns.map(c=>c.tableId===source.tableId?ordered[at++]!:c)};
+}
 export function setMappingPair<T extends {
     sourceColumnIds: string[];
     targetColumnIds: string[];
@@ -60,35 +69,39 @@ function Check({ label, value, onChange }: {
     value: boolean;
     onChange: (v: boolean) => void;
 }) { return <label className="table-check"><Checkbox checked={value} onChange={e => onChange(e.target.checked)}/>{label}</label>; }
-function InlineCell({value, label, onCommit, disabled = false}: {value:string;label:string;onCommit:(value:string)=>void;disabled?:boolean}) {
-    const [editing,setEditing]=useState(false), [draft,setDraft]=useState(value); const cancel=useRef(false);
-    const commit=()=>{if(!cancel.current && draft!==value)onCommit(draft);setEditing(false);};
-    return editing ? <Input autoFocus aria-label={label} value={draft} onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape'){cancel.current=true;setEditing(false);}if(e.key==='Enter'){e.preventDefault();commit();}}}/> : <span className="table-inline" title={`${label}: ${value || '미입력'}${disabled?'':' · 더블클릭하여 편집'}`} onDoubleClick={e=>{if(disabled)return;e.stopPropagation();cancel.current=false;setDraft(value);setEditing(true);}}>{value || '—'}</span>;
+function InlineCell({value,label,onCommit,disabled=false}:{value:string;label:string;onCommit:(value:string)=>void;disabled?:boolean}) {
+ const [editing,setEditing]=useState(false),[draft,setDraft]=useState(value);const cancel=useRef(false);
+ const begin=()=>{if(disabled)return;cancel.current=false;setDraft(value);setEditing(true);};
+ const commit=()=>{if(!cancel.current&&draft!==value)onCommit(draft);setEditing(false);};
+ return <span className="table-inline" data-inline-cell tabIndex={disabled||editing?-1:0} title={label+': '+(value||'미입력')+(disabled?'':' · 더블클릭하여 편집')} onFocus={e=>{if(e.target===e.currentTarget)begin();}} onDoubleClick={e=>{e.stopPropagation();begin();}}>{editing?<Input autoFocus aria-label={label} value={draft} onPointerDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()} onChange={e=>setDraft(e.target.value)} onBlur={commit} onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();cancel.current=true;setEditing(false);}if(e.key==='Enter'){e.preventDefault();commit();}}}/>:value||'—'}</span>;
 }
 const freshColumn=(tableId:string,scope:ModelScope='physical'):Column=>({id:newId(),tableId,scope,logical:{name:'새 컬럼',definition:'',semanticType:'',required:false},physical:{name:'',type:{name:'text',isArray:false},nullable:false,defaultExpression:null,comment:''},customProperties:emptyMeta()});
 export function TableNodeContent({ document:doc, tableId, viewId, onChange, readOnly=false, onStartForeignKey, onCreatePin }: {
  document:DesignDocument;tableId:string;viewMode:ModelScope;viewId?:string;onChange?:(d:DesignDocument)=>void;readOnly?:boolean;onStartForeignKey?:(id:string)=>void;onCreatePin?:(position:{clientX:number;clientY:number})=>void;
 }) {
+ const confirm=useConfirm();
  const [menu,setMenu]=useState<{x:number;y:number;id:string}|null>(null);
  const table=doc.tables?.find(t=>t.id===tableId);if(!table)return null;
+ const showNullable=table.canvasDisplay?.showNullable!==false,showComment=table.canvasDisplay?.showComment!==false;
+ const display=(patch:NonNullable<Table['canvasDisplay']>)=>onChange?.(updateTable(doc,tableId,{canvasDisplay:{...table.canvasDisplay,...patch}}));
  const columns=(doc.columns??[]).filter(c=>c.tableId===tableId&&isVisibleInView(c.scope,'physical',table.scope));
  const editable=!!onChange&&!readOnly;
  const metrics=tableCardMetrics(doc,tableId);
  const cell=(value:string,label:string,commit:(v:string)=>DesignDocument)=><InlineCell value={value} label={label} disabled={!editable} onCommit={v=>onChange?.(commit(v))}/>;
- return <div className="table-node-content" style={{'--table-grid':metrics.grid} as CSSProperties} onContextMenu={e=>{e.preventDefault();e.stopPropagation();if(editable)setMenu({x:e.clientX,y:e.clientY,id:''});}}><header title={`${viewId&&viewId!==table.domainId?'외부 참조 · ':''}${doc.domains.find(d=>d.id===table.domainId)?.name??''}`}><strong>{cell(table.physical.name,'테이블명',name=>updateTable(doc,tableId,{physical:{...table.physical,name}}))}</strong></header>
- <div className="table-columns"><div className="table-column-row table-column-head"><span>키</span><span>컬럼</span><span>타입</span><span>NULL</span><span>comment</span></div>{columns.map((c,columnIndex)=>{
+ return <div className="table-node-content" style={{'--table-grid':metrics.grid} as CSSProperties} onContextMenu={e=>{e.preventDefault();e.stopPropagation();if(editable)setMenu({x:e.clientX,y:e.clientY,id:''});}}><header style={{background:doc.domains.find(d=>d.id===table.domainId)?.color || undefined}} title={`${viewId&&viewId!==table.domainId?'외부 참조 · ':''}${doc.domains.find(d=>d.id===table.domainId)?.name??''}`}><strong>{cell(table.physical.name,'테이블명',name=>updateTable(doc,tableId,{physical:{...table.physical,name}}))}</strong></header>
+ <div className="table-columns"><div className="table-column-row table-column-head"><span>키</span><span>컬럼</span><span>타입</span>{showNullable&&<span>NULL</span>}{showComment&&<span>comment</span>}</div>{columns.map((c,columnIndex)=>{
  const keys=(doc.keys??[]).filter(k=>k.columnIds.includes(c.id)&&k.scope!=='logical');
  const fk=(doc.tableRelations??[]).some(r=>r.physical?.sourceColumnIds.includes(c.id)&&r.scope!=='logical');
  const patch=(v:Partial<Column['physical']>)=>updateColumn(doc,c.id,{physical:{...c.physical,...v}});
  return <div className={`table-column-row${keys.some(k=>k.kind==='primary')?' table-column-pk':''}${fk?' table-column-fk':''}`} style={{minHeight:metrics.rows[columnIndex]}} key={c.id} onContextMenu={e=>{e.preventDefault();e.stopPropagation();if(!editable)return;setMenu({x:e.clientX,y:e.clientY,id:c.id});}}>
  <span className="table-key-marker">{[keys.some(k=>k.kind==='primary')?'PK':'',fk?'FK':'',keys.some(k=>k.kind==='unique')?'UQ':''].filter(Boolean).join(' ')}</span>
  {cell(c.physical.name,'컬럼명',name=>patch({name}))}
- <span className="table-type-label">{(c.physical.type.enumId?doc.enums?.find(t=>t.id===c.physical.type.enumId)?.name??'ENUM':c.physical.type.name).toUpperCase()}{c.physical.type.isArray?'[]':''}</span>
- <span data-inline-edit="true" title="더블클릭하여 NULL 설정 변경" onDoubleClick={e=>{e.stopPropagation();if(editable)onChange?.(patch({nullable:!c.physical.nullable}));}}>{c.physical.nullable?'':'NN'}</span>
- {cell(c.physical.comment,'컬럼 comment',comment=>patch({comment}))}</div>;
+ <span className="table-type-label">{columnTypeDisplay(c.physical.type,doc.enums)}</span>
+ {showNullable&&<span data-inline-edit="true" title="더블클릭하여 NULL 설정 변경" onDoubleClick={e=>{e.stopPropagation();if(editable)onChange?.(patch({nullable:!c.physical.nullable}));}}>{c.physical.nullable?'':'NN'}</span>}
+ {showComment&&cell(c.physical.comment,'컬럼 comment',comment=>patch({comment}))}</div>;
  })}{!columns.length&&<p>컬럼을 추가해 설계를 시작하세요.</p>}</div>
  <div className="table-node-footer" onPointerDown={e=>e.stopPropagation()}><IconButton aria-label="컬럼 추가" disabled={!editable} onClick={()=>onChange?.(addColumn(doc,freshColumn(tableId)))}>+</IconButton></div>
- <ContextMenu position={menu} onClose={()=>setMenu(null)} label="컬럼" items={[{id:'pin',label:'여기에 핀 남기기',disabled:!onCreatePin,onAction:()=>{if(menu)onCreatePin?.({clientX:menu.x,clientY:menu.y});}},{id:'add-column',label:'컬럼 추가',onAction:()=>onChange?.(addColumn(doc,freshColumn(tableId)))},{id:'fk',label:'PK에서 관계 연결',disabled:!onStartForeignKey||!doc.keys?.some(k=>k.tableId===tableId&&k.kind==='primary'&&k.scope!=='logical'&&k.columnIds.includes(menu?.id??'')),onAction:()=>menu&&onStartForeignKey?.(menu.id)}]}/></div>;
+ <ContextMenu position={menu} onClose={()=>setMenu(null)} label="컬럼" items={[{id:'delete-column',label:'컬럼 삭제',disabled:!menu?.id,onAction:async()=>{const id=menu?.id;if(id&&await confirm({title:'컬럼 삭제',description:'컬럼과 연결된 키 및 관계를 삭제할까요?',confirmLabel:'삭제',destructive:true}))onChange?.(removeColumn(doc,id));}},{id:'toggle-nullable',label:showNullable?'NULL 숨기기':'NULL 표시',onAction:()=>display({showNullable:!showNullable})},{id:'toggle-comment',label:showComment?'comment 숨기기':'comment 표시',onAction:()=>display({showComment:!showComment})},{id:'pin',label:'여기에 핀 남기기',disabled:!onCreatePin,onAction:()=>{if(menu)onCreatePin?.({clientX:menu.x,clientY:menu.y});}},{id:'add-column',label:'컬럼 추가',onAction:()=>onChange?.(addColumn(doc,freshColumn(tableId)))},{id:'fk',label:'PK에서 관계 연결',disabled:!onStartForeignKey||!doc.keys?.some(k=>k.tableId===tableId&&k.kind==='primary'&&k.scope!=='logical'&&k.columnIds.includes(menu?.id??'')),onAction:()=>menu&&onStartForeignKey?.(menu.id)}]}/></div>;
 }
 export function TableWorkspaceTools({document:doc,viewId,onChange,readOnly,position,onSelect}:{document:DesignDocument;viewId:string;viewMode:ModelScope;onViewModeChange:(v:ModelScope)=>void;onChange:(d:DesignDocument)=>void;readOnly:boolean;position:{x:number;y:number};onSelect:(id:string)=>void;hideViewMode?:boolean}) {
  const [name,setName]=useState('');
@@ -97,11 +110,6 @@ export function TableWorkspaceTools({document:doc,viewId,onChange,readOnly,posit
   <Button variant="primary" className="primary" disabled={readOnly||viewId==='overview'} onClick={()=>{const id=newId();onChange(addTable(doc,{id,domainId:viewId,scope:'physical',logical:{name:'새 테이블',definition:''},physical:{name,schema:'public',comment:''},customProperties:emptyMetadata()},position));setName('');onSelect(id);}}>+ 테이블</Button>
   <PanelNote>이름을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이 화면으로 참조할 수 있습니다.</PanelNote>
  </div>;
-}
-function EnumManager({document:doc,onChange,readOnly}:{document:DesignDocument;onChange:(d:DesignDocument)=>void;readOnly:boolean}) {
- const [editing,setEditing]=useState<string|null>(null),[name,setName]=useState(''),[schema,setSchema]=useState('public'),[values,setValues]=useState(''),[error,setError]=useState('');
- return <fieldset disabled={readOnly}><p>프로젝트의 테이블에서 사용하는 ENUM 값 목록입니다.</p>{(doc.enums??[]).map(item=><div className="table-enum-item" key={item.id}><strong>{item.name}</strong><small>{item.values.join(' · ')}</small><div className="table-actions"><Button onClick={()=>{setEditing(item.id);setName(item.name);setSchema(item.schema);setValues(item.values.join('\n'));}}>편집</Button><Button variant="danger" onClick={()=>{try{onChange(removeEnum(doc,item.id));setError('');}catch(e){setError(e instanceof Error?e.message:'사용 중인 ENUM은 삭제할 수 없습니다.');}}}>삭제</Button></div></div>)}
- <TextField label="ENUM 이름" value={name} max={120} onChange={setName}/><label>ENUM 값 (한 줄에 하나, 빈 줄은 빈 문자열)<Textarea value={values} onChange={e=>setValues(e.target.value)}/></label><Button disabled={!name.trim()||!schema.trim()} onClick={()=>{try{onChange(upsertEnum(doc,{id:editing??newId(),name:name.trim(),schema:schema.trim(),values:values.split('\n')}));setEditing(null);setName('');setSchema('public');setValues('');setError('');}catch(e){setError(e instanceof Error?e.message:'ENUM을 확인하세요.');}}}>{editing?'ENUM 변경 적용':'ENUM 생성'}</Button>{editing&&<Button onClick={()=>{setEditing(null);setName('');setSchema('public');setValues('');}}>편집 취소</Button>}{error&&<p role="alert" className="table-error">{error}</p>}</fieldset>;
 }
 export function TableInspector({ document: doc, tableId, onChange, readOnly, onStartForeignKey }: {
     document: DesignDocument;
@@ -112,6 +120,7 @@ export function TableInspector({ document: doc, tableId, onChange, readOnly, onS
 }) {
     const confirm=useConfirm();
     const [columnId, setColumnId] = useState<string | null>(null);
+    const [draggingColumn,setDraggingColumn]=useState<string|null>(null),[dropColumn,setDropColumn]=useState<string|null>(null);
     const [keyDraft,setKeyDraft]=useState<TableKey|null>(null),[fkColumnId,setFkColumnId]=useState('');
     useEffect(()=>{setColumnId(null);setKeyDraft(null);setFkColumnId('');},[tableId]);
     const table = doc.tables?.find(t => t.id === tableId);
@@ -139,18 +148,21 @@ export function TableInspector({ document: doc, tableId, onChange, readOnly, onS
             <PanelSection title="컬럼" count={cols.length} defaultOpen>
                 <PanelList empty="아직 컬럼이 없습니다. 아래 컬럼 추가에서 첫 컬럼을 만들어 주세요.">
                     {cols.map((c, at) => <PanelRow key={c.id}
+                        className={dropColumn===c.id?'table-column-drop':draggingColumn===c.id?'table-column-dragging':''}
+                        drag={{draggable:!readOnly,onDragStart:e=>{setDraggingColumn(c.id);e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',c.id);},onDragOver:e=>{if(!readOnly&&draggingColumn&&draggingColumn!==c.id){e.preventDefault();e.dataTransfer.dropEffect='move';setDropColumn(c.id);}},onDragLeave:()=>setDropColumn(null),onDrop:e=>{e.preventDefault();if(!readOnly&&draggingColumn)change(reorderColumn(doc,draggingColumn,c.id));setDraggingColumn(null);setDropColumn(null);},onDragEnd:()=>{setDraggingColumn(null);setDropColumn(null);}}}
+                        action={<span className="table-column-drag-hint" aria-hidden="true">⠿</span>}
                         active={c.id === columnId}
                         title={(at + 1) + '. ' + columnName(c)}
-                        meta={c.physical.type.name.toUpperCase() + (c.physical.type.isArray ? '[]' : '')}
+                        meta={columnTypeDisplay(c.physical.type,doc.enums)}
                         badge={marker(c) || undefined}
                         onSelect={() => setColumnId(value => value === c.id ? null : c.id)}/>)}
                 </PanelList>
-                {active && <ColumnEditor document={doc} column={active} index={index} count={cols.length}
+                {active && <ColumnEditor key={active.id} document={doc} column={active} index={index} count={cols.length}
                     onChange={p => change(updateColumn(doc, active.id, p))}
                     onMove={dir => change(moveColumn(doc, active.id, dir))}
                     onDelete={() => { change(removeColumn(doc, active.id)); setColumnId(null); }}
                     onClose={() => setColumnId(null)}/>}
-                <PanelSection title="컬럼 추가"><ColumnCreationForm document={doc} tableId={tableId} onChange={change}/></PanelSection>
+                <PanelSection title="컬럼 추가" className="table-column-create-section"><ColumnCreationForm document={doc} tableId={tableId} onChange={change}/></PanelSection>
             </PanelSection>
             <PanelSection title="키 · PK / UNIQUE" count={keys.length}>
                 {keys.map(k => <KeyEditor key={k.id} item={k} columns={cols} onChange={next => change(upsertKey(doc, next))} onDelete={() => change(removeKey(doc, k.id))}/>)}
@@ -185,7 +197,7 @@ function ColumnEditor({ document:doc, column: c, index, count, onChange, onMove,
     return <div className="panel-detail table-column-editor"><div className="panel-detail-head"><strong>컬럼 {index+1} / {count}</strong><IconButton aria-label={`${columnName(c)} 위로`} disabled={index===0} onClick={()=>onMove(-1)}>↑</IconButton><IconButton aria-label={`${columnName(c)} 아래로`} disabled={index===count-1} onClick={()=>onMove(1)}>↓</IconButton><IconButton aria-label="컬럼 편집 닫기" onClick={onClose}>×</IconButton></div>
     <TextField label="컬럼명" value={c.physical.name} max={120} onChange={name=>physical({name})}/>
     <label>ENUM<Select aria-label="ENUM" value={c.physical.type.enumId??''} onValueChange={value =>physical({type:{name:value?doc.enums?.find(t=>t.id===value)?.name??'text':'text',isArray:c.physical.type.isArray,enumId:value||undefined}})}><option value="">기본 타입</option>{doc.enums?.map(t=><option key={t.id} value={t.id}>{t.name.toUpperCase()}</option>)}</Select></label>
-    <label>타입<SearchType label="타입" disabled={!!c.physical.type.enumId} value={c.physical.type.name} onValueChange={value=>physical({type:{name:value,isArray:c.physical.type.isArray}})} options={[...new Set([...physicalTypes,c.physical.type.name])].map(value=>({value,label:value.toUpperCase()}))}/></label>
+    <label>타입<SearchType label="타입" disabled={!!c.physical.type.enumId} value={c.physical.type.name} onValueChange={value=>physical({type:{name:value,isArray:c.physical.type.isArray}})} options={[...new Set([...physicalTypes,c.physical.type.name])].map(value=>({value,label:value===c.physical.type.name?columnTypeDisplay(c.physical.type,doc.enums):value.toUpperCase()}))}/></label>
     <div className="table-type-params">{(['length','precision','scale'] as const).map(key=><label key={key}>{{length:'길이',precision:'정밀도',scale:'소수'}[key]}<Input type="number" disabled={!typeParameterEnabled(c.physical.type,key)} step={1} min={key==='scale'?-1000:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?0:1} max={key==='length'?10485760:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?6:1000} value={c.physical.type[key]??''} onChange={e=>{const value=e.target.value===''?undefined:Number(e.target.value);if(value===undefined||(Number.isInteger(value)&&value>=(key==='scale'?-1000:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?0:1)&&value<=(key==='length'?10485760:key==='precision'&&!['numeric','decimal'].includes(c.physical.type.name)?6:1000)))physical({type:{...c.physical.type,[key]:value,...(key==='precision'&&value===undefined?{scale:undefined}:{})}});}}/></label>)}</div>
     <div className="table-column-flags"><Check label="배열" value={c.physical.type.isArray} onChange={isArray=>physical({type:{...c.physical.type,isArray}})}/><Check label="NULL 허용" value={c.physical.nullable} onChange={nullable=>physical({nullable})}/></div><TextField label="설명" value={c.physical.comment} onChange={comment=>physical({comment})}/><div className="panel-danger"><Button variant="danger" onClick={onDelete}>컬럼 삭제</Button></div></div>;
 }

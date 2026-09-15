@@ -31,9 +31,9 @@ function example() {
 describe('table editor rendered controls',()=>{
  it('shows owner and respects logical-only column visibility in physical cards',()=>{
   const doc=example();
-  const logical=renderToStaticMarkup(createElement(TableNodeContent,{document:doc,tableId:'t',viewMode:'logical',viewId:'external'}));
+  const logical=renderToStaticMarkup(createElement(ConfirmProvider,{children:createElement(TableNodeContent,{document:doc,tableId:'t',viewMode:'logical',viewId:'external'})}));
   expect(logical).toContain('외부 참조 · '); expect(logical).not.toContain('논리 전용 항목');
-  const physical=renderToStaticMarkup(createElement(TableNodeContent,{document:doc,tableId:'t',viewMode:'physical'}));
+  const physical=renderToStaticMarkup(createElement(ConfirmProvider,{children:createElement(TableNodeContent,{document:doc,tableId:'t',viewMode:'physical'})}));
   expect(physical).toContain('invoice'); expect(physical).not.toContain('hidden_column');
  });
  it('keeps physical inspector mutations read-only without exposing model view controls',()=>{

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, HTMLAttributes } from 'react';
 import { Accordion, Button } from './components/ui/index.js';
 
 /**
@@ -37,7 +37,7 @@ export function PanelList({ empty, children }: { empty: ReactNode; children: Rea
   return items.length ? <ul className="panel-list">{items}</ul> : <PanelNote>{empty}</PanelNote>;
 }
 
-export function PanelRow({ title, meta, badge, accent, active = false, onSelect, action }: {
+export function PanelRow({ title, meta, badge, accent, active = false, onSelect, action, drag, className }: {
   title: ReactNode;
   meta?: ReactNode;
   badge?: ReactNode;
@@ -45,8 +45,10 @@ export function PanelRow({ title, meta, badge, accent, active = false, onSelect,
   active?: boolean;
   onSelect: () => void;
   action?: ReactNode;
+  className?: string;
+  drag?: Pick<HTMLAttributes<HTMLLIElement>,'draggable'|'onDragStart'|'onDragOver'|'onDrop'|'onDragEnd'|'onDragLeave'>;
 }) {
-  return <li className={active ? 'panel-row is-active' : 'panel-row'}>
+  return <li {...drag} className={['panel-row',active?'is-active':'',className].filter(Boolean).join(' ')}>
     <Button className="panel-row-main" aria-current={active || undefined} onClick={onSelect}>
       {accent ? <span className="panel-row-dot" style={{ background: accent }} aria-hidden="true" /> : null}
       <span className="panel-row-text">

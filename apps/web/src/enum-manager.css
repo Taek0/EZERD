@@ -1,0 +1,8 @@
+.table-enum-manager{display:grid;gap:10px;min-width:0}
+.enum-dialog .table-enum-form{border:0;padding:0;margin:0;display:grid;gap:10px;min-width:0}
+.table-enum-list{max-height:280px;overflow:auto;display:grid;gap:6px;align-content:start}
+.table-enum-manager .table-enum-item{display:block;padding:8px 10px;border:1px solid var(--line,#d6dce5);border-radius:8px;min-width:0}
+.table-enum-item summary{cursor:pointer;min-width:0;user-select:none}
+.table-enum-item summary strong,.table-enum-item summary small{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.table-enum-values{display:flex;flex-wrap:wrap;gap:5px;max-height:160px;overflow:auto;margin:8px 0}
+.table-enum-values span{padding:3px 6px;border-radius:4px;background:var(--surface,#eef1f5);overflow-wrap:anywhere}

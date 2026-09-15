@@ -279,3 +279,14 @@
 .canvas-world>.table-route-overlay{z-index:5;pointer-events:none}
 .table-route-overlay .table-route-control-group{pointer-events:none}
 .table-route-overlay .table-route-adjust{pointer-events:all}
+
+.table-inspector .panel-row{transition:background-color 160ms ease,box-shadow 160ms ease,transform 160ms ease}
+.table-inspector .panel-row.is-active{background:color-mix(in srgb,var(--accent) 12%,var(--surface));box-shadow:inset 3px 0 var(--accent)}
+.table-inspector .table-column-editor{background:color-mix(in srgb,var(--accent) 5%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));animation:table-column-enter 160ms ease-out}
+@keyframes table-column-enter{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+.table-inspector .table-column-create-section>summary{min-height:28px;padding:5px 10px;font-size:13px}
+.table-inspector .table-column-create-section .panel-section-body{gap:8px;padding-top:4px}
+.table-column-drop{box-shadow:inset 0 3px var(--accent)}.table-column-dragging{opacity:.45}
+.table-inspector .panel-row[draggable=true]{cursor:grab;user-select:none}.table-column-drag-hint{padding:0 8px;color:var(--muted);font-size:17px}
+.table-node-content .table-inline{min-width:0;outline:none}.table-node-content .table-inline:focus-within{box-shadow:inset 0 0 0 1px var(--accent);border-radius:3px}
+@media(prefers-reduced-motion:reduce){.table-inspector .panel-row{transition:none}.table-inspector .table-column-editor{animation:none}}
