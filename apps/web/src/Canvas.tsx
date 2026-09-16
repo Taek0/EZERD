@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom';
 import { applyDomainSelection } from './domain-view.js';
+import { wheelCamera } from './canvas-wheel.js';
 import { applyDomainRelationPatch, type DomainRelationPatch } from './domain-relation-edit.js';
 import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from './components/ui/untitled.js';
@@ -510,9 +511,26 @@ export function Canvas({
     const element = surface.current;
     if (!element) return;
     const wheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          'input,textarea,select,[contenteditable="true"],[role="listbox"],[role="dialog"]',
+        )
+      )
+        return;
       event.preventDefault();
-      zoom(viewport.zoom * (event.deltaY > 0 ? 0.9 : 1.1));
+      const rect = element.getBoundingClientRect();
+      setLocalViewports((current) => ({
+        ...current,
+        [viewId]: clampLayoutPatch(
+          wheelCamera(
+            current[viewId] ?? viewport,
+            event,
+            { x: event.clientX - rect.left, y: event.clientY - rect.top },
+            rect.height,
+          ),
+        ),
+      }));
     };
     element.addEventListener('wheel', wheel, { passive: false });
     return () => element.removeEventListener('wheel', wheel);
