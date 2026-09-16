@@ -437,29 +437,6 @@
   height: 20px;
   background: var(--line);
 }
-.view-mode-switch {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: #e1e5ec;
-}
-.view-mode-switch > .ui-button {
-  min-height: 26px;
-  padding: 3px 10px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  box-shadow: none;
-  color: var(--muted);
-  font-size: 13px;
-}
-.view-mode-switch > .ui-button[aria-pressed='true'] {
-  background: var(--surface);
-  color: var(--accent);
-  box-shadow: 0 1px 3px #1f2a3a24;
-}
 
 /* --- table inspector density inside the panel --- */
 .inspector .table-inspector {
@@ -544,8 +521,7 @@
 }
 @media (prefers-reduced-motion: no-preference) {
   .panel-row > .panel-row-main,
-  .inspector-tabs > .ui-button,
-  .view-mode-switch > .ui-button {
+  .inspector-tabs > .ui-button {
     transition:
       background-color 0.14s ease,
       color 0.14s ease;
