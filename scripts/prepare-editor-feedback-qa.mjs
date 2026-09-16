@@ -9,7 +9,7 @@ await writeFile(
   `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts/apple-sd-gothic-neo/fonts.css"></head><body><div id="root"></div><script type="module">
 import React from 'react';import {createRoot} from 'react-dom/client';import {App} from '/src/App.tsx';import {ConfirmProvider} from '/src/components/ui/ConfirmProvider.tsx';
 import {createEmptyDocument,addDomain,addTable,addColumn,upsertKey,createForeignKeyFromPrimaryKey,setViewport} from '@ezerd/model';
-import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';import '/src/inspector.css';import '/src/editor-feedback.css';
+import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';import '/src/inspector.css';import '/src/editor-feedback.css';import '/src/canvas-viewport.css';
 const now=new Date().toISOString(),pid='00000000-0000-4000-8000-000000000001';
 const user={id:'00000000-0000-4000-8000-000000000002',username:'responsive-qa',color:'#4169e1',createdAt:now,updatedAt:now};
 const project={id:pid,name:'klassboard-backend-refactor',status:'active',version:0,createdAt:now,updatedAt:now};

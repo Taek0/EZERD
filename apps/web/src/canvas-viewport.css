@@ -1,0 +1,63 @@
+/* The editor owns a viewport; only its panel bodies scroll. */
+.app-shell.editor-shell {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.app-shell.editor-shell > .editor {
+  min-height: 0;
+  overflow: hidden;
+}
+.app-shell.editor-shell .review-workspace {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  align-content: stretch;
+}
+.app-shell.editor-shell .review-workspace > .workspace {
+  min-height: 0;
+  min-width: 0;
+}
+.app-shell.editor-shell .canvas-column,
+.app-shell.editor-shell .canvas-surface {
+  min-height: 0;
+}
+.app-shell.editor-shell .canvas-surface {
+  overscroll-behavior: none;
+}
+.app-shell.editor-shell .inspector-shell {
+  min-height: 0;
+  overflow: hidden;
+}
+.app-shell.editor-shell .inspector-shell .inspector {
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+}
+.app-shell.editor-shell .inspector-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+.app-shell.editor-shell .comments-container .comments-panel {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+.app-shell.editor-shell .workspace.inspector-stacked {
+  grid-template-rows: minmax(0, 1fr) minmax(0, min(40%, 240px));
+}
+.app-shell.editor-shell .workspace.inspector-stacked.inspector-hidden {
+  grid-template-rows: minmax(0, 1fr) 0;
+}
+@media (max-width: 1120px) {
+  .app-shell.editor-shell .review-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .app-shell.editor-shell .review-workspace > .comments-container[data-open='true'] {
+    height: clamp(120px, 26dvh, 220px);
+  }
+}
