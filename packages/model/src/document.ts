@@ -94,6 +94,7 @@ export interface Note {
   id: string;
   viewId: string;
   text: string;
+  color?: string | undefined;
 }
 export interface Position {
   x: number;
@@ -283,9 +284,16 @@ export function addNote(doc: DesignDocument, note: Note, point: Position): Desig
     160,
   );
 }
-export function updateNote(doc: DesignDocument, id: string, text: string): DesignDocument {
+export function updateNote(
+  doc: DesignDocument,
+  id: string,
+  value: string | Partial<Pick<Note, 'text' | 'color'>>,
+): DesignDocument {
   requireObject(doc.notes.find((n) => n.id === id));
-  return { ...doc, notes: doc.notes.map((n) => (n.id === id ? { ...n, text } : n)) };
+  const patch = typeof value === 'string' ? { text: value } : value;
+  if (patch.color !== undefined && !/^#[0-9a-f]{6}$/i.test(patch.color))
+    throw new Error('메모 색상을 확인하세요.');
+  return { ...doc, notes: doc.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)) };
 }
 export function removeNote(doc: DesignDocument, id: string): DesignDocument {
   return {

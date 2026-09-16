@@ -40,7 +40,15 @@ export const domainRelationSchema = z.strictObject({
   direction: z.enum(['forward', 'both']),
   description: z.string().max(10000),
 });
-export const noteSchema = z.strictObject({ id: objectId, viewId: id, text: z.string().max(20000) });
+export const noteSchema = z.strictObject({
+  id: objectId,
+  viewId: id,
+  text: z.string().max(20000),
+  color: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
+});
 export const nodeLayoutSchema = z.strictObject({
   id,
   objectId: id,
