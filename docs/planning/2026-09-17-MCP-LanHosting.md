@@ -3,231 +3,228 @@
 작성일: 2026-09-17
 상태: 구현 전 계획
 
-## 목표
+## 목표와 설계 결정
 
-EZERD의 기존 React·NestJS·PostgreSQL LAN 호스팅에 별도 Streamable HTTP MCP 서버를 추가한다. 사내 Codex 클라이언트가 프로젝트 조회뿐 아니라 생성, 수정, 리뷰와 문서 변경 작업까지 수행할 수 있게 하며, 초기 운영 경계는 MCP 애플리케이션 인증이 아니라 사내 서브넷 접근 제한으로 둔다.
+EZERD의 기존 NestJS 서버에 Streamable HTTP MCP endpoint를 추가한다. 사용자는 웹에서 기존 계정으로 로그인해 MCP 전용 토큰을 발급하고, 사내 MCP 클라이언트에 주소와 토큰을 한 번 설정한다. 이후 프로젝트 조회·생성·수정, 리뷰, ERD 문서 변경을 자연어로 요청하며 변경 이력에는 해당 사용자를 기록한다.
+
+구현 단순화를 위해 사용자별 전용 Bearer 토큰과 같은 프로세스의 서비스 호출을 채택한다. 기존 계획의 별도 `apps/mcp`, 공용 내부 사용자, 내부 HTTP API 클라이언트와 세션 갱신은 제거한다. OAuth와 브라우저 연결 승인 화면은 후속 범위다. 초기 지원 대상은 사용자 지정 Bearer 토큰과 Streamable HTTP를 지원하는 클라이언트다.
 
 ```text
-사내 Codex 클라이언트
-        │ Streamable HTTP
+사내 MCP 클라이언트 / 웹 브라우저
+        │ HTTPS, 사내 주소:443
         ▼
-EZERD MCP 0.0.0.0:3002/mcp
-        │ HTTP, loopback only
+TLS 리버스 프록시 + 사내 접근 대역 제한
+        │ loopback HTTP
         ▼
-EZERD NestJS 127.0.0.1:3001/api
-        │
-        ▼
-PostgreSQL 127.0.0.1:55432
+기존 NestJS 127.0.0.1:3001
+        ├── /mcp       → MCP 토큰 인증 → 도구 어댑터
+        ├── /api      → 기존 웹 세션 인증 → REST controller
+        └── React 정적 파일
+                          │
+                          ▼
+                  공통 서비스와 동기화 로직
+                          │
+                          ▼
+              PostgreSQL 127.0.0.1:55432
 ```
 
-기존 웹 LAN 서비스는 계속 `0.0.0.0:3001`에서 React 정적 파일과 NestJS API를 함께 제공한다. MCP는 `apps/mcp`의 독립 프로세스로 실행하여 장애와 배포 수명주기를 분리한다.
+MCP와 웹/API가 같은 프로세스이므로 MCP의 프로세스 수준 장애는 웹/API에도 영향을 줄 수 있다. 초기에는 이 절충을 수용하고 도구별 오류 처리와 요청 크기·처리 시간 제한을 적용한다. 독립 프로세스 운영은 필요해질 때 검토한다.
 
 ## 확정 정책
 
-- MCP는 `0.0.0.0:3002`의 `/mcp`에서 Streamable HTTP로 제공한다.
-- `MCP_ALLOWED_CIDRS`에 지정한 사내 IPv4 서브넷과 loopback 요청만 허용한다. 빈 값이나 유효하지 않은 CIDR은 서버 시작 실패로 처리하며 전체 허용 기본값을 두지 않는다.
-- 허용 판단에는 직접 연결의 소켓 주소만 사용한다. 초기 버전은 `X-Forwarded-For`를 신뢰하지 않으며 프록시 도입 시 별도 설계를 추가한다.
-- 호스트 OS 방화벽도 TCP 3002 인바운드를 같은 사내 서브넷으로 제한한다. 애플리케이션 CIDR 검사와 방화벽 규칙을 이중 적용한다.
-- MCP 클라이언트용 OAuth, Bearer token과 사용자별 인증은 이번 범위에 포함하지 않는다.
-- 읽기·쓰기·삭제 도구를 기능상 비활성화하지 않는다. 모든 등록 도구를 클라이언트에 노출한다.
-- 각 도구의 `readOnlyHint`, `destructiveHint`, `openWorldHint`는 실제 동작에 맞게 설정하되 도구 차단 정책으로 사용하지 않는다.
-- 환경변수, PIN, 세션 토큰, DB 연결 문자열, 전체 요청 헤더와 내부 오류 스택은 MCP 응답에 포함하지 않는다.
-- 로그는 로컬 파일로 생성하되 외부 수집, 대시보드, 알림 시스템은 이번 범위에서 구축하지 않는다.
-- PostgreSQL 포트는 계속 loopback에만 바인딩하고 MCP가 DB에 직접 연결하지 않는다.
+- MCP endpoint는 API 전역 prefix와 분리한 `/mcp`이며 별도 3002 포트를 열지 않는다.
+- 읽기 도구와 초기화를 포함한 모든 MCP 요청에 유효한 MCP 전용 토큰을 요구한다.
+- 사용자별 토큰은 웹 로그인 세션과 별도 수명주기로 관리한다. 브라우저 세션 토큰을 복사하거나 MCP 인증에 재사용하지 않는다.
+- 최초 버전의 토큰은 해당 사용자가 기존 서비스에서 수행할 수 있는 작업 범위를 따른다. 별도 역할·scope 체계는 추가하지 않으며, 사용자 식별이 프로젝트별 권한 분리를 자동으로 제공한다고 가정하지 않는다.
+- 모든 계획된 도구를 등록하고 `readOnlyHint`, `destructiveHint`, `openWorldHint`는 실제 동작에 맞게 설정한다. 클라이언트 승인 설정은 서버 인증·권한 검사의 대체물이 아니다.
+- 기존 데이터 검증, 보관·삭제 규칙, 작업자 검사, 트랜잭션과 동시성 보호를 공통 서비스에서 유지한다.
+- MCP 도구 어댑터는 DB를 직접 수정하지 않는다. 공통 서비스와 토큰 저장소만 기존 DB 계층을 사용한다.
+- 인증정보와 업무 데이터 원문은 로그에 기록하지 않는다. 외부 로그 수집과 알림 시스템은 구축하지 않는다.
+
+## 사용자 연결 흐름
+
+1. 사용자가 EZERD 웹에서 기존 사용자명·PIN 방식으로 로그인한다.
+2. 설정의 MCP 연결 화면에서 토큰 이름을 입력하고 발급한다.
+3. 서버는 토큰 원문을 발급 응답으로 한 번만 반환한다. 화면은 MCP 주소, 토큰 복사, 클라이언트 설정 예시와 만료일을 표시한다.
+4. 사용자는 자신의 클라이언트 실행 환경에 토큰을 저장하고 MCP 주소를 등록한다. PIN이나 토큰을 채팅으로 입력하게 하지 않는다.
+5. 연결 후 도구를 호출하면 토큰 소유자가 실제 작업자로 기록된다.
+6. 만료되거나 노출된 토큰은 웹에서 폐기하고 새 토큰을 발급해 클라이언트 설정을 교체한다.
+
+자동 갱신과 refresh token은 구현하지 않는다. 웹에는 본인의 토큰 이름, 생성일, 만료일, 마지막 사용일과 폐기 기능만 제공하며 원문 재조회는 제공하지 않는다.
+
+## 토큰 저장과 인증
+
+기존 `sessions` 테이블과 별도로 `mcp_tokens`를 추가한다.
+
+- `id`, `userId`, `name`, `tokenHash`, `createdAt`, `expiresAt`, `revokedAt`, `lastUsedAt`
+- 암호학적으로 안전한 32바이트 이상 난수로 원문을 생성하고 MCP 전용 접두어를 붙인다.
+- DB에는 SHA-256 해시만 저장하고 `tokenHash`에 unique index를 둔다. 원문은 발급 시에만 반환한다.
+- 초기 유효기간은 발급 시점부터 90일로 고정하며 무기한 토큰은 제공하지 않는다.
+- 관리 API는 `POST /api/mcp-tokens`, `GET /api/mcp-tokens`, `DELETE /api/mcp-tokens/:id`로 구성한다. 기존 웹 세션 인증을 요구하고 목록·폐기 대상을 세션 사용자로 제한한다.
+- 발급 응답에는 `Cache-Control: no-store`를 적용한다. 웹은 토큰 원문을 localStorage/sessionStorage에 저장하지 않고 발급 화면의 일시적 상태로만 유지한다.
+- MCP는 매 요청의 `Authorization: Bearer ...`에서 토큰을 확인하고 해시, 만료, 폐기 상태와 사용자 존재 여부를 DB에서 검증한다. 잘못된 토큰은 도구 실행 전에 HTTP 401로 거부한다.
+- 조회한 사용자로 서버 내부 작업자 정보를 구성한다. 도구 입력의 사용자 ID로 작업자를 선택하거나 바꿀 수 없게 한다.
+- stateless Streamable HTTP를 우선 사용한다. SDK상 세션이 필요하면 세션을 토큰 소유자와 연결하고 매 요청 인증을 유지한다. MCP 세션 ID 자체를 인증 수단으로 사용하지 않는다.
+- 폐기·만료는 다음 요청부터 적용하며 이미 실행 중인 트랜잭션을 강제 취소하지 않는다.
+
+토큰을 발급하는 웹 로그인에는 기존 PIN 검증을 재사용하되 로그인과 발급 경로의 요청 빈도를 제한한다. PIN 자체를 MCP 설정에 저장하는 방식은 사용하지 않는다.
 
 ## 애플리케이션 구조
 
 ```text
-apps/mcp/
-├── package.json
-├── tsconfig.json
-└── src/
-    ├── main.ts                 # 설정 검증, HTTP 시작과 종료
-    ├── mcp-server.ts           # 서버 정보, instructions, 도구 등록
-    ├── transport.ts            # Streamable HTTP 세션 수명주기
-    ├── config.ts               # 포트, CIDR, API 주소, 내부 사용자 설정
-    ├── network/
-    │   └── subnet-guard.ts     # remoteAddress CIDR 검사
-    ├── api/
-    │   ├── ezerd-api.client.ts # 기존 NestJS API 호출과 응답 검증
-    │   └── session-provider.ts # 내부 사용자 세션 발급·갱신
-    ├── logging/
-    │   ├── logger.ts           # JSONL 파일 기록
-    │   └── redaction.ts        # 민감 키 및 오류 정제
-    └── tools/
-        ├── projects.ts
-        ├── document.ts
-        ├── reviews.ts
-        └── diagnostics.ts
+apps/server/src/mcp/
+├── mcp.module.ts               # 기존 서버 모듈에 등록
+├── mcp.controller.ts           # /mcp transport와 요청 처리
+├── mcp-server.ts               # instructions, 도구 등록
+├── mcp-auth.service.ts         # 토큰 검증과 작업자 구성
+├── mcp-token.controller.ts     # 웹 세션 기반 발급·목록·폐기
+├── mcp-token.service.ts        # 해시 저장과 소유자 검사
+├── logging.ts                 # JSONL 기록과 민감정보 정제
+└── tools/
+    ├── projects.ts
+    ├── reviews.ts
+    └── document.ts
 ```
 
-MCP handler에는 비즈니스 규칙을 복제하지 않는다. 입력 형식과 MCP 결과를 검증하고 기존 NestJS API를 호출하는 어댑터로 제한한다. 공유 가능한 스키마는 `@ezerd/contracts`, 순수 문서 진단과 변경 계산은 `@ezerd/model`을 사용한다.
+이는 예정 구조이며 SDK transport와 NestJS adapter의 통합 방식은 첫 구현에서 확인한다. 기존 controller에 비즈니스 로직이 있다면 필요한 부분만 공통 서비스로 추출하고 REST와 MCP 양쪽에서 호출한다. 전체 서버 재구성은 하지 않는다.
 
-## 기존 세션 API 연결
-
-기존 NestJS 쓰기 API는 유효한 사용자 세션을 요구하므로 이를 우회하거나 인증 없는 내부 쓰기 API를 추가하지 않는다. 대신 MCP 서버가 전용 내부 사용자로 기존 `POST /api/sessions`에 로그인한다.
-
-- `EZERD_MCP_ACTOR_USERNAME`과 `EZERD_MCP_ACTOR_PIN`은 호스팅 PC의 환경변수에서만 읽는다.
-- 전용 사용자는 기존 사용자 생성 절차로 한 번 준비한다.
-- MCP 서버는 세션 토큰과 만료 시간을 메모리에만 보관한다.
-- 만료 전 갱신하고, API가 401을 반환하면 세션을 한 번 재발급한 뒤 요청을 한 번만 재시도한다.
-- PIN과 세션 토큰은 MCP 응답, tool 결과, 오류 상세와 로그에 기록하지 않는다.
-- 초기 단계의 모든 MCP 쓰기는 이 전용 사용자로 기록된다. 사용자별 행위 귀속은 후속 MCP 인증 설계에서 다룬다.
-
-이는 새 MCP 클라이언트 인증을 추가하는 작업이 아니라 현재 서버의 쓰기 불변조건을 유지하기 위한 내부 호출자 식별이다.
+`@ezerd/contracts`의 입출력 스키마, `@ezerd/model`의 진단·의미 변경 계산, 기존 동기화 서비스를 재사용한다. MCP가 기존 REST endpoint를 내부 HTTP로 호출하거나 공용 계정으로 로그인하지 않는다. 기존 웹 세션 인증을 MCP 토큰 인증으로 대체하거나 완화하지 않는다.
 
 ## 도구 설계
 
-첫 구현에서는 저수준 REST endpoint를 그대로 노출하지 않고 사용자가 인지할 수 있는 작업 단위로 제공한다.
-
 ### 프로젝트
 
-- `list_projects`: 상태와 검색어로 프로젝트 목록을 조회한다.
-- `get_project`: 프로젝트 메타데이터와 현재 설계 문서를 조회한다.
-- `create_project`: 프로젝트를 생성한다.
-- `update_project`: 이름 또는 보관 상태를 현재 `expectedVersion` 기준으로 변경한다.
-- `delete_project`: 보관된 프로젝트의 최신 버전을 영구 삭제한다.
+- `list_projects`: 상태와 검색어로 프로젝트 목록 조회
+- `get_project`: 프로젝트 메타데이터와 현재 설계 문서 조회
+- `create_project`: 프로젝트 생성
+- `update_project`: 현재 `expectedVersion` 기준 이름·보관 상태 변경
+- `delete_project`: 보관된 프로젝트의 최신 버전 영구 삭제
 
 ### 리뷰
 
-- `list_review_threads`: 프로젝트의 핀과 답글을 조회한다.
-- `create_review_thread`: 뷰 또는 객체 위치에 리뷰 핀과 첫 메시지를 생성한다.
-- `reply_review_thread`: 기존 핀에 답글을 추가한다.
-- `update_review_thread`: 상태나 위치 등 현재 계약이 허용하는 속성을 수정한다.
-- `delete_review_thread`: 최신 수정 시각을 기준으로 핀을 삭제한다.
+- `list_review_threads`: 프로젝트의 핀과 답글 조회
+- `create_review_thread`: 리뷰 핀과 첫 메시지 생성
+- `reply_review_thread`: 기존 핀에 답글 추가
+- `update_review_thread`: 기존 계약이 허용하는 상태·위치 등 수정
+- `delete_review_thread`: 최신 수정 시각 기준 핀 삭제
 
 ### 문서와 진단
 
-- `diagnose_project`: 현재 프로젝트 문서를 `@ezerd/model`로 진단하고 구조화된 문제 목록을 반환한다.
-- `apply_project_changes`: 고수준 변경 요청으로 목표 문서를 구성한 뒤 기존 동기화 API를 통해 원자적으로 반영한다.
-- `get_project_history`: 기존 동기화 이력을 조회한다.
-- `undo_project_operation`: 기존 서버 규칙에 따라 승인 작업을 실행 취소한다.
-- `restore_project_deletion`: 삭제 작업 스냅샷을 새 ID로 복원한다.
+- `diagnose_project`: 현재 문서를 진단하고 구조화된 문제 반환
+- `apply_project_changes`: 고수준 변경 요청을 기존 동기화 operation으로 원자적 반영
+- `get_project_history`: 기존 동기화 이력 조회
+- `undo_project_operation`: 기존 서버 규칙에 따른 승인 작업 실행 취소
+- `restore_project_deletion`: 삭제 작업 스냅샷을 새 ID로 복원
 
-`apply_project_changes`는 전체 문서 PUT을 부활시키지 않는다. MCP 서버가 현재 문서와 동기화 기준을 조회하고, `@ezerd/model`의 의미 변경 계산을 사용하여 기존 `POST /api/projects/:id/operations` 계약을 호출한다. 초기 변경 명령은 도메인, 테이블, 컬럼, 키, 관계, 노트의 추가·수정·삭제를 명시적인 discriminated union으로 정의하며 자유 형식 JSON Patch는 사용하지 않는다.
+`apply_project_changes`는 현재 문서와 동기화 기준을 조회하고 의미 변경을 계산해 기존 operations endpoint와 같은 서비스 경로로 제출한다. 전체 문서 PUT을 추가하지 않는다. 도메인·테이블·컬럼·키·관계·노트의 추가·수정·삭제를 명시적인 discriminated union으로 정의하고 자유 형식 JSON Patch는 사용하지 않는다.
 
-모든 쓰기·삭제 도구는 `expectedVersion`, `expectedUpdatedAt`, operation ID 또는 서버 동기화 기준처럼 기존 API의 동시성 보호 값을 유지한다. 충돌 시 현재 값을 덮어쓰지 않고 재조회가 필요한 구조화 오류를 반환한다.
+쓰기·삭제 도구는 기존 `expectedVersion`, `expectedUpdatedAt`, operation ID와 동기화 기준을 유지한다. 충돌은 덮어쓰지 않고 재조회가 필요한 오류로 반환한다. 작업 ID를 사용하는 변경은 기존 중복 방지 규칙을 유지하고, 응답 유실 시 결과가 불명확한 쓰기를 자동 재실행하지 않는다.
 
-## 응답과 오류 정책
+## 응답과 로그
 
-- Tool 입력은 Zod로 검증하고 알 수 없는 필드는 거부한다.
-- Tool 출력도 공개 계약 스키마로 검증한 뒤 `structuredContent`와 짧은 `content`를 반환한다.
-- 응답에는 작업 완료에 필요한 ID, 버전, 상태, 변경 경로와 사용자 데이터만 포함한다.
-- 환경변수 이름과 값, 내부 API 기본 URL, DB URL, PIN, Authorization 헤더, 세션 토큰, 원시 응답 헤더는 반환하지 않는다.
-- 예상 가능한 400, 401, 404, 409, 410, 503은 안정적인 MCP 오류 코드와 사용자용 메시지로 변환한다.
-- 예상하지 못한 오류는 request ID만 반환하고 상세 원인과 정제된 스택은 로컬 로그에 기록한다.
-- 문서와 리뷰 본문처럼 업무 데이터인 값은 tool 결과에는 필요 범위로 포함할 수 있지만 로그에는 원문을 기록하지 않는다.
+- 입력과 출력은 공개 계약 스키마로 검증하고 알 수 없는 입력 필드는 거부한다.
+- 결과는 `structuredContent`와 짧은 `content`로 제공한다.
+- 인증 실패는 transport에서 401로 거부하고, 서비스의 예상 가능한 검증·권한·충돌 오류는 안정적인 도구 오류로 변환한다.
+- 예상하지 못한 오류는 일반 메시지와 request ID를 반환하며 정제된 상세 원인은 로컬 로그에만 기록한다.
+- 환경변수 값, PIN, 웹 세션 토큰, MCP 토큰, DB URL, Authorization 헤더와 원시 오류 스택은 MCP 응답에 포함하지 않는다. 토큰 원문의 유일한 반환 경로는 인증된 웹 발급 API다.
+- 로그는 `.data/logs/mcp/YYYY-MM-DD.jsonl`에 기록한다. 시작·종료, 인증 거부, 토큰 발급·폐기, 도구 성공·실패를 남긴다.
+- 필드는 시각, 수준, request ID, 확인된 사용자 ID·토큰 레코드 ID, 도구 이름, 처리 시간, 결과 상태, 오류 코드와 제한된 결과 개수로 한정한다. 토큰 레코드 ID는 토큰 원문과 구분한다.
+- tool arguments/results 전체, 문서·리뷰 원문, PIN, 토큰 원문·해시, 헤더 전체와 설정 객체를 기록하지 않는다.
 
-## 로그 정책
+## HTTPS와 사내 접근 제한
 
-로그는 `.data/logs/mcp/YYYY-MM-DD.jsonl`에 일 단위 JSON Lines로 append한다. `.data`는 이미 Git 추적 대상에서 제외되어 있다.
+초기 운영도 토큰을 전달하므로 TLS를 적용한다. 사내 DNS 이름과 클라이언트가 신뢰하는 인증서를 준비하고, 하나의 리버스 프록시가 웹·API·MCP의 TLS를 종료한다. 사내 CA를 사용한다면 각 클라이언트의 신뢰 저장소 설치 절차를 문서화하고 인증서 검증을 끄도록 안내하지 않는다.
 
-각 이벤트는 필요한 경우 다음 필드를 가진다.
+- LAN에 노출되는 포트는 프록시의 443이며 프록시 접근 규칙과 호스트 방화벽을 같은 사내 CIDR로 제한한다.
+- NestJS와 PostgreSQL은 loopback에 바인딩해 프록시 우회를 막는다. 기존 3001 직접 LAN 노출은 이 배포 구성에서 닫는다.
+- CIDR 검사는 실제 클라이언트 연결을 받는 프록시에서 수행한다. NestJS가 보는 loopback 주소를 사내 IP 검증으로 착각하지 않는다.
+- 전달 헤더는 loopback 프록시에서 온 요청에 한해 신뢰하도록 명시적으로 설정한다. 외부가 보낸 `X-Forwarded-For`를 그대로 신뢰하지 않는다.
+- 프록시는 Streamable HTTP에 필요한 헤더·스트리밍을 유지하고 버퍼링과 timeout을 검증한다. 액세스 로그에 Authorization 값을 포함하지 않는다.
+- MCP의 Host/Origin 검증을 SDK 지침에 맞게 적용한다. 웹의 쿠키나 브라우저 세션만으로 MCP 요청을 허용하지 않는다.
+- 개발용 loopback HTTP는 허용하되 실제 LAN 토큰 전달 검증은 HTTPS로 수행한다.
 
-- `timestamp`, `level`, `event`
-- `requestId`, `mcpSessionId`
-- `remoteAddress`, `toolName`
-- `durationMs`, `outcome`, `statusCode`, `errorCode`
-- 결과 개수나 변경 경로 개수처럼 내용이 아닌 제한된 수치
+애플리케이션 CIDR 파서와 별도 MCP 네트워크 포트를 추가하지 않는다. 방화벽과 프록시의 실제 사내 CIDR은 배포 시 지정하고 전체 허용 기본 예시를 두지 않는다.
 
-다음 값은 기록하지 않는다.
+## 설정과 실행
 
-- 환경변수와 설정 객체 전체
-- PIN, 세션 토큰, Authorization 또는 Cookie
-- tool arguments와 tool results 전체
-- 설계 문서, 리뷰 본문, 사용자 입력 원문
-- DB 연결 문자열과 원시 오류 객체
-
-시작, 종료, CIDR 거부, MCP 초기화 실패, tool 시작·성공·실패, 내부 API 재시도와 세션 갱신을 이벤트로 남긴다. 초기 구현은 외부 전송과 알림 없이 파일 생성과 보존만 담당하며, 보존 기간 자동 삭제도 후속 운영 작업으로 남긴다.
-
-## 설정 계약
-
-루트 `.env.example`과 설정 검증에 다음 항목을 추가한다. 실제 값은 `.env`에만 둔다.
+앱 설정은 다음 정도로 제한한다. 기존 서버의 주소·포트 설정은 재사용한다.
 
 ```dotenv
-MCP_HOST=0.0.0.0
-MCP_PORT=3002
-MCP_ALLOWED_CIDRS=192.168.0.0/24
-MCP_API_BASE_URL=http://127.0.0.1:3001/api
-EZERD_MCP_ACTOR_USERNAME=ezerd-mcp
-EZERD_MCP_ACTOR_PIN=0000
+MCP_ENABLED=true
+MCP_PUBLIC_URL=https://ezerd.example.internal/mcp
 MCP_LOG_DIR=.data/logs/mcp
 ```
 
-예제 PIN은 로컬 예시이며 실제 사내 값으로 교체한다. 설정 오류 메시지는 누락된 키 이름만 알려주고 값을 출력하지 않는다.
+위 주소는 예시다. TLS 인증서, 허용 CIDR과 외부 호스트명은 프록시 설정에서 관리한다. 기존 계획의 `MCP_PORT`, `MCP_API_BASE_URL`, `EZERD_MCP_ACTOR_USERNAME`, `EZERD_MCP_ACTOR_PIN`은 추가하지 않는다.
 
-## 실행과 운영
+- `pnpm dev`, `pnpm build`, `pnpm host:start`, `pnpm host:serve`의 기존 서버 경로에 MCP를 포함한다.
+- 별도 MCP 개발·빌드·시작 프로세스를 추가하지 않는다. Inspector는 검증 절차로 안내한다.
+- 호스팅 안내에는 웹 URL과 `/mcp` URL, 프록시 준비·실행 절차를 표시한다. 인증서와 방화벽을 스크립트가 자동 변경하지 않는다.
+- 프록시와 PostgreSQL은 운영 전제 조건으로 관리한다. MCP 때문에 두 Node 프로세스의 종료를 연동하는 로직은 추가하지 않는다.
 
-루트에 다음 명령을 제공한다.
-
-- `pnpm mcp:dev`: MCP 서버 감시 실행
-- `pnpm mcp:build`: MCP 앱 빌드
-- `pnpm mcp:start`: 빌드된 MCP 서버 실행
-- `pnpm mcp:inspect`: 로컬 MCP Inspector 실행 안내 또는 래퍼
-- `pnpm host:start`: 기존 웹/API와 MCP를 함께 빌드·마이그레이션·실행
-- `pnpm host:serve`: 준비된 웹/API와 MCP를 함께 실행
-
-LAN 호스팅 스크립트는 웹 URL과 MCP URL을 별도로 출력하고, 실제 네트워크 인터페이스 후보를 표시한다. 두 자식 프로세스 중 하나가 종료되면 다른 프로세스도 정리하고 전체 명령을 실패 처리한다. PostgreSQL 컨테이너는 기존처럼 별도로 실행한다.
-
-사무실 Codex 클라이언트에는 다음 형태의 연결을 안내한다.
+Codex 설정 예시는 다음과 같다.
 
 ```toml
 [mcp_servers.ezerd]
-url = "http://192.168.0.20:3002/mcp"
+url = "https://ezerd.example.internal/mcp"
+bearer_token_env_var = "EZERD_MCP_TOKEN"
 default_tools_approval_mode = "writes"
 tool_timeout_sec = 60
 ```
 
-도구 자체를 비활성화하지 않지만, 클라이언트의 `writes` 승인 모드는 실제 쓰기 도구 호출 전에 사용자가 작업 내용을 확인할 수 있게 한다. 원하는 클라이언트에서는 별도 정책으로 `approve`를 선택할 수 있다.
+`EZERD_MCP_TOKEN`은 사용자의 Codex 실행 환경에 설정한다. 호스팅 서버 공용 `.env`나 저장소에 사용자 토큰을 모으지 않는다. 설정 가이드에는 운영체제와 클라이언트 실행 방식별 환경변수 전달 방법을 포함한다. 토큰이 없거나 만료된 경우 웹에서 재발급·설정 교체하도록 안내하며 OAuth 로그인 명령을 안내하지 않는다.
 
 ## 구현 단위와 커밋
 
-1. **MCP 기반 앱과 네트워크 경계**
-   - `apps/mcp` 패키지, 설정 검증, Streamable HTTP transport, CIDR guard, health/startup 처리와 단위 테스트를 추가한다.
-   - MCP SDK와 CIDR 파서 의존성을 정확한 버전으로 고정한다.
+1. **공통 서비스 경계 정리**
+   - REST controller의 필요한 비즈니스 로직만 서비스로 추출한다.
+   - 기존 웹 API의 인증·작업자·검증·충돌 동작이 유지되는지 검증하고 독립 커밋한다.
+2. **사용자별 토큰과 웹 연결 화면**
+   - 마이그레이션, 발급·목록·폐기 API, 인증과 설정 화면을 추가한다.
+   - 소유자 제한, 원문 1회 반환, 해시 저장, 만료·폐기, PIN·발급 요청 제한을 검증하고 독립 커밋한다.
+3. **NestJS MCP와 조회 도구**
+   - SDK 버전을 고정하고 `/mcp`, 토큰 검증, 프로젝트·리뷰 조회를 연결한다.
+   - stateless 처리 가능 여부와 실제 Codex Bearer 연결을 검증하고 독립 커밋한다.
+4. **프로젝트·리뷰 쓰기 도구**
+   - 공통 서비스를 호출하고 사용자별 작업자 기록과 기존 충돌·삭제 규칙을 검증한다.
+   - 입출력 스키마와 annotation을 추가하고 독립 커밋한다.
+5. **문서 변경·진단·이력 도구**
+   - 기존 동기화 서비스와 의미 변경 계산을 재사용한다.
+   - 충돌, 중복 operation, undo·restore와 사용자별 작업자 규칙을 검증하고 독립 커밋한다.
+6. **로그·HTTPS 운영과 최종 검증**
+   - 로그 정제, 프록시 예시, 방화벽 절차, 환경설정과 LAN 운영 문서를 추가한다.
+   - 실제 PostgreSQL 통합 테스트, Inspector와 다른 장치의 Codex 연결을 검증한다.
+   - 구현 결과는 `docs/work-log/2026-09-17-MCP-LanHosting.md`에 기록한다. 실제 작업일이 달라지면 해당 날짜로 파일명을 정한다.
    - 독립 커밋으로 남긴다.
-2. **API 클라이언트와 내부 사용자 세션**
-   - 응답 스키마 검증, 세션 발급·갱신·단일 재시도, 오류 변환과 민감정보 정제를 구현한다.
-   - API mock 기반 단위 테스트로 토큰 비노출과 재시도를 검증한다.
-   - 독립 커밋으로 남긴다.
-3. **프로젝트·리뷰 도구**
-   - 프로젝트 및 리뷰의 읽기·쓰기·삭제 tool을 추가하고 실제 동작에 맞는 annotation과 입출력 스키마를 정의한다.
-   - 기존 NestJS 통합 환경에 연결한 MCP tool 통합 테스트를 추가한다.
-   - 독립 커밋으로 남긴다.
-4. **문서 변경·진단·이력 도구**
-   - 고수준 변경 명령, 동기화 기준 수립, 작업 제출, 충돌·undo·restore 흐름을 구현하고 모델 단위 테스트와 통합 테스트를 추가한다.
-   - 독립 커밋으로 남긴다.
-5. **로그와 LAN 실행 통합**
-   - JSONL 로그, redaction 테스트, 루트 실행 명령, 호스팅 스크립트, `.env.example`, LAN 운영 문서를 갱신한다.
-   - 호스트 방화벽에서 3002를 사내 CIDR에만 허용하는 운영 절차를 OS별 예시로 기록하되 스크립트가 방화벽을 자동 변경하지는 않는다.
-   - 독립 커밋으로 남긴다.
-6. **최종 검증과 작업 기록**
-   - 포맷, 타입 검사, 단위 테스트, 빌드, 실제 PostgreSQL 통합 테스트, MCP Inspector, 허용·거부 IP 검증을 수행한다.
-   - 결과를 `docs/work-log/2026-09-17-MCP-LanHosting.md`에 기록하고 독립 커밋으로 남긴다.
 
-각 커밋은 요청과 무관한 기존 변경을 포함하지 않는다. 코드와 문서는 루트 Prettier 설정을 따르고 최종적으로 `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm build`를 통과해야 한다.
+각 커밋은 하나의 목적만 포함하며 무관한 기존 변경을 포함하지 않는다. 코드 포맷은 루트 설정을 따르고 `.prettierignore`의 문서·생성물 제외 규칙을 유지한다. 구현 완료 시 `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm build`를 수행한다.
 
 ## 검증 기준
 
-- 허용 CIDR의 클라이언트는 `/mcp` 초기화와 tool 목록 조회에 성공한다.
-- 허용되지 않은 주소는 MCP 세션 생성 전 403으로 거부되고 CIDR 거부 로그가 남는다.
-- 프로젝트·리뷰의 읽기, 생성, 수정, 보관과 삭제 도구가 기존 REST API와 동일한 검증·충돌 규칙을 따른다.
-- 문서 변경 도구가 전체 PUT 없이 기존 동기화 operation을 만들며 동시 변경을 덮어쓰지 않는다.
-- 모든 tool이 등록되고 기능상 비활성화되지 않는다.
-- 환경변수, PIN, 세션 토큰, DB URL과 Authorization 값이 MCP 응답과 로그에 나타나지 않는다.
-- 예상하지 못한 오류 응답에는 request ID만 포함되고 동일 ID의 정제 로그를 찾을 수 있다.
-- 로그 파일이 날짜별로 생성되며 tool 성공·실패와 처리 시간이 기록된다.
-- MCP 프로세스 중단이 NestJS API 프로세스를 직접 손상시키지 않고, 통합 실행 명령은 장애를 감지해 명확히 종료한다.
-- 사내 다른 장치의 Codex에서 `http://호스팅PC:3002/mcp`로 연결해 조회와 쓰기 tool을 각각 한 번 이상 실제 검증한다.
+- 토큰 발급·목록·폐기에는 기존 웹 세션이 필요하고 타인의 토큰을 조회·폐기할 수 없다.
+- 원문은 발급 응답 외 DB, 로그, 목록 API와 브라우저 영구 저장소에 남지 않는다.
+- 유효 토큰은 MCP 초기화·도구 조회에 성공하고 누락·변조·만료·폐기 토큰은 다음 요청에서 401로 거부된다.
+- 웹 세션 토큰과 MCP 토큰은 서로의 인증 경로에서 대체 사용되지 않는다.
+- 두 사용자의 토큰으로 변경하면 각각의 사용자 ID가 기록되고 도구 입력으로 작업자를 위조할 수 없다.
+- 기존 REST와 MCP가 동일한 검증·권한·보관·충돌 규칙을 적용한다.
+- 문서 변경은 기존 동기화 operation으로 수행하며 동시 변경을 덮어쓰거나 재시도로 중복 적용하지 않는다.
+- 도구의 예외가 정제된 오류와 request ID로 반환되고 프로세스가 정상 요청을 계속 처리한다.
+- 허용되지 않은 사내 대역 밖의 연결은 프록시·방화벽에서 차단되고 3001 직접 접속은 불가능하다.
+- HTTPS 인증서 신뢰, 프록시 스트리밍, Host/Origin 검사와 실제 클라이언트 헤더 전달을 검증한다.
+- 사내 다른 장치에서 주소·개인 토큰 설정, 조회·쓰기, 토큰 폐기 후 거부, 새 토큰으로 재연결을 검증한다.
 
 ## 후속 범위
 
-이번 구현에 포함하지 않는 항목은 다음과 같다.
-
-- MCP 사용자별 OAuth 또는 Bearer token 인증
-- 사용자별 MCP 작업 귀속과 역할 기반 권한
-- TLS 종단과 리버스 프록시
+- OAuth와 브라우저 연결 승인, 자동 토큰 갱신
+- 세분화된 토큰 scope, 프로젝트별 권한과 역할 기반 권한
+- 별도 MCP 프로세스 분리와 장애 격리
 - 외부 로그 수집, 대시보드, 경보와 자동 보존 정책
 - 인터넷 공개와 사내망 밖 원격 접속
 
-MCP가 사내 LAN 밖으로 노출되거나 사용자별 작업 귀속이 필요해지는 시점에는 인증과 TLS를 구현하기 전까지 공개 범위를 확대하지 않는다.
+사용자별 인증과 작업자 기록, HTTPS는 이번 범위에 포함한다. 외부 공개나 OAuth만 지원하는 클라이언트로의 확장은 별도 설계와 검증 후 진행한다.
+
+## 참고
+
+- [Codex MCP 설정](https://developers.openai.com/codex/mcp): Streamable HTTP와 `bearer_token_env_var` 설정
+- 현재 저장소의 `apps/server/src/session.ts`: 웹 세션 인증과 작업자 구조
+- 현재 저장소의 `apps/server/src/sync.service.ts`: 문서 동기화 서비스 재사용 대상
