@@ -65,6 +65,8 @@ describe('MCP server tools', () => {
       expect(client.getInstructions()).toContain('관계선 교차');
       expect(client.getInstructions()).toContain('브라우저 스킬이나 스크린샷 대신');
       expect(client.getInstructions()).toContain('x·y·width·height');
+      expect(client.getInstructions()).toContain('불필요한 폭·높이·빈 공간을 줄여');
+      expect(client.getInstructions()).toContain('구조적 계층');
       expect(client.getInstructions()).toContain('겹침을 확인하고 수정');
       expect(
         tools.tools.find((tool) => tool.name === 'apply_project_changes')?.description,
