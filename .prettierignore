@@ -18,7 +18,6 @@ apps/web/public/
 apps/web/third-party/
 apps/web/src/components/ui/UPSTREAM.json
 artifacts/
-deploy/Caddyfile.example
 
 # Documentation is maintained separately from code formatting.
 docs/

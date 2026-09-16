@@ -401,6 +401,18 @@ small {
   display: block;
   margin: 10px 0;
 }
+.mcp-token-secret {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+}
 .mcp-endpoint dt,
 .mcp-token-list h2 {
   font-size: 14px;

@@ -22,3 +22,10 @@
 - LAN host script와 환경 예시
 - HTTP에서도 항상 작동하는 token 수동 선택·복사 UI
 - 직접 LAN 운영 문서와 실제 non-loopback HTTP/WS 통합 검증
+
+## 호스팅·UI 변경
+
+- `host:start`와 `host:serve` 경로는 개발 `.env`의 loopback 기본값을 override하고 `0.0.0.0`에 bind한다. 시작 시 loopback health URL, LAN 후보 주소, 허용 CIDR과 MCP URL을 표시한다.
+- `.env.example`에 `LAN_ALLOWED_CIDRS`와 사설 IPv4 MCP URL 형식을 추가했다.
+- 비보안 HTTP에서도 사용할 수 있도록 발급 token을 읽기 전용 input에 표시하고 발급 직후 전체 선택한다. Clipboard API가 없거나 실패하면 입력란을 다시 선택하고 `Ctrl+C` 수동 복사 안내를 표시한다.
+- 기본 운영 문서를 별도 도메인·TLS·proxy가 없는 직접 LAN HTTP 절차로 교체했다. 이전 Caddy 예시는 제거했다.

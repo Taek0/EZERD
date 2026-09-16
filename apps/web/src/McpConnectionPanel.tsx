@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { body, message, request } from './client.js';
 import { Button, Input } from './components/ui/index.js';
 
@@ -21,6 +21,7 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
   const [copyStatus, setCopyStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const tokenInput = useRef<HTMLInputElement>(null);
   const mcpUrl = config.publicUrl;
 
   async function load() {
@@ -38,6 +39,11 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => {
+    if (!issued) return;
+    tokenInput.current?.focus();
+    tokenInput.current?.select();
+  }, [issued]);
 
   async function issue(event: FormEvent) {
     event.preventDefault();
@@ -58,6 +64,12 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
 
   async function copyToken() {
     if (!issued) return;
+    if (!navigator.clipboard?.writeText) {
+      tokenInput.current?.focus();
+      tokenInput.current?.select();
+      setCopyStatus('자동 복사를 사용할 수 없습니다. 선택된 토큰을 Ctrl+C로 복사하세요.');
+      return;
+    }
     try {
       await navigator.clipboard.writeText(issued.token);
       setCopyStatus('복사했습니다.');
@@ -103,7 +115,16 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
             이 값은 다시 표시되지 않으며 {new Date(issued.expiresAt).toLocaleDateString('ko-KR')}에
             만료됩니다.
           </p>
-          <code>{issued.token}</code>
+          <label htmlFor="issued-mcp-token">발급 토큰</label>
+          <input
+            ref={tokenInput}
+            id="issued-mcp-token"
+            className="mcp-token-secret"
+            readOnly
+            value={issued.token}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <p>입력란을 클릭하면 전체 선택됩니다. 자동 복사가 안 되면 Ctrl+C로 복사하세요.</p>
           <Button onClick={() => void copyToken()}>토큰 복사</Button>
           {copyStatus && <p>{copyStatus}</p>}
         </div>
