@@ -769,14 +769,14 @@
 }
 .table-node-content header strong,
 .table-node-content header span {
-  font-size: 24px;
-  line-height: 32px;
+  font-size: 26px;
+  line-height: 34px;
 }
 .table-node-content .table-column-row {
   gap: 6px;
-  padding: 5px 10px;
-  font-size: 18px;
-  line-height: 26px;
+  padding: 4px 10px;
+  font-size: 20px;
+  line-height: 28px;
 }
 .table-node-content .table-column-head {
   height: 34px;
@@ -789,9 +789,9 @@
   font-size: 14px;
 }
 .table-node-content .table-column-row .ui-input {
-  font-size: 18px;
-  min-height: 26px;
-  height: 26px;
+  font-size: 20px;
+  min-height: 28px;
+  height: 28px;
 }
 .table-node-content .table-node-footer {
   height: 40px;

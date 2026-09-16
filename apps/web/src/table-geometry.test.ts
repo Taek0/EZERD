@@ -35,7 +35,7 @@ describe('table content bounds', () => {
       ],
     } as unknown as DesignDocument;
     const metrics = tableCardMetrics(doc, 't');
-    expect(metrics.rows[0]).toBeGreaterThanOrEqual(3 * 26 + 11);
+    expect(metrics.rows[0]).toBeGreaterThanOrEqual(3 * 28 + 9);
     expect(metrics.height).toBeGreaterThanOrEqual(50 + 34 + metrics.rows[0]! + 40);
   });
   it('grows for additional rows and long comments without shrinking saved sizes', () => {
