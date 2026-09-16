@@ -19,7 +19,7 @@ import {
   Query,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   createProjectSchema,
@@ -29,12 +29,12 @@ import {
   usernameInputSchema,
   updateUserSchema,
 } from '@ezerd/contracts';
-import type { Project, User } from '@ezerd/contracts';
+import type { User } from '@ezerd/contracts';
 import { DatabaseService } from './db/database.service.js';
-import { projects, users } from './db/schema.js';
+import { users } from './db/schema.js';
 import { isUsernameConflict } from './user-conflicts.js';
-import type { ProjectRow } from './db/schema.js';
 import { requireSession, SessionService } from './session.js';
+import { WorkspaceService } from './workspace.service.js';
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -42,16 +42,6 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 const idSchema = z.uuid();
-function project(row: ProjectRow): Project {
-  return {
-    id: row.id,
-    name: row.name,
-    status: row.status,
-    version: row.version,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
 function user(row: typeof users.$inferSelect): User {
   return {
     id: row.id,
@@ -81,6 +71,7 @@ export class WorkspaceController {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(WorkspaceService) private readonly workspace: WorkspaceService,
   ) {}
 
   @Post('users')
@@ -152,50 +143,19 @@ export class WorkspaceController {
   ) {
     await requireSession(this.sessions, authorization);
     const input = parse(createProjectSchema, body);
-    return databaseOperation(async () => {
-      const [row] = await this.database.db.insert(projects).values(input).returning();
-      return project(row!);
-    });
+    return this.workspace.createProject(input);
   }
 
   @Get('projects')
   listProjects(@Query() query: unknown) {
     const input = parse(projectQuerySchema, query);
-    return databaseOperation(async () => {
-      const escapedSearch = input.search?.replace(/[\\%_]/g, '\\$&');
-      const rows = await this.database.db
-        .select()
-        .from(projects)
-        .where(
-          and(
-            eq(projects.status, input.status ?? 'active'),
-            escapedSearch ? ilike(projects.name, `%${escapedSearch}%`) : undefined,
-          ),
-        )
-        .orderBy(desc(projects.updatedAt), asc(projects.id));
-      return rows.map(project);
-    });
+    return this.workspace.listProjects(input);
   }
 
   @Get('projects/:id')
   getProject(@Param('id') rawId: string) {
     const id = parse(idSchema, rawId);
-    return databaseOperation(async () => {
-      const [row] = await this.database.db.select().from(projects).where(eq(projects.id, id));
-      if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      return { project: project(row), document: row.document };
-    });
-  }
-
-  private async missingOrConflict(id: string): Promise<never> {
-    const [row] = await this.database.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.id, id));
-    if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-    throw new ConflictException(
-      '프로젝트가 변경되었거나 보관되었습니다. 다시 열어 최신 내용을 확인해주세요.',
-    );
+    return this.workspace.getProject(id);
   }
 
   @Patch('projects/:id')
@@ -206,23 +166,7 @@ export class WorkspaceController {
   ) {
     await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
-    const { expectedVersion, ...changes } = parse(updateProjectSchema, body);
-    return databaseOperation(async () => {
-      const unarchivesWithoutOtherEdits = changes.status === 'active' && changes.name === undefined;
-      const [row] = await this.database.db
-        .update(projects)
-        .set({ ...changes, version: sql`${projects.version} + 1`, updatedAt: new Date() })
-        .where(
-          and(
-            eq(projects.id, id),
-            eq(projects.version, expectedVersion),
-            unarchivesWithoutOtherEdits ? undefined : eq(projects.status, 'active'),
-          ),
-        )
-        .returning();
-      if (!row) return this.missingOrConflict(id);
-      return project(row);
-    });
+    return this.workspace.updateProject(id, parse(updateProjectSchema, body));
   }
 
   @Delete('projects/:id')
@@ -233,29 +177,7 @@ export class WorkspaceController {
   ) {
     await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
-    const { expectedVersion } = parse(deleteProjectSchema, body);
-    return databaseOperation(async () => {
-      // CAS and archived state are checked atomically. FK cascades remove pins/replies/notifications.
-      const [removed] = await this.database.db
-        .delete(projects)
-        .where(
-          and(
-            eq(projects.id, id),
-            eq(projects.version, expectedVersion),
-            eq(projects.status, 'archived'),
-          ),
-        )
-        .returning({ id: projects.id });
-      if (removed) return { id: removed.id, deleted: true };
-      const [current] = await this.database.db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(eq(projects.id, id));
-      if (!current) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      throw new ConflictException(
-        '보관된 프로젝트의 최신 버전만 삭제할 수 있습니다. 목록을 새로 확인해주세요.',
-      );
-    });
+    return this.workspace.deleteProject(id, parse(deleteProjectSchema, body));
   }
 
   @Put('projects/:id/document')
