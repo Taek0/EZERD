@@ -21,6 +21,7 @@ it('uses fine pinch increments anchored under the pointer', () => {
     600,
   );
   expect(next.zoom).toBeGreaterThan(1);
+  expect(next.zoom).toBeGreaterThan(1.0035);
   expect(next.zoom).toBeLessThan(1.01);
   expect((200 - next.x) / next.zoom).toBeCloseTo(190);
   expect((150 - next.y) / next.zoom).toBeCloseTo(130);

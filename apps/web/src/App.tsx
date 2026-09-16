@@ -498,6 +498,15 @@ export function App() {
     void runtime.current?.edit(document);
   }
   async function leave() {
+    if (
+      current.current &&
+      !(await confirm({
+        title: '갤러리로 이동할까요?',
+        description: '현재 프로젝트를 닫고 프로젝트 갤러리로 이동합니다.',
+        confirmLabel: '갤러리로 이동',
+      }))
+    )
+      return;
     await flushAutosave();
     navigation.current.begin();
     setBusy(false);
@@ -712,13 +721,16 @@ export function App() {
       ) : opened ? (
         <main id="main" className="editor">
           <div className="editor-heading">
-            <div className="project-title">
-              <Button onClick={leave}>← 갤러리</Button>
+            <div className="project-title" role="group" aria-label="프로젝트 이동">
+              <Button className="gallery-return" onClick={leave}>
+                ← 갤러리
+              </Button>
+              <span className="navigation-divider" aria-hidden="true" />
               <h1 title={opened.project.name}>{opened.project.name}</h1>
               <div className="editor-path-host" ref={setPathHost} />
             </div>
             <div className="editor-toolbar-host" ref={setToolbarHost} />
-            <div className="save-controls">
+            <div className="save-controls" role="group" aria-label="변경 기록과 동기화">
               <Button
                 aria-label="실행 취소"
                 title="실행 취소 (Ctrl+Z / ⌘Z)"

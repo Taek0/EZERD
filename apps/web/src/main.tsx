@@ -10,6 +10,7 @@ import './inspector.css';
 import './editor-feedback.css';
 import './canvas-viewport.css';
 import './editor-topbar.css';
+import './navigation-controls.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

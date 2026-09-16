@@ -760,119 +760,127 @@ export function Canvas({
   const toolbar = (
     <div className="canvas-toolbar">
       <div className="actions">
-        {viewId === 'overview' ? (
-          <Button disabled={readOnly} onClick={() => newDomain()}>
-            ＋ 도메인
+        <div className="toolbar-group toolbar-create" role="group" aria-label="편집 도구">
+          {viewId === 'overview' ? (
+            <Button disabled={readOnly} onClick={() => newDomain()}>
+              ＋ 도메인
+            </Button>
+          ) : (
+            <Button disabled={readOnly || !!activeCombined} onClick={() => newTable()}>
+              ＋ 테이블
+            </Button>
+          )}
+          <Button disabled={readOnly} onClick={newNote}>
+            ＋ 메모
           </Button>
-        ) : (
-          <Button disabled={readOnly || !!activeCombined} onClick={() => newTable()}>
-            ＋ 테이블
-          </Button>
-        )}
-        <Button disabled={readOnly} onClick={newNote}>
-          ＋ 메모
-        </Button>
+        </div>
         <span className="toolbar-divider" aria-hidden="true" />
-        <DialogTrigger
-          isOpen={viewPickerOpen}
-          onOpenChange={(open) => {
-            setViewPickerOpen(open);
-            if (open) {
-              setSelectedDomains(
-                activeCombined?.domainIds ??
-                  (activeDomain ? [activeDomain.id] : (doc.views?.[0]?.domainIds ?? [])),
-              );
-            }
-          }}
-        >
+        <div className="toolbar-group" role="group" aria-label="보기와 내보내기">
+          {viewId !== 'overview' && (
+            <DialogTrigger
+              isOpen={viewPickerOpen}
+              onOpenChange={(open) => {
+                setViewPickerOpen(open);
+                if (open) {
+                  setSelectedDomains(
+                    activeCombined?.domainIds ??
+                      (activeDomain ? [activeDomain.id] : (doc.views?.[0]?.domainIds ?? [])),
+                  );
+                }
+              }}
+            >
+              <Button
+                className={activeCombined ? 'domain-view-trigger is-active' : 'domain-view-trigger'}
+              >
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none">
+                  <path
+                    d="M3 5h14M3 10h14M3 15h14"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                {activeCombined ? '도메인 구성' : '도메인 뷰'}
+              </Button>
+              <UntitledPopover
+                className="domain-view-popover"
+                placement="bottom start"
+                shouldFlip={false}
+                offset={8}
+              >
+                <Dialog aria-label="도메인 뷰" className="combined-view-picker">
+                  <strong>도메인 선택</strong>
+                  <p className="panel-note">
+                    함께 볼 도메인을 선택하세요. 각 도메인의 테이블 배치를 유지해 나란히 표시합니다.
+                  </p>
+                  <div className="combined-domain-options">
+                    {doc.domains.map((d) => (
+                      <label key={d.id}>
+                        <Checkbox
+                          aria-label={d.name}
+                          checked={selectedDomains.includes(d.id)}
+                          onChange={(e) =>
+                            setSelectedDomains((value) =>
+                              e.target.checked
+                                ? [...value, d.id]
+                                : value.filter((id) => id !== d.id),
+                            )
+                          }
+                        />
+                        <span style={{ color: d.color ?? '#8993a3' }}>●</span>
+                        {d.name}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="actions">
+                    <Button
+                      disabled={readOnly || !selectedDomains.length}
+                      onClick={() => {
+                        const result = applyDomainSelection(
+                          doc,
+                          selectedDomains,
+                          activeCombined?.id ?? null,
+                          newId,
+                        );
+                        change(result.document);
+                        navigate(result.viewId);
+                        setViewPickerOpen(false);
+                      }}
+                    >
+                      적용
+                    </Button>
+                    <Button onClick={() => setViewPickerOpen(false)}>닫기</Button>
+                  </div>
+                </Dialog>
+              </UntitledPopover>
+            </DialogTrigger>
+          )}
+          <Button onClick={() => setEnumOpen(true)}>ENUM</Button>
           <Button
-            className={activeCombined ? 'domain-view-trigger is-active' : 'domain-view-trigger'}
+            disabled={exporting || !nodes.length}
+            onClick={async () => {
+              const world = surface.current?.querySelector<HTMLElement>('.canvas-world');
+              if (!world) return;
+              setExporting(true);
+              setExportError('');
+              try {
+                await exportCanvasPng(
+                  world,
+                  nodes,
+                  activeCombined?.name ?? activeCombined?.name ?? activeDomain?.name ?? '도메인 맵',
+                );
+              } catch {
+                setExportError('이미지를 만들지 못했습니다. 다시 시도해 주세요.');
+              } finally {
+                setExporting(false);
+              }
+            }}
           >
-            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <path
-                d="M3 5h14M3 10h14M3 15h14"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-            {activeCombined ? '도메인 구성' : '도메인 뷰'}
+            {exporting ? '이미지 생성 중…' : '고화질 PNG'}
           </Button>
-          <UntitledPopover
-            className="domain-view-popover"
-            placement="bottom start"
-            shouldFlip={false}
-            offset={8}
-          >
-            <Dialog aria-label="도메인 뷰" className="combined-view-picker">
-              <strong>도메인 선택</strong>
-              <p className="panel-note">
-                함께 볼 도메인을 선택하세요. 각 도메인의 테이블 배치를 유지해 나란히 표시합니다.
-              </p>
-              <div className="combined-domain-options">
-                {doc.domains.map((d) => (
-                  <label key={d.id}>
-                    <Checkbox
-                      aria-label={d.name}
-                      checked={selectedDomains.includes(d.id)}
-                      onChange={(e) =>
-                        setSelectedDomains((value) =>
-                          e.target.checked ? [...value, d.id] : value.filter((id) => id !== d.id),
-                        )
-                      }
-                    />
-                    <span style={{ color: d.color ?? '#8993a3' }}>●</span>
-                    {d.name}
-                  </label>
-                ))}
-              </div>
-              <div className="actions">
-                <Button
-                  disabled={readOnly || !selectedDomains.length}
-                  onClick={() => {
-                    const result = applyDomainSelection(
-                      doc,
-                      selectedDomains,
-                      activeCombined?.id ?? null,
-                      newId,
-                    );
-                    change(result.document);
-                    navigate(result.viewId);
-                    setViewPickerOpen(false);
-                  }}
-                >
-                  적용
-                </Button>
-                <Button onClick={() => setViewPickerOpen(false)}>닫기</Button>
-              </div>
-            </Dialog>
-          </UntitledPopover>
-        </DialogTrigger>
-        <Button onClick={() => setEnumOpen(true)}>ENUM</Button>
-        <Button
-          disabled={exporting || !nodes.length}
-          onClick={async () => {
-            const world = surface.current?.querySelector<HTMLElement>('.canvas-world');
-            if (!world) return;
-            setExporting(true);
-            setExportError('');
-            try {
-              await exportCanvasPng(
-                world,
-                nodes,
-                activeCombined?.name ?? activeCombined?.name ?? activeDomain?.name ?? '도메인 맵',
-              );
-            } catch {
-              setExportError('이미지를 만들지 못했습니다. 다시 시도해 주세요.');
-            } finally {
-              setExporting(false);
-            }
-          }}
-        >
-          {exporting ? '이미지 생성 중…' : '고화질 PNG'}
-        </Button>
+        </div>
         <span className="toolbar-divider" aria-hidden="true" />
-        <div className="panel-toggles">
+        <div className="toolbar-group panel-toggles" role="group" aria-label="협업과 속성 패널">
           {panelToggle}
           <IconButton
             className="inspector-toggle panel-toggle"

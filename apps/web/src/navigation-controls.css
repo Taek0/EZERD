@@ -1,0 +1,79 @@
+/* Navigation and panel sizing are loaded after the viewport rules. */
+.app-shell.editor-shell .project-title {
+  flex: 1 1 auto;
+  max-width: 100%;
+}
+
+.app-shell.editor-shell .editor-toolbar-host {
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+.app-shell.editor-shell .save-controls {
+  margin-left: 0;
+  padding-left: var(--topbar-gap-group);
+  border-left: 1px solid var(--line);
+}
+
+.app-shell.editor-shell .navigation-divider {
+  align-self: center;
+  flex: none;
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+}
+
+.app-shell.editor-shell .project-title h1,
+.app-shell.editor-shell .editor-path .path-step,
+.app-shell.editor-shell .editor-path .path-current {
+  font-size: var(--editor-control-font);
+  line-height: 1.4;
+  font-weight: var(--font-weight-medium);
+}
+
+.app-shell.editor-shell .review-workspace > .workspace {
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.app-shell.editor-shell .inspector-shell {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell.editor-shell .inspector-shell .inspector {
+  flex: 1 1 0;
+  height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.app-shell.editor-shell .inspector-body {
+  flex: none;
+  overflow: visible;
+}
+
+.app-shell.editor-shell .workspace.inspector-stacked {
+  grid-template-rows: minmax(0, 1fr) minmax(0, min(40%, 240px));
+}
+
+.app-shell.editor-shell .workspace.inspector-stacked.inspector-hidden {
+  grid-template-rows: minmax(0, 1fr) 0;
+}
+
+@media (max-width: 1120px) {
+  .app-shell.editor-shell .editor-toolbar-host {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .app-shell.editor-shell .project-title {
+    flex-basis: 100%;
+  }
+  .app-shell.editor-shell .save-controls {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
