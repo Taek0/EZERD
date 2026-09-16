@@ -1,15 +1,29 @@
 import { type DesignDocument, upsertCombinedView, setViewport } from '@ezerd/model';
 import { tableCardSize } from './table-geometry.js';
+/** Name the saved view after its domains so the editor path shows what is combined. */
+export function combinedViewName(names: string[]): string {
+  if (!names.length) return '도메인 뷰';
+  const label =
+    names.length > 3
+      ? names.slice(0, 2).join(' · ') + ' 외 ' + (names.length - 2) + '개'
+      : names.join(' · ');
+  return label.length > 120 ? label.slice(0, 119) + '…' : label;
+}
 export function applyDomainSelection(
   doc: DesignDocument,
   domainIds: string[],
   preferredViewId: string | null,
   createId: () => string,
 ): { document: DesignDocument; viewId: string } {
-  const selectedIds = doc.domains.filter((d) => domainIds.includes(d.id)).map((d) => d.id);
+  const selected = doc.domains.filter((d) => domainIds.includes(d.id));
+  const selectedIds = selected.map((d) => d.id);
   const current = doc.views?.find((v) => v.id === preferredViewId) ?? doc.views?.[0];
   const viewId = current?.id ?? createId();
-  let next = upsertCombinedView(doc, { id: viewId, name: '도메인 뷰', domainIds: selectedIds });
+  let next = upsertCombinedView(doc, {
+    id: viewId,
+    name: combinedViewName(selected.map((d) => d.name)),
+    domainIds: selectedIds,
+  });
   const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
   let offsetX = 0;
   for (const domainId of selectedIds) {

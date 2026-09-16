@@ -6,7 +6,7 @@ import {
   upsertCombinedView,
   type DesignDocument,
 } from '@ezerd/model';
-import { applyDomainSelection } from './domain-view.js';
+import { applyDomainSelection, combinedViewName } from './domain-view.js';
 import { tableCardSize } from './table-geometry.js';
 const metadata = { common: {}, logical: {}, physical: {} };
 function seed() {
@@ -102,5 +102,23 @@ describe('domain selection layout', () => {
     expect(
       node(result.document, 'current', 'a2').x - node(result.document, 'current', 'a1').x,
     ).toBe(640);
+  });
+});
+describe('saved view naming', () => {
+  it('names the view after its domains and shortens long selections', () => {
+    expect(combinedViewName([])).toBe('도메인 뷰');
+    expect(combinedViewName(['주문'])).toBe('주문');
+    expect(combinedViewName(['주문', '결제', '배송'])).toBe('주문 · 결제 · 배송');
+    expect(combinedViewName(['주문', '결제', '배송', '회원'])).toBe('주문 · 결제 외 2개');
+    expect(combinedViewName(['x'.repeat(200)])).toHaveLength(120);
+  });
+  it('applies the composed name to the saved view', () => {
+    const { document: result, viewId } = applyDomainSelection(
+      seed(),
+      ['a', 'b'],
+      null,
+      () => 'current',
+    );
+    expect(result.views?.find((v) => v.id === viewId)?.name).toBe('A · B');
   });
 });
