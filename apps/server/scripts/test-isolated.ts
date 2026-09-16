@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import pg from 'pg';
 import { readConfig } from '../src/config.js';
 
@@ -15,11 +18,20 @@ const admin = new pg.Pool({
 });
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 let created = false;
+const mcpLogDir = mkdtempSync(join(tmpdir(), 'ezerd-mcp-integration-'));
 try {
   await admin.query(`CREATE DATABASE "${name}"`);
   created = true;
   configured.pathname = '/' + name;
-  const env = { ...process.env, DATABASE_URL: configured.toString(), EZERD_DB_TEST: '1' };
+  const env = {
+    ...process.env,
+    DATABASE_URL: configured.toString(),
+    EZERD_DB_TEST: '1',
+    NODE_ENV: 'test',
+    MCP_ENABLED: 'true',
+    MCP_PUBLIC_URL: 'http://127.0.0.1/mcp',
+    MCP_LOG_DIR: mcpLogDir,
+  };
   const migrate = spawnSync('pnpm', ['--filter', '@ezerd/server', 'db:migrate'], {
     cwd: root,
     env,
@@ -34,6 +46,7 @@ try {
       'run',
       'apps/server/test/api.integration.test.ts',
       'apps/server/test/autosync.integration.test.ts',
+      'apps/server/test/mcp.integration.test.ts',
     ],
     { cwd: root, env, stdio: 'inherit' },
   );
@@ -42,4 +55,5 @@ try {
 } finally {
   if (created) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);
   await admin.end();
+  rmSync(mcpLogDir, { recursive: true, force: true });
 }

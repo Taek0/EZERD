@@ -352,7 +352,6 @@ export class McpServerFactory {
             text: expected ? error.message : `도구 실행에 실패했습니다. 요청 ID: ${requestId}`,
           },
         ],
-        structuredContent: { error: { code: errorCode, requestId } },
       };
     }
   }
