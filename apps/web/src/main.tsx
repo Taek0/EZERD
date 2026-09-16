@@ -9,6 +9,7 @@ import './styles.css';
 import './inspector.css';
 import './editor-feedback.css';
 import './canvas-viewport.css';
+import './editor-topbar.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

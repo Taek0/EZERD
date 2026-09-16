@@ -66,6 +66,7 @@ const identityKey = 'ezerd.userId';
 export function App() {
   const confirm = useConfirm();
   const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
+  const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
   const [renamingProject, setRenamingProject] = useState<Project | null>(null);
   const [draftTarget, setDraftTarget] = useState<CommentContext & { nonce: number }>();
   const [user, setUser] = useState<User | null>(null),
@@ -701,10 +702,8 @@ export function App() {
           <div className="editor-heading">
             <div className="project-title">
               <Button onClick={leave}>← 갤러리</Button>
-              <div>
-                <small>PROJECT / DOMAIN WORKSPACE</small>
-                <h1 title={opened.project.name}>{opened.project.name}</h1>
-              </div>
+              <h1 title={opened.project.name}>{opened.project.name}</h1>
+              <div className="editor-path-host" ref={setPathHost} />
             </div>
             <div className="editor-toolbar-host" ref={setToolbarHost} />
             <div className="save-controls">
@@ -723,15 +722,6 @@ export function App() {
                 onClick={() => restoreHistory('redo')}
               >
                 ↷
-              </Button>
-              <Button
-                aria-expanded={commentsOpen}
-                onClick={() => {
-                  setDraftTarget(undefined);
-                  setCommentsOpen((v) => !v);
-                }}
-              >
-                핀
               </Button>
               <span
                 role="status"
@@ -791,6 +781,24 @@ export function App() {
               key={opened.project.id}
               document={opened.document}
               toolbarHost={toolbarHost}
+              pathHost={pathHost}
+              panelToggle={
+                <Button
+                  className="panel-toggle"
+                  aria-label={commentsOpen ? '핀 패널 숨기기' : '핀 패널 열기'}
+                  title={commentsOpen ? '핀 패널 숨기기' : '핀 패널 열기'}
+                  aria-pressed={commentsOpen}
+                  onClick={() => {
+                    setDraftTarget(undefined);
+                    setCommentsOpen((v) => !v);
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <rect x="3" y="4" width="14" height="9" rx="2.5" />
+                    <path d="M7 13v3.2L10.6 13" />
+                  </svg>
+                </Button>
+              }
               onChange={edit}
               onPreviewChange={previewEdit}
               readOnly={opened.project.status === 'archived'}

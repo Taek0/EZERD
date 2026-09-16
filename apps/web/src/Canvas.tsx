@@ -76,6 +76,8 @@ export type CanvasContext = {
 };
 type Props = {
   toolbarHost?: HTMLElement | null;
+  pathHost?: HTMLElement | null;
+  panelToggle?: ReactNode;
   onCreatePin?: (context: CanvasContext) => void;
   onContextChange?: (context: CanvasContext) => void;
   focusTarget?: {
@@ -102,6 +104,8 @@ export function Canvas({
   pins,
   onCreatePin,
   toolbarHost,
+  pathHost,
+  panelToggle,
 }: Props) {
   const confirm = useConfirm();
   const latestDeletion = useRef({ doc, onChange, readOnly });
@@ -709,22 +713,52 @@ export function Canvas({
       globalThis.document.querySelector<HTMLInputElement>('[aria-label="관계 이름"]')?.focus(),
     );
   }
+  const currentViewName = activeCombined?.name ?? activeDomain?.name ?? '';
+  const pathTrail = (
+    <nav className="editor-path" aria-label="현재 위치">
+      <span className="path-sep" aria-hidden="true">
+        /
+      </span>
+      {viewId === 'overview' ? (
+        <strong className="path-current">도메인 맵</strong>
+      ) : (
+        <>
+          <Button className="path-step" onClick={() => navigate('overview')}>
+            도메인 맵
+          </Button>
+          <span className="path-sep" aria-hidden="true">
+            /
+          </span>
+          <strong
+            className="path-current"
+            key={viewId}
+            title={activeCombined ? currentViewName + ' (도메인 뷰)' : currentViewName}
+          >
+            {activeCombined && (
+              <svg
+                className="path-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 20 20"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 5h14M3 10h14M3 15h14"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+            {currentViewName}
+          </strong>
+        </>
+      )}
+    </nav>
+  );
   const toolbar = (
     <div className="canvas-toolbar">
-      <div className="breadcrumbs">
-        {viewId !== 'overview' && (
-          <Button className="domain-map-return" onClick={() => navigate('overview')}>
-            ← 도메인 맵으로
-          </Button>
-        )}
-        {activeCombined && <strong>{activeCombined.name}</strong>}
-        {activeDomain && (
-          <>
-            <span aria-hidden="true">/</span>
-            <strong title={activeDomain.name}>{activeDomain.name}</strong>
-          </>
-        )}
-      </div>
       <div className="actions">
         {viewId === 'overview' ? (
           <Button disabled={readOnly} onClick={() => newDomain()}>
@@ -735,6 +769,10 @@ export function Canvas({
             ＋ 테이블
           </Button>
         )}
+        <Button disabled={readOnly} onClick={newNote}>
+          ＋ 메모
+        </Button>
+        <span className="toolbar-divider" aria-hidden="true" />
         <DialogTrigger
           isOpen={viewPickerOpen}
           onOpenChange={(open) => {
@@ -747,7 +785,9 @@ export function Canvas({
             }
           }}
         >
-          <Button className="domain-view-trigger">
+          <Button
+            className={activeCombined ? 'domain-view-trigger is-active' : 'domain-view-trigger'}
+          >
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none">
               <path
                 d="M3 5h14M3 10h14M3 15h14"
@@ -756,7 +796,7 @@ export function Canvas({
                 strokeLinecap="round"
               />
             </svg>
-            도메인 뷰
+            {activeCombined ? '도메인 구성' : '도메인 뷰'}
           </Button>
           <UntitledPopover
             className="domain-view-popover"
@@ -808,6 +848,7 @@ export function Canvas({
             </Dialog>
           </UntitledPopover>
         </DialogTrigger>
+        <Button onClick={() => setEnumOpen(true)}>ENUM</Button>
         <Button
           disabled={exporting || !nodes.length}
           onClick={async () => {
@@ -830,25 +871,25 @@ export function Canvas({
         >
           {exporting ? '이미지 생성 중…' : '고화질 PNG'}
         </Button>
-        <Button disabled={readOnly} onClick={newNote}>
-          ＋ 메모
-        </Button>
-        {viewId !== 'overview' && <Button onClick={() => setEnumOpen(true)}>ENUM</Button>}
         <span className="toolbar-divider" aria-hidden="true" />
-        <IconButton
-          className="inspector-toggle"
-          aria-label={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'}
-          title={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'}
-          aria-expanded={inspectorOpen}
-          aria-controls="canvas-inspector"
-          onClick={() => setInspectorOpen((value) => !value)}
-        >
-          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <rect x="3" y="4" width="14" height="12" rx="3" />
-            <path className="sidebar-icon-divider" d="M12 4.5v11" />
-            <path className="sidebar-icon-fill" d="M13 5h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1z" />
-          </svg>
-        </IconButton>
+        <div className="panel-toggles">
+          {panelToggle}
+          <IconButton
+            className="inspector-toggle panel-toggle"
+            aria-label={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'}
+            title={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'}
+            aria-pressed={inspectorOpen}
+            aria-expanded={inspectorOpen}
+            aria-controls="canvas-inspector"
+            onClick={() => setInspectorOpen((value) => !value)}
+          >
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <rect x="3" y="4" width="14" height="12" rx="3" />
+              <path className="sidebar-icon-divider" d="M12 4.5v11" />
+              <path className="sidebar-icon-fill" d="M13 5h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1z" />
+            </svg>
+          </IconButton>
+        </div>
       </div>
     </div>
   );
@@ -914,6 +955,7 @@ export function Canvas({
       className={`workspace ${inspectorOpen ? '' : 'inspector-hidden'} ${resizingInspector ? 'inspector-resizing' : ''} ${stackedInspector ? 'inspector-stacked' : ''}`}
     >
       <div className="canvas-column" key={viewId}>
+        {pathHost ? createPortal(pathTrail, pathHost) : pathTrail}
         {toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
         {exportError && <p role="alert">{exportError}</p>}
 

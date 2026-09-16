@@ -1339,19 +1339,6 @@ button.relation-disclosure:hover {
   font-size: 13px;
   border-radius: 8px;
 }
-.canvas-toolbar .breadcrumbs .domain-map-return {
-  padding: 8px 13px;
-  border: 1px solid #99b9de;
-  border-radius: 8px;
-  background: #e0ecf9;
-  color: #184e82;
-  font-weight: 700;
-  box-shadow: 0 1px 3px #234c7314;
-}
-.canvas-toolbar .breadcrumbs .domain-map-return:hover {
-  background: #cbdff5;
-  border-color: #6896c8;
-}
 @media (max-width: 700px) {
   .editor-shell .editor-heading {
     gap: 10px;

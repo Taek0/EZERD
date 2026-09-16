@@ -1,0 +1,176 @@
+/* Top bar zones. Position carries meaning: the path sits on the left, document
+   state in the middle and canvas tools on the right. Loaded after the shell so
+   the zone gaps win over the single shared --editor-gap. */
+.app-shell.editor-shell {
+  --topbar-gap-tight: 4px;
+  --topbar-gap-group: clamp(10px, 1vw, 14px);
+  --topbar-gap-zone: clamp(16px, 2vw, 28px);
+}
+.app-shell.editor-shell .editor-heading {
+  gap: var(--topbar-gap-zone);
+}
+.app-shell.editor-shell .project-title,
+.app-shell.editor-shell .save-controls {
+  gap: var(--topbar-gap-group);
+}
+.app-shell.editor-shell .canvas-toolbar .actions {
+  gap: var(--topbar-gap-tight);
+}
+/* Dividers carry the group spacing so neighbouring controls stay tight. */
+.app-shell.editor-shell .canvas-toolbar .actions > .toolbar-divider {
+  margin-inline: calc(var(--topbar-gap-group) - var(--topbar-gap-tight));
+}
+.app-shell.editor-shell .toolbar-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--topbar-gap-tight);
+  min-width: 0;
+}
+
+/* --- left zone: gallery, project and view as one path --- */
+.app-shell.editor-shell .project-title {
+  align-items: center;
+}
+/* The left zone now carries the path as well, so it sizes to its content and
+   lets the project name absorb the shrinking. */
+.app-shell.editor-shell .project-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(54vw, 640px);
+}
+.app-shell.editor-shell .project-title h1 {
+  margin: 0;
+}
+.app-shell.editor-shell .project-title > h1 {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.editor-path-host {
+  display: contents;
+}
+.editor-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+.app-shell.editor-shell .editor-path {
+  flex: none;
+  white-space: nowrap;
+}
+.editor-path .path-sep {
+  flex: none;
+  color: var(--muted);
+}
+.app-shell.editor-shell .editor-path .path-step {
+  min-height: 26px;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+.app-shell.editor-shell .editor-path .path-step:hover:not(:disabled) {
+  border-color: transparent;
+  background: #dce5f1;
+  color: #1f4c80;
+}
+.editor-path .path-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: var(--font-weight-label);
+  color: var(--ink);
+}
+/* A saved domain view keeps the same mark as its toolbar control. */
+.editor-path .path-icon {
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--accent);
+}
+
+/* --- right zone: creation, view tools and panel toggles stay apart --- */
+.app-shell.editor-shell .canvas-toolbar .toolbar-divider {
+  align-self: center;
+  height: 18px;
+}
+.app-shell.editor-shell .canvas-toolbar .toolbar-create > .ui-button:first-child {
+  min-width: 84px;
+}
+.app-shell.editor-shell .canvas-toolbar .domain-view-trigger {
+  min-width: 104px;
+  justify-content: center;
+}
+.app-shell.editor-shell .canvas-toolbar .domain-view-trigger.is-active {
+  border-color: #648cc1;
+  background: #dce9fa;
+  color: #153f74;
+}
+.app-shell.editor-shell .panel-toggles {
+  gap: 2px;
+}
+.app-shell.editor-shell .canvas-toolbar .panel-toggles > .ui-button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--editor-control-height);
+  height: var(--editor-control-height);
+  min-height: var(--editor-control-height);
+  padding: 0;
+}
+.app-shell.editor-shell .canvas-toolbar .panel-toggles > .ui-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.app-shell.editor-shell .canvas-toolbar .panel-toggles > .ui-button[aria-pressed='true'] {
+  border-color: #648cc1;
+  background: #dce9fa;
+  color: #153f74;
+  box-shadow:
+    inset 2px 2px 4px #a8b8cf80,
+    inset -2px -2px 4px #ffffffb3;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .app-shell.editor-shell .editor-path .path-step,
+  .app-shell.editor-shell .canvas-toolbar .domain-view-trigger,
+  .app-shell.editor-shell .canvas-toolbar .panel-toggles > .ui-button {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
+  }
+  .editor-path .path-current {
+    animation: topbar-path-enter 180ms ease-out;
+  }
+}
+@keyframes topbar-path-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 700px) {
+  .app-shell.editor-shell {
+    --topbar-gap-zone: 12px;
+    --topbar-gap-group: 8px;
+  }
+}
