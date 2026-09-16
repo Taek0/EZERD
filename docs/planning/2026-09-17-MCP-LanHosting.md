@@ -3,6 +3,8 @@
 작성일: 2026-09-17
 상태: 기존 HTTPS proxy안 구현 완료 후 운영 방향 변경. 직접 LAN HTTP 기준은 `2026-09-17-MCP-DirectLanHttp.md`로 대체
 
+> 이 문서는 현재 운영 기준이 아니다. 도메인·TLS proxy 없이 사설 IPv4 HTTP로 직접 실행하는 최신 정책과 설정은 [`2026-09-17-MCP-DirectLanHttp.md`](./2026-09-17-MCP-DirectLanHttp.md)를 따른다.
+
 ## 목표와 설계 결정
 
 EZERD의 기존 NestJS 서버에 Streamable HTTP MCP endpoint를 추가한다. 사용자는 웹에서 기존 계정으로 로그인해 MCP 전용 토큰을 발급하고, 사내 MCP 클라이언트에 주소와 토큰을 한 번 설정한다. 이후 프로젝트 조회·생성·수정, 리뷰, ERD 문서 변경을 자연어로 요청하며 변경 이력에는 해당 사용자를 기록한다.
