@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument } from '@ezerd/model';
 import type { SyncOperationInput, SyncOperationResult } from '@ezerd/contracts';
 import { MemorySyncOperationStore, type StoredSyncOperation } from './sync-storage.js';
@@ -18,6 +18,12 @@ const ids = {
   actor: '00000000-0000-4000-8000-000000000006',
 };
 const issuedAt = '2026-09-15T00:00:00.000Z';
+// Fixtures model a live baseline; wall-clock date must not expire their 24h queue window.
+beforeAll(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-09-15T00:01:00.000Z'));
+});
+afterAll(() => vi.useRealTimers());
 
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
