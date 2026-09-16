@@ -761,31 +761,42 @@
   font-size: 13px;
 }
 
-/* Keep larger card typography and content bounds in table-geometry.ts aligned. */
+/* Keep compact card typography and content bounds in table-geometry.ts aligned. */
 .table-node-content header {
-  height: 62px;
-  min-height: 62px;
+  height: 50px;
+  min-height: 50px;
+  padding: 8px 10px;
 }
 .table-node-content header strong,
 .table-node-content header span {
-  font-size: 28px;
-  line-height: 38px;
+  font-size: 24px;
+  line-height: 32px;
 }
 .table-node-content .table-column-row {
-  font-size: 20px;
-  line-height: 30px;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 18px;
+  line-height: 26px;
 }
 .table-node-content .table-column-head {
-  height: 42px;
-  min-height: 42px;
-  font-size: 16px;
-  line-height: 30px;
+  height: 34px;
+  min-height: 34px;
+  padding-block: 3px;
+  font-size: 14px;
+  line-height: 26px;
 }
 .table-node-content .table-key-marker {
-  font-size: 16px;
+  font-size: 14px;
 }
 .table-node-content .table-column-row .ui-input {
-  font-size: 20px;
+  font-size: 18px;
+  min-height: 26px;
+  height: 26px;
+}
+.table-node-content .table-node-footer {
+  height: 40px;
+  min-height: 40px;
+  padding: 3px 44px 3px 10px;
 }
 .table-column-type-controls,
 .table-referential-actions {

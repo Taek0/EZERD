@@ -1,7 +1,7 @@
 import { columnTypeDisplay } from './column-type-display.js';
 import { type DesignDocument, isVisibleInView } from '@ezerd/model';
 const textWidth = (value: string) =>
-  [...value].reduce((n, c) => n + (c.charCodeAt(0) > 255 ? 20 : 12.4), 0);
+  [...value].reduce((n, c) => n + (c.charCodeAt(0) > 255 ? 18 : 11.2), 0);
 export function tableCardMetrics(doc: DesignDocument, tableId: string) {
   const table = doc.tables?.find((t) => t.id === tableId);
   const columns = (doc.columns ?? []).filter(
@@ -11,11 +11,11 @@ export function tableCardMetrics(doc: DesignDocument, tableId: string) {
     showComment = table?.canvasDisplay?.showComment !== false;
   const typeDisplays = columns.map((c) => columnTypeDisplay(c.physical.type, doc.enums));
   const widths = [
-    58,
-    Math.max(110, ...columns.map((c) => Math.min(240, textWidth(c.physical.name)))),
-    Math.max(120, ...typeDisplays.map((typeDisplay) => Math.min(260, textWidth(typeDisplay) + 18))),
-    44,
-    Math.max(110, ...columns.map((c) => Math.min(320, textWidth(c.physical.comment)))),
+    54,
+    Math.max(100, ...columns.map((c) => Math.min(216, textWidth(c.physical.name)))),
+    Math.max(108, ...typeDisplays.map((typeDisplay) => Math.min(234, textWidth(typeDisplay) + 16))),
+    40,
+    Math.max(96, ...columns.map((c) => Math.min(288, textWidth(c.physical.comment)))),
   ];
   const lines = (value: string, width: number) =>
     value.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(textWidth(line) / width)), 0);
@@ -27,28 +27,28 @@ export function tableCardMetrics(doc: DesignDocument, tableId: string) {
         lines(typeDisplays[index]!, widths[2]!),
         showComment ? lines(c.physical.comment, widths[4]!) : 1,
       ) *
-        30 +
-      17,
+        26 +
+      11,
   );
   const visibleWidths = widths.filter(
     (_, i) => (i !== 3 && i !== 4) || (i === 3 && showNullable) || (i === 4 && showComment),
   );
   const width = Math.max(
-    320,
-    visibleWidths.reduce((a, b) => a + b, 0) + 24 + (visibleWidths.length - 1) * 8,
-    textWidth(table?.physical.name ?? '') * 1.4 + 32,
+    280,
+    visibleWidths.reduce((a, b) => a + b, 0) + 20 + (visibleWidths.length - 1) * 6,
+    (textWidth(table?.physical.name ?? '') * 24) / 18 + 24,
   );
   return {
     width,
     height: Math.max(
-      240,
-      62 +
-        42 +
+      180,
+      50 +
+        34 +
         Math.max(
-          47,
+          37,
           rows.reduce((a, b) => a + b, 0),
         ) +
-        56,
+        40,
     ),
     grid: visibleWidths.map((n) => `minmax(${n}px, ${n}fr)`).join(' '),
     rows,

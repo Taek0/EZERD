@@ -1,12 +1,43 @@
 import { describe, it, expect } from 'vitest';
 import { type DesignDocument } from '@ezerd/model';
-import { tableCardSize } from './table-geometry.js';
+import { tableCardMetrics, tableCardSize } from './table-geometry.js';
 import { relationGeometry } from './TableEditor.js';
 const base = {
   tables: [{ id: 't', scope: 'physical', physical: { name: 'users' } }],
   columns: [],
 } as unknown as DesignDocument;
 describe('table content bounds', () => {
+  it('fits a typical five-column card inside the existing default footprint', () => {
+    const doc = {
+      ...base,
+      columns: Array.from({ length: 5 }, (_, i) => ({
+        id: String(i),
+        tableId: 't',
+        scope: 'physical',
+        physical: { name: `field_${i}`, type: { name: 'integer' }, comment: '' },
+      })),
+    } as unknown as DesignDocument;
+    const metrics = tableCardMetrics(doc, 't');
+    expect(metrics.width).toBeLessThanOrEqual(480);
+    expect(metrics.height).toBeLessThan(330);
+    expect(tableCardSize(doc, 't', 900, 800)).toEqual({ width: 900, height: 800 });
+  });
+  it('reserves all explicit comment lines at compact row spacing', () => {
+    const doc = {
+      ...base,
+      columns: [
+        {
+          id: 'c',
+          tableId: 't',
+          scope: 'physical',
+          physical: { name: 'id', type: { name: 'integer' }, comment: '첫 줄\n두 번째\n세 번째' },
+        },
+      ],
+    } as unknown as DesignDocument;
+    const metrics = tableCardMetrics(doc, 't');
+    expect(metrics.rows[0]).toBeGreaterThanOrEqual(3 * 26 + 11);
+    expect(metrics.height).toBeGreaterThanOrEqual(50 + 34 + metrics.rows[0]! + 40);
+  });
   it('grows for additional rows and long comments without shrinking saved sizes', () => {
     const empty = tableCardSize(base, 't', 1, 1);
     const column = {
