@@ -33,6 +33,7 @@ import { SyncHistoryPanel } from './sync-history-panel.js';
 import { Avatar, Badge, Button, Dropdown, Input, TabButton } from './components/ui/index.js';
 import './responsive-shell.css';
 import { McpConnectionPanel } from './McpConnectionPanel.js';
+import { ProjectImportButton, exportProjectFile } from './ProjectTransfer.js';
 
 type User = {
   id: string;
@@ -903,6 +904,15 @@ export function App() {
             </div>
           </section>
           <div className="gallery-tools">
+            <ProjectImportButton
+              disabled={busy}
+              onImported={() => {
+                setStatus('active');
+                setSearch('');
+                setError('');
+                setRefresh((value) => value + 1);
+              }}
+            />
             <div className="tabs" aria-label="프로젝트 상태">
               <TabButton selected={status === 'active'} onClick={() => setStatus('active')}>
                 진행 중
@@ -967,6 +977,23 @@ export function App() {
                   </Button>
                   <p>수정 {new Date(project.updatedAt).toLocaleDateString('ko-KR')}</p>
                   <div className="card-actions">
+                    <Button
+                      disabled={busy}
+                      aria-label={`${project.name} 내보내기`}
+                      onClick={async () => {
+                        setBusy(true);
+                        setError('');
+                        try {
+                          await exportProjectFile(project.id);
+                        } catch (error) {
+                          setError(message(error));
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      내보내기
+                    </Button>
                     <Button disabled={busy} onClick={() => setRenamingProject(project)}>
                       이름 수정
                     </Button>
