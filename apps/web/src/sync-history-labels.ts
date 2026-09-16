@@ -181,7 +181,8 @@ function context(document: DesignDocument, history: History, changes: readonly H
         fk = lookupName('tables', relation.sourceTableId);
       title = pk && fk ? pk + ' → ' + fk : '';
     }
-    if (collection === 'notes') title = text(value.text) || title;
+    if (collection === 'notes')
+      title = text(value.text).slice(0, 32) + (text(value.text).length > 32 ? '…' : '') || title;
     return kind + (title ? ' ‘' + title + '’' : '');
   };
   const valueLabel = (value: unknown, field: string): string => {
@@ -305,6 +306,27 @@ export function describeChanges(
           : '설정');
     const before = ctx.valueLabel(change.before, field),
       after = ctx.valueLabel(change.after, field);
+    if (
+      [
+        'text',
+        'description',
+        'logical.description',
+        'physical.comment',
+        'logical.definition',
+      ].includes(field) &&
+      (String(change.before ?? '').length > 80 || String(change.after ?? '').length > 80)
+    ) {
+      return [
+        caption +
+          ' ' +
+          fieldLabel +
+          ' 변경 (' +
+          Array.from(String(change.before ?? '')).length +
+          '자 → ' +
+          Array.from(String(change.after ?? '')).length +
+          '자)',
+      ];
+    }
     const showValues = before !== '설정' && after !== '설정' && fieldLabel !== '설정';
     return [
       caption + ' ' + fieldLabel + ' 변경' + (showValues ? ': ' + before + ' → ' + after : ''),

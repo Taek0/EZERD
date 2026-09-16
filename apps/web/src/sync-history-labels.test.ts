@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyDocument, type DesignDocument } from '@ezerd/model';
 import { describeChanges, describeDeletedValues, historyMessage } from './sync-history-labels.js';
+it('summarizes long note edits without changing the original operation', () => {
+  const document = createEmptyDocument();
+  const before = '가'.repeat(10000),
+    after = '나'.repeat(12000);
+  document.notes = [{ id: 'memo', viewId: 'overview', text: after }];
+  const change = { path: '/notes/memo/text', before, after };
+  const labels = describeChanges([change], document);
+  expect(labels[0]!.length).toBeLessThan(120);
+  expect(labels[0]).toContain('10000자 → 12000자');
+  expect(change.before).toBe(before);
+  expect(change.after).toBe(after);
+});
 const tableId = '10000000-0000-4000-8000-000000000001',
   columnId = '10000000-0000-4000-8000-000000000002';
 const table = { id: tableId, domainId: 'd', physical: { name: 'users' }, logical: { name: '' } };
