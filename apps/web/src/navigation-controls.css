@@ -1,4 +1,8 @@
 /* Navigation and panel sizing are loaded after the viewport rules. */
+.app-shell.editor-shell .review-workspace {
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
 .app-shell.editor-shell .project-title {
   flex: 1 1 auto;
   max-width: 100%;
@@ -32,6 +36,7 @@
 }
 
 .app-shell.editor-shell .review-workspace > .workspace {
+  height: 100%;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
