@@ -1,7 +1,7 @@
 # MCP 사내 LAN 호스팅 구현 계획
 
 작성일: 2026-09-17
-상태: 구현 완료, 로컬 PostgreSQL·HTTP·SDK 검증 완료. 실제 사내 HTTPS·방화벽·다른 장치 연결 검증 대기
+상태: 기존 HTTPS proxy안 구현 완료 후 운영 방향 변경. 직접 LAN HTTP 기준은 `2026-09-17-MCP-DirectLanHttp.md`로 대체
 
 ## 목표와 설계 결정
 
