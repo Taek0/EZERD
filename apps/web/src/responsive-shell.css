@@ -65,7 +65,7 @@
 }
 
 .app-shell.editor-shell .project-title {
-  flex: 0 1 320px;
+  flex: 0 1 clamp(280px, 25vw, 400px);
   min-width: 0;
   max-width: 100%;
   gap: var(--editor-gap);
