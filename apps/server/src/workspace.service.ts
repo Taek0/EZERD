@@ -77,6 +77,14 @@ export class WorkspaceService {
     });
   }
 
+  getProjectState(id: string) {
+    return operation(async () => {
+      const [row] = await this.database.db.select().from(projects).where(eq(projects.id, id));
+      if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+      return { project: project(row), document: row.document, syncSequence: row.syncSequence };
+    });
+  }
+
   private async missingOrConflict(id: string): Promise<never> {
     const [row] = await this.database.db
       .select({ id: projects.id })

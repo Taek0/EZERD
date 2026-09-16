@@ -10,17 +10,34 @@ import {
   projectDocumentSchema,
   projectQuerySchema,
   projectSchema,
+  syncHistoryEntrySchema,
+  syncOperationResultSchema,
   threadSchema,
   updateProjectSchema,
   updateThreadSchema,
 } from '@ezerd/contracts';
+import { diagnoseDocument } from '@ezerd/model';
 import type { AuthenticatedUser } from '../session.js';
 import { ReviewService } from '../review.service.js';
 import { WorkspaceService } from '../workspace.service.js';
+import { SyncService } from '../sync.service.js';
 import { McpLogger } from './logging.js';
+import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 
 const idSchema = z.uuid();
 const TIMEOUT_MS = 60_000;
+const sequenceSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const projectStateSchema = projectDocumentSchema.extend({ syncSequence: sequenceSchema });
+const commandRequestSchema = z.strictObject({
+  operationId: idSchema,
+  groupId: idSchema,
+  clientId: idSchema,
+});
+const diagnosticSchema = z.strictObject({
+  code: z.string(),
+  objectId: z.string(),
+  message: z.string(),
+});
 
 @Injectable()
 export class McpServerFactory {
@@ -28,6 +45,8 @@ export class McpServerFactory {
     @Inject(WorkspaceService) private readonly workspace: WorkspaceService,
     @Inject(ReviewService) private readonly reviews: ReviewService,
     @Inject(McpLogger) private readonly logger: McpLogger,
+    @Inject(SyncService) private readonly sync: SyncService,
+    @Inject(McpDocumentService) private readonly documents: McpDocumentService,
   ) {}
 
   create(user: AuthenticatedUser, tokenId: string, requestId: string): McpServer {
@@ -41,6 +60,15 @@ export class McpServerFactory {
     );
     const invoke = <T>(tool: string, callback: () => Promise<T>) =>
       this.invoke(tool, user, tokenId, requestId, callback);
+    const requireAccepted = <
+      T extends { status: 'accepted' | 'rejected'; reason?: string | undefined },
+    >(
+      result: T,
+    ) => {
+      if (result.status === 'rejected')
+        throw new HttpException(result.reason ?? '작업이 동시성 규칙에 따라 거부되었습니다.', 409);
+      return result;
+    };
 
     server.registerTool(
       'list_projects',
@@ -61,12 +89,12 @@ export class McpServerFactory {
       {
         description: '프로젝트 메타데이터와 현재 설계 문서를 조회합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
-        outputSchema: projectDocumentSchema,
+        outputSchema: projectStateSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId }) =>
         invoke('get_project', async () =>
-          projectDocumentSchema.parse(await this.workspace.getProject(projectId)),
+          projectStateSchema.parse(await this.workspace.getProjectState(projectId)),
         ),
     );
     server.registerTool(
@@ -168,6 +196,92 @@ export class McpServerFactory {
       },
       ({ threadId, delete: input }) =>
         invoke('delete_review_thread', () => this.reviews.remove(threadId, input, user)),
+    );
+    server.registerTool(
+      'diagnose_project',
+      {
+        description: '현재 설계 문서의 구조적 문제를 진단합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema }),
+        outputSchema: z.strictObject({ diagnostics: z.array(diagnosticSchema) }),
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId }) =>
+        invoke('diagnose_project', async () => {
+          const { document } = await this.workspace.getProject(projectId);
+          return { diagnostics: z.array(diagnosticSchema).parse(diagnoseDocument(document)) };
+        }),
+    );
+    server.registerTool(
+      'apply_project_changes',
+      {
+        description:
+          '명시적인 도메인·테이블·컬럼·키·관계·노트 변경을 최신 기준에 원자적으로 적용합니다.',
+        inputSchema: applyProjectChangesSchema,
+        outputSchema: syncOperationResultSchema,
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      (input) =>
+        invoke('apply_project_changes', async () =>
+          syncOperationResultSchema.parse(await this.documents.apply(input, user)),
+        ),
+    );
+    server.registerTool(
+      'get_project_history',
+      {
+        description: '지정한 동기화 순서 이후의 프로젝트 변경 이력을 조회합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema, since: sequenceSchema.default(0) }),
+        outputSchema: z.strictObject({ history: z.array(syncHistoryEntrySchema) }),
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, since }) =>
+        invoke('get_project_history', async () => ({
+          history: z.array(syncHistoryEntrySchema).parse(await this.sync.history(projectId, since)),
+        })),
+    );
+    server.registerTool(
+      'undo_project_operation',
+      {
+        description: '인증된 사용자가 승인받은 기존 작업을 현재 충돌 규칙에 따라 실행 취소합니다.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          sourceOperationId: idSchema,
+          request: commandRequestSchema,
+        }),
+        outputSchema: syncOperationResultSchema,
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      ({ projectId, sourceOperationId, request }) =>
+        invoke('undo_project_operation', async () =>
+          requireAccepted(
+            syncOperationResultSchema.parse(
+              await this.sync.undo(projectId, sourceOperationId, request, user),
+            ),
+          ),
+        ),
+    );
+    server.registerTool(
+      'restore_project_deletion',
+      {
+        description: '삭제 작업의 보존 스냅샷을 새 객체 ID로 복원합니다.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          deletedOperationId: idSchema,
+          request: commandRequestSchema,
+        }),
+        outputSchema: z.strictObject({
+          result: syncOperationResultSchema,
+          omittedRelations: z.array(z.string()),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, deletedOperationId, request }) =>
+        invoke('restore_project_deletion', async () => {
+          const outcome = await this.sync.restore(projectId, deletedOperationId, request, user);
+          return {
+            result: requireAccepted(syncOperationResultSchema.parse(outcome.result)),
+            omittedRelations: z.array(z.string()).parse(outcome.omittedRelations),
+          };
+        }),
     );
     return server;
   }

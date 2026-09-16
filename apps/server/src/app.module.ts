@@ -16,6 +16,7 @@ import { McpController } from './mcp/mcp.controller.js';
 import { McpAuthService } from './mcp/mcp-auth.service.js';
 import { McpServerFactory } from './mcp/mcp-server.js';
 import { McpLogger } from './mcp/logging.js';
+import { McpDocumentService } from './mcp/mcp-document.service.js';
 
 @Module({
   controllers: [
@@ -39,6 +40,7 @@ import { McpLogger } from './mcp/logging.js';
     McpAuthService,
     McpServerFactory,
     McpLogger,
+    McpDocumentService,
   ],
 })
 export class AppModule {}

@@ -408,6 +408,24 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     return syncOperationResultSchema.parse(row.result);
   }
 
+  async findReplay(
+    projectId: string,
+    operationId: string,
+    requestHash: string,
+    user: AuthenticatedUser,
+  ): Promise<SyncOperationResult | undefined> {
+    const [row] = await this.database.db
+      .select()
+      .from(syncOperations)
+      .where(
+        and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
+      );
+    if (!row) return undefined;
+    if (row.actorId !== user.id || row.fingerprint !== requestHash)
+      throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
+    return syncOperationResultSchema.parse(row.result);
+  }
+
   async events(
     projectId: string,
     since: number,
@@ -463,6 +481,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     projectId: string,
     clientId: string,
     user: AuthenticatedUser,
+    expected?: { version: number; sequence: number },
   ): Promise<{
     baselineId: string;
     sequence: number;
@@ -471,10 +490,24 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
   }> {
     return this.database.db.transaction(async (tx) => {
       const [project] = await tx
-        .select({ sequence: projects.syncSequence, document: projects.document })
+        .select({
+          sequence: projects.syncSequence,
+          version: projects.version,
+          status: projects.status,
+          document: projects.document,
+        })
         .from(projects)
         .where(eq(projects.id, projectId));
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+      if (expected && project.status !== 'active')
+        throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
+      if (
+        expected &&
+        (project.version !== expected.version || project.sequence !== expected.sequence)
+      )
+        throw new ConflictException(
+          '프로젝트가 변경되었습니다. 최신 내용과 동기화 순서를 다시 확인해주세요.',
+        );
       const now = new Date();
       const baselineId = randomUUID();
       const document = sharedDocument(project.document);

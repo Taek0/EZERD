@@ -43,7 +43,15 @@ describe('MCP server tools', () => {
       create: vi.fn(async () => reviewThread),
     };
     const logger = { write: vi.fn(async () => undefined) };
-    const factory = new McpServerFactory(workspace as never, reviews as never, logger as never);
+    const sync = { history: vi.fn(async () => []) };
+    const documents = { apply: vi.fn() };
+    const factory = new McpServerFactory(
+      workspace as never,
+      reviews as never,
+      logger as never,
+      sync as never,
+      documents as never,
+    );
     const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
     const server = factory.create(actor, crypto.randomUUID(), crypto.randomUUID());
     const client = new Client({ name: 'test', version: '1.0.0' });
@@ -63,6 +71,11 @@ describe('MCP server tools', () => {
         'reply_review_thread',
         'update_review_thread',
         'delete_review_thread',
+        'diagnose_project',
+        'apply_project_changes',
+        'get_project_history',
+        'undo_project_operation',
+        'restore_project_deletion',
       ]);
       expect(tools.tools.slice(0, 3).every((tool) => tool.annotations?.readOnlyHint === true)).toBe(
         true,

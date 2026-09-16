@@ -20,6 +20,9 @@
 - 모든 MCP 요청은 전용 토큰의 해시·만료·폐기·사용자 존재를 먼저 검증한다. SDK의 Host/Origin 재바인딩 보호에는 설정된 공개 URL만 허용한다.
 - `list_projects`, `get_project`, `list_review_threads` 조회 도구에 strict 입출력 스키마와 read-only annotation을 추가했다.
 - `create_project`, `update_project`, `delete_project`, `create_review_thread`, `reply_review_thread`, `update_review_thread`, `delete_review_thread`를 공통 서비스에 연결했다. 작업자는 입력이 아니라 인증된 토큰 소유자로 고정된다.
+- `diagnose_project`, `apply_project_changes`, `get_project_history`, `undo_project_operation`, `restore_project_deletion`을 추가했다.
+- 문서 변경은 자유 형식 patch 대신 도메인·테이블·컬럼·키·관계·노트의 strict discriminated union을 사용한다. 호출자가 확인한 project version과 sync sequence가 모두 일치할 때만 reconnect 기준을 발급한다.
+- MCP 문서 변경의 idempotency fingerprint는 서버가 새로 발급하는 baseline이 아니라 사용자의 고수준 명령으로 계산한다. 같은 operation ID 재요청은 작업자와 fingerprint가 모두 일치할 때만 저장 결과를 반환한다.
 - MCP 로그는 인자·결과·헤더·토큰 없이 제한된 메타데이터만 날짜별 JSONL에 기록한다.
 - 다음 작업: 프로젝트·리뷰 쓰기 도구와 문서 변경·진단·이력 도구 구현.
 - 사용자 소유의 기존 변경 파일은 수정하거나 커밋하지 않는다.
