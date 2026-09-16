@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   Inject,
@@ -8,6 +9,8 @@ import {
 } from '@nestjs/common';
 import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
 import type { z } from 'zod';
+import { projectTransferSchema, type ProjectTransfer } from '@ezerd/contracts';
+import { diagnoseDocument } from '@ezerd/model';
 import type {
   createProjectSchema,
   deleteProjectSchema,
@@ -48,6 +51,37 @@ export class WorkspaceService {
   createProject(input: z.infer<typeof createProjectSchema>) {
     return operation(async () => {
       const [row] = await this.database.db.insert(projects).values(input).returning();
+      return project(row!);
+    });
+  }
+
+  async exportProject(id: string): Promise<ProjectTransfer> {
+    const snapshot = await this.getProject(id);
+    return projectTransferSchema.parse({
+      format: 'ezerd-project',
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      project: { name: snapshot.project.name },
+      document: snapshot.document,
+    });
+  }
+
+  importProject(raw: unknown) {
+    const parsed = projectTransferSchema.safeParse(raw);
+    if (!parsed.success)
+      throw new BadRequestException('프로젝트 파일 형식, 버전 또는 크기를 확인해 주세요.');
+    const input = parsed.data;
+    const issue = diagnoseDocument(input.document)[0];
+    if (issue) throw new BadRequestException(`설계 데이터를 확인해 주세요: ${issue.message}`);
+    return operation(async () => {
+      // One row contains the whole design: insertion is atomic, with fresh DB defaults.
+      const [row] = await this.database.db
+        .insert(projects)
+        .values({
+          name: input.project.name,
+          document: input.document,
+        })
+        .returning();
       return project(row!);
     });
   }

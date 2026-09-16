@@ -25,3 +25,4 @@ export * from './project-actions.js';
 
 export * from './pin-actions.js';
 export * from './sync.js';
+export * from './project-transfer.js';

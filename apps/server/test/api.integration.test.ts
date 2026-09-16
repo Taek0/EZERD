@@ -4,7 +4,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NestFactory } from '@nestjs/core';
 import pg from 'pg';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { deriveOperationChanges } from '@ezerd/model';
+import {
+  deriveOperationChanges,
+  createEmptyDocument,
+  addDomain,
+  addNote,
+  addTable,
+  addColumn,
+  upsertKey,
+  upsertTableRelation,
+} from '@ezerd/model';
 import type { DesignDocument } from '@ezerd/model';
 
 // Deliberately opt in: this suite creates records in the configured development DB.
@@ -107,6 +116,133 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       await pool.end();
     }
     if (app) await app.close();
+  });
+
+  it('roundtrips a design into independent projects and supports fresh sync after import', async () => {
+    let document = addDomain(
+      createEmptyDocument(),
+      { id: 'transfer-domain', name: '판매', description: '설명', color: '#112233' },
+      { x: 12, y: 34 },
+    );
+    document = addNote(
+      document,
+      { id: 'transfer-note', viewId: 'transfer-domain', text: '메모', color: '#ffeeaa' },
+      { x: 60, y: 70 },
+    );
+    for (const id of ['parent', 'child']) {
+      document = addTable(
+        document,
+        {
+          id,
+          domainId: 'transfer-domain',
+          scope: 'both',
+          logical: { name: id, definition: '정의' },
+          physical: { name: id, schema: 'public', comment: '설명' },
+          customProperties: { common: {}, logical: {}, physical: {} },
+          canvasDisplay: { showComment: true, showNullable: false },
+        },
+        { x: id === 'parent' ? 100 : 500, y: 200 },
+      );
+      document = addColumn(document, {
+        id: `${id}-id`,
+        tableId: id,
+        scope: 'both',
+        logical: { name: '번호', definition: '', semanticType: '', required: true },
+        physical: {
+          name: 'id',
+          type: { name: 'integer', isArray: false },
+          nullable: false,
+          defaultExpression: null,
+          comment: '',
+        },
+        customProperties: { common: {}, logical: {}, physical: {} },
+      });
+      document = upsertKey(document, {
+        id: `${id}-pk`,
+        tableId: id,
+        scope: 'both',
+        kind: 'primary',
+        name: `${id}_pk`,
+        columnIds: [`${id}-id`],
+      });
+    }
+    document = upsertTableRelation(document, {
+      id: 'fk',
+      sourceTableId: 'child',
+      targetTableId: 'parent',
+      scope: 'both',
+      logical: { name: '참조', cardinality: 'one-to-many', required: true },
+      physical: {
+        name: 'child_fk',
+        sourceColumnIds: ['child-id'],
+        targetColumnIds: ['parent-id'],
+        onDelete: 'CASCADE',
+        onUpdate: 'RESTRICT',
+      },
+    });
+    document = {
+      ...document,
+      enums: [{ id: 'status', name: 'status', schema: 'public', values: ['ready', 'done'] }],
+      views: [{ id: 'saved-view', name: '저장된 뷰', domainIds: ['transfer-domain'] }],
+      layout: {
+        ...document.layout,
+        relations: [
+          { relationId: 'fk', viewId: 'transfer-domain', offset: 24, bend: { x: 360, y: 220 } },
+        ],
+      },
+    };
+    const file = {
+      format: 'ezerd-project',
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      project: { name: 'transfer-integration' },
+      document,
+    };
+    expect((await request('/projects/import', 'POST', file, null)).status).toBe(401);
+    const countBefore = Number(
+      (await pool.query("SELECT count(*) FROM projects WHERE name = 'transfer-integration'"))
+        .rows[0].count,
+    );
+    expect(
+      (
+        await request('/projects/import', 'POST', {
+          ...file,
+          document: { ...document, domains: [] },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      Number(
+        (await pool.query("SELECT count(*) FROM projects WHERE name = 'transfer-integration'"))
+          .rows[0].count,
+      ),
+    ).toBe(countBefore);
+    const first = await request('/projects/import', 'POST', file);
+    const second = await request('/projects/import', 'POST', file);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    projectIds.push(first.data.id, second.data.id);
+    expect(first.data.id).not.toBe(second.data.id);
+    expect(first.data.version).toBe(0);
+    const exported = await request(`/projects/${first.data.id}/export`);
+    expect(exported.status).toBe(200);
+    expect(exported.data.document).toEqual(document);
+    expect(exported.data.project).toEqual(file.project);
+    expect(Object.keys(exported.data).sort()).toEqual([
+      'document',
+      'exportedAt',
+      'format',
+      'formatVersion',
+      'project',
+    ]);
+    const changed = {
+      ...document,
+      domains: document.domains.map((domain) => ({ ...domain, name: '가져온 후 수정' })),
+    };
+    const saved = await syncDocument(first.data.id, changed);
+    expect(saved.status).toBe(201);
+    expect(saved.data.document).toEqual(changed);
+    expect((await request(`/projects/${second.data.id}`)).data.document).toEqual(document);
   });
   it('normalizes case across registration, login, rename and concurrent creation', async () => {
     const name = 'CaseUser-' + randomUUID().slice(0, 8);

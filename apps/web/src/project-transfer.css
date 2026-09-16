@@ -1,0 +1,54 @@
+.project-transfer-dialog {
+  width: min(460px, calc(100vw - 32px));
+  border: 1px solid var(--line, #dce2eb);
+  border-radius: 16px;
+  padding: 24px;
+  color: var(--ink, #1c2637);
+  background: var(--surface, #fff);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+.project-transfer-dialog::backdrop {
+  background: rgb(15 23 42 / 40%);
+}
+.project-transfer-dialog form {
+  display: grid;
+  gap: 12px;
+}
+.project-transfer-dialog h2,
+.project-transfer-dialog p {
+  margin: 0;
+}
+.project-transfer-counts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 8px 0;
+}
+.project-transfer-counts dt {
+  font-size: 12px;
+  color: var(--muted, #64748b);
+}
+.project-transfer-counts dd {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.project-transfer-hint {
+  font-size: 12px;
+  color: var(--muted, #64748b);
+}
+.project-transfer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.project-transfer-error {
+  flex-basis: 100%;
+}
+
+.card-actions {
+  flex-wrap: wrap;
+}

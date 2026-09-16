@@ -160,6 +160,20 @@ export class WorkspaceController {
     return this.workspace.listProjects(input);
   }
 
+  @Post('projects/import')
+  async importProject(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: unknown,
+  ) {
+    await requireSession(this.sessions, authorization);
+    return this.workspace.importProject(body);
+  }
+
+  @Get('projects/:id/export')
+  exportProject(@Param('id') rawId: string) {
+    return this.workspace.exportProject(parse(idSchema, rawId));
+  }
+
   @Get('projects/:id')
   getProject(@Param('id') rawId: string) {
     const id = parse(idSchema, rawId);
