@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { MCP_TOKEN_PREFIX, McpTokenService, hashMcpToken } from '../src/mcp/mcp-token.service.js';
 import { RateLimitService } from '../src/rate-limit.service.js';
@@ -46,5 +46,28 @@ describe('MCP tokens', () => {
     const limiter = new RateLimitService();
     for (let index = 0; index < 2; index += 1) limiter.consume('identity', 2, 60_000);
     expect(() => limiter.consume('identity', 2, 60_000)).toThrow(HttpException);
+  });
+
+  it('redacts token-store failures from responses and logs', async () => {
+    const logger = { write: vi.fn(async () => undefined) };
+    const database = {
+      db: {
+        insert: () => ({
+          values: () => ({
+            returning: async () => {
+              throw new Error('postgresql://sentinel-secret@private/token-hash-sentinel');
+            },
+          }),
+        }),
+      },
+    };
+    const service = new McpTokenService(database as never, new RateLimitService(), logger as never);
+    const error = await service.create(crypto.randomUUID(), 'private name').catch((value) => value);
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect(error.message).not.toContain('sentinel');
+    expect(JSON.stringify(logger.write.mock.calls)).not.toContain('sentinel');
+    expect(logger.write).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'token-failed', errorCode: 'TOKEN_STORE_UNAVAILABLE' }),
+    );
   });
 });

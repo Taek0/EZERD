@@ -6,7 +6,14 @@ import { readConfig } from '../config.js';
 
 export type McpLogEntry = {
   level: 'info' | 'warn' | 'error';
-  event: 'start' | 'stop' | 'auth-rejected' | 'token-issued' | 'token-revoked' | 'tool-finished';
+  event:
+    | 'start'
+    | 'stop'
+    | 'auth-rejected'
+    | 'token-issued'
+    | 'token-revoked'
+    | 'token-failed'
+    | 'tool-finished';
   requestId: string;
   userId?: string;
   tokenId?: string;
