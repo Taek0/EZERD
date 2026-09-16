@@ -26,14 +26,26 @@ describe('MCP server tools', () => {
       listProjects: vi.fn(async () => [project]),
       getProject: vi.fn(async () => ({ project, document })),
     };
-    const reviews = { list: vi.fn(async () => []) };
+    const reviewThread = {
+      id: crypto.randomUUID(),
+      projectId: project.id,
+      viewId: 'overview',
+      objectId: null,
+      x: 0,
+      y: 0,
+      resolved: false,
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+    };
+    const reviews = {
+      list: vi.fn(async () => []),
+      create: vi.fn(async () => reviewThread),
+    };
     const logger = { write: vi.fn(async () => undefined) };
     const factory = new McpServerFactory(workspace as never, reviews as never, logger as never);
-    const server = factory.create(
-      { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' },
-      crypto.randomUUID(),
-      crypto.randomUUID(),
-    );
+    const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
+    const server = factory.create(actor, crypto.randomUUID(), crypto.randomUUID());
     const client = new Client({ name: 'test', version: '1.0.0' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport as never);
@@ -44,8 +56,20 @@ describe('MCP server tools', () => {
         'list_projects',
         'get_project',
         'list_review_threads',
+        'create_project',
+        'update_project',
+        'delete_project',
+        'create_review_thread',
+        'reply_review_thread',
+        'update_review_thread',
+        'delete_review_thread',
       ]);
-      expect(tools.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+      expect(tools.tools.slice(0, 3).every((tool) => tool.annotations?.readOnlyHint === true)).toBe(
+        true,
+      );
+      expect(
+        tools.tools.find((tool) => tool.name === 'delete_project')?.annotations?.destructiveHint,
+      ).toBe(true);
       const result = await client.callTool({ name: 'list_projects', arguments: {} });
       expect(result.structuredContent).toEqual({ projects: [project] });
       expect(workspace.listProjects).toHaveBeenCalledWith({ status: 'active', search: '' });
@@ -55,6 +79,43 @@ describe('MCP server tools', () => {
           tool: 'list_projects',
           status: 'success',
         }),
+      );
+      const spoofed = await client.callTool({
+        name: 'create_review_thread',
+        arguments: {
+          projectId: project.id,
+          thread: {
+            authorId: crypto.randomUUID(),
+            viewId: 'overview',
+            objectId: null,
+            x: 0,
+            y: 0,
+            body: 'review',
+            mentionIds: [],
+          },
+        },
+      });
+      expect(spoofed.isError).toBe(true);
+      expect(reviews.create).not.toHaveBeenCalled();
+      const written = await client.callTool({
+        name: 'create_review_thread',
+        arguments: {
+          projectId: project.id,
+          thread: {
+            viewId: 'overview',
+            objectId: null,
+            x: 0,
+            y: 0,
+            body: 'review',
+            mentionIds: [],
+          },
+        },
+      });
+      expect(written.structuredContent).toEqual(reviewThread);
+      expect(reviews.create).toHaveBeenCalledWith(
+        project.id,
+        expect.objectContaining({ body: 'review' }),
+        actor,
       );
     } finally {
       await client.close();

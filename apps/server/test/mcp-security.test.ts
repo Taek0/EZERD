@@ -28,6 +28,7 @@ describe('MCP security boundaries', () => {
       'https://user:secret@ezerd.internal/mcp',
       'https://ezerd.internal/other',
       'https://ezerd.internal/mcp?token=secret',
+      'not-a-url-with-secret',
     ]) {
       process.env.MCP_PUBLIC_URL = url;
       expect(() => readConfig()).toThrow(/MCP_PUBLIC_URL/);

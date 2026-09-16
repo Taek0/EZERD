@@ -2,10 +2,17 @@ import { HttpException, Inject, Injectable } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
+  createMessageSchema,
+  createProjectSchema,
+  createThreadSchema,
+  deleteProjectSchema,
+  deleteThreadSchema,
   projectDocumentSchema,
   projectQuerySchema,
   projectSchema,
   threadSchema,
+  updateProjectSchema,
+  updateThreadSchema,
 } from '@ezerd/contracts';
 import type { AuthenticatedUser } from '../session.js';
 import { ReviewService } from '../review.service.js';
@@ -74,6 +81,93 @@ export class McpServerFactory {
         invoke('list_review_threads', async () => ({
           threads: z.array(threadSchema).parse(await this.reviews.list(projectId)),
         })),
+    );
+    server.registerTool(
+      'create_project',
+      {
+        description: '새 EZERD 프로젝트를 생성합니다.',
+        inputSchema: createProjectSchema,
+        outputSchema: projectSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      (input) =>
+        invoke('create_project', async () =>
+          projectSchema.parse(await this.workspace.createProject(input)),
+        ),
+    );
+    server.registerTool(
+      'update_project',
+      {
+        description: '최신 expectedVersion을 기준으로 프로젝트 이름 또는 보관 상태를 변경합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema, update: updateProjectSchema }),
+        outputSchema: projectSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, update }) =>
+        invoke('update_project', async () =>
+          projectSchema.parse(await this.workspace.updateProject(projectId, update)),
+        ),
+    );
+    server.registerTool(
+      'delete_project',
+      {
+        description: '보관된 프로젝트의 최신 버전을 영구 삭제합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema, delete: deleteProjectSchema }),
+        outputSchema: z.strictObject({ id: idSchema, deleted: z.literal(true) }),
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      ({ projectId, delete: input }) =>
+        invoke('delete_project', () => this.workspace.deleteProject(projectId, input)),
+    );
+    server.registerTool(
+      'create_review_thread',
+      {
+        description: '프로젝트 화면에 리뷰 핀과 첫 메시지를 생성합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema, thread: createThreadSchema }),
+        outputSchema: threadSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, thread }) =>
+        invoke('create_review_thread', async () =>
+          threadSchema.parse(await this.reviews.create(projectId, thread, user)),
+        ),
+    );
+    server.registerTool(
+      'reply_review_thread',
+      {
+        description: '기존 리뷰 핀에 인증된 사용자 명의로 답글을 추가합니다.',
+        inputSchema: z.strictObject({ threadId: idSchema, message: createMessageSchema }),
+        outputSchema: threadSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      ({ threadId, message }) =>
+        invoke('reply_review_thread', async () =>
+          threadSchema.parse(await this.reviews.reply(threadId, message, user)),
+        ),
+    );
+    server.registerTool(
+      'update_review_thread',
+      {
+        description: '리뷰 핀의 해결 상태를 변경합니다.',
+        inputSchema: z.strictObject({ threadId: idSchema, update: updateThreadSchema }),
+        outputSchema: threadSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      ({ threadId, update }) =>
+        invoke('update_review_thread', async () =>
+          threadSchema.parse(await this.reviews.update(threadId, update, user)),
+        ),
+    );
+    server.registerTool(
+      'delete_review_thread',
+      {
+        description: '최신 expectedUpdatedAt을 기준으로 리뷰 핀과 답글을 삭제합니다.',
+        inputSchema: z.strictObject({ threadId: idSchema, delete: deleteThreadSchema }),
+        outputSchema: z.strictObject({ id: idSchema, deleted: z.literal(true) }),
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      ({ threadId, delete: input }) =>
+        invoke('delete_review_thread', () => this.reviews.remove(threadId, input, user)),
     );
     return server;
   }

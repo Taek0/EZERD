@@ -19,6 +19,7 @@
 - 공식 `@modelcontextprotocol/sdk` 1.30.0을 고정하고, 전역 `/api` prefix 밖의 stateless JSON Streamable HTTP `/mcp` endpoint를 추가했다.
 - 모든 MCP 요청은 전용 토큰의 해시·만료·폐기·사용자 존재를 먼저 검증한다. SDK의 Host/Origin 재바인딩 보호에는 설정된 공개 URL만 허용한다.
 - `list_projects`, `get_project`, `list_review_threads` 조회 도구에 strict 입출력 스키마와 read-only annotation을 추가했다.
+- `create_project`, `update_project`, `delete_project`, `create_review_thread`, `reply_review_thread`, `update_review_thread`, `delete_review_thread`를 공통 서비스에 연결했다. 작업자는 입력이 아니라 인증된 토큰 소유자로 고정된다.
 - MCP 로그는 인자·결과·헤더·토큰 없이 제한된 메타데이터만 날짜별 JSONL에 기록한다.
 - 다음 작업: 프로젝트·리뷰 쓰기 도구와 문서 변경·진단·이력 도구 구현.
 - 사용자 소유의 기존 변경 파일은 수정하거나 커밋하지 않는다.

@@ -28,7 +28,17 @@ const envSchema = z
         message: 'MCP_PUBLIC_URL is required when MCP is enabled.',
       });
     if (value.MCP_PUBLIC_URL) {
-      const url = new URL(value.MCP_PUBLIC_URL);
+      let url: URL;
+      try {
+        url = new URL(value.MCP_PUBLIC_URL);
+      } catch {
+        context.addIssue({
+          code: 'custom',
+          path: ['MCP_PUBLIC_URL'],
+          message: 'MCP_PUBLIC_URL must be a valid URL.',
+        });
+        return;
+      }
       const loopback =
         url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
       const secure =

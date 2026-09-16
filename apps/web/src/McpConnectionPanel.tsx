@@ -43,6 +43,7 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
     event.preventDefault();
     setBusy(true);
     setError('');
+    setCopyStatus('');
     try {
       const value = await request<IssuedToken>('/api/mcp-tokens', body('POST', { name }));
       setIssued(value);
