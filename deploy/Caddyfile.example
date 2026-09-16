@@ -1,0 +1,24 @@
+# Set every environment variable before starting Caddy. Do not use an unrestricted CIDR.
+{
+	auto_https disable_redirects
+}
+
+{$EZERD_HOSTNAME} {
+	tls "{$EZERD_TLS_CERT}" "{$EZERD_TLS_KEY}"
+
+	# Query strings carry current WebSocket sessions; do not write proxy access logs.
+	log {
+		output discard
+	}
+
+	@allowed_network remote_ip {$EZERD_ALLOWED_CIDRS}
+	handle @allowed_network {
+		reverse_proxy 127.0.0.1:3001 {
+			# Preserve MCP streaming behavior and WebSocket upgrades without response buffering.
+			flush_interval -1
+		}
+	}
+	handle {
+		respond 403
+	}
+}
