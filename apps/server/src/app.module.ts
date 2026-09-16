@@ -9,6 +9,9 @@ import { SyncController } from './sync.controller.js';
 import { SyncGateway } from './sync.gateway.js';
 import { SyncService } from './sync.service.js';
 import { WorkspaceService } from './workspace.service.js';
+import { RateLimitService } from './rate-limit.service.js';
+import { McpTokenController } from './mcp/mcp-token.controller.js';
+import { McpTokenService } from './mcp/mcp-token.service.js';
 
 @Module({
   controllers: [
@@ -17,6 +20,7 @@ import { WorkspaceService } from './workspace.service.js';
     ReviewController,
     SessionController,
     SyncController,
+    McpTokenController,
   ],
   providers: [
     DatabaseService,
@@ -25,6 +29,8 @@ import { WorkspaceService } from './workspace.service.js';
     SyncService,
     WorkspaceService,
     ReviewService,
+    RateLimitService,
+    McpTokenService,
   ],
 })
 export class AppModule {}

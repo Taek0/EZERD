@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   Post,
+  Req,
   UnauthorizedException,
 } from '@nestjs/common';
 import { and, eq, gt } from 'drizzle-orm';
@@ -13,6 +14,7 @@ import { z } from 'zod';
 import { usernameSchema } from '@ezerd/contracts';
 import { DatabaseService } from './db/database.service.js';
 import { sessions, users } from './db/schema.js';
+import { RateLimitService } from './rate-limit.service.js';
 
 const pinSchema = z.string().regex(/^\d{4}$/);
 const createSessionSchema = z.union([
@@ -28,11 +30,16 @@ function hash(value: string): string {
 
 @Injectable()
 export class SessionService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(RateLimitService) private readonly rateLimits: RateLimitService,
+  ) {}
 
-  async create(body: unknown) {
+  async create(body: unknown, clientAddress = 'unknown') {
     const parsed = createSessionSchema.safeParse(body);
     if (!parsed.success) throw new UnauthorizedException('사용자와 PIN을 확인해주세요.');
+    const identityKey = 'userId' in parsed.data ? parsed.data.userId : parsed.data.username;
+    this.rateLimits.consume(`login:${clientAddress}:${identityKey}`, 10, 15 * 60 * 1000);
     const identity =
       'userId' in parsed.data
         ? eq(users.id, parsed.data.userId)
@@ -84,8 +91,8 @@ export class SessionService {
 @Controller()
 export class SessionController {
   constructor(@Inject(SessionService) private readonly sessions: SessionService) {}
-  @Post('sessions') create(@Body() body: unknown) {
-    return this.sessions.create(body);
+  @Post('sessions') create(@Body() body: unknown, @Req() request: { ip?: string }) {
+    return this.sessions.create(body, request.ip);
   }
 }
 

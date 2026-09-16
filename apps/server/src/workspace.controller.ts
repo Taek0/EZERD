@@ -17,6 +17,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { asc, eq } from 'drizzle-orm';
@@ -35,6 +36,7 @@ import { users } from './db/schema.js';
 import { isUsernameConflict } from './user-conflicts.js';
 import { requireSession, SessionService } from './session.js';
 import { WorkspaceService } from './workspace.service.js';
+import { RateLimitService } from './rate-limit.service.js';
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -72,11 +74,17 @@ export class WorkspaceController {
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(WorkspaceService) private readonly workspace: WorkspaceService,
+    @Inject(RateLimitService) private readonly rateLimits: RateLimitService,
   ) {}
 
   @Post('users')
-  createUser(@Body() body: unknown) {
+  createUser(@Body() body: unknown, @Req() request: { ip?: string }) {
     const input = parse(usernameInputSchema, body);
+    this.rateLimits.consume(
+      `identify:${request.ip ?? 'unknown'}:${input.username}`,
+      10,
+      15 * 60 * 1000,
+    );
     return databaseOperation(async () => {
       const pinHash = createHash('sha256').update(input.pin).digest('hex');
       const [row] = await this.database.db

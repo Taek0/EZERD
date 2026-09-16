@@ -32,6 +32,7 @@ import {
 import { SyncHistoryPanel } from './sync-history-panel.js';
 import { Avatar, Badge, Button, Dropdown, Input, TabButton } from './components/ui/index.js';
 import './responsive-shell.css';
+import { McpConnectionPanel } from './McpConnectionPanel.js';
 
 type User = {
   id: string;
@@ -73,6 +74,7 @@ export function App() {
     [checking, setChecking] = useState(true);
   const [session, setSession] = useState<SyncSession | null>(null);
   const [editingColor, setEditingColor] = useState(false);
+  const [editingMcp, setEditingMcp] = useState(false);
   const [registrationPin, setRegistrationPin] = useState('');
   const [members, setMembers] = useState<Array<{ id: string; username: string; color?: string }>>(
     [],
@@ -642,6 +644,15 @@ export function App() {
                   setEditingColor(true);
                 },
               },
+              {
+                id: 'mcp',
+                label: 'MCP 연결',
+                onAction: () => {
+                  setEditingName(false);
+                  setEditingColor(false);
+                  setEditingMcp(true);
+                },
+              },
             ]}
             trigger={
               <Button
@@ -672,6 +683,7 @@ export function App() {
           {userForm}
         </section>
       )}
+      {editingMcp && user && session && <McpConnectionPanel onClose={() => setEditingMcp(false)} />}
       {error && (
         <div className="notice error" role="alert">
           {error}

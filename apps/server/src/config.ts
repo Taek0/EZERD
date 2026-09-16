@@ -12,6 +12,12 @@ const envSchema = z.object({
     .string()
     .url()
     .refine((value) => /^postgres(ql)?:\/\//.test(value)),
+  MCP_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  MCP_PUBLIC_URL: z.string().url().optional(),
+  MCP_LOG_DIR: z.string().min(1).default('.data/logs/mcp'),
 });
 
 export function readConfig() {

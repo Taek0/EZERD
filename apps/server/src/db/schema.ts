@@ -127,6 +127,26 @@ export const sessions = pgTable(
   ],
 );
 
+export const mcpTokens = pgTable(
+  'mcp_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 80 }).notNull(),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('mcp_tokens_token_hash_unique').on(table.tokenHash),
+    index('mcp_tokens_user_idx').on(table.userId),
+  ],
+);
+
 export const syncOperations = pgTable(
   'sync_operations',
   {

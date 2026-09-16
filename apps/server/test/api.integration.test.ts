@@ -580,9 +580,14 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
         },
       },
     };
-    const controller = new WorkspaceController(brokenDatabase as never);
+    const controller = new WorkspaceController(
+      brokenDatabase as never,
+      {} as never,
+      {} as never,
+      { consume: () => undefined } as never,
+    );
     try {
-      await controller.createUser({ username: 'test', pin: '0012' });
+      await controller.createUser({ username: 'test', pin: '0012' }, { ip: '127.0.0.1' });
       throw new Error('Expected a storage failure');
     } catch (error) {
       const failure = error as { getStatus(): number; getResponse(): unknown };

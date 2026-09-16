@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, GoneException, UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { ReviewController } from '../src/review.controller.js';
+import { ReviewService } from '../src/review.service.js';
 import { WorkspaceController } from '../src/workspace.controller.js';
 
 const actor = { id: randomUUID(), username: 'actor', color: '#4169e1' };
@@ -17,21 +18,22 @@ function rejectingSession() {
 
 describe('authenticated write paths', () => {
   it('authenticates every project, review, and notification mutation before database access', async () => {
-    const database = new Proxy(
+    const domainService = new Proxy(
       {},
       {
         get: () => {
-          throw new Error('database must not be accessed');
+          throw new Error('domain service must not be accessed');
         },
       },
     );
     const session = rejectingSession();
-    const workspace = new WorkspaceController(database as never, session as never);
-    const review = new ReviewController(
-      database as never,
+    const workspace = new WorkspaceController(
+      {} as never,
       session as never,
-      { publish: vi.fn() } as never,
+      domainService as never,
+      {} as never,
     );
+    const review = new ReviewController(session as never, domainService as never);
     const id = randomUUID();
 
     const writes = [
@@ -60,7 +62,12 @@ describe('authenticated write paths', () => {
 
   it('returns 410 for authenticated whole-document replacement attempts', async () => {
     const session = { authenticateHeader: vi.fn(async () => actor) };
-    const controller = new WorkspaceController({} as never, session as never);
+    const controller = new WorkspaceController(
+      {} as never,
+      session as never,
+      {} as never,
+      {} as never,
+    );
     await expect(
       controller.saveDocument('Bearer valid-token', randomUUID(), {}),
     ).rejects.toBeInstanceOf(GoneException);
@@ -119,7 +126,8 @@ describe('authenticated write paths', () => {
     };
     const session = { authenticateHeader: vi.fn(async () => actor) };
     const gateway = { publishReview: vi.fn(() => expect(committed).toBe(true)) };
-    const controller = new ReviewController(database as never, session as never, gateway as never);
+    const service = new ReviewService(database as never, gateway as never);
+    const controller = new ReviewController(session as never, service);
 
     await expect(
       controller.create('Bearer valid-token', project.id, {
