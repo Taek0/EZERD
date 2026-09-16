@@ -60,6 +60,15 @@ describe('MCP server tools', () => {
     await client.connect(clientTransport as never);
     try {
       const tools = await client.listTools();
+      expect(client.getInstructions()).toContain('최소 40px');
+      expect(client.getInstructions()).toContain('PK→FK 방향');
+      expect(client.getInstructions()).toContain('관계선 교차');
+      expect(client.getInstructions()).toContain('브라우저 스킬이나 스크린샷 대신');
+      expect(client.getInstructions()).toContain('x·y·width·height');
+      expect(client.getInstructions()).toContain('겹침을 확인하고 수정');
+      expect(
+        tools.tools.find((tool) => tool.name === 'apply_project_changes')?.description,
+      ).toContain('겹침 없이');
       expect(tools.tools.map((tool) => tool.name)).toEqual([
         'list_projects',
         'get_project',
