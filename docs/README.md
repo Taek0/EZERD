@@ -12,6 +12,7 @@
 | [TECH_STACK.md](./planning/TECH_STACK.md) | 기술 선택과 구조 설계, 검토 이력 |
 | [DESIGN_SYSTEM.md](./planning/DESIGN_SYSTEM.md) | 시각·조작 기준과 디자인 결정 |
 | [EDITOR_WORKFLOW_DECISIONS.md](./planning/EDITOR_WORKFLOW_DECISIONS.md) | 다음 편집 기능의 확정 사항과 미확정 세부 설계 |
+| [프로젝트 내보내기·가져오기 제안](./planning/2026-09-17-Project-ExportImport.md) | JSON 설계 백업·이동 범위와 미결정 사항 · 미구현 |
 
 ## work-log · 진행한 작업·검증·사용 안내
 
