@@ -2,6 +2,43 @@ import { HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { MCP_TOKEN_PREFIX, McpTokenService, hashMcpToken } from '../src/mcp/mcp-token.service.js';
 import { RateLimitService } from '../src/rate-limit.service.js';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
+
+it('only deletes revoked token records belonging to the authenticated owner', async () => {
+  const userId = crypto.randomUUID(),
+    id = crypto.randomUUID();
+  let predicate: SQL | undefined;
+  const database = {
+    db: {
+      delete: () => ({
+        where: (condition: SQL) => {
+          predicate = condition;
+          return { returning: async () => [{ id }] };
+        },
+      }),
+    },
+  };
+  const logger = { write: vi.fn(async () => undefined) };
+  const service = new McpTokenService(database as never, new RateLimitService(), logger as never);
+  expect(await service.removeRevoked(userId, id)).toEqual({ id, deleted: true });
+  const query = new PgDialect().sqlToQuery(predicate!);
+  expect(query.params).toEqual([id, userId]);
+  expect(query.sql).toContain('"mcp_tokens"."user_id"');
+  expect(query.sql).toContain('"mcp_tokens"."revoked_at" is not null');
+  expect(logger.write).toHaveBeenCalledWith(
+    expect.objectContaining({ event: 'token-removed', tokenId: id }),
+  );
+});
+it('rejects a missing, active or other-owner token without logging a deletion', async () => {
+  const logger = { write: vi.fn() };
+  const database = { db: { delete: () => ({ where: () => ({ returning: async () => [] }) }) } };
+  const service = new McpTokenService(database as never, new RateLimitService(), logger as never);
+  await expect(
+    service.removeRevoked(crypto.randomUUID(), crypto.randomUUID()),
+  ).rejects.toMatchObject({ status: 404 });
+  expect(logger.write).not.toHaveBeenCalled();
+});
 
 describe('MCP tokens', () => {
   it('returns the secret once while storing only its SHA-256 hash', async () => {

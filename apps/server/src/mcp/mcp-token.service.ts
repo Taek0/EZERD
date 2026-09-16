@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { DatabaseService } from '../db/database.service.js';
 import { mcpTokens } from '../db/schema.js';
 import { RateLimitService } from '../rate-limit.service.js';
@@ -93,6 +93,31 @@ export class McpTokenService {
       status: 'success',
     });
     return publicToken(row);
+  }
+
+  async removeRevoked(userId: string, id: string) {
+    const requestId = randomUUID();
+    let deleted: { id: string } | undefined;
+    try {
+      [deleted] = await this.database.db
+        .delete(mcpTokens)
+        .where(
+          and(eq(mcpTokens.id, id), eq(mcpTokens.userId, userId), isNotNull(mcpTokens.revokedAt)),
+        )
+        .returning({ id: mcpTokens.id });
+    } catch {
+      await this.storageFailure(requestId, userId);
+    }
+    if (!deleted) throw new NotFoundException('삭제할 폐기된 토큰을 찾을 수 없습니다.');
+    await this.logger.write({
+      level: 'info',
+      event: 'token-removed',
+      requestId,
+      userId,
+      tokenId: id,
+      status: 'success',
+    });
+    return { id, deleted: true };
   }
 
   private async storageFailure(requestId: string, userId: string): Promise<never> {

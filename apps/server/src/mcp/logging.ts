@@ -12,6 +12,7 @@ export type McpLogEntry = {
     | 'auth-rejected'
     | 'token-issued'
     | 'token-revoked'
+    | 'token-removed'
     | 'token-failed'
     | 'tool-finished';
   requestId: string;

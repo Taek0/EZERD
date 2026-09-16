@@ -64,4 +64,13 @@ export class McpTokenController {
     const actor = await requireSession(this.sessions, authorization);
     return this.tokens.revoke(actor.id, parse(idSchema, rawId));
   }
+
+  @Delete(':id/record')
+  async removeRevoked(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
+    return this.tokens.removeRevoked(actor.id, parse(idSchema, rawId));
+  }
 }

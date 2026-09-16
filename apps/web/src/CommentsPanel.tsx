@@ -10,6 +10,8 @@ import {
 } from '@ezerd/contracts';
 import { body, message, request } from './client.js';
 import { pinRequest, replyRequest } from './pin-request.js';
+import { usePanelDismiss } from './use-panel-dismiss.js';
+import './collaboration-panels.css';
 import { pinAttachment, pinPosition, selectedMentions } from './comments-state.js';
 import {
   Avatar,
@@ -559,6 +561,7 @@ export function Notifications({
     [refresh, setRefresh] = useState(0);
   const revision = useRef(0),
     lock = useRef(false);
+  const notificationPanel = usePanelDismiss(() => setOpened(false), opened);
   useEffect(() => {
     const controller = new AbortController();
     const snapshot = revision.current;
@@ -600,11 +603,17 @@ export function Notifications({
     }
   }
   return (
-    <div className="notifications">
+    <div
+      className="notifications"
+      ref={(element) => {
+        notificationPanel.ref.current = element;
+      }}
+    >
       <Button
         aria-expanded={opened}
         onClick={() => {
-          setOpened((v) => !v);
+          if (opened) notificationPanel.close();
+          else setOpened(true);
           setRefresh((v) => v + 1);
         }}
       >
@@ -616,7 +625,11 @@ export function Notifications({
         )}
       </Button>
       {opened && (
-        <section className="notification-popover" aria-label="멘션 알림">
+        <section
+          data-closing={notificationPanel.closing}
+          className="notification-popover"
+          aria-label="멘션 알림"
+        >
           <h2>멘션 알림</h2>
           {error && <p role="alert">{error}</p>}
           {!items.length && <p>새로운 멘션 알림이 없습니다.</p>}

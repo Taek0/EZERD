@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { body, message, request } from './client.js';
-import { Button, Input } from './components/ui/index.js';
+import { AnimatedDetails, Button, Input } from './components/ui/index.js';
+import { usePanelDismiss } from './use-panel-dismiss.js';
+import './collaboration-panels.css';
 
 type TokenSummary = {
   id: string;
@@ -14,6 +16,7 @@ type IssuedToken = TokenSummary & { token: string };
 type McpConfig = { enabled: boolean; publicUrl: string | null };
 
 export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
+  const panel = usePanelDismiss(onClose);
   const [tokens, setTokens] = useState<TokenSummary[]>([]);
   const [name, setName] = useState('내 MCP 클라이언트');
   const [issued, setIssued] = useState<IssuedToken | null>(null);
@@ -92,14 +95,34 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function removeRevoked(id: string) {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await request(`/api/mcp-tokens/${id}/record`, { method: 'DELETE' });
+      setTokens((current) => current.filter((token) => token.id !== id));
+      if (issued?.id === id) setIssued(null);
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <section className="mcp-panel" aria-label="MCP 연결 설정">
+    <section
+      ref={panel.ref}
+      data-closing={panel.closing}
+      className="mcp-panel"
+      aria-label="MCP 연결 설정"
+    >
       <div className="mcp-panel-heading">
         <div>
           <strong>MCP 연결</strong>
           <p>개인 토큰으로 EZERD 도구를 연결합니다.</p>
         </div>
-        <Button aria-label="MCP 연결 닫기" onClick={onClose}>
+        <Button aria-label="MCP 연결 닫기" onClick={panel.close}>
           ×
         </Button>
       </div>
@@ -164,7 +187,16 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
                   : ''}
               </small>
             </div>
-            {!token.revokedAt && (
+            {token.revokedAt ? (
+              <Button
+                disabled={busy}
+                variant="danger"
+                aria-label={`${token.name} 폐기 기록 삭제`}
+                onClick={() => void removeRevoked(token.id)}
+              >
+                삭제
+              </Button>
+            ) : (
               <Button disabled={busy} onClick={() => void revoke(token.id)}>
                 폐기
               </Button>
@@ -172,14 +204,14 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
           </article>
         ))}
       </div>
-      <details>
+      <AnimatedDetails>
         <summary>Codex 설정 예시</summary>
         <pre>
           {mcpUrl
             ? `[mcp_servers.ezerd]\nurl = "${mcpUrl}"\nbearer_token_env_var = "EZERD_MCP_TOKEN"\ndefault_tools_approval_mode = "writes"\ntool_timeout_sec = 60`
             : 'MCP 공개 주소 설정 후 예시를 확인할 수 있습니다.'}
         </pre>
-      </details>
+      </AnimatedDetails>
       <p className="mcp-security-note">
         MCP 토큰은 채팅에 붙여 넣지 말고 클라이언트 실행 환경에만 저장하세요. PIN은 MCP 설정에
         사용하지 않습니다.

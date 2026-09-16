@@ -93,6 +93,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     expect((await api('/mcp-tokens', 'POST', { name: 'missing-session' })).status).toBe(401);
     const owned = await issue(userA.session, 'owner token');
     expect(
+      (await api(`/mcp-tokens/${owned.id}/record`, 'DELETE', undefined, userA.session)).status,
+    ).toBe(404);
+    expect(
       (
         await fetch(`${base}/mcp`, {
           method: 'POST',
@@ -142,6 +145,16 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     ).toBe(401);
     expect((await api(`/mcp-tokens/${owned.id}`, 'DELETE', undefined, userA.session)).status).toBe(
       200,
+    );
+    expect((await api(`/mcp-tokens/${owned.id}/record`, 'DELETE')).status).toBe(401);
+    expect(
+      (await api(`/mcp-tokens/${owned.id}/record`, 'DELETE', undefined, userB.session)).status,
+    ).toBe(404);
+    const removed = await api(`/mcp-tokens/${owned.id}/record`, 'DELETE', undefined, userA.session);
+    expect(removed.status).toBe(200);
+    expect(removed.data).toEqual({ id: owned.id, deleted: true });
+    expect((await pool.query('SELECT id FROM mcp_tokens WHERE id = $1', [owned.id])).rows).toEqual(
+      [],
     );
     expect(
       (
