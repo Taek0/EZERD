@@ -34,8 +34,16 @@
 - 독립 임시 PostgreSQL 생성 → 전체 migration → API·WebSocket·MCP 통합: 3개 파일, 22개 테스트 통과 후 임시 DB 삭제
 - CIDR이 빈 production LAN 실행은 server listen 전에 `LAN_ALLOWED_CIDRS` 설정 이름만 포함한 오류로 fail closed됨을 확인
 - 실제 호스팅 PC의 사설 인터페이스를 임시 `/32` test 설정으로 검증했다. 불허 CIDR에서는 정적 `/`, API, `/mcp`, malformed JSON을 모두 403으로 차단했고 WebSocket은 인증 전에 종료했다. 위조한 `X-Forwarded-For`와 `Forwarded`는 무시됐다.
-- 허용 CIDR에서는 사설 IPv4의 정적 페이지와 API가 200, 인증 WebSocket upgrade가 성공했다.
+- 허용 CIDR에서는 사설 IPv4의 정적 페이지와 API가 200이었다. 실제 소켓의 WebSocket 허용·차단 검증에는 검증용 인증 서비스를 사용했고, 실제 사용자 세션 인증은 별도 PostgreSQL 통합 테스트로 검증했다.
 - production 사설 IPv4 HTTP에서 MCP SDK initialize, 15개 tools/list, list_projects를 확인했고 token 폐기 다음 요청은 401이었다.
-- 실제 사설 IPv4 브라우저에서 MCP panel의 HTTP URL, token 발급, 읽기 전용 입력란 전체 선택, 복사 피드백, 폐기와 console 오류·경고 없음을 확인했다. Clipboard API가 없는 경우의 수동 input/textarea 분기는 source와 unit 회귀로 확인했다.
+- 실제 사설 IPv4 브라우저에서 MCP panel의 HTTP URL, token 발급, 읽기 전용 입력란 전체 선택, 복사 피드백, 폐기와 console 오류·경고 없음을 확인했다. 검증 브라우저에서는 Clipboard API가 사용 가능했다. API가 없는 경우의 수동 input/textarea 분기는 소스로 검토했으며 런타임에서 강제로 재현하지 않았다.
 
 위 실제 인터페이스 검증은 임시 test port·격리 DB에서 수행했으며 사용자의 `.env`, 방화벽과 기존 데이터를 변경하지 않았다. 다른 사내 장치와 실제 운영 방화벽의 허용·차단 검증은 배포 시 남아 있다.
+
+## 직접 검토와 정리
+
+- 이전 요청의 역할을 유지해 Sol medium이 구현하고 주 에이전트가 직접 검토했다.
+- CIDR 계산의 signed 32-bit 연산으로 172·192 사설 대역이 거부될 수 있는 문제를 찾아 unsigned 변환으로 수정했고, 해당 대역과 `/32` 검증을 확인했다.
+- 주 에이전트가 네트워크·MCP 설정 테스트 2개 파일, 7개 테스트를 직접 실행해 통과했다.
+- 브라우저 검토용 토큰을 폐기하고 탭·검토 서버를 종료한 뒤 격리 DB를 삭제했다.
+- 429 오류는 발생하지 않아 세션 포크는 실행하지 않았다. 기존 사용자 변경과 `docs/EZERD.txt`는 보존했다.
