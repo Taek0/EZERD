@@ -29,13 +29,17 @@ describe('MCP tokens', () => {
         }),
       },
     };
-    const service = new McpTokenService(database as never, new RateLimitService());
+    const logger = { write: vi.fn(async () => undefined) };
+    const service = new McpTokenService(database as never, new RateLimitService(), logger as never);
     const result = await service.create(crypto.randomUUID(), 'client');
 
     expect(result.token).toMatch(/^ezmcp_[A-Za-z0-9_-]{43}$/);
     expect(result.token.startsWith(MCP_TOKEN_PREFIX)).toBe(true);
     expect(inserted?.tokenHash).toBe(hashMcpToken(result.token));
     expect(JSON.stringify(inserted)).not.toContain(result.token);
+    expect(logger.write).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'token-issued', tokenId: result.id }),
+    );
   });
 
   it('limits repeated issuance and login-style attempts', () => {

@@ -1,11 +1,12 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { RequestMethod } from '@nestjs/common';
 
 export function configureApplication(app: NestExpressApplication): void {
   // Only a loopback reverse proxy may supply the client address used by request limits.
   app.set('trust proxy', 'loopback');
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', { exclude: [{ path: 'mcp', method: RequestMethod.ALL }] });
   // Sync requests carry a validated baseline, final candidate, and semantic diff.
   // Each document is capped at 1.5 MB by the shared contract, so the transport
   // envelope must allow the bounded duplicated representation.

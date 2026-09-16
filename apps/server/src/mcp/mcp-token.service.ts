@@ -1,9 +1,10 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { DatabaseService } from '../db/database.service.js';
 import { mcpTokens } from '../db/schema.js';
 import { RateLimitService } from '../rate-limit.service.js';
+import { McpLogger } from './logging.js';
 
 const TOKEN_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 export const MCP_TOKEN_PREFIX = 'ezmcp_';
@@ -28,6 +29,7 @@ export class McpTokenService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(RateLimitService) private readonly rateLimits: RateLimitService,
+    @Inject(McpLogger) private readonly logger: McpLogger,
   ) {}
 
   async create(userId: string, name: string) {
@@ -38,6 +40,14 @@ export class McpTokenService {
       .insert(mcpTokens)
       .values({ userId, name, tokenHash: hashMcpToken(token), expiresAt })
       .returning();
+    await this.logger.write({
+      level: 'info',
+      event: 'token-issued',
+      requestId: randomUUID(),
+      userId,
+      tokenId: row!.id,
+      status: 'success',
+    });
     return { ...publicToken(row!), token };
   }
 
@@ -57,6 +67,14 @@ export class McpTokenService {
       .where(and(eq(mcpTokens.id, id), eq(mcpTokens.userId, userId)))
       .returning();
     if (!row) throw new NotFoundException('MCP 토큰을 찾을 수 없습니다.');
+    await this.logger.write({
+      level: 'info',
+      event: 'token-revoked',
+      requestId: randomUUID(),
+      userId,
+      tokenId: row.id,
+      status: 'success',
+    });
     return publicToken(row);
   }
 }

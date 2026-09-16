@@ -12,6 +12,10 @@ import { WorkspaceService } from './workspace.service.js';
 import { RateLimitService } from './rate-limit.service.js';
 import { McpTokenController } from './mcp/mcp-token.controller.js';
 import { McpTokenService } from './mcp/mcp-token.service.js';
+import { McpController } from './mcp/mcp.controller.js';
+import { McpAuthService } from './mcp/mcp-auth.service.js';
+import { McpServerFactory } from './mcp/mcp-server.js';
+import { McpLogger } from './mcp/logging.js';
 
 @Module({
   controllers: [
@@ -21,6 +25,7 @@ import { McpTokenService } from './mcp/mcp-token.service.js';
     SessionController,
     SyncController,
     McpTokenController,
+    McpController,
   ],
   providers: [
     DatabaseService,
@@ -31,6 +36,9 @@ import { McpTokenService } from './mcp/mcp-token.service.js';
     ReviewService,
     RateLimitService,
     McpTokenService,
+    McpAuthService,
+    McpServerFactory,
+    McpLogger,
   ],
 })
 export class AppModule {}
