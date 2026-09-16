@@ -97,10 +97,29 @@ export function SyncHistoryContent({
   onClose,
 }: SyncHistoryPanelProps & { onClose?: () => void }) {
   const [filter, setFilter] = useState<HistoryFilter>('all');
+  const [copyFeedback, setCopyFeedback] = useState<{
+    operationId: string;
+    message: string;
+    manualValue?: string;
+  } | null>(null);
   const history = filterHistory(snapshot?.history ?? [], filter);
   const deletions = history.filter((entry) => entry.changes.some(isDeletion));
   const changes = history.filter((entry) => !entry.changes.some(isDeletion));
   const unresolved = snapshot?.pending.filter((item) => item.state === 'unresolved') ?? [];
+  async function copyChanges(operationId: string, changes: readonly HistoryChange[]) {
+    const value = JSON.stringify(changes);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(value);
+      setCopyFeedback({ operationId, message: '변경 내용을 복사했습니다.' });
+    } catch {
+      setCopyFeedback({
+        operationId,
+        message: '자동 복사를 사용할 수 없습니다. 아래 내용을 선택해 Ctrl+C로 복사하세요.',
+        manualValue: value,
+      });
+    }
+  }
   return (
     <div className="sync-history-panel sync-history-content">
       <h2>히스토리</h2>
@@ -135,11 +154,7 @@ export function SyncHistoryContent({
                 >
                   재적용
                 </Button>
-                <Button
-                  onClick={() => {
-                    void navigator.clipboard.writeText(JSON.stringify(item.operation.changes));
-                  }}
-                >
+                <Button onClick={() => void copyChanges(item.operationId, item.operation.changes)}>
                   변경 내용 복사
                 </Button>
                 <Button
@@ -150,6 +165,19 @@ export function SyncHistoryContent({
                   폐기
                 </Button>
               </div>
+              {copyFeedback?.operationId === item.operationId && (
+                <div className="sync-history-copy-feedback" role="status">
+                  <p>{copyFeedback.message}</p>
+                  {copyFeedback.manualValue && (
+                    <textarea
+                      aria-label="수동 복사용 변경 내용"
+                      readOnly
+                      value={copyFeedback.manualValue}
+                      onFocus={(event) => event.currentTarget.select()}
+                    />
+                  )}
+                </div>
+              )}
             </article>
           ))
         )}

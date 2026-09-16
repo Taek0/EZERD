@@ -48,3 +48,22 @@
   margin: 8px 0;
   font-size: 12px;
 }
+
+.sync-history-copy-feedback {
+  display: grid;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.sync-history-copy-feedback p {
+  margin: 0;
+}
+
+.sync-history-copy-feedback textarea {
+  width: 100%;
+  min-height: 78px;
+  padding: 7px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}

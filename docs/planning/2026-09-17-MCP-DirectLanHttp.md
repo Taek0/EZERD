@@ -47,7 +47,7 @@ MCP_PUBLIC_URL=http://<host-private-ip>:3001/mcp
 MCP_LOG_DIR=.data/logs/mcp
 ```
 
-호스팅 스크립트는 명시된 `HOST`를 존중하고, `.env`에 HOST가 없을 때 production LAN 기본값으로 `0.0.0.0`을 사용한다. 방화벽은 자동 변경하지 않는다.
+개발 실행은 `.env`의 `HOST`를 존중한다. 전용 `host:start`와 `host:serve` 명령은 개발용 loopback 기본값과 혼동되지 않도록 production에서 명시적으로 `0.0.0.0`을 사용한다. 방화벽은 자동 변경하지 않는다.
 
 ## 구현 단위
 

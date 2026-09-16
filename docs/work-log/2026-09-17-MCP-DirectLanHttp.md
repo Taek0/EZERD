@@ -28,4 +28,5 @@
 - `host:start`와 `host:serve` 경로는 개발 `.env`의 loopback 기본값을 override하고 `0.0.0.0`에 bind한다. 시작 시 loopback health URL, LAN 후보 주소, 허용 CIDR과 MCP URL을 표시한다.
 - `.env.example`에 `LAN_ALLOWED_CIDRS`와 사설 IPv4 MCP URL 형식을 추가했다.
 - 비보안 HTTP에서도 사용할 수 있도록 발급 token을 읽기 전용 input에 표시하고 발급 직후 전체 선택한다. Clipboard API가 없거나 실패하면 입력란을 다시 선택하고 `Ctrl+C` 수동 복사 안내를 표시한다.
+- 동기화 히스토리의 변경 내용 복사도 Clipboard API 실패 시 선택 가능한 읽기 전용 textarea와 `Ctrl+C` 안내를 표시한다.
 - 기본 운영 문서를 별도 도메인·TLS·proxy가 없는 직접 LAN HTTP 절차로 교체했다. 이전 Caddy 예시는 제거했다.
