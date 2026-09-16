@@ -3,6 +3,8 @@
  * Upstream c981a73bcd6b6c68d2a54070f20f020191212828. See NOTICE.md.
  * Active upstream-derived runtime trees live in untitled.tsx; CSS recipes in untitled.css.
  */
+import { AnimatedDetails } from './AnimatedDetails.js';
+export { AnimatedDetails } from './AnimatedDetails.js';
 import {
   Children,
   Fragment,
@@ -493,13 +495,13 @@ export function Accordion({
   ...props
 }: Omit<DetailsHTMLAttributes<HTMLDetailsElement>, 'title'> & { title: ReactNode }) {
   return (
-    <details {...props} className={cx('ui-accordion', className)}>
+    <AnimatedDetails {...props} className={cx('ui-accordion', className)}>
       <summary>
         {title}
         <ChevronDown className="ui-chevron" />
       </summary>
       {children}
-    </details>
+    </AnimatedDetails>
   );
 }
 export const TabButton = forwardRef<HTMLButtonElement, ButtonProps & { selected: boolean }>(

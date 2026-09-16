@@ -355,7 +355,7 @@ export function Canvas({
       : domain
         ? '도메인'
         : note
-          ? '텍스트'
+          ? '메모'
           : '';
   const selectionName = selectedTableRelation
     ? `${tableLabel(doc.tables!.find((t) => t.id === selectedTableRelation.targetTableId)!)} → ${tableLabel(doc.tables!.find((t) => t.id === selectedTableRelation.sourceTableId)!)}`
@@ -364,7 +364,7 @@ export function Canvas({
       : domain
         ? domain.name
         : note
-          ? note.text.slice(0, 40) || '자유 텍스트'
+          ? note.text.slice(0, 40) || '메모'
           : '';
   function pinAt(clientX: number, clientY: number) {
     const rect = surface.current?.getBoundingClientRect();
@@ -813,7 +813,7 @@ export function Canvas({
           {exporting ? '이미지 생성 중…' : '고화질 PNG'}
         </Button>
         <Button disabled={readOnly} onClick={newNote}>
-          ＋ 텍스트
+          ＋ 메모
         </Button>
         {viewId !== 'overview' && <Button onClick={() => setEnumOpen(true)}>ENUM</Button>}
         <span className="toolbar-divider" aria-hidden="true" />
@@ -1086,6 +1086,7 @@ export function Canvas({
                         ? tableCardSize(doc, t.id, node.width, node.height)
                         : cardSize(d ? 'domain' : 'note', node.width, node.height)),
                       ...(d ? { '--domain-color': d.color ?? '#8993a3' } : {}),
+                      ...(n ? { '--note-color': n.color ?? '#fff3c4' } : {}),
                     } as CSSProperties
                   }
                   onPointerDown={(e) => begin(e, node.id)}
@@ -1105,7 +1106,7 @@ export function Canvas({
                   onDoubleClick={() => d && navigate(d.id)}
                   tabIndex={0}
                   role="group"
-                  aria-label={d?.name ?? (t ? tableLabel(t) : '자유 텍스트')}
+                  aria-label={d?.name ?? (t ? tableLabel(t) : '메모')}
                   onFocus={(e) => {
                     if (e.target === e.currentTarget) setSelected(node.objectId);
                   }}
@@ -1187,7 +1188,13 @@ export function Canvas({
                       }}
                     />
                   ) : (
-                    <p className="note-content">{n?.text}</p>
+                    <DomainDescription
+                      memo
+                      name="메모"
+                      value={n?.text ?? ''}
+                      readOnly={readOnly}
+                      onCommit={(text) => n && change(updateNote(doc, n.id, text))}
+                    />
                   )}
                   {layoutPolicy.resizeNodes && (
                     <div
@@ -1649,15 +1656,23 @@ export function Canvas({
                       </div>
                     </>
                   ) : (
-                    <label>
-                      자유 텍스트
-                      <Textarea
-                        maxLength={20000}
-                        value={note?.text ?? ''}
+                    <>
+                      <DomainColorPicker
+                        label="메모 색상"
+                        value={note?.color ?? '#fff3c4'}
                         disabled={readOnly}
-                        onChange={(e) => note && change(updateNote(doc, note.id, e.target.value))}
+                        onChange={(color) => note && change(updateNote(doc, note.id, { color }))}
                       />
-                    </label>
+                      <label>
+                        메모
+                        <Textarea
+                          maxLength={20000}
+                          value={note?.text ?? ''}
+                          disabled={readOnly}
+                          onChange={(e) => note && change(updateNote(doc, note.id, e.target.value))}
+                        />
+                      </label>
+                    </>
                   )}
                 </div>
                 {domain && (
@@ -1720,7 +1735,7 @@ export function Canvas({
                     onClick={async () => {
                       if (
                         !(await confirm({
-                          title: domain ? '도메인 삭제' : '텍스트 삭제',
+                          title: domain ? '도메인 삭제' : '메모 삭제',
                           description: domain
                             ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?'
                             : '이 텍스트를 삭제할까요?',
@@ -1733,7 +1748,7 @@ export function Canvas({
                       setSelected(null);
                     }}
                   >
-                    {domain ? '도메인 삭제' : '텍스트 삭제'}
+                    {domain ? '도메인 삭제' : '메모 삭제'}
                   </Button>
                 </div>
               </>

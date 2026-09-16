@@ -1,0 +1,93 @@
+/* Editor tool grouping remains right aligned even when the row wraps. */
+.app-shell.editor-shell .editor-heading > .save-controls {
+  order: 1;
+  margin-left: 0;
+}
+.app-shell.editor-shell .editor-heading > .editor-toolbar-host {
+  order: 2;
+  margin-left: auto;
+}
+.app-shell.editor-shell .editor-toolbar-host .canvas-toolbar {
+  justify-content: flex-end;
+}
+.app-shell.editor-shell .editor-toolbar-host .canvas-toolbar > .actions {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+.inspector .table-column-type-controls {
+  grid-template-columns: minmax(0, 1fr);
+  grid-column: 1 / -1;
+}
+.inspector .table-column-type-controls > label {
+  min-width: 0;
+  width: 100%;
+}
+.canvas-node.note-node {
+  background: color-mix(in srgb, var(--note-color, #fff3c4) 24%, white);
+  border-top: 4px solid var(--note-color, #fff3c4);
+  color: #202b3a;
+}
+.note-node .note-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  width: 100%;
+  min-height: 48px;
+  cursor: text;
+}
+.note-node .note-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 60px;
+  resize: none;
+  font: inherit;
+  background: #ffffffdc;
+  color: #202b3a;
+}
+/* The shared JS animation supplies opening and closing for Safari as well. */
+.animated-details::details-content {
+  block-size: auto;
+  opacity: 1;
+  transition: none;
+}
+.animated-details > summary {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.animated-details > summary .ui-chevron {
+  transition: transform 180ms ease;
+}
+.enum-dialog .table-enum-item,
+.enum-dialog .table-enum-form {
+  animation: enum-content-enter 180ms ease-out;
+}
+.enum-dialog .table-enum-item[open] {
+  border-color: var(--accent);
+}
+.enum-dialog .table-enum-item > summary {
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+.enum-dialog .table-enum-item > summary:hover {
+  background: #6685ff0c;
+}
+@keyframes enum-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enum-dialog .table-enum-item,
+  .enum-dialog .table-enum-form {
+    animation: none;
+  }
+  .animated-details > summary .ui-chevron,
+  .enum-dialog .table-enum-item > summary {
+    transition: none;
+  }
+}

@@ -33,6 +33,7 @@ import { SearchType } from './components/ui/SearchType.js';
 import { useConfirm } from './components/ui/ConfirmProvider.js';
 import { createForeignKeyFromPrimaryKey, upsertRelationLayout } from '@ezerd/model';
 import {
+  AnimatedDetails,
   Button,
   Checkbox,
   ContextMenu,
@@ -980,42 +981,41 @@ function ColumnEditor({
           타입
           <SearchType
             label="타입"
-            disabled={!!c.physical.type.enumId}
-            value={c.physical.type.name}
-            onValueChange={(value) =>
-              physical({ type: { name: value, isArray: c.physical.type.isArray } })
-            }
-            options={[...new Set([...physicalTypes, c.physical.type.name])].map((value) => ({
-              value,
-              label:
-                value === c.physical.type.name
-                  ? columnTypeDisplay(c.physical.type, doc.enums)
-                  : value.toUpperCase(),
-            }))}
-          />
-        </label>
-        <label>
-          ENUM
-          <Select
-            aria-label="ENUM"
-            value={c.physical.type.enumId ?? ''}
-            onValueChange={(value) =>
+            value={c.physical.type.enumId ? `enum:${c.physical.type.enumId}` : c.physical.type.name}
+            onValueChange={(value) => {
+              if (
+                value ===
+                (c.physical.type.enumId ? `enum:${c.physical.type.enumId}` : c.physical.type.name)
+              )
+                return;
+              const enumType = doc.enums?.find((item) => `enum:${item.id}` === value);
               physical({
                 type: {
-                  name: value ? (doc.enums?.find((t) => t.id === value)?.name ?? 'text') : 'text',
+                  name: enumType?.name ?? value,
                   isArray: c.physical.type.isArray,
-                  enumId: value || undefined,
+                  ...(enumType ? { enumId: enumType.id } : {}),
                 },
-              })
-            }
-          >
-            <option value="">기본 타입</option>
-            {doc.enums?.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name.toUpperCase()}
-              </option>
-            ))}
-          </Select>
+              });
+            }}
+            options={[
+              ...[
+                ...new Set([
+                  ...physicalTypes,
+                  ...(!c.physical.type.enumId ? [c.physical.type.name] : []),
+                ]),
+              ].map((value) => ({
+                value,
+                label:
+                  value === c.physical.type.name && !c.physical.type.enumId
+                    ? columnTypeDisplay(c.physical.type, doc.enums)
+                    : value.toUpperCase(),
+              })),
+              ...(doc.enums ?? []).map((item) => ({
+                value: `enum:${item.id}`,
+                label: item.name.toUpperCase() + ' · ENUM',
+              })),
+            ]}
+          />
         </label>
       </div>
       <div className="table-type-params">
@@ -1323,7 +1323,7 @@ export function RelationEditor({
           ))}
         </div>
       )}
-      <details className="table-relation-advanced">
+      <AnimatedDetails className="table-relation-advanced">
         <summary>고급 설정 · 테이블, FK 매핑</summary>
         {(['targetTableId', 'sourceTableId'] as const).map((key) => (
           <label key={key}>
@@ -1425,7 +1425,7 @@ export function RelationEditor({
             </Button>
           </>
         )}
-      </details>
+      </AnimatedDetails>
       <Button variant="danger" className="danger" onClick={onDelete}>
         관계 삭제
       </Button>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { type DesignDocument, removeEnum, upsertEnum } from '@ezerd/model';
-import { Button, Input, Textarea } from './components/ui/index.js';
+import { AnimatedDetails, Button, Input, Textarea } from './components/ui/index.js';
 import { newId } from './client.js';
 import './enum-manager.css';
 export function EnumManager({
@@ -44,7 +44,7 @@ export function EnumManager({
       </small>
       <div className="table-enum-list">
         {items.map((item) => (
-          <details className="table-enum-item" key={item.id}>
+          <AnimatedDetails className="table-enum-item" key={item.id}>
             <summary>
               <strong>{item.name}</strong>
               <small>
@@ -92,13 +92,13 @@ export function EnumManager({
                 삭제
               </Button>
             </div>
-          </details>
+          </AnimatedDetails>
         ))}
         {!items.length && (
           <p className="panel-note">{query ? '검색 결과가 없습니다.' : '아직 ENUM이 없습니다.'}</p>
         )}
       </div>
-      <fieldset disabled={readOnly} className="table-enum-form">
+      <fieldset key={editing ?? 'new'} disabled={readOnly} className="table-enum-form">
         <label>
           ENUM 이름
           <Input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />

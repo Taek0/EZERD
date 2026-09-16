@@ -7,6 +7,7 @@ import './tokens.css';
 import './components/ui/ui.css';
 import './styles.css';
 import './inspector.css';
+import './editor-feedback.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

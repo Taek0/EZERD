@@ -49,7 +49,7 @@ describe('editor sidebar structure', () => {
     const html = markup();
     const toolbar = html.slice(html.indexOf('canvas-toolbar'), html.indexOf('canvas-surface'));
     expect(toolbar).toContain('＋ 도메인');
-    expect(toolbar).toContain('＋ 텍스트');
+    expect(toolbar).toContain('＋ 메모');
     expect(toolbar).toContain('canvas-inspector');
     expect(toolbar).not.toContain('자동 배치');
   });
