@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { isLoopbackHost, isPrivateIPv4, parseAllowedCidrs } from './network-policy.js';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true });
 
@@ -19,8 +20,30 @@ const envSchema = z
       .transform((value) => value === 'true'),
     MCP_PUBLIC_URL: z.string().url().optional(),
     MCP_LOG_DIR: z.string().min(1).default('.data/logs/mcp'),
+    LAN_ALLOWED_CIDRS: z.string().default(''),
   })
   .superRefine((value, context) => {
+    let cidrsValid = true;
+    try {
+      parseAllowedCidrs(value.LAN_ALLOWED_CIDRS);
+    } catch {
+      cidrsValid = false;
+      context.addIssue({
+        code: 'custom',
+        path: ['LAN_ALLOWED_CIDRS'],
+        message: 'LAN_ALLOWED_CIDRS is invalid.',
+      });
+    }
+    if (
+      value.NODE_ENV === 'production' &&
+      !isLoopbackHost(value.HOST) &&
+      (value.LAN_ALLOWED_CIDRS.trim() === '' || !cidrsValid)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['LAN_ALLOWED_CIDRS'],
+        message: 'LAN_ALLOWED_CIDRS is required for a LAN bind.',
+      });
     if (value.MCP_ENABLED && !value.MCP_PUBLIC_URL)
       context.addIssue({
         code: 'custom',
@@ -39,13 +62,14 @@ const envSchema = z
         });
         return;
       }
-      const loopback =
-        url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
-      const secure =
-        url.protocol === 'https:' ||
-        (value.NODE_ENV !== 'production' && loopback && url.protocol === 'http:');
+      const loopback = isLoopbackHost(url.hostname);
+      const privateHttp =
+        url.protocol === 'http:' &&
+        (loopback || isPrivateIPv4(url.hostname)) &&
+        Number(url.port || '80') === value.PORT;
+      const secure = url.protocol === 'https:';
       if (
-        !secure ||
+        (!secure && !privateHttp) ||
         url.pathname !== '/mcp' ||
         url.username ||
         url.password ||
@@ -56,7 +80,7 @@ const envSchema = z
           code: 'custom',
           path: ['MCP_PUBLIC_URL'],
           message:
-            'MCP_PUBLIC_URL must be an HTTPS /mcp URL without credentials, query, or fragment.',
+            'MCP_PUBLIC_URL must be a private LAN HTTP URL on PORT or an HTTPS /mcp URL without credentials, query, or fragment.',
         });
     }
   });

@@ -7,7 +7,7 @@ import { readConfig } from './config.js';
 import { SyncGateway } from './sync.gateway.js';
 
 const environment = readConfig();
-const app = await NestFactory.create<NestExpressApplication>(AppModule);
+const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
 configureApplication(app);
 app.get(SyncGateway).attach(app.getHttpServer());
 app.enableShutdownHooks();

@@ -10,6 +10,9 @@ const original = {
   MCP_ENABLED: process.env.MCP_ENABLED,
   MCP_PUBLIC_URL: process.env.MCP_PUBLIC_URL,
   MCP_LOG_DIR: process.env.MCP_LOG_DIR,
+  HOST: process.env.HOST,
+  PORT: process.env.PORT,
+  LAN_ALLOWED_CIDRS: process.env.LAN_ALLOWED_CIDRS,
 };
 
 afterEach(() => {
@@ -20,11 +23,17 @@ afterEach(() => {
 });
 
 describe('MCP security boundaries', () => {
-  it('requires a credential-free HTTPS /mcp public URL in production', () => {
+  it('accepts private LAN HTTP on the app port and rejects external or malformed HTTP', () => {
     process.env.NODE_ENV = 'production';
+    process.env.HOST = '0.0.0.0';
+    process.env.PORT = '3001';
+    process.env.LAN_ALLOWED_CIDRS = '192.168.40.0/24';
     process.env.MCP_ENABLED = 'true';
     for (const url of [
       'http://ezerd.internal/mcp',
+      'http://8.8.8.8:3001/mcp',
+      'http://192.168.40.20:3002/mcp',
+      'http://user:secret@192.168.40.20:3001/mcp',
       'https://user:secret@ezerd.internal/mcp',
       'https://ezerd.internal/other',
       'https://ezerd.internal/mcp?token=secret',
@@ -33,8 +42,25 @@ describe('MCP security boundaries', () => {
       process.env.MCP_PUBLIC_URL = url;
       expect(() => readConfig()).toThrow(/MCP_PUBLIC_URL/);
     }
-    process.env.MCP_PUBLIC_URL = 'https://ezerd.internal/mcp';
-    expect(readConfig().MCP_PUBLIC_URL).toBe('https://ezerd.internal/mcp');
+    process.env.MCP_PUBLIC_URL = 'http://192.168.40.20:3001/mcp';
+    expect(readConfig().MCP_PUBLIC_URL).toBe('http://192.168.40.20:3001/mcp');
+  });
+
+  it('fails closed for missing or invalid CIDRs on a production LAN bind', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.HOST = '0.0.0.0';
+    process.env.PORT = '3001';
+    process.env.MCP_ENABLED = 'true';
+    process.env.MCP_PUBLIC_URL = 'http://192.168.40.20:3001/mcp';
+    for (const cidrs of ['', '8.8.8.0/24', 'not-a-cidr-secret']) {
+      process.env.LAN_ALLOWED_CIDRS = cidrs;
+      expect(() => readConfig()).toThrow(/LAN_ALLOWED_CIDRS/);
+      try {
+        readConfig();
+      } catch (error) {
+        expect(String(error)).not.toContain(cidrs || 'empty-value');
+      }
+    }
   });
 
   it('serializes only the explicit log allowlist at runtime', async () => {

@@ -65,11 +65,15 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     const { readConfig } = await import('../dist/config.js');
     const config = readConfig();
     pool = new pg.Pool({ connectionString: config.DATABASE_URL });
-    app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
+    app = await NestFactory.create<NestExpressApplication>(AppModule, {
+      logger: false,
+      bodyParser: false,
+    });
     const { configureApplication } = await import('../dist/application.js');
     configureApplication(app);
     await app.listen(0, '127.0.0.1');
     base = await app.getUrl();
+    process.env.PORT = new URL(base).port;
     process.env.MCP_PUBLIC_URL = `${base}/mcp`;
     userA = await createUser('a');
     userB = await createUser('b');

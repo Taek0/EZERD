@@ -24,7 +24,7 @@ const result = spawnSync(
       EZERD_DB_TEST: '1',
       NODE_ENV: 'test',
       MCP_ENABLED: 'true',
-      MCP_PUBLIC_URL: 'http://127.0.0.1/mcp',
+      MCP_PUBLIC_URL: 'http://127.0.0.1:3001/mcp',
       MCP_LOG_DIR: mcpLogDir,
     },
     stdio: 'inherit',

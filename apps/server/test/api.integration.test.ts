@@ -80,7 +80,10 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       throw new Error('Integration tests require a local development database.');
     }
     pool = new pg.Pool({ connectionString: config.DATABASE_URL });
-    app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
+    app = await NestFactory.create<NestExpressApplication>(AppModule, {
+      logger: false,
+      bodyParser: false,
+    });
     const { configureApplication } = await import('../dist/application.js');
     configureApplication(app);
     await app.listen(0, '127.0.0.1');

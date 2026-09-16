@@ -7,6 +7,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { DatabaseService } from './db/database.service.js';
 import { projects } from './db/schema.js';
 import { SessionService, type AuthenticatedUser } from './session.js';
+import { LanAccessService } from './network-access.js';
 
 type Client = {
   socket: WebSocket;
@@ -24,6 +25,7 @@ export class SyncGateway implements OnApplicationShutdown {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(LanAccessService) private readonly network: LanAccessService,
   ) {}
   attach(server: Server): void {
     if (this.server) return;
@@ -33,6 +35,7 @@ export class SyncGateway implements OnApplicationShutdown {
     this.headTimer.unref();
   }
   private readonly upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
+    if (!this.network.isAllowed(request.socket.remoteAddress)) return socket.destroy();
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (url.pathname !== '/api/sync') return socket.destroy();
     const token = url.searchParams.get('token') ?? '';
