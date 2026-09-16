@@ -49,13 +49,25 @@
 .app-shell.editor-shell .inspector-shell .inspector {
   flex: 1 1 0;
   height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 
-.app-shell.editor-shell .inspector-body {
-  flex: none;
-  overflow: visible;
+/* Properties and outlines share one bounded scroller. Header/tabs stay visible,
+   while nested sections retain their natural content height. */
+.app-shell.editor-shell .inspector-shell .inspector-body {
+  flex: 1 1 0;
+  height: 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.app-shell.editor-shell .comments-container .comments-panel {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .app-shell.editor-shell .workspace.inspector-stacked {

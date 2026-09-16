@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
-import { applyDomainSelection } from './domain-view.js';
-import { wheelCamera } from './canvas-wheel.js';
+import { applyDomainSelection, domainViewExitTarget } from './domain-view.js';
+import { wheelCamera, MIN_CANVAS_ZOOM, MAX_CANVAS_ZOOM } from './canvas-wheel.js';
 import { applyDomainRelationPatch, type DomainRelationPatch } from './domain-relation-edit.js';
 import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from './components/ui/untitled.js';
@@ -114,6 +114,7 @@ export function Canvas({
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
   const [viewDraftId, setViewDraftId] = useState<string | null>(null);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const domainViewOrigin = useRef<string | null>(null);
   const [combinedName, setCombinedName] = useState('함께 보기');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -500,7 +501,7 @@ export function Canvas({
     setPanelTab('properties');
   }
   function zoom(value: number) {
-    const next = Math.max(0.25, Math.min(2, value));
+    const next = Math.max(MIN_CANVAS_ZOOM, Math.min(MAX_CANVAS_ZOOM, value));
     const rect = surface.current?.getBoundingClientRect();
     const cx = (rect?.width ?? 800) / 2,
       cy = (rect?.height ?? 600) / 2;
@@ -791,6 +792,11 @@ export function Canvas({
             >
               <Button
                 className={activeCombined ? 'domain-view-trigger is-active' : 'domain-view-trigger'}
+                title={
+                  activeCombined
+                    ? '테이블 고정 배치 · 키 관계 설정 및 관계선 이동 가능'
+                    : '도메인 뷰'
+                }
               >
                 <svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none">
                   <path
@@ -800,7 +806,7 @@ export function Canvas({
                     strokeLinecap="round"
                   />
                 </svg>
-                {activeCombined ? '도메인 구성' : '도메인 뷰'}
+                도메인 뷰
               </Button>
               <UntitledPopover
                 className="domain-view-popover"
@@ -812,6 +818,7 @@ export function Canvas({
                   <strong>도메인 선택</strong>
                   <p className="panel-note">
                     함께 볼 도메인을 선택하세요. 각 도메인의 테이블 배치를 유지해 나란히 표시합니다.
+                    테이블 위치는 고정되며, 키 관계 설정과 관계선 이동은 가능합니다.
                   </p>
                   <div className="combined-domain-options">
                     {doc.domains.map((d) => (
@@ -842,6 +849,7 @@ export function Canvas({
                           activeCombined?.id ?? null,
                           newId,
                         );
+                        if (!activeCombined) domainViewOrigin.current = activeDomain?.id ?? null;
                         change(result.document);
                         navigate(result.viewId);
                         setViewPickerOpen(false);
@@ -854,6 +862,19 @@ export function Canvas({
                 </Dialog>
               </UntitledPopover>
             </DialogTrigger>
+          )}
+          {activeCombined && (
+            <Button
+              className="domain-view-exit"
+              onClick={() => {
+                setViewPickerOpen(false);
+                navigate(
+                  domainViewExitTarget(doc, activeCombined.domainIds, domainViewOrigin.current),
+                );
+              }}
+            >
+              도메인 뷰 나가기
+            </Button>
           )}
           <Button onClick={() => setEnumOpen(true)}>ENUM</Button>
           <Button
@@ -1484,7 +1505,7 @@ export function Canvas({
             }
           }}
         />
-        <aside id="canvas-inspector" className="inspector">
+        <aside id="canvas-inspector" className="inspector" data-panel-tab={panelTab}>
           <div className="inspector-topbar">
             <div className="inspector-place">
               <span>{viewId === 'overview' ? 'VIEW' : 'DOMAIN'}</span>
@@ -1514,6 +1535,11 @@ export function Canvas({
             </div>
           </div>
           <div className="inspector-body">
+            {activeCombined && (
+              <PanelNote>
+                도메인 뷰 · 테이블은 고정 배치입니다. 키 관계 설정과 관계선 이동은 가능합니다.
+              </PanelNote>
+            )}
             {panelTab === 'outline' ? (
               <>
                 <div className="panel-search">

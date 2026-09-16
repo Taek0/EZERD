@@ -6,7 +6,14 @@ import {
   upsertCombinedView,
   type DesignDocument,
 } from '@ezerd/model';
-import { applyDomainSelection, combinedViewName } from './domain-view.js';
+import { applyDomainSelection, combinedViewName, domainViewExitTarget } from './domain-view.js';
+it('leaves combined views to their originating domain with safe fallbacks', () => {
+  const doc = seed();
+  expect(domainViewExitTarget(doc, ['a', 'b'], 'b')).toBe('b');
+  expect(domainViewExitTarget(doc, ['a'], 'b')).toBe('a');
+  expect(domainViewExitTarget(doc, ['missing'], 'missing')).toBe('overview');
+  expect(domainViewExitTarget(doc, ['a', 'b'], null)).toBe('a');
+});
 import { tableCardSize } from './table-geometry.js';
 const metadata = { common: {}, logical: {}, physical: {} };
 function seed() {

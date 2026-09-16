@@ -34,6 +34,23 @@ it('uses fine pinch increments anchored under the pointer', () => {
     ).zoom,
   ).toBe(2);
 });
+it('allows dense canvases to zoom below 25 percent down to 10 percent', () => {
+  const next = wheelCamera(
+    { ...camera, zoom: 0.2 },
+    { ...wheel, deltaY: 40, ctrlKey: true },
+    { x: 100, y: 100 },
+    600,
+  );
+  expect(next.zoom).toBeLessThan(0.2);
+  expect(
+    wheelCamera(
+      { ...camera, zoom: 0.1 },
+      { ...wheel, deltaY: 40, ctrlKey: true },
+      { x: 100, y: 100 },
+      600,
+    ).zoom,
+  ).toBe(0.1);
+});
 it('normalizes line/page events, supports horizontal shift and accumulates events', () => {
   expect(wheelCamera(camera, { ...wheel, deltaMode: 1 }, { x: 0, y: 0 }, 600).y).toBe(-300);
   expect(wheelCamera(camera, { ...wheel, deltaY: 1, deltaMode: 2 }, { x: 0, y: 0 }, 600).y).toBe(

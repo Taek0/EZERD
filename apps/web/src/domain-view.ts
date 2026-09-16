@@ -1,5 +1,13 @@
 import { type DesignDocument, upsertCombinedView, setViewport } from '@ezerd/model';
 import { tableCardSize } from './table-geometry.js';
+export function domainViewExitTarget(
+  doc: DesignDocument,
+  domainIds: string[],
+  origin: string | null,
+): string {
+  const available = domainIds.filter((id) => doc.domains.some((domain) => domain.id === id));
+  return origin && available.includes(origin) ? origin : (available[0] ?? 'overview');
+}
 /** Name the saved view after its domains so the editor path shows what is combined. */
 export function combinedViewName(names: string[]): string {
   if (!names.length) return '도메인 뷰';

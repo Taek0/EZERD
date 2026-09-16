@@ -1,4 +1,6 @@
 type Camera = { x: number; y: number; zoom: number };
+export const MIN_CANVAS_ZOOM = 0.1;
+export const MAX_CANVAS_ZOOM = 2;
 type Wheel = {
   deltaX: number;
   deltaY: number;
@@ -19,8 +21,8 @@ export function wheelCamera<T extends Camera>(
   if (![dx, dy].every(Number.isFinite)) return camera;
   if (event.ctrlKey || event.metaKey) {
     const zoom = Math.max(
-      0.25,
-      Math.min(2, camera.zoom * Math.exp(-Math.max(-40, Math.min(40, dy)) * 0.002)),
+      MIN_CANVAS_ZOOM,
+      Math.min(MAX_CANVAS_ZOOM, camera.zoom * Math.exp(-Math.max(-40, Math.min(40, dy)) * 0.002)),
     );
     return {
       ...camera,
