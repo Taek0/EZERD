@@ -40,6 +40,17 @@
   fill: none;
   pointer-events: stroke;
 }
+.relation > path.domain-label-leader {
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.combined-domain-options .combined-select-all {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  font-weight: 700;
+}
 .canvas-node {
   transition:
     opacity 160ms ease,

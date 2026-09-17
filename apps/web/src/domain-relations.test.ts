@@ -1,5 +1,21 @@
 import { expect, it } from 'vitest';
 import { layoutDomainRelations } from './domain-relations.js';
+it('separates long relationship labels from each other and card bounds', () => {
+  const links = Array.from({ length: 16 }, (_, i) => ({
+    ...r('label-' + i),
+    name: '중첩될 수 있는 긴 관계 이름 ' + i,
+  }));
+  const layouts = layoutDomainRelations(links, nodes);
+  const boxes = [...layouts.values()].map((item) => item.labelBounds!);
+  const overlaps = (a: (typeof boxes)[number], b: (typeof boxes)[number]) =>
+    a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  boxes.forEach((box, i) => {
+    boxes.slice(i + 1).forEach((other) => expect(overlaps(box, other)).toBe(false));
+    nodes.forEach((node) => expect(overlaps(box, node)).toBe(false));
+  });
+  expect([...layouts.values()].some((route) => route.labelAnchor)).toBe(true);
+  expect(layoutDomainRelations([...links].reverse(), nodes)).toEqual(layouts);
+});
 const nodes = [
   { objectId: 'a', x: 0, y: 0, width: 240, height: 210 },
   { objectId: 'b', x: 500, y: 0, width: 240, height: 210 },

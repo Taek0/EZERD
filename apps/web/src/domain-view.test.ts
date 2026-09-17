@@ -44,6 +44,82 @@ function node(doc: DesignDocument, viewId: string, id: string) {
   return doc.layout.nodes.find((n) => n.viewId === viewId && n.objectId === id)!;
 }
 describe('domain selection layout', () => {
+  it('keeps diagonal overview directions and separates differently sized clusters', () => {
+    let source = seed();
+    const b = source.layout.nodes.find((n) => n.objectId === 'b' && n.viewId === 'overview')!;
+    b.x = 450;
+    b.y = 650;
+    source = addDomain(source, { id: 'c', name: 'C', description: '' }, { x: 1000, y: 0 });
+    source = addTable(source, { ...source.tables![0]!, id: 'c1', domainId: 'c' }, { x: 0, y: 0 });
+    const { document: result, viewId } = applyDomainSelection(
+      source,
+      ['c', 'b', 'a'],
+      null,
+      () => 'diagonal',
+    );
+    const bounds = (id: string) => {
+      const items = result.layout.nodes.filter(
+        (n) =>
+          n.viewId === viewId && result.tables?.find((t) => t.id === n.objectId)?.domainId === id,
+      );
+      const left = Math.min(...items.map((n) => n.x)),
+        top = Math.min(...items.map((n) => n.y));
+      const right = Math.max(...items.map((n) => n.x + n.width)),
+        bottom = Math.max(...items.map((n) => n.y + n.height));
+      return { left, top, right, bottom, x: (left + right) / 2, y: (top + bottom) / 2 };
+    };
+    const a = bounds('a'),
+      bb = bounds('b'),
+      c = bounds('c');
+    expect(bb.x).toBeGreaterThan(a.x);
+    expect(bb.y).toBeGreaterThan(a.y);
+    expect(c.x).toBeGreaterThan(bb.x);
+    expect(c.y).toBeCloseTo(a.y);
+    for (const [one, two] of [
+      [a, bb],
+      [a, c],
+      [bb, c],
+    ])
+      expect(
+        one!.right + 179.99 <= two!.left ||
+          two!.right + 179.99 <= one!.left ||
+          one!.bottom + 179.99 <= two!.top ||
+          two!.bottom + 179.99 <= one!.top,
+      ).toBe(true);
+  });
+  it('places missing map locations deterministically without invalid coordinates', () => {
+    const source = seed();
+    source.layout.nodes = source.layout.nodes.filter((n) => n.viewId !== 'overview');
+    const one = applyDomainSelection(source, ['a', 'b'], null, () => 'fallback');
+    const two = applyDomainSelection(source, ['b', 'a'], null, () => 'fallback');
+    expect(one.document).toEqual(two.document);
+    for (const n of one.document.layout.nodes) expect([n.x, n.y].every(Number.isFinite)).toBe(true);
+  });
+  it('mirrors the overview vertical direction instead of placing every domain in one row', () => {
+    const source = seed();
+    const b = source.layout.nodes.find((n) => n.objectId === 'b' && n.viewId === 'overview')!;
+    b.y = 600;
+    const { document: result, viewId } = applyDomainSelection(
+      source,
+      ['a', 'b'],
+      null,
+      () => 'vertical',
+    );
+    const group = (id: string) =>
+      result.layout.nodes.filter(
+        (n) =>
+          n.viewId === viewId && result.tables?.find((t) => t.id === n.objectId)?.domainId === id,
+      );
+    const aNodes = group('a'),
+      bNodes = group('b');
+    expect(
+      Math.min(...bNodes.map((n) => n.y)) - Math.max(...aNodes.map((n) => n.y + n.height)),
+    ).toBeGreaterThanOrEqual(179.99);
+    const centerX = (items: typeof aNodes) =>
+      (Math.min(...items.map((n) => n.x)) + Math.max(...items.map((n) => n.x + n.width))) / 2;
+    expect(centerX(aNodes)).toBeCloseTo(centerX(bNodes));
+    expect(node(result, viewId, 'b2').x - node(result, viewId, 'b1').x).toBe(680);
+  });
   it('preserves original relative distances and separates domains by actual card width', () => {
     const source = seed(),
       snapshot = structuredClone(source);

@@ -13,6 +13,8 @@ export interface DomainRelationGeometry {
   end: Point;
   path: string;
   label: Point;
+  labelAnchor?: Point;
+  labelBounds?: { x: number; y: number; width: number; height: number };
 }
 interface Port {
   key: string;
@@ -161,5 +163,72 @@ export function layoutDomainRelations(
       },
     });
   }
+  placeLabels(valid, nodes, result);
   return result;
+}
+
+type LabelBounds = { x: number; y: number; width: number; height: number };
+const intersects = (a: LabelBounds, b: LabelBounds) =>
+  a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+/** Conservative glyph bounds at the SVG's 14px type scale; no browser measurement
+ * or document mutation is required, so exports and interactive views agree. */
+function placeLabels(
+  relations: DomainRelation[],
+  nodes: DomainBounds[],
+  routes: Map<string, DomainRelationGeometry>,
+) {
+  const occupied: LabelBounds[] = nodes.map((n) => ({
+    x: n.x - 8,
+    y: n.y - 8,
+    width: n.width + 16,
+    height: n.height + 16,
+  }));
+  let bottom = Math.max(0, ...occupied.map((n) => n.y + n.height));
+  for (const relation of relations) {
+    const route = routes.get(relation.id)!;
+    const origin = route.label;
+    const width = Math.max(
+      24,
+      [...relation.name.replace(/\s+/g, ' ')].reduce((sum, c) => sum + (c === ' ' ? 6 : 14), 0) +
+        12,
+    );
+    const bounds = (p: Point): LabelBounds => ({
+      x: p.x - width / 2,
+      y: p.y - 18,
+      width,
+      height: 26,
+    });
+    const free = (p: Point) => !occupied.some((box) => intersects(bounds(p), box));
+    let label = origin;
+    if (!free(label)) {
+      let found = false;
+      for (let ring = 1; ring <= 64 && !found; ring++) {
+        const dx = ring * (width / 2 + 16),
+          dy = ring * 30;
+        for (const [x, y] of [
+          [0, -dy],
+          [0, dy],
+          [-dx, 0],
+          [dx, 0],
+          [-dx, -dy],
+          [dx, -dy],
+          [-dx, dy],
+          [dx, dy],
+        ]) {
+          const candidate = { x: origin.x + x!, y: origin.y + y! };
+          if (free(candidate)) {
+            label = candidate;
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) label = { x: origin.x, y: bottom + 40 };
+      route.labelAnchor = { x: origin.x, y: origin.y + 10 };
+    }
+    route.label = label;
+    route.labelBounds = bounds(label);
+    occupied.push(route.labelBounds);
+    bottom = Math.max(bottom, route.labelBounds.y + route.labelBounds.height);
+  }
 }

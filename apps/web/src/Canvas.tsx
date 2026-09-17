@@ -114,6 +114,10 @@ export function Canvas({
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
   const [viewDraftId, setViewDraftId] = useState<string | null>(null);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const selectedDomainSet = new Set(selectedDomains);
+  const selectedDomainCount = doc.domains.filter((domain) =>
+    selectedDomainSet.has(domain.id),
+  ).length;
   const domainViewOrigin = useRef<string | null>(null);
   const [combinedName, setCombinedName] = useState('함께 보기');
   const [exporting, setExporting] = useState(false);
@@ -817,15 +821,34 @@ export function Canvas({
                 <Dialog aria-label="도메인 뷰" className="combined-view-picker">
                   <strong>도메인 선택</strong>
                   <p className="panel-note">
-                    함께 볼 도메인을 선택하세요. 각 도메인의 테이블 배치를 유지해 나란히 표시합니다.
-                    테이블 위치는 고정되며, 키 관계 설정과 관계선 이동은 가능합니다.
+                    함께 볼 도메인을 선택하세요. 도메인 맵의 배치를 따라 테이블 묶음을 표시하고,
+                    묶음 안의 배치는 유지합니다. 테이블 위치는 고정되며, 키 관계 설정과 관계선
+                    이동은 가능합니다.
                   </p>
                   <div className="combined-domain-options">
+                    <label className="combined-select-all">
+                      <Checkbox
+                        aria-label="모든 도메인 선택"
+                        disabled={!doc.domains.length}
+                        checked={
+                          doc.domains.length > 0 && selectedDomainCount === doc.domains.length
+                        }
+                        indeterminate={
+                          selectedDomainCount > 0 && selectedDomainCount < doc.domains.length
+                        }
+                        onChange={(event) =>
+                          setSelectedDomains(
+                            event.target.checked ? doc.domains.map((domain) => domain.id) : [],
+                          )
+                        }
+                      />
+                      전체
+                    </label>
                     {doc.domains.map((d) => (
                       <label key={d.id}>
                         <Checkbox
                           aria-label={d.name}
-                          checked={selectedDomains.includes(d.id)}
+                          checked={selectedDomainSet.has(d.id)}
                           onChange={(e) =>
                             setSelectedDomains((value) =>
                               e.target.checked
@@ -1069,6 +1092,12 @@ export function Canvas({
                         markerEnd="url(#arrow-end)"
                         markerStart={r.direction === 'both' ? 'url(#arrow-end)' : undefined}
                       />
+                      {route.labelAnchor && (
+                        <path
+                          className="domain-label-leader"
+                          d={`M ${route.labelAnchor.x} ${route.labelAnchor.y} L ${route.label.x} ${route.label.y + 4}`}
+                        />
+                      )}
                       <text x={route.label.x} y={route.label.y} textAnchor="middle">
                         {r.name}
                       </text>
