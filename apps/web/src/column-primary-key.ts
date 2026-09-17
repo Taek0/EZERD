@@ -1,3 +1,4 @@
+import { patchColumnPhysical } from './column-defaults.js';
 import { type DesignDocument, removeKey, updateColumn, upsertKey } from '@ezerd/model';
 import { newId } from './client.js';
 
@@ -46,7 +47,9 @@ export function setColumnPrimaryKey(
     ? [...(key?.columnIds ?? []), columnId]
     : key!.columnIds.filter((id) => id !== columnId);
   const next = checked
-    ? updateColumn(doc, columnId, { physical: { ...column.physical, nullable: false } })
+    ? updateColumn(doc, columnId, {
+        physical: patchColumnPhysical(column.physical, { nullable: false }),
+      })
     : doc;
   return ids.length
     ? upsertKey(next, {

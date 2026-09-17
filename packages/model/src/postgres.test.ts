@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyDocument, type Column, type Table, type TableRelation } from './document.js';
 import { exportPostgres } from './postgres.js';
 const props = () => ({ common: {}, logical: {}, physical: {} });
+it('exports only the allowed current-time default on scalar time columns', () => {
+  for (const name of ['time', 'timetz']) {
+    const doc = fixture();
+    doc.columns[0]!.physical.type.name = name;
+    doc.columns[1]!.physical.type.name = name;
+    doc.columns[0]!.physical.defaultExpression = 'CURRENT_TIME';
+    expect(exportPostgres(doc).sql).toContain('DEFAULT CURRENT_TIME');
+    doc.columns[0]!.physical.defaultExpression = 'CURRENT_TIME; SELECT 1';
+    expect(exportPostgres(doc).canExport).toBe(false);
+    doc.columns[0]!.physical.defaultExpression = 'CURRENT_TIME';
+    doc.columns[0]!.physical.type.isArray = true;
+    expect(exportPostgres(doc).canExport).toBe(false);
+  }
+});
 const table = (id: string): Table => ({
   id,
   domainId: 'd',

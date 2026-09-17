@@ -839,3 +839,12 @@
     animation: none;
   }
 }
+.table-column-default {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.table-column-default small {
+  color: var(--text-secondary);
+  font-size: 11px;
+}

@@ -155,6 +155,7 @@ function defaultSql(column: Column, enums: Map<string, ProjectEnum>): string | n
   if (['timestamp', 'timestamptz'].includes(name) && /^(now\(\)|current_timestamp)$/i.test(value))
     return value.toUpperCase();
   if (name === 'date' && /^current_date$/i.test(value)) return 'CURRENT_DATE';
+  if (['time', 'timetz'].includes(name) && /^current_time$/i.test(value)) return 'CURRENT_TIME';
   if (name === 'uuid' && /^gen_random_uuid\(\)$/i.test(value)) return 'gen_random_uuid()';
   if (numeric.has(name) && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) {
     if (!Number.isFinite(Number(value))) return null;

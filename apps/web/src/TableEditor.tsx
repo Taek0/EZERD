@@ -1,3 +1,10 @@
+import {
+  applyColumnDefault,
+  autoIncrementDefault,
+  columnDefaultOptions,
+  isAutoIncrement,
+  patchColumnPhysical,
+} from './column-defaults.js';
 import { EnumManager } from './EnumManager.js';
 import { columnTypeDisplay } from './column-type-display.js';
 import { primaryKeyChangeReason, setColumnPrimaryKey } from './column-primary-key.js';
@@ -407,7 +414,7 @@ export function TableNodeContent({
             (r) => r.physical?.sourceColumnIds.includes(c.id) && r.scope !== 'logical',
           );
           const patch = (v: Partial<Column['physical']>) =>
-            updateColumn(doc, c.id, { physical: { ...c.physical, ...v } });
+            updateColumn(doc, c.id, { physical: patchColumnPhysical(c.physical, v) });
           return (
             <div
               className={`table-column-row${keys.some((k) => k.kind === 'primary') ? ' table-column-pk' : ''}${fk ? ' table-column-fk' : ''}`}
@@ -474,7 +481,9 @@ export function TableNodeContent({
                                 'text')
                               : value,
                             ...(value.startsWith('enum:') ? { enumId: value.slice(5) } : {}),
-                            isArray: c.physical.type.isArray,
+                            isArray: ['serial', 'bigserial', 'smallserial'].includes(value)
+                              ? false
+                              : c.physical.type.isArray,
                           },
                         }),
                       );
@@ -923,6 +932,43 @@ export function TableInspector({
     </section>
   );
 }
+export function ColumnDefaultControl({
+  physical,
+  enums,
+  onChange,
+}: {
+  physical: Column['physical'];
+  enums: DesignDocument['enums'];
+  onChange: (physical: Column['physical']) => void;
+}) {
+  const options = columnDefaultOptions(physical, enums);
+  const value = isAutoIncrement(physical.type)
+    ? autoIncrementDefault
+    : (physical.defaultExpression ?? '');
+  const existing = value && !options.some((option) => option.value === value);
+  return (
+    <label className="table-column-default">
+      기본값
+      <Select
+        aria-label="컬럼 기본값"
+        value={value}
+        onValueChange={(next) => onChange(applyColumnDefault(physical, next, enums))}
+      >
+        {existing && (
+          <option value={value} disabled>
+            기존 값 · {value}
+          </option>
+        )}
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+      <small>타입 변경 시 기본값이 초기화됩니다.</small>
+    </label>
+  );
+}
 function ColumnEditor({
   document: doc,
   column: c,
@@ -945,7 +991,7 @@ function ColumnEditor({
   onClose: () => void;
 }) {
   const physical = (p: Partial<Column['physical']>) =>
-    onChange({ physical: { ...c.physical, ...p } });
+    onChange({ physical: patchColumnPhysical(c.physical, p) });
   return (
     <div className="panel-detail table-column-editor">
       <div className="panel-detail-head">
@@ -992,7 +1038,9 @@ function ColumnEditor({
               physical({
                 type: {
                   name: enumType?.name ?? value,
-                  isArray: c.physical.type.isArray,
+                  isArray: ['serial', 'bigserial', 'smallserial'].includes(value)
+                    ? false
+                    : c.physical.type.isArray,
                   ...(enumType ? { enumId: enumType.id } : {}),
                 },
               });
@@ -1090,6 +1138,7 @@ function ColumnEditor({
         <Check
           label="배열"
           value={c.physical.type.isArray}
+          disabled={isAutoIncrement(c.physical.type)}
           onChange={(isArray) => physical({ type: { ...c.physical.type, isArray } })}
         />
         <Check
@@ -1111,6 +1160,11 @@ function ColumnEditor({
           }}
         />
       </div>
+      <ColumnDefaultControl
+        physical={c.physical}
+        enums={doc.enums}
+        onChange={(next) => onChange({ physical: next })}
+      />
       {primaryKeyChangeReason(doc, c.id) && (
         <PanelNote>{primaryKeyChangeReason(doc, c.id)}</PanelNote>
       )}
@@ -1450,7 +1504,20 @@ function ColumnCreationForm({
     [type, setType] = useState('text'),
     [comment, setComment] = useState(''),
     [pk, setPk] = useState(false),
-    [notNull, setNotNull] = useState(true);
+    [notNull, setNotNull] = useState(true),
+    [defaultExpression, setDefaultExpression] = useState<string | null>(null);
+  const enumType = doc.enums?.find((item) => `enum:${item.id}` === type);
+  const draftPhysical: Column['physical'] = {
+    name,
+    comment,
+    nullable: !notNull && !pk,
+    type: {
+      name: enumType?.name ?? type,
+      isArray: false,
+      ...(enumType ? { enumId: enumType.id } : {}),
+    },
+    defaultExpression,
+  };
   return (
     <div className="table-column-create">
       <div className="table-create-grid">
@@ -1463,7 +1530,10 @@ function ColumnCreationForm({
                 .filter((c) => c.tableId === tableId && c.scope !== 'logical')
                 .find((c) => primaryKeyChangeReason(doc, c.id))
             }
-            onChange={(e) => setPk(e.target.checked)}
+            onChange={(e) => {
+              setPk(e.target.checked);
+              if (e.target.checked && defaultExpression === 'NULL') setDefaultExpression(null);
+            }}
           />
         </label>
         <TextField label="속성" value={name} max={120} onChange={setName} />
@@ -1472,7 +1542,10 @@ function ColumnCreationForm({
           <SearchType
             label="타입"
             value={type}
-            onValueChange={setType}
+            onValueChange={(value) => {
+              setType(value);
+              setDefaultExpression(null);
+            }}
             options={[
               ...physicalTypes.map((value) => ({ value, label: value.toUpperCase() })),
               ...(doc.enums ?? []).map((e) => ({
@@ -1487,24 +1560,27 @@ function ColumnCreationForm({
           <Checkbox
             checked={notNull || pk}
             disabled={pk}
-            onChange={(e) => setNotNull(e.target.checked)}
+            onChange={(e) => {
+              setNotNull(e.target.checked);
+              if (e.target.checked && defaultExpression === 'NULL') setDefaultExpression(null);
+            }}
           />
         </label>
         <TextField label="새 컬럼 comment" value={comment} onChange={setComment} />
       </div>
+      <ColumnDefaultControl
+        physical={draftPhysical}
+        enums={doc.enums}
+        onChange={(next) => {
+          setDefaultExpression(next.defaultExpression);
+          setType(next.type.enumId ? `enum:${next.type.enumId}` : next.type.name);
+          setNotNull(!next.nullable);
+        }}
+      />
       <Button
         onClick={() => {
           const column = freshColumn(tableId);
-          column.physical.name = name;
-          column.physical.comment = comment;
-          column.physical.nullable = !notNull && !pk;
-          column.physical.type = type.startsWith('enum:')
-            ? {
-                name: (doc.enums ?? []).find((t) => t.id === type.slice(5))?.name ?? 'text',
-                enumId: type.slice(5),
-                isArray: false,
-              }
-            : { name: type, isArray: false };
+          column.physical = draftPhysical;
           let next = addColumn(doc, column);
           if (pk) next = setColumnPrimaryKey(next, column.id, true);
           onChange(next);

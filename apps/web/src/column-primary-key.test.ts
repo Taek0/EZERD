@@ -15,6 +15,11 @@ const seed = () =>
     ],
   }) as unknown as DesignDocument;
 describe('direct PK editing', () => {
+  it('clears a NULL default when promoting a column to PK', () => {
+    const doc = seed();
+    doc.columns![1]!.physical.defaultExpression = 'NULL';
+    expect(setColumnPrimaryKey(doc, 'b', true).columns![1]!.physical.defaultExpression).toBeNull();
+  });
   it('appends composite members, forces NOT NULL and removes the final key', () => {
     let doc = setColumnPrimaryKey(seed(), 'b', true);
     expect(doc.keys?.[0]?.columnIds).toEqual(['a', 'b']);
