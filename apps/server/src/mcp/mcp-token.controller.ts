@@ -12,7 +12,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { z } from 'zod';
-import { requireSession, SessionService } from '../session.js';
+import { requireSession, SessionService } from '../identity/session.js';
 import { McpTokenService } from './mcp-token.service.js';
 import { readConfig } from '../config.js';
 

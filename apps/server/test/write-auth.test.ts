@@ -2,9 +2,9 @@ import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, GoneException, UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
-import { ReviewController } from '../src/review.controller.js';
-import { ReviewService } from '../src/review.service.js';
-import { WorkspaceController } from '../src/workspace.controller.js';
+import { ReviewController } from '../src/review/review.controller.js';
+import { ReviewService } from '../src/review/review.service.js';
+import { WorkspaceController } from '../src/workspace/workspace.controller.js';
 
 const actor = { id: randomUUID(), username: 'actor', color: '#4169e1' };
 

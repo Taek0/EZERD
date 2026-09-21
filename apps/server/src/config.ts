@@ -1,7 +1,7 @@
 import { config } from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { isLoopbackHost, isPrivateIPv4, parseAllowedCidrs } from './network-policy.js';
+import { isLoopbackHost, isPrivateIPv4, parseAllowedCidrs } from './network/network-policy.js';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true });
 

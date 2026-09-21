@@ -16,10 +16,10 @@ import type {
   updateNotificationSchema,
   updateThreadSchema,
 } from '@ezerd/contracts';
-import { DatabaseService } from './db/database.service.js';
-import { messages, notifications, projects, threads, users } from './db/schema.js';
-import type { AuthenticatedUser } from './session.js';
-import { SyncGateway } from './sync.gateway.js';
+import { DatabaseService } from '../db/database.service.js';
+import { messages, notifications, projects, threads, users } from '../db/schema.js';
+import type { AuthenticatedUser } from '../identity/session.js';
+import { SyncGateway } from '../sync/sync.gateway.js';
 
 type Transaction = Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0];
 type Store = DatabaseService['db'] | Transaction;

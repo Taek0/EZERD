@@ -1,7 +1,7 @@
 import { BlockList, isIP } from 'node:net';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Injectable } from '@nestjs/common';
-import { readConfig } from './config.js';
+import { readConfig } from '../config.js';
 import { parseAllowedCidrs } from './network-policy.js';
 
 @Injectable()

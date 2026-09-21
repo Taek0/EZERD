@@ -17,10 +17,10 @@ import {
   updateThreadSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument } from '@ezerd/model';
-import type { AuthenticatedUser } from '../session.js';
-import { ReviewService } from '../review.service.js';
-import { WorkspaceService } from '../workspace.service.js';
-import { SyncService } from '../sync.service.js';
+import type { AuthenticatedUser } from '../identity/session.js';
+import { ReviewService } from '../review/review.service.js';
+import { WorkspaceService } from '../workspace/workspace.service.js';
+import { SyncService } from '../sync/sync.service.js';
 import { McpLogger } from './logging.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 

@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LanAccessService } from '../src/network-access.js';
-import { isPrivateIPv4, parseAllowedCidrs } from '../src/network-policy.js';
-import { SyncGateway } from '../src/sync.gateway.js';
+import { LanAccessService } from '../src/network/network-access.js';
+import { isPrivateIPv4, parseAllowedCidrs } from '../src/network/network-policy.js';
+import { SyncGateway } from '../src/sync/sync.gateway.js';
 
 const original = {
   NODE_ENV: process.env.NODE_ENV,

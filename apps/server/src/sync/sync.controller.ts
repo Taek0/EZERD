@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { syncOperationInputSchema } from '@ezerd/contracts';
 import { z } from 'zod';
-import { requireSession, SessionService } from './session.js';
+import { requireSession, SessionService } from '../identity/session.js';
 import { SyncService } from './sync.service.js';
 
 const idSchema = z.uuid();

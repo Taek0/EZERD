@@ -7,8 +7,8 @@ import {
 } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, addDomain, addNote } from '@ezerd/model';
-import { WorkspaceService } from '../src/workspace.service.js';
-import { WorkspaceController } from '../src/workspace.controller.js';
+import { WorkspaceService } from '../src/workspace/workspace.service.js';
+import { WorkspaceController } from '../src/workspace/workspace.controller.js';
 
 const document = addNote(
   addDomain(

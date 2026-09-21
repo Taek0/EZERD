@@ -3,7 +3,7 @@ import { Inject, Injectable, NotFoundException, ServiceUnavailableException } fr
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { DatabaseService } from '../db/database.service.js';
 import { mcpTokens } from '../db/schema.js';
-import { RateLimitService } from '../rate-limit.service.js';
+import { RateLimitService } from '../shared/rate-limit.service.js';
 import { McpLogger } from './logging.js';
 
 const TOKEN_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;

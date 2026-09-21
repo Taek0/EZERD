@@ -1,7 +1,7 @@
 import { HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { MCP_TOKEN_PREFIX, McpTokenService, hashMcpToken } from '../src/mcp/mcp-token.service.js';
-import { RateLimitService } from '../src/rate-limit.service.js';
+import { RateLimitService } from '../src/shared/rate-limit.service.js';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 

@@ -30,15 +30,15 @@ import {
   sharedDocument,
 } from '@ezerd/model';
 import type { DesignDocument, DocumentChange } from '@ezerd/model';
-import { DatabaseService } from './db/database.service.js';
+import { DatabaseService } from '../db/database.service.js';
 import {
   projects,
   syncClientBaselines,
   syncFieldVersions,
   syncOperations,
   syncTombstones,
-} from './db/schema.js';
-import type { AuthenticatedUser } from './session.js';
+} from '../db/schema.js';
+import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncGateway } from './sync.gateway.js';
 
 const RECONNECT_MAX_AGE_MS = 24 * 60 * 60 * 1000;

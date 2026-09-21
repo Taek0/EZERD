@@ -31,12 +31,12 @@ import {
   updateUserSchema,
 } from '@ezerd/contracts';
 import type { User } from '@ezerd/contracts';
-import { DatabaseService } from './db/database.service.js';
-import { users } from './db/schema.js';
-import { isUsernameConflict } from './user-conflicts.js';
-import { requireSession, SessionService } from './session.js';
+import { DatabaseService } from '../db/database.service.js';
+import { users } from '../db/schema.js';
+import { isUsernameConflict } from '../identity/user-conflicts.js';
+import { requireSession, SessionService } from '../identity/session.js';
 import { WorkspaceService } from './workspace.service.js';
-import { RateLimitService } from './rate-limit.service.js';
+import { RateLimitService } from '../shared/rate-limit.service.js';
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);

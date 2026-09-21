@@ -19,7 +19,7 @@ import {
   updateThreadSchema,
 } from '@ezerd/contracts';
 import { ReviewService } from './review.service.js';
-import { requireSession, SessionService } from './session.js';
+import { requireSession, SessionService } from '../identity/session.js';
 
 const idSchema = z.uuid();
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {

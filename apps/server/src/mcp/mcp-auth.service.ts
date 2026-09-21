@@ -2,7 +2,7 @@ import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { and, eq, gt, isNull, lt, or } from 'drizzle-orm';
 import { DatabaseService } from '../db/database.service.js';
 import { mcpTokens, users } from '../db/schema.js';
-import type { AuthenticatedUser } from '../session.js';
+import type { AuthenticatedUser } from '../identity/session.js';
 import { hashMcpToken, MCP_TOKEN_PREFIX } from './mcp-token.service.js';
 
 export type McpPrincipal = { user: AuthenticatedUser; tokenId: string };

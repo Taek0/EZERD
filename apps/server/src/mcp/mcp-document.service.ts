@@ -36,8 +36,8 @@ import {
   upsertTableRelation,
 } from '@ezerd/model';
 import type { DesignDocument } from '@ezerd/model';
-import type { AuthenticatedUser } from '../session.js';
-import { SyncService } from '../sync.service.js';
+import type { AuthenticatedUser } from '../identity/session.js';
+import { SyncService } from '../sync/sync.service.js';
 
 const objectId = z.string().trim().min(1).max(160);
 const coordinate = z.number().min(-1e7).max(1e7);

@@ -2,7 +2,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { RequestMethod } from '@nestjs/common';
-import { LanAccessService } from './network-access.js';
+import { LanAccessService } from './network/network-access.js';
 
 export function configureApplication(app: NestExpressApplication): void {
   app.set('trust proxy', false);

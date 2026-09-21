@@ -4,7 +4,7 @@ import { AppModule } from './app.module.js';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { configureApplication } from './application.js';
 import { readConfig } from './config.js';
-import { SyncGateway } from './sync.gateway.js';
+import { SyncGateway } from './sync/sync.gateway.js';
 
 const environment = readConfig();
 const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });

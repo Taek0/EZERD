@@ -12,9 +12,9 @@ import {
 import { and, eq, gt } from 'drizzle-orm';
 import { z } from 'zod';
 import { usernameSchema } from '@ezerd/contracts';
-import { DatabaseService } from './db/database.service.js';
-import { sessions, users } from './db/schema.js';
-import { RateLimitService } from './rate-limit.service.js';
+import { DatabaseService } from '../db/database.service.js';
+import { sessions, users } from '../db/schema.js';
+import { RateLimitService } from '../shared/rate-limit.service.js';
 
 const pinSchema = z.string().regex(/^\d{4}$/);
 const createSessionSchema = z.union([

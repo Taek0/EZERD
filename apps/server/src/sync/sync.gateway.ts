@@ -4,10 +4,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { OnApplicationShutdown } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { WebSocket, WebSocketServer } from 'ws';
-import { DatabaseService } from './db/database.service.js';
-import { projects } from './db/schema.js';
-import { SessionService, type AuthenticatedUser } from './session.js';
-import { LanAccessService } from './network-access.js';
+import { DatabaseService } from '../db/database.service.js';
+import { projects } from '../db/schema.js';
+import { SessionService, type AuthenticatedUser } from '../identity/session.js';
+import { LanAccessService } from '../network/network-access.js';
 
 type Client = {
   socket: WebSocket;

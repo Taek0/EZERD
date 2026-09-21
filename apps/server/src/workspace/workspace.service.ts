@@ -18,9 +18,9 @@ import type {
   updateProjectSchema,
   Project,
 } from '@ezerd/contracts';
-import { DatabaseService } from './db/database.service.js';
-import { projects } from './db/schema.js';
-import type { ProjectRow } from './db/schema.js';
+import { DatabaseService } from '../db/database.service.js';
+import { projects } from '../db/schema.js';
+import type { ProjectRow } from '../db/schema.js';
 
 function project(row: ProjectRow): Project {
   return {

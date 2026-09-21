@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { isUsernameConflict } from '../src/user-conflicts.js';
+import { isUsernameConflict } from '../src/identity/user-conflicts.js';
 it('recognizes only the username uniqueness constraint through wrapped errors', () => {
   expect(
     isUsernameConflict({ cause: { code: '23505', constraint: 'users_username_unique' } }),
