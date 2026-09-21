@@ -12,13 +12,31 @@
 
 - **프로젝트 갤러리**: 프로젝트 생성·검색·이름 변경·보관·삭제.
 - **도메인 캔버스**: 도메인 색상과 설명, 관계 목록과 즉시 편집, 우클릭 자동 배치.
-- **테이블 캔버스**: 카드에서 컬럼명·타입·NULL 직접 편집, Tab으로 타입 검색, PK/복합 UNIQUE, 프로젝트 ENUM, 컬럼 순서 변경, NULL/comment 숨김, 이미지 내보내기.
+- **테이블 캔버스**: 카드에서 컬럼명·타입·NULL 직접 편집, Tab으로 타입 검색, 타입에 맞는 기본값 설정, PK/복합 UNIQUE, 프로젝트 ENUM, 컬럼 순서 변경, NULL/comment 숨김, 이미지 내보내기.
+- **테이블 도메인 변경**: 사이드바의 기본 정보에서 소속 도메인 변경. 일반 도메인 화면은 소속 테이블만 표시하며 컬럼·키·FK는 보존합니다.
 - **테이블 관계**: PK → FK 연결과 FK 컬럼 자동 생성, 컬럼명·대응관계 설정, ON UPDATE/ON DELETE, 직각 선분과 까마귀발 접점 조절.
 - **도메인 뷰**: 여러 도메인의 테이블을 기존 상대 배치대로 함께 보기. 카드 위치는 고정하며 관계선은 조절할 수 있습니다. 개인 뷰의 경로는 현재 프로젝트 세션에서 유지됩니다.
 - **핀 대화**: 캔버스 우클릭으로 위치에 핀 작성, 답글·멘션·알림, 해결 처리와 삭제.
 - **자동 저장·협업**: 객체 속성 단위 변경과 WebSocket 기반 동기화, 변경자·일시 및 동작 필터를 제공하는 히스토리, 실행 취소와 복원.
+- **프로젝트 내보내기·가져오기**: 갤러리에서 설계를 JSON 파일로 내보내거나 새 프로젝트로 가져오기. 설계와 배치는 포함하고 사용자·인증·핀 대화·히스토리는 제외합니다. 내보내기는 서버에 동기화된 최신 설계를 사용합니다.
 
-PostgreSQL DDL 생성 모델과 검증 스크립트는 저장소에 남아 있으나, 현재 화면에서는 DDL 내보내기를 제공하지 않습니다. 최근 변경과 검증 결과는 [피드백 통합 QA 기록](./docs/work-log/2026-09-15-Workspace-FeedbackQA.md)을 참고하세요.
+PostgreSQL DDL 생성 모델과 검증 스크립트는 저장소에 남아 있으나, 현재 화면에서는 DDL 내보내기를 제공하지 않습니다. 최근 변경과 검증 결과는 아래 개발 문서의 작업 기록을 참고하세요.
+
+## 캔버스 조작
+
+배율 표시 왼쪽에서 커서·손 도구를 선택합니다. 도메인과 테이블 캔버스에 공통으로 적용됩니다.
+
+| 조작 | 동작 |
+| --- | --- |
+| 커서 도구로 빈 공간 드래그 | 영역 안의 여러 카드·메모 선택 |
+| 선택한 객체 드래그 | 선택한 객체를 함께 이동 |
+| 손 도구로 드래그 | 카드 편집 없이 화면 이동 |
+| 휠 버튼을 누른 채 드래그 | 커서 도구에서도 화면 이동 |
+| 트랙패드 두 손가락 스와이프 / 핀치 | 화면 이동 / 확대·축소 |
+| 캔버스 우클릭 | 생성·자동 배치 등의 메뉴 표시, 손 도구에서도 사용 가능 |
+| Delete / Escape | 선택 객체 삭제 확인 / 영역 선택 취소 |
+
+읽기 전용 프로젝트와 도메인 뷰의 고정 배치에서는 객체 이동이 제한됩니다. 도메인 뷰의 관계선은 계속 조절할 수 있습니다.
 
 ## 사용자와 인증
 
@@ -110,8 +128,20 @@ pnpm --filter @ezerd/server exec drizzle-kit generate --config drizzle.config.ts
 
 ```text
 apps/
-  web/                      React 화면, Vite 개발 프록시
+  web/src/
+    app/                    앱 조립과 자동 저장 연결
+    features/               canvas, tables, relations, domains 등 기능별 화면·로직
+    components/ui/          공통 UI 컴포넌트
+    shared/                 API 클라이언트, 편집기 공통 요소, hooks
+    styles/                 전역·편집기 스타일
   server/
+    src/workspace/          프로젝트와 설계 문서 API
+    src/sync/               동기화 API·WebSocket
+    src/review/             핀·댓글·알림
+    src/identity/           세션과 사용자 식별
+    src/network/            LAN 접근 제어
+    src/mcp/                MCP 연결과 도구
+    src/shared/             공통 요청 빈도 제한
     src/db/schema.ts        EZERD 자체 DB 테이블 정의
     src/db/database.service.ts
     src/health.controller.ts
@@ -145,6 +175,11 @@ scripts/setup.mjs            로컬 환경 파일 준비
 UI 폰트는 Apple SD Gothic Neo이며, 제공받은 폰트의 프로젝트 내부 서브셋을 사용합니다. 굵기별 용도와 자산 위치는 [디자인 문서](./docs/planning/DESIGN_SYSTEM.md)에 있습니다.
 
 - [최근 피드백 구현·QA](./docs/work-log/2026-09-15-Workspace-FeedbackQA.md)
+- [기능별 폴더 구조 정리](./docs/work-log/2026-09-21-Repository-FolderRefactoring.md)
+- [테이블 도메인 변경](./docs/work-log/2026-09-21-Table-DomainMove.md)
+- [캔버스 선택·이동 도구](./docs/work-log/2026-09-21-Canvas-SelectionAndOwnership.md)
+- [손 도구 우클릭·휠 버튼 이동](./docs/work-log/2026-09-21-Canvas-PointerNavigation.md)
+- [프로젝트 내보내기·가져오기](./docs/work-log/2026-09-17-Project-ExportImport.md)
 - [사용자명 정규화와 고유성](./docs/work-log/2026-09-15-Auth-NormalizedUsernames.md)
 - [기존 기능 사용 안내](./docs/work-log/USER_GUIDE.md)
 - [PostgreSQL DDL 모델 지원 범위 · 현재 UI 제외](./docs/work-log/POSTGRES_EXPORT.md)
