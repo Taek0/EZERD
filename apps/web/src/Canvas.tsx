@@ -579,8 +579,8 @@ export function Canvas({
     return () => element.removeEventListener('wheel', wheel);
   }, [doc, readOnly, viewId, viewport.x, viewport.y, viewport.zoom]);
   function begin(e: PointerEvent<HTMLDivElement>, id: string | null, resize = false) {
-    if (e.button !== 0) return;
-    if (tool === 'hand') {
+    if (e.button !== 0 && e.button !== 1) return;
+    if (tool === 'hand' || e.button === 1) {
       e.preventDefault();
       e.stopPropagation();
       drag.current = {
@@ -1140,7 +1140,10 @@ export function Canvas({
           tabIndex={0}
           data-tool={tool}
           onPointerDownCapture={(event) => {
-            if (tool === 'hand' && !(event.target as Element).closest('.zoom-controls'))
+            if (
+              (tool === 'hand' || event.button === 1) &&
+              !(event.target as Element).closest('.zoom-controls')
+            )
               begin(event, null);
           }}
           onDoubleClickCapture={(event) => {
@@ -1149,11 +1152,8 @@ export function Canvas({
               event.stopPropagation();
             }
           }}
-          onContextMenuCapture={(event) => {
-            if (tool === 'hand') {
-              event.preventDefault();
-              event.stopPropagation();
-            }
+          onAuxClick={(event) => {
+            if (event.button === 1) event.preventDefault();
           }}
           className={`canvas-surface ${connectSource || fkSource ? 'connection-target-mode' : ''}`}
           onContextMenu={(e) => {
