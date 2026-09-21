@@ -1,5 +1,5 @@
 import type { ReactNode, HTMLAttributes } from 'react';
-import { Accordion, Button } from './components/ui/index.js';
+import { Accordion, Button } from '../../components/ui/index.js';
 
 /**
  * One collapsible group style for the editor sidebar. Content stays in the DOM

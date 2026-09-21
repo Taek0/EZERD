@@ -1,4 +1,4 @@
-import { userColorStyle } from './user-color-style.js';
+import { userColorStyle } from '../identity/user-color-style.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { DesignDocument } from '@ezerd/model';
 import {
@@ -8,10 +8,10 @@ import {
   type Thread,
   type Notification,
 } from '@ezerd/contracts';
-import { body, message, request } from './client.js';
+import { body, message, request } from '../../shared/api/client.js';
 import { pinRequest, replyRequest } from './pin-request.js';
-import { usePanelDismiss } from './use-panel-dismiss.js';
-import './collaboration-panels.css';
+import { usePanelDismiss } from '../../shared/hooks/use-panel-dismiss.js';
+import '../../styles/collaboration-panels.css';
 import { pinAttachment, pinPosition, selectedMentions } from './comments-state.js';
 import {
   Avatar,
@@ -21,8 +21,8 @@ import {
   IconButton,
   Input,
   Textarea,
-} from './components/ui/index.js';
-import { useConfirm } from './components/ui/ConfirmProvider.js';
+} from '../../components/ui/index.js';
+import { useConfirm } from '../../components/ui/ConfirmProvider.js';
 import './comments.css';
 type Member = {
   id: string;

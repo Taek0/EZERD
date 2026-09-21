@@ -1,5 +1,5 @@
 import { type DesignDocument, upsertCombinedView, setViewport } from '@ezerd/model';
-import { tableCardSize } from './table-geometry.js';
+import { tableCardSize } from '../tables/table-geometry.js';
 export function domainViewExitTarget(
   doc: DesignDocument,
   domainIds: string[],

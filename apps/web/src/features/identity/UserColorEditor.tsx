@@ -1,9 +1,9 @@
 import { userColorStyle } from './user-color-style.js';
 import { useState, type FormEvent } from 'react';
 import { userSchema } from '@ezerd/contracts';
-import { body, message, request } from './client.js';
-import { Avatar, Button } from './components/ui/index.js';
-import { DomainColorPicker } from './DomainColorPicker.js';
+import { body, message, request } from '../../shared/api/client.js';
+import { Avatar, Button } from '../../components/ui/index.js';
+import { DomainColorPicker } from '../domains/DomainColorPicker.js';
 import './user-color.css';
 type ColorUser = {
   id: string;

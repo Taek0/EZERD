@@ -8,8 +8,8 @@ import {
   Dialog,
   ColorSwatch,
 } from 'react-aria-components';
-import { Button } from './components/ui/index.js';
-import { UntitledPopover } from './components/ui/untitled.js';
+import { Button } from '../../components/ui/index.js';
+import { UntitledPopover } from '../../components/ui/untitled.js';
 
 // Free React Aria composition, styled to fit the existing Untitled UI primitives.
 // The upstream Untitled UI Color Picker is a paid component; its source is not used.

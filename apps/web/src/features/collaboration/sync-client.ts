@@ -15,7 +15,7 @@ import {
   type DesignDocument,
   type DocumentChange,
 } from '@ezerd/model';
-import { newId } from './client.js';
+import { newId } from '../../shared/api/client.js';
 import { SyncEventCursor } from './sync-events.js';
 import { DurableSyncQueue, type QueueListener } from './sync-queue.js';
 import {

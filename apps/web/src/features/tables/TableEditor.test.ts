@@ -1,4 +1,4 @@
-import { ConfirmProvider } from './components/ui/ConfirmProvider.js';
+import { ConfirmProvider } from '../../components/ui/ConfirmProvider.js';
 import { describe, expect, it } from 'vitest';
 import { moveColumn, parseMetadata, setMappingPair } from './TableEditor.js';
 describe('table editor actions', () => {

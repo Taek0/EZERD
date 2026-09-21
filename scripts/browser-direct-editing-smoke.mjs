@@ -7,9 +7,9 @@ await writeFile(
   target,
   `<!doctype html><html><head><link rel="stylesheet" href="/fonts/apple-sd-gothic-neo/fonts.css"></head><body><div id="qa"></div><script type="module">
 import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
-import {Canvas} from '/src/Canvas.tsx';import {ConfirmProvider} from '/src/components/ui/ConfirmProvider.tsx';
+import {Canvas} from '/src/features/canvas/Canvas.tsx';import {ConfirmProvider} from '/src/components/ui/ConfirmProvider.tsx';
 import {createEmptyDocument,addDomain,addTable,addColumn,upsertKey,createForeignKeyFromPrimaryKey,setViewport} from '@ezerd/model';
-import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';import '/src/inspector.css';
+import '/src/components/ui/tailwind.css';import '/src/styles/tokens.css';import '/src/components/ui/ui.css';import '/src/styles/styles.css';import '/src/styles/inspector.css';
 const h=React.createElement,meta={common:{},logical:{},physical:{}};
 let seed=addDomain(createEmptyDocument(),{id:'d',name:'테스트',description:'',color:'#2e90fa'},{x:40,y:40});
 for(const [id,name,x,y] of [['user','user',0,0],['product','product',900,400]]){

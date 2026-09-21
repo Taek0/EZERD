@@ -7,7 +7,7 @@ const target = new URL('../apps/web/' + filename, import.meta.url);
 const html = `<!doctype html><html><head><link rel="stylesheet" href="/fonts/apple-sd-gothic-neo/fonts.css"></head><body><div id="qa"></div><script type="module">
 import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
 import {Button,IconButton,Input,Select,Checkbox,Field,ContextMenu,TabButton} from '/src/components/ui/index.tsx';
-import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';
+import '/src/components/ui/tailwind.css';import '/src/styles/tokens.css';import '/src/components/ui/ui.css';import '/src/styles/styles.css';
 const h=React.createElement;
 function Demo(){const [actions,A]=useState(0),[submits,S]=useState(0),[position,P]=useState(null),[selected,V]=useState('a'),[checked,C]=useState(false),[blockedMode,B]=useState('');
 return h('main',{style:{padding:32,maxWidth:600}},h('form',{onSubmit:e=>{e.preventDefault();S(n=>n+1)}},

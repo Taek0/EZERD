@@ -14,7 +14,7 @@ it('leaves combined views to their originating domain with safe fallbacks', () =
   expect(domainViewExitTarget(doc, ['missing'], 'missing')).toBe('overview');
   expect(domainViewExitTarget(doc, ['a', 'b'], null)).toBe('a');
 });
-import { tableCardSize } from './table-geometry.js';
+import { tableCardSize } from '../tables/table-geometry.js';
 const metadata = { common: {}, logical: {}, physical: {} };
 function seed() {
   let doc = createEmptyDocument();

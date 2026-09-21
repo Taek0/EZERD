@@ -8,8 +8,8 @@ await writeFile(
   target,
   `<!doctype html><html><body><div id="qa"></div><script type="module">
 import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
-import {createEmptyDocument} from '@ezerd/model';import {SyncHistoryContent} from '/src/sync-history-panel.tsx';
-import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';
+import {createEmptyDocument} from '@ezerd/model';import {SyncHistoryContent} from '/src/features/collaboration/sync-history-panel.tsx';
+import '/src/components/ui/tailwind.css';import '/src/styles/tokens.css';import '/src/components/ui/ui.css';import '/src/styles/styles.css';
 const h=React.createElement, document=createEmptyDocument();
 document.tables=[{id:'table',physical:{name:'orders'}}];
 document.columns=[{id:'column-a',tableId:'table',physical:{name:'id'}},{id:'column-b',tableId:'table',physical:{name:'id'}}];

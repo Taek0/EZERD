@@ -1,9 +1,9 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { type DesignDocument, createForeignKeyFromPrimaryKey } from '@ezerd/model';
-import { newId } from './client.js';
-import { Button, Input, Select } from './components/ui/index.js';
-import { PanelNote } from './panel.js';
+import { newId } from '../../shared/api/client.js';
+import { Button, Input, Select } from '../../components/ui/index.js';
+import { PanelNote } from '../../shared/editor/panel.js';
 import { applyForeignKeyDraft, type CardinalityChoice } from './foreign-key-draft.js';
 import './foreign-key-dialog.css';
 export function ForeignKeyDialog({

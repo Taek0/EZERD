@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { type DesignDocument, removeEnum, upsertEnum } from '@ezerd/model';
-import { AnimatedDetails, Button, Input, Textarea } from './components/ui/index.js';
-import { newId } from './client.js';
+import { AnimatedDetails, Button, Input, Textarea } from '../../components/ui/index.js';
+import { newId } from '../../shared/api/client.js';
 import './enum-manager.css';
 export function EnumManager({
   document: doc,

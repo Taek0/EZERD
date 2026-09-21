@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { applyDomainSelection, domainViewExitTarget } from './domain-view.js';
+import { applyDomainSelection, domainViewExitTarget } from '../domains/domain-view.js';
 import {
   selectionRect,
   intersectingObjects,
@@ -8,9 +8,12 @@ import {
 } from './canvas-selection.js';
 import './canvas-tools.css';
 import { wheelCamera, MIN_CANVAS_ZOOM, MAX_CANVAS_ZOOM } from './canvas-wheel.js';
-import { applyDomainRelationPatch, type DomainRelationPatch } from './domain-relation-edit.js';
+import {
+  applyDomainRelationPatch,
+  type DomainRelationPatch,
+} from '../domains/domain-relation-edit.js';
 import { DialogTrigger, Dialog } from 'react-aria-components';
-import { UntitledPopover } from './components/ui/untitled.js';
+import { UntitledPopover } from '../../components/ui/untitled.js';
 import {
   useEffect,
   useRef,
@@ -46,12 +49,12 @@ import {
   readInspectorWidth,
   shouldStackInspector,
 } from './inspector-state.js';
-import { tableCardSize } from './table-geometry.js';
+import { tableCardSize } from '../tables/table-geometry.js';
 import { exportCanvasPng } from './canvas-export.js';
-import { layoutDomainRelations } from './domain-relations.js';
-import { DomainDescription } from './DomainDescription.js';
-import { DomainColorPicker } from './DomainColorPicker.js';
-import { useConfirm } from './components/ui/ConfirmProvider.js';
+import { layoutDomainRelations } from '../domains/domain-relations.js';
+import { DomainDescription } from '../domains/DomainDescription.js';
+import { DomainColorPicker } from '../domains/DomainColorPicker.js';
+import { useConfirm } from '../../components/ui/ConfirmProvider.js';
 import { cardSize, connectedRelations } from './canvas-state.js';
 import {
   TableNodeContent,
@@ -62,8 +65,8 @@ import {
   ForeignKeyDialog,
   EnumDialog,
   emptyMetadata,
-} from './TableEditor.js';
-import { clampLayoutPatch, newId, validViewId } from './client.js';
+} from '../tables/TableEditor.js';
+import { clampLayoutPatch, newId, validViewId } from '../../shared/api/client.js';
 import {
   Button,
   Checkbox,
@@ -73,10 +76,10 @@ import {
   Select,
   TabButton,
   Textarea,
-} from './components/ui/index.js';
-import { PanelList, PanelNote, PanelRow, PanelSection } from './panel.js';
-import { syncLayoutPolicy } from './sync-layout-policy.js';
-import './domain-workflow.css';
+} from '../../components/ui/index.js';
+import { PanelList, PanelNote, PanelRow, PanelSection } from '../../shared/editor/panel.js';
+import { syncLayoutPolicy } from '../collaboration/sync-layout-policy.js';
+import '../domains/domain-workflow.css';
 export type CanvasContext = {
   viewId: string;
   selectedObjectId: string | null;

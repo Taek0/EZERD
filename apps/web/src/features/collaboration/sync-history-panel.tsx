@@ -1,11 +1,11 @@
 import { Dialog, DialogTrigger } from 'react-aria-components';
 import { useState } from 'react';
 import { isEffectiveChange } from '@ezerd/model';
-import { UntitledPopover } from './components/ui/untitled.js';
+import { UntitledPopover } from '../../components/ui/untitled.js';
 import { describeChanges, describeDeletedValues, historyMessage } from './sync-history-labels.js';
 import './sync-history-panel.css';
 import type { SyncSnapshot } from './sync-client.js';
-import { Button, TabButton } from './components/ui/index.js';
+import { Button, TabButton } from '../../components/ui/index.js';
 import type { HistoryChange } from './sync-history-labels.js';
 
 const historyFilters = [

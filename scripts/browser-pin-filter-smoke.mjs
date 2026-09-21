@@ -7,8 +7,8 @@ await writeFile(
   target,
   `<!doctype html><html><body><div id="qa"></div><script type="module">
 import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
-import {CommentsPanel} from '/src/CommentsPanel.tsx';import {ConfirmProvider} from '/src/components/ui/ConfirmProvider.tsx';import {createEmptyDocument} from '@ezerd/model';
-import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';
+import {CommentsPanel} from '/src/features/comments/CommentsPanel.tsx';import {ConfirmProvider} from '/src/components/ui/ConfirmProvider.tsx';import {createEmptyDocument} from '@ezerd/model';
+import '/src/components/ui/tailwind.css';import '/src/styles/tokens.css';import '/src/components/ui/ui.css';import '/src/styles/styles.css';
 const h=React.createElement,noop=()=>{},doc=createEmptyDocument();
 function Demo(){const [active,setActive]=useState(null);return h(ConfirmProvider,null,h(CommentsPanel,{projectId:'00000000-0000-4000-8000-000000000001',userId:'00000000-0000-4000-8000-000000000002',document:doc,context:{viewId:'overview',selectedObjectId:null,position:{x:10,y:20}},activeThreadId:active,onThreads:noop,onNavigate:t=>setActive(t.id),onClose:noop,onCancelPinDraft:noop}));}createRoot(document.getElementById('qa')).render(h(Demo));
 </script></body></html>`,

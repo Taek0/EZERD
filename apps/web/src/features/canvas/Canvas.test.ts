@@ -2,7 +2,7 @@ import { createElement as h } from 'react';
 import { renderToStaticMarkup as render } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createEmptyDocument, addDomain, upsertDomainRelation } from '@ezerd/model';
-import { ConfirmProvider } from './components/ui/ConfirmProvider.js';
+import { ConfirmProvider } from '../../components/ui/ConfirmProvider.js';
 import { Canvas } from './Canvas.js';
 
 function example() {

@@ -33,11 +33,11 @@ import {
 } from '@ezerd/model';
 import { createPortal } from 'react-dom';
 import { upsertEnum, removeEnum } from '@ezerd/model';
-import { newId } from './client.js';
+import { newId } from '../../shared/api/client.js';
 import './table-editor.css';
 import { tableCardMetrics, tableCardSize } from './table-geometry.js';
-import { SearchType } from './components/ui/SearchType.js';
-import { useConfirm } from './components/ui/ConfirmProvider.js';
+import { SearchType } from '../../components/ui/SearchType.js';
+import { useConfirm } from '../../components/ui/ConfirmProvider.js';
 import { createForeignKeyFromPrimaryKey, upsertRelationLayout } from '@ezerd/model';
 import {
   AnimatedDetails,
@@ -48,8 +48,8 @@ import {
   Input,
   Select,
   Textarea,
-} from './components/ui/index.js';
-import { PanelList, PanelNote, PanelRow, PanelSection } from './panel.js';
+} from '../../components/ui/index.js';
+import { PanelList, PanelNote, PanelRow, PanelSection } from '../../shared/editor/panel.js';
 export const physicalTypes = [
   'uuid',
   'integer',
@@ -1502,9 +1502,9 @@ export function RelationEditor({
   );
 }
 
-export { relationGeometry, TableRelationsSvg } from './TableRelations.js';
+export { relationGeometry, TableRelationsSvg } from '../relations/TableRelations.js';
 
-export { ForeignKeyDialog } from './ForeignKeyDialog.js';
+export { ForeignKeyDialog } from '../relations/ForeignKeyDialog.js';
 
 function ColumnCreationForm({
   document: doc,

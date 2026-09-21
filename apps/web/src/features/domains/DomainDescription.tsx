@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Textarea } from './components/ui/index.js';
+import { Textarea } from '../../components/ui/index.js';
 
 type Props = {
   value: string;

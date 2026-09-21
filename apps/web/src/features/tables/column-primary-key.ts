@@ -1,6 +1,6 @@
 import { patchColumnPhysical } from './column-defaults.js';
 import { type DesignDocument, removeKey, updateColumn, upsertKey } from '@ezerd/model';
-import { newId } from './client.js';
+import { newId } from '../../shared/api/client.js';
 
 export function primaryKeyChangeReason(doc: DesignDocument, columnId: string): string | undefined {
   const column = doc.columns?.find((c) => c.id === columnId);

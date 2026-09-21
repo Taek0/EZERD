@@ -9,8 +9,8 @@ import {
   upsertRelationLayout,
   removeTableRelation,
 } from '@ezerd/model';
-import { tableCardSize } from './table-geometry.js';
-import { ContextMenu } from './components/ui/index.js';
+import { tableCardSize } from '../tables/table-geometry.js';
+import { ContextMenu } from '../../components/ui/index.js';
 import {
   relationGeometry,
   relationAnchorAtPoint,

@@ -9,7 +9,7 @@ import {
   upsertTableRelation,
 } from '@ezerd/model';
 import { applyRoutePatch } from './TableRelations.js';
-import { mergePersonalState } from './sync-client.js';
+import { mergePersonalState } from '../collaboration/sync-client.js';
 
 it('keeps combined view routes personal while preserving owner positions and routes across remote sync', () => {
   let doc = addDomain(

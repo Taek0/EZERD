@@ -4,8 +4,8 @@ const { chromium } = await import(process.env.EZERD_PLAYWRIGHT_MODULE || 'playwr
 const filename = `__domain-workflow-${Date.now()}.html`;
 const target = new URL('../apps/web/' + filename, import.meta.url);
 const html = `<!doctype html><html><head><link rel="stylesheet" href="/fonts/apple-sd-gothic-neo/fonts.css"></head><body><div id="qa"></div><script type="module">
-import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {Canvas} from '/src/Canvas.tsx';import {createEmptyDocument,addDomain,upsertDomainRelation} from '@ezerd/model';
-import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';
+import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {Canvas} from '/src/features/canvas/Canvas.tsx';import {createEmptyDocument,addDomain,upsertDomainRelation} from '@ezerd/model';
+import '/src/components/ui/tailwind.css';import '/src/styles/tokens.css';import '/src/components/ui/ui.css';import '/src/styles/styles.css';
 const h=React.createElement;let seed=createEmptyDocument();for(const [id,name,x,y] of [['a','Alpha',40,60],['b','Beta',390,60],['c','Gamma',390,390]])seed=addDomain(seed,{id,name,description:''},{x,y});
 for(const [id,name] of [['r1','첫 흐름'],['r2','두번째 흐름']])seed=upsertDomainRelation(seed,{id,name,sourceDomainId:'a',targetDomainId:'b',direction:'forward',description:''});
 function Demo(){const [doc,setDoc]=useState(seed);return h('main',{style:{height:'96vh'}},h(Canvas,{document:doc,onChange:setDoc,readOnly:false}),h('output',{id:'document-state',hidden:true},JSON.stringify(doc)));}createRoot(document.getElementById('qa')).render(h(Demo));

@@ -1,5 +1,5 @@
 import type { Column, DesignDocument } from '@ezerd/model';
-import { columnTypeDisplay } from './column-type-display.js';
+import { columnTypeDisplay } from '../tables/column-type-display.js';
 
 export type HistoryChange = {
   path: string;

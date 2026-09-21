@@ -6,9 +6,9 @@ const target = new URL('../apps/web/' + filename, import.meta.url);
 await writeFile(
   target,
   `<!doctype html><div id="qa"></div><script type="module">
-import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Canvas}from'/src/Canvas.tsx';
+import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{Canvas}from'/src/features/canvas/Canvas.tsx';
 import{createEmptyDocument,addDomain,addTable}from'@ezerd/model';
-import'/src/components/ui/tailwind.css';import'/src/tokens.css';import'/src/components/ui/ui.css';import'/src/styles.css';import'/src/inspector.css';
+import'/src/components/ui/tailwind.css';import'/src/styles/tokens.css';import'/src/components/ui/ui.css';import'/src/styles/styles.css';import'/src/styles/inspector.css';
 const h=React.createElement;let seed=addDomain(createEmptyDocument(),{id:'d',name:'Orders',description:''},{x:40,y:40});
 seed=addTable(seed,{id:'t',domainId:'d',scope:'physical',logical:{name:'주문',definition:''},physical:{name:'orders',schema:'public',comment:''},customProperties:{common:{},logical:{},physical:{}}},{x:80,y:80});
 function Demo(){const[doc,D]=useState(seed);return h('main',null,h(Canvas,{document:doc,onChange:D,readOnly:new URLSearchParams(location.search).has('readonly')}),h('output',{id:'document-state',hidden:true},JSON.stringify(doc)));}createRoot(document.getElementById('qa')).render(h(Demo));

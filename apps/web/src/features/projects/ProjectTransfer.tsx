@@ -7,8 +7,8 @@ import {
   type Project,
   type ProjectTransfer,
 } from '@ezerd/contracts';
-import { body, message, request } from './client.js';
-import { Button, Input } from './components/ui/index.js';
+import { body, message, request } from '../../shared/api/client.js';
+import { Button, Input } from '../../components/ui/index.js';
 import { parseProjectTransfer, projectTransferFilename } from './project-transfer.js';
 import './project-transfer.css';
 

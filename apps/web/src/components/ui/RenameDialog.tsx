@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, Input } from './index.js';
-import { message } from '../../client.js';
+import { message } from '../../shared/api/client.js';
 import './confirm.css';
 
 export function RenameDialog({

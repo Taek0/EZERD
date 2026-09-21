@@ -1,7 +1,7 @@
-import { PinPanelResizer } from './PinPanelResizer.js';
-import { userColorStyle } from './user-color-style.js';
-import { UserColorEditor } from './UserColorEditor.js';
-import { clampCommentsPanelWidth } from './comments-panel-size.js';
+import { PinPanelResizer } from '../features/comments/PinPanelResizer.js';
+import { userColorStyle } from '../features/identity/user-color-style.js';
+import { UserColorEditor } from '../features/identity/UserColorEditor.js';
+import { clampCommentsPanelWidth } from '../features/comments/comments-panel-size.js';
 import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
 import {
   applyChanges,
@@ -17,23 +17,28 @@ import {
   type Thread,
   type Notification,
 } from '@ezerd/contracts';
-import { body, message, newId, request } from './client.js';
-import { Canvas } from './Canvas.js';
-import { CommentsPanel, CommentPins, Notifications, type CommentContext } from './CommentsPanel.js';
-import { RenameDialog } from './components/ui/RenameDialog.js';
-import { useConfirm } from './components/ui/ConfirmProvider.js';
-import { LatestRequest } from './comments-state.js';
+import { body, message, newId, request } from '../shared/api/client.js';
+import { Canvas } from '../features/canvas/Canvas.js';
+import {
+  CommentsPanel,
+  CommentPins,
+  Notifications,
+  type CommentContext,
+} from '../features/comments/CommentsPanel.js';
+import { RenameDialog } from '../components/ui/RenameDialog.js';
+import { useConfirm } from '../components/ui/ConfirmProvider.js';
+import { LatestRequest } from '../features/comments/comments-state.js';
 import {
   ProjectSyncRuntime,
   stableClientId,
   type SyncSession,
   type SyncSnapshot,
-} from './sync-client.js';
-import { SyncHistoryPanel } from './sync-history-panel.js';
-import { Avatar, Badge, Button, Dropdown, Input, TabButton } from './components/ui/index.js';
-import './responsive-shell.css';
-import { McpConnectionPanel } from './McpConnectionPanel.js';
-import { ProjectImportButton, exportProjectFile } from './ProjectTransfer.js';
+} from '../features/collaboration/sync-client.js';
+import { SyncHistoryPanel } from '../features/collaboration/sync-history-panel.js';
+import { Avatar, Badge, Button, Dropdown, Input, TabButton } from '../components/ui/index.js';
+import '../styles/responsive-shell.css';
+import { McpConnectionPanel } from '../features/mcp/McpConnectionPanel.js';
+import { ProjectImportButton, exportProjectFile } from '../features/projects/ProjectTransfer.js';
 
 type User = {
   id: string;

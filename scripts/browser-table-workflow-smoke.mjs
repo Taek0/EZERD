@@ -8,8 +8,8 @@ await writeFile(
   target,
   `<!doctype html><div id="qa"></div><script type="module">
 import React,{useState} from 'react';import{createRoot}from'react-dom/client';
-import{TableNodeContent,TableInspector,TableWorkspaceTools,ForeignKeyDialog,TableRelationsSvg}from'/src/TableEditor.tsx';
-import'/src/tokens.css';import'/src/components/ui/ui.css';import'/src/styles.css';
+import{TableNodeContent,TableInspector,TableWorkspaceTools,ForeignKeyDialog,TableRelationsSvg}from'/src/features/tables/TableEditor.tsx';
+import'/src/styles/tokens.css';import'/src/components/ui/ui.css';import'/src/styles/styles.css';
 const h=React.createElement,m={common:{},logical:{},physical:{}};
 const table=(id)=>({id,domainId:'d',scope:'both',logical:{name:id+' 논리',definition:''},physical:{name:id,schema:'public',comment:''},customProperties:m});
 const column=(id,tableId,name)=>({id,tableId,scope:'both',logical:{name:name+' 논리',definition:'',semanticType:'',required:false},physical:{name,type:{name:'integer',isArray:false},nullable:false,defaultExpression:null,comment:''},customProperties:m});

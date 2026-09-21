@@ -4,8 +4,8 @@ const { chromium } = await import(process.env.EZERD_PLAYWRIGHT_MODULE || 'playwr
 const filename = `__domain-inline-${Date.now()}.html`;
 const target = new URL('../apps/web/' + filename, import.meta.url);
 const html = `<!doctype html><html><body><div id="qa"></div><script type="module">
-import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {Canvas} from '/src/Canvas.tsx';import {ConfirmProvider} from '/src/components/ui/ConfirmProvider.tsx';import {createEmptyDocument,addDomain,upsertDomainRelation} from '@ezerd/model';
-import '/src/components/ui/tailwind.css';import '/src/tokens.css';import '/src/components/ui/ui.css';import '/src/styles.css';
+import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {Canvas} from '/src/features/canvas/Canvas.tsx';import {ConfirmProvider} from '/src/components/ui/ConfirmProvider.tsx';import {createEmptyDocument,addDomain,upsertDomainRelation} from '@ezerd/model';
+import '/src/components/ui/tailwind.css';import '/src/styles/tokens.css';import '/src/components/ui/ui.css';import '/src/styles/styles.css';
 const h=React.createElement;let seed=createEmptyDocument();for(const [id,name,x,y] of [['a','Alpha',20,20],['b','Beta',520,20],['c','Gamma',520,330]])seed=addDomain(seed,{id,name,description:'Initial'},{x,y});
 for(const [id,sourceDomainId,targetDomainId,direction] of [['r1','a','b','forward'],['r2','a','b','both'],['r3','b','a','forward'],['r4','a','c','forward']])seed=upsertDomainRelation(seed,{id,name:id,sourceDomainId,targetDomainId,direction,description:''});
 function Demo(){const [doc,setDoc]=useState(seed);const [readOnly,setReadOnly]=useState(false);const [changes,setChanges]=useState(0);return h(ConfirmProvider,null,h('main',{style:{height:'95vh'}},h('button',{id:'toggle-readonly',onClick:()=>setReadOnly(v=>!v)},'Toggle read only'),h(Canvas,{document:doc,onChange:next=>{setDoc(next);setChanges(n=>n+1)},readOnly}),h('output',{id:'document-state',hidden:true},JSON.stringify({doc,changes}))));}createRoot(document.getElementById('qa')).render(h(Demo));

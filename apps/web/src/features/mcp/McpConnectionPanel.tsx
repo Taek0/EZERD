@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { body, message, request } from './client.js';
-import { AnimatedDetails, Button, Input } from './components/ui/index.js';
-import { usePanelDismiss } from './use-panel-dismiss.js';
-import './collaboration-panels.css';
+import { body, message, request } from '../../shared/api/client.js';
+import { AnimatedDetails, Button, Input } from '../../components/ui/index.js';
+import { usePanelDismiss } from '../../shared/hooks/use-panel-dismiss.js';
+import '../../styles/collaboration-panels.css';
 
 type TokenSummary = {
   id: string;
