@@ -619,7 +619,20 @@ export function updateTable(
   const next = { ...current, ...cloneModel(patch), id };
   requireObject(doc.domains.find((domain) => domain.id === next.domainId));
   let updated = { ...doc, tables: doc.tables!.map((table) => (table.id === id ? next : table)) };
-  // Moving ownership preserves existing placements and creates a new owning placement if needed.
+  const ownershipChanged = current.domainId !== next.domainId;
+  if (ownershipChanged) {
+    const domainIds = new Set(doc.domains.map((domain) => domain.id));
+    updated = {
+      ...updated,
+      layout: {
+        ...updated.layout,
+        nodes: updated.layout.nodes.filter(
+          (node) =>
+            node.objectId !== id || node.viewId === next.domainId || !domainIds.has(node.viewId),
+        ),
+      },
+    };
+  }
   if (!updated.layout.nodes.some((node) => node.objectId === id && node.viewId === next.domainId)) {
     const previous = doc.layout.nodes.find(
       (node) => node.objectId === id && node.viewId === current.domainId,
@@ -633,6 +646,25 @@ export function updateTable(
   }
   for (const view of updated.views ?? [])
     updated = upsertCombinedView(updated, view) as typeof updated;
+  if (ownershipChanged && updated.layout.relations) {
+    updated = {
+      ...updated,
+      layout: {
+        ...updated.layout,
+        relations: updated.layout.relations.filter((route) => {
+          const relation = updated.tableRelations?.find((item) => item.id === route.relationId);
+          return (
+            relation &&
+            [relation.sourceTableId, relation.targetTableId].every((tableId) =>
+              updated.layout.nodes.some(
+                (node) => node.objectId === tableId && node.viewId === route.viewId,
+              ),
+            )
+          );
+        }),
+      },
+    };
+  }
   return updated;
 }
 

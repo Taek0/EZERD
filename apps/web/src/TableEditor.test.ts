@@ -111,6 +111,11 @@ describe('table editor rendered controls', () => {
     );
     expect(inspector).toContain('<fieldset disabled=""');
     expect(inspector).toContain('테이블명');
+    expect(inspector).toContain('aria-label="도메인"');
+    const domainControl = [...inspector.matchAll(/<button\b([^>]*)>/g)].find((match) =>
+      match[1]?.includes('aria-label="도메인"'),
+    );
+    expect(domainControl?.[1]).toContain('disabled=""');
     expect(inspector).toContain('키 · PK / UNIQUE');
     const tools = renderToStaticMarkup(
       createElement(TableWorkspaceTools, {

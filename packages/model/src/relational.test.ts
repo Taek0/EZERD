@@ -8,10 +8,13 @@ import {
   diagnoseDocument,
   removeColumn,
   removeDomain,
+  removeTable,
   removeTableReference,
   updateColumn,
   updateTable,
   upsertKey,
+  upsertCombinedView,
+  upsertRelationLayout,
   upsertTableRelation,
   type Table,
   type Column,
@@ -128,6 +131,77 @@ describe('relational model snapshots', () => {
 });
 
 describe('relational ownership and independent properties', () => {
+  it('moves only placements while preserving FK data and valid destination routes', () => {
+    let doc = addDomain(seed(), { id: 'c', name: 'c', description: '' }, { x: 0, y: 0 });
+    doc = addTable(addTable(doc, table('t'), { x: 12, y: 34 }), table('u', 'b'), {
+      x: 400,
+      y: 0,
+    });
+    doc = addTableReference(doc, 't', 'b', { x: 90, y: 80 });
+    doc = addTableReference(doc, 't', 'c', { x: 20, y: 30 });
+    doc = addTableReference(doc, 'u', 'a', { x: 400, y: 0 });
+    doc = addColumn(addColumn(doc, column('tc', 't')), column('uc', 'u'));
+    doc = upsertKey(doc, {
+      id: 'pk',
+      tableId: 'u',
+      scope: 'both',
+      kind: 'primary',
+      name: 'pk',
+      columnIds: ['uc'],
+    });
+    doc = upsertTableRelation(doc, {
+      id: 'fk',
+      sourceTableId: 't',
+      targetTableId: 'u',
+      scope: 'both',
+      logical: { name: '', cardinality: 'one-to-many', required: false },
+      physical: {
+        name: 'fk',
+        sourceColumnIds: ['tc'],
+        targetColumnIds: ['uc'],
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      },
+    });
+    doc = upsertCombinedView(doc, { id: 'old', name: 'old', domainIds: ['a'] });
+    doc = upsertCombinedView(doc, { id: 'both', name: 'both', domainIds: ['a', 'b'] });
+    doc = upsertRelationLayout(doc, { relationId: 'fk', viewId: 'a', offset: 20 });
+    doc = upsertRelationLayout(doc, { relationId: 'fk', viewId: 'b', offset: 40 });
+    const moved = updateTable(doc, 't', { domainId: 'b' });
+    expect(moved.tables!.find((item) => item.id === 't')!.domainId).toBe('b');
+    expect(moved.columns).toEqual(doc.columns);
+    expect(moved.keys).toEqual(doc.keys);
+    expect(moved.tableRelations).toEqual(doc.tableRelations);
+    expect(
+      moved.layout.nodes.filter((node) => node.objectId === 't').map((node) => node.viewId),
+    ).toEqual(['b', 'both']);
+    expect(moved.layout.nodes.find((node) => node.id === 'node:t:b')).toEqual(
+      doc.layout.nodes.find((node) => node.id === 'node:t:b'),
+    );
+    expect(moved.layout.relations).toEqual([{ relationId: 'fk', viewId: 'b', offset: 40 }]);
+    expect(diagnoseDocument(moved)).toEqual([]);
+    expect(doc.layout.nodes.some((node) => node.id === 'node:t:a')).toBe(true);
+    const deleted = removeTable(moved, 't');
+    const refreshed = upsertCombinedView(
+      deleted,
+      deleted.views!.find((view) => view.id === 'both')!,
+    );
+    expect(refreshed.layout.nodes.some((node) => node.objectId === 't')).toBe(false);
+    expect(() => updateTable(refreshed, 't', { domainId: 'a' })).toThrow();
+  });
+
+  it('keeps intentional references when ownership does not change', () => {
+    const doc = addTableReference(addTable(seed(), table('t'), { x: 12, y: 34 }), 't', 'b', {
+      x: 90,
+      y: 80,
+    });
+    const edited = updateTable(doc, 't', {
+      domainId: 'a',
+      physical: { name: 'renamed', schema: 'public', comment: '' },
+    });
+    expect(edited.layout.nodes).toEqual(doc.layout.nodes);
+  });
+
   it('isolates caller-owned nested metadata and moves ownership without cloning a table', () => {
     const input = table('t');
     let doc = addTable(seed(), input, { x: 12, y: 34 });
@@ -139,7 +213,9 @@ describe('relational ownership and independent properties', () => {
     });
     expect(doc.tables).toHaveLength(1);
     expect(doc.tables![0]!.logical.name).toBe('t');
-    expect(doc.layout.nodes.filter((node) => node.objectId === 't')).toHaveLength(2);
+    expect(doc.layout.nodes.filter((node) => node.objectId === 't')).toEqual([
+      expect.objectContaining({ viewId: 'b', x: 12, y: 34 }),
+    ]);
     const after = removeDomain(doc, 'a');
     expect(after.tables![0]!.id).toBe('t');
     expect(diagnoseDocument(after)).toEqual([]);

@@ -737,6 +737,21 @@ export function TableInspector({
       </p>
       <fieldset disabled={readOnly}>
         <PanelSection title="기본 정보" defaultOpen>
+          <label>
+            도메인
+            <Select
+              aria-label="도메인"
+              value={table.domainId}
+              disabled={readOnly}
+              onValueChange={(domainId) => patch({ domainId })}
+            >
+              {doc.domains.map((domain) => (
+                <option key={domain.id} value={domain.id}>
+                  {domain.name}
+                </option>
+              ))}
+            </Select>
+          </label>
           <TextField
             label="테이블명"
             value={table.physical.name}
