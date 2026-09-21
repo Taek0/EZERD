@@ -1,5 +1,12 @@
 import { createPortal } from 'react-dom';
 import { applyDomainSelection, domainViewExitTarget } from './domain-view.js';
+import {
+  selectionRect,
+  intersectingObjects,
+  translateSelectedNodes,
+  type SelectionPoint,
+} from './canvas-selection.js';
+import './canvas-tools.css';
 import { wheelCamera, MIN_CANVAS_ZOOM, MAX_CANVAS_ZOOM } from './canvas-wheel.js';
 import { applyDomainRelationPatch, type DomainRelationPatch } from './domain-relation-edit.js';
 import { DialogTrigger, Dialog } from 'react-aria-components';
@@ -11,6 +18,7 @@ import {
   type ReactNode,
   type CSSProperties,
   type PointerEvent,
+  type SetStateAction,
 } from 'react';
 import {
   type DesignDocument,
@@ -183,8 +191,15 @@ export function Canvas({
     }
   }, [inspectorOpen]);
   const [requestedViewId, setViewId] = useState('overview'),
-    [selected, setSelected] = useState<string | null>(null),
+    [selected, setSelectedState] = useState<string | null>(null),
     [relationId, setRelationId] = useState('');
+  const [tool, setTool] = useState<'select' | 'hand'>('select');
+  const [multiSelection, setMultiSelection] = useState<string[]>([]);
+  const [marquee, setMarquee] = useState<ReturnType<typeof selectionRect> | null>(null);
+  function setSelected(value: SetStateAction<string | null>) {
+    setMultiSelection([]);
+    setSelectedState(value);
+  }
   const [source, setSource] = useState(''),
     [target, setTarget] = useState(''),
     [relationName, setRelationName] = useState(''),
@@ -231,6 +246,10 @@ export function Canvas({
     y: number;
     width: number;
     height: number;
+    boxStart?: SelectionPoint;
+    boxEnd?: SelectionPoint;
+    members?: { id: string; x: number; y: number }[];
+    zoom?: number;
   } | null>(null);
   const viewport = localViewports[viewId] ??
     doc.layout.viewports.find((v) => v.viewId === viewId) ?? { viewId, x: 40, y: 40, zoom: 1 };
@@ -243,7 +262,9 @@ export function Canvas({
         n.viewId === viewId &&
         (!table ||
           (isVisibleInView(table.scope, viewMode) &&
-            (!activeCombined || activeCombined.domainIds.includes(table.domainId))))
+            (activeCombined
+              ? activeCombined.domainIds.includes(table.domainId)
+              : table.domainId === viewId)))
       );
     })
     .map((node) => {
@@ -263,6 +284,7 @@ export function Canvas({
   const selectedNode = nodes.find((n) => n.objectId === selected),
     domain = doc.domains.find((d) => d.id === selected),
     note = doc.notes.find((n) => n.id === selected);
+  const selectedObjects = multiSelection.filter((id) => nodes.some((n) => n.objectId === id));
   useEffect(() => {
     if (source && !doc.domains.some((d) => d.id === source)) setSource('');
     if (target && !doc.domains.some((d) => d.id === target)) setTarget('');
@@ -329,6 +351,14 @@ export function Canvas({
   useEffect(() => {
     const cancel = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        const active = drag.current;
+        if (active?.boxStart) {
+          drag.current = null;
+          setMarquee(null);
+          setMultiSelection([]);
+          if (active.captureTarget.hasPointerCapture(active.pointerId))
+            active.captureTarget.releasePointerCapture(active.pointerId);
+        }
         setConnectSource(null);
         setConnectPointer(null);
         setFkSource(null);
@@ -520,6 +550,10 @@ export function Canvas({
     const element = surface.current;
     if (!element) return;
     const wheel = (event: WheelEvent) => {
+      if (drag.current) {
+        event.preventDefault();
+        return;
+      }
       if (
         event.target instanceof Element &&
         event.target.closest(
@@ -546,6 +580,25 @@ export function Canvas({
   }, [doc, readOnly, viewId, viewport.x, viewport.y, viewport.zoom]);
   function begin(e: PointerEvent<HTMLDivElement>, id: string | null, resize = false) {
     if (e.button !== 0) return;
+    if (tool === 'hand') {
+      e.preventDefault();
+      e.stopPropagation();
+      drag.current = {
+        id: null,
+        resize: false,
+        pending: false,
+        captureTarget: e.currentTarget,
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        x: viewport.x,
+        y: viewport.y,
+        width: 0,
+        height: 0,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
     const node = nodes.find((n) => n.id === id);
     if (!readOnly && node && connectSource) {
       e.stopPropagation();
@@ -581,7 +634,8 @@ export function Canvas({
       return;
     }
     if (node) {
-      setSelected(node.objectId);
+      if (!(selectedObjects.length > 1 && selectedObjects.includes(node.objectId)))
+        setSelected(node.objectId);
       if (doc.domains.some((d) => d.id === node.objectId)) {
         setInspectorOpen(true);
         setConnectedOpen(true);
@@ -616,6 +670,28 @@ export function Canvas({
         selectedObjectId: null,
         position: blankPosition.current,
       });
+      setMarquee(selectionRect(blankPosition.current, blankPosition.current));
+      drag.current = {
+        id: null,
+        resize: false,
+        pending: false,
+        captureTarget: e.currentTarget,
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        x: viewport.x,
+        y: viewport.y,
+        width: 0,
+        height: 0,
+        boxStart: { x: blankPosition.current.x, y: blankPosition.current.y },
+        boxEnd: { x: blankPosition.current.x, y: blankPosition.current.y },
+        zoom: viewport.zoom,
+      };
+      e.preventDefault();
+      e.currentTarget.focus({ preventScroll: true });
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.stopPropagation();
+      return;
     }
     const pending = !!node && !resize && !!(e.target as HTMLElement).closest('.table-inline');
     drag.current = {
@@ -630,6 +706,14 @@ export function Canvas({
       y: node?.y ?? viewport.y,
       width: node?.width ?? 0,
       height: node?.height ?? 0,
+      ...(!resize && node && selectedObjects.includes(node.objectId) && selectedObjects.length > 1
+        ? {
+            members: nodes
+              .filter((n) => selectedObjects.includes(n.objectId))
+              .map((n) => ({ id: n.id, x: n.x, y: n.y })),
+          }
+        : {}),
+      zoom: viewport.zoom,
     };
     if (!pending) e.currentTarget.setPointerCapture(e.pointerId);
     e.stopPropagation();
@@ -650,6 +734,16 @@ export function Canvas({
       finish();
       return;
     }
+    if (start.boxStart) {
+      start.boxEnd = {
+        x: start.boxStart.x + dx / (start.zoom ?? viewport.zoom),
+        y: start.boxStart.y + dy / (start.zoom ?? viewport.zoom),
+      };
+      const rect = selectionRect(start.boxStart, start.boxEnd);
+      setMarquee(rect);
+      setMultiSelection(intersectingObjects(rect, nodes));
+      return;
+    }
     if (start.pending) {
       // Preserve the original click target so stationary double-clicks enter editing.
       if (Math.hypot(dx, dy) < 5) return;
@@ -657,6 +751,17 @@ export function Canvas({
       start.captureTarget.setPointerCapture(start.pointerId);
     }
     if (start.id) {
+      if (start.members) {
+        preview(
+          translateSelectedNodes(
+            live.current,
+            start.members,
+            dx / (start.zoom ?? viewport.zoom),
+            dy / (start.zoom ?? viewport.zoom),
+          ),
+        );
+        return;
+      }
       preview(
         updateNodeLayout(
           live.current,
@@ -674,9 +779,18 @@ export function Canvas({
   function finish() {
     const active = drag.current;
     drag.current = null;
+    setMarquee(null);
     if (active?.captureTarget.hasPointerCapture(active.pointerId))
       active.captureTarget.releasePointerCapture(active.pointerId);
     if (active?.id && !active.pending) change(live.current);
+    if (active?.boxStart && active.boxEnd) {
+      const ids = intersectingObjects(selectionRect(active.boxStart, active.boxEnd), nodes);
+      if (ids.length === 1) setSelected(ids[0]!);
+      else {
+        setSelectedState(null);
+        setMultiSelection(ids);
+      }
+    }
   }
   function editRelation(id: string) {
     const relation = doc.domainRelations.find((r) => r.id === id);
@@ -959,8 +1073,9 @@ export function Canvas({
           event.shiftKey ||
           readOnly ||
           deletionPending.current ||
-          !selectedNode ||
-          (!domain && !table) ||
+          tool === 'hand' ||
+          (!selectedNode && !selectedObjects.length) ||
+          (!domain && !table && !note && !selectedObjects.length) ||
           !(event.target instanceof Element) ||
           !event.currentTarget.contains(event.target) ||
           !!event.target.closest('.canvas-toolbar') ||
@@ -971,17 +1086,28 @@ export function Canvas({
           return;
         event.preventDefault();
         event.stopPropagation();
-        const id = selectedNode.objectId;
-        const kind = domain ? 'domain' : 'table';
+        const ids = selectedObjects.length ? selectedObjects : [selectedNode!.objectId];
+        const kind = domain ? 'domain' : note ? 'note' : 'table';
         deletionPending.current = true;
         try {
           if (
             !(await confirm({
-              title: kind === 'domain' ? '도메인 삭제' : '테이블 삭제',
+              title:
+                ids.length > 1
+                  ? `선택한 객체 ${ids.length}개 삭제`
+                  : kind === 'domain'
+                    ? '도메인 삭제'
+                    : kind === 'note'
+                      ? '메모 삭제'
+                      : '테이블 삭제',
               description:
-                kind === 'domain'
-                  ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?'
-                  : '테이블과 소유 컬럼, 키, 관계 및 모든 외부 참조를 삭제할까요?',
+                ids.length > 1
+                  ? '선택한 객체와 소유 데이터·연결 관계를 삭제할까요?'
+                  : kind === 'domain'
+                    ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?'
+                    : kind === 'note'
+                      ? '이 메모를 삭제할까요?'
+                      : '테이블과 소유 컬럼, 키, 관계 및 모든 외부 참조를 삭제할까요?',
               confirmLabel: '삭제',
               destructive: true,
             }))
@@ -989,16 +1115,14 @@ export function Canvas({
             return;
           const latest = latestDeletion.current;
           if (latest.readOnly) return;
-          if (
-            kind === 'domain'
-              ? !latest.doc.domains.some((item) => item.id === id)
-              : !latest.doc.tables?.some((item) => item.id === id)
-          )
-            return;
-          latest.onChange(
-            kind === 'domain' ? removeDomain(latest.doc, id) : removeTable(latest.doc, id),
-          );
-          setSelected((current) => (current === id ? null : current));
+          let next = latest.doc;
+          for (const id of ids) {
+            if (next.domains.some((item) => item.id === id)) next = removeDomain(next, id);
+            else if (next.tables?.some((item) => item.id === id)) next = removeTable(next, id);
+            else if (next.notes.some((item) => item.id === id)) next = removeNote(next, id);
+          }
+          if (next !== latest.doc) latest.onChange(next);
+          setSelected(null);
         } finally {
           deletionPending.current = false;
         }
@@ -1013,6 +1137,24 @@ export function Canvas({
 
         <div
           ref={surface}
+          tabIndex={0}
+          data-tool={tool}
+          onPointerDownCapture={(event) => {
+            if (tool === 'hand' && !(event.target as Element).closest('.zoom-controls'))
+              begin(event, null);
+          }}
+          onDoubleClickCapture={(event) => {
+            if (tool === 'hand') {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+          onContextMenuCapture={(event) => {
+            if (tool === 'hand') {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
           className={`canvas-surface ${connectSource || fkSource ? 'connection-target-mode' : ''}`}
           onContextMenu={(e) => {
             if (
@@ -1058,6 +1200,7 @@ export function Canvas({
         >
           <div
             className="canvas-world"
+            inert={tool === 'hand'}
             style={{
               transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
             }}
@@ -1195,7 +1338,7 @@ export function Canvas({
               return (
                 <div
                   key={node.id}
-                  className={`canvas-node ${d ? 'domain-node' : t ? 'table-node' : 'note-node'} ${selected === node.objectId ? 'selected' : ''} ${d && connectSource === d.id ? 'connection-source' : ''}`}
+                  className={`canvas-node ${d ? 'domain-node' : t ? 'table-node' : 'note-node'} ${selected === node.objectId || selectedObjects.includes(node.objectId) ? 'selected' : ''} ${d && connectSource === d.id ? 'connection-source' : ''}`}
                   style={
                     {
                       left: node.x,
@@ -1226,7 +1369,8 @@ export function Canvas({
                   role="group"
                   aria-label={d?.name ?? (t ? tableLabel(t) : '메모')}
                   onFocus={(e) => {
-                    if (e.target === e.currentTarget) setSelected(node.objectId);
+                    if (e.target === e.currentTarget && !selectedObjects.includes(node.objectId))
+                      setSelected(node.objectId);
                   }}
                   onKeyDown={(e) => {
                     if (e.target !== e.currentTarget) return;
@@ -1255,6 +1399,17 @@ export function Canvas({
                     const offset = offsets[e.key];
                     if (offset) {
                       e.preventDefault();
+                      if (selectedObjects.length > 1 && selectedObjects.includes(node.objectId)) {
+                        change(
+                          translateSelectedNodes(
+                            doc,
+                            nodes.filter((n) => selectedObjects.includes(n.objectId)),
+                            offset[0]!,
+                            offset[1]!,
+                          ),
+                        );
+                        return;
+                      }
                       change(
                         updateNodeLayout(doc, node.id, {
                           x: node.x + offset[0],
@@ -1325,6 +1480,19 @@ export function Canvas({
               );
             })}
             {pins}
+            {marquee && (
+              <div
+                className="canvas-selection-box"
+                data-export-hidden
+                style={{
+                  left: marquee.x,
+                  top: marquee.y,
+                  width: marquee.width,
+                  height: marquee.height,
+                  borderWidth: 1 / viewport.zoom,
+                }}
+              />
+            )}
           </div>
           {!nodes.length && (
             <div className="canvas-empty">
@@ -1358,9 +1526,59 @@ export function Canvas({
               ? '연결할 도메인을 클릭하세요 · Escape 취소'
               : fkSource
                 ? 'PK를 받을 테이블을 클릭하세요 · FK 컬럼 자동 추가 · Escape 취소'
-                : '드래그로 이동 · 우클릭으로 자동 배치'}
+                : selectedObjects.length > 1
+                  ? `${selectedObjects.length}개 선택됨 · 함께 드래그하여 이동`
+                  : tool === 'hand'
+                    ? '손 도구 · 드래그로 화면 이동'
+                    : '커서 도구 · 빈 공간 드래그로 여러 객체 선택'}
           </div>
           <div className="zoom-controls" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="canvas-tool-picker" role="group" aria-label="캔버스 도구">
+              <IconButton
+                aria-label="커서 도구"
+                title="커서 · 드래그로 여러 객체 선택"
+                aria-pressed={tool === 'select'}
+                onClick={() => {
+                  finish();
+                  setTool('select');
+                  setConnectSource(null);
+                  setFkSource(null);
+                  setFkTarget(null);
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path
+                    d="m4 2 12 8-6 1-3 6-3-15Z"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </IconButton>
+              <IconButton
+                aria-label="손 도구"
+                title="손 · 화면 이동만"
+                aria-pressed={tool === 'hand'}
+                onClick={() => {
+                  finish();
+                  setTool('hand');
+                  setSelected(null);
+                  setConnectSource(null);
+                  setFkSource(null);
+                  setFkTarget(null);
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path
+                    d="M6 10V5a1.3 1.3 0 0 1 2.6 0v4-6a1.3 1.3 0 0 1 2.6 0v6-5a1.3 1.3 0 0 1 2.6 0v5-3a1.3 1.3 0 0 1 2.6 0v6c0 4-2 6-5.5 6H9c-2 0-3-1-4-3L2 11c-1-2 1-3 2-1l2 2"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </IconButton>
+            </div>
             <IconButton aria-label="축소" onClick={() => zoom(viewport.zoom - 0.1)}>
               −
             </IconButton>

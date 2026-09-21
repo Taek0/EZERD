@@ -1,0 +1,36 @@
+.canvas-tool-picker {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  margin-right: 4px;
+  border-right: 1px solid var(--line);
+}
+.zoom-controls .canvas-tool-picker button {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  min-width: 30px;
+}
+.zoom-controls .canvas-tool-picker button[aria-pressed='true'] {
+  background: var(--ui-brand-50);
+  color: var(--accent);
+  box-shadow: inset 1px 1px 3px #24365420;
+}
+.canvas-surface[data-tool='hand'] {
+  cursor: grab;
+}
+.canvas-surface[data-tool='hand']:active {
+  cursor: grabbing;
+}
+.canvas-surface[data-tool='select'] {
+  cursor: default;
+}
+.canvas-selection-box {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: #4169e11a;
+  box-sizing: border-box;
+  z-index: 20;
+}
