@@ -6,6 +6,102 @@ import * as routing from './relation-routing.js';
 import { createPerformanceFixture } from '../../shared/performance/fixture.js';
 import { prepareTableRelations } from './prepare-table-relations.js';
 import { relationGeometry } from './relation-routing.js';
+import { prepareTableRelationsReference } from './prepare-table-relations.reference.js';
+import * as cardGeometry from '../tables/table-geometry.js';
+
+it('calculates each participating card boundary once per preparation, including obstacles', () => {
+  const doc = createPerformanceFixture();
+  const spy = vi.spyOn(cardGeometry, 'tableCardSize');
+  try {
+    const result = prepareTableRelations(doc, 'perf', 'physical');
+    expect(result.filter(Boolean)).toHaveLength(10);
+    expect(spy).toHaveBeenCalledTimes(10);
+    spy.mockClear();
+    expect(
+      prepareTableRelations(doc, 'perf', 'physical', ['node-t0', 'node-t1']).filter(Boolean),
+    ).toHaveLength(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockClear();
+    prepareTableRelations({ ...doc, tableRelations: [] }, 'perf', 'physical');
+    expect(spy).not.toHaveBeenCalled();
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+it('matches the previous algorithm for edited, self, parallel, draft and multi-view relations', () => {
+  for (let variant = 0; variant < 6; variant++) {
+    const doc = createPerformanceFixture();
+    doc.layout.nodes = doc.layout.nodes.map((node, index) => ({
+      ...node,
+      x: node.x + ((index * 17 + variant * 43) % 160),
+      width: node.width + variant * 11,
+    }));
+    doc.columns![0]!.physical.name = '복합_식별자_' + '가'.repeat(variant * 5);
+    const first = doc.tableRelations![0]!;
+    doc.tableRelations!.push(
+      { ...first, id: 'self', targetTableId: 't0' },
+      { ...first, id: 'parallel' },
+      {
+        ...first,
+        id: 'reverse',
+        sourceTableId: first.targetTableId,
+        targetTableId: first.sourceTableId,
+      },
+      { ...first, id: 'draft', sourceTableId: 'missing' },
+      { ...first, id: 'logical', scope: 'both', physical: null },
+    );
+    doc.layout.relations = [
+      {
+        relationId: 'r0',
+        viewId: 'perf',
+        offset: variant * 7,
+        sourceAnchor: { side: 'right', ratio: 0.25 },
+        targetAnchor: { side: 'left', ratio: 0.75 },
+        waypoints: [{ x: 570, y: 220 + variant * 10 }],
+      },
+    ];
+    doc.views = [{ id: 'combined', name: 'test', domainIds: ['perf'] }];
+    doc.layout.nodes.push(
+      ...doc.layout.nodes
+        .filter((n) => n.viewId === 'perf')
+        .map((n) => ({ ...n, id: 'combined-' + n.id, viewId: 'combined' })),
+    );
+    if (variant % 2) doc.tableRelations!.reverse();
+    const before = structuredClone(doc);
+    for (const view of ['perf', 'combined', 'missing']) {
+      for (const scope of ['physical', 'both', 'logical'] as const) {
+        for (const visible of [undefined, ['node-t0', 'node-t1', 'node-t2']]) {
+          expect(prepareTableRelations(doc, view, scope, visible)).toEqual(
+            prepareTableRelationsReference(doc, view, scope, visible),
+          );
+        }
+      }
+    }
+    expect(doc).toEqual(before);
+  }
+});
+
+it('retains first-match semantics even for duplicate IDs in unvalidated input', () => {
+  const doc = createPerformanceFixture();
+  doc.tables!.push({
+    ...doc.tables![0]!,
+    physical: { ...doc.tables![0]!.physical, name: 'ignored' },
+  });
+  doc.columns!.push({
+    ...doc.columns![0]!,
+    physical: { ...doc.columns![0]!.physical, name: 'ignored' },
+  });
+  doc.layout.nodes.push({ ...doc.layout.nodes[0]!, x: 555 });
+  doc.tableRelations!.push({ ...doc.tableRelations![0]! });
+  doc.layout.relations = [
+    { relationId: 'r0', viewId: 'perf', offset: 12 },
+    { relationId: 'r0', viewId: 'perf', offset: 99 },
+  ];
+  expect(prepareTableRelations(doc, 'perf', 'physical')).toEqual(
+    prepareTableRelationsReference(doc, 'perf', 'physical'),
+  );
+});
 
 it('shares one calculation across both SVG layers without changing standalone output', () => {
   const doc = createPerformanceFixture();
