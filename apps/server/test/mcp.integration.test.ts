@@ -563,6 +563,26 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         },
       });
       expect(tablesAdded.isError).not.toBe(true);
+      const renamedTable = await a.instance.callTool({
+        name: 'apply_project_changes',
+        arguments: {
+          projectId,
+          expectedVersion: 2,
+          expectedSequence: 2,
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: randomUUID(),
+          commands: [
+            { type: 'patch_table', id: 'orders', patch: { logical: { name: 'Orders renamed' } } },
+          ],
+        },
+      });
+      expect(renamedTable.isError).not.toBe(true);
+      const details = await a.instance.callTool({
+        name: 'get_table_details',
+        arguments: { projectId, tableId: 'orders' },
+      });
+      expect(details.structuredContent).toHaveProperty('table.logical.name', 'Orders renamed');
       const layout = await a.instance.callTool({
         name: 'apply_personal_changes',
         arguments: {
@@ -615,11 +635,28 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: { projectId, viewId: 'sales-view' },
       });
       expect(otherView.isError).toBe(true);
-      const removedPersonal = await a.instance.callTool({
+      const personalPatch = await a.instance.callTool({
         name: 'apply_personal_changes',
         arguments: {
           projectId,
           expectedVersion: 3,
+          operationId: randomUUID(),
+          commands: [
+            { type: 'patch_combined_view', id: 'sales-view', patch: { name: 'Renamed view' } },
+            { type: 'patch_note', id: 'private-note', patch: { text: 'Updated note' } },
+          ],
+        },
+      });
+      expect(personalPatch.isError).not.toBe(true);
+      expect(personalPatch.structuredContent).toMatchObject({
+        version: 4,
+        state: { views: [{ name: 'Renamed view' }], notes: [{ text: 'Updated note' }] },
+      });
+      const removedPersonal = await a.instance.callTool({
+        name: 'apply_personal_changes',
+        arguments: {
+          projectId,
+          expectedVersion: 4,
           operationId: randomUUID(),
           commands: [
             { type: 'delete_relation_layout', relationId: 'orders-users', viewId: 'sales-view' },
@@ -630,7 +667,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       expect(removedPersonal.isError).not.toBe(true);
       expect(removedPersonal.structuredContent).toMatchObject({
-        version: 4,
+        version: 5,
         state: { relations: [], notes: [] },
       });
       expect(

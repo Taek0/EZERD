@@ -43,6 +43,7 @@ import {
 import type { DesignDocument } from '@ezerd/model';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncService } from '../sync/sync.service.js';
+import { applyPatchCommand, patchCommandSchema, patchCommandSchemas } from './mcp-patch.js';
 
 const objectId = z.string().trim().min(1).max(160);
 const coordinate = z.number().min(-1e7).max(1e7);
@@ -86,6 +87,7 @@ export const mcpDocumentCommandSchema = z.discriminatedUnion('type', [
     relationId: objectId,
     viewId: objectId,
   }),
+  ...patchCommandSchemas,
 ]);
 export const applyProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -160,6 +162,8 @@ export class McpDocumentService {
     document: DesignDocument,
     command: z.infer<typeof mcpDocumentCommandSchema>,
   ): DesignDocument {
+    const patch = patchCommandSchema.safeParse(command);
+    if (patch.success) return applyPatchCommand(document, patch.data);
     const point =
       'placement' in command && command.placement
         ? { x: command.placement.x, y: command.placement.y }
@@ -281,5 +285,6 @@ export class McpDocumentService {
           },
         };
     }
+    throw new Error('지원되지 않는 문서 변경 명령입니다.');
   }
 }

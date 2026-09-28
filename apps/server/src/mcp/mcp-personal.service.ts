@@ -38,6 +38,16 @@ const nodePatch = z
 export const personalCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('upsert_combined_view'), value: combinedViewSchema }),
   z.strictObject({ type: z.literal('delete_combined_view'), id: objectId }),
+  z.strictObject({
+    type: z.literal('patch_combined_view'),
+    id: objectId,
+    patch: z
+      .strictObject({
+        name: combinedViewSchema.shape.name.optional(),
+        domainIds: combinedViewSchema.shape.domainIds.optional(),
+      })
+      .refine((value) => Object.values(value).some((item) => item !== undefined)),
+  }),
   z.strictObject({ type: z.literal('set_viewport'), value: viewportSchema }),
   z.strictObject({
     type: z.literal('add_table_reference'),
@@ -64,6 +74,16 @@ export const personalCommandSchema = z.discriminatedUnion('type', [
     placement: z.strictObject({ x: coordinate, y: coordinate }).optional(),
   }),
   z.strictObject({ type: z.literal('delete_note'), id: objectId }),
+  z.strictObject({
+    type: z.literal('patch_note'),
+    id: objectId,
+    patch: z
+      .strictObject({
+        text: noteSchema.shape.text.optional(),
+        color: noteSchema.shape.color.nullable(),
+      })
+      .refine((value) => Object.values(value).some((item) => item !== undefined)),
+  }),
 ]);
 export const applyPersonalChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -119,6 +139,15 @@ export class McpPersonalService {
       case 'delete_combined_view':
         requireCombined(command.id);
         return removeCombinedView(document, command.id);
+      case 'patch_combined_view': {
+        const current = document.views?.find((view) => view.id === command.id);
+        if (!current) throw new Error('개인 결합 화면을 찾을 수 없습니다.');
+        return upsertCombinedView(document, {
+          ...current,
+          ...(command.patch.name !== undefined ? { name: command.patch.name } : {}),
+          ...(command.patch.domainIds !== undefined ? { domainIds: command.patch.domainIds } : {}),
+        });
+      }
       case 'set_viewport':
         return setViewport(document, command.value);
       case 'add_table_reference': {
@@ -190,6 +219,19 @@ export class McpPersonalService {
         if (!note) throw new Error('메모를 찾을 수 없습니다.');
         requireCombined(note.viewId);
         return removeNote(document, command.id);
+      }
+      case 'patch_note': {
+        const current = document.notes.find((item) => item.id === command.id);
+        if (!current) throw new Error('메모를 찾을 수 없습니다.');
+        requireCombined(current.viewId);
+        return updateNote(document, command.id, {
+          ...(command.patch.text !== undefined ? { text: command.patch.text } : {}),
+          ...(command.patch.color === null
+            ? { color: undefined }
+            : command.patch.color === undefined
+              ? {}
+              : { color: command.patch.color }),
+        });
       }
     }
   }

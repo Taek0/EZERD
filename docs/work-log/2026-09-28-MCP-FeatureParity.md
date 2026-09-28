@@ -20,3 +20,10 @@
 - MCP 범위별 프로젝트 조회는 인증 사용자 자신의 개인 화면을 병합해 반환한다.
 
 검증: 단위 테스트 68개 파일 353개, 격리 PostgreSQL·API·WebSocket·MCP 통합 테스트 3개 파일 24개, 전체 타입 검사와 Prettier 검사를 통과했다. 실제 MCP·REST 호출에서 사용자 격리와 재시도를 확인했다. 기존 개발 DB에는 새 마이그레이션을 적용하지 않았다.
+
+## 부분 수정 명령
+
+- 공유 문서에 `patch_domain`, `patch_table`, `patch_column`, `patch_note`, `patch_domain_relation`, `patch_key`, `patch_table_relation`, `patch_enum`을 추가했다.
+- 개인 화면에 `patch_combined_view`, `patch_note`를 추가했다.
+- 중첩 필드는 기존 값과 병합하고, 객체 ID·컬럼 소유 테이블·키 소유 테이블은 변경하지 않는다. 대상이 없거나 패치가 비어 있으면 거부한다. 색상은 `null`로 제거할 수 있다.
+- 검증: 부분 수정 단위 테스트와 서버 타입 검사 통과. 격리 PostgreSQL·MCP 통합 테스트에서 테이블의 논리 이름만 수정하고 다른 필드는 유지되는지 확인했다.

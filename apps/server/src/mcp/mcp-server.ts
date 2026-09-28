@@ -316,7 +316,7 @@ export class McpServerFactory {
       'apply_project_changes',
       {
         description:
-          '명시적인 도메인·테이블·컬럼·키·관계·노트·ENUM과 공유 화면 배치를 최신 기준에 원자적으로 적용합니다. 생성/이동할 카드의 크기와 같은 뷰의 기존 위치를 먼저 확인하고 최소 40px 간격으로 겹침 없이 배치하세요. 연결된 객체를 가까이 묶고 도메인 흐름 및 PK→FK 방향을 일관되게 표현하며 관계선 교차와 긴 연결을 줄인 뒤 결과를 재조회하세요.',
+          '명시적인 도메인·테이블·컬럼·키·관계·노트·ENUM과 공유 화면 배치를 최신 기준에 원자적으로 적용합니다. 기존 객체의 일부 필드는 patch_* 명령으로 변경할 수 있습니다. 생성/이동할 카드의 크기와 같은 뷰의 기존 위치를 먼저 확인하고 최소 40px 간격으로 겹침 없이 배치하세요. 연결된 객체를 가까이 묶고 도메인 흐름 및 PK→FK 방향을 일관되게 표현하며 관계선 교차와 긴 연결을 줄인 뒤 결과를 재조회하세요.',
         inputSchema: applyProjectChangesSchema.extend({
           includeDocument: z.boolean().default(false),
         }),
