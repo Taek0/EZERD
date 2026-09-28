@@ -22,6 +22,7 @@
 
 | 문서 | 내용 |
 | --- | --- |
+| [최소 성능 측정 도구](./work-log/2026-09-28-Canvas-MeasurementImplementation.md) | 측정 빌드·계산 runner·브라우저 패널 사용법과 해석 한계 |
 | [IMPLEMENTATION_PROGRESS.md](./work-log/IMPLEMENTATION_PROGRESS.md) | 구현 이력, 검증 결과와 남은 작업 |
 | [SETUP_VERIFICATION.md](./work-log/SETUP_VERIFICATION.md) | 개발 환경 구성·장애 대응·검증 기록 |
 | [DEVELOPMENT_VERSIONS.md](./work-log/DEVELOPMENT_VERSIONS.md) | 구성한 실행 환경과 도구 버전 |

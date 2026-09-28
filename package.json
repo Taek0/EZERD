@@ -9,6 +9,9 @@
     "pnpm": "11.24.0"
   },
   "scripts": {
+    "perf:calculate": "pnpm build:shared && pnpm --filter @ezerd/server exec tsx ../../scripts/performance/calculate.ts",
+    "perf:build": "pnpm build:shared && pnpm --filter @ezerd/web exec tsc --noEmit && pnpm --filter @ezerd/web exec vite build --config vite.performance.config.ts",
+    "perf:serve": "pnpm --filter @ezerd/web exec vite preview --config vite.performance.config.ts --outDir dist-performance",
     "setup": "node scripts/setup.mjs",
     "docs:versions": "node scripts/document-versions.mjs",
     "docs:ui-licenses": "node scripts/document-ui-licenses.mjs",
