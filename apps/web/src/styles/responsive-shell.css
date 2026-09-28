@@ -121,13 +121,6 @@
   font-size: var(--editor-control-font);
   font-weight: 650;
   line-height: 1.4;
-  border: 1px solid #9bb1cf;
-  border-radius: 8px;
-  color: #244b7b;
-  background: linear-gradient(145deg, #f5f8fd, #dce5f1);
-  box-shadow:
-    2px 2px 5px #a8b8cf66,
-    -2px -2px 5px #ffffffd9;
 }
 
 .app-shell.editor-shell .editor-toolbar-host .canvas-toolbar .actions > button {
@@ -140,34 +133,6 @@
   width: var(--editor-control-height);
   height: var(--editor-control-height);
   padding: 4px;
-}
-
-.app-shell.editor-shell .editor-heading button:hover:not(:disabled),
-.app-shell.editor-shell .canvas-toolbar button:hover:not(:disabled) {
-  color: #153f74;
-  border-color: #6389b9;
-  background: linear-gradient(145deg, #edf4ff, #cedef2);
-}
-
-.app-shell.editor-shell .editor-heading button:focus-visible,
-.app-shell.editor-shell .canvas-toolbar button:focus-visible {
-  outline: 2px solid #346dc1;
-  outline-offset: 3px;
-}
-
-.app-shell.editor-shell .editor-heading button[aria-expanded='true'],
-.app-shell.editor-shell .canvas-toolbar button[aria-expanded='true'] {
-  border-color: #648cc1;
-  background: #dce9fa;
-  box-shadow:
-    inset 2px 2px 4px #a8b8cf80,
-    inset -2px -2px 4px #ffffffb3;
-}
-
-.app-shell.editor-shell .editor-heading button:disabled,
-.app-shell.editor-shell .canvas-toolbar button:disabled {
-  opacity: 0.55;
-  box-shadow: none;
 }
 
 .app-shell.editor-shell .review-workspace > .workspace {

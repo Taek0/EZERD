@@ -67,19 +67,9 @@
 .app-shell.editor-shell .editor-path .path-step {
   min-height: 26px;
   padding: 2px 7px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  box-shadow: none;
-  color: var(--muted);
   font-size: 13px;
   font-weight: var(--font-weight-medium);
   white-space: nowrap;
-}
-.app-shell.editor-shell .editor-path .path-step:hover:not(:disabled) {
-  border-color: transparent;
-  background: #dce5f1;
-  color: #1f4c80;
 }
 .editor-path .path-current {
   min-width: 0;
@@ -109,11 +99,6 @@
   min-width: 104px;
   justify-content: center;
 }
-.app-shell.editor-shell .canvas-toolbar .domain-view-trigger.is-active {
-  border-color: #648cc1;
-  background: #dce9fa;
-  color: #153f74;
-}
 .app-shell.editor-shell .panel-toggles {
   gap: 2px;
 }
@@ -133,14 +118,6 @@
   stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-.app-shell.editor-shell .canvas-toolbar .panel-toggles > .ui-button[aria-pressed='true'] {
-  border-color: #648cc1;
-  background: #dce9fa;
-  color: #153f74;
-  box-shadow:
-    inset 2px 2px 4px #a8b8cf80,
-    inset -2px -2px 4px #ffffffb3;
 }
 
 @media (prefers-reduced-motion: no-preference) {

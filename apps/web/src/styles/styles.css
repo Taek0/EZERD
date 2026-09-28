@@ -178,9 +178,6 @@ small {
   min-height: 40px;
   font-size: 16px;
   padding: 8px 14px;
-  box-shadow: none;
-  background: transparent;
-  border-color: transparent;
 }
 
 .search {
@@ -283,11 +280,7 @@ small {
 }
 .card-actions button {
   min-height: 26px;
-  box-shadow: none;
-  border: none;
   padding: 4px 0;
-  background: none;
-  color: var(--muted);
   font-size: 12px;
   line-height: 18px;
   white-space: nowrap;
@@ -459,7 +452,6 @@ small {
   color: #8a3631;
 }
 .notice button {
-  box-shadow: none;
   flex-shrink: 0;
 }
 .editor-heading {
@@ -487,7 +479,6 @@ small {
 }
 .project-title > button {
   white-space: nowrap;
-  box-shadow: none;
 }
 .save-controls {
   display: flex;
@@ -625,8 +616,6 @@ small {
   font-size: 16px;
 }
 .breadcrumbs button {
-  border: 0;
-  background: none;
   padding-left: 0;
   white-space: nowrap;
 }
@@ -810,11 +799,7 @@ small {
 }
 .zoom-controls button {
   min-width: 40px;
-  box-shadow: none;
-  border: 0;
   padding: 8px;
-  border-radius: 8px;
-  background: transparent;
   font-size: 14px;
 }
 .inspector {
@@ -1237,15 +1222,6 @@ small {
   height: 34px;
   min-height: 34px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  box-shadow: none;
-  color: #68717c;
-}
-.canvas-toolbar button.inspector-toggle:hover {
-  background: #dce1e8;
-  color: #283647;
 }
 .inspector-toggle svg {
   stroke: currentColor;
@@ -1466,17 +1442,7 @@ button.relation-disclosure:hover {
   padding: 0;
 }
 .gallery-tools .tabs button {
-  border: 0;
-  box-shadow: none;
   font-size: 14px;
-}
-.gallery-tools .tabs button[aria-pressed='true'] {
-  color: #355982;
-  background: #e1e7ee;
-  box-shadow: none;
-}
-.gallery-tools .tabs button:hover {
-  background: #e4e8ed;
 }
 .gallery .project-card {
   border: 1px solid #ffffffb3;
@@ -1493,12 +1459,6 @@ button.relation-disclosure:hover {
 .card-actions .project-archive,
 .card-actions .project-delete {
   margin-left: auto;
-}
-.card-actions .project-archive:hover,
-.card-actions .project-delete:hover {
-  background: #b63737;
-  color: white;
-  border-color: #a62b2b;
 }
 button,
 [role='button'],

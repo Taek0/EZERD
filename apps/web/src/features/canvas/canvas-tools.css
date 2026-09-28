@@ -12,11 +12,6 @@
   padding: 6px;
   min-width: 30px;
 }
-.zoom-controls .canvas-tool-picker button[aria-pressed='true'] {
-  background: var(--ui-brand-50);
-  color: var(--accent);
-  box-shadow: inset 1px 1px 3px #24365420;
-}
 .canvas-surface[data-tool='hand'] {
   cursor: grab;
 }

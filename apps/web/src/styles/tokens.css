@@ -38,3 +38,20 @@
   --ui-focus-ring: #305be775;
   --ui-danger: #9e3434;
 }
+
+/* Approved button proposal A; independent of form and card surfaces. */
+:root {
+  --button-radius: 8px;
+  --button-background: linear-gradient(145deg, #f8f9fb, #e9edf2);
+  --button-primary-background: linear-gradient(145deg, #eaf0f7, #dce5ef);
+  --button-text: #414651;
+  --button-primary-text: #294f79;
+  --button-hover-background: #dfe7f0;
+  --button-hover-text: #24476d;
+  --button-pressed-background: #dce5ef;
+  --button-selected-background: #dce7f4;
+  --button-selected-text: #234f80;
+  --button-shadow-inset: inset 2px 2px 5px #aeb7c440, inset -2px -2px 5px #ffffffb3;
+  --button-danger-background: #f4e9e9;
+  --button-danger-hover: #eddbdb;
+}

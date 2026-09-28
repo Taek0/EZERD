@@ -136,9 +136,9 @@
   min-width: 36px;
   border-radius: 50% 50% 50% 4px;
   border: 2px solid white;
-  background: var(--accent);
-  color: white;
-  box-shadow: 0 3px 10px #20232740;
+  background: var(--button-primary-background);
+  color: var(--button-primary-text);
+  box-shadow: var(--ui-product-raised);
   z-index: 15;
   pointer-events: auto;
   padding: 5px;
@@ -476,14 +476,14 @@
   padding: 0;
   border-radius: 50% 50% 50% 4px;
   border: 2px solid var(--erd-background);
-  background: var(--accent);
-  color: white;
-  box-shadow: 0 2px 6px #20232726;
+  background: var(--button-primary-background);
+  color: var(--button-primary-text);
+  box-shadow: var(--ui-product-raised);
   font-size: 12px;
 }
 .comment-pin.ui-icon-button:hover {
-  background: var(--accent);
-  box-shadow: 0 3px 8px #20232735;
+  background: var(--button-hover-background);
+  box-shadow: var(--ui-product-raised);
 }
 .notification-popover {
   width: 300px;

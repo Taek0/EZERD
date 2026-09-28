@@ -91,11 +91,6 @@
 .ui-accordion[open] > summary > .ui-chevron {
   transform: rotate(0);
 }
-.ui-tab-button[aria-pressed='true'] {
-  color: var(--accent);
-  background: var(--ui-brand-50);
-  border-color: var(--ui-brand-200);
-}
 :where(.ui-avatar) {
   display: inline-flex;
   align-items: center;
