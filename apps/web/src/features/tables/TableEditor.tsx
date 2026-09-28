@@ -8,7 +8,7 @@ import {
 import { EnumManager } from './EnumManager.js';
 import { columnTypeDisplay } from './column-type-display.js';
 import { primaryKeyChangeReason, setColumnPrimaryKey } from './column-primary-key.js';
-import { useRef, useEffect, useState, type CSSProperties } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
 import {
   type DesignDocument,
   type ModelScope,
@@ -183,6 +183,49 @@ function TextField({
     <label>
       {label}
       <Input value={value} maxLength={max} onChange={(e) => onChange(e.target.value)} />
+    </label>
+  );
+}
+function DescriptionField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const textarea = ref.current;
+    if (!textarea) return;
+    const resize = () => {
+      textarea.style.height = 'auto';
+      const borderHeight = textarea.offsetHeight - textarea.clientHeight;
+      textarea.style.height = `${textarea.scrollHeight + borderHeight}px`;
+    };
+    resize();
+    let width = textarea.getBoundingClientRect().width;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry && entry.contentRect.width !== width) {
+        width = entry.contentRect.width;
+        resize();
+      }
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, [value]);
+  return (
+    <label>
+      {label}
+      <Textarea
+        ref={ref}
+        className="table-description-input"
+        rows={2}
+        maxLength={10000}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </label>
   );
 }
@@ -758,6 +801,11 @@ export function TableInspector({
             max={120}
             onChange={(name) => patch({ physical: { ...table.physical, name } })}
           />
+          <DescriptionField
+            label="설명"
+            value={table.physical.comment}
+            onChange={(comment) => patch({ physical: { ...table.physical, comment } })}
+          />
         </PanelSection>
         <PanelSection title="컬럼" count={cols.length} defaultOpen>
           <PanelList empty="아직 컬럼이 없습니다. 아래 컬럼 추가에서 첫 컬럼을 만들어 주세요.">
@@ -1305,6 +1353,11 @@ export function RelationEditor({
         max={120}
         onChange={(name) => onChange({ ...r, logical: { ...r.logical, name } })}
       />
+      <DescriptionField
+        label="관계 설명"
+        value={r.logical.description ?? ''}
+        onChange={(description) => onChange({ ...r, logical: { ...r.logical, description } })}
+      />
       {!r.logical.sourceCardinality && !r.logical.targetCardinality && (
         <label>
           카디널리티
@@ -1418,11 +1471,6 @@ export function RelationEditor({
             </Select>
           </label>
         ))}
-        <TextField
-          label="관계 설명"
-          value={r.logical.description ?? ''}
-          onChange={(description) => onChange({ ...r, logical: { ...r.logical, description } })}
-        />
         {physical ? (
           <Button onClick={() => onChange({ ...r, physical: null })}>FK 정의 제거</Button>
         ) : (

@@ -2,6 +2,15 @@
   min-width: 0;
   font-size: 15px;
 }
+.ui-textarea.table-description-input,
+.inspector .table-inspector .ui-textarea.table-description-input {
+  min-height: 64px;
+  max-height: 180px;
+  overflow-y: auto;
+  resize: none;
+  font-size: 13px;
+  line-height: 20px;
+}
 .table-inspector fieldset {
   border: 0;
   padding: 0;
