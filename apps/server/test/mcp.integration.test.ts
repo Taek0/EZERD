@@ -228,6 +228,13 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       expect(applied.isError).not.toBe(true);
       expect((applied.structuredContent as { actor: { id: string } }).actor.id).toBe(userA.id);
+      expect(applied.structuredContent).not.toHaveProperty('document');
+      const appliedWithDocument = await a.instance.callTool({
+        name: 'apply_project_changes',
+        arguments: { ...applyArguments, includeDocument: true },
+      });
+      expect(appliedWithDocument.isError).not.toBe(true);
+      expect(appliedWithDocument.structuredContent).toHaveProperty('document.domains');
       expect(
         (
           await a.instance.callTool({
@@ -266,6 +273,25 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: { projectId: project.id },
       });
       expect(diagnosis.structuredContent).toEqual({ diagnostics: [] });
+      const summary = await a.instance.callTool({
+        name: 'get_project_summary',
+        arguments: { projectId: project.id },
+      });
+      expect(summary.structuredContent).toMatchObject({
+        counts: { domains: 1 },
+        syncSequence: 1,
+      });
+      expect(summary.structuredContent).not.toHaveProperty('document');
+      const view = await a.instance.callTool({
+        name: 'get_project_view',
+        arguments: { projectId: project.id, viewId: 'overview' },
+      });
+      expect((view.structuredContent as { nodes: unknown[] }).nodes).toHaveLength(1);
+      const tables = await a.instance.callTool({
+        name: 'list_tables',
+        arguments: { projectId: project.id },
+      });
+      expect(tables.structuredContent).toMatchObject({ tables: [], nextCursor: null });
       const history = await a.instance.callTool({
         name: 'get_project_history',
         arguments: { projectId: project.id, since: 0 },
@@ -273,6 +299,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect((history.structuredContent as { history: unknown[] }).history.length).toBeGreaterThan(
         0,
       );
+      expect(history.structuredContent).not.toHaveProperty('history.0.document');
+      expect(history.structuredContent).not.toHaveProperty('history.0.changes');
 
       const undoRequest = {
         operationId: randomUUID(),
@@ -305,6 +333,13 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         },
       });
       expect(restored.isError).not.toBe(true);
+      expect(restored.structuredContent).not.toHaveProperty('result.document');
+      const historyPage = await a.instance.callTool({
+        name: 'get_project_history',
+        arguments: { projectId: project.id, since: 0, limit: 1, includeChanges: true },
+      });
+      expect(historyPage.structuredContent).toHaveProperty('nextSince', 1);
+      expect(historyPage.structuredContent).toHaveProperty('history.0.changes');
 
       const thread = await a.instance.callTool({
         name: 'create_review_thread',

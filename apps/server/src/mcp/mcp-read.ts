@@ -163,7 +163,7 @@ export function listTables(state: ProjectState, input: z.infer<typeof listTables
           table.logical.name.toLocaleLowerCase().includes(search) ||
           table.physical.name.toLocaleLowerCase().includes(search)),
     )
-    .sort((a, b) => a.id.localeCompare(b.id))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .slice(0, input.limit + 1);
   const hasMore = filtered.length > input.limit;
   const tables = filtered.slice(0, input.limit).map(tableSummary);

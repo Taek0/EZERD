@@ -477,6 +477,37 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     });
   }
 
+  async historyPage(
+    projectId: string,
+    since: number,
+    limit: number,
+  ): Promise<{ history: SyncHistoryEntry[]; nextSince: number | null }> {
+    const [project] = await this.database.db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+    const rows = await this.database.db
+      .select()
+      .from(syncOperations)
+      .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
+      .orderBy(asc(syncOperations.sequence))
+      .limit(limit + 1);
+    const page = rows.slice(0, limit);
+    return {
+      history: page.map((row) => {
+        const snapshot = row.deletionSnapshot as { items?: unknown[] } | null;
+        return {
+          ...eventFrom(row),
+          clientId: row.clientId,
+          kind: row.kind as 'online' | 'reconnect',
+          ...(snapshot?.items?.length ? { deletionSnapshot: { items: snapshot.items } } : {}),
+        };
+      }),
+      nextSince: rows.length > limit ? page.at(-1)!.sequence : null,
+    };
+  }
+
   async establishBaseline(
     projectId: string,
     clientId: string,

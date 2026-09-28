@@ -10,7 +10,6 @@ import {
   projectDocumentSchema,
   projectQuerySchema,
   projectSchema,
-  syncHistoryEntrySchema,
   syncOperationResultSchema,
   threadSchema,
   updateProjectSchema,
@@ -34,11 +33,18 @@ import {
   tableDetailsSchema,
   tableListSchema,
 } from './mcp-read.js';
+import {
+  historyInputSchema,
+  historyPageSchema,
+  operationResult,
+  projectHistory,
+} from './mcp-response.js';
 
 const idSchema = z.uuid();
 const TIMEOUT_MS = 60_000;
-const sequenceSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const projectStateSchema = projectDocumentSchema.extend({ syncSequence: sequenceSchema });
+const projectStateSchema = projectDocumentSchema.extend({
+  syncSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+});
 const commandRequestSchema = z.strictObject({
   operationId: idSchema,
   groupId: idSchema,
@@ -293,27 +299,33 @@ export class McpServerFactory {
       {
         description:
           '명시적인 도메인·테이블·컬럼·키·관계·노트 변경을 최신 기준에 원자적으로 적용합니다. 생성/이동할 카드의 크기와 같은 뷰의 기존 위치를 먼저 확인하고 최소 40px 간격으로 겹침 없이 배치하세요. 연결된 객체를 가까이 묶고 도메인 흐름 및 PK→FK 방향을 일관되게 표현하며 관계선 교차와 긴 연결을 줄인 뒤 결과를 재조회하세요.',
-        inputSchema: applyProjectChangesSchema,
+        inputSchema: applyProjectChangesSchema.extend({
+          includeDocument: z.boolean().default(false),
+        }),
         outputSchema: syncOperationResultSchema,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
-      (input) =>
+      ({ includeDocument, ...input }) =>
         invoke('apply_project_changes', async () =>
-          syncOperationResultSchema.parse(await this.documents.apply(input, user)),
+          operationResult(
+            syncOperationResultSchema.parse(await this.documents.apply(input, user)),
+            includeDocument,
+          ),
         ),
     );
     server.registerTool(
       'get_project_history',
       {
-        description: '지정한 동기화 순서 이후의 프로젝트 변경 이력을 조회합니다.',
-        inputSchema: z.strictObject({ projectId: idSchema, since: sequenceSchema.default(0) }),
-        outputSchema: z.strictObject({ history: z.array(syncHistoryEntrySchema) }),
+        description:
+          '지정한 동기화 순서 이후의 이력을 최대 100건씩 조회합니다. 기본 응답은 변경 경로만 포함하며 변경값·전체 문서·삭제 스냅샷은 요청 시 포함합니다.',
+        inputSchema: historyInputSchema,
+        outputSchema: historyPageSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, since }) =>
-        invoke('get_project_history', async () => ({
-          history: z.array(syncHistoryEntrySchema).parse(await this.sync.history(projectId, since)),
-        })),
+      ({ projectId, since, limit, ...options }) =>
+        invoke('get_project_history', async () =>
+          projectHistory(await this.sync.historyPage(projectId, since, limit), options),
+        ),
     );
     server.registerTool(
       'undo_project_operation',
@@ -323,16 +335,20 @@ export class McpServerFactory {
           projectId: idSchema,
           sourceOperationId: idSchema,
           request: commandRequestSchema,
+          includeDocument: z.boolean().default(false),
         }),
         outputSchema: syncOperationResultSchema,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
-      ({ projectId, sourceOperationId, request }) =>
+      ({ projectId, sourceOperationId, request, includeDocument }) =>
         invoke('undo_project_operation', async () =>
-          requireAccepted(
-            syncOperationResultSchema.parse(
-              await this.sync.undo(projectId, sourceOperationId, request, user),
+          operationResult(
+            requireAccepted(
+              syncOperationResultSchema.parse(
+                await this.sync.undo(projectId, sourceOperationId, request, user),
+              ),
             ),
+            includeDocument,
           ),
         ),
     );
@@ -344,6 +360,7 @@ export class McpServerFactory {
           projectId: idSchema,
           deletedOperationId: idSchema,
           request: commandRequestSchema,
+          includeDocument: z.boolean().default(false),
         }),
         outputSchema: z.strictObject({
           result: syncOperationResultSchema,
@@ -351,11 +368,14 @@ export class McpServerFactory {
         }),
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, deletedOperationId, request }) =>
+      ({ projectId, deletedOperationId, request, includeDocument }) =>
         invoke('restore_project_deletion', async () => {
           const outcome = await this.sync.restore(projectId, deletedOperationId, request, user);
           return {
-            result: requireAccepted(syncOperationResultSchema.parse(outcome.result)),
+            result: operationResult(
+              requireAccepted(syncOperationResultSchema.parse(outcome.result)),
+              includeDocument,
+            ),
             omittedRelations: z.array(z.string()).parse(outcome.omittedRelations),
           };
         }),
