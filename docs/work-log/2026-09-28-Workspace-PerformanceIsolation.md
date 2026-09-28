@@ -31,3 +31,5 @@ pnpm perf:serve
 ```
 
 이전 기록에 남은 D:/ChatGPT/ERD/artifacts/performance 절대 경로는 당시 위치다. 같은 상대 경로의 결과는 현재 lab 폴더 아래에 있으며 manifest에 이전/현재 위치가 기록되어 있다.
+
+추가 확인: 도구 이전 커밋 c923b63의 깨끗한 상태에서 pnpm perf:build를 실행해 새 apps/web/dist-performance 생성에 성공했다. 보관된 relocation-builds와 원시 결과는 별도 위치로 유지한다.
