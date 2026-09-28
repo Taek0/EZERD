@@ -64,6 +64,8 @@ export const tableListSchema = baseSchema.extend({
 });
 export const projectViewSchema = baseSchema.extend({
   view: viewSummarySchema,
+  totalNodes: z.number().int().nonnegative(),
+  nextCursor: objectId.nullable(),
   domains: z.array(domainSchema.pick({ id: true, name: true, color: true })),
   tables: z.array(tableSummarySchema),
   notes: z.array(noteSchema),
@@ -86,6 +88,29 @@ export const projectViewSchema = baseSchema.extend({
   nodes: z.array(nodeLayoutSchema),
   relationLayouts: z.array(relationLayoutSchema),
   viewport: viewportSchema.nullable(),
+});
+export const projectViewInputSchema = z.strictObject({
+  projectId: z.uuid(),
+  viewId: objectId,
+  cursor: objectId.optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+});
+export const viewRelationsInputSchema = projectViewInputSchema.extend({
+  cursor: objectId.optional(),
+});
+export const viewRelationsSchema = baseSchema.extend({
+  view: viewSummarySchema,
+  relations: z.array(
+    z.strictObject({
+      id: objectId,
+      kind: z.enum(['domain', 'table']),
+      sourceId: objectId,
+      targetId: objectId,
+      name: z.string(),
+      layout: relationLayoutSchema.nullable(),
+    }),
+  ),
+  nextCursor: objectId.nullable(),
 });
 export const tableDetailsSchema = baseSchema.extend({
   table: tableSchema,
@@ -175,16 +200,33 @@ export function listTables(state: ProjectState, input: z.infer<typeof listTables
   });
 }
 
-export function projectView(state: ProjectState, viewId: string) {
+export function projectView(state: ProjectState, viewId: string, limit = 50, cursor?: string) {
   const { project, document, syncSequence } = state;
   const view = views(document).find((item) => item.id === viewId);
   if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
-  const nodes = document.layout.nodes.filter((node) => node.viewId === viewId);
+  const allNodes = document.layout.nodes
+    .filter((node) => node.viewId === viewId)
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const page = allNodes.filter((node) => !cursor || node.id > cursor).slice(0, limit + 1);
+  const nodes = page.slice(0, limit);
   const visible = new Set(nodes.map((node) => node.objectId));
+  const tableRelations = (document.tableRelations ?? [])
+    .filter(
+      (relation) => visible.has(relation.sourceTableId) && visible.has(relation.targetTableId),
+    )
+    .map(({ id, sourceTableId, targetTableId, logical }) => ({
+      id,
+      sourceTableId,
+      targetTableId,
+      name: logical.name,
+    }));
+  const visibleRelationIds = new Set(tableRelations.map((relation) => relation.id));
   return projectViewSchema.parse({
     project,
     syncSequence,
     view,
+    totalNodes: allNodes.length,
+    nextCursor: page.length > limit ? nodes.at(-1)!.id : null,
     domains: document.domains
       .filter((domain) => visible.has(domain.id))
       .map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })),
@@ -200,21 +242,64 @@ export function projectView(state: ProjectState, viewId: string) {
         targetDomainId,
         name,
       })),
-    tableRelations: (document.tableRelations ?? [])
-      .filter(
-        (relation) => visible.has(relation.sourceTableId) && visible.has(relation.targetTableId),
-      )
-      .map(({ id, sourceTableId, targetTableId, logical }) => ({
-        id,
-        sourceTableId,
-        targetTableId,
-        name: logical.name,
-      })),
+    tableRelations,
     nodes,
     relationLayouts: (document.layout.relations ?? []).filter(
-      (relation) => relation.viewId === viewId,
+      (relation) => relation.viewId === viewId && visibleRelationIds.has(relation.relationId),
     ),
     viewport: document.layout.viewports.find((viewport) => viewport.viewId === viewId) ?? null,
+  });
+}
+
+export function listViewRelations(
+  state: ProjectState,
+  viewId: string,
+  limit = 50,
+  cursor?: string,
+) {
+  const { project, document, syncSequence } = state;
+  const view = views(document).find((item) => item.id === viewId);
+  if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
+  const visible = new Set(
+    document.layout.nodes.filter((node) => node.viewId === viewId).map((node) => node.objectId),
+  );
+  const layouts = new Map(
+    (document.layout.relations ?? [])
+      .filter((item) => item.viewId === viewId)
+      .map((item) => [item.relationId, item]),
+  );
+  const relations = [
+    ...document.domainRelations
+      .filter((item) => visible.has(item.sourceDomainId) && visible.has(item.targetDomainId))
+      .map((item) => ({
+        id: item.id,
+        kind: 'domain' as const,
+        sourceId: item.sourceDomainId,
+        targetId: item.targetDomainId,
+        name: item.name,
+        layout: null,
+      })),
+    ...(document.tableRelations ?? [])
+      .filter((item) => visible.has(item.sourceTableId) && visible.has(item.targetTableId))
+      .map((item) => ({
+        id: item.id,
+        kind: 'table' as const,
+        sourceId: item.sourceTableId,
+        targetId: item.targetTableId,
+        name: item.logical.name,
+        layout: layouts.get(item.id) ?? null,
+      })),
+  ]
+    .filter((item) => !cursor || item.id > cursor)
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, limit + 1);
+  const page = relations.slice(0, limit);
+  return viewRelationsSchema.parse({
+    project,
+    syncSequence,
+    view,
+    relations: page,
+    nextCursor: relations.length > limit ? page.at(-1)!.id : null,
   });
 }
 

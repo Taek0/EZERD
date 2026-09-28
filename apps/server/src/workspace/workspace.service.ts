@@ -7,7 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { projectTransferSchema, type ProjectTransfer } from '@ezerd/contracts';
 import { diagnoseDocument } from '@ezerd/model';
@@ -21,6 +21,7 @@ import type {
 import { DatabaseService } from '../db/database.service.js';
 import { projects } from '../db/schema.js';
 import type { ProjectRow } from '../db/schema.js';
+import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
 
 function project(row: ProjectRow): Project {
   return {
@@ -100,6 +101,44 @@ export class WorkspaceService {
         )
         .orderBy(desc(projects.updatedAt), asc(projects.id));
       return rows.map(project);
+    });
+  }
+
+  listProjectsPage(
+    input: z.infer<typeof projectQuerySchema> & { limit: number; cursor?: string | undefined },
+  ) {
+    return operation(async () => {
+      const cursor = decodeUpdatedCursor(input.cursor);
+      const escapedSearch = input.search?.replace(/[\\%_]/g, '\\$&');
+      const orderedTime = sql<Date>`date_trunc('milliseconds', ${projects.updatedAt})`;
+      const rows = await this.database.db
+        .select()
+        .from(projects)
+        .where(
+          and(
+            eq(projects.status, input.status ?? 'active'),
+            escapedSearch ? ilike(projects.name, `%${escapedSearch}%`) : undefined,
+            cursor
+              ? or(
+                  lt(orderedTime, new Date(cursor.updatedAt)),
+                  and(eq(orderedTime, new Date(cursor.updatedAt)), gt(projects.id, cursor.id)),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(orderedTime), asc(projects.id))
+        .limit(input.limit + 1);
+      const page = rows.slice(0, input.limit);
+      return {
+        projects: page.map(project),
+        nextCursor:
+          rows.length > input.limit
+            ? encodeUpdatedCursor({
+                updatedAt: page.at(-1)!.updatedAt.toISOString(),
+                id: page.at(-1)!.id,
+              })
+            : null,
+      };
     });
   }
 

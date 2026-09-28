@@ -7,7 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type {
   createMessageSchema,
@@ -20,6 +20,7 @@ import { DatabaseService } from '../db/database.service.js';
 import { messages, notifications, projects, threads, users } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncGateway } from '../sync/sync.gateway.js';
+import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
 
 type Transaction = Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0];
 type Store = DatabaseService['db'] | Transaction;
@@ -121,6 +122,53 @@ export class ReviewService {
         .orderBy(desc(threads.updatedAt), asc(threads.id));
       return Promise.all(rows.map((row) => loadThread(this.database.db, row.id)));
     });
+  }
+
+  listPage(projectId: string, limit: number, rawCursor?: string) {
+    return operation(async () => {
+      const cursor = decodeUpdatedCursor(rawCursor);
+      const [project] = await this.database.db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+      if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+      const orderedTime = sql<Date>`date_trunc('milliseconds', ${threads.updatedAt})`;
+      const rows = await this.database.db
+        .select()
+        .from(threads)
+        .where(
+          and(
+            eq(threads.projectId, projectId),
+            cursor
+              ? or(
+                  lt(orderedTime, new Date(cursor.updatedAt)),
+                  and(eq(orderedTime, new Date(cursor.updatedAt)), gt(threads.id, cursor.id)),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(orderedTime), asc(threads.id))
+        .limit(limit + 1);
+      const page = rows.slice(0, limit);
+      return {
+        threads: page.map((row) => ({
+          ...row,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+        nextCursor:
+          rows.length > limit
+            ? encodeUpdatedCursor({
+                updatedAt: page.at(-1)!.updatedAt.toISOString(),
+                id: page.at(-1)!.id,
+              })
+            : null,
+      };
+    });
+  }
+
+  getThread(id: string) {
+    return operation(() => loadThread(this.database.db, id));
   }
 
   create(projectId: string, input: z.infer<typeof createThreadSchema>, actor: AuthenticatedUser) {

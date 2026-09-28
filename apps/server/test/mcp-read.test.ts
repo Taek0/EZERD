@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DesignDocument, Project } from '@ezerd/contracts';
 import {
   listTables,
+  listViewRelations,
   projectSummary,
   projectView,
   tableDetails,
@@ -166,6 +167,15 @@ describe('MCP scoped reads', () => {
       },
     ]);
     expect(result.nodes).toHaveLength(2);
+    expect(result.totalNodes).toBe(2);
+    expect(result.nextCursor).toBeNull();
+    const first = projectView(state, 'combined', 1);
+    expect(first.nodes).toHaveLength(1);
+    expect(first.nextCursor).toBe(first.nodes[0]!.id);
+    expect(projectView(state, 'combined', 1, first.nextCursor!).nodes).toHaveLength(1);
+    expect(listViewRelations(state, 'combined').relations).toContainEqual(
+      expect.objectContaining({ id: 'orders-users', kind: 'table' }),
+    );
     expect(result).not.toHaveProperty('columns');
     expect(() => projectView(state, 'missing')).toThrow('화면을 찾을 수 없습니다.');
   });

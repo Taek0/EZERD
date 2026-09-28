@@ -176,7 +176,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(22);
+      expect(listedTools.tools).toHaveLength(24);
       const list = await a.instance.callTool({ name: 'list_projects', arguments: {} });
       expect(list.isError).not.toBe(true);
       const created = await a.instance.callTool({
@@ -367,6 +367,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: { projectId: project.id },
       });
       expect((listedThreads.structuredContent as { threads: unknown[] }).threads).toHaveLength(1);
+      expect(listedThreads.structuredContent).not.toHaveProperty('threads.0.messages');
+      const fullThread = await a.instance.callTool({
+        name: 'get_review_thread',
+        arguments: { threadId },
+      });
+      expect((fullThread.structuredContent as { messages: unknown[] }).messages).toHaveLength(2);
       expect(
         (
           await a.instance.callTool({
@@ -630,6 +636,11 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       expect((personalView.structuredContent as { tables: unknown[] }).tables).toHaveLength(2);
       expect(personalView.structuredContent).toHaveProperty('relationLayouts.0.offset', 12);
+      const viewRelations = await a.instance.callTool({
+        name: 'list_view_relations',
+        arguments: { projectId, viewId: 'sales-view' },
+      });
+      expect(viewRelations.structuredContent).toHaveProperty('relations.0.layout.offset', 12);
       const layoutDiagnosis = await a.instance.callTool({
         name: 'diagnose_layout',
         arguments: { projectId, viewId: 'sales-view' },
@@ -684,6 +695,89 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     } finally {
       await a.instance.close();
       await b.instance.close();
+    }
+  });
+
+  it('paginates project and review listings with stable cursors', async () => {
+    const token = await issue(userA.session, 'pagination');
+    const connection = client(token.token);
+    await connection.instance.connect(connection.transport);
+    const search = `MCP-page-${randomUUID().slice(0, 8)}`;
+    try {
+      for (let index = 0; index < 3; index++) {
+        const created = await connection.instance.callTool({
+          name: 'create_project',
+          arguments: { name: `${search}-${index}` },
+        });
+        projects.push((created.structuredContent as { id: string }).id);
+      }
+      const listed: string[] = [];
+      let cursor: string | null = null;
+      for (let index = 0; index < 3; index++) {
+        const page = await connection.instance.callTool({
+          name: 'list_projects',
+          arguments: { search, limit: 1, ...(cursor ? { cursor } : {}) },
+        });
+        expect(page.isError).not.toBe(true);
+        const content = page.structuredContent as {
+          projects: Array<{ id: string }>;
+          nextCursor: string | null;
+        };
+        expect(content.projects).toHaveLength(1);
+        listed.push(content.projects[0]!.id);
+        cursor = content.nextCursor;
+      }
+      expect(new Set(listed).size).toBe(3);
+      expect(cursor).toBeNull();
+      expect(
+        (
+          await connection.instance.callTool({
+            name: 'list_projects',
+            arguments: { search, cursor: 'invalid-cursor' },
+          })
+        ).isError,
+      ).toBe(true);
+      const projectId = listed[0]!;
+      for (let index = 0; index < 2; index++) {
+        const thread = await connection.instance.callTool({
+          name: 'create_review_thread',
+          arguments: {
+            projectId,
+            thread: {
+              viewId: 'overview',
+              objectId: null,
+              x: index,
+              y: 0,
+              body: `Review ${index}`,
+              mentionIds: [],
+            },
+          },
+        });
+        expect(thread.isError).not.toBe(true);
+      }
+      const first = await connection.instance.callTool({
+        name: 'list_review_threads',
+        arguments: { projectId, limit: 1 },
+      });
+      const firstPage = first.structuredContent as {
+        threads: Array<{ id: string }>;
+        nextCursor: string;
+      };
+      expect(firstPage.threads).toHaveLength(1);
+      expect(firstPage.nextCursor).toBeTruthy();
+      const second = await connection.instance.callTool({
+        name: 'list_review_threads',
+        arguments: { projectId, limit: 1, cursor: firstPage.nextCursor },
+      });
+      const secondPage = second.structuredContent as {
+        threads: Array<{ id: string }>;
+        nextCursor: string | null;
+      };
+      expect(secondPage.threads).toHaveLength(1);
+      expect(secondPage.threads[0]!.id).not.toBe(firstPage.threads[0]!.id);
+      expect(secondPage.nextCursor).toBeNull();
+    } finally {
+      await connection.instance.close();
     }
   });
 });

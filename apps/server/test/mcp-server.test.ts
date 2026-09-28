@@ -24,6 +24,7 @@ describe('MCP server tools', () => {
   it('registers validated read tools with safe annotations and structured output', async () => {
     const workspace = {
       listProjects: vi.fn(async () => [project]),
+      listProjectsPage: vi.fn(async () => ({ projects: [project], nextCursor: null })),
       getProject: vi.fn(async () => ({ project, document })),
       getProjectState: vi.fn(async () => ({ project, document, syncSequence: 0 })),
     };
@@ -41,6 +42,8 @@ describe('MCP server tools', () => {
     };
     const reviews = {
       list: vi.fn(async () => []),
+      listPage: vi.fn(async () => ({ threads: [], nextCursor: null })),
+      getThread: vi.fn(async () => reviewThread),
       create: vi.fn(async () => reviewThread),
     };
     const logger = { write: vi.fn(async () => undefined) };
@@ -94,9 +97,11 @@ describe('MCP server tools', () => {
         'get_project_summary',
         'list_tables',
         'get_project_view',
+        'list_view_relations',
         'get_personal_state',
         'get_table_details',
         'list_review_threads',
+        'get_review_thread',
         'create_project',
         'update_project',
         'delete_project',
@@ -119,8 +124,12 @@ describe('MCP server tools', () => {
         tools.tools.find((tool) => tool.name === 'delete_project')?.annotations?.destructiveHint,
       ).toBe(true);
       const result = await client.callTool({ name: 'list_projects', arguments: {} });
-      expect(result.structuredContent).toEqual({ projects: [project] });
-      expect(workspace.listProjects).toHaveBeenCalledWith({ status: 'active', search: '' });
+      expect(result.structuredContent).toEqual({ projects: [project], nextCursor: null });
+      expect(workspace.listProjectsPage).toHaveBeenCalledWith({
+        status: 'active',
+        search: '',
+        limit: 50,
+      });
       expect(logger.write).toHaveBeenCalledWith(
         expect.objectContaining({
           event: 'tool-finished',

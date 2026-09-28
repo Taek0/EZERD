@@ -32,13 +32,17 @@ import {
 import {
   listTables,
   listTablesInputSchema,
+  listViewRelations,
   projectSummary,
   projectSummarySchema,
   projectView,
+  projectViewInputSchema,
   projectViewSchema,
   tableDetails,
   tableDetailsSchema,
   tableListSchema,
+  viewRelationsInputSchema,
+  viewRelationsSchema,
 } from './mcp-read.js';
 import {
   historyInputSchema,
@@ -62,6 +66,16 @@ const diagnosticSchema = z.strictObject({
   objectId: z.string(),
   message: z.string(),
 });
+const pageLimit = z.number().int().min(1).max(100).default(50);
+const listProjectsInputSchema = projectQuerySchema.extend({
+  limit: pageLimit,
+  cursor: z.string().min(1).max(500).optional(),
+});
+const listReviewThreadsInputSchema = z.strictObject({
+  projectId: idSchema,
+  limit: pageLimit,
+  cursor: z.string().min(1).max(500).optional(),
+});
 
 @Injectable()
 export class McpServerFactory {
@@ -81,7 +95,7 @@ export class McpServerFactory {
         capabilities: { tools: {} },
         instructions:
           'EZERD 프로젝트와 리뷰를 조회하고 변경합니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
-          '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view로 대상 뷰의 최신 배치를 확인하세요. 결합 화면·개인 화면 위치는 get_personal_state로 개인 버전을 확인하고 apply_personal_changes로 변경하세요. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
+          '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view의 모든 페이지로 대상 뷰의 최신 배치를 확인하세요. 화면의 관계는 list_view_relations로 조회하세요. 결합 화면·개인 화면 위치는 get_personal_state로 개인 버전을 확인하고 apply_personal_changes로 변경하세요. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
           '같은 뷰의 카드 경계와 콘텐츠에 필요한 크기를 고려해 서로 겹치지 않게 배치하고 최소 40px 간격을 두세요. ' +
@@ -120,15 +134,21 @@ export class McpServerFactory {
     server.registerTool(
       'list_projects',
       {
-        description: '상태와 이름 검색어로 EZERD 프로젝트를 조회합니다.',
-        inputSchema: projectQuerySchema,
-        outputSchema: z.strictObject({ projects: z.array(projectSchema) }),
+        description: '상태와 이름 검색어로 EZERD 프로젝트를 최대 100개씩 조회합니다.',
+        inputSchema: listProjectsInputSchema,
+        outputSchema: z.strictObject({
+          projects: z.array(projectSchema),
+          nextCursor: z.string().nullable(),
+        }),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       (input) =>
         invoke('list_projects', async () => {
-          const projects = z.array(projectSchema).parse(await this.workspace.listProjects(input));
-          return { projects };
+          const page = await this.workspace.listProjectsPage(input);
+          return {
+            projects: z.array(projectSchema).parse(page.projects),
+            nextCursor: page.nextCursor,
+          };
         }),
     );
     server.registerTool(
@@ -169,13 +189,29 @@ export class McpServerFactory {
       'get_project_view',
       {
         description:
-          '한 화면의 카드 요약, 좌표와 연결 관계를 조회합니다. 테이블 컬럼은 포함하지 않습니다.',
-        inputSchema: z.strictObject({ projectId: idSchema, viewId: z.string().min(1).max(160) }),
+          '한 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. 테이블 컬럼은 포함하지 않습니다.',
+        inputSchema: projectViewInputSchema,
         outputSchema: projectViewSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, viewId }) =>
-        invoke('get_project_view', async () => projectView(await projectState(projectId), viewId)),
+      ({ projectId, viewId, limit, cursor }) =>
+        invoke('get_project_view', async () =>
+          projectView(await projectState(projectId), viewId, limit, cursor),
+        ),
+    );
+    server.registerTool(
+      'list_view_relations',
+      {
+        description:
+          '한 화면에 실제로 보이는 도메인·테이블 관계와 관계선 경로를 최대 100개씩 조회합니다.',
+        inputSchema: viewRelationsInputSchema,
+        outputSchema: viewRelationsSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, viewId, limit, cursor }) =>
+        invoke('list_view_relations', async () =>
+          listViewRelations(await projectState(projectId), viewId, limit, cursor),
+        ),
     );
     server.registerTool(
       'get_personal_state',
@@ -206,15 +242,36 @@ export class McpServerFactory {
     server.registerTool(
       'list_review_threads',
       {
-        description: '프로젝트의 리뷰 핀과 모든 답글을 조회합니다.',
-        inputSchema: z.strictObject({ projectId: idSchema }),
-        outputSchema: z.strictObject({ threads: z.array(threadSchema) }),
+        description:
+          '프로젝트의 리뷰 핀 요약을 최대 100개씩 조회합니다. 답글은 get_review_thread로 조회합니다.',
+        inputSchema: listReviewThreadsInputSchema,
+        outputSchema: z.strictObject({
+          threads: z.array(threadSchema.omit({ messages: true })),
+          nextCursor: z.string().nullable(),
+        }),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId }) =>
-        invoke('list_review_threads', async () => ({
-          threads: z.array(threadSchema).parse(await this.reviews.list(projectId)),
-        })),
+      ({ projectId, limit, cursor }) =>
+        invoke('list_review_threads', async () => {
+          const page = await this.reviews.listPage(projectId, limit, cursor);
+          return {
+            threads: z.array(threadSchema.omit({ messages: true })).parse(page.threads),
+            nextCursor: page.nextCursor,
+          };
+        }),
+    );
+    server.registerTool(
+      'get_review_thread',
+      {
+        description: '리뷰 핀 한 개와 모든 답글을 조회합니다.',
+        inputSchema: z.strictObject({ threadId: idSchema }),
+        outputSchema: threadSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ threadId }) =>
+        invoke('get_review_thread', async () =>
+          threadSchema.parse(await this.reviews.getThread(threadId)),
+        ),
     );
     server.registerTool(
       'create_project',
