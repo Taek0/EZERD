@@ -7,6 +7,14 @@
   --topbar-gap-zone: clamp(16px, 2vw, 28px);
 }
 .app-shell.editor-shell .editor-heading {
+  --button-background: linear-gradient(145deg, #e1e9f2, #cfdae7);
+  --button-primary-background: linear-gradient(145deg, #d5e2f0, #bdcfe4);
+  --button-hover-background: #c1d2e6;
+  --button-selected-background: #b5cbe5;
+  --button-pressed-background: #a9c1dd;
+  --ui-product-raised:
+    3px 3px 8px #aeb7c433, -3px -3px 8px #ffffffcc, inset 0 0 0 1px #a9b8ca80,
+    inset 0 1px 0 #ffffffd9;
   gap: var(--topbar-gap-zone);
 }
 .app-shell.editor-shell .project-title,
