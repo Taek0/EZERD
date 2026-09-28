@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   columnSchema,
-  customPropertiesSchema,
   domainRelationSchema,
   domainSchema,
   noteSchema,
@@ -21,6 +20,7 @@ import {
   upsertKey,
   upsertTableRelation,
   type Column,
+  type CustomProperties,
   type DesignDocument,
   type Domain,
   type DomainRelation,
@@ -32,6 +32,12 @@ import {
 } from '@ezerd/model';
 
 const id = z.string().trim().min(1).max(160);
+const propertyChanges = z.record(z.string().min(1).max(120), z.string().max(10000).nullable());
+const customPropertiesPatch = z.strictObject({
+  common: propertyChanges.optional(),
+  logical: propertyChanges.optional(),
+  physical: propertyChanges.optional(),
+});
 const nonEmpty = <T extends z.ZodRawShape>(schema: z.ZodObject<T>) =>
   schema.refine((value) => Object.values(value).some((item) => item !== undefined));
 const domainPatch = nonEmpty(
@@ -47,7 +53,7 @@ const tablePatch = nonEmpty(
     scope: tableSchema.shape.scope.optional(),
     logical: tableSchema.shape.logical.partial().optional(),
     physical: tableSchema.shape.physical.partial().optional(),
-    customProperties: customPropertiesSchema.partial().optional(),
+    customProperties: customPropertiesPatch.optional(),
     canvasDisplay: tableSchema.shape.canvasDisplay,
   }),
 );
@@ -60,7 +66,7 @@ const columnPatch = nonEmpty(
       .partial()
       .extend({ type: physicalTypeSchema.partial().optional() })
       .optional(),
-    customProperties: customPropertiesSchema.partial().optional(),
+    customProperties: customPropertiesPatch.optional(),
   }),
 );
 const notePatch = nonEmpty(
@@ -107,6 +113,25 @@ function defined<T extends object>(value: object): Partial<T> {
   ) as Partial<T>;
 }
 
+function mergeCustomProperties(
+  current: CustomProperties,
+  patch: z.infer<typeof customPropertiesPatch>,
+): CustomProperties {
+  const merge = (values: Record<string, string>, changes?: Record<string, string | null>) => {
+    const next = { ...values };
+    for (const [key, value] of Object.entries(changes ?? {})) {
+      if (value === null) delete next[key];
+      else next[key] = value;
+    }
+    return next;
+  };
+  return {
+    common: merge(current.common, patch.common),
+    logical: merge(current.logical, patch.logical),
+    physical: merge(current.physical, patch.physical),
+  };
+}
+
 export function applyPatchCommand(document: DesignDocument, command: PatchCommand): DesignDocument {
   switch (command.type) {
     case 'patch_domain': {
@@ -130,12 +155,7 @@ export function applyPatchCommand(document: DesignDocument, command: PatchComman
           ? { physical: { ...current.physical, ...defined<Table['physical']>(physical) } }
           : {}),
         ...(customProperties
-          ? {
-              customProperties: {
-                ...current.customProperties,
-                ...defined<Table['customProperties']>(customProperties),
-              },
-            }
+          ? { customProperties: mergeCustomProperties(current.customProperties, customProperties) }
           : {}),
       };
       return updateTable(document, command.id, next);
@@ -166,12 +186,7 @@ export function applyPatchCommand(document: DesignDocument, command: PatchComman
             }
           : {}),
         ...(customProperties
-          ? {
-              customProperties: {
-                ...current.customProperties,
-                ...defined<Column['customProperties']>(customProperties),
-              },
-            }
+          ? { customProperties: mergeCustomProperties(current.customProperties, customProperties) }
           : {}),
       };
       return updateColumn(document, command.id, next);

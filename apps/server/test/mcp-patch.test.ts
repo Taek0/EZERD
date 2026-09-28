@@ -145,4 +145,43 @@ describe('MCP partial patches', () => {
       patchCommandSchema.safeParse({ type: 'patch_table', id: 'orders', patch: {} }).success,
     ).toBe(false);
   });
+
+  it('merges individual custom property keys and removes keys set to null', () => {
+    const source = fixture();
+    source.tables![0]!.customProperties = {
+      common: { keep: 'old', remove: 'old' },
+      logical: { untouched: 'yes' },
+      physical: {},
+    };
+    source.columns![0]!.customProperties = {
+      common: {},
+      logical: { keep: 'old' },
+      physical: {},
+    };
+    const table = applyPatchCommand(
+      source,
+      patchCommandSchema.parse({
+        type: 'patch_table',
+        id: 'orders',
+        patch: { customProperties: { common: { add: 'new', remove: null } } },
+      }),
+    );
+    expect(table.tables?.[0]?.customProperties).toEqual({
+      common: { keep: 'old', add: 'new' },
+      logical: { untouched: 'yes' },
+      physical: {},
+    });
+    const column = applyPatchCommand(
+      table,
+      patchCommandSchema.parse({
+        type: 'patch_column',
+        id: 'order-id',
+        patch: { customProperties: { logical: { add: 'new' } } },
+      }),
+    );
+    expect(column.columns?.[0]?.customProperties.logical).toEqual({
+      keep: 'old',
+      add: 'new',
+    });
+  });
 });
