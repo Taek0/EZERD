@@ -1,3 +1,5 @@
+import { translate as tr } from '../../shared/i18n/index.js';
+import '../canvas/translations.js';
 import { type DesignDocument, type RelationCardinality, upsertKey } from '@ezerd/model';
 
 export type CardinalityChoice = '0..1' | '1' | '0..N' | '1..N';
@@ -28,7 +30,7 @@ export function applyForeignKeyDraft(
       .map((c) => c.physical.name),
   );
   for (const name of trimmed) {
-    if (used.has(name)) throw new Error(`컬럼 이름 ‘${name}’이 중복됩니다.`);
+    if (used.has(name)) throw new Error(tr('컬럼 이름 ‘{name}’이 중복됩니다.', { name }));
     used.add(name);
   }
   const sourceCardinality = cardinalityValue(foreign);

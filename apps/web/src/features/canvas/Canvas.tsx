@@ -1,3 +1,5 @@
+import { translate as tr, useI18n } from '../../shared/i18n/index.js';
+import './translations.js';
 import { createPortal } from 'react-dom';
 import { applyDomainSelection, domainViewExitTarget } from '../domains/domain-view.js';
 import {
@@ -118,6 +120,7 @@ export function Canvas({
   pathHost,
   panelToggle,
 }: Props) {
+  useI18n();
   const confirm = useConfirm();
   const latestDeletion = useRef({ doc, onChange, readOnly });
   latestDeletion.current = { doc, onChange, readOnly };
@@ -389,16 +392,16 @@ export function Canvas({
       viewTables.some((t) => t.id === r.sourceTableId) &&
       viewTables.some((t) => t.id === r.targetTableId),
   );
-  const tableLabel = (t: Table) => t.physical.name || t.logical.name || '이름 없는 테이블';
+  const tableLabel = (t: Table) => t.physical.name || t.logical.name || tr('이름 없는 테이블');
   const outlineCount = viewId === 'overview' ? doc.domains.length : viewTables.length;
   const selectionKind = selectedTableRelation
-    ? '테이블 관계'
+    ? tr('테이블 관계')
     : table
-      ? '테이블'
+      ? tr('테이블')
       : domain
-        ? '도메인'
+        ? tr('도메인')
         : note
-          ? '메모'
+          ? tr('메모')
           : '';
   const selectionName = selectedTableRelation
     ? `${tableLabel(doc.tables!.find((t) => t.id === selectedTableRelation.targetTableId)!)} → ${tableLabel(doc.tables!.find((t) => t.id === selectedTableRelation.sourceTableId)!)}`
@@ -407,7 +410,7 @@ export function Canvas({
       : domain
         ? domain.name
         : note
-          ? note.text.slice(0, 40) || '메모'
+          ? note.text.slice(0, 40) || tr('메모')
           : '';
   function pinAt(clientX: number, clientY: number) {
     const rect = surface.current?.getBoundingClientRect();
@@ -832,21 +835,21 @@ export function Canvas({
     setPanelTab('properties');
     setRelationsOpen(true);
     requestAnimationFrame(() =>
-      globalThis.document.querySelector<HTMLInputElement>('[aria-label="관계 이름"]')?.focus(),
+      globalThis.document.querySelector<HTMLInputElement>('[data-relation-name-input]')?.focus(),
     );
   }
   const currentViewName = activeCombined?.name ?? activeDomain?.name ?? '';
   const pathTrail = (
-    <nav className="editor-path" aria-label="현재 위치">
+    <nav className="editor-path" aria-label={tr('현재 위치')}>
       <span className="path-sep" aria-hidden="true">
         /
       </span>
       {viewId === 'overview' ? (
-        <strong className="path-current">도메인 맵</strong>
+        <strong className="path-current">{tr('도메인 맵')}</strong>
       ) : (
         <>
           <Button className="path-step" onClick={() => navigate('overview')}>
-            도메인 맵
+            {tr('도메인 맵')}
           </Button>
           <span className="path-sep" aria-hidden="true">
             /
@@ -854,7 +857,7 @@ export function Canvas({
           <strong
             className="path-current"
             key={viewId}
-            title={activeCombined ? currentViewName + ' (도메인 뷰)' : currentViewName}
+            title={activeCombined ? currentViewName + tr(' (도메인 뷰)') : currentViewName}
           >
             {activeCombined && (
               <svg
@@ -882,22 +885,22 @@ export function Canvas({
   const toolbar = (
     <div className="canvas-toolbar">
       <div className="actions">
-        <div className="toolbar-group toolbar-create" role="group" aria-label="편집 도구">
+        <div className="toolbar-group toolbar-create" role="group" aria-label={tr('편집 도구')}>
           {viewId === 'overview' ? (
             <Button disabled={readOnly} onClick={() => newDomain()}>
-              ＋ 도메인
+              {tr('＋ 도메인')}
             </Button>
           ) : (
             <Button disabled={readOnly || !!activeCombined} onClick={() => newTable()}>
-              ＋ 테이블
+              {tr('＋ 테이블')}
             </Button>
           )}
           <Button disabled={readOnly} onClick={newNote}>
-            ＋ 메모
+            {tr('＋ 메모')}
           </Button>
         </div>
         <span className="toolbar-divider" aria-hidden="true" />
-        <div className="toolbar-group" role="group" aria-label="보기와 내보내기">
+        <div className="toolbar-group" role="group" aria-label={tr('보기와 내보내기')}>
           {viewId !== 'overview' && (
             <DialogTrigger
               isOpen={viewPickerOpen}
@@ -915,8 +918,8 @@ export function Canvas({
                 className={activeCombined ? 'domain-view-trigger is-active' : 'domain-view-trigger'}
                 title={
                   activeCombined
-                    ? '테이블 고정 배치 · 키 관계 설정 및 관계선 이동 가능'
-                    : '도메인 뷰'
+                    ? tr('테이블 고정 배치 · 키 관계 설정 및 관계선 이동 가능')
+                    : tr('도메인 뷰')
                 }
               >
                 <svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none">
@@ -927,7 +930,7 @@ export function Canvas({
                     strokeLinecap="round"
                   />
                 </svg>
-                도메인 뷰
+                {tr('도메인 뷰')}
               </Button>
               <UntitledPopover
                 className="domain-view-popover"
@@ -935,17 +938,17 @@ export function Canvas({
                 shouldFlip={false}
                 offset={8}
               >
-                <Dialog aria-label="도메인 뷰" className="combined-view-picker">
-                  <strong>도메인 선택</strong>
+                <Dialog aria-label={tr('도메인 뷰')} className="combined-view-picker">
+                  <strong>{tr('도메인 선택')}</strong>
                   <p className="panel-note">
-                    함께 볼 도메인을 선택하세요. 도메인 맵의 배치를 따라 테이블 묶음을 표시하고,
-                    묶음 안의 배치는 유지합니다. 테이블 위치는 고정되며, 키 관계 설정과 관계선
-                    이동은 가능합니다.
+                    {tr(
+                      '함께 볼 도메인을 선택하세요. 도메인 맵의 배치를 따라 테이블 묶음을 표시하고, 묶음 안의 배치는 유지합니다. 테이블 위치는 고정되며, 키 관계 설정과 관계선 이동은 가능합니다.',
+                    )}
                   </p>
                   <div className="combined-domain-options">
                     <label className="combined-select-all">
                       <Checkbox
-                        aria-label="모든 도메인 선택"
+                        aria-label={tr('모든 도메인 선택')}
                         disabled={!doc.domains.length}
                         checked={
                           doc.domains.length > 0 && selectedDomainCount === doc.domains.length
@@ -959,7 +962,7 @@ export function Canvas({
                           )
                         }
                       />
-                      전체
+                      {tr('전체')}
                     </label>
                     {doc.domains.map((d) => (
                       <label key={d.id}>
@@ -995,9 +998,9 @@ export function Canvas({
                         setViewPickerOpen(false);
                       }}
                     >
-                      적용
+                      {tr('적용')}
                     </Button>
-                    <Button onClick={() => setViewPickerOpen(false)}>닫기</Button>
+                    <Button onClick={() => setViewPickerOpen(false)}>{tr('닫기')}</Button>
                   </div>
                 </Dialog>
               </UntitledPopover>
@@ -1013,7 +1016,7 @@ export function Canvas({
                 );
               }}
             >
-              도메인 뷰 나가기
+              {tr('도메인 뷰 나가기')}
             </Button>
           )}
           <Button onClick={() => setEnumOpen(true)}>ENUM</Button>
@@ -1028,25 +1031,32 @@ export function Canvas({
                 await exportCanvasPng(
                   world,
                   nodes,
-                  activeCombined?.name ?? activeCombined?.name ?? activeDomain?.name ?? '도메인 맵',
+                  activeCombined?.name ??
+                    activeCombined?.name ??
+                    activeDomain?.name ??
+                    tr('도메인 맵'),
                 );
               } catch {
-                setExportError('이미지를 만들지 못했습니다. 다시 시도해 주세요.');
+                setExportError(tr('이미지를 만들지 못했습니다. 다시 시도해 주세요.'));
               } finally {
                 setExporting(false);
               }
             }}
           >
-            {exporting ? '이미지 생성 중…' : '고화질 PNG'}
+            {exporting ? tr('이미지 생성 중…') : tr('고화질 PNG')}
           </Button>
         </div>
         <span className="toolbar-divider" aria-hidden="true" />
-        <div className="toolbar-group panel-toggles" role="group" aria-label="협업과 속성 패널">
+        <div
+          className="toolbar-group panel-toggles"
+          role="group"
+          aria-label={tr('협업과 속성 패널')}
+        >
           {panelToggle}
           <IconButton
             className="inspector-toggle panel-toggle"
-            aria-label={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'}
-            title={inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기'}
+            aria-label={inspectorOpen ? tr('속성 패널 숨기기') : tr('속성 패널 열기')}
+            title={inspectorOpen ? tr('속성 패널 숨기기') : tr('속성 패널 열기')}
             aria-pressed={inspectorOpen}
             aria-expanded={inspectorOpen}
             aria-controls="canvas-inspector"
@@ -1097,21 +1107,21 @@ export function Canvas({
             !(await confirm({
               title:
                 ids.length > 1
-                  ? `선택한 객체 ${ids.length}개 삭제`
+                  ? tr('선택한 객체 {count}개 삭제', { count: ids.length })
                   : kind === 'domain'
-                    ? '도메인 삭제'
+                    ? tr('도메인 삭제')
                     : kind === 'note'
-                      ? '메모 삭제'
-                      : '테이블 삭제',
+                      ? tr('메모 삭제')
+                      : tr('테이블 삭제'),
               description:
                 ids.length > 1
-                  ? '선택한 객체와 소유 데이터·연결 관계를 삭제할까요?'
+                  ? tr('선택한 객체와 소유 데이터·연결 관계를 삭제할까요?')
                   : kind === 'domain'
-                    ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?'
+                    ? tr('도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?')
                     : kind === 'note'
-                      ? '이 메모를 삭제할까요?'
-                      : '테이블과 소유 컬럼, 키, 관계 및 모든 외부 참조를 삭제할까요?',
-              confirmLabel: '삭제',
+                      ? tr('이 메모를 삭제할까요?')
+                      : tr('테이블과 소유 컬럼, 키, 관계 및 모든 외부 참조를 삭제할까요?'),
+              confirmLabel: tr('삭제'),
               destructive: true,
             }))
           )
@@ -1184,8 +1194,8 @@ export function Canvas({
           }}
           aria-label={
             viewId === 'overview'
-              ? '도메인 맵 캔버스'
-              : `${activeCombined?.name ?? activeDomain?.name} 내부 캔버스`
+              ? tr('도메인 맵 캔버스')
+              : tr('{name} 내부 캔버스', { name: activeCombined?.name ?? activeDomain?.name ?? '' })
           }
           onPointerDown={(e) => begin(e, null)}
           onPointerMove={move}
@@ -1209,7 +1219,7 @@ export function Canvas({
             }}
           >
             {viewId === 'overview' && (
-              <svg className="relations" aria-label="도메인 관계">
+              <svg className="relations" aria-label={tr('도메인 관계')}>
                 <defs>
                   <marker
                     id="arrow-end"
@@ -1268,7 +1278,7 @@ export function Canvas({
               <>
                 <svg
                   className="relations"
-                  aria-label="테이블 관계"
+                  aria-label={tr('테이블 관계')}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
                   <TableRelationsSvg
@@ -1292,7 +1302,7 @@ export function Canvas({
                 <svg
                   className="relations table-route-overlay"
                   data-export-hidden="true"
-                  aria-label="관계 선 조절"
+                  aria-label={tr('관계 선 조절')}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
                   <TableRelationsSvg
@@ -1370,7 +1380,7 @@ export function Canvas({
                   onDoubleClick={() => d && navigate(d.id)}
                   tabIndex={0}
                   role="group"
-                  aria-label={d?.name ?? (t ? tableLabel(t) : '메모')}
+                  aria-label={d?.name ?? (t ? tableLabel(t) : tr('메모'))}
                   onFocus={(e) => {
                     if (e.target === e.currentTarget && !selectedObjects.includes(node.objectId))
                       setSelected(node.objectId);
@@ -1438,9 +1448,9 @@ export function Canvas({
                         className="enter-domain"
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => navigate(d.id)}
-                        aria-label={`${d.name} 도메인 열기`}
+                        aria-label={tr('{name} 도메인 열기', { name: d.name })}
                       >
-                        도메인 열기 ↗
+                        {tr('도메인 열기 ↗')}
                       </Button>
                     </>
                   ) : t ? (
@@ -1466,7 +1476,7 @@ export function Canvas({
                   ) : (
                     <DomainDescription
                       memo
-                      name="메모"
+                      name={tr('메모')}
                       value={n?.text ?? ''}
                       readOnly={readOnly}
                       onCommit={(text) => n && change(updateNote(doc, n.id, text))}
@@ -1475,7 +1485,7 @@ export function Canvas({
                   {layoutPolicy.resizeNodes && (
                     <div
                       className="resize-handle"
-                      title="크기 조절"
+                      title={tr('크기 조절')}
                       onPointerDown={(e) => begin(e, node.id, true)}
                     />
                   )}
@@ -1503,12 +1513,14 @@ export function Canvas({
                 {viewId === 'overview' ? '◇' : '▦'}
               </span>
               <h2>
-                {viewId === 'overview' ? '큰 그림부터 시작하세요' : '이 도메인의 구조를 준비하세요'}
+                {viewId === 'overview'
+                  ? tr('큰 그림부터 시작하세요')
+                  : tr('이 도메인의 구조를 준비하세요')}
               </h2>
               <p>
                 {viewId === 'overview'
-                  ? '도메인을 만들고 업무의 흐름을 연결해 보세요.'
-                  : '테이블을 추가하고 컬럼과 관계를 설계하세요.'}
+                  ? tr('도메인을 만들고 업무의 흐름을 연결해 보세요.')
+                  : tr('테이블을 추가하고 컬럼과 관계를 설계하세요.')}
               </p>
 
               {viewId === 'overview' && (
@@ -1519,27 +1531,27 @@ export function Canvas({
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => newDomain()}
                 >
-                  첫 도메인 만들기
+                  {tr('첫 도메인 만들기')}
                 </Button>
               )}
             </div>
           )}
           <div className="canvas-hint" role={connectSource || fkSource ? 'status' : undefined}>
             {connectSource
-              ? '연결할 도메인을 클릭하세요 · Escape 취소'
+              ? tr('연결할 도메인을 클릭하세요 · Escape 취소')
               : fkSource
-                ? 'PK를 받을 테이블을 클릭하세요 · FK 컬럼 자동 추가 · Escape 취소'
+                ? tr('PK를 받을 테이블을 클릭하세요 · FK 컬럼 자동 추가 · Escape 취소')
                 : selectedObjects.length > 1
-                  ? `${selectedObjects.length}개 선택됨 · 함께 드래그하여 이동`
+                  ? tr('{count}개 선택됨 · 함께 드래그하여 이동', { count: selectedObjects.length })
                   : tool === 'hand'
-                    ? '손 도구 · 드래그로 화면 이동'
-                    : '커서 도구 · 빈 공간 드래그로 여러 객체 선택'}
+                    ? tr('손 도구 · 드래그로 화면 이동')
+                    : tr('커서 도구 · 빈 공간 드래그로 여러 객체 선택')}
           </div>
           <div className="zoom-controls" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="canvas-tool-picker" role="group" aria-label="캔버스 도구">
+            <div className="canvas-tool-picker" role="group" aria-label={tr('캔버스 도구')}>
               <IconButton
-                aria-label="커서 도구"
-                title="커서 · 드래그로 여러 객체 선택"
+                aria-label={tr('커서 도구')}
+                title={tr('커서 · 드래그로 여러 객체 선택')}
                 aria-pressed={tool === 'select'}
                 onClick={() => {
                   finish();
@@ -1559,8 +1571,8 @@ export function Canvas({
                 </svg>
               </IconButton>
               <IconButton
-                aria-label="손 도구"
-                title="손 · 화면 이동만"
+                aria-label={tr('손 도구')}
+                title={tr('손 · 화면 이동만')}
                 aria-pressed={tool === 'hand'}
                 onClick={() => {
                   finish();
@@ -1582,13 +1594,13 @@ export function Canvas({
                 </svg>
               </IconButton>
             </div>
-            <IconButton aria-label="축소" onClick={() => zoom(viewport.zoom - 0.1)}>
+            <IconButton aria-label={tr('축소')} onClick={() => zoom(viewport.zoom - 0.1)}>
               −
             </IconButton>
-            <Button onClick={() => zoom(1)} aria-label="배율 100%로 초기화">
+            <Button onClick={() => zoom(1)} aria-label={tr('배율 100%로 초기화')}>
               {Math.round(viewport.zoom * 100)}%
             </Button>
-            <IconButton aria-label="확대" onClick={() => zoom(viewport.zoom + 0.1)}>
+            <IconButton aria-label={tr('확대')} onClick={() => zoom(viewport.zoom + 0.1)}>
               ＋
             </IconButton>
           </div>
@@ -1608,7 +1620,7 @@ export function Canvas({
       )}
       <ContextMenu
         position={menu ? { x: menu.x, y: menu.y } : null}
-        label={menu?.source ? '도메인 관계 설정' : '캔버스 메뉴'}
+        label={menu?.source ? tr('도메인 관계 설정') : tr('캔버스 메뉴')}
         onClose={() => setMenu(null)}
         items={
           menu
@@ -1617,7 +1629,7 @@ export function Canvas({
                   ? [
                       {
                         id: 'create-pin',
-                        label: '이 위치에 핀 남기기',
+                        label: tr('이 위치에 핀 남기기'),
                         onAction: () => pinAt(menuPointer.current.x, menuPointer.current.y),
                       },
                     ]
@@ -1627,12 +1639,12 @@ export function Canvas({
                     ? [
                         {
                           id: 'panel-relation',
-                          label: '새 도메인 관계',
+                          label: tr('새 도메인 관계'),
                           onAction: () => startRelation(menu.source!, ''),
                         },
                         {
                           id: 'direct-relation',
-                          label: '도메인 직접 연결',
+                          label: tr('도메인 직접 연결'),
                           disabled: doc.domains.length < 2,
                           onAction: () => {
                             setConnectSource(menu.source);
@@ -1646,7 +1658,7 @@ export function Canvas({
                           ? [
                               {
                                 id: 'new-domain',
-                                label: '새 도메인 생성',
+                                label: tr('새 도메인 생성'),
                                 onAction: () =>
                                   newDomain(
                                     '새 도메인',
@@ -1657,7 +1669,7 @@ export function Canvas({
                               },
                               {
                                 id: 'new-relation',
-                                label: '새 도메인 관계',
+                                label: tr('새 도메인 관계'),
                                 onAction: () => startRelation('', ''),
                               },
                             ]
@@ -1665,8 +1677,8 @@ export function Canvas({
                               {
                                 id: 'new-table',
                                 label: activeCombined
-                                  ? '새 테이블은 소유 도메인 화면에서 생성하세요'
-                                  : '새 테이블 생성',
+                                  ? tr('새 테이블은 소유 도메인 화면에서 생성하세요')
+                                  : tr('새 테이블 생성'),
                                 disabled: !!activeCombined || !activeDomain,
                                 onAction: () =>
                                   newTable(
@@ -1679,7 +1691,7 @@ export function Canvas({
                             ]),
                         {
                           id: 'auto-layout',
-                          label: '자동 배치',
+                          label: tr('자동 배치'),
                           disabled: !nodes.length || !layoutPolicy.autoLayout,
                           onAction: () => {
                             arrangeVisibleNodes();
@@ -1704,7 +1716,7 @@ export function Canvas({
         <div
           className="inspector-resizer"
           role="separator"
-          aria-label="속성 패널 너비 조절"
+          aria-label={tr('속성 패널 너비 조절')}
           aria-orientation="vertical"
           aria-valuemin={panelBounds.min}
           aria-valuemax={panelBounds.max}
@@ -1759,51 +1771,56 @@ export function Canvas({
           <div className="inspector-topbar">
             <div className="inspector-place">
               <span>{viewId === 'overview' ? 'VIEW' : 'DOMAIN'}</span>
-              <strong title={activeCombined?.name ?? activeDomain?.name ?? '도메인 맵'}>
-                {activeCombined?.name ?? activeDomain?.name ?? '도메인 맵'}
+              <strong title={activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵')}>
+                {activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵')}
               </strong>
             </div>
             {selectionName && (
               <div className="inspector-selection">
                 <span className="selection-kind">{selectionKind}</span>
                 <strong title={selectionName}>{selectionName}</strong>
-                <IconButton aria-label="선택 해제" onClick={() => setSelected(null)}>
+                <IconButton aria-label={tr('선택 해제')} onClick={() => setSelected(null)}>
                   ×
                 </IconButton>
               </div>
             )}
-            <div className="inspector-tabs" role="group" aria-label="패널 보기 전환">
+            <div className="inspector-tabs" role="group" aria-label={tr('패널 보기 전환')}>
               <TabButton
                 selected={panelTab === 'properties'}
                 onClick={() => setPanelTab('properties')}
               >
-                속성
+                {tr('속성')}
               </TabButton>
               <TabButton selected={panelTab === 'outline'} onClick={() => setPanelTab('outline')}>
-                목록 <span className="panel-count">{outlineCount}</span>
+                {tr('목록 ')}
+                <span className="panel-count">{outlineCount}</span>
               </TabButton>
             </div>
           </div>
           <div className="inspector-body">
             {activeCombined && (
               <PanelNote>
-                도메인 뷰 · 테이블은 고정 배치입니다. 키 관계 설정과 관계선 이동은 가능합니다.
+                {tr(
+                  '도메인 뷰 · 테이블은 고정 배치입니다. 키 관계 설정과 관계선 이동은 가능합니다.',
+                )}
               </PanelNote>
             )}
             {panelTab === 'outline' ? (
               <>
                 <div className="panel-search">
                   <Input
-                    aria-label="현재 화면 검색"
-                    placeholder={viewId === 'overview' ? '도메인·관계 검색' : '테이블·관계 검색'}
+                    aria-label={tr('현재 화면 검색')}
+                    placeholder={
+                      viewId === 'overview' ? tr('도메인·관계 검색') : tr('테이블·관계 검색')
+                    }
                     value={relationSearch}
                     onChange={(e) => setRelationSearch(e.target.value)}
                   />
                 </div>
                 {viewId === 'overview' ? (
                   <>
-                    <PanelSection title="도메인" count={doc.domains.length} defaultOpen>
-                      <PanelList empty="표시할 도메인이 없습니다.">
+                    <PanelSection title={tr('도메인')} count={doc.domains.length} defaultOpen>
+                      <PanelList empty={tr('표시할 도메인이 없습니다.')}>
                         {doc.domains
                           .filter((d) => matches(d.name, d.description))
                           .map((d) => (
@@ -1812,19 +1829,21 @@ export function Canvas({
                               accent={d.color ?? '#8993a3'}
                               active={selected === d.id}
                               title={d.name}
-                              meta={
-                                '관계 ' +
-                                connectedRelations(doc.domainRelations, d.id).length +
-                                '개'
-                              }
+                              meta={tr('관계 {count}개', {
+                                count: connectedRelations(doc.domainRelations, d.id).length,
+                              })}
                               onSelect={() => pick(d.id)}
-                              action={<Button onClick={() => navigate(d.id)}>열기</Button>}
+                              action={<Button onClick={() => navigate(d.id)}>{tr('열기')}</Button>}
                             />
                           ))}
                       </PanelList>
                     </PanelSection>
-                    <PanelSection title="도메인 관계" count={filteredRelations.length} defaultOpen>
-                      <PanelList empty="표시할 관계가 없습니다.">
+                    <PanelSection
+                      title={tr('도메인 관계')}
+                      count={filteredRelations.length}
+                      defaultOpen
+                    >
+                      <PanelList empty={tr('표시할 관계가 없습니다.')}>
                         {filteredRelations.map((r) => (
                           <PanelRow
                             key={r.id}
@@ -1843,8 +1862,14 @@ export function Canvas({
                   </>
                 ) : (
                   <>
-                    <PanelSection title="이 화면의 테이블" count={viewTables.length} defaultOpen>
-                      <PanelList empty="이 도메인에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.">
+                    <PanelSection
+                      title={tr('이 화면의 테이블')}
+                      count={viewTables.length}
+                      defaultOpen
+                    >
+                      <PanelList
+                        empty={tr('이 도메인에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.')}
+                      >
                         {viewTables
                           .filter((t) => matches(t.physical.name, t.logical.name))
                           .map((t) => (
@@ -1852,21 +1877,19 @@ export function Canvas({
                               key={t.id}
                               active={selected === t.id}
                               title={tableLabel(t)}
-                              meta={
-                                '컬럼 ' +
-                                (doc.columns ?? []).filter(
+                              meta={tr('컬럼 {count}개', {
+                                count: (doc.columns ?? []).filter(
                                   (c) => c.tableId === t.id && isVisibleInView(c.scope, viewMode),
-                                ).length +
-                                '개'
-                              }
-                              badge={t.domainId === viewId ? undefined : '참조'}
+                                ).length,
+                              })}
+                              badge={t.domainId === viewId ? undefined : tr('참조')}
                               onSelect={() => pick(t.id)}
                             />
                           ))}
                       </PanelList>
                     </PanelSection>
-                    <PanelSection title="테이블 관계" count={viewRelations.length}>
-                      <PanelList empty="이 화면에 표시할 테이블 관계가 없습니다.">
+                    <PanelSection title={tr('테이블 관계')} count={viewRelations.length}>
+                      <PanelList empty={tr('이 화면에 표시할 테이블 관계가 없습니다.')}>
                         {viewRelations
                           .filter((r) => matches(r.logical.name, r.physical?.name))
                           .map((r) => (
@@ -1892,11 +1915,15 @@ export function Canvas({
                       </PanelList>
                     </PanelSection>
                     {!activeCombined && (
-                      <PanelSection title="다른 도메인 테이블" count={otherTables.length}>
+                      <PanelSection title={tr('다른 도메인 테이블')} count={otherTables.length}>
                         <PanelNote>
-                          도메인 뷰에서 현재 도메인과 키 관계로 연결된 참조 테이블입니다.
+                          {tr('도메인 뷰에서 현재 도메인과 키 관계로 연결된 참조 테이블입니다.')}
                         </PanelNote>
-                        <PanelList empty="도메인 뷰에서 참조 관계를 설정한 다른 도메인 테이블이 없습니다.">
+                        <PanelList
+                          empty={tr(
+                            '도메인 뷰에서 참조 관계를 설정한 다른 도메인 테이블이 없습니다.',
+                          )}
+                        >
                           {otherTables
                             .filter((t) => matches(t.physical.name, t.logical.name))
                             .map((t) => (
@@ -1908,7 +1935,7 @@ export function Canvas({
                                       {doc.domains.find((d) => d.id === t.domainId)?.name}
                                     </small>
                                   </span>
-                                  <span className="panel-row-badge">참조</span>
+                                  <span className="panel-row-badge">{tr('참조')}</span>
                                 </div>
                               </li>
                             ))}
@@ -1945,7 +1972,7 @@ export function Canvas({
                       setSelected(null);
                     }}
                   >
-                    이 화면의 참조 제거
+                    {tr('이 화면의 참조 제거')}
                   </Button>
                 )}
                 <TableInspector
@@ -1966,7 +1993,7 @@ export function Canvas({
                   {domain ? (
                     <>
                       <label>
-                        도메인 이름
+                        {tr('도메인 이름')}
                         <Input
                           value={domain.name}
                           maxLength={120}
@@ -1977,7 +2004,7 @@ export function Canvas({
                         />
                       </label>
                       <label>
-                        업무 설명
+                        {tr('업무 설명')}
                         <Textarea
                           maxLength={10000}
                           value={domain.description}
@@ -1993,22 +2020,22 @@ export function Canvas({
                         onChange={(color) => change(updateDomain(doc, domain.id, { color }))}
                       />
                       <div className="panel-actions">
-                        <Button onClick={() => navigate(domain.id)}>도메인 열기 →</Button>
+                        <Button onClick={() => navigate(domain.id)}>{tr('도메인 열기 →')}</Button>
                         <Button disabled={readOnly} onClick={() => startRelation(domain.id, '')}>
-                          ＋ 관계
+                          {tr('＋ 관계')}
                         </Button>
                       </div>
                     </>
                   ) : (
                     <>
                       <DomainColorPicker
-                        label="메모 색상"
+                        label={tr('메모 색상')}
                         value={note?.color ?? '#fff3c4'}
                         disabled={readOnly}
                         onChange={(color) => note && change(updateNote(doc, note.id, { color }))}
                       />
                       <label>
-                        메모
+                        {tr('메모')}
                         <Textarea
                           maxLength={20000}
                           value={note?.text ?? ''}
@@ -2021,12 +2048,16 @@ export function Canvas({
                 </div>
                 {domain && (
                   <PanelSection
-                    title="연결된 도메인 관계"
+                    title={tr('연결된 도메인 관계')}
                     count={connectedRelations(doc.domainRelations, domain.id).length}
                     open={connectedOpen}
                     onOpenChange={setConnectedOpen}
                   >
-                    <PanelList empty="연결된 관계가 없습니다. 카드를 우클릭하거나 위의 ＋ 관계로 연결하세요.">
+                    <PanelList
+                      empty={tr(
+                        '연결된 관계가 없습니다. 카드를 우클릭하거나 위의 ＋ 관계로 연결하세요.',
+                      )}
+                    >
                       {connectedRelations(doc.domainRelations, domain.id).map((r) => (
                         <PanelRow
                           key={r.id}
@@ -2043,11 +2074,11 @@ export function Canvas({
                     </PanelList>
                   </PanelSection>
                 )}
-                <PanelSection title="위치와 크기">
+                <PanelSection title={tr('위치와 크기')}>
                   <div className="dimensions">
                     {(['x', 'y', 'width', 'height'] as const).map((key) => (
                       <label key={key}>
-                        {{ x: 'X', y: 'Y', width: '너비', height: '높이' }[key]}
+                        {{ x: 'X', y: 'Y', width: tr('너비'), height: tr('높이') }[key]}
                         <Input
                           type="number"
                           min={
@@ -2079,11 +2110,11 @@ export function Canvas({
                     onClick={async () => {
                       if (
                         !(await confirm({
-                          title: domain ? '도메인 삭제' : '메모 삭제',
+                          title: domain ? tr('도메인 삭제') : tr('메모 삭제'),
                           description: domain
-                            ? '도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?'
-                            : '이 텍스트를 삭제할까요?',
-                          confirmLabel: '삭제',
+                            ? tr('도메인과 연결된 업무 관계·내부 테이블·텍스트를 삭제할까요?')
+                            : tr('이 텍스트를 삭제할까요?'),
+                          confirmLabel: tr('삭제'),
                           destructive: true,
                         }))
                       )
@@ -2092,25 +2123,27 @@ export function Canvas({
                       setSelected(null);
                     }}
                   >
-                    {domain ? '도메인 삭제' : '메모 삭제'}
+                    {domain ? tr('도메인 삭제') : tr('메모 삭제')}
                   </Button>
                 </div>
               </>
             ) : viewId === 'overview' ? (
               <>
                 <div className="panel-empty">
-                  <strong>도메인 맵</strong>
-                  <p>카드를 선택하면 이름·설명·색상과 연결된 관계를 여기에서 편집합니다.</p>
+                  <strong>{tr('도메인 맵')}</strong>
+                  <p>{tr('카드를 선택하면 이름·설명·색상과 연결된 관계를 여기에서 편집합니다.')}</p>
                 </div>
                 <div className="panel-summary">
                   <span>
-                    도메인 <b>{doc.domains.length}</b>
+                    {tr('도메인 ')}
+                    <b>{doc.domains.length}</b>
                   </span>
                   <span>
-                    관계 <b>{doc.domainRelations.length}</b>
+                    {tr('관계 ')}
+                    <b>{doc.domainRelations.length}</b>
                   </span>
                 </div>
-                <PanelSection title="새 도메인 만들기">
+                <PanelSection title={tr('새 도메인 만들기')}>
                   <form
                     className="inspector-fields"
                     onSubmit={(e) => {
@@ -2119,7 +2152,7 @@ export function Canvas({
                     }}
                   >
                     <label>
-                      도메인 이름
+                      {tr('도메인 이름')}
                       <Input
                         value={domainName}
                         onChange={(e) => setDomainName(e.target.value)}
@@ -2134,12 +2167,12 @@ export function Canvas({
                       className="primary"
                       disabled={readOnly || !domainName.trim()}
                     >
-                      도메인 생성
+                      {tr('도메인 생성')}
                     </Button>
                   </form>
                 </PanelSection>
                 <PanelSection
-                  title={relationId ? '도메인 관계 수정' : '새 도메인 관계'}
+                  title={relationId ? tr('도메인 관계 수정') : tr('새 도메인 관계')}
                   open={relationsOpen}
                   onOpenChange={setRelationsOpen}
                 >
@@ -2169,12 +2202,12 @@ export function Canvas({
                       resetRelation();
                     }}
                   >
-                    <p className="field-help">도메인 사이의 업무 흐름을 연결합니다.</p>
+                    <p className="field-help">{tr('도메인 사이의 업무 흐름을 연결합니다.')}</p>
                     <div className="relation-endpoints">
                       <label>
-                        출발 도메인
+                        {tr('출발 도메인')}
                         <Select
-                          aria-label="출발 도메인"
+                          aria-label={tr('출발 도메인')}
                           required
                           value={editingDomainRelation?.sourceDomainId ?? source}
                           disabled={readOnly}
@@ -2184,7 +2217,7 @@ export function Canvas({
                               : setSource(value)
                           }
                         >
-                          <option value="">도메인 선택</option>
+                          <option value="">{tr('도메인 선택')}</option>
                           {doc.domains.map((d) => (
                             <option
                               key={d.id}
@@ -2200,9 +2233,9 @@ export function Canvas({
                         </Select>
                       </label>
                       <label>
-                        도착 도메인
+                        {tr('도착 도메인')}
                         <Select
-                          aria-label="도착 도메인"
+                          aria-label={tr('도착 도메인')}
                           required
                           value={editingDomainRelation?.targetDomainId ?? target}
                           disabled={readOnly}
@@ -2212,7 +2245,7 @@ export function Canvas({
                               : setTarget(value)
                           }
                         >
-                          <option value="">도메인 선택</option>
+                          <option value="">{tr('도메인 선택')}</option>
                           {doc.domains.map((d) => (
                             <option
                               key={d.id}
@@ -2229,13 +2262,14 @@ export function Canvas({
                       </label>
                     </div>
                     <label>
-                      관계 이름
+                      {tr('관계 이름')}
                       <Input
-                        aria-label="관계 이름"
+                        data-relation-name-input
+                        aria-label={tr('관계 이름')}
                         required
                         maxLength={120}
                         value={displayedRelationName}
-                        placeholder="예: 결제 요청"
+                        placeholder={tr('예: 결제 요청')}
                         disabled={readOnly}
                         aria-invalid={!displayedRelationName.trim()}
                         onChange={(e) => {
@@ -2254,14 +2288,14 @@ export function Canvas({
                       />
                       {editingDomainRelation && !displayedRelationName.trim() && (
                         <span className="field-help" role="status">
-                          관계 이름을 입력하면 저장됩니다. 기존 이름은 유지됩니다.
+                          {tr('관계 이름을 입력하면 저장됩니다. 기존 이름은 유지됩니다.')}
                         </span>
                       )}
                     </label>
                     <label>
-                      방향
+                      {tr('방향')}
                       <Select
-                        aria-label="방향"
+                        aria-label={tr('방향')}
                         value={editingDomainRelation?.direction ?? direction}
                         disabled={readOnly}
                         onValueChange={(value) =>
@@ -2270,12 +2304,12 @@ export function Canvas({
                             : setDirection(value as 'forward' | 'both')
                         }
                       >
-                        <option value="forward">출발 → 도착</option>
-                        <option value="both">출발 ↔ 도착</option>
+                        <option value="forward">{tr('출발 → 도착')}</option>
+                        <option value="both">{tr('출발 ↔ 도착')}</option>
                       </Select>
                     </label>
                     <label>
-                      설명
+                      {tr('설명')}
                       <Textarea
                         maxLength={10000}
                         value={editingDomainRelation?.description ?? relationDescription}
@@ -2300,7 +2334,7 @@ export function Canvas({
                           !relationName.trim()
                         }
                       >
-                        관계 연결
+                        {tr('관계 연결')}
                       </Button>
                     )}
                     {relationId && (
@@ -2315,38 +2349,40 @@ export function Canvas({
                             resetRelation();
                           }}
                         >
-                          관계 삭제
+                          {tr('관계 삭제')}
                         </Button>
                         <Button type="button" onClick={resetRelation}>
-                          편집 닫기
+                          {tr('편집 닫기')}
                         </Button>
                       </div>
                     )}
                   </form>
                 </PanelSection>
                 <PanelNote>
-                  빈 캔버스를 우클릭하면 자동 배치와 생성 명령을 바로 사용할 수 있습니다.
+                  {tr('빈 캔버스를 우클릭하면 자동 배치와 생성 명령을 바로 사용할 수 있습니다.')}
                 </PanelNote>
               </>
             ) : (
               <>
                 <div className="panel-empty">
-                  <strong>{activeCombined?.name ?? activeDomain?.name ?? '도메인'}</strong>
-                  <p>테이블을 선택하면 컬럼·키·관계를 여기에서 편집합니다.</p>
+                  <strong>{activeCombined?.name ?? activeDomain?.name ?? tr('도메인')}</strong>
+                  <p>{tr('테이블을 선택하면 컬럼·키·관계를 여기에서 편집합니다.')}</p>
                 </div>
                 <div className="panel-summary">
                   <span>
-                    테이블 <b>{viewTables.length}</b>
+                    {tr('테이블 ')}
+                    <b>{viewTables.length}</b>
                   </span>
                   <span>
-                    관계 <b>{viewRelations.length}</b>
+                    {tr('관계 ')}
+                    <b>{viewRelations.length}</b>
                   </span>
                   <span>
                     ENUM <b>{(doc.enums ?? []).length}</b>
                   </span>
                 </div>
                 {!activeCombined && (
-                  <PanelSection title="새 테이블 만들기" defaultOpen>
+                  <PanelSection title={tr('새 테이블 만들기')} defaultOpen>
                     <TableWorkspaceTools
                       hideViewMode
                       document={doc}
@@ -2361,8 +2397,9 @@ export function Canvas({
                   </PanelSection>
                 )}
                 <PanelNote>
-                  목록 탭에서 테이블과 다른 도메인의 참조 관계를 확인할 수 있습니다. 빈 캔버스
-                  우클릭으로 자동 배치를 실행합니다.
+                  {tr(
+                    '목록 탭에서 테이블과 다른 도메인의 참조 관계를 확인할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.',
+                  )}
                 </PanelNote>
               </>
             )}

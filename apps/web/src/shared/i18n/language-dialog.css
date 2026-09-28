@@ -1,0 +1,31 @@
+.language-dialog fieldset {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+}
+.language-dialog legend {
+  margin-bottom: 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.language-dialog label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #d0d7e1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.language-dialog label:has(input:checked) {
+  border-color: var(--accent, #4169e1);
+  background: color-mix(in srgb, var(--accent, #4169e1) 6%, transparent);
+}
+.language-dialog input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent, #4169e1);
+}

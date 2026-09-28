@@ -1,3 +1,5 @@
+import { translate } from '../../shared/i18n/index.js';
+import './translations.js';
 import type { Column, DesignDocument } from '@ezerd/model';
 
 type Physical = Column['physical'];
@@ -21,10 +23,10 @@ export function isAutoIncrement(type: Physical['type']) {
 }
 export function columnDefaultOptions(physical: Physical, enums: DesignDocument['enums'] = []) {
   const { type, nullable } = physical;
-  const choices = [{ value: '', label: '기본값 없음' }];
+  const choices = [{ value: '', label: translate('기본값 없음') }];
   const add = (value: string, label = value) => choices.push({ value, label });
   if (isAutoIncrement(type)) {
-    add(autoIncrementDefault, '자동 증가 (1부터)');
+    add(autoIncrementDefault, translate('자동 증가 (1부터)'));
     return choices;
   }
   if (nullable) add('NULL', 'NULL');
@@ -34,7 +36,7 @@ export function columnDefaultOptions(physical: Physical, enums: DesignDocument['
       add("'" + value.replaceAll("'", "''") + "'", value);
     return choices;
   }
-  if (serialTypes[type.name]) add(autoIncrementDefault, '자동 증가 (1부터)');
+  if (serialTypes[type.name]) add(autoIncrementDefault, translate('자동 증가 (1부터)'));
   if (
     serialTypes[type.name] ||
     ['numeric', 'decimal', 'real', 'double precision', 'float4', 'float8'].includes(type.name)
@@ -55,22 +57,22 @@ export function columnDefaultOptions(physical: Physical, enums: DesignDocument['
       'timestamp without time zone',
     ].includes(type.name)
   ) {
-    add('now()', '현재 시각 · now()');
+    add('now()', translate('현재 시각 · now()'));
     add('CURRENT_TIMESTAMP');
   }
-  if (type.name === 'date') add('CURRENT_DATE', '오늘 날짜 · CURRENT_DATE');
+  if (type.name === 'date') add('CURRENT_DATE', translate('오늘 날짜 · CURRENT_DATE'));
   if (['time', 'timetz', 'time with time zone', 'time without time zone'].includes(type.name))
-    add('CURRENT_TIME', '현재 시간 · CURRENT_TIME');
+    add('CURRENT_TIME', translate('현재 시간 · CURRENT_TIME'));
   if (['boolean', 'bool'].includes(type.name)) {
     add('TRUE');
     add('FALSE');
   }
   if (['text', 'varchar', 'char', 'character varying', 'character'].includes(type.name))
-    add("''", '빈 문자열');
-  if (type.name === 'uuid') add('gen_random_uuid()', 'UUID 자동 생성');
+    add("''", translate('빈 문자열'));
+  if (type.name === 'uuid') add('gen_random_uuid()', translate('UUID 자동 생성'));
   if (['json', 'jsonb'].includes(type.name)) {
-    add("'{}'", '빈 객체 {}');
-    add("'[]'", '빈 배열 []');
+    add("'{}'", translate('빈 객체 {}'));
+    add("'[]'", translate('빈 배열 []'));
   }
   return choices;
 }

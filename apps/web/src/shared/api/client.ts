@@ -1,3 +1,13 @@
+import { registerTranslations, translate as t } from '../i18n/index.js';
+
+registerTranslations({
+  '다른 저장 내용이 있습니다. 최신 내용을 다시 열어 주세요.':
+    'There are other saved changes. Reopen the latest version.',
+  '요청을 완료하지 못했습니다 ({status}). 다시 시도해 주세요.':
+    'The request failed ({status}). Please try again.',
+  '연결을 확인하고 다시 시도해 주세요.': 'Check your connection and try again.',
+});
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -42,8 +52,10 @@ export async function request<T>(
     throw new ApiError(
       response.status,
       response.status === 409
-        ? '다른 저장 내용이 있습니다. 최신 내용을 다시 열어 주세요.'
-        : `요청을 완료하지 못했습니다 (${response.status}). 다시 시도해 주세요.`,
+        ? t('다른 저장 내용이 있습니다. 최신 내용을 다시 열어 주세요.')
+        : t('요청을 완료하지 못했습니다 ({status}). 다시 시도해 주세요.', {
+            status: response.status,
+          }),
     );
   return (await response.json()) as T;
 }
@@ -53,7 +65,7 @@ export const body = (method: string, value: unknown): RequestInit => ({
   body: JSON.stringify(value),
 });
 export const message = (error: unknown) =>
-  error instanceof Error ? error.message : '연결을 확인하고 다시 시도해 주세요.';
+  error instanceof Error ? error.message : t('연결을 확인하고 다시 시도해 주세요.');
 export type SaveSnapshot<T> = {
   document: T;
   revision: number;

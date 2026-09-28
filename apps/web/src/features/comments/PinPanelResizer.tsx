@@ -1,3 +1,5 @@
+import { translate as t, useI18n } from '../../shared/i18n/index.js';
+import '../collaboration/translations.js';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { commentsPanelBounds } from './comments-panel-size.js';
 
@@ -7,6 +9,7 @@ type Props = {
   onResizingChange?: (resizing: boolean) => void;
 };
 export function PinPanelResizer({ width, onWidthChange, onResizingChange }: Props) {
+  useI18n();
   const elementRef = useRef<HTMLDivElement>(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(1400);
   const bounds = commentsPanelBounds(workspaceWidth);
@@ -63,7 +66,7 @@ export function PinPanelResizer({ width, onWidthChange, onResizingChange }: Prop
       ref={elementRef}
       className="pin-panel-resizer"
       role="separator"
-      aria-label="핀 패널 너비 조절"
+      aria-label={t('핀 패널 너비 조절')}
       aria-orientation="vertical"
       aria-valuemin={bounds.min}
       aria-valuemax={bounds.max}

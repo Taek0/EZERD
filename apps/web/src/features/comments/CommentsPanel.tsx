@@ -1,3 +1,5 @@
+import { translate as t, useI18n, getLocale } from '../../shared/i18n/index.js';
+import '../collaboration/translations.js';
 import { userColorStyle } from '../identity/user-color-style.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { DesignDocument } from '@ezerd/model';
@@ -50,6 +52,7 @@ export function CommentPins({
   viewId: string;
   onOpen: (thread: Thread) => void;
 }) {
+  useI18n();
   return (
     <>
       {threads
@@ -71,7 +74,10 @@ export function CommentPins({
                 e.stopPropagation();
                 onOpen(thread);
               }}
-              aria-label={`핀 ${index + 1}: ${thread.messages[0]?.body ?? ''}`}
+              aria-label={t('핀 {number}: {body}', {
+                number: index + 1,
+                body: thread.messages[0]?.body ?? '',
+              })}
             >
               {index + 1}
             </IconButton>
@@ -97,6 +103,7 @@ function Composer({
   label: string;
   onSend: (text: string, mentions: string[]) => Promise<boolean>;
 }) {
+  useI18n();
   const composerRef = useRef<HTMLFormElement>(null);
   const composing = useRef(false),
     submitting = useRef(false);
@@ -156,7 +163,7 @@ function Composer({
           }}
           maxLength={10000}
           required
-          placeholder={label === '핀 등록' ? '핀 추가' : '답글 추가'}
+          placeholder={label === t('핀 등록') ? t('핀 추가') : t('답글 추가')}
           disabled={busy}
         />
       </div>
@@ -166,25 +173,27 @@ function Composer({
             type="button"
             key={id}
             onClick={() => setMentions((v) => v.filter((i) => i !== id))}
-            aria-label={`${users.find((u) => u.id === id)?.username ?? id} 멘션 제거`}
+            aria-label={t('{name} 멘션 제거', {
+              name: users.find((u) => u.id === id)?.username ?? id,
+            })}
           >
-            @{users.find((u) => u.id === id)?.username ?? '사용자'} ×
+            @{users.find((u) => u.id === id)?.username ?? t('사용자')} ×
           </Button>
         ))}
       </div>
       <div className="comment-actions">
         <Button type="button" aria-expanded={picking} onClick={() => setPicking((v) => !v)}>
-          ＠ 멘션
+          {t('＠ 멘션')}
         </Button>
         <Button type="submit" variant="primary" className="primary" disabled={busy || !text.trim()}>
-          {busy ? '등록 중…' : label}
+          {busy ? t('등록 중…') : label}
         </Button>
       </div>
       {picking && (
         <div className="mention-picker">
           <Input
-            aria-label="멘션할 사용자 검색"
-            placeholder="사용자 이름 검색"
+            aria-label={t('멘션할 사용자 검색')}
+            placeholder={t('사용자 이름 검색')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -203,7 +212,7 @@ function Composer({
                 @{u.username} <small>{u.id.slice(0, 8)}</small>
               </Button>
             ))}
-          {!users.length && <p>사용자 목록을 불러와야 멘션할 수 있습니다.</p>}
+          {!users.length && <p>{t('사용자 목록을 불러와야 멘션할 수 있습니다.')}</p>}
         </div>
       )}
     </form>
@@ -236,6 +245,7 @@ export function CommentsPanel({
   onClose: () => void;
   onCancelPinDraft: () => void;
 }) {
+  useI18n();
   const [threads, setThreads] = useState<Thread[]>([]),
     [users, setUsers] = useState<Member[]>([]),
     [error, setError] = useState(''),
@@ -340,9 +350,9 @@ export function CommentsPanel({
   async function deleteThread(thread: Thread) {
     if (mutation.current) return;
     const accepted = await confirm({
-      title: '핀 삭제',
-      description: '이 핀과 모든 답글을 삭제합니다. 삭제한 내용은 되돌릴 수 없습니다.',
-      confirmLabel: '삭제',
+      title: t('핀 삭제'),
+      description: t('이 핀과 모든 답글을 삭제합니다. 삭제한 내용은 되돌릴 수 없습니다.'),
+      confirmLabel: t('삭제'),
       destructive: true,
     });
     if (!accepted || !mounted.current || mutation.current) return;
@@ -379,26 +389,27 @@ export function CommentsPanel({
     (t) => (allViews || t.viewId === context.viewId) && (showResolved || !t.resolved),
   );
   return (
-    <aside className="comments-panel" aria-label="핀">
+    <aside className="comments-panel" aria-label={t('핀')}>
       <div className="comment-panel-heading">
         <h2>
-          핀 <Badge variant="plain">{threads.filter((t) => !t.resolved).length}</Badge>
+          {t('핀')}
+          <Badge variant="plain">{threads.filter((t) => !t.resolved).length}</Badge>
         </h2>
-        <IconButton onClick={onClose} aria-label="핀 닫기">
+        <IconButton onClick={onClose} aria-label={t('핀 닫기')}>
           ×
         </IconButton>
       </div>
       <div className="comment-filters">
         <label>
           <Checkbox checked={allViews} onChange={(e) => setAllViews(e.target.checked)} />
-          프로젝트 전체 핀
+          {t('프로젝트 전체 핀')}
         </label>
         <label>
           <Checkbox checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
-          해결됨 포함
+          {t('해결됨 포함')}
         </label>
         <Button disabled={busy} onClick={() => setRefresh((v) => v + 1)}>
-          새로고침
+          {t('새로고침')}
         </Button>
       </div>
       {error && (
@@ -416,10 +427,10 @@ export function CommentsPanel({
             <div className="comment-thread-heading">
               <Button onClick={() => onNavigate(thread)}>
                 {pinPosition(document, thread).missing
-                  ? '대상 삭제됨'
+                  ? t('대상 삭제됨')
                   : thread.objectId
-                    ? '연결된 객체로 이동 ↗'
-                    : '핀 위치로 이동 ↗'}
+                    ? t('연결된 객체로 이동 ↗')
+                    : t('핀 위치로 이동 ↗')}
               </Button>
               <Button
                 disabled={busy}
@@ -432,14 +443,14 @@ export function CommentsPanel({
                   )
                 }
               >
-                {thread.resolved ? '다시 열기' : '해결'}
+                {thread.resolved ? t('다시 열기') : t('해결')}
               </Button>
               <Button
                 disabled={busy}
-                aria-label="핀 삭제"
+                aria-label={t('핀 삭제')}
                 onClick={() => void deleteThread(thread)}
               >
-                삭제
+                {t('삭제')}
               </Button>
             </div>
             {thread.messages.map((entry, index) => (
@@ -456,28 +467,36 @@ export function CommentsPanel({
                       : users.find((u) => u.id === entry.authorId)?.color,
                   )}
                 >
-                  {(users.find((u) => u.id === entry.authorId)?.username ?? '사용자').slice(0, 1)}
+                  {(users.find((u) => u.id === entry.authorId)?.username ?? t('사용자')).slice(
+                    0,
+                    1,
+                  )}
                 </Avatar>
                 <div className="comment-message-content">
                   <div className="comment-message-meta">
                     <strong>
-                      {users.find((u) => u.id === entry.authorId)?.username ?? '사용자'}
+                      {users.find((u) => u.id === entry.authorId)?.username ?? t('사용자')}
                     </strong>
                     <time
                       dateTime={entry.createdAt}
-                      title={new Date(entry.createdAt).toLocaleString('ko-KR')}
+                      title={new Date(entry.createdAt).toLocaleString(
+                        getLocale() === 'en' ? 'en-US' : 'ko-KR',
+                      )}
                     >
-                      {new Date(entry.createdAt).toLocaleDateString('ko-KR', {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
+                      {new Date(entry.createdAt).toLocaleDateString(
+                        getLocale() === 'en' ? 'en-US' : 'ko-KR',
+                        {
+                          month: 'short',
+                          day: 'numeric',
+                        },
+                      )}
                     </time>
                   </div>
                   <p>{entry.body}</p>
                   <div className="mention-chips">
                     {entry.mentionIds.map((id) => (
                       <Badge key={id}>
-                        @{users.find((u) => u.id === id)?.username ?? '사용자'}
+                        @{users.find((u) => u.id === id)?.username ?? t('사용자')}
                       </Badge>
                     ))}
                   </div>
@@ -486,7 +505,9 @@ export function CommentsPanel({
             ))}
             {activeThreadId !== thread.id && (
               <Button className="thread-reply-open" onClick={() => onNavigate(thread)}>
-                답글 {Math.max(0, thread.messages.length - 1)}개 · 답글 남기기
+                {t('답글 {count}개 · 답글 남기기', {
+                  count: Math.max(0, thread.messages.length - 1),
+                })}
               </Button>
             )}
             <div hidden={activeThreadId !== thread.id}>
@@ -494,9 +515,9 @@ export function CommentsPanel({
                 authorColor={currentUserColor}
                 key={thread.id}
                 users={users}
-                authorName={users.find((u) => u.id === userId)?.username ?? '나'}
+                authorName={users.find((u) => u.id === userId)?.username ?? t('나')}
                 busy={busy}
-                label="답글 등록"
+                label={t('답글 등록')}
                 onSend={(text, mentionIds) =>
                   mutate(
                     `/api/threads/${thread.id}/messages`,
@@ -510,22 +531,22 @@ export function CommentsPanel({
         ))}
         {!visible.length && (
           <p className="comment-empty">
-            아직 핀이 없습니다. 캔버스의 빈 공간에서 우클릭해 첫 핀을 남겨 보세요.
+            {t('아직 핀이 없습니다. 캔버스의 빈 공간에서 우클릭해 첫 핀을 남겨 보세요.')}
           </p>
         )}
       </div>
       {draftContext && (
-        <div className="new-thread" aria-label="선택한 위치에 핀 작성">
+        <div className="new-thread" aria-label={t('선택한 위치에 핀 작성')}>
           <Button type="button" disabled={busy} onClick={onCancelPinDraft}>
-            작성 취소
+            {t('작성 취소')}
           </Button>
           <Composer
             authorColor={currentUserColor}
             key={draftContext.nonce}
             users={users}
-            authorName={users.find((u) => u.id === userId)?.username ?? '나'}
+            authorName={users.find((u) => u.id === userId)?.username ?? t('나')}
             busy={busy}
-            label="핀 등록"
+            label={t('핀 등록')}
             focusNonce={draftContext.nonce}
             onSend={(text, mentionIds) =>
               mutate(
@@ -554,6 +575,7 @@ export function Notifications({
   userId: string;
   onNavigate: (notification: Notification) => Promise<boolean>;
 }) {
+  useI18n();
   const [items, setItems] = useState<Notification[]>([]),
     [opened, setOpened] = useState(false),
     [error, setError] = useState(''),
@@ -617,7 +639,7 @@ export function Notifications({
           setRefresh((v) => v + 1);
         }}
       >
-        알림{' '}
+        {t('알림')}{' '}
         {items.filter((n) => !n.read).length > 0 && (
           <Badge variant="plain" className="notification-count">
             {items.filter((n) => !n.read).length}
@@ -628,11 +650,11 @@ export function Notifications({
         <section
           data-closing={notificationPanel.closing}
           className="notification-popover"
-          aria-label="멘션 알림"
+          aria-label={t('멘션 알림')}
         >
-          <h2>멘션 알림</h2>
+          <h2>{t('멘션 알림')}</h2>
           {error && <p role="alert">{error}</p>}
-          {!items.length && <p>새로운 멘션 알림이 없습니다.</p>}
+          {!items.length && <p>{t('새로운 멘션 알림이 없습니다.')}</p>}
           {items.map((item) => (
             <Button
               key={item.id}
@@ -640,9 +662,11 @@ export function Notifications({
               className={item.read ? 'read' : 'unread'}
               onClick={() => void visit(item)}
             >
-              <strong>{item.read ? '읽음' : '새 멘션'}</strong>
-              <span>핀으로 이동 ↗</span>
-              <time>{new Date(item.createdAt).toLocaleString('ko-KR')}</time>
+              <strong>{item.read ? t('읽음') : t('새 멘션')}</strong>
+              <span>{t('핀으로 이동 ↗')}</span>
+              <time>
+                {new Date(item.createdAt).toLocaleString(getLocale() === 'en' ? 'en-US' : 'ko-KR')}
+              </time>
             </Button>
           ))}
         </section>

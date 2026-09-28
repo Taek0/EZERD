@@ -1,3 +1,5 @@
+import { translate as tr, useI18n } from '../../shared/i18n/index.js';
+import '../canvas/translations.js';
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { type DesignDocument, createForeignKeyFromPrimaryKey } from '@ezerd/model';
@@ -19,6 +21,7 @@ export function ForeignKeyDialog({
   onChange: (d: DesignDocument) => void;
   onClose: () => void;
 }) {
+  useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const source = doc.columns?.find((c) => c.id === sourceColumnId);
   const sourceTable = doc.tables?.find((t) => t.id === source?.tableId),
@@ -54,7 +57,7 @@ export function ForeignKeyDialog({
         columnIds: columnIds.slice(0, key.columnIds.length),
       });
     } catch (e) {
-      previewError = e instanceof Error ? e.message : '관계를 생성할 수 없습니다.';
+      previewError = e instanceof Error ? tr(e.message) : tr('관계를 생성할 수 없습니다.');
     }
   const names =
     key?.columnIds.map((id, index) => {
@@ -76,7 +79,7 @@ export function ForeignKeyDialog({
         uniqueKeyId,
       );
     } catch (e) {
-      previewError = e instanceof Error ? e.message : '관계를 생성할 수 없습니다.';
+      previewError = e instanceof Error ? tr(e.message) : tr('관계를 생성할 수 없습니다.');
     }
   }
   useEffect(() => {
@@ -95,21 +98,22 @@ export function ForeignKeyDialog({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <h2 id="fk-dialog-title">PK → FK 관계 만들기</h2>
+      <h2 id="fk-dialog-title">{tr('PK → FK 관계 만들기')}</h2>
       <p>
-        {sourceTable?.physical.name || '출발 테이블'} → {target?.physical.name || '도착 테이블'}
+        {sourceTable?.physical.name || tr('출발 테이블')} →{' '}
+        {target?.physical.name || tr('도착 테이블')}
       </p>
       <label>
-        출발 PK
+        {tr('출발 PK')}
         <Select
-          aria-label="출발 PK"
+          aria-label={tr('출발 PK')}
           value={keyId}
           onValueChange={(value) => {
             setKeyId(value);
             setError('');
           }}
         >
-          {!keys.length && <option value="">참조 가능한 PK 없음</option>}
+          {!keys.length && <option value="">{tr('참조 가능한 PK 없음')}</option>}
           {keys.map((k) => (
             <option key={k.id} value={k.id}>
               {k.name ||
@@ -121,8 +125,9 @@ export function ForeignKeyDialog({
         </Select>
       </label>
       <PanelNote>
-        도착 테이블에 아래 FK 컬럼을 자동으로 추가합니다. 복합 PK는 순서대로 연결하며, 같은 이름이
-        있으면 새 이름으로 만듭니다.
+        {tr(
+          '도착 테이블에 아래 FK 컬럼을 자동으로 추가합니다. 복합 PK는 순서대로 연결하며, 같은 이름이 있으면 새 이름으로 만듭니다.',
+        )}
       </PanelNote>
       <div className="table-fk-pairs">
         {key?.columnIds.map((id, index) => {
@@ -131,13 +136,13 @@ export function ForeignKeyDialog({
           return (
             <div key={id}>
               <span>
-                {primary?.physical.name || '이름 없는 컬럼'}
+                {primary?.physical.name || tr('이름 없는 컬럼')}
                 <small>{primary?.physical.type.name.toUpperCase()}</small>
               </span>
               <span aria-hidden="true">→</span>
               <span>
                 <Input
-                  aria-label={`새 FK 컬럼 이름 ${index + 1}`}
+                  aria-label={tr('새 FK 컬럼 이름 {index}', { index: index + 1 })}
                   value={names[index] ?? ''}
                   maxLength={120}
                   onChange={(e) => {
@@ -148,7 +153,9 @@ export function ForeignKeyDialog({
                     setError('');
                   }}
                 />
-                <small>{foreign?.physical.type.name.toUpperCase()} · 자동 추가</small>
+                <small>
+                  {foreign?.physical.type.name.toUpperCase()} {tr(' · 자동 추가')}
+                </small>
               </span>
             </div>
           );
@@ -156,47 +163,47 @@ export function ForeignKeyDialog({
       </div>
       <div className="fk-cardinality-controls">
         <label>
-          PK 쪽 대응관계
+          {tr('PK 쪽 대응관계')}
           <Select
-            aria-label="PK 쪽 대응관계"
+            aria-label={tr('PK 쪽 대응관계')}
             value={primaryCardinality}
             onValueChange={(value) => setPrimaryCardinality(value as '0..1' | '1')}
           >
-            <option value="0..1">0..1 · 없거나 하나</option>
-            <option value="1">1 · 정확히 하나</option>
+            <option value="0..1">{tr('0..1 · 없거나 하나')}</option>
+            <option value="1">{tr('1 · 정확히 하나')}</option>
           </Select>
         </label>
         <label>
-          FK 쪽 대응관계
+          {tr('FK 쪽 대응관계')}
           <Select
-            aria-label="FK 쪽 대응관계"
+            aria-label={tr('FK 쪽 대응관계')}
             value={foreignCardinality}
             onValueChange={(value) => setForeignCardinality(value as CardinalityChoice)}
           >
-            <option value="0..1">0..1 · 없거나 하나</option>
-            <option value="1">1 · 정확히 하나</option>
-            <option value="0..N">0..N · 없거나 여러 개</option>
-            <option value="1..N">1..N · 하나 이상</option>
+            <option value="0..1">{tr('0..1 · 없거나 하나')}</option>
+            <option value="1">{tr('1 · 정확히 하나')}</option>
+            <option value="0..N">{tr('0..N · 없거나 여러 개')}</option>
+            <option value="1..N">{tr('1..N · 하나 이상')}</option>
           </Select>
         </label>
       </div>
       <PanelNote>
-        PK 쪽{' '}
+        {tr('PK 쪽')}{' '}
         {primaryCardinality === '0..1'
-          ? '0..1은 FK 컬럼에 NULL을 허용합니다.'
-          : '1은 FK 컬럼을 NOT NULL로 만듭니다.'}
+          ? tr('0..1은 FK 컬럼에 NULL을 허용합니다.')
+          : tr('1은 FK 컬럼을 NOT NULL로 만듭니다.')}
         {(foreignCardinality === '0..1' || foreignCardinality === '1') &&
-          ' FK 쪽 최대 1을 보장하도록 새 FK 컬럼 묶음에 UNIQUE 키를 추가합니다.'}
+          tr(' FK 쪽 최대 1을 보장하도록 새 FK 컬럼 묶음에 UNIQUE 키를 추가합니다.')}
         {foreignCardinality.startsWith('1') &&
-          ' FK 쪽 최소 1은 모델에 기록되며 FK 제약만으로 강제되지 않습니다.'}
+          tr(' FK 쪽 최소 1은 모델에 기록되며 FK 제약만으로 강제되지 않습니다.')}
       </PanelNote>
       {(error || previewError || !keys.length) && (
         <p role="alert" className="table-error">
-          {error || previewError || '출발 테이블에 PK를 먼저 정의하세요.'}
+          {tr(error || previewError || '출발 테이블에 PK를 먼저 정의하세요.')}
         </p>
       )}
       <div className="table-actions">
-        <Button onClick={onClose}>취소</Button>
+        <Button onClick={onClose}>{tr('취소')}</Button>
         <Button
           variant="primary"
           disabled={!finalPreview}
@@ -207,11 +214,11 @@ export function ForeignKeyDialog({
                 onClose();
               }
             } catch (e) {
-              setError(e instanceof Error ? e.message : '관계를 생성할 수 없습니다.');
+              setError(e instanceof Error ? tr(e.message) : tr('관계를 생성할 수 없습니다.'));
             }
           }}
         >
-          컬럼 추가 및 관계 생성
+          {tr('컬럼 추가 및 관계 생성')}
         </Button>
       </div>
     </dialog>,

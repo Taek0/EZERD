@@ -1,3 +1,5 @@
+import { translate as tr, useI18n } from '../../shared/i18n/index.js';
+import '../canvas/translations.js';
 import {
   ColorPicker,
   ColorArea,
@@ -17,25 +19,30 @@ export function DomainColorPicker({
   value,
   onChange,
   disabled = false,
-  label = '도메인 색상',
+  label = tr('도메인 색상'),
 }: {
   label?: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
+  useI18n();
   return (
     <div className="domain-color-field">
       <span>{label}</span>
       <ColorPicker value={value} onChange={(color) => onChange(color.toString('hex'))}>
         <DialogTrigger>
-          <Button disabled={disabled} aria-label={label + ' 선택'} className="domain-color-trigger">
+          <Button
+            disabled={disabled}
+            aria-label={tr('{label} 선택', { label })}
+            className="domain-color-trigger"
+          >
             <ColorSwatch className="domain-color-swatch" />
             <span>{value.toUpperCase()}</span>
             <span aria-hidden="true">⌄</span>
           </Button>
           <UntitledPopover className="domain-color-popover" placement="bottom start">
-            <Dialog aria-label={label + ' 선택'}>
+            <Dialog aria-label={tr('{label} 선택', { label })}>
               <ColorArea
                 className="domain-color-area"
                 colorSpace="hsb"
@@ -48,7 +55,7 @@ export function DomainColorPicker({
                 className="domain-color-slider"
                 colorSpace="hsb"
                 channel="hue"
-                aria-label="색조"
+                aria-label={tr('색조')}
               >
                 <SliderTrack className="domain-color-track">
                   <ColorThumb className="domain-color-thumb" />
@@ -57,7 +64,7 @@ export function DomainColorPicker({
               <label className="domain-color-hex">
                 HEX{' '}
                 <input
-                  aria-label="HEX 색상"
+                  aria-label={tr('HEX 색상')}
                   key={value}
                   defaultValue={value.toUpperCase()}
                   maxLength={7}
@@ -71,7 +78,7 @@ export function DomainColorPicker({
                   }}
                 />
               </label>
-              <div className="domain-color-swatches" aria-label="추천 색상">
+              <div className="domain-color-swatches" aria-label={tr('추천 색상')}>
                 {[
                   '#8993a3',
                   '#475467',
@@ -86,7 +93,7 @@ export function DomainColorPicker({
                 ].map((color) => (
                   <Button
                     key={color}
-                    aria-label={`${color} 색상`}
+                    aria-label={tr('{color} 색상', { color })}
                     aria-pressed={value.toLowerCase() === color}
                     onClick={() => onChange(color)}
                     style={{ background: color }}

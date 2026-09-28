@@ -4,6 +4,8 @@
  * Active upstream-derived runtime trees live in untitled.tsx; CSS recipes in untitled.css.
  */
 import { AnimatedDetails } from './AnimatedDetails.js';
+import { useI18n } from '../../shared/i18n/index.js';
+import './translations.js';
 export { AnimatedDetails } from './AnimatedDetails.js';
 import {
   Children,
@@ -173,7 +175,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
     disabled,
     required,
     readOnly,
-    placeholder = '선택',
+    placeholder,
     autoComplete,
     autoFocus,
     form,
@@ -183,6 +185,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
   ref,
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const popoverRef = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   const [skipExitAnimation, setSkipExitAnimation] = useState(false);
@@ -306,7 +309,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         <SelectValue className="ui-select-value">
           {({ selectedText }) => (
             <>
-              <span>{selectedText || placeholder}</span>
+              <span>{selectedText || placeholder || t('선택')}</span>
               <ChevronDown className="ui-select-chevron" />
             </>
           )}
@@ -319,7 +322,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         maxHeight={256}
         {...(portalContainer ? { UNSTABLE_portalContainer: portalContainer } : {})}
       >
-        <ListBox className="ui-select-listbox" aria-label={props['aria-label'] ?? '선택 항목'}>
+        <ListBox className="ui-select-listbox" aria-label={props['aria-label'] ?? t('선택 항목')}>
           {entries.map((entry) =>
             entry.group !== undefined ? (
               <ListBoxSection key={entry.key}>
@@ -537,8 +540,14 @@ export interface ContextMenuProps {
   label?: string;
 }
 export function ContextMenu({ position, items, onClose, label = '메뉴' }: ContextMenuProps) {
+  const { t } = useI18n();
   return position ? (
-    <OpenContextMenu position={position} items={items} onClose={onClose} label={label} />
+    <OpenContextMenu
+      position={position}
+      items={items}
+      onClose={onClose}
+      label={label === '메뉴' ? t('메뉴') : label}
+    />
   ) : null;
 }
 function OpenContextMenu({
@@ -547,6 +556,7 @@ function OpenContextMenu({
   onClose,
   label,
 }: ContextMenuProps & { position: { x: number; y: number } }) {
+  const { t } = useI18n();
   const container = useRef<HTMLDivElement>(null);
   const previous = useRef(
     document.activeElement instanceof HTMLElement ? document.activeElement : null,
@@ -594,7 +604,7 @@ function OpenContextMenu({
     >
       <div className="ui-menu-heading">{label}</div>
       <AriaMenu
-        aria-label={label ?? '메뉴'}
+        aria-label={label ?? t('메뉴')}
         autoFocus="first"
         className="ui-menu"
         onClose={onClose}
@@ -634,6 +644,7 @@ export function Dropdown({
   label?: string;
 }) {
   const root = useRef<HTMLSpanElement>(null);
+  const { t } = useI18n();
   const [portalContainer, setPortalContainer] = useState<HTMLElement>();
   useLayoutEffect(() => {
     setPortalContainer(root.current?.closest('dialog') ?? undefined);
@@ -647,7 +658,7 @@ export function Dropdown({
           placement="bottom end"
           {...(portalContainer ? { UNSTABLE_portalContainer: portalContainer } : {})}
         >
-          <AriaMenu aria-label={label} className="ui-menu">
+          <AriaMenu aria-label={label === '메뉴' ? t('메뉴') : label} className="ui-menu">
             {items.map((item) => (
               <AriaMenuItem
                 key={item.id}

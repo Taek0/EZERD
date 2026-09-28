@@ -1,3 +1,5 @@
+import { translate as t, useI18n } from '../../shared/i18n/index.js';
+import '../collaboration/translations.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -21,7 +23,7 @@ export async function exportProjectFile(projectId: string): Promise<void> {
     );
   } catch {
     throw new Error(
-      '서버의 최신 저장 내용을 가져올 수 없습니다. 연결을 확인한 뒤 다시 내보내 주세요.',
+      t('서버의 최신 저장 내용을 가져올 수 없습니다. 연결을 확인한 뒤 다시 내보내 주세요.'),
     );
   }
   const url = URL.createObjectURL(
@@ -43,6 +45,7 @@ export function ProjectImportButton({
   onImported: (project: Project) => void;
   disabled?: boolean;
 }) {
+  useI18n();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<ProjectTransfer | null>(null);
   const [error, setError] = useState('');
@@ -50,14 +53,14 @@ export function ProjectImportButton({
   return (
     <>
       <Button disabled={disabled || reading} onClick={() => input.current?.click()}>
-        {reading ? '파일 확인 중…' : '프로젝트 가져오기'}
+        {reading ? t('파일 확인 중…') : t('프로젝트 가져오기')}
       </Button>
       <input
         ref={input}
         type="file"
         accept=".json,.ezerd.json,application/json"
         hidden
-        aria-label="프로젝트 JSON 파일"
+        aria-label={t('프로젝트 JSON 파일')}
         onChange={async (event) => {
           const selected = event.target.files?.[0];
           event.target.value = '';
@@ -66,7 +69,7 @@ export function ProjectImportButton({
           setReading(true);
           try {
             if (selected.size > MAX_PROJECT_TRANSFER_BYTES)
-              throw new Error('프로젝트 파일은 2 MB까지 가져올 수 있습니다.');
+              throw new Error(t('프로젝트 파일은 2 MB까지 가져올 수 있습니다.'));
             setFile(parseProjectTransfer(await selected.text()));
           } catch (e) {
             setError(message(e));
@@ -103,6 +106,7 @@ function ProjectImportDialog({
   onCancel: () => void;
   onImported: (project: Project) => void;
 }) {
+  useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
   const [name, setName] = useState(file.project.name);
@@ -154,9 +158,9 @@ function ProjectImportDialog({
           }
         }}
       >
-        <h2 id={titleId}>프로젝트 가져오기</h2>
-        <p>설계 데이터를 새 프로젝트로 만듭니다.</p>
-        <label htmlFor={inputId}>프로젝트 이름</label>
+        <h2 id={titleId}>{t('프로젝트 가져오기')}</h2>
+        <p>{t('설계 데이터를 새 프로젝트로 만듭니다.')}</p>
+        <label htmlFor={inputId}>{t('프로젝트 이름')}</label>
         <Input
           id={inputId}
           value={name}
@@ -168,19 +172,19 @@ function ProjectImportDialog({
         />
         <dl className="project-transfer-counts">
           <div>
-            <dt>도메인</dt>
+            <dt>{t('도메인')}</dt>
             <dd>{doc.domains.length}</dd>
           </div>
           <div>
-            <dt>테이블</dt>
+            <dt>{t('테이블')}</dt>
             <dd>{doc.tables?.length ?? 0}</dd>
           </div>
           <div>
-            <dt>컬럼</dt>
+            <dt>{t('컬럼')}</dt>
             <dd>{doc.columns?.length ?? 0}</dd>
           </div>
           <div>
-            <dt>관계</dt>
+            <dt>{t('관계')}</dt>
             <dd>{doc.domainRelations.length + (doc.tableRelations?.length ?? 0)}</dd>
           </div>
           <div>
@@ -188,16 +192,16 @@ function ProjectImportDialog({
             <dd>{doc.enums?.length ?? 0}</dd>
           </div>
           <div>
-            <dt>메모</dt>
+            <dt>{t('메모')}</dt>
             <dd>{doc.notes.length}</dd>
           </div>
           <div>
-            <dt>저장된 뷰</dt>
+            <dt>{t('저장된 뷰')}</dt>
             <dd>{doc.views?.length ?? 0}</dd>
           </div>
         </dl>
         <p className="project-transfer-hint">
-          계정, PIN, 대화, 변경 이력 및 개인 화면 설정은 포함되지 않습니다.
+          {t('계정, PIN, 대화, 변경 이력 및 개인 화면 설정은 포함되지 않습니다.')}
         </p>
         {error && (
           <p className="notice error" role="alert">
@@ -206,10 +210,10 @@ function ProjectImportDialog({
         )}
         <div className="project-transfer-actions">
           <Button type="button" disabled={busy} onClick={onCancel}>
-            취소
+            {t('취소')}
           </Button>
           <Button type="submit" disabled={busy || !name.trim()}>
-            {busy ? '가져오는 중…' : '새 프로젝트로 가져오기'}
+            {busy ? t('가져오는 중…') : t('새 프로젝트로 가져오기')}
           </Button>
         </div>
       </form>

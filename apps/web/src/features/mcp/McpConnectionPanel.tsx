@@ -1,3 +1,5 @@
+import { translate as t, useI18n, getLocale } from '../../shared/i18n/index.js';
+import '../collaboration/translations.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { body, message, request } from '../../shared/api/client.js';
 import { AnimatedDetails, Button, Input } from '../../components/ui/index.js';
@@ -16,9 +18,10 @@ type IssuedToken = TokenSummary & { token: string };
 type McpConfig = { enabled: boolean; publicUrl: string | null };
 
 export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
+  useI18n();
   const panel = usePanelDismiss(onClose);
   const [tokens, setTokens] = useState<TokenSummary[]>([]);
-  const [name, setName] = useState('내 MCP 클라이언트');
+  const [name, setName] = useState(t('내 MCP 클라이언트'));
   const [issued, setIssued] = useState<IssuedToken | null>(null);
   const [config, setConfig] = useState<McpConfig>({ enabled: false, publicUrl: null });
   const [copyStatus, setCopyStatus] = useState('');
@@ -70,14 +73,14 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
     if (!navigator.clipboard?.writeText) {
       tokenInput.current?.focus();
       tokenInput.current?.select();
-      setCopyStatus('자동 복사를 사용할 수 없습니다. 선택된 토큰을 Ctrl+C로 복사하세요.');
+      setCopyStatus(t('자동 복사를 사용할 수 없습니다. 선택된 토큰을 Ctrl+C로 복사하세요.'));
       return;
     }
     try {
       await navigator.clipboard.writeText(issued.token);
-      setCopyStatus('복사했습니다.');
+      setCopyStatus(t('복사했습니다.'));
     } catch {
-      setCopyStatus('자동 복사를 사용할 수 없습니다. 위 토큰을 직접 선택해 복사하세요.');
+      setCopyStatus(t('자동 복사를 사용할 수 없습니다. 위 토큰을 직접 선택해 복사하세요.'));
     }
   }
 
@@ -115,14 +118,14 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
       ref={panel.ref}
       data-closing={panel.closing}
       className="mcp-panel"
-      aria-label="MCP 연결 설정"
+      aria-label={t('MCP 연결 설정')}
     >
       <div className="mcp-panel-heading">
         <div>
-          <strong>MCP 연결</strong>
-          <p>개인 토큰으로 EZERD 도구를 연결합니다.</p>
+          <strong>{t('MCP 연결')}</strong>
+          <p>{t('개인 토큰으로 EZERD 도구를 연결합니다.')}</p>
         </div>
-        <Button aria-label="MCP 연결 닫기" onClick={panel.close}>
+        <Button aria-label={t('MCP 연결 닫기')} onClick={panel.close}>
           ×
         </Button>
       </div>
@@ -133,12 +136,15 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
       )}
       {issued && (
         <div className="mcp-issued" role="status">
-          <strong>지금 토큰을 복사하세요</strong>
+          <strong>{t('지금 토큰을 복사하세요')}</strong>
           <p>
-            이 값은 다시 표시되지 않으며 {new Date(issued.expiresAt).toLocaleDateString('ko-KR')}에
-            만료됩니다.
+            {t('이 값은 다시 표시되지 않으며 {date}에 만료됩니다.', {
+              date: new Date(issued.expiresAt).toLocaleDateString(
+                getLocale() === 'en' ? 'en-US' : 'ko-KR',
+              ),
+            })}
           </p>
-          <label htmlFor="issued-mcp-token">발급 토큰</label>
+          <label htmlFor="issued-mcp-token">{t('발급 토큰')}</label>
           <input
             ref={tokenInput}
             id="issued-mcp-token"
@@ -147,19 +153,19 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
             value={issued.token}
             onFocus={(event) => event.currentTarget.select()}
           />
-          <p>입력란을 클릭하면 전체 선택됩니다. 자동 복사가 안 되면 Ctrl+C로 복사하세요.</p>
-          <Button onClick={() => void copyToken()}>토큰 복사</Button>
+          <p>{t('입력란을 클릭하면 전체 선택됩니다. 자동 복사가 안 되면 Ctrl+C로 복사하세요.')}</p>
+          <Button onClick={() => void copyToken()}>{t('토큰 복사')}</Button>
           {copyStatus && <p>{copyStatus}</p>}
         </div>
       )}
       <dl className="mcp-endpoint">
-        <dt>MCP 주소</dt>
+        <dt>{t('MCP 주소')}</dt>
         <dd>
-          <code>{mcpUrl ?? '서버 관리자가 MCP 공개 주소를 설정해야 합니다.'}</code>
+          <code>{mcpUrl ?? t('서버 관리자가 MCP 공개 주소를 설정해야 합니다.')}</code>
         </dd>
       </dl>
       <form onSubmit={(event) => void issue(event)}>
-        <label htmlFor="mcp-token-name">토큰 이름</label>
+        <label htmlFor="mcp-token-name">{t('토큰 이름')}</label>
         <Input
           id="mcp-token-name"
           value={name}
@@ -168,22 +174,34 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
           onChange={(event) => setName(event.target.value)}
         />
         <Button type="submit" variant="primary" disabled={busy || !name.trim() || !config.enabled}>
-          90일 토큰 발급
+          {t('90일 토큰 발급')}
         </Button>
       </form>
       <div className="mcp-token-list">
-        <h2>발급한 토큰</h2>
-        {!tokens.length && <p>발급한 토큰이 없습니다.</p>}
+        <h2>{t('발급한 토큰')}</h2>
+        {!tokens.length && <p>{t('발급한 토큰이 없습니다.')}</p>}
         {tokens.map((token) => (
           <article key={token.id}>
             <div>
               <strong>{token.name}</strong>
               <small>
                 {token.revokedAt
-                  ? `폐기 ${new Date(token.revokedAt).toLocaleDateString('ko-KR')}`
-                  : `만료 ${new Date(token.expiresAt).toLocaleDateString('ko-KR')}`}
+                  ? t('폐기 {date}', {
+                      date: new Date(token.revokedAt).toLocaleDateString(
+                        getLocale() === 'en' ? 'en-US' : 'ko-KR',
+                      ),
+                    })
+                  : t('만료 {date}', {
+                      date: new Date(token.expiresAt).toLocaleDateString(
+                        getLocale() === 'en' ? 'en-US' : 'ko-KR',
+                      ),
+                    })}
                 {token.lastUsedAt
-                  ? ` · 최근 사용 ${new Date(token.lastUsedAt).toLocaleDateString('ko-KR')}`
+                  ? t(' · 최근 사용 {date}', {
+                      date: new Date(token.lastUsedAt).toLocaleDateString(
+                        getLocale() === 'en' ? 'en-US' : 'ko-KR',
+                      ),
+                    })
                   : ''}
               </small>
             </div>
@@ -191,30 +209,31 @@ export function McpConnectionPanel({ onClose }: { onClose: () => void }) {
               <Button
                 disabled={busy}
                 variant="danger"
-                aria-label={`${token.name} 폐기 기록 삭제`}
+                aria-label={t('{name} 폐기 기록 삭제', { name: token.name })}
                 onClick={() => void removeRevoked(token.id)}
               >
-                삭제
+                {t('삭제')}
               </Button>
             ) : (
               <Button disabled={busy} onClick={() => void revoke(token.id)}>
-                폐기
+                {t('폐기')}
               </Button>
             )}
           </article>
         ))}
       </div>
       <AnimatedDetails>
-        <summary>Codex 설정 예시</summary>
+        <summary>{t('Codex 설정 예시')}</summary>
         <pre>
           {mcpUrl
             ? `[mcp_servers.ezerd]\nurl = "${mcpUrl}"\nbearer_token_env_var = "EZERD_MCP_TOKEN"\ndefault_tools_approval_mode = "writes"\ntool_timeout_sec = 60`
-            : 'MCP 공개 주소 설정 후 예시를 확인할 수 있습니다.'}
+            : t('MCP 공개 주소 설정 후 예시를 확인할 수 있습니다.')}
         </pre>
       </AnimatedDetails>
       <p className="mcp-security-note">
-        MCP 토큰은 채팅에 붙여 넣지 말고 클라이언트 실행 환경에만 저장하세요. PIN은 MCP 설정에
-        사용하지 않습니다.
+        {t(
+          'MCP 토큰은 채팅에 붙여 넣지 말고 클라이언트 실행 환경에만 저장하세요. PIN은 MCP 설정에 사용하지 않습니다.',
+        )}
       </p>
     </section>
   );

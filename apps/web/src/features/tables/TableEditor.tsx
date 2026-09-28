@@ -1,3 +1,5 @@
+import { translate, useI18n } from '../../shared/i18n/index.js';
+import './translations.js';
 import {
   applyColumnDefault,
   autoIncrementDefault,
@@ -117,8 +119,8 @@ export function canSaveKey(key: TableKey, columns: Column[], keys: TableKey[]) {
 }
 export const emptyMetadata = (): CustomProperties => ({ common: {}, logical: {}, physical: {} });
 const emptyMeta = emptyMetadata;
-const tableName = (t: Table) => t.physical.name || '이름 없는 테이블';
-const columnName = (c: Column) => c.physical.name || '이름 없는 컬럼';
+const tableName = (t: Table) => t.physical.name || translate('이름 없는 테이블');
+const columnName = (c: Column) => c.physical.name || translate('이름 없는 컬럼');
 export function parseMetadata(text: string): Record<string, string> {
   const value: unknown = JSON.parse(text);
   if (
@@ -130,7 +132,7 @@ export function parseMetadata(text: string): Record<string, string> {
     ) ||
     Object.keys(value).length > 100
   )
-    throw new Error('최대 100개, 키 120자 / 문자열 값 10,000자까지 입력하세요.');
+    throw new Error(translate('최대 100개, 키 120자 / 문자열 값 10,000자까지 입력하세요.'));
   return value as Record<string, string>;
 }
 export function moveColumn(doc: DesignDocument, id: string, direction: number): DesignDocument {
@@ -185,6 +187,7 @@ function TextField({
   onChange: (v: string) => void;
   max?: number;
 }) {
+  useI18n();
   return (
     <label>
       {label}
@@ -201,6 +204,7 @@ function DescriptionField({
   value: string;
   onChange: (value: string) => void;
 }) {
+  useI18n();
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const textarea = ref.current;
@@ -246,6 +250,7 @@ function Check({
   disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
+  useI18n();
   return (
     <label className="table-check">
       <Checkbox disabled={disabled} checked={value} onChange={(e) => onChange(e.target.checked)} />
@@ -264,6 +269,7 @@ function InlineCell({
   onCommit: (value: string) => void;
   disabled?: boolean;
 }) {
+  useI18n();
   const [editing, setEditing] = useState(false),
     [draft, setDraft] = useState(value);
   const cancel = useRef(false);
@@ -282,7 +288,12 @@ function InlineCell({
       className="table-inline"
       data-inline-cell
       tabIndex={disabled || editing ? -1 : 0}
-      title={label + ': ' + (value || '미입력') + (disabled ? '' : ' · 더블클릭하여 편집')}
+      title={
+        label +
+        ': ' +
+        (value || translate('미입력')) +
+        (disabled ? '' : translate(' · 더블클릭하여 편집'))
+      }
       onFocus={(e) => {
         if (e.target === e.currentTarget) begin();
       }}
@@ -320,6 +331,7 @@ function InlineCell({
   );
 }
 function InlineType({ display, ...props }: Parameters<typeof SearchType>[0] & { display: string }) {
+  useI18n();
   const [editing, setEditing] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const restoringFocus = useRef(false);
@@ -343,7 +355,7 @@ function InlineType({ display, ...props }: Parameters<typeof SearchType>[0] & { 
     <Button
       ref={trigger}
       className="table-type-trigger"
-      aria-label={`${props.label} 편집`}
+      aria-label={translate('{x0} 편집', { x0: props.label })}
       aria-haspopup="listbox"
       title={display}
       onFocus={() => {
@@ -359,7 +371,7 @@ const freshColumn = (tableId: string, scope: ModelScope = 'physical'): Column =>
   id: newId(),
   tableId,
   scope,
-  logical: { name: '새 컬럼', definition: '', semanticType: '', required: false },
+  logical: { name: translate('새 컬럼'), definition: '', semanticType: '', required: false },
   physical: {
     name: '',
     type: { name: 'text', isArray: false },
@@ -406,6 +418,7 @@ export function TableNodeContent({
   onStartForeignKey?: (id: string) => void;
   onCreatePin?: (position: { clientX: number; clientY: number }) => void;
 }) {
+  useI18n();
   const confirm = useConfirm();
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const table = doc.tables?.find((t) => t.id === tableId);
@@ -439,19 +452,19 @@ export function TableNodeContent({
     >
       <header
         style={{ background: doc.domains.find((d) => d.id === table.domainId)?.color || '#8993a3' }}
-        title={`${viewId && viewId !== table.domainId ? '외부 참조 · ' : ''}${doc.domains.find((d) => d.id === table.domainId)?.name ?? ''}`}
+        title={`${viewId && viewId !== table.domainId ? translate('외부 참조 · ') : ''}${doc.domains.find((d) => d.id === table.domainId)?.name ?? ''}`}
       >
         <strong>
-          {cell(table.physical.name, '테이블명', (name) =>
+          {cell(table.physical.name, translate('테이블명'), (name) =>
             updateTable(doc, tableId, { physical: { ...table.physical, name } }),
           )}
         </strong>
       </header>
       <div className="table-columns">
         <div className="table-column-row table-column-head">
-          <span>키</span>
-          <span>컬럼</span>
-          <span>타입</span>
+          <span>{translate('키')}</span>
+          <span>{translate('컬럼')}</span>
+          <span>{translate('타입')}</span>
           {showNullable && <span>NULL</span>}
           {showComment && <span>comment</span>}
         </div>
@@ -485,7 +498,7 @@ export function TableNodeContent({
                   .filter(Boolean)
                   .join(' ')}
               </span>
-              {cell(c.physical.name, '컬럼명', (name) => patch({ name }))}
+              {cell(c.physical.name, translate('컬럼명'), (name) => patch({ name }))}
               <span
                 className="table-type-label table-direct-control"
                 onPointerDown={(e) => e.stopPropagation()}
@@ -495,7 +508,7 @@ export function TableNodeContent({
                 {editable ? (
                   <InlineType
                     display={columnTypeDisplay(c.physical.type, doc.enums)}
-                    label={`${columnName(c)} 타입`}
+                    label={translate('{x0} 타입', { x0: columnName(c) })}
                     value={
                       c.physical.type.enumId
                         ? `enum:${c.physical.type.enumId}`
@@ -548,15 +561,15 @@ export function TableNodeContent({
                   className="table-direct-control"
                   title={
                     keys.some((k) => k.kind === 'primary')
-                      ? 'PK 컬럼은 NULL을 허용하지 않습니다.'
-                      : 'NULL 허용'
+                      ? translate('PK 컬럼은 NULL을 허용하지 않습니다.')
+                      : translate('NULL 허용')
                   }
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.stopPropagation()}
                 >
                   <Checkbox
-                    aria-label={`${columnName(c)} NULL 허용`}
+                    aria-label={translate('{x0} NULL 허용', { x0: columnName(c) })}
                     checked={c.physical.nullable}
                     disabled={!editable || keys.some((k) => k.kind === 'primary')}
                     onChange={(e) => onChange?.(patch({ nullable: e.target.checked }))}
@@ -564,15 +577,17 @@ export function TableNodeContent({
                 </span>
               )}
               {showComment &&
-                cell(c.physical.comment, '컬럼 comment', (comment) => patch({ comment }))}
+                cell(c.physical.comment, translate('컬럼 comment'), (comment) =>
+                  patch({ comment }),
+                )}
             </div>
           );
         })}
-        {!columns.length && <p>컬럼을 추가해 설계를 시작하세요.</p>}
+        {!columns.length && <p>{translate('컬럼을 추가해 설계를 시작하세요.')}</p>}
       </div>
       <div className="table-node-footer" onPointerDown={(e) => e.stopPropagation()}>
         <IconButton
-          aria-label="컬럼 추가"
+          aria-label={translate('컬럼 추가')}
           disabled={!editable}
           onClick={() => onChange?.(addColumn(doc, freshColumn(tableId)))}
         >
@@ -582,7 +597,7 @@ export function TableNodeContent({
       <ContextMenu
         position={menu}
         onClose={() => setMenu(null)}
-        label="컬럼"
+        label={translate('컬럼')}
         items={[
           {
             id: 'primary-key',
@@ -594,8 +609,8 @@ export function TableNodeContent({
                   k.scope !== 'logical' &&
                   k.columnIds.includes(menu?.id ?? ''),
               )
-                ? '기본 키(PK)에서 해제'
-                : '기본 키(PK)로 지정'),
+                ? translate('기본 키(PK)에서 해제')
+                : translate('기본 키(PK)로 지정')),
             disabled: !menu?.id || !!primaryKeyChangeReason(doc, menu.id),
             onAction: () => {
               if (menu?.id)
@@ -615,16 +630,16 @@ export function TableNodeContent({
           },
           {
             id: 'delete-column',
-            label: '컬럼 삭제',
+            label: translate('컬럼 삭제'),
             disabled: !menu?.id,
             onAction: async () => {
               const id = menu?.id;
               if (
                 id &&
                 (await confirm({
-                  title: '컬럼 삭제',
-                  description: '컬럼과 연결된 키 및 관계를 삭제할까요?',
-                  confirmLabel: '삭제',
+                  title: translate('컬럼 삭제'),
+                  description: translate('컬럼과 연결된 키 및 관계를 삭제할까요?'),
+                  confirmLabel: translate('삭제'),
                   destructive: true,
                 }))
               )
@@ -633,17 +648,17 @@ export function TableNodeContent({
           },
           {
             id: 'toggle-nullable',
-            label: showNullable ? 'NULL 숨기기' : 'NULL 표시',
+            label: showNullable ? translate('NULL 숨기기') : translate('NULL 표시'),
             onAction: () => display({ showNullable: !showNullable }),
           },
           {
             id: 'toggle-comment',
-            label: showComment ? 'comment 숨기기' : 'comment 표시',
+            label: showComment ? translate('comment 숨기기') : translate('comment 표시'),
             onAction: () => display({ showComment: !showComment }),
           },
           {
             id: 'pin',
-            label: '여기에 핀 남기기',
+            label: translate('여기에 핀 남기기'),
             disabled: !onCreatePin,
             onAction: () => {
               if (menu) onCreatePin?.({ clientX: menu.x, clientY: menu.y });
@@ -651,12 +666,12 @@ export function TableNodeContent({
           },
           {
             id: 'add-column',
-            label: '컬럼 추가',
+            label: translate('컬럼 추가'),
             onAction: () => onChange?.(addColumn(doc, freshColumn(tableId))),
           },
           {
             id: 'fk',
-            label: 'PK에서 관계 연결',
+            label: translate('PK에서 관계 연결'),
             disabled:
               !onStartForeignKey ||
               !doc.keys?.some(
@@ -691,10 +706,11 @@ export function TableWorkspaceTools({
   onSelect: (id: string) => void;
   hideViewMode?: boolean;
 }) {
+  useI18n();
   const [name, setName] = useState('');
   return (
     <div className="table-workspace-tools">
-      <TextField label="새 테이블명" value={name} max={120} onChange={setName} />
+      <TextField label={translate('새 테이블명')} value={name} max={120} onChange={setName} />
       <Button
         variant="primary"
         className="primary"
@@ -708,7 +724,7 @@ export function TableWorkspaceTools({
                 id,
                 domainId: viewId,
                 scope: 'physical',
-                logical: { name: '새 테이블', definition: '' },
+                logical: { name: translate('새 테이블'), definition: '' },
                 physical: { name, schema: 'public', comment: '' },
                 customProperties: emptyMetadata(),
               },
@@ -719,11 +735,12 @@ export function TableWorkspaceTools({
           onSelect(id);
         }}
       >
-        + 테이블
+        {translate('+ 테이블')}
       </Button>
       <PanelNote>
-        이름을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이
-        화면으로 참조할 수 있습니다.
+        {translate(
+          '이름을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이 화면으로 참조할 수 있습니다.',
+        )}
       </PanelNote>
     </div>
   );
@@ -741,6 +758,7 @@ export function TableInspector({
   readOnly: boolean;
   onStartForeignKey?: (id: string) => void;
 }) {
+  useI18n();
   const confirm = useConfirm();
   const [columnId, setColumnId] = useState<string | null>(null);
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null),
@@ -779,15 +797,16 @@ export function TableInspector({
   return (
     <section className="table-inspector">
       <p className="table-owner">
-        소유 도메인 · {doc.domains.find((d) => d.id === table.domainId)?.name} · 참조 화면에서도
-        원본을 편집합니다.
+        {translate('소유 도메인 · {domain} · 참조 화면에서도 원본을 편집합니다.', {
+          domain: doc.domains.find((d) => d.id === table.domainId)?.name ?? '',
+        })}
       </p>
       <fieldset disabled={readOnly}>
-        <PanelSection title="기본 정보" defaultOpen>
+        <PanelSection title={translate('기본 정보')} defaultOpen>
           <label>
-            도메인
+            {translate('도메인')}
             <Select
-              aria-label="도메인"
+              aria-label={translate('도메인')}
               value={table.domainId}
               disabled={readOnly}
               onValueChange={(domainId) => patch({ domainId })}
@@ -800,19 +819,21 @@ export function TableInspector({
             </Select>
           </label>
           <TextField
-            label="테이블명"
+            label={translate('테이블명')}
             value={table.physical.name}
             max={120}
             onChange={(name) => patch({ physical: { ...table.physical, name } })}
           />
           <DescriptionField
-            label="설명"
+            label={translate('설명')}
             value={table.physical.comment}
             onChange={(comment) => patch({ physical: { ...table.physical, comment } })}
           />
         </PanelSection>
-        <PanelSection title="컬럼" count={cols.length} defaultOpen>
-          <PanelList empty="아직 컬럼이 없습니다. 아래 컬럼 추가에서 첫 컬럼을 만들어 주세요.">
+        <PanelSection title={translate('컬럼')} count={cols.length} defaultOpen>
+          <PanelList
+            empty={translate('아직 컬럼이 없습니다. 아래 컬럼 추가에서 첫 컬럼을 만들어 주세요.')}
+          >
             {cols.map((c, at) => (
               <Fragment key={c.id}>
                 <PanelRow
@@ -884,11 +905,11 @@ export function TableInspector({
               </Fragment>
             ))}
           </PanelList>
-          <PanelSection title="컬럼 추가" className="table-column-create-section">
+          <PanelSection title={translate('컬럼 추가')} className="table-column-create-section">
             <ColumnCreationForm document={doc} tableId={tableId} onChange={change} />
           </PanelSection>
         </PanelSection>
-        <PanelSection title="키 · PK / UNIQUE" count={keys.length}>
+        <PanelSection title={translate('키 · PK / UNIQUE')} count={keys.length}>
           {keys.map((k) => (
             <KeyEditor
               key={k.id}
@@ -915,10 +936,10 @@ export function TableInspector({
                   setKeyDraft(null);
                 }}
               >
-                키 생성
+                {translate('키 생성')}
               </Button>
               <PanelNote>
-                컬럼을 선택한 뒤 키를 생성하세요. 같은 키는 중복 생성할 수 없습니다.
+                {translate('컬럼을 선택한 뒤 키를 생성하세요. 같은 키는 중복 생성할 수 없습니다.')}
               </PanelNote>
             </>
           )}
@@ -935,10 +956,10 @@ export function TableInspector({
               })
             }
           >
-            + 키 추가
+            {translate('+ 키 추가')}
           </Button>
         </PanelSection>
-        <PanelSection title="테이블 관계" count={relations.length}>
+        <PanelSection title={translate('테이블 관계')} count={relations.length}>
           {relations.map((r) => (
             <RelationEditor
               key={r.id}
@@ -949,14 +970,14 @@ export function TableInspector({
             />
           ))}
           <label>
-            PK 출발 컬럼
+            {translate('PK 출발 컬럼')}
             <Select
-              aria-label="PK 출발 컬럼"
+              aria-label={translate('PK 출발 컬럼')}
               value={fkColumnId}
               disabled={!onStartForeignKey}
               onValueChange={(value) => setFkColumnId(value)}
             >
-              <option value="">출발 컬럼 선택</option>
+              <option value="">{translate('출발 컬럼 선택')}</option>
               {cols
                 .filter((c) => keys.some((k) => k.kind === 'primary' && k.columnIds.includes(c.id)))
                 .map((c) => (
@@ -974,10 +995,12 @@ export function TableInspector({
               setFkColumnId('');
             }}
           >
-            + 테이블 관계 추가
+            {translate('+ 테이블 관계 추가')}
           </Button>
           <PanelNote>
-            PK 컬럼을 선택한 뒤 FK를 받을 테이블을 클릭하세요. 대응 컬럼은 자동으로 추가됩니다.
+            {translate(
+              'PK 컬럼을 선택한 뒤 FK를 받을 테이블을 클릭하세요. 대응 컬럼은 자동으로 추가됩니다.',
+            )}
           </PanelNote>
         </PanelSection>
         <div className="panel-danger">
@@ -987,16 +1010,18 @@ export function TableInspector({
             onClick={async () => {
               if (
                 await confirm({
-                  title: '테이블 삭제',
-                  description: '테이블과 소유 컬럼, 키, 관계 및 모든 외부 참조를 삭제할까요?',
-                  confirmLabel: '삭제',
+                  title: translate('테이블 삭제'),
+                  description: translate(
+                    '테이블과 소유 컬럼, 키, 관계 및 모든 외부 참조를 삭제할까요?',
+                  ),
+                  confirmLabel: translate('삭제'),
                   destructive: true,
                 })
               )
                 change(removeTable(doc, tableId));
             }}
           >
-            테이블 삭제
+            {translate('테이블 삭제')}
           </Button>
         </div>
       </fieldset>
@@ -1012,6 +1037,7 @@ export function ColumnDefaultControl({
   enums: DesignDocument['enums'];
   onChange: (physical: Column['physical']) => void;
 }) {
+  useI18n();
   const options = columnDefaultOptions(physical, enums);
   const value = isAutoIncrement(physical.type)
     ? autoIncrementDefault
@@ -1019,15 +1045,15 @@ export function ColumnDefaultControl({
   const existing = value && !options.some((option) => option.value === value);
   return (
     <label className="table-column-default">
-      기본값
+      {translate('기본값')}
       <Select
-        aria-label="컬럼 기본값"
+        aria-label={translate('컬럼 기본값')}
         value={value}
         onValueChange={(next) => onChange(applyColumnDefault(physical, next, enums))}
       >
         {existing && (
           <option value={value} disabled>
-            기존 값 · {value}
+            {translate('기존 값 · {value}', { value })}
           </option>
         )}
         {options.map((option) => (
@@ -1036,7 +1062,7 @@ export function ColumnDefaultControl({
           </option>
         ))}
       </Select>
-      <small>타입 변경 시 기본값이 초기화됩니다.</small>
+      <small>{translate('타입 변경 시 기본값이 초기화됩니다.')}</small>
     </label>
   );
 }
@@ -1061,43 +1087,42 @@ function ColumnEditor({
   onDelete: () => void;
   onClose: () => void;
 }) {
+  useI18n();
   const physical = (p: Partial<Column['physical']>) =>
     onChange({ physical: patchColumnPhysical(c.physical, p) });
   return (
     <div className="panel-detail table-column-editor">
       <div className="panel-detail-head">
-        <strong>
-          컬럼 {index + 1} / {count}
-        </strong>
+        <strong>{translate('컬럼 {index} / {count}', { index: index + 1, count })}</strong>
         <IconButton
-          aria-label={`${columnName(c)} 위로`}
+          aria-label={translate('{x0} 위로', { x0: columnName(c) })}
           disabled={index === 0}
           onClick={() => onMove(-1)}
         >
           ↑
         </IconButton>
         <IconButton
-          aria-label={`${columnName(c)} 아래로`}
+          aria-label={translate('{x0} 아래로', { x0: columnName(c) })}
           disabled={index === count - 1}
           onClick={() => onMove(1)}
         >
           ↓
         </IconButton>
-        <IconButton aria-label="컬럼 편집 닫기" onClick={onClose}>
+        <IconButton aria-label={translate('컬럼 편집 닫기')} onClick={onClose}>
           ×
         </IconButton>
       </div>
       <TextField
-        label="컬럼명"
+        label={translate('컬럼명')}
         value={c.physical.name}
         max={120}
         onChange={(name) => physical({ name })}
       />
       <div className="table-column-type-controls">
         <label>
-          타입
+          {translate('타입')}
           <SearchType
-            label="타입"
+            label={translate('타입')}
             value={c.physical.type.enumId ? `enum:${c.physical.type.enumId}` : c.physical.type.name}
             onValueChange={(value) => {
               if (
@@ -1140,7 +1165,13 @@ function ColumnEditor({
       <div className="table-type-params">
         {(['length', 'precision', 'scale'] as const).map((key) => (
           <label key={key}>
-            {{ length: '길이', precision: '정밀도', scale: '소수' }[key]}
+            {
+              {
+                length: translate('길이'),
+                precision: translate('정밀도'),
+                scale: translate('소수'),
+              }[key]
+            }
             <Input
               type="number"
               disabled={!typeParameterEnabled(c.physical.type, key)}
@@ -1195,7 +1226,7 @@ function ColumnEditor({
       <div className="table-column-flags">
         <label className="table-check" title={primaryKeyChangeReason(doc, c.id)}>
           <Checkbox
-            aria-label="기본 키 (PK)"
+            aria-label={translate('기본 키 (PK)')}
             checked={
               !!doc.keys?.some(
                 (k) => k.kind === 'primary' && k.scope !== 'logical' && k.columnIds.includes(c.id),
@@ -1204,16 +1235,16 @@ function ColumnEditor({
             disabled={!!primaryKeyChangeReason(doc, c.id)}
             onChange={(e) => onPrimaryKeyChange(e.target.checked)}
           />
-          기본 키 (PK)
+          {translate('기본 키 (PK)')}
         </label>
         <Check
-          label="배열"
+          label={translate('배열')}
           value={c.physical.type.isArray}
           disabled={isAutoIncrement(c.physical.type)}
           onChange={(isArray) => physical({ type: { ...c.physical.type, isArray } })}
         />
         <Check
-          label="NULL 허용"
+          label={translate('NULL 허용')}
           disabled={
             !!doc.keys?.some(
               (k) => k.kind === 'primary' && k.scope !== 'logical' && k.columnIds.includes(c.id),
@@ -1240,13 +1271,13 @@ function ColumnEditor({
         <PanelNote>{primaryKeyChangeReason(doc, c.id)}</PanelNote>
       )}
       <TextField
-        label="설명"
+        label={translate('설명')}
         value={c.physical.comment}
         onChange={(comment) => physical({ comment })}
       />
       <div className="panel-danger">
         <Button variant="danger" onClick={onDelete}>
-          컬럼 삭제
+          {translate('컬럼 삭제')}
         </Button>
       </div>
     </div>
@@ -1264,19 +1295,21 @@ function KeyEditor({
   onChange: (k: TableKey) => void;
   onDelete: () => void;
 }) {
+  useI18n();
   return (
     <PanelSection
       defaultOpen
       title={
         <>
-          {k.kind === 'primary' ? '기본 키' : '고유 키'} · {k.name || '이름 없음'}
+          {k.kind === 'primary' ? translate('기본 키') : translate('고유 키')} ·{' '}
+          {k.name || translate('이름 없음')}
         </>
       }
     >
       <label>
-        키 종류
+        {translate('키 종류')}
         <Select
-          aria-label="키 종류"
+          aria-label={translate('키 종류')}
           value={k.kind}
           onValueChange={(value) => onChange({ ...k, kind: value as TableKey['kind'] })}
         >
@@ -1285,13 +1318,15 @@ function KeyEditor({
         </Select>
       </label>
       <TextField
-        label="키 이름"
+        label={translate('키 이름')}
         value={k.name}
         max={120}
         onChange={(name) => onChange({ ...k, name })}
       />
       <p>
-        체크한 순서대로 하나의 복합 {k.kind === 'primary' ? 'PRIMARY KEY' : 'UNIQUE'}를 구성합니다.
+        {translate('체크한 순서대로 하나의 복합 {kind}를 구성합니다.', {
+          kind: k.kind === 'primary' ? 'PRIMARY KEY' : 'UNIQUE',
+        })}
       </p>
       <div className="table-key-options">
         {columns.map((c) => (
@@ -1311,7 +1346,7 @@ function KeyEditor({
         ))}
       </div>
       <Button variant="danger" className="danger" onClick={onDelete}>
-        키 삭제
+        {translate('키 삭제')}
       </Button>
     </PanelSection>
   );
@@ -1329,6 +1364,7 @@ export function RelationEditor({
   onChange: (r: TableRelation) => void;
   onDelete: () => void;
 }) {
+  useI18n();
   const physical = r.physical,
     source = (doc.columns ?? []).filter((c) => c.tableId === r.sourceTableId),
     target = (doc.columns ?? []).filter((c) => c.tableId === r.targetTableId);
@@ -1346,31 +1382,31 @@ export function RelationEditor({
         {physical ? (
           physical.targetColumnIds.map((id, index) => (
             <span key={`${id}:${index}`}>
-              {target.find((c) => c.id === id)?.physical.name || 'PK 컬럼'} →{' '}
+              {target.find((c) => c.id === id)?.physical.name || translate('PK 컬럼')} →{' '}
               {source.find((c) => c.id === physical.sourceColumnIds[index])?.physical.name ||
-                'FK 컬럼'}
+                translate('FK 컬럼')}
             </span>
           ))
         ) : (
-          <span>물리 FK 없음</span>
+          <span>{translate('물리 FK 없음')}</span>
         )}
       </div>
       <TextField
-        label="관계명"
+        label={translate('관계명')}
         value={r.logical.name}
         max={120}
         onChange={(name) => onChange({ ...r, logical: { ...r.logical, name } })}
       />
       <DescriptionField
-        label="관계 설명"
+        label={translate('관계 설명')}
         value={r.logical.description ?? ''}
         onChange={(description) => onChange({ ...r, logical: { ...r.logical, description } })}
       />
       {!r.logical.sourceCardinality && !r.logical.targetCardinality && (
         <label>
-          카디널리티
+          {translate('카디널리티')}
           <Select
-            aria-label="카디널리티"
+            aria-label={translate('카디널리티')}
             value={r.logical.cardinality}
             onValueChange={(value) =>
               onChange({
@@ -1402,9 +1438,15 @@ export function RelationEditor({
         };
         return (
           <label key={side}>
-            {side === 'targetCardinality' ? '출발 끝점 (PK)' : '대상 끝점 (FK)'}
+            {side === 'targetCardinality'
+              ? translate('출발 끝점 (PK)')
+              : translate('대상 끝점 (FK)')}
             <Select
-              aria-label={side === 'targetCardinality' ? '출발 끝점 (PK)' : '대상 끝점 (FK)'}
+              aria-label={
+                side === 'targetCardinality'
+                  ? translate('출발 끝점 (PK)')
+                  : translate('대상 끝점 (FK)')
+              }
               value={`${endpoint.min}:${endpoint.max}`}
               onValueChange={(value) => {
                 const [min, max] = value.split(':');
@@ -1427,14 +1469,14 @@ export function RelationEditor({
       })}
       {!r.logical.targetCardinality && (
         <Check
-          label="관계 필수"
+          label={translate('관계 필수')}
           value={r.logical.required}
           onChange={(required) => onChange({ ...r, logical: { ...r.logical, required } })}
         />
       )}
       {physical && (
         <div className="table-referential-actions">
-          <p>참조 키 변경·삭제 시 FK 처리</p>
+          <p>{translate('참조 키 변경·삭제 시 FK 처리')}</p>
           {(['onDelete', 'onUpdate'] as const).map((key) => (
             <label key={key}>
               {key === 'onDelete' ? 'ON DELETE' : 'ON UPDATE'}
@@ -1454,12 +1496,18 @@ export function RelationEditor({
         </div>
       )}
       <AnimatedDetails className="table-relation-advanced">
-        <summary>고급 설정 · 테이블, FK 매핑</summary>
+        <summary>{translate('고급 설정 · 테이블, FK 매핑')}</summary>
         {(['targetTableId', 'sourceTableId'] as const).map((key) => (
           <label key={key}>
-            {key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}
+            {key === 'sourceTableId'
+              ? translate('대상 테이블 (FK)')
+              : translate('출발 테이블 (PK)')}
             <Select
-              aria-label={key === 'sourceTableId' ? '대상 테이블 (FK)' : '출발 테이블 (PK)'}
+              aria-label={
+                key === 'sourceTableId'
+                  ? translate('대상 테이블 (FK)')
+                  : translate('출발 테이블 (PK)')
+              }
               value={r[key]}
               onValueChange={(value) =>
                 onChange({
@@ -1480,34 +1528,39 @@ export function RelationEditor({
           </label>
         ))}
         {physical ? (
-          <Button onClick={() => onChange({ ...r, physical: null })}>FK 정의 제거</Button>
+          <Button onClick={() => onChange({ ...r, physical: null })}>
+            {translate('FK 정의 제거')}
+          </Button>
         ) : (
-          <p>새 FK는 출발 PK 컬럼을 선택한 뒤 도착 테이블을 클릭하여 생성합니다.</p>
+          <p>{translate('새 FK는 출발 PK 컬럼을 선택한 뒤 도착 테이블을 클릭하여 생성합니다.')}</p>
         )}
         {physical && (
           <>
             <TextField
-              label="FK 이름"
+              label={translate('FK 이름')}
               value={physical.name}
               max={120}
               onChange={(name) => onChange({ ...r, physical: { ...physical, name } })}
             />
-            <p>출발 PK / UNIQUE 컬럼 → 대상 FK 컬럼 순서로 대응합니다.</p>
+            <p>{translate('출발 PK / UNIQUE 컬럼 → 대상 FK 컬럼 순서로 대응합니다.')}</p>
             {physical.sourceColumnIds.map((id, i) => (
               <div className="table-mapping" key={i}>
                 <span>{i + 1}</span>
                 {(['target', 'source'] as const).map((side) => (
                   <label key={side}>
-                    {side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼
+                    {side === 'source' ? 'FK' : 'PK / UNIQUE'} {translate('컬럼')}
                     <Select
-                      aria-label={`${side === 'source' ? 'FK' : 'PK / UNIQUE'} 컬럼 ${i + 1}`}
+                      aria-label={translate('{x0} 컬럼 {x1}', {
+                        x0: side === 'source' ? 'FK' : 'PK / UNIQUE',
+                        x1: i + 1,
+                      })}
                       value={side === 'source' ? id : (physical.targetColumnIds[i] ?? '')}
                       onValueChange={(value) => {
                         if (value)
                           onChange({ ...r, physical: setMappingPair(physical, i, side, value) });
                       }}
                     >
-                      <option value="">선택</option>
+                      <option value="">{translate('선택')}</option>
                       {(side === 'source' ? source : target).map((c) => (
                         <option key={c.id} value={c.id}>
                           {columnName(c)}
@@ -1517,7 +1570,7 @@ export function RelationEditor({
                   </label>
                 ))}
                 <IconButton
-                  aria-label={`매핑 ${i + 1} 삭제`}
+                  aria-label={translate('매핑 {x0} 삭제', { x0: i + 1 })}
                   onClick={() =>
                     onChange({
                       ...r,
@@ -1546,13 +1599,13 @@ export function RelationEditor({
                 })
               }
             >
-              + 컬럼 매핑
+              {translate('+ 컬럼 매핑')}
             </Button>
           </>
         )}
       </AnimatedDetails>
       <Button variant="danger" className="danger" onClick={onDelete}>
-        관계 삭제
+        {translate('관계 삭제')}
       </Button>
     </PanelSection>
   );
@@ -1571,6 +1624,7 @@ function ColumnCreationForm({
   tableId: string;
   onChange: (d: DesignDocument) => void;
 }) {
+  useI18n();
   const [name, setName] = useState(''),
     [type, setType] = useState('text'),
     [comment, setComment] = useState(''),
@@ -1607,11 +1661,16 @@ function ColumnCreationForm({
             }}
           />
         </label>
-        <TextField label="속성" value={name} max={120} onChange={setName} />
+        <TextField
+          label={translate('속성', undefined, 'column')}
+          value={name}
+          max={120}
+          onChange={setName}
+        />
         <label>
-          타입
+          {translate('타입')}
           <SearchType
-            label="타입"
+            label={translate('타입')}
             value={type}
             onValueChange={(value) => {
               setType(value);
@@ -1637,7 +1696,7 @@ function ColumnCreationForm({
             }}
           />
         </label>
-        <TextField label="새 컬럼 comment" value={comment} onChange={setComment} />
+        <TextField label={translate('새 컬럼 comment')} value={comment} onChange={setComment} />
       </div>
       <ColumnDefaultControl
         physical={draftPhysical}
@@ -1660,7 +1719,7 @@ function ColumnCreationForm({
           setPk(false);
         }}
       >
-        + 컬럼 추가
+        {translate('+ 컬럼 추가')}
       </Button>
     </div>
   );
@@ -1677,6 +1736,7 @@ export function EnumDialog({
   readOnly: boolean;
   onClose: () => void;
 }) {
+  useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const previous = document.activeElement;
@@ -1695,14 +1755,14 @@ export function EnumDialog({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="enum-dialog-head">
-        <h2 id="enum-dialog-title">프로젝트 ENUM</h2>
-        <IconButton aria-label="ENUM 관리 닫기" onClick={onClose}>
+        <h2 id="enum-dialog-title">{translate('프로젝트 ENUM')}</h2>
+        <IconButton aria-label={translate('ENUM 관리 닫기')} onClick={onClose}>
           ×
         </IconButton>
       </div>
       <EnumManager document={doc} onChange={onChange} readOnly={readOnly} />
       <div className="table-actions">
-        <Button onClick={onClose}>닫기</Button>
+        <Button onClick={onClose}>{translate('닫기')}</Button>
       </div>
     </dialog>,
     document.body,

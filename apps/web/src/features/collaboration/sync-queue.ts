@@ -1,3 +1,5 @@
+import { translate as t } from '../../shared/i18n/index.js';
+import './translations.js';
 import type { StoredSyncOperation, SyncOperationStore } from './sync-storage.js';
 
 export const automaticReconnectLimitMs = 24 * 60 * 60 * 1000;
@@ -45,7 +47,7 @@ export class DurableSyncQueue<T, R> {
             continue;
           }
         } catch (error) {
-          await this.update(item, 'unknown', '서버 처리 여부를 확인하지 못했습니다.');
+          await this.update(item, 'unknown', t('서버 처리 여부를 확인하지 못했습니다.'));
           this.listener({ type: 'error', item, error });
           continue;
         }
@@ -93,7 +95,7 @@ export class DurableSyncQueue<T, R> {
             try {
               known = await this.transport.lookup(item.operationId);
             } catch (error) {
-              await this.update(item, 'unknown', '서버 처리 여부를 확인하지 못했습니다.');
+              await this.update(item, 'unknown', t('서버 처리 여부를 확인하지 못했습니다.'));
               this.listener({ type: 'error', item, error });
               break;
             }
@@ -103,7 +105,7 @@ export class DurableSyncQueue<T, R> {
             }
           }
           if (this.now() - item.baselineAt > automaticReconnectLimitMs) {
-            await this.update(item, 'unresolved', '24시간이 지나 자동 반영하지 않았습니다.');
+            await this.update(item, 'unresolved', t('24시간이 지나 자동 반영하지 않았습니다.'));
             continue;
           }
           if (this.transport.prepare) {
@@ -133,7 +135,7 @@ export class DurableSyncQueue<T, R> {
             const result = await this.transport.submit(item.operation);
             await this.ack(sending, result);
           } catch (error) {
-            await this.update(sending, 'unknown', '전송 결과를 확인하지 못했습니다.');
+            await this.update(sending, 'unknown', t('전송 결과를 확인하지 못했습니다.'));
             this.listener({ type: 'error', item: sending, error });
             break;
           }
@@ -192,7 +194,7 @@ export class DurableSyncQueue<T, R> {
       await this.store.put({
         ...item,
         state: 'unresolved',
-        reason: outcome.reason ?? '서버가 변경을 반영하지 않았습니다.',
+        reason: outcome.reason ?? t('서버가 변경을 반영하지 않았습니다.'),
       });
       this.listener({ type: 'ack', item, result });
     }

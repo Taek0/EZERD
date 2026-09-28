@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createEmptyDocument, addDomain, upsertDomainRelation } from '@ezerd/model';
 import { ConfirmProvider } from '../../components/ui/ConfirmProvider.js';
 import { Canvas } from './Canvas.js';
+import { setLocale } from '../../shared/i18n/index.js';
 
 function example() {
   let doc = addDomain(
@@ -29,6 +30,28 @@ function markup(readOnly = false) {
 }
 
 describe('editor sidebar structure', () => {
+  it('switches editor labels to English while preserving user-authored domain content', () => {
+    const doc = example();
+    const before = JSON.stringify(doc);
+    try {
+      setLocale('en');
+      const html = render(
+        h(ConfirmProvider, null, h(Canvas, { document: doc, onChange: () => {}, readOnly: false })),
+      );
+      expect(html).toContain('Domain map');
+      expect(html).toContain('Create a domain');
+      expect(html).toContain('＋ Domain');
+      expect(html).toContain('Cursor tool');
+      expect(html).toContain('결제 업무 영역');
+      expect(html).toContain('주문 결제');
+      expect(JSON.stringify(doc)).toBe(before);
+      setLocale('ko');
+      expect(markup()).toContain('도메인 맵');
+    } finally {
+      setLocale('ko');
+    }
+  });
+
   it('keeps one panel frame with a place, a selection slot and both panel views', () => {
     const html = markup();
     expect(html).toContain('inspector-topbar');

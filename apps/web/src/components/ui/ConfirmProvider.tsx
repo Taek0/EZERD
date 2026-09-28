@@ -9,8 +9,11 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { I18nProvider } from 'react-aria-components';
 import { Button } from './index.js';
 import './confirm.css';
+import { useI18n } from '../../shared/i18n/index.js';
+import './translations.js';
 
 export interface ConfirmOptions {
   title: string;
@@ -29,6 +32,7 @@ export function useConfirm(): Confirm {
 }
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const { t, locale } = useI18n();
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const resolver = useRef<((confirmed: boolean) => void) | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -68,50 +72,52 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <ConfirmContext.Provider value={confirm}>
-      {children}
-      {options &&
-        createPortal(
-          <dialog
-            ref={dialog}
-            className="confirmation-dialog"
-            aria-labelledby={titleId}
-            aria-describedby={descriptionId}
-            onCancel={(event) => {
-              event.preventDefault();
-              finish(false);
-            }}
-            onClick={(event) => {
-              if (event.target === event.currentTarget) {
-                const bounds = event.currentTarget.getBoundingClientRect();
-                if (
-                  event.clientX < bounds.left ||
-                  event.clientX > bounds.right ||
-                  event.clientY < bounds.top ||
-                  event.clientY > bounds.bottom
-                )
-                  finish(false);
-              }
-            }}
-          >
-            <h2 id={titleId}>{options.title}</h2>
-            <p id={descriptionId}>{options.description}</p>
-            <div className="confirmation-dialog-actions">
-              <Button ref={cancelButton} type="button" onClick={() => finish(false)}>
-                취소
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                className={options.destructive ? 'confirmation-danger' : 'confirmation-primary'}
-                onClick={() => finish(true)}
-              >
-                {options.confirmLabel ?? '확인'}
-              </Button>
-            </div>
-          </dialog>,
-          document.body,
-        )}
-    </ConfirmContext.Provider>
+    <I18nProvider locale={locale === 'en' ? 'en-US' : 'ko-KR'}>
+      <ConfirmContext.Provider value={confirm}>
+        {children}
+        {options &&
+          createPortal(
+            <dialog
+              ref={dialog}
+              className="confirmation-dialog"
+              aria-labelledby={titleId}
+              aria-describedby={descriptionId}
+              onCancel={(event) => {
+                event.preventDefault();
+                finish(false);
+              }}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) {
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  if (
+                    event.clientX < bounds.left ||
+                    event.clientX > bounds.right ||
+                    event.clientY < bounds.top ||
+                    event.clientY > bounds.bottom
+                  )
+                    finish(false);
+                }
+              }}
+            >
+              <h2 id={titleId}>{options.title}</h2>
+              <p id={descriptionId}>{options.description}</p>
+              <div className="confirmation-dialog-actions">
+                <Button ref={cancelButton} type="button" onClick={() => finish(false)}>
+                  {t('취소')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  className={options.destructive ? 'confirmation-danger' : 'confirmation-primary'}
+                  onClick={() => finish(true)}
+                >
+                  {options.confirmLabel ?? t('확인')}
+                </Button>
+              </div>
+            </dialog>,
+            document.body,
+          )}
+      </ConfirmContext.Provider>
+    </I18nProvider>
   );
 }

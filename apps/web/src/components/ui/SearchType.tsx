@@ -4,6 +4,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ComboBox, Group, Input, ListBox } from 'react-aria-components';
 import { UntitledPopover, UntitledSelectItem } from './untitled.js';
+import { useI18n } from '../../shared/i18n/index.js';
+import './translations.js';
 export function SearchType({
   value,
   onValueChange,
@@ -24,6 +26,7 @@ export function SearchType({
   onEditEnd?: (reason: 'blur' | 'escape' | 'selection') => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const [blocked, setBlocked] = useState(false);
   const [container, setContainer] = useState<HTMLElement>();
   useEffect(() => {
@@ -63,7 +66,7 @@ export function SearchType({
         )}
         <Input
           className="ui-input"
-          placeholder="타입 검색"
+          placeholder={t('타입 검색')}
           autoFocus={autoFocus}
           onFocus={(event) => event.currentTarget.select()}
           onKeyDown={(event) => {
@@ -77,7 +80,7 @@ export function SearchType({
       <UntitledPopover {...(container ? { UNSTABLE_portalContainer: container } : {})}>
         <ListBox<{ value: string; label: string }>
           className="ui-select-list"
-          renderEmptyState={() => '검색 결과가 없습니다.'}
+          renderEmptyState={() => t('검색 결과가 없습니다.')}
         >
           {(item) => <UntitledSelectItem id={item.value} label={item.label.toUpperCase()} />}
         </ListBox>

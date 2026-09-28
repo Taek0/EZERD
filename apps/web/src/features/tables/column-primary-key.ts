@@ -1,10 +1,12 @@
+import { translate } from '../../shared/i18n/index.js';
+import './translations.js';
 import { patchColumnPhysical } from './column-defaults.js';
 import { type DesignDocument, removeKey, updateColumn, upsertKey } from '@ezerd/model';
 import { newId } from '../../shared/api/client.js';
 
 export function primaryKeyChangeReason(doc: DesignDocument, columnId: string): string | undefined {
   const column = doc.columns?.find((c) => c.id === columnId);
-  if (!column || column.scope === 'logical') return '물리 컬럼을 선택하세요.';
+  if (!column || column.scope === 'logical') return translate('물리 컬럼을 선택하세요.');
   const key = doc.keys?.find(
     (k) => k.tableId === column.tableId && k.kind === 'primary' && k.scope !== 'logical',
   );
@@ -27,7 +29,7 @@ export function primaryKeyChangeReason(doc: DesignDocument, columnId: string): s
         r.physical.targetColumnIds.every((id, i) => id === key.columnIds[i]),
     )
   )
-    return '이 PK를 참조하는 FK가 있습니다. 관계의 참조 키를 먼저 변경하세요.';
+    return translate('이 PK를 참조하는 FK가 있습니다. 관계의 참조 키를 먼저 변경하세요.');
 }
 
 export function setColumnPrimaryKey(

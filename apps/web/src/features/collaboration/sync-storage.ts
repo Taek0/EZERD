@@ -1,3 +1,5 @@
+import { translate as t } from '../../shared/i18n/index.js';
+import './translations.js';
 export type QueueState = 'queued' | 'sending' | 'unknown' | 'unresolved';
 
 export type StoredSyncOperation<T> = {
@@ -59,7 +61,7 @@ export class IndexedDbSyncOperationStore<T> implements SyncOperationStore<T> {
         }
       };
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error('IndexedDB를 열 수 없습니다.'));
+      request.onerror = () => reject(request.error ?? new Error(t('IndexedDB를 열 수 없습니다.')));
     });
     return this.database;
   }
@@ -78,11 +80,11 @@ export class IndexedDbSyncOperationStore<T> implements SyncOperationStore<T> {
       let result: R;
       let hasResult = false;
       transaction.onerror = () =>
-        reject(transaction.error ?? new Error('로컬 변경을 저장할 수 없습니다.'));
+        reject(transaction.error ?? new Error(t('로컬 변경을 저장할 수 없습니다.')));
       transaction.onabort = () =>
-        reject(transaction.error ?? new Error('로컬 변경 저장이 취소되었습니다.'));
+        reject(transaction.error ?? new Error(t('로컬 변경 저장이 취소되었습니다.')));
       transaction.oncomplete = () =>
-        hasResult ? resolve(result) : reject(new Error('로컬 변경 저장 결과가 없습니다.'));
+        hasResult ? resolve(result) : reject(new Error(t('로컬 변경 저장 결과가 없습니다.')));
       run(
         transaction.objectStore(storeName),
         (value) => {
@@ -136,8 +138,9 @@ export async function createSyncOperationStore<T>(): Promise<{
   } catch {
     return {
       store: new MemorySyncOperationStore<T>(),
-      failure:
+      failure: t(
         '이 브라우저에서는 편집 내용을 영구 보관할 수 없습니다. 이 탭을 닫기 전에 연결을 복구해 주세요.',
+      ),
     };
   }
 }

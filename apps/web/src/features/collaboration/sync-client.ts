@@ -1,3 +1,5 @@
+import { translate as t } from '../../shared/i18n/index.js';
+import './translations.js';
 import {
   syncEventSchema,
   syncHistoryEntrySchema,
@@ -223,7 +225,7 @@ export class ProjectSyncRuntime {
       this.store,
       {
         prepare: async (operation) => {
-          if (this.stopped) throw new Error('동기화가 중지되었습니다.');
+          if (this.stopped) throw new Error(t('동기화가 중지되었습니다.'));
           const local = operation as RebasedSyncOperation;
           const rebase = [operation.baselineId, ...(local.rebaseAncestors ?? [])]
             .map((baselineId) => this.rebases.get(baselineId))
@@ -246,7 +248,7 @@ export class ProjectSyncRuntime {
           };
         },
         submit: (operation) => {
-          if (this.stopped) return Promise.reject(new Error('동기화가 중지되었습니다.'));
+          if (this.stopped) return Promise.reject(new Error(t('동기화가 중지되었습니다.')));
           const { rebaseAncestors: _localAncestry, ...wireOperation } =
             operation as RebasedSyncOperation;
           return this.api(`/operations`, {
@@ -302,7 +304,7 @@ export class ProjectSyncRuntime {
     await this.ensureCurrentBaseline();
     if (this.stopped) return;
     if (!this.queue) {
-      this.error = '동기화 대기열이 준비되지 않아 편집을 보관하지 못했습니다.';
+      this.error = t('동기화 대기열이 준비되지 않아 편집을 보관하지 못했습니다.');
       this.publish();
       return;
     }
@@ -348,15 +350,15 @@ export class ProjectSyncRuntime {
       if (!representable && !hasPendingPredecessor) {
         await this.queue.markUnresolved(
           operation.operationId,
-          '현재 서버 기준에서 변경 대상을 찾을 수 없습니다. 연결을 복구한 뒤 재적용해 주세요.',
+          t('현재 서버 기준에서 변경 대상을 찾을 수 없습니다. 연결을 복구한 뒤 재적용해 주세요.'),
         );
-        this.error = '편집 의도는 로컬에 보관했지만 현재 서버 기준에 자동 반영할 수 없습니다.';
+        this.error = t('편집 의도는 로컬에 보관했지만 현재 서버 기준에 자동 반영할 수 없습니다.');
         this.publish();
         return;
       }
       void this.queue.pump();
     } catch (error) {
-      this.error = error instanceof Error ? error.message : '로컬 변경을 보관하지 못했습니다.';
+      this.error = error instanceof Error ? error.message : t('로컬 변경을 보관하지 못했습니다.');
     }
     this.publish();
   }
@@ -375,7 +377,7 @@ export class ProjectSyncRuntime {
     try {
       candidate = applyChanges(operationBaseline, modelChanges(source.operation.changes));
     } catch {
-      this.error = '현재 문서에서 변경 대상을 찾을 수 없어 재적용하지 못했습니다.';
+      this.error = t('현재 문서에서 변경 대상을 찾을 수 없어 재적용하지 못했습니다.');
       this.publish();
       return;
     }
@@ -455,7 +457,8 @@ export class ProjectSyncRuntime {
           await this.toggleAcceptedEdit(own);
         } catch (error) {
           this.ownPast.push(own);
-          this.error = error instanceof Error ? error.message : '작업을 실행 취소하지 못했습니다.';
+          this.error =
+            error instanceof Error ? error.message : t('작업을 실행 취소하지 못했습니다.');
           this.publish();
           throw error;
         }
@@ -465,7 +468,7 @@ export class ProjectSyncRuntime {
         await this.toggleAcceptedEdit(own);
       } catch (error) {
         this.ownPast.push(own);
-        this.error = error instanceof Error ? error.message : '작업을 실행 취소하지 못했습니다.';
+        this.error = error instanceof Error ? error.message : t('작업을 실행 취소하지 못했습니다.');
         this.publish();
         throw error;
       }
@@ -493,7 +496,7 @@ export class ProjectSyncRuntime {
           } catch (error) {
             this.ownPast.push(own);
             this.error =
-              error instanceof Error ? error.message : '작업을 실행 취소하지 못했습니다.';
+              error instanceof Error ? error.message : t('작업을 실행 취소하지 못했습니다.');
             this.publish();
             throw error;
           }
@@ -526,7 +529,7 @@ export class ProjectSyncRuntime {
         this.rebuildVisible();
       } catch (error) {
         this.ownFuture.push(own);
-        this.error = error instanceof Error ? error.message : '작업을 다시 실행하지 못했습니다.';
+        this.error = error instanceof Error ? error.message : t('작업을 다시 실행하지 못했습니다.');
         this.publish();
         throw error;
       }
@@ -537,7 +540,7 @@ export class ProjectSyncRuntime {
       document = applyChanges(this.baselineDocument, modelChanges(own.operation.changes));
     } catch (error) {
       this.ownFuture.push(own);
-      this.error = '현재 문서에서 작업을 다시 실행할 수 없습니다.';
+      this.error = t('현재 문서에서 작업을 다시 실행할 수 없습니다.');
       this.publish();
       throw error;
     }
@@ -571,7 +574,7 @@ export class ProjectSyncRuntime {
       }),
     );
     if (result.status !== 'accepted')
-      throw new Error(result.reason ?? '서버가 작업을 되돌리지 않았습니다.');
+      throw new Error(result.reason ?? t('서버가 작업을 되돌리지 않았습니다.'));
     own.commandSourceId = result.operationId;
     own.acceptedSequence = result.sequence;
     const newest = result.sequence >= this.sequence;
@@ -604,7 +607,10 @@ export class ProjectSyncRuntime {
   private async lookup(operationId: string) {
     const response = await this.raw(`/operations/${encodeURIComponent(operationId)}`);
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`작업 처리 상태를 확인하지 못했습니다 (${response.status}).`);
+    if (!response.ok)
+      throw new Error(
+        t('작업 처리 상태를 확인하지 못했습니다 ({status}).', { status: response.status }),
+      );
     return syncOperationResultSchema.parse(await response.json());
   }
 
@@ -645,7 +651,7 @@ export class ProjectSyncRuntime {
             this.baselineRefreshFailed = true;
             this.connected = false;
             this.error =
-              error instanceof Error ? error.message : '최신 동기화 기준을 받지 못했습니다.';
+              error instanceof Error ? error.message : t('최신 동기화 기준을 받지 못했습니다.');
             this.publish();
           }
         })();
@@ -719,12 +725,13 @@ export class ProjectSyncRuntime {
       this.rebuildVisible();
       void this.refreshHistory();
     } else if (event.type === 'expired') {
-      this.storageFailure =
-        '7일이 지난 로컬 미반영 편집을 정리했습니다. 해당 편집은 더 이상 복원할 수 없습니다.';
+      this.storageFailure = t(
+        '7일이 지난 로컬 미반영 편집을 정리했습니다. 해당 편집은 더 이상 복원할 수 없습니다.',
+      );
       this.publish();
     } else if (event.type === 'error') {
       this.connected = false;
-      this.error = event.error instanceof Error ? event.error.message : '연결이 끊겼습니다.';
+      this.error = event.error instanceof Error ? event.error.message : t('연결이 끊겼습니다.');
       this.publish();
     }
   }
@@ -739,7 +746,7 @@ export class ProjectSyncRuntime {
           const unresolved = {
             ...item,
             state: 'unresolved' as const,
-            reason: '변경 대상이 삭제되어 자동 반영할 수 없습니다.',
+            reason: t('변경 대상이 삭제되어 자동 반영할 수 없습니다.'),
           };
           this.pending = this.pending.map((value) =>
             value.operationId === item.operationId ? unresolved : value,
@@ -817,7 +824,7 @@ export class ProjectSyncRuntime {
         else if (value.type === 'operation')
           void this.cursor.receive(syncEventSchema.parse(value.event));
       } catch {
-        this.error = '실시간 변경을 해석하지 못했습니다.';
+        this.error = t('실시간 변경을 해석하지 못했습니다.');
         this.publish();
       }
     };
@@ -869,7 +876,7 @@ export class ProjectSyncRuntime {
     if (this.personalPending || this.personalSaving) {
       if (this.personalLoaded) {
         this.personalConflict = true;
-        this.error = '개인 화면이 다른 곳에서 변경되었습니다. 프로젝트를 다시 열어 주세요.';
+        this.error = t('개인 화면이 다른 곳에서 변경되었습니다. 프로젝트를 다시 열어 주세요.');
         this.publish();
       } else {
         this.personalVersion = snapshot.version;
@@ -902,14 +909,17 @@ export class ProjectSyncRuntime {
           });
           if (!response.ok) {
             if (response.status === 409) this.personalConflict = true;
-            throw new Error(`개인 화면을 저장하지 못했습니다 (${response.status}).`);
+            throw new Error(
+              t('개인 화면을 저장하지 못했습니다 ({status}).', { status: response.status }),
+            );
           }
           const saved = personalStateSnapshotSchema.parse(await response.json());
           this.personalVersion = saved.version;
-          if (this.error?.startsWith('개인 화면을 저장하지 못했습니다')) this.error = undefined;
+          if (this.error?.startsWith(t('개인 화면을 저장하지 못했습니다'))) this.error = undefined;
         } catch (error) {
           this.personalPending ??= state;
-          this.error = error instanceof Error ? error.message : '개인 화면을 저장하지 못했습니다.';
+          this.error =
+            error instanceof Error ? error.message : t('개인 화면을 저장하지 못했습니다.');
           this.publish();
           break;
         }
@@ -921,7 +931,10 @@ export class ProjectSyncRuntime {
 
   private async api(path: string, init?: RequestInit): Promise<unknown> {
     const response = await this.raw(path, init);
-    if (!response.ok) throw new Error(`동기화 요청을 완료하지 못했습니다 (${response.status}).`);
+    if (!response.ok)
+      throw new Error(
+        t('동기화 요청을 완료하지 못했습니다 ({status}).', { status: response.status }),
+      );
     return response.json();
   }
 }

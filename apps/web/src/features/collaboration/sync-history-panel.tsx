@@ -1,3 +1,5 @@
+import { translate as t, useI18n, getLocale } from '../../shared/i18n/index.js';
+import './translations.js';
 import { Dialog, DialogTrigger } from 'react-aria-components';
 import { useState } from 'react';
 import { isEffectiveChange } from '@ezerd/model';
@@ -49,7 +51,10 @@ export function filterHistory<T extends { changes: readonly HistoryChange[] }>(
 }
 
 const date = (value: string | number) =>
-  new Date(value).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+  new Date(value).toLocaleString(getLocale() === 'en' ? 'en-US' : 'ko-KR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
 const isDeletion = (change: {
   path: string;
   before: unknown;
@@ -71,15 +76,17 @@ type SyncHistoryPanelProps = {
 };
 
 export function SyncHistoryPanel(props: SyncHistoryPanelProps) {
+  useI18n();
   const unresolvedCount =
     props.snapshot?.pending.filter((item) => item.state === 'unresolved').length ?? 0;
   return (
     <DialogTrigger>
       <Button className="sync-history-trigger" aria-haspopup="dialog">
-        히스토리{unresolvedCount ? ` ${unresolvedCount}` : ''}
+        {t('히스토리')}
+        {unresolvedCount ? ` ${unresolvedCount}` : ''}
       </Button>
       <UntitledPopover className="sync-history-popover" placement="bottom end" offset={10}>
-        <Dialog aria-label="히스토리" className="sync-history-dialog">
+        <Dialog aria-label={t('히스토리')} className="sync-history-dialog">
           {({ close }) => <SyncHistoryContent {...props} onClose={close} />}
         </Dialog>
       </UntitledPopover>
@@ -96,6 +103,7 @@ export function SyncHistoryContent({
   notice,
   onClose,
 }: SyncHistoryPanelProps & { onClose?: () => void }) {
+  useI18n();
   const [filter, setFilter] = useState<HistoryFilter>('all');
   const [copyFeedback, setCopyFeedback] = useState<{
     operationId: string;
@@ -111,18 +119,18 @@ export function SyncHistoryContent({
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
       await navigator.clipboard.writeText(value);
-      setCopyFeedback({ operationId, message: '변경 내용을 복사했습니다.' });
+      setCopyFeedback({ operationId, message: t('변경 내용을 복사했습니다.') });
     } catch {
       setCopyFeedback({
         operationId,
-        message: '자동 복사를 사용할 수 없습니다. 아래 내용을 선택해 Ctrl+C로 복사하세요.',
+        message: t('자동 복사를 사용할 수 없습니다. 아래 내용을 선택해 Ctrl+C로 복사하세요.'),
         manualValue: value,
       });
     }
   }
   return (
     <div className="sync-history-panel sync-history-content">
-      <h2>히스토리</h2>
+      <h2>{t('히스토리')}</h2>
       {notice && (
         <p className="sync-history-notice" role="status">
           {historyMessage(notice)}
@@ -130,10 +138,11 @@ export function SyncHistoryContent({
       )}
       <section>
         <h3>
-          미반영 편집 <span>{unresolved.length}</span>
+          {t('미반영 편집')}
+          <span>{unresolved.length}</span>
         </h3>
         {!unresolved.length ? (
-          <p>미반영 편집이 없습니다.</p>
+          <p>{t('미반영 편집이 없습니다.')}</p>
         ) : (
           unresolved.map((item) => (
             <article key={item.operationId}>
@@ -145,24 +154,25 @@ export function SyncHistoryContent({
                 ).join(', ')}
               </strong>
               <small>
-                {historyMessage(item.reason ?? '자동 반영할 수 없습니다.')} · {date(item.createdAt)}
+                {historyMessage(item.reason ?? t('자동 반영할 수 없습니다.'))} ·{' '}
+                {date(item.createdAt)}
               </small>
               <div className="sync-history-actions">
                 <Button
                   disabled={!onReapply || activeOperationId === item.operationId}
                   onClick={() => onReapply?.(item.operationId)}
                 >
-                  재적용
+                  {t('재적용')}
                 </Button>
                 <Button onClick={() => void copyChanges(item.operationId, item.operation.changes)}>
-                  변경 내용 복사
+                  {t('변경 내용 복사')}
                 </Button>
                 <Button
                   variant="danger"
                   disabled={!onDiscard || activeOperationId === item.operationId}
                   onClick={() => onDiscard?.(item.operationId)}
                 >
-                  폐기
+                  {t('폐기')}
                 </Button>
               </div>
               {copyFeedback?.operationId === item.operationId && (
@@ -170,7 +180,7 @@ export function SyncHistoryContent({
                   <p>{copyFeedback.message}</p>
                   {copyFeedback.manualValue && (
                     <textarea
-                      aria-label="수동 복사용 변경 내용"
+                      aria-label={t('수동 복사용 변경 내용')}
                       readOnly
                       value={copyFeedback.manualValue}
                       onFocus={(event) => event.currentTarget.select()}
@@ -182,22 +192,24 @@ export function SyncHistoryContent({
           ))
         )}
       </section>
-      <div className="sync-history-filters" role="group" aria-label="히스토리 동작 필터">
+      <div className="sync-history-filters" role="group" aria-label={t('히스토리 동작 필터')}>
         {historyFilters.map(([value, label]) => (
           <TabButton key={value} selected={filter === value} onClick={() => setFilter(value)}>
-            {label}
+            {t(label)}
           </TabButton>
         ))}
       </div>
       <p className="sync-history-filter-summary" role="status">
-        {historyFilters.find(([value]) => value === filter)![1]} · {history.length}건
+        {t(historyFilters.find(([value]) => value === filter)![1])} · {history.length}
+        {t('건')}
       </p>
       <section>
         <h3>
-          삭제 <span>{deletions.length}</span>
+          {t('삭제')}
+          <span>{deletions.length}</span>
         </h3>
         {!deletions.length ? (
-          <p>최근 삭제가 없습니다.</p>
+          <p>{t('최근 삭제가 없습니다.')}</p>
         ) : (
           deletions
             .slice(-20)
@@ -211,7 +223,7 @@ export function SyncHistoryContent({
                   {entry.actor.username} · {date(entry.createdAt)}
                 </small>
                 <details className="sync-history-preview">
-                  <summary>삭제 당시 내용 미리보기</summary>
+                  <summary>{t('삭제 당시 내용 미리보기')}</summary>
                   {entry.changes.filter(isDeletion).map((change) => (
                     <p key={change.path}>
                       {describeDeletedValues(change, snapshot!.document, snapshot!.history).join(
@@ -221,14 +233,14 @@ export function SyncHistoryContent({
                   ))}
                 </details>
                 {filter !== 'all' && (
-                  <small>복원은 이 편집에서 삭제된 객체 전체에 적용됩니다.</small>
+                  <small>{t('복원은 이 편집에서 삭제된 객체 전체에 적용됩니다.')}</small>
                 )}
                 <div className="sync-history-actions">
                   <Button
                     disabled={!onRestore || activeOperationId === entry.operationId}
                     onClick={() => onRestore?.(entry.operationId)}
                   >
-                    {activeOperationId === entry.operationId ? '복원 중…' : '새 객체로 복원'}
+                    {activeOperationId === entry.operationId ? t('복원 중…') : t('새 객체로 복원')}
                   </Button>
                 </div>
               </article>
@@ -237,10 +249,11 @@ export function SyncHistoryContent({
       </section>
       <section>
         <h3>
-          변경 <span>{changes.length}</span>
+          {t('변경')}
+          <span>{changes.length}</span>
         </h3>
         {!changes.length ? (
-          <p>최근 변경이 없습니다.</p>
+          <p>{t('최근 변경이 없습니다.')}</p>
         ) : (
           changes
             .slice(-30)
@@ -257,7 +270,7 @@ export function SyncHistoryContent({
             ))
         )}
       </section>
-      <Button onClick={onClose}>닫기</Button>
+      <Button onClick={onClose}>{t('닫기')}</Button>
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { translate as t } from '../../shared/i18n/index.js';
+import './translations.js';
 import type { Column, DesignDocument } from '@ezerd/model';
 import { columnTypeDisplay } from '../tables/column-type-display.js';
 
@@ -39,9 +41,9 @@ export function historyMessage(text: string): string {
   return text
     .replace(
       /\/(?:layout|domains|domainRelations|tables|columns|keys|tableRelations|enums|notes|views)\/[^\s,;]+/g,
-      '변경 항목',
+      t('변경 항목'),
     )
-    .replace(uuid, '[식별자]');
+    .replace(uuid, t('[식별자]'));
 }
 const text = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -138,7 +140,7 @@ function context(document: DesignDocument, history: History, changes: readonly H
   };
   const label = (collection: string, id: string, override?: Item): string => {
     const value = override ?? record(collection, id);
-    let kind = collections[collection] ?? '항목',
+    let kind = t(collections[collection] ?? '항목'),
       title = name(value);
     if (collection === 'columns') {
       const parent = lookupName('tables', value.tableId);
@@ -186,7 +188,7 @@ function context(document: DesignDocument, history: History, changes: readonly H
     return kind + (title ? ' ‘' + title + '’' : '');
   };
   const valueLabel = (value: unknown, field: string): string => {
-    if (value === null || value === undefined || value === '') return '없음';
+    if (value === null || value === undefined || value === '') return t('없음');
     if (field === 'physical.type') {
       const type = object(value);
       if (typeof type.name === 'string') {
@@ -195,33 +197,33 @@ function context(document: DesignDocument, history: History, changes: readonly H
           .map(([, item]) => item) as unknown as DesignDocument['enums'];
         return text(columnTypeDisplay(type as Column['physical']['type'], enums));
       }
-      return '타입 설정';
+      return t('타입 설정');
     }
     if (field.endsWith('columnIds') || field.endsWith('ColumnIds'))
       return (
         strings(value)
-          .map((id) => lookupName('columns', id) || '컬럼')
-          .join(', ') || '없음'
+          .map((id) => lookupName('columns', id) || t('컬럼'))
+          .join(', ') || t('없음')
       );
-    if (field.endsWith('DomainId')) return lookupName('domains', value) || '도메인';
+    if (field.endsWith('DomainId')) return lookupName('domains', value) || t('도메인');
     if (field.endsWith('TableId') || field === 'tableId')
-      return lookupName('tables', value) || '테이블';
+      return lookupName('tables', value) || t('테이블');
     if (field === 'enumId') return lookupName('enums', value) || 'ENUM';
-    if (typeof value === 'boolean') return value ? '허용' : '허용 안함';
+    if (typeof value === 'boolean') return value ? t('허용') : t('허용 안함');
     if (typeof value === 'number') return String(value);
     if (typeof value === 'string') return text(value);
     if (Array.isArray(value))
       return field === 'values'
         ? text(
             strings(value)
-              .map((v) => v || '빈 문자열')
+              .map((v) => v || t('빈 문자열'))
               .join(', '),
           )
-        : value.length + '개 항목';
+        : value.length + t('개 항목');
     const v = object(value);
     if (v.min !== undefined && v.max !== undefined)
       return String(v.min) + '..' + (v.max === 'many' ? 'N' : String(v.max));
-    return '설정';
+    return t('설정');
   };
   return { record, label, nodeOwner, valueLabel };
 }
@@ -282,8 +284,8 @@ export function describeChanges(
         item = ctx.record(collection, moved);
       return [
         collection === 'columns'
-          ? ctx.label('tables', String(item.tableId ?? '')) + ' 컬럼 순서 변경'
-          : (collections[collection] ?? '항목') + ' 순서 변경',
+          ? ctx.label('tables', String(item.tableId ?? '')) + t(' 컬럼 순서 변경')
+          : t(collections[collection] ?? '항목') + t(' 순서 변경'),
       ];
     }
     if (collection === 'nodes' && p.length === 2) {
@@ -292,18 +294,19 @@ export function describeChanges(
     }
     const caption = ctx.label(collection, id);
     if (deleting(change, p))
-      return [caption + (collection === 'nodes' ? ' 보기에서 제거' : ' 삭제')];
-    if (adding(change, p)) return [caption + (collection === 'nodes' ? ' 보기 추가' : ' 추가')];
-    if (collection === 'nodes' && field === 'position') return [caption + ' 이동'];
-    if (collection === 'nodes' && field === 'size') return [caption + ' 크기 변경'];
-    if (collection === 'relations') return [caption + ' 경로 변경'];
+      return [caption + (collection === 'nodes' ? t(' 보기에서 제거') : t(' 삭제'))];
+    if (adding(change, p))
+      return [caption + (collection === 'nodes' ? t(' 보기 추가') : t(' 추가'))];
+    if (collection === 'nodes' && field === 'position') return [caption + t(' 이동')];
+    if (collection === 'nodes' && field === 'size') return [caption + t(' 크기 변경')];
+    if (collection === 'relations') return [caption + t(' 경로 변경')];
     const fieldLabel =
-      fields[field] ??
+      (fields[field] ? t(fields[field]) : undefined) ??
       (field.startsWith('physical.type.')
-        ? '타입 설정'
+        ? t('타입 설정')
         : field.startsWith('customProperties')
-          ? '추가 정보'
-          : '설정');
+          ? t('추가 정보')
+          : t('설정'));
     const before = ctx.valueLabel(change.before, field),
       after = ctx.valueLabel(change.after, field);
     if (
@@ -320,19 +323,19 @@ export function describeChanges(
         caption +
           ' ' +
           fieldLabel +
-          ' 변경 (' +
+          t(' 변경 (') +
           Array.from(String(change.before ?? '')).length +
-          '자 → ' +
+          t('자 → ') +
           Array.from(String(change.after ?? '')).length +
-          '자)',
+          t('자)'),
       ];
     }
-    const showValues = before !== '설정' && after !== '설정' && fieldLabel !== '설정';
+    const showValues = before !== t('설정') && after !== t('설정') && fieldLabel !== t('설정');
     return [
-      caption + ' ' + fieldLabel + ' 변경' + (showValues ? ': ' + before + ' → ' + after : ''),
+      caption + ' ' + fieldLabel + t(' 변경') + (showValues ? ': ' + before + ' → ' + after : ''),
     ];
   });
-  return [...new Set(result.length ? result : ['보드 변경'])];
+  return [...new Set(result.length ? result : [t('보드 변경')])];
 }
 
 export function describeDeletedValues(
@@ -347,13 +350,13 @@ export function describeDeletedValues(
   const lines = [ctx.label(p[0] ?? '', p[1] ?? '', value)];
   const description =
     text(value.description) || text(value.text) || text(object(value.logical).definition);
-  if (description) lines.push('설명: ' + description);
-  if (physical.type) lines.push('타입: ' + ctx.valueLabel(physical.type, 'physical.type'));
+  if (description) lines.push(t('설명: ') + description);
+  if (physical.type) lines.push(t('타입: ') + ctx.valueLabel(physical.type, 'physical.type'));
   if (typeof physical.nullable === 'boolean')
-    lines.push('NULL: ' + (physical.nullable ? '허용' : '허용 안함'));
+    lines.push('NULL: ' + (physical.nullable ? t('허용') : t('허용 안함')));
   if (text(physical.comment)) lines.push('comment: ' + text(physical.comment));
-  if (Array.isArray(value.values)) lines.push('값: ' + ctx.valueLabel(value.values, 'values'));
+  if (Array.isArray(value.values)) lines.push(t('값: ') + ctx.valueLabel(value.values, 'values'));
   if (Array.isArray(value.columnIds))
-    lines.push('컬럼: ' + ctx.valueLabel(value.columnIds, 'columnIds'));
+    lines.push(t('컬럼: ') + ctx.valueLabel(value.columnIds, 'columnIds'));
   return lines;
 }

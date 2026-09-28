@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Button, Input } from './index.js';
 import { message } from '../../shared/api/client.js';
 import './confirm.css';
+import { useI18n } from '../../shared/i18n/index.js';
+import './translations.js';
 
 export function RenameDialog({
   title,
@@ -22,6 +24,7 @@ export function RenameDialog({
   const [value, setValue] = useState(initialValue),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null),
     input = useRef<HTMLInputElement>(null);
   const submitting = useRef(false),
@@ -46,7 +49,7 @@ export function RenameDialog({
     if (submitting.current || composing.current) return;
     const name = value.trim();
     if (!name || name.length > maxLength) {
-      setError(`이름을 1~${maxLength}자로 입력해 주세요.`);
+      setError(t('이름을 1~{max}자로 입력해 주세요.', { max: maxLength }));
       input.current?.focus();
       return;
     }
@@ -110,10 +113,10 @@ export function RenameDialog({
         )}
         <div className="confirmation-dialog-actions">
           <Button type="button" disabled={busy} onClick={onCancel}>
-            취소
+            {t('취소')}
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !value.trim()}>
-            {busy ? '저장 중…' : '저장'}
+            {busy ? t('저장 중…') : t('저장')}
           </Button>
         </div>
       </form>

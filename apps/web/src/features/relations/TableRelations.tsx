@@ -1,3 +1,5 @@
+import { translate as tr, useI18n } from '../../shared/i18n/index.js';
+import '../canvas/translations.js';
 import { tableRelationLabel } from './table-relation-label.js';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
@@ -94,6 +96,7 @@ export function TableRelationsSvg({
   visibleNodeIds?: string[];
   selectedId?: string | null;
 }) {
+  useI18n();
   const live = useRef(doc);
   live.current = doc;
   const drag = useRef<{
@@ -315,7 +318,7 @@ export function TableRelationsSvg({
             }
             role={controlsOnly ? undefined : 'button'}
             tabIndex={controlsOnly ? undefined : 0}
-            aria-label={controlsOnly ? undefined : `테이블 관계 ${fullLabel}`}
+            aria-label={controlsOnly ? undefined : tr('테이블 관계 {name}', { name: fullLabel })}
             onContextMenu={(event) => {
               if (readOnly || !onChange) return;
               event.preventDefault();
@@ -452,7 +455,10 @@ export function TableRelationsSvg({
                       strokeWidth={14}
                       role="button"
                       tabIndex={0}
-                      aria-label={`관계 선 구간 ${index + 1} 조절 ${fullLabel}`}
+                      aria-label={tr('관계 선 구간 {index} 조절 {name}', {
+                        index: index + 1,
+                        name: fullLabel,
+                      })}
                       onPointerDown={(event) => beginDrag(event, index)}
                       onKeyDown={(event) => {
                         const direction = horizontal
@@ -475,7 +481,7 @@ export function TableRelationsSvg({
                         );
                       }}
                     >
-                      <title>직선 구간을 드래그하여 이동 · 방향키로 미세 조절</title>
+                      <title>{tr('직선 구간을 드래그하여 이동 · 방향키로 미세 조절')}</title>
                     </path>
                   );
                 })}
@@ -490,7 +496,10 @@ export function TableRelationsSvg({
                       className={`table-route-endpoint${selectedId === relation.id ? ' selected' : ''}`}
                       role="button"
                       tabIndex={0}
-                      aria-label={`관계 ${index === 0 ? 'FK' : 'PK'} 연결 위치 조절 ${fullLabel}`}
+                      aria-label={tr('관계 {side} 연결 위치 조절 {name}', {
+                        side: index === 0 ? 'FK' : 'PK',
+                        name: fullLabel,
+                      })}
                       onPointerDown={(event) => beginDrag(event, kind)}
                       onKeyDown={(event) => {
                         const direction = {
@@ -528,7 +537,7 @@ export function TableRelationsSvg({
                         r={4}
                         className="table-route-endpoint-dot"
                       />
-                      <title>연결 끝점을 카드 테두리로 드래그 · 방향키로 미세 조절</title>
+                      <title>{tr('연결 끝점을 카드 테두리로 드래그 · 방향키로 미세 조절')}</title>
                     </g>
                   );
                 })}
@@ -543,13 +552,13 @@ export function TableRelationsSvg({
           <ContextMenu
             position={menu}
             onClose={() => setMenu(null)}
-            label="테이블 관계"
+            label={tr('테이블 관계')}
             items={[
               ...(!layoutReadOnly
                 ? [
                     {
                       id: 'reset-route',
-                      label: '관계 선 자동 정리',
+                      label: tr('관계 선 자동 정리'),
                       onAction: () => {
                         if (menu && !readOnly)
                           onChange?.({
@@ -567,7 +576,7 @@ export function TableRelationsSvg({
                 : []),
               {
                 id: 'delete',
-                label: '관계 삭제',
+                label: tr('관계 삭제'),
                 destructive: true,
                 onAction: () => {
                   if (menu && !readOnly) onChange?.(removeTableRelation(doc, menu.id));

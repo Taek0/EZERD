@@ -1,3 +1,5 @@
+import { translate as tr, useI18n } from '../../shared/i18n/index.js';
+import '../canvas/translations.js';
 import { useRef, useState } from 'react';
 import { Textarea } from '../../components/ui/index.js';
 
@@ -10,6 +12,7 @@ type Props = {
 };
 
 export function DomainDescription({ value, name, readOnly, onCommit, memo = false }: Props) {
+  useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const finished = useRef(false);
@@ -29,7 +32,7 @@ export function DomainDescription({ value, name, readOnly, onCommit, memo = fals
     <Textarea
       autoFocus
       className={memo ? 'note-editor' : 'domain-description-editor'}
-      aria-label={memo ? '메모 내용' : `${name} 업무 설명`}
+      aria-label={memo ? tr('메모 내용') : tr('{name} 업무 설명', { name })}
       maxLength={memo ? 20000 : 10000}
       value={draft}
       onPointerDown={(event) => event.stopPropagation()}
@@ -54,9 +57,9 @@ export function DomainDescription({ value, name, readOnly, onCommit, memo = fals
       className={memo ? 'note-content' : 'domain-description'}
       data-inline-edit="true"
       tabIndex={readOnly ? undefined : 0}
-      aria-label={memo ? '메모 내용' : `${name} 업무 설명`}
+      aria-label={memo ? tr('메모 내용') : tr('{name} 업무 설명', { name })}
       title={
-        readOnly ? undefined : '더블클릭하여 편집 · Enter 줄바꿈 · Ctrl/⌘+Enter 저장 · Esc 취소'
+        readOnly ? undefined : tr('더블클릭하여 편집 · Enter 줄바꿈 · Ctrl/⌘+Enter 저장 · Esc 취소')
       }
       onDoubleClick={(event) => {
         event.stopPropagation();
@@ -70,7 +73,7 @@ export function DomainDescription({ value, name, readOnly, onCommit, memo = fals
         }
       }}
     >
-      {value || (memo ? '더블클릭하여 메모를 작성하세요' : '업무 영역을 설명해 주세요')}
+      {value || (memo ? tr('더블클릭하여 메모를 작성하세요') : tr('업무 영역을 설명해 주세요'))}
     </p>
   );
 }

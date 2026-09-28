@@ -1,3 +1,6 @@
+import { useI18n } from '../shared/i18n/index.js';
+import { LanguageDialog } from '../shared/i18n/LanguageDialog.js';
+import '../shared/i18n/app-translations.js';
 import { PinPanelResizer } from '../features/comments/PinPanelResizer.js';
 import { userColorStyle } from '../features/identity/user-color-style.js';
 import { UserColorEditor } from '../features/identity/UserColorEditor.js';
@@ -87,6 +90,8 @@ async function loadProjectWithPersonal(id: string): Promise<OpenProject> {
 }
 const identityKey = 'ezerd.userId';
 export function App() {
+  const { t, locale } = useI18n();
+  const [editingLanguage, setEditingLanguage] = useState(false);
   const confirm = useConfirm();
   const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
@@ -228,7 +233,7 @@ export function App() {
       const thread = threadValues
         .map((v) => threadSchema.parse(v))
         .find((t) => t.id === notification.threadId);
-      if (!thread) throw new Error('알림의 댓글을 찾을 수 없습니다.');
+      if (!thread) throw new Error(t('알림의 댓글을 찾을 수 없습니다.'));
       if (projectValue) {
         replaceProject(projectValue);
         resetReview();
@@ -376,7 +381,7 @@ export function App() {
         localStorage.setItem(identityKey, value.id);
       } catch {
         setError(
-          '이 브라우저에서는 이름을 기억할 수 없습니다. 다음 방문에 이름을 다시 설정해 주세요.',
+          t('이 브라우저에서는 이름을 기억할 수 없습니다. 다음 방문에 이름을 다시 설정해 주세요.'),
         );
       }
     } catch (e) {
@@ -447,9 +452,12 @@ export function App() {
     if (busy || project.status !== 'archived') return;
     if (
       !(await confirm({
-        title: '프로젝트 영구 삭제',
-        description: `“${project.name}” 프로젝트를 삭제할까요? 도메인, 테이블, 관계, 핀과 답글 및 관련 알림이 함께 삭제되며 복원할 수 없습니다.`,
-        confirmLabel: '영구 삭제',
+        title: t('프로젝트 영구 삭제'),
+        description: t(
+          '“{name}” 프로젝트를 삭제할까요? 도메인, 테이블, 관계, 핀과 답글 및 관련 알림이 함께 삭제되며 복원할 수 없습니다.',
+          { name: project.name },
+        ),
+        confirmLabel: t('영구 삭제'),
         destructive: true,
       }))
     )
@@ -523,9 +531,9 @@ export function App() {
     if (
       current.current &&
       !(await confirm({
-        title: '갤러리로 이동할까요?',
-        description: '현재 프로젝트를 닫고 프로젝트 갤러리로 이동합니다.',
-        confirmLabel: '갤러리로 이동',
+        title: t('갤러리로 이동할까요?'),
+        description: t('현재 프로젝트를 닫고 프로젝트 갤러리로 이동합니다.'),
+        confirmLabel: t('갤러리로 이동'),
       }))
     )
       return;
@@ -550,11 +558,17 @@ export function App() {
         headers: { Authorization: `Bearer ${session.token}` },
       });
       if (outcome.result.status !== 'accepted')
-        throw new Error(outcome.result.reason ?? '삭제 항목을 복원하지 못했습니다.');
+        throw new Error(outcome.result.reason ?? t('삭제 항목을 복원하지 못했습니다.'));
       setHistoryNotice(
         outcome.omittedRelations.length
-          ? `삭제 항목을 새 객체로 복원했습니다. 현재 구조에서 유효하지 않은 관계·배치 ${outcome.omittedRelations.length}개는 제외했습니다: ${outcome.omittedRelations.join(', ')}`
-          : '삭제 항목을 새 객체로 복원했습니다.',
+          ? t(
+              '삭제 항목을 새 객체로 복원했습니다. 현재 구조에서 유효하지 않은 관계·배치 {count}개는 제외했습니다: {items}',
+              {
+                count: outcome.omittedRelations.length,
+                items: outcome.omittedRelations.join(', '),
+              },
+            )
+          : t('삭제 항목을 새 객체로 복원했습니다.'),
       );
       await runtime.current?.refreshHistory();
     } catch (cause) {
@@ -579,7 +593,7 @@ export function App() {
   }
   const userForm = (
     <form className="identity-form" onSubmit={(e) => void identify(e)}>
-      <label htmlFor="username">함께 사용할 이름</label>
+      <label htmlFor="username">{t('함께 사용할 이름')}</label>
       <Input
         id="username"
         value={username}
@@ -588,11 +602,11 @@ export function App() {
         required
         autoComplete="nickname"
         autoFocus
-        placeholder="예: 김설계"
+        placeholder={t('예: 김설계')}
       />
       {(!user || !session) && (
         <>
-          <label htmlFor="registration-pin">사용자 PIN (숫자 4자리)</label>
+          <label htmlFor="registration-pin">{t('사용자 PIN (숫자 4자리)')}</label>
           <Input
             id="registration-pin"
             type="password"
@@ -604,16 +618,16 @@ export function App() {
             autoComplete={user ? 'current-password' : 'new-password'}
             value={registrationPin}
             onChange={(e) => setRegistrationPin(e.target.value.replace(/[^0-9]/g, ''))}
-            placeholder="숫자 4자리"
+            placeholder={t('숫자 4자리')}
           />
         </>
       )}
       <p>
         {user && !session
-          ? '동기화를 계속하려면 기존 PIN으로 로그인해 주세요.'
+          ? t('동기화를 계속하려면 기존 PIN으로 로그인해 주세요.')
           : user
-            ? '이 이름으로 팀에 표시됩니다. 기존 PIN은 유지됩니다.'
-            : '이름과 PIN 조합으로 사용자를 구분합니다.'}
+            ? t('이 이름으로 팀에 표시됩니다. 기존 PIN은 유지됩니다.')
+            : t('이름과 PIN 조합으로 사용자를 구분합니다.')}
       </p>
       <div className="actions">
         <Button
@@ -625,16 +639,16 @@ export function App() {
           }
         >
           {busy
-            ? '확인 중…'
+            ? t('확인 중…')
             : user && !session
-              ? '로그인 →'
+              ? t('로그인 →')
               : user
-                ? '이름 저장'
-                : '워크스페이스 시작하기 →'}
+                ? t('이름 저장')
+                : t('워크스페이스 시작하기 →')}
         </Button>
         {user && (
           <Button type="button" onClick={() => setEditingName(false)}>
-            취소
+            {t('취소')}
           </Button>
         )}
       </div>
@@ -643,10 +657,10 @@ export function App() {
   return (
     <div className={opened ? 'app-shell editor-shell' : 'app-shell'}>
       <a className="skip-link" href="#main">
-        본문으로 이동
+        {t('본문으로 이동')}
       </a>
       <header className="app-header">
-        <Button className="brand" onClick={leave} aria-label="EZERD 프로젝트 갤러리">
+        <Button className="brand" onClick={leave} aria-label={t('EZERD 프로젝트 갤러리')}>
           EZERD<span>.</span>
         </Button>
         <span className="header-caption">
@@ -657,11 +671,11 @@ export function App() {
         {user && <Notifications userId={user.id} onNavigate={visitNotification} />}
         {user && (
           <Dropdown
-            label="사용자 메뉴"
+            label={t('사용자 메뉴')}
             items={[
               {
                 id: 'rename',
-                label: '이름 변경',
+                label: t('이름 변경'),
                 onAction: () => {
                   setEditingColor(false);
                   setEditingName(true);
@@ -669,15 +683,25 @@ export function App() {
               },
               {
                 id: 'color',
-                label: '색상 변경',
+                label: t('색상 변경'),
                 onAction: () => {
                   setEditingName(false);
                   setEditingColor(true);
                 },
               },
               {
+                id: 'language',
+                label: t('언어 변경'),
+                onAction: () => {
+                  setEditingName(false);
+                  setEditingColor(false);
+                  setEditingMcp(false);
+                  setEditingLanguage(true);
+                },
+              },
+              {
                 id: 'mcp',
-                label: 'MCP 연결',
+                label: t('MCP 연결'),
                 onAction: () => {
                   setEditingName(false);
                   setEditingColor(false);
@@ -688,7 +712,7 @@ export function App() {
             trigger={
               <Button
                 className="user-button"
-                aria-label={`${user.username}, 사용자 메뉴`}
+                aria-label={t('{name}, 사용자 메뉴', { name: user.username })}
                 title={user.username}
               >
                 <Avatar className="avatar" style={userColorStyle(user.color)}>
@@ -701,6 +725,7 @@ export function App() {
           />
         )}
       </header>
+      {editingLanguage && <LanguageDialog onClose={() => setEditingLanguage(false)} />}
       {editingColor && user && (
         <UserColorEditor
           key={user.id}
@@ -710,60 +735,61 @@ export function App() {
         />
       )}
       {editingName && (
-        <section className="identity-popover" aria-label="이름 변경">
+        <section className="identity-popover" aria-label={t('이름 변경')}>
           {userForm}
         </section>
       )}
       {editingMcp && user && session && <McpConnectionPanel onClose={() => setEditingMcp(false)} />}
       {error && (
         <div className="notice error" role="alert">
-          {error}
-          <Button onClick={() => setRefresh((v) => v + 1)}>다시 확인</Button>
+          {t(error)}
+          <Button onClick={() => setRefresh((v) => v + 1)}>{t('다시 확인')}</Button>
         </div>
       )}
       {checking ? (
         <main id="main" className="gallery">
-          <p role="status">워크스페이스를 여는 중…</p>
+          <p role="status">{t('워크스페이스를 여는 중…')}</p>
         </main>
       ) : !user || !session ? (
         <main id="main" className="welcome">
           <p className="eyebrow">01 / WELCOME TO EZERD</p>
           <h1>
-            명확한 구조.
+            {t('명확한 구조.')}
             <br />
-            함께 만드는 설계<span>.</span>
+            {t('함께 만드는 설계')}
+            <span>.</span>
           </h1>
           <p className="intro">
-            큰 그림을 연결하고, 데이터의 흐름을 정리하세요.
+            {t('큰 그림을 연결하고, 데이터의 흐름을 정리하세요.')}
             <br />
-            이름 하나로 우리 팀의 설계를 시작합니다.
+            {t('이름 하나로 우리 팀의 설계를 시작합니다.')}
           </p>
           {userForm}
         </main>
       ) : opened ? (
         <main id="main" className="editor">
           <div className="editor-heading">
-            <div className="project-title" role="group" aria-label="프로젝트 이동">
+            <div className="project-title" role="group" aria-label={t('프로젝트 이동')}>
               <Button className="gallery-return" onClick={leave}>
-                ← 갤러리
+                {t('← 갤러리')}
               </Button>
               <span className="navigation-divider" aria-hidden="true" />
               <h1 title={opened.project.name}>{opened.project.name}</h1>
               <div className="editor-path-host" ref={setPathHost} />
             </div>
             <div className="editor-toolbar-host" ref={setToolbarHost} />
-            <div className="save-controls" role="group" aria-label="변경 기록과 동기화">
+            <div className="save-controls" role="group" aria-label={t('변경 기록과 동기화')}>
               <Button
-                aria-label="실행 취소"
-                title="실행 취소 (Ctrl+Z / ⌘Z)"
+                aria-label={t('실행 취소')}
+                title={t('실행 취소 (Ctrl+Z / ⌘Z)')}
                 disabled={busy || opened.project.status === 'archived' || !sync?.canUndo}
                 onClick={() => restoreHistory('undo')}
               >
                 ↶
               </Button>
               <Button
-                aria-label="다시 실행"
-                title="다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)"
+                aria-label={t('다시 실행')}
+                title={t('다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)')}
                 disabled={busy || opened.project.status === 'archived' || !sync?.canRedo}
                 onClick={() => restoreHistory('redo')}
               >
@@ -774,12 +800,12 @@ export function App() {
                 className={`save-state ${sync?.status === 'action-needed' ? 'failed' : ''}`}
               >
                 {sync?.status === 'syncing'
-                  ? '◌ 동기화 중'
+                  ? t('◌ 동기화 중')
                   : sync?.status === 'offline'
-                    ? '○ 오프라인'
+                    ? t('○ 오프라인')
                     : sync?.status === 'action-needed'
-                      ? '! 확인 필요'
-                      : '✓ 동기화됨'}
+                      ? t('! 확인 필요')
+                      : t('✓ 동기화됨')}
               </span>
               <SyncHistoryPanel
                 snapshot={sync}
@@ -799,12 +825,12 @@ export function App() {
           </div>
           {opened.project.status === 'archived' && (
             <div className="notice">
-              보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.
+              {t('보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.')}
             </div>
           )}
           {(sync?.storageFailure || sync?.error) && (
             <div className="notice error" role="alert">
-              {sync.storageFailure ?? sync.error}
+              {t(sync.storageFailure ?? sync.error ?? '')}
             </div>
           )}
           <div
@@ -831,8 +857,8 @@ export function App() {
               panelToggle={
                 <Button
                   className="panel-toggle"
-                  aria-label={commentsOpen ? '핀 패널 숨기기' : '핀 패널 열기'}
-                  title={commentsOpen ? '핀 패널 숨기기' : '핀 패널 열기'}
+                  aria-label={commentsOpen ? t('핀 패널 숨기기') : t('핀 패널 열기')}
+                  title={commentsOpen ? t('핀 패널 숨기기') : t('핀 패널 열기')}
                   aria-pressed={commentsOpen}
                   onClick={() => {
                     setDraftTarget(undefined);
@@ -913,11 +939,12 @@ export function App() {
           </div>
           <section className="gallery-hero">
             <div>
-              <p className="eyebrow">도메인에서 시작하는 데이터 설계</p>
+              <p className="eyebrow">{t('도메인에서 시작하는 데이터 설계')}</p>
               <h1>
-                우리 팀의 설계<span>.</span>
+                {t('우리 팀의 설계')}
+                <span>.</span>
               </h1>
-              <p>아이디어를 연결하고, 함께 구조를 만들어 가세요.</p>
+              <p>{t('아이디어를 연결하고, 함께 구조를 만들어 가세요.')}</p>
             </div>
             <div className="hero-index">
               {String(projects.length).padStart(2, '0')}
@@ -934,19 +961,19 @@ export function App() {
                 setRefresh((value) => value + 1);
               }}
             />
-            <div className="tabs" aria-label="프로젝트 상태">
+            <div className="tabs" aria-label={t('프로젝트 상태')}>
               <TabButton selected={status === 'active'} onClick={() => setStatus('active')}>
-                진행 중
+                {t('진행 중')}
               </TabButton>
               <TabButton selected={status === 'archived'} onClick={() => setStatus('archived')}>
-                보관함
+                {t('보관함')}
               </TabButton>
             </div>
             <label className="search">
-              <span>검색</span>
+              <span>{t('검색')}</span>
               <Input
-                aria-label="프로젝트 검색"
-                placeholder="프로젝트 이름 검색"
+                aria-label={t('프로젝트 검색')}
+                placeholder={t('프로젝트 이름 검색')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -954,8 +981,8 @@ export function App() {
           </div>
           <form className="create-project" onSubmit={(e) => void create(e)}>
             <Input
-              aria-label="새 프로젝트 이름"
-              placeholder="새 프로젝트 이름"
+              aria-label={t('새 프로젝트 이름')}
+              placeholder={t('새 프로젝트 이름')}
               maxLength={120}
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
@@ -968,13 +995,13 @@ export function App() {
               disabled={busy || !projectName.trim()}
             >
               <span aria-hidden="true">＋</span>
-              <span>프로젝트 만들기</span>
+              <span>{t('프로젝트 만들기')}</span>
             </Button>
           </form>
           {loading ? (
-            <p role="status">프로젝트를 불러오는 중…</p>
+            <p role="status">{t('프로젝트를 불러오는 중…')}</p>
           ) : (
-            <section className="project-grid" aria-label="프로젝트 목록">
+            <section className="project-grid" aria-label={t('프로젝트 목록')}>
               {projects.map((project, index) => (
                 <article className="project-card" key={project.id}>
                   <div className="card-top">
@@ -984,7 +1011,7 @@ export function App() {
                       tone={project.status === 'active' ? 'blue' : 'neutral'}
                       className="project-state"
                     >
-                      {project.status === 'active' ? '진행 중' : '보관됨'}
+                      {project.status === 'active' ? t('진행 중') : t('보관됨')}
                     </Badge>
                   </div>
                   <Button
@@ -996,11 +1023,16 @@ export function App() {
                     <h2>{project.name}</h2>
                     <span aria-hidden="true">↗</span>
                   </Button>
-                  <p>수정 {new Date(project.updatedAt).toLocaleDateString('ko-KR')}</p>
+                  <p>
+                    {t('수정', undefined, 'date')}{' '}
+                    {new Date(project.updatedAt).toLocaleDateString(
+                      locale === 'en' ? 'en-US' : 'ko-KR',
+                    )}
+                  </p>
                   <div className="card-actions">
                     <Button
                       disabled={busy}
-                      aria-label={`${project.name} 내보내기`}
+                      aria-label={t('{name} 내보내기', { name: project.name })}
                       onClick={async () => {
                         setBusy(true);
                         setError('');
@@ -1013,10 +1045,10 @@ export function App() {
                         }
                       }}
                     >
-                      내보내기
+                      {t('내보내기')}
                     </Button>
                     <Button disabled={busy} onClick={() => setRenamingProject(project)}>
-                      이름 수정
+                      {t('이름 수정')}
                     </Button>
                     <Button
                       className={
@@ -1027,9 +1059,12 @@ export function App() {
                         if (
                           project.status === 'archived' ||
                           (await confirm({
-                            title: '프로젝트 보관',
-                            description: `“${project.name}” 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.`,
-                            confirmLabel: '보관',
+                            title: t('프로젝트 보관'),
+                            description: t(
+                              '“{name}” 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.',
+                              { name: project.name },
+                            ),
+                            confirmLabel: t('보관'),
                           }))
                         )
                           void changeProject(project, {
@@ -1037,7 +1072,7 @@ export function App() {
                           });
                       }}
                     >
-                      {project.status === 'active' ? '보관' : '복원'}
+                      {project.status === 'active' ? t('보관') : t('복원')}
                     </Button>
                     {project.status === 'archived' && (
                       <Button
@@ -1046,7 +1081,7 @@ export function App() {
                         disabled={busy}
                         onClick={() => void deleteProject(project)}
                       >
-                        삭제
+                        {t('삭제')}
                       </Button>
                     )}
                   </div>
@@ -1059,28 +1094,28 @@ export function App() {
               <span aria-hidden="true">＋</span>
               <h2>
                 {search
-                  ? '검색 결과가 없습니다'
+                  ? t('검색 결과가 없습니다')
                   : status === 'archived'
-                    ? '보관한 프로젝트가 없습니다'
-                    : '첫 설계의 큰 그림을 그려 보세요'}
+                    ? t('보관한 프로젝트가 없습니다')
+                    : t('첫 설계의 큰 그림을 그려 보세요')}
               </h2>
               <p>
                 {search
-                  ? '다른 프로젝트 이름으로 검색해 주세요.'
-                  : '프로젝트를 만들면 도메인과 업무 관계를 정리할 수 있습니다.'}
+                  ? t('다른 프로젝트 이름으로 검색해 주세요.')
+                  : t('프로젝트를 만들면 도메인과 업무 관계를 정리할 수 있습니다.')}
               </p>
             </div>
           )}
           <footer>
             <span>EZERD — TEAM WORKSPACE</span>
-            <span>명확한 구조. 함께 만드는 설계.</span>
+            <span>{t('명확한 구조. 함께 만드는 설계.')}</span>
           </footer>
         </main>
       )}
       {renamingProject && (
         <RenameDialog
-          title="프로젝트 이름 수정"
-          label="프로젝트 이름"
+          title={t('프로젝트 이름 수정')}
+          label={t('프로젝트 이름')}
           initialValue={renamingProject.name}
           maxLength={120}
           onCancel={() => setRenamingProject(null)}

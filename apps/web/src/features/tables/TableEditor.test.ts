@@ -34,6 +34,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TableInspector, TableNodeContent, TableWorkspaceTools } from './TableEditor.js';
 import { createEmptyDocument, addDomain, addTable, addColumn } from '@ezerd/model';
+import { setLocale } from '../../shared/i18n/index.js';
+import { columnDefaultOptions } from './column-defaults.js';
+import { EnumManager } from './EnumManager.js';
 const metadata = { common: {}, logical: {}, physical: {} };
 function example() {
   let doc = addDomain(
@@ -70,6 +73,68 @@ function example() {
   return doc;
 }
 describe('table editor rendered controls', () => {
+  it('switches editor labels while preserving schema names and SQL defaults', () => {
+    const doc = example();
+    doc.tables![0]!.physical.name = '결제_테이블';
+    doc.columns![0]!.scope = 'physical';
+    doc.columns![0]!.physical.name = '금액_컬럼';
+    const original = structuredClone(doc);
+    const renderCard = () =>
+      renderToStaticMarkup(
+        createElement(ConfirmProvider, {
+          children: createElement(TableNodeContent, {
+            document: doc,
+            tableId: 't',
+            viewMode: 'physical',
+            onChange: () => {},
+          }),
+        }),
+      );
+    try {
+      setLocale('en');
+      const english = renderCard();
+      expect(english).toContain('aria-label="Edit 금액_컬럼 type"');
+      expect(english).toContain('Allow NULL for 금액_컬럼');
+      expect(english).toContain('결제_테이블');
+      expect(english).not.toContain('더블클릭하여 편집');
+      const defaults = columnDefaultOptions({
+        ...doc.columns![0]!.physical,
+        type: { name: 'date', isArray: false },
+      });
+      expect(defaults).toContainEqual({
+        value: 'CURRENT_DATE',
+        label: 'Current date · CURRENT_DATE',
+      });
+      expect(doc).toEqual(original);
+      setLocale('ko');
+      expect(renderCard()).toContain('금액_컬럼 타입 편집');
+      expect(doc).toEqual(original);
+    } finally {
+      setLocale('ko');
+    }
+  });
+  it('renders English ENUM controls without translating user-defined values', () => {
+    const doc = example();
+    doc.enums = [{ id: 'enum', schema: 'public', name: '상태', values: ['편집', '삭제'] }];
+    try {
+      setLocale('en');
+      const html = renderToStaticMarkup(
+        createElement(EnumManager, {
+          document: doc,
+          onChange: () => {},
+          readOnly: false,
+        }),
+      );
+      expect(html).toContain('Search ENUMs');
+      expect(html).toContain('2 values ·');
+      expect(html).toContain('Create ENUM');
+      expect(html).toContain('<strong>상태</strong>');
+      expect(html).toContain('<span>편집</span>');
+      expect(html).toContain('<span>삭제</span>');
+    } finally {
+      setLocale('ko');
+    }
+  });
   it('shows owner and respects logical-only column visibility in physical cards', () => {
     const doc = example();
     const logical = renderToStaticMarkup(
