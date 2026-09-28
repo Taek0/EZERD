@@ -176,7 +176,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(21);
+      expect(listedTools.tools).toHaveLength(22);
       const list = await a.instance.callTool({ name: 'list_projects', arguments: {} });
       expect(list.isError).not.toBe(true);
       const created = await a.instance.callTool({
@@ -630,6 +630,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       expect((personalView.structuredContent as { tables: unknown[] }).tables).toHaveLength(2);
       expect(personalView.structuredContent).toHaveProperty('relationLayouts.0.offset', 12);
+      const layoutDiagnosis = await a.instance.callTool({
+        name: 'diagnose_layout',
+        arguments: { projectId, viewId: 'sales-view' },
+      });
+      expect(layoutDiagnosis.isError).not.toBe(true);
+      expect(layoutDiagnosis.structuredContent).toHaveProperty('diagnostics');
       const otherView = await b.instance.callTool({
         name: 'get_project_view',
         arguments: { projectId, viewId: 'sales-view' },

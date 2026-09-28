@@ -24,3 +24,4 @@ export * from './postgres.js';
 export * from './layout.js';
 export * from './sync.js';
 export * from './personal.js';
+export * from './table-geometry.js';

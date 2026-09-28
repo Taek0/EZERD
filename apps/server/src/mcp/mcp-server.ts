@@ -25,6 +25,11 @@ import { McpLogger } from './logging.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
+  diagnoseLayout,
+  layoutDiagnosisInputSchema,
+  layoutDiagnosisSchema,
+} from './mcp-layout-diagnostics.js';
+import {
   listTables,
   listTablesInputSchema,
   projectSummary,
@@ -310,6 +315,22 @@ export class McpServerFactory {
         invoke('diagnose_project', async () => {
           const { document } = await projectState(projectId);
           return { diagnostics: z.array(diagnosticSchema).parse(diagnoseDocument(document)) };
+        }),
+    );
+    server.registerTool(
+      'diagnose_layout',
+      {
+        description:
+          '저장 좌표와 실제 렌더링 카드 크기로 화면의 카드 겹침·40px 미만 간격·테이블 자동 확장을 진단합니다. 결과는 배치를 자동 변경하지 않습니다.',
+        inputSchema: layoutDiagnosisInputSchema,
+        outputSchema: layoutDiagnosisSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, viewId, limit }) =>
+        invoke('diagnose_layout', async () => {
+          const state = await projectState(projectId);
+          if (viewId) projectView(state, viewId);
+          return diagnoseLayout(state.document, viewId, limit);
         }),
     );
     server.registerTool(

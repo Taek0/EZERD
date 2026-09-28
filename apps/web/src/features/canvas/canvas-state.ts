@@ -1,6 +1,6 @@
+import { basicCardSize } from '@ezerd/model';
 export function cardSize(kind: 'domain' | 'table' | 'note', width: number, height: number) {
-  const min = kind === 'domain' ? [240, 210] : kind === 'table' ? [280, 220] : [160, 110];
-  return { width: Math.max(min[0]!, width), height: Math.max(min[1]!, height) };
+  return basicCardSize(kind, width, height);
 }
 export function relationTargets<T extends { id: string }>(domains: T[], source: string): T[] {
   return domains.filter((domain) => domain.id !== source);

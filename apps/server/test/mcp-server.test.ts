@@ -105,6 +105,7 @@ describe('MCP server tools', () => {
         'update_review_thread',
         'delete_review_thread',
         'diagnose_project',
+        'diagnose_layout',
         'apply_project_changes',
         'apply_personal_changes',
         'get_project_history',
