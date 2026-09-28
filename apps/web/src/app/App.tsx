@@ -8,11 +8,13 @@ import {
   diffSharedDocument,
   type DesignDocument,
   createEmptyDocument,
+  mergeStoredPersonalState,
 } from '@ezerd/model';
 import {
   userSchema,
   projectSchema,
   projectDocumentSchema,
+  personalStateSnapshotSchema,
   threadSchema,
   type Thread,
   type Notification,
@@ -69,6 +71,20 @@ type OpenProject = {
   project: Project;
   document: DesignDocument;
 };
+async function loadProjectWithPersonal(id: string): Promise<OpenProject> {
+  const [projectValue, personalValue] = await Promise.all([
+    request(`/api/projects/${id}`),
+    request(`/api/projects/${id}/personal-state`).catch(() => null),
+  ]);
+  const project = projectDocumentSchema.parse(projectValue);
+  const personal = personalValue ? personalStateSnapshotSchema.parse(personalValue) : null;
+  return {
+    project: project.project,
+    document: personal
+      ? mergeStoredPersonalState(project.document, personal.state)
+      : project.document,
+  };
+}
 const identityKey = 'ezerd.userId';
 export function App() {
   const confirm = useConfirm();
@@ -206,7 +222,7 @@ export function App() {
     try {
       const [threadValues, projectValue] = await Promise.all([
         request<unknown[]>(`/api/projects/${notification.projectId}/threads`),
-        sameProject ? Promise.resolve(null) : request(`/api/projects/${notification.projectId}`),
+        sameProject ? Promise.resolve(null) : loadProjectWithPersonal(notification.projectId),
       ]);
       if (!navigation.current.isCurrent(ticket)) return false;
       const thread = threadValues
@@ -214,7 +230,7 @@ export function App() {
         .find((t) => t.id === notification.threadId);
       if (!thread) throw new Error('알림의 댓글을 찾을 수 없습니다.');
       if (projectValue) {
-        replaceProject(projectDocumentSchema.parse(projectValue));
+        replaceProject(projectValue);
         resetReview();
       }
       focusThread(thread);
@@ -374,7 +390,7 @@ export function App() {
     setBusy(true);
     setError('');
     try {
-      const value = projectDocumentSchema.parse(await request(`/api/projects/${id}`));
+      const value = await loadProjectWithPersonal(id);
       if (!navigation.current.isCurrent(ticket)) return;
       resetReview();
       replaceProject(value);
