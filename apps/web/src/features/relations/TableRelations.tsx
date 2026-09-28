@@ -1,7 +1,13 @@
 import { translate as tr, useI18n } from '../../shared/i18n/index.js';
 import '../canvas/translations.js';
 import { tableRelationLabel } from './table-relation-label.js';
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   type DesignDocument,
@@ -165,9 +171,10 @@ export function TableRelationsSvg({
     window.addEventListener('keydown', cancel);
     return () => window.removeEventListener('keydown', cancel);
   }, [viewId]);
-  return (
-    <>
-      {(doc.tableRelations ?? []).map((relation) => {
+  // Only pure geometry is cached; callbacks and drag state below stay current.
+  const preparedRelations = useMemo(
+    () =>
+      (doc.tableRelations ?? []).map((relation) => {
         const source = doc.tables?.find((table) => table.id === relation.sourceTableId);
         const target = doc.tables?.find((table) => table.id === relation.targetTableId);
         const a = doc.layout.nodes.find(
@@ -238,6 +245,38 @@ export function TableRelationsSvg({
           obstacles,
           route,
         );
+
+        return {
+          relation,
+          sourceBounds,
+          targetBounds,
+          obstacles,
+          geometry,
+          route,
+          label,
+          fullLabel,
+          labelWidth,
+          physical,
+        };
+      }),
+    [doc, viewId, viewMode, visibleNodeIds],
+  );
+  return (
+    <>
+      {preparedRelations.map((prepared) => {
+        if (!prepared) return null;
+        const {
+          relation,
+          sourceBounds,
+          targetBounds,
+          obstacles,
+          geometry,
+          route,
+          label,
+          fullLabel,
+          labelWidth,
+          physical,
+        } = prepared;
         const worldPoint = (element: SVGGraphicsElement, clientX: number, clientY: number) => {
           const matrix = element.getScreenCTM();
           return matrix ? new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse()) : null;

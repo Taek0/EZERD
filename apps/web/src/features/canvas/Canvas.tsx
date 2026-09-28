@@ -18,6 +18,7 @@ import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from '../../components/ui/untitled.js';
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -261,32 +262,41 @@ export function Canvas({
     doc.layout.viewports.find((v) => v.viewId === viewId) ?? { viewId, x: 40, y: 40, zoom: 1 };
   const activeCombined = doc.views?.find((v) => v.id === viewId);
   const layoutPolicy = syncLayoutPolicy(readOnly, !!activeCombined);
-  const nodes = doc.layout.nodes
-    .filter((n) => {
-      const table = (doc.tables ?? []).find((t) => t.id === n.objectId);
-      return (
-        n.viewId === viewId &&
-        (!table ||
-          (isVisibleInView(table.scope, viewMode) &&
-            (activeCombined
-              ? activeCombined.domainIds.includes(table.domainId)
-              : table.domainId === viewId)))
-      );
-    })
-    .map((node) => {
-      const kind = doc.domains.some((d) => d.id === node.objectId)
-        ? 'domain'
-        : (doc.tables ?? []).some((t) => t.id === node.objectId)
-          ? 'table'
-          : 'note';
-      return {
-        ...node,
-        ...(kind === 'table'
-          ? tableCardSize(doc, node.objectId, node.width, node.height)
-          : cardSize(kind, node.width, node.height)),
-      };
-    });
-  const domainRoutes = layoutDomainRelations(doc.domainRelations, nodes);
+  // Camera state does not change document-space geometry. Any new document invalidates it.
+  const nodes = useMemo(
+    () =>
+      doc.layout.nodes
+        .filter((n) => {
+          const table = (doc.tables ?? []).find((t) => t.id === n.objectId);
+          return (
+            n.viewId === viewId &&
+            (!table ||
+              (isVisibleInView(table.scope, viewMode) &&
+                (activeCombined
+                  ? activeCombined.domainIds.includes(table.domainId)
+                  : table.domainId === viewId)))
+          );
+        })
+        .map((node) => {
+          const kind = doc.domains.some((d) => d.id === node.objectId)
+            ? 'domain'
+            : (doc.tables ?? []).some((t) => t.id === node.objectId)
+              ? 'table'
+              : 'note';
+          return {
+            ...node,
+            ...(kind === 'table'
+              ? tableCardSize(doc, node.objectId, node.width, node.height)
+              : cardSize(kind, node.width, node.height)),
+          };
+        }),
+    [doc, viewId, viewMode, activeCombined],
+  );
+  const visibleNodeIds = useMemo(() => nodes.map((node) => node.id), [nodes]);
+  const domainRoutes = useMemo(
+    () => layoutDomainRelations(doc.domainRelations, nodes),
+    [doc.domainRelations, nodes],
+  );
   const selectedNode = nodes.find((n) => n.objectId === selected),
     domain = doc.domains.find((d) => d.id === selected),
     note = doc.notes.find((n) => n.id === selected);
@@ -1285,7 +1295,7 @@ export function Canvas({
                     hideControls
                     selectedId={selected}
                     document={doc}
-                    visibleNodeIds={nodes.map((node) => node.id)}
+                    visibleNodeIds={visibleNodeIds}
                     viewId={viewId}
                     viewMode={viewMode}
                     onChange={change}
@@ -1309,7 +1319,7 @@ export function Canvas({
                     controlsOnly
                     selectedId={selected}
                     document={doc}
-                    visibleNodeIds={nodes.map((node) => node.id)}
+                    visibleNodeIds={visibleNodeIds}
                     viewId={viewId}
                     viewMode={viewMode}
                     onChange={change}
@@ -1356,9 +1366,8 @@ export function Canvas({
                     {
                       left: node.x,
                       top: node.y,
-                      ...(t
-                        ? tableCardSize(doc, t.id, node.width, node.height)
-                        : cardSize(d ? 'domain' : 'note', node.width, node.height)),
+                      width: node.width,
+                      height: node.height,
                       ...(d ? { '--domain-color': d.color ?? '#8993a3' } : {}),
                       ...(n ? { '--note-color': n.color ?? '#fff3c4' } : {}),
                     } as CSSProperties
