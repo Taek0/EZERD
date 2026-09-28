@@ -45,6 +45,7 @@ function PerformanceFixture() {
     events: {} as Record<string, number>,
     before: '',
     scenario: '',
+    mode: 'browser-input',
     id: '',
   });
   const focus = useMemo(
@@ -143,7 +144,7 @@ function PerformanceFixture() {
           columns,
           fixtureFingerprint: fixtureFingerprint(createPerformanceFixture(count, columns)),
           scenario: current.scenario,
-          mode: 'browser-input',
+          mode: current.mode,
           build: 'production-instrumented',
           locale: getLocale(),
           userAgent: navigator.userAgent,
@@ -205,6 +206,50 @@ function PerformanceFixture() {
     setOutput('');
     setDoc(createPerformanceFixture(count, columns));
     setEpoch((n) => n + 1);
+  }
+
+  async function wheelBurst() {
+    if (
+      latest.current.tables?.length !== count ||
+      latest.current.columns?.length !== count * columns
+    ) {
+      reset();
+      return;
+    }
+    const id = crypto.randomUUID();
+    Object.assign(run.current, {
+      armed: true,
+      running: false,
+      finishing: false,
+      events: {},
+      frames: [],
+      scenario: 'WHEEL_BURST',
+      mode: 'internal-replay',
+      id,
+    });
+    setOutput('');
+    setPhase('armed');
+    await frame();
+    await frame();
+    if (!run.current.armed || run.current.id !== id) return;
+    const surface = area.current?.querySelector('.canvas-surface');
+    if (!surface) return;
+    const bounds = surface.getBoundingClientRect();
+    // Test-page generated events: exercises the real wheel listener, not native input delivery.
+    for (let i = 0; i < 120; i++)
+      surface.dispatchEvent(
+        new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          deltaX: 1,
+          deltaY: 0,
+          deltaMode: 0,
+          clientX: bounds.left + 100,
+          clientY: bounds.top + 100,
+        }),
+      );
+    await frame();
+    await finish();
   }
 
   return (
@@ -274,6 +319,7 @@ function PerformanceFixture() {
               events: {},
               frames: [],
               scenario,
+              mode: 'browser-input',
               id: crypto.randomUUID(),
             });
             setOutput('');
@@ -284,6 +330,12 @@ function PerformanceFixture() {
         </button>
         <button disabled={phase !== 'armed'} onClick={() => void finish()}>
           Finish measurement
+        </button>
+        <button
+          disabled={phase !== 'ready' && phase !== 'result'}
+          onClick={() => void wheelBurst()}
+        >
+          Replay 120 wheel inputs
         </button>
         <output ref={status} aria-label="Measurement status">
           {phase}
