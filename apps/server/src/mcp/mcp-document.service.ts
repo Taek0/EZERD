@@ -3,9 +3,11 @@ import { BadRequestException, ConflictException, Inject, Injectable } from '@nes
 import { z } from 'zod';
 import {
   columnSchema,
+  combinedViewSchema,
   domainRelationSchema,
   domainSchema,
   noteSchema,
+  projectEnumSchema,
   tableKeySchema,
   tableRelationSchema,
   tableSchema,
@@ -19,8 +21,10 @@ import {
   addTable,
   diffSharedDocument,
   removeColumn,
+  removeCombinedView,
   removeDomain,
   removeDomainRelation,
+  removeEnum,
   removeKey,
   removeNote,
   removeTable,
@@ -31,7 +35,9 @@ import {
   updateNodeLayout,
   updateNote,
   updateTable,
+  upsertCombinedView,
   upsertDomainRelation,
+  upsertEnum,
   upsertKey,
   upsertTableRelation,
 } from '@ezerd/model';
@@ -64,6 +70,10 @@ export const mcpDocumentCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('delete_table_relation'), id: objectId }),
   z.strictObject({ type: z.literal('upsert_note'), value: noteSchema, placement }),
   z.strictObject({ type: z.literal('delete_note'), id: objectId }),
+  z.strictObject({ type: z.literal('upsert_combined_view'), value: combinedViewSchema }),
+  z.strictObject({ type: z.literal('delete_combined_view'), id: objectId }),
+  z.strictObject({ type: z.literal('upsert_enum'), value: projectEnumSchema }),
+  z.strictObject({ type: z.literal('delete_enum'), id: objectId }),
 ]);
 export const applyProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -221,6 +231,14 @@ export class McpDocumentService {
         );
       case 'delete_note':
         return removeNote(document, command.id);
+      case 'upsert_combined_view':
+        return upsertCombinedView(document, command.value);
+      case 'delete_combined_view':
+        return removeCombinedView(document, command.id);
+      case 'upsert_enum':
+        return upsertEnum(document, command.value);
+      case 'delete_enum':
+        return removeEnum(document, command.id);
     }
   }
 }

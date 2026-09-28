@@ -214,4 +214,76 @@ describe('MCP document changes', () => {
       expect.objectContaining({ objectId: 'default', viewId: 'overview', x: 0, y: 0 }),
     );
   });
+
+  it('creates and removes combined views and ENUMs through model commands', async () => {
+    const domain = { id: 'sales', name: 'Sales', description: '' };
+    const view = { id: 'sales-combined', name: 'Sales overview', domainIds: ['sales'] };
+    const enumValue = {
+      id: 'order-status',
+      name: 'order_status',
+      schema: 'public',
+      values: ['new'],
+    };
+    let baseline = {
+      ...empty,
+      domains: [domain],
+      layout: {
+        ...empty.layout,
+        nodes: [
+          {
+            id: 'node:sales',
+            objectId: 'sales',
+            viewId: 'overview',
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 140,
+          },
+        ],
+      },
+    };
+    const sync = {
+      findReplay: vi.fn(async () => undefined),
+      establishBaseline: vi.fn(async () => ({
+        baselineId: crypto.randomUUID(),
+        sequence: 3,
+        baselineIssuedAt: new Date().toISOString(),
+        document: baseline,
+      })),
+      apply: vi.fn(async (_projectId, operation) => ({
+        status: 'accepted' as const,
+        operationId: operation.operationId,
+      })),
+    };
+    const service = new McpDocumentService(sync as never);
+    await service.apply(
+      {
+        ...request,
+        commands: [
+          { type: 'upsert_enum', value: enumValue },
+          { type: 'upsert_combined_view', value: view },
+        ],
+      },
+      actor,
+    );
+    const created = sync.apply.mock.calls[0]![1].document;
+    expect(created.enums).toEqual([enumValue]);
+    expect(created.views).toEqual([view]);
+
+    baseline = created;
+    await service.apply(
+      {
+        ...request,
+        operationId: crypto.randomUUID(),
+        commands: [
+          { type: 'delete_combined_view', id: view.id },
+          { type: 'delete_enum', id: enumValue.id },
+        ],
+      },
+      actor,
+    );
+    const deleted = sync.apply.mock.calls[1]![1].document;
+    expect(deleted.views).toEqual([]);
+    expect(deleted.enums).toEqual([]);
+  });
 });
