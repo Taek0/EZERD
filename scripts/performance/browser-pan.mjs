@@ -45,3 +45,28 @@ export async function measurePan(tab, point) {
     throw new Error('Incomplete measurement or pan changed the document');
   return output;
 }
+
+/** Regression assertion for warm camera-only input on an instrumented build. */
+export function assertCameraReuse(result) {
+  if (
+    result.outcome !== 'complete' ||
+    result.metadata.collectSpans !== true ||
+    result.metadata.scenario !== 'PAN' ||
+    !result.documentUnchanged ||
+    !result.events.wheel ||
+    result.before.cameraTransform === result.after.cameraTransform ||
+    !result.summary.some((span) => span.name === 'Canvas.tsx.Canvas' && span.count > 0)
+  ) {
+    throw new Error('Not a valid instrumented camera-only sample');
+  }
+  const recalculated = result.summary.filter(
+    (span) =>
+      /\.(tableCardMetrics|tableCardSize|relationGeometry|layoutDomainRelations)$/.test(
+        span.name,
+      ) && span.count > 0,
+  );
+  if (recalculated.length)
+    throw new Error(
+      `Camera recomputed geometry: ${recalculated.map((span) => span.name).join(', ')}`,
+    );
+}
