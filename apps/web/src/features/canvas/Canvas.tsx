@@ -1,3 +1,5 @@
+import { createFrameQueue } from './frame-queue.js';
+import { prepareTableRelations } from '../relations/prepare-table-relations.js';
 import { translate as tr, useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
 import { createPortal } from 'react-dom';
@@ -18,6 +20,8 @@ import { DialogTrigger, Dialog } from 'react-aria-components';
 import { UntitledPopover } from '../../components/ui/untitled.js';
 import {
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -259,34 +263,83 @@ export function Canvas({
   } | null>(null);
   const viewport = localViewports[viewId] ??
     doc.layout.viewports.find((v) => v.viewId === viewId) ?? { viewId, x: 40, y: 40, zoom: 1 };
+  const [previewFrame] = useState(() => createFrameQueue());
+  const [cameraFrame] = useState(() => createFrameQueue());
+  const pendingCamera = useRef<typeof viewport | null>(null);
+  const cameraCurrent = useRef(viewport);
+  cameraCurrent.current = viewport;
+  const gestureContext = useRef({ viewId, readOnly });
+  gestureContext.current = { viewId, readOnly };
+  const previewLatest = useRef(preview);
+  previewLatest.current = preview;
+  const finishLatest = useRef(finish);
+  finishLatest.current = finish;
+  useLayoutEffect(() => {
+    setMarquee(null);
+    return () => {
+      previewFrame.cancel();
+      cameraFrame.cancel();
+      pendingCamera.current = null;
+      const active = drag.current;
+      drag.current = null;
+      if (active?.captureTarget.hasPointerCapture(active.pointerId))
+        active.captureTarget.releasePointerCapture(active.pointerId);
+    };
+  }, [viewId, readOnly, previewFrame, cameraFrame]);
+  useEffect(() => {
+    const finishInput = () => finishLatest.current();
+    const hidden = () => {
+      if (document.hidden) finishInput();
+    };
+    window.addEventListener('blur', finishInput);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      window.removeEventListener('blur', finishInput);
+      document.removeEventListener('visibilitychange', hidden);
+    };
+  }, []);
   const activeCombined = doc.views?.find((v) => v.id === viewId);
   const layoutPolicy = syncLayoutPolicy(readOnly, !!activeCombined);
-  const nodes = doc.layout.nodes
-    .filter((n) => {
-      const table = (doc.tables ?? []).find((t) => t.id === n.objectId);
-      return (
-        n.viewId === viewId &&
-        (!table ||
-          (isVisibleInView(table.scope, viewMode) &&
-            (activeCombined
-              ? activeCombined.domainIds.includes(table.domainId)
-              : table.domainId === viewId)))
-      );
-    })
-    .map((node) => {
-      const kind = doc.domains.some((d) => d.id === node.objectId)
-        ? 'domain'
-        : (doc.tables ?? []).some((t) => t.id === node.objectId)
-          ? 'table'
-          : 'note';
-      return {
-        ...node,
-        ...(kind === 'table'
-          ? tableCardSize(doc, node.objectId, node.width, node.height)
-          : cardSize(kind, node.width, node.height)),
-      };
-    });
-  const domainRoutes = layoutDomainRelations(doc.domainRelations, nodes);
+  // Camera state does not change document-space geometry. Any new document invalidates it.
+  const nodes = useMemo(
+    () =>
+      doc.layout.nodes
+        .filter((n) => {
+          const table = (doc.tables ?? []).find((t) => t.id === n.objectId);
+          return (
+            n.viewId === viewId &&
+            (!table ||
+              (isVisibleInView(table.scope, viewMode) &&
+                (activeCombined
+                  ? activeCombined.domainIds.includes(table.domainId)
+                  : table.domainId === viewId)))
+          );
+        })
+        .map((node) => {
+          const kind = doc.domains.some((d) => d.id === node.objectId)
+            ? 'domain'
+            : (doc.tables ?? []).some((t) => t.id === node.objectId)
+              ? 'table'
+              : 'note';
+          return {
+            ...node,
+            ...(kind === 'table'
+              ? tableCardSize(doc, node.objectId, node.width, node.height)
+              : cardSize(kind, node.width, node.height)),
+          };
+        }),
+    [doc, viewId, viewMode, activeCombined],
+  );
+  const visibleNodeIds = useMemo(() => nodes.map((node) => node.id), [nodes]);
+  const domainRoutes = useMemo(
+    () => layoutDomainRelations(doc.domainRelations, nodes),
+    [doc.domainRelations, nodes],
+  );
+  const tableRelations = useMemo(
+    () =>
+      viewId === 'overview' ? [] : prepareTableRelations(doc, viewId, viewMode, visibleNodeIds),
+    [doc, viewId, viewMode, visibleNodeIds],
+  );
   const selectedNode = nodes.find((n) => n.objectId === selected),
     domain = doc.domains.find((d) => d.id === selected),
     note = doc.notes.find((n) => n.id === selected);
@@ -325,6 +378,7 @@ export function Canvas({
   ]);
   useEffect(() => {
     if (!focusTarget) return;
+    finish();
     const destinationView = validViewId(focusTarget.viewId, [
       ...doc.domains.map((d) => d.id),
       ...(doc.views ?? []).map((v) => v.id),
@@ -452,7 +506,10 @@ export function Canvas({
     if (!readOnly) onChange(next);
   }
   function preview(next: DesignDocument) {
-    if (!readOnly) (onPreviewChange ?? onChange)(next);
+    if (!readOnly) {
+      live.current = next;
+      (onPreviewChange ?? onChange)(next);
+    }
   }
   function updateNodeLayout(
     document: DesignDocument,
@@ -481,10 +538,18 @@ export function Canvas({
     return modelUpdateNodeLayout(document, id, clampLayoutPatch(patch));
   }
   function moveViewport(next: typeof viewport) {
-    next = clampLayoutPatch(next);
-    setLocalViewports((value) => ({ ...value, [viewId]: next }));
+    pendingCamera.current = clampLayoutPatch(next);
+    cameraFrame.enqueue(applyCameraFrame);
+  }
+  function applyCameraFrame() {
+    const latest = pendingCamera.current;
+    pendingCamera.current = null;
+    if (!latest || latest.viewId !== gestureContext.current.viewId) return;
+    cameraCurrent.current = latest;
+    setLocalViewports((value) => ({ ...value, [latest.viewId]: latest }));
   }
   function navigate(id: string) {
+    finish();
     setMenu(null);
     setConnectSource(null);
     setConnectPointer(null);
@@ -541,6 +606,7 @@ export function Canvas({
     setPanelTab('properties');
   }
   function zoom(value: number) {
+    const camera = pendingCamera.current ?? cameraCurrent.current;
     const next = Math.max(MIN_CANVAS_ZOOM, Math.min(MAX_CANVAS_ZOOM, value));
     const rect = surface.current?.getBoundingClientRect();
     const cx = (rect?.width ?? 800) / 2,
@@ -548,8 +614,8 @@ export function Canvas({
     moveViewport({
       viewId,
       zoom: next,
-      x: cx - ((cx - viewport.x) * next) / viewport.zoom,
-      y: cy - ((cy - viewport.y) * next) / viewport.zoom,
+      x: cx - ((cx - camera.x) * next) / camera.zoom,
+      y: cy - ((cy - camera.y) * next) / camera.zoom,
     });
   }
   useEffect(() => {
@@ -569,23 +635,23 @@ export function Canvas({
         return;
       event.preventDefault();
       const rect = element.getBoundingClientRect();
-      setLocalViewports((current) => ({
-        ...current,
-        [viewId]: clampLayoutPatch(
-          wheelCamera(
-            current[viewId] ?? viewport,
-            event,
-            { x: event.clientX - rect.left, y: event.clientY - rect.top },
-            rect.height,
-          ),
+      moveViewport({
+        ...wheelCamera(
+          pendingCamera.current ?? cameraCurrent.current,
+          event,
+          { x: event.clientX - rect.left, y: event.clientY - rect.top },
+          rect.height,
         ),
-      }));
+        viewId,
+      });
     };
     element.addEventListener('wheel', wheel, { passive: false });
     return () => element.removeEventListener('wheel', wheel);
   }, [doc, readOnly, viewId, viewport.x, viewport.y, viewport.zoom]);
   function begin(e: PointerEvent<HTMLDivElement>, id: string | null, resize = false) {
     if (e.button !== 0 && e.button !== 1) return;
+    cameraFrame.flush();
+    const camera = cameraCurrent.current;
     if (tool === 'hand' || e.button === 1) {
       e.preventDefault();
       e.stopPropagation();
@@ -597,8 +663,8 @@ export function Canvas({
         pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
-        x: viewport.x,
-        y: viewport.y,
+        x: camera.x,
+        y: camera.y,
         width: 0,
         height: 0,
       };
@@ -668,8 +734,8 @@ export function Canvas({
       const rect = surface.current?.getBoundingClientRect();
       blankPosition.current = {
         viewId,
-        x: (e.clientX - (rect?.left ?? 0) - viewport.x) / viewport.zoom,
-        y: (e.clientY - (rect?.top ?? 0) - viewport.y) / viewport.zoom,
+        x: (e.clientX - (rect?.left ?? 0) - camera.x) / camera.zoom,
+        y: (e.clientY - (rect?.top ?? 0) - camera.y) / camera.zoom,
       };
       contextCallback.current?.({
         viewId,
@@ -685,13 +751,13 @@ export function Canvas({
         pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
-        x: viewport.x,
-        y: viewport.y,
+        x: camera.x,
+        y: camera.y,
         width: 0,
         height: 0,
         boxStart: { x: blankPosition.current.x, y: blankPosition.current.y },
         boxEnd: { x: blankPosition.current.x, y: blankPosition.current.y },
-        zoom: viewport.zoom,
+        zoom: camera.zoom,
       };
       e.preventDefault();
       e.currentTarget.focus({ preventScroll: true });
@@ -708,8 +774,8 @@ export function Canvas({
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
-      x: node?.x ?? viewport.x,
-      y: node?.y ?? viewport.y,
+      x: node?.x ?? camera.x,
+      y: node?.y ?? camera.y,
       width: node?.width ?? 0,
       height: node?.height ?? 0,
       ...(!resize && node && selectedObjects.includes(node.objectId) && selectedObjects.length > 1
@@ -719,7 +785,7 @@ export function Canvas({
               .map((n) => ({ id: n.id, x: n.x, y: n.y })),
           }
         : {}),
-      zoom: viewport.zoom,
+      zoom: camera.zoom,
     };
     if (!pending) e.currentTarget.setPointerCapture(e.pointerId);
     e.stopPropagation();
@@ -757,32 +823,34 @@ export function Canvas({
       start.captureTarget.setPointerCapture(start.pointerId);
     }
     if (start.id) {
-      if (start.members) {
-        preview(
-          translateSelectedNodes(
-            live.current,
-            start.members,
-            dx / (start.zoom ?? viewport.zoom),
-            dy / (start.zoom ?? viewport.zoom),
-          ),
-        );
-        return;
-      }
-      preview(
-        updateNodeLayout(
-          live.current,
-          start.id,
-          start.resize
-            ? {
-                width: Math.max(160, start.width + dx / viewport.zoom),
-                height: Math.max(110, start.height + dy / viewport.zoom),
-              }
-            : { x: start.x + dx / viewport.zoom, y: start.y + dy / viewport.zoom },
-        ),
-      );
-    } else moveViewport({ ...viewport, x: start.x + dx, y: start.y + dy });
+      // Keep only the last absolute delta, but apply it to the freshest document.
+      previewFrame.enqueue(() => {
+        if (
+          drag.current !== start ||
+          gestureContext.current.viewId !== viewId ||
+          gestureContext.current.readOnly
+        )
+          return;
+        const zoom = start.zoom ?? cameraCurrent.current.zoom;
+        const next = start.members
+          ? translateSelectedNodes(live.current, start.members, dx / zoom, dy / zoom)
+          : updateNodeLayout(
+              live.current,
+              start.id!,
+              start.resize
+                ? {
+                    width: Math.max(160, start.width + dx / zoom),
+                    height: Math.max(110, start.height + dy / zoom),
+                  }
+                : { x: start.x + dx / zoom, y: start.y + dy / zoom },
+            );
+        previewLatest.current(next);
+      });
+    } else moveViewport({ ...cameraCurrent.current, x: start.x + dx, y: start.y + dy });
   }
   function finish() {
+    previewFrame.flush();
+    cameraFrame.flush();
     const active = drag.current;
     drag.current = null;
     setMarquee(null);
@@ -1285,7 +1353,8 @@ export function Canvas({
                     hideControls
                     selectedId={selected}
                     document={doc}
-                    visibleNodeIds={nodes.map((node) => node.id)}
+                    visibleNodeIds={visibleNodeIds}
+                    sharedRelations={tableRelations}
                     viewId={viewId}
                     viewMode={viewMode}
                     onChange={change}
@@ -1309,7 +1378,8 @@ export function Canvas({
                     controlsOnly
                     selectedId={selected}
                     document={doc}
-                    visibleNodeIds={nodes.map((node) => node.id)}
+                    visibleNodeIds={visibleNodeIds}
+                    sharedRelations={tableRelations}
                     viewId={viewId}
                     viewMode={viewMode}
                     onChange={change}
@@ -1356,9 +1426,8 @@ export function Canvas({
                     {
                       left: node.x,
                       top: node.y,
-                      ...(t
-                        ? tableCardSize(doc, t.id, node.width, node.height)
-                        : cardSize(d ? 'domain' : 'note', node.width, node.height)),
+                      width: node.width,
+                      height: node.height,
                       ...(d ? { '--domain-color': d.color ?? '#8993a3' } : {}),
                       ...(n ? { '--note-color': n.color ?? '#fff3c4' } : {}),
                     } as CSSProperties
@@ -1594,13 +1663,19 @@ export function Canvas({
                 </svg>
               </IconButton>
             </div>
-            <IconButton aria-label={tr('축소')} onClick={() => zoom(viewport.zoom - 0.1)}>
+            <IconButton
+              aria-label={tr('축소')}
+              onClick={() => zoom((pendingCamera.current ?? cameraCurrent.current).zoom - 0.1)}
+            >
               −
             </IconButton>
             <Button onClick={() => zoom(1)} aria-label={tr('배율 100%로 초기화')}>
               {Math.round(viewport.zoom * 100)}%
             </Button>
-            <IconButton aria-label={tr('확대')} onClick={() => zoom(viewport.zoom + 0.1)}>
+            <IconButton
+              aria-label={tr('확대')}
+              onClick={() => zoom((pendingCamera.current ?? cameraCurrent.current).zoom + 0.1)}
+            >
               ＋
             </IconButton>
           </div>
