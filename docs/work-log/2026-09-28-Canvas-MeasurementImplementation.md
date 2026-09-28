@@ -47,3 +47,5 @@ pnpm perf:serve
 - 초기 `pnpm check`에서 373개 통과, DB 관련 25개 skip, 타입·포맷·일반 빌드 통과. 이후 collector off/표본 손실 개선 후 관련 테스트 5개와 측정용 타입·빌드 검증을 통과했다.
 - `pnpm perf:build` 성공. 일반 dist에서 측정 화면 문자열·계측 symbol·span 이름이 없는 것을 확인했다. 빌드의 큰 청크 경고는 남아 있다.
 - 브라우저에서 작은 fixture 로딩·선택·wheel 팬과 결과 JSON 출력을 확인했다. 첫 시도에서 arm이 시작되지 않는 조작은 유효 표본으로 사용하지 않았다. 최종 커밋 기준 반복 결과는 별도 기록으로 남긴다.
+
+최종 기준 관찰과 자동화 수집 한계는 [첫 측정 결과](./2026-09-28-Canvas-MeasurementBaseline.md)에 정리했다. Browser 스킬로 연결한 tab에서 `scripts/performance/browser-pan.mjs`의 `measurePan(tab, point)`를 호출하면 reset·arm·wheel·finish·분할 JSON 읽기를 반복할 수 있다. point는 실행 전 실제 캔버스 위치를 관찰해 지정해야 한다.
