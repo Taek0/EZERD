@@ -375,18 +375,19 @@ export function relationGeometry(
       candidates.push({ s, t });
     }
   const consider = (s: Port, t: Port, middle: Point[]) => {
+    if (requested && !expandedClear(middle)) return;
     const points = simplify([s.tip, ...middle, t.tip]);
-    const cost = score(points);
+    const cost = requested ? undefined : score(points);
     // Automatic candidates only replace the best on a strictly lower score.
     // Requested-bend callers also use validity to decide whether to run fallback search.
-    if (!requested && cost >= bestScore) return;
-    if (!expandedClear(middle)) return;
+    if (!requested && (cost! >= bestScore || !expandedClear(middle))) return;
     // Simplification must not reverse an attachment into the table.
     if (!rawClear(points) || retraces(points)) return;
     if (requested && !points.slice(1, -1).some((p) => same(p, requested))) return;
-    if (cost < bestScore) {
+    const candidateScore = cost ?? score(points);
+    if (candidateScore < bestScore) {
       best = points;
-      bestScore = cost;
+      bestScore = candidateScore;
     }
     return true;
   };
