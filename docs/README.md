@@ -14,6 +14,7 @@
 | [EDITOR_WORKFLOW_DECISIONS.md](./planning/EDITOR_WORKFLOW_DECISIONS.md) | 다음 편집 기능의 확정 사항과 미확정 세부 설계 |
 | [캔버스 성능 개선 계획](./planning/2026-09-17-Canvas-Performance.md) | 현재 구현 기준의 계측·최적화 후보와 완료 조건 |
 | [성능 조사 7단계 실측 절차](./planning/2026-09-28-Canvas-PerformanceInvestigation.md) | 2026-09-28 구조 기준 계측 위치·실험·판정·결과 기록 방법 |
+| [브라우저 자동화 성능 측정 계획](./planning/2026-09-28-Canvas-BrowserPerformance.md) | 안정성 점검·UI 시나리오·계측 어댑터·결과 수집·중단 및 복구 |
 | [저장소 폴더 정리 계획](./planning/2026-09-17-Repository-FolderRefactoring.md) | 기능별 소유 위치, 단계별 이동과 책임 분리, 경로·동작 검증 |
 | [프로젝트 내보내기·가져오기 제안](./planning/2026-09-17-Project-ExportImport.md) | JSON 설계 백업·이동 범위와 미결정 사항 · 미구현 |
 
