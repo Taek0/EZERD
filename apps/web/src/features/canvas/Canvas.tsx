@@ -1,3 +1,4 @@
+import { prepareTableRelations } from '../relations/prepare-table-relations.js';
 import { translate as tr, useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
 import { createPortal } from 'react-dom';
@@ -296,6 +297,11 @@ export function Canvas({
   const domainRoutes = useMemo(
     () => layoutDomainRelations(doc.domainRelations, nodes),
     [doc.domainRelations, nodes],
+  );
+  const tableRelations = useMemo(
+    () =>
+      viewId === 'overview' ? [] : prepareTableRelations(doc, viewId, viewMode, visibleNodeIds),
+    [doc, viewId, viewMode, visibleNodeIds],
   );
   const selectedNode = nodes.find((n) => n.objectId === selected),
     domain = doc.domains.find((d) => d.id === selected),
@@ -1296,6 +1302,7 @@ export function Canvas({
                     selectedId={selected}
                     document={doc}
                     visibleNodeIds={visibleNodeIds}
+                    sharedRelations={tableRelations}
                     viewId={viewId}
                     viewMode={viewMode}
                     onChange={change}
@@ -1320,6 +1327,7 @@ export function Canvas({
                     selectedId={selected}
                     document={doc}
                     visibleNodeIds={visibleNodeIds}
+                    sharedRelations={tableRelations}
                     viewId={viewId}
                     viewMode={viewMode}
                     onChange={change}

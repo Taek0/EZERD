@@ -1,6 +1,6 @@
 import { translate as tr, useI18n } from '../../shared/i18n/index.js';
 import '../canvas/translations.js';
-import { tableRelationLabel } from './table-relation-label.js';
+import { prepareTableRelations, type PreparedTableRelations } from './prepare-table-relations.js';
 import {
   useEffect,
   useMemo,
@@ -13,18 +13,11 @@ import {
   type DesignDocument,
   type ModelScope,
   type RelationLayout,
-  isVisibleInView,
   upsertRelationLayout,
   removeTableRelation,
 } from '@ezerd/model';
-import { tableCardSize } from '../tables/table-geometry.js';
 import { ContextMenu } from '../../components/ui/index.js';
-import {
-  relationGeometry,
-  relationAnchorAtPoint,
-  moveRelationSegment,
-  type Point,
-} from './relation-routing.js';
+import { relationAnchorAtPoint, moveRelationSegment, type Point } from './relation-routing.js';
 export { relationGeometry } from './relation-routing.js';
 import './table-relations.css';
 type RoutePatch = Partial<
@@ -88,6 +81,7 @@ export function TableRelationsSvg({
   hideControls = false,
   visibleNodeIds,
   selectedId,
+  sharedRelations,
 }: {
   document: DesignDocument;
   viewId: string;
@@ -101,6 +95,7 @@ export function TableRelationsSvg({
   hideControls?: boolean;
   visibleNodeIds?: string[];
   selectedId?: string | null;
+  sharedRelations?: PreparedTableRelations;
 }) {
   useI18n();
   const live = useRef(doc);
@@ -171,95 +166,9 @@ export function TableRelationsSvg({
     window.addEventListener('keydown', cancel);
     return () => window.removeEventListener('keydown', cancel);
   }, [viewId]);
-  // Only pure geometry is cached; callbacks and drag state below stay current.
   const preparedRelations = useMemo(
-    () =>
-      (doc.tableRelations ?? []).map((relation) => {
-        const source = doc.tables?.find((table) => table.id === relation.sourceTableId);
-        const target = doc.tables?.find((table) => table.id === relation.targetTableId);
-        const a = doc.layout.nodes.find(
-          (node) => node.objectId === relation.sourceTableId && node.viewId === viewId,
-        );
-        const b = doc.layout.nodes.find(
-          (node) => node.objectId === relation.targetTableId && node.viewId === viewId,
-        );
-        if (
-          !source ||
-          !target ||
-          !a ||
-          !b ||
-          !isVisibleInView(relation.scope, viewMode) ||
-          !isVisibleInView(source.scope, viewMode) ||
-          !isVisibleInView(target.scope, viewMode)
-        )
-          return null;
-        if (visibleNodeIds && (!visibleNodeIds.includes(a.id) || !visibleNodeIds.includes(b.id)))
-          return null;
-        if (viewMode === 'physical' && !relation.physical) return null;
-        const combined = doc.views?.find((view) => view.id === viewId);
-        if (
-          combined &&
-          (!combined.domainIds.includes(source.domainId) ||
-            !combined.domainIds.includes(target.domainId))
-        )
-          return null;
-        const physical =
-          viewMode !== 'logical' && !!relation.physical && relation.scope !== 'logical';
-        const fullLabel = tableRelationLabel(doc, relation);
-        const label = fullLabel;
-        const labelWidth = Math.max(
-          90,
-          [...label].reduce((sum, character) => sum + (character.charCodeAt(0) > 255 ? 14 : 8), 24),
-        );
-        const pair = (doc.tableRelations ?? []).filter(
-          (r) =>
-            [r.sourceTableId, r.targetTableId].sort().join(':') ===
-            [relation.sourceTableId, relation.targetTableId].sort().join(':'),
-        );
-        const sourceBounds = { ...a, ...tableCardSize(doc, source.id, a.width, a.height) };
-        const targetBounds =
-          source.id === target.id
-            ? sourceBounds
-            : { ...b, ...tableCardSize(doc, target.id, b.width, b.height) };
-        const route = doc.layout.relations?.find(
-          (item) => item.relationId === relation.id && item.viewId === viewId,
-        );
-        const offset = route?.offset ?? 0;
-        const obstacles = doc.layout.nodes
-          .filter(
-            (n) =>
-              n.viewId === viewId &&
-              n.objectId !== source.id &&
-              n.objectId !== target.id &&
-              doc.tables?.some((t) => t.id === n.objectId) &&
-              (!visibleNodeIds || visibleNodeIds.includes(n.id)),
-          )
-          .map((n) => ({ ...n, ...tableCardSize(doc, n.objectId, n.width, n.height) }));
-        const geometry = relationGeometry(
-          sourceBounds,
-          targetBounds,
-          labelWidth,
-          pair.findIndex((r) => r.id === relation.id),
-          offset,
-          route?.bend,
-          obstacles,
-          route,
-        );
-
-        return {
-          relation,
-          sourceBounds,
-          targetBounds,
-          obstacles,
-          geometry,
-          route,
-          label,
-          fullLabel,
-          labelWidth,
-          physical,
-        };
-      }),
-    [doc, viewId, viewMode, visibleNodeIds],
+    () => sharedRelations ?? prepareTableRelations(doc, viewId, viewMode, visibleNodeIds),
+    [sharedRelations, doc, viewId, viewMode, visibleNodeIds],
   );
   return (
     <>
