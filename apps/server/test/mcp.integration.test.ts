@@ -176,7 +176,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(15);
+      expect(listedTools.tools).toHaveLength(19);
       const list = await a.instance.callTool({ name: 'list_projects', arguments: {} });
       expect(list.isError).not.toBe(true);
       const created = await a.instance.callTool({

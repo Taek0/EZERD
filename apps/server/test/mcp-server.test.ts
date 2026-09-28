@@ -74,6 +74,10 @@ describe('MCP server tools', () => {
       expect(tools.tools.map((tool) => tool.name)).toEqual([
         'list_projects',
         'get_project',
+        'get_project_summary',
+        'list_tables',
+        'get_project_view',
+        'get_table_details',
         'list_review_threads',
         'create_project',
         'update_project',

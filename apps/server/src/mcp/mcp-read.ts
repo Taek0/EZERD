@@ -1,0 +1,254 @@
+import { NotFoundException } from '@nestjs/common';
+import { z } from 'zod';
+import {
+  columnSchema,
+  domainSchema,
+  noteSchema,
+  nodeLayoutSchema,
+  projectEnumSchema,
+  projectSchema,
+  relationLayoutSchema,
+  tableKeySchema,
+  tableRelationSchema,
+  tableSchema,
+  viewportSchema,
+} from '@ezerd/contracts';
+import type { DesignDocument, Project } from '@ezerd/contracts';
+
+const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const objectId = z.string().trim().min(1).max(160);
+const tableSummarySchema = tableSchema
+  .pick({
+    id: true,
+    domainId: true,
+    scope: true,
+  })
+  .extend({
+    logicalName: z.string(),
+    physicalName: z.string(),
+  });
+const domainSummarySchema = domainSchema.pick({ id: true, name: true }).extend({
+  tableCount: z.number().int().nonnegative(),
+});
+const viewSummarySchema = z.strictObject({
+  id: objectId,
+  name: z.string(),
+  kind: z.enum(['overview', 'domain', 'combined']),
+  domainIds: z.array(objectId),
+});
+const baseSchema = z.strictObject({ project: projectSchema, syncSequence: sequence });
+
+export const projectSummarySchema = baseSchema.extend({
+  counts: z.strictObject({
+    domains: z.number().int().nonnegative(),
+    tables: z.number().int().nonnegative(),
+    columns: z.number().int().nonnegative(),
+    keys: z.number().int().nonnegative(),
+    domainRelations: z.number().int().nonnegative(),
+    tableRelations: z.number().int().nonnegative(),
+    notes: z.number().int().nonnegative(),
+  }),
+  domains: z.array(domainSummarySchema),
+  views: z.array(viewSummarySchema),
+});
+export const listTablesInputSchema = z.strictObject({
+  projectId: z.uuid(),
+  domainId: objectId.optional(),
+  search: z.string().trim().max(120).default(''),
+  cursor: objectId.optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+});
+export const tableListSchema = baseSchema.extend({
+  tables: z.array(tableSummarySchema),
+  nextCursor: objectId.nullable(),
+});
+export const projectViewSchema = baseSchema.extend({
+  view: viewSummarySchema,
+  domains: z.array(domainSchema.pick({ id: true, name: true, color: true })),
+  tables: z.array(tableSummarySchema),
+  notes: z.array(noteSchema),
+  domainRelations: z.array(
+    z.strictObject({
+      id: objectId,
+      sourceDomainId: objectId,
+      targetDomainId: objectId,
+      name: z.string(),
+    }),
+  ),
+  tableRelations: z.array(
+    z.strictObject({
+      id: objectId,
+      sourceTableId: objectId,
+      targetTableId: objectId,
+      name: z.string(),
+    }),
+  ),
+  nodes: z.array(nodeLayoutSchema),
+  relationLayouts: z.array(relationLayoutSchema),
+  viewport: viewportSchema.nullable(),
+});
+export const tableDetailsSchema = baseSchema.extend({
+  table: tableSchema,
+  domain: domainSchema.pick({ id: true, name: true, color: true }),
+  columns: z.array(columnSchema),
+  keys: z.array(tableKeySchema),
+  relations: z.array(tableRelationSchema),
+  relatedTables: z.array(tableSummarySchema),
+  enums: z.array(projectEnumSchema),
+  nodes: z.array(nodeLayoutSchema),
+});
+
+export type ProjectState = { project: Project; document: DesignDocument; syncSequence: number };
+
+function tableSummary(table: NonNullable<DesignDocument['tables']>[number]) {
+  return {
+    id: table.id,
+    domainId: table.domainId,
+    scope: table.scope,
+    logicalName: table.logical.name,
+    physicalName: table.physical.name,
+  };
+}
+
+function views(document: DesignDocument) {
+  return [
+    { id: 'overview', name: 'Overview', kind: 'overview' as const, domainIds: [] },
+    ...document.domains.map((domain) => ({
+      id: domain.id,
+      name: domain.name,
+      kind: 'domain' as const,
+      domainIds: [domain.id],
+    })),
+    ...(document.views ?? []).map((view) => ({
+      id: view.id,
+      name: view.name,
+      kind: 'combined' as const,
+      domainIds: view.domainIds,
+    })),
+  ];
+}
+
+export function projectSummary(state: ProjectState) {
+  const { project, document, syncSequence } = state;
+  return projectSummarySchema.parse({
+    project,
+    syncSequence,
+    counts: {
+      domains: document.domains.length,
+      tables: document.tables?.length ?? 0,
+      columns: document.columns?.length ?? 0,
+      keys: document.keys?.length ?? 0,
+      domainRelations: document.domainRelations.length,
+      tableRelations: document.tableRelations?.length ?? 0,
+      notes: document.notes.length,
+    },
+    domains: document.domains.map((domain) => ({
+      id: domain.id,
+      name: domain.name,
+      tableCount: document.tables?.filter((table) => table.domainId === domain.id).length ?? 0,
+    })),
+    views: views(document),
+  });
+}
+
+export function listTables(state: ProjectState, input: z.infer<typeof listTablesInputSchema>) {
+  const search = input.search.toLocaleLowerCase();
+  const filtered = (state.document.tables ?? [])
+    .filter(
+      (table) =>
+        (!input.domainId || table.domainId === input.domainId) &&
+        (!input.cursor || table.id > input.cursor) &&
+        (!search ||
+          table.id.toLocaleLowerCase().includes(search) ||
+          table.logical.name.toLocaleLowerCase().includes(search) ||
+          table.physical.name.toLocaleLowerCase().includes(search)),
+    )
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .slice(0, input.limit + 1);
+  const hasMore = filtered.length > input.limit;
+  const tables = filtered.slice(0, input.limit).map(tableSummary);
+  return tableListSchema.parse({
+    project: state.project,
+    syncSequence: state.syncSequence,
+    tables,
+    nextCursor: hasMore ? tables.at(-1)!.id : null,
+  });
+}
+
+export function projectView(state: ProjectState, viewId: string) {
+  const { project, document, syncSequence } = state;
+  const view = views(document).find((item) => item.id === viewId);
+  if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
+  const nodes = document.layout.nodes.filter((node) => node.viewId === viewId);
+  const visible = new Set(nodes.map((node) => node.objectId));
+  return projectViewSchema.parse({
+    project,
+    syncSequence,
+    view,
+    domains: document.domains
+      .filter((domain) => visible.has(domain.id))
+      .map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })),
+    tables: (document.tables ?? []).filter((table) => visible.has(table.id)).map(tableSummary),
+    notes: document.notes.filter((note) => note.viewId === viewId && visible.has(note.id)),
+    domainRelations: document.domainRelations
+      .filter(
+        (relation) => visible.has(relation.sourceDomainId) && visible.has(relation.targetDomainId),
+      )
+      .map(({ id, sourceDomainId, targetDomainId, name }) => ({
+        id,
+        sourceDomainId,
+        targetDomainId,
+        name,
+      })),
+    tableRelations: (document.tableRelations ?? [])
+      .filter(
+        (relation) => visible.has(relation.sourceTableId) && visible.has(relation.targetTableId),
+      )
+      .map(({ id, sourceTableId, targetTableId, logical }) => ({
+        id,
+        sourceTableId,
+        targetTableId,
+        name: logical.name,
+      })),
+    nodes,
+    relationLayouts: (document.layout.relations ?? []).filter(
+      (relation) => relation.viewId === viewId,
+    ),
+    viewport: document.layout.viewports.find((viewport) => viewport.viewId === viewId) ?? null,
+  });
+}
+
+export function tableDetails(state: ProjectState, tableId: string) {
+  const { project, document, syncSequence } = state;
+  const table = document.tables?.find((item) => item.id === tableId);
+  if (!table) throw new NotFoundException('테이블을 찾을 수 없습니다.');
+  const domain = document.domains.find((item) => item.id === table.domainId);
+  if (!domain) throw new NotFoundException('테이블의 도메인을 찾을 수 없습니다.');
+  const columns = (document.columns ?? []).filter((column) => column.tableId === tableId);
+  const relations = (document.tableRelations ?? []).filter(
+    (relation) => relation.sourceTableId === tableId || relation.targetTableId === tableId,
+  );
+  const relatedIds = new Set(
+    relations.flatMap((relation) => [relation.sourceTableId, relation.targetTableId]),
+  );
+  relatedIds.delete(tableId);
+  const enumIds = new Set(columns.map((column) => column.physical.type.enumId).filter(Boolean));
+  return tableDetailsSchema.parse({
+    project,
+    syncSequence,
+    table,
+    domain: {
+      id: domain.id,
+      name: domain.name,
+      ...(domain.color ? { color: domain.color } : {}),
+    },
+    columns,
+    keys: (document.keys ?? []).filter((key) => key.tableId === tableId),
+    relations,
+    relatedTables: (document.tables ?? [])
+      .filter((item) => relatedIds.has(item.id))
+      .map(tableSummary),
+    enums: (document.enums ?? []).filter((item) => enumIds.has(item.id)),
+    nodes: document.layout.nodes.filter((node) => node.objectId === tableId),
+  });
+}

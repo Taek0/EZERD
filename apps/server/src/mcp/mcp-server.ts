@@ -23,6 +23,17 @@ import { WorkspaceService } from '../workspace/workspace.service.js';
 import { SyncService } from '../sync/sync.service.js';
 import { McpLogger } from './logging.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
+import {
+  listTables,
+  listTablesInputSchema,
+  projectSummary,
+  projectSummarySchema,
+  projectView,
+  projectViewSchema,
+  tableDetails,
+  tableDetailsSchema,
+  tableListSchema,
+} from './mcp-read.js';
 
 const idSchema = z.uuid();
 const TIMEOUT_MS = 60_000;
@@ -56,7 +67,7 @@ export class McpServerFactory {
         capabilities: { tools: {} },
         instructions:
           'EZERD 프로젝트와 리뷰를 조회하고 변경합니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
-          '도메인·테이블·메모 등 캔버스 객체를 생성하거나 이동하기 전에 get_project로 대상 뷰의 최신 배치를 확인하세요. ' +
+          '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view로 대상 뷰의 최신 배치를 확인하세요. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
           '같은 뷰의 카드 경계와 콘텐츠에 필요한 크기를 고려해 서로 겹치지 않게 배치하고 최소 40px 간격을 두세요. ' +
@@ -67,7 +78,7 @@ export class McpServerFactory {
           '순환 관계는 무리한 일렬 배치 대신 관련 객체를 묶고, 관계선 교차·카드 관통·불필요하게 긴 연결을 최소화하세요. ' +
           '컬럼/설명 추가로 카드 크기가 커지는 경우에도 인접 카드와의 겹침을 다시 확인하세요. ' +
           '기존 사용자의 배치를 불필요하게 바꾸지 말고 빈 공간을 우선 사용하며, 자동 배치는 요청받은 범위에만 적용하세요. ' +
-          '작업 후 get_project로 결과를 재조회해 같은 좌표 계산으로 겹침을 확인하고 수정하세요. 좌표를 생략해 모든 객체를 같은 위치에 생성하지 마세요.',
+          '작업 후 get_project_view로 결과를 재조회해 같은 좌표 계산으로 겹침을 확인하고 수정하세요. 좌표를 생략해 모든 객체를 같은 위치에 생성하지 마세요.',
       },
     );
     const invoke = <T>(tool: string, callback: () => Promise<T>) =>
@@ -107,6 +118,60 @@ export class McpServerFactory {
       ({ projectId }) =>
         invoke('get_project', async () =>
           projectStateSchema.parse(await this.workspace.getProjectState(projectId)),
+        ),
+    );
+    server.registerTool(
+      'get_project_summary',
+      {
+        description:
+          '전체 설계 문서 없이 프로젝트 버전, 객체 개수와 화면·도메인 목록을 조회합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema }),
+        outputSchema: projectSummarySchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId }) =>
+        invoke('get_project_summary', async () =>
+          projectSummary(await this.workspace.getProjectState(projectId)),
+        ),
+    );
+    server.registerTool(
+      'list_tables',
+      {
+        description: '테이블 이름과 ID를 도메인·검색어로 좁혀 최대 100개씩 조회합니다.',
+        inputSchema: listTablesInputSchema,
+        outputSchema: tableListSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      (input) =>
+        invoke('list_tables', async () =>
+          listTables(await this.workspace.getProjectState(input.projectId), input),
+        ),
+    );
+    server.registerTool(
+      'get_project_view',
+      {
+        description:
+          '한 화면의 카드 요약, 좌표와 연결 관계를 조회합니다. 테이블 컬럼은 포함하지 않습니다.',
+        inputSchema: z.strictObject({ projectId: idSchema, viewId: z.string().min(1).max(160) }),
+        outputSchema: projectViewSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, viewId }) =>
+        invoke('get_project_view', async () =>
+          projectView(await this.workspace.getProjectState(projectId), viewId),
+        ),
+    );
+    server.registerTool(
+      'get_table_details',
+      {
+        description: '한 테이블의 컬럼·키·연결 관계·배치 정보를 조회합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema, tableId: z.string().min(1).max(160) }),
+        outputSchema: tableDetailsSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, tableId }) =>
+        invoke('get_table_details', async () =>
+          tableDetails(await this.workspace.getProjectState(projectId), tableId),
         ),
     );
     server.registerTool(
