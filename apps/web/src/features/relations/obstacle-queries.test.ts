@@ -7,6 +7,28 @@ import {
   type RelationBounds,
 } from './relation-routing.js';
 import { relationGeometryReference } from './relation-routing.reference.js';
+import { createPerformanceFixture } from '../../shared/performance/fixture.js';
+import { prepareTableRelations } from './prepare-table-relations.js';
+
+it('preserves every route in the 300-table scale fixture', () => {
+  const doc = createPerformanceFixture(300, 10);
+  const prepared = prepareTableRelations(doc, 'perf', 'physical');
+  expect(prepared.filter(Boolean)).toHaveLength(300);
+  for (const item of prepared) {
+    if (!item) throw new Error('Unexpected missing route');
+    expect(item.geometry).toEqual(
+      relationGeometryReference(
+        item.sourceBounds,
+        item.targetBounds,
+        item.labelWidth,
+        0,
+        0,
+        undefined,
+        item.obstacles,
+      ),
+    );
+  }
+}, 10000);
 
 const linear = (points: Point[], boxes: RelationBounds[]) =>
   points.every(

@@ -7,7 +7,7 @@ if (!baselinePath || !candidatePath)
 const baseline = resolve(baselinePath),
   candidate = resolve(candidatePath);
 const names = (await readdir(baseline))
-  .filter((name) => /^(EDIT|MOVE)-(10|50)-\d+\.json$/.test(name))
+  .filter((name) => /^(EDIT|MOVE)-(10|50|100|300)-\d+\.json$/.test(name))
   .sort();
 if (!names.length) throw new Error('No baseline repetitions');
 const rows = [];
@@ -67,21 +67,25 @@ const report = {
   rows,
 };
 await writeFile(join(candidate, 'comparison.json'), JSON.stringify(report, null, 2));
-for (const scenario of ['EDIT', 'MOVE']) {
-  const selected = rows.filter((r) => r.file.startsWith(`${scenario}-50-`));
-  const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
-  console.log(
-    JSON.stringify({
-      scenario,
-      repetitions: selected.length,
-      metrics: [0, 1].map((index) => ({
-        metric: selected[0]?.metrics[index].metric,
-        beforeCount: selected[0]?.metrics[index].beforeCount,
-        afterCount: selected[0]?.metrics[index].afterCount,
-        beforeMedianMs: median(selected.map((r) => r.metrics[index].beforeTotalMs)),
-        afterMedianMs: median(selected.map((r) => r.metrics[index].afterTotalMs)),
-      })),
-    }),
-  );
+for (const count of [...new Set(rows.map((row) => Number(row.file.split('-')[1])))]) {
+  for (const scenario of ['EDIT', 'MOVE']) {
+    const selected = rows.filter((r) => r.file.startsWith(`${scenario}-${count}-`));
+    if (!selected.length) continue;
+    const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
+    console.log(
+      JSON.stringify({
+        scenario,
+        count,
+        repetitions: selected.length,
+        metrics: [0, 1].map((index) => ({
+          metric: selected[0]?.metrics[index].metric,
+          beforeCount: selected[0]?.metrics[index].beforeCount,
+          afterCount: selected[0]?.metrics[index].afterCount,
+          beforeMedianMs: median(selected.map((r) => r.metrics[index].beforeTotalMs)),
+          afterMedianMs: median(selected.map((r) => r.metrics[index].afterTotalMs)),
+        })),
+      }),
+    );
+  }
 }
 console.log(`Exact input/output comparison passed for ${rows.length} repetitions.`);
