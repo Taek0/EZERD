@@ -1,7 +1,11 @@
 # MCP 편집 기능 보강 기록
 
-## 결합 화면과 ENUM 명령
+## ENUM 명령
 
-- `apply_project_changes`에 `upsert_combined_view`, `delete_combined_view`, `upsert_enum`, `delete_enum`을 추가했다.
-- 기존 모델 함수를 재사용해 결합 화면의 배치 연동과 ENUM 참조 제한을 유지했다.
+- `apply_project_changes`에 `upsert_enum`, `delete_enum`을 추가했다.
+- 기존 모델 함수를 재사용해 ENUM 참조 제한을 유지했다.
 - 검증: MCP 문서 변경 테스트 4개 통과, 서버 타입 검사 통과.
+
+## 개인 화면 경계 수정
+
+결합 화면과 뷰포트는 `sharedDocument`에서 제외된다. 첫 명령 시도에서 다른 공유 변경과 함께 요청하면 개인 화면 명령이 성공처럼 보이지만 저장되지 않는 문제를 발견했다. 공유 문서 명령에서 해당 개인 상태 명령을 제거하고, 사용자별 서버 저장과 웹 연동을 별도 구현하도록 계획을 수정했다.

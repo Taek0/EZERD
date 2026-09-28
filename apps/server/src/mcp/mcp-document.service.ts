@@ -3,11 +3,11 @@ import { BadRequestException, ConflictException, Inject, Injectable } from '@nes
 import { z } from 'zod';
 import {
   columnSchema,
-  combinedViewSchema,
   domainRelationSchema,
   domainSchema,
   noteSchema,
   projectEnumSchema,
+  relationLayoutSchema,
   tableKeySchema,
   tableRelationSchema,
   tableSchema,
@@ -21,7 +21,6 @@ import {
   addTable,
   diffSharedDocument,
   removeColumn,
-  removeCombinedView,
   removeDomain,
   removeDomainRelation,
   removeEnum,
@@ -35,10 +34,10 @@ import {
   updateNodeLayout,
   updateNote,
   updateTable,
-  upsertCombinedView,
   upsertDomainRelation,
   upsertEnum,
   upsertKey,
+  upsertRelationLayout,
   upsertTableRelation,
 } from '@ezerd/model';
 import type { DesignDocument } from '@ezerd/model';
@@ -55,6 +54,14 @@ const placement = z
     height: z.number().positive().max(10000).optional(),
   })
   .optional();
+const nodePatch = z
+  .strictObject({
+    x: coordinate.optional(),
+    y: coordinate.optional(),
+    width: z.number().positive().max(10000).optional(),
+    height: z.number().positive().max(10000).optional(),
+  })
+  .refine((value) => Object.values(value).some((item) => item !== undefined));
 export const mcpDocumentCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('upsert_domain'), value: domainSchema, placement }),
   z.strictObject({ type: z.literal('delete_domain'), id: objectId }),
@@ -70,10 +77,15 @@ export const mcpDocumentCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('delete_table_relation'), id: objectId }),
   z.strictObject({ type: z.literal('upsert_note'), value: noteSchema, placement }),
   z.strictObject({ type: z.literal('delete_note'), id: objectId }),
-  z.strictObject({ type: z.literal('upsert_combined_view'), value: combinedViewSchema }),
-  z.strictObject({ type: z.literal('delete_combined_view'), id: objectId }),
   z.strictObject({ type: z.literal('upsert_enum'), value: projectEnumSchema }),
   z.strictObject({ type: z.literal('delete_enum'), id: objectId }),
+  z.strictObject({ type: z.literal('update_node_layout'), nodeId: objectId, patch: nodePatch }),
+  z.strictObject({ type: z.literal('upsert_relation_layout'), value: relationLayoutSchema }),
+  z.strictObject({
+    type: z.literal('delete_relation_layout'),
+    relationId: objectId,
+    viewId: objectId,
+  }),
 ]);
 export const applyProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -231,14 +243,43 @@ export class McpDocumentService {
         );
       case 'delete_note':
         return removeNote(document, command.id);
-      case 'upsert_combined_view':
-        return upsertCombinedView(document, command.value);
-      case 'delete_combined_view':
-        return removeCombinedView(document, command.id);
       case 'upsert_enum':
         return upsertEnum(document, command.value);
       case 'delete_enum':
         return removeEnum(document, command.id);
+      case 'update_node_layout':
+        if (
+          document.views?.some((view) =>
+            document.layout.nodes.some(
+              (node) => node.id === command.nodeId && node.viewId === view.id,
+            ),
+          )
+        )
+          throw new Error('개인 결합 화면의 배치는 공유 문서 명령으로 변경할 수 없습니다.');
+        return updateNodeLayout(document, command.nodeId, {
+          ...(command.patch.x !== undefined ? { x: command.patch.x } : {}),
+          ...(command.patch.y !== undefined ? { y: command.patch.y } : {}),
+          ...(command.patch.width !== undefined ? { width: command.patch.width } : {}),
+          ...(command.patch.height !== undefined ? { height: command.patch.height } : {}),
+        });
+      case 'upsert_relation_layout':
+        if (document.views?.some((view) => view.id === command.value.viewId))
+          throw new Error('개인 결합 화면의 관계 경로는 공유 문서 명령으로 변경할 수 없습니다.');
+        return upsertRelationLayout(document, command.value);
+      case 'delete_relation_layout':
+        if (document.views?.some((view) => view.id === command.viewId))
+          throw new Error('개인 결합 화면의 관계 경로는 공유 문서 명령으로 변경할 수 없습니다.');
+        return {
+          ...document,
+          layout: {
+            ...document.layout,
+            ...(document.layout.relations && {
+              relations: document.layout.relations.filter(
+                (item) => item.relationId !== command.relationId || item.viewId !== command.viewId,
+              ),
+            }),
+          },
+        };
     }
   }
 }

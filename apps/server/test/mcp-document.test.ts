@@ -215,18 +215,75 @@ describe('MCP document changes', () => {
     );
   });
 
-  it('creates and removes combined views and ENUMs through model commands', async () => {
-    const domain = { id: 'sales', name: 'Sales', description: '' };
-    const view = { id: 'sales-combined', name: 'Sales overview', domainIds: ['sales'] };
+  it('creates and removes ENUMs through model commands', async () => {
     const enumValue = {
       id: 'order-status',
       name: 'order_status',
       schema: 'public',
       values: ['new'],
     };
+    let baseline = empty;
+    const sync = {
+      findReplay: vi.fn(async () => undefined),
+      establishBaseline: vi.fn(async () => ({
+        baselineId: crypto.randomUUID(),
+        sequence: 3,
+        baselineIssuedAt: new Date().toISOString(),
+        document: baseline,
+      })),
+      apply: vi.fn(async (_projectId, operation) => ({
+        status: 'accepted' as const,
+        operationId: operation.operationId,
+      })),
+    };
+    const service = new McpDocumentService(sync as never);
+    await service.apply(
+      {
+        ...request,
+        commands: [{ type: 'upsert_enum', value: enumValue }],
+      },
+      actor,
+    );
+    const created = sync.apply.mock.calls[0]![1].document;
+    expect(created.enums).toEqual([enumValue]);
+
+    baseline = created;
+    await service.apply(
+      {
+        ...request,
+        operationId: crypto.randomUUID(),
+        commands: [{ type: 'delete_enum', id: enumValue.id }],
+      },
+      actor,
+    );
+    const deleted = sync.apply.mock.calls[1]![1].document;
+    expect(deleted.enums).toEqual([]);
+  });
+
+  it('edits shared node geometry and relation routes', async () => {
+    const properties = { common: {}, logical: {}, physical: {} };
+    const table = (id: string) => ({
+      id,
+      domainId: 'sales',
+      scope: 'both' as const,
+      logical: { name: id, definition: '' },
+      physical: { name: id, schema: 'public', comment: '' },
+      customProperties: properties,
+    });
     let baseline = {
       ...empty,
-      domains: [domain],
+      domains: [{ id: 'sales', name: 'Sales', description: '' }],
+      tables: [table('orders'), table('users')],
+      tableRelations: [
+        {
+          id: 'orders-users',
+          sourceTableId: 'orders',
+          targetTableId: 'users',
+          scope: 'logical' as const,
+          logical: { name: 'owner', cardinality: 'many-to-many' as const, required: false },
+          physical: null,
+        },
+      ],
       layout: {
         ...empty.layout,
         nodes: [
@@ -239,7 +296,26 @@ describe('MCP document changes', () => {
             width: 240,
             height: 140,
           },
+          {
+            id: 'node:orders',
+            objectId: 'orders',
+            viewId: 'sales',
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 180,
+          },
+          {
+            id: 'node:users',
+            objectId: 'users',
+            viewId: 'sales',
+            x: 300,
+            y: 0,
+            width: 240,
+            height: 180,
+          },
         ],
+        viewports: [...empty.layout.viewports, { viewId: 'sales', x: 0, y: 0, zoom: 1 }],
       },
     };
     const sync = {
@@ -260,30 +336,42 @@ describe('MCP document changes', () => {
       {
         ...request,
         commands: [
-          { type: 'upsert_enum', value: enumValue },
-          { type: 'upsert_combined_view', value: view },
+          { type: 'update_node_layout', nodeId: 'node:orders', patch: { x: 30, width: 260 } },
+          {
+            type: 'upsert_relation_layout',
+            value: { relationId: 'orders-users', viewId: 'sales', offset: 12 },
+          },
         ],
       },
       actor,
     );
-    const created = sync.apply.mock.calls[0]![1].document;
-    expect(created.enums).toEqual([enumValue]);
-    expect(created.views).toEqual([view]);
+    const edited = sync.apply.mock.calls[0]![1].document;
+    expect(edited.layout.nodes).toContainEqual(
+      expect.objectContaining({
+        id: 'node:orders',
+        x: 30,
+        y: 0,
+        width: 260,
+        height: 180,
+      }),
+    );
+    expect(edited.layout.relations).toContainEqual({
+      relationId: 'orders-users',
+      viewId: 'sales',
+      offset: 12,
+    });
 
-    baseline = created;
+    baseline = edited;
     await service.apply(
       {
         ...request,
         operationId: crypto.randomUUID(),
-        commands: [
-          { type: 'delete_combined_view', id: view.id },
-          { type: 'delete_enum', id: enumValue.id },
-        ],
+        commands: [{ type: 'delete_relation_layout', relationId: 'orders-users', viewId: 'sales' }],
       },
       actor,
     );
-    const deleted = sync.apply.mock.calls[1]![1].document;
-    expect(deleted.views).toEqual([]);
-    expect(deleted.enums).toEqual([]);
+    const removed = sync.apply.mock.calls[1]![1].document;
+    expect(removed.layout.relations).toEqual([]);
+    expect(removed.tables).toHaveLength(2);
   });
 });
