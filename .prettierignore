@@ -1,6 +1,8 @@
 # Dependencies, build products and local/private state.
 **/node_modules/
 **/dist/
+**/dist-performance/
+**/dist-performance-immediate/
 coverage/
 .cache/
 .data/

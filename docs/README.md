@@ -22,6 +22,8 @@
 
 | 문서 | 내용 |
 | --- | --- |
+| [최소 성능 측정 도구](./work-log/2026-09-28-Canvas-MeasurementImplementation.md) | 측정 빌드·계산 runner·브라우저 패널 사용법과 해석 한계 |
+| [100·300개 규모 측정](./work-log/2026-09-28-Canvas-ScaleMeasurement.md) | 시간 제한 계산 runner·100개 UI 결과·300개 반복 보류 근거 |
 | [IMPLEMENTATION_PROGRESS.md](./work-log/IMPLEMENTATION_PROGRESS.md) | 구현 이력, 검증 결과와 남은 작업 |
 | [SETUP_VERIFICATION.md](./work-log/SETUP_VERIFICATION.md) | 개발 환경 구성·장애 대응·검증 기록 |
 | [DEVELOPMENT_VERSIONS.md](./work-log/DEVELOPMENT_VERSIONS.md) | 구성한 실행 환경과 도구 버전 |
@@ -33,3 +35,7 @@
 | [LAN_HOSTING.md](./work-log/LAN_HOSTING.md) | 준비된 호스팅 구성과 실행·접속 확인 절차 |
 
 새 기획·설계 결정은 `planning`, 실제 구현·검증·운영 안내는 `work-log`에 추가한다. `pnpm docs:versions`의 생성 위치는 `work-log/DEPENDENCY_VERSIONS.md`다.
+
+## 성능 작업 위치
+
+성능 작업은 codex/performance-lab 워크트리에서 수행한다. [격리 계획](./planning/2026-09-28-Workspace-PerformanceIsolation.md)을 참고한다. 기본 D:/ChatGPT/ERD는 main 전용이며 원시 결과는 이 워크트리의 artifacts/performance에 보존한다.

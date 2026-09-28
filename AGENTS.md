@@ -23,3 +23,11 @@
 - 코드 형식은 루트 Prettier 설정을 따른다. `pnpm format`으로 적용하고 `pnpm format:check`로 확인한다.
 - `.prettierignore`에 지정한 생성물·외부 자산은 포맷하지 않는다.
 - 대규모 포맷 변경은 기능 변경과 별도 커밋으로 구분한다.
+
+## 성능 작업 격리 (이 브랜치 전용)
+
+- 성능 측정·개선은 이 워크트리(C:/Users/nty43/.codex/worktrees/product-performance-pr/ERD)의 codex/performance-lab에서 진행한다.
+- D:/ChatGPT/ERD는 원격 main과 동기화하는 기본 checkout이다. 성능 실험을 위해 그 작업 폴더의 브랜치·파일·서버를 변경하지 않는다.
+- 원시 결과는 이 워크트리의 artifacts/performance에 저장하며 Git 제외 대상이다. relocation-builds에는 이전 측정 빌드를 보존한다. 새 측정은 pnpm perf:build로 현재 코드에서 다시 빌드한다.
+- 제품 반영 PR은 최신 main에서 제품 최적화와 회귀 테스트만 선별한다. 측정 도구가 포함된 lab 브랜치 전체를 main에 병합하지 않는다.
+- 이 로컬 브랜치는 origin/main을 upstream으로 사용하지 않는다. push가 요청되면 별도 원격 lab 브랜치를 명시한다.
