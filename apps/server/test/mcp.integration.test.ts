@@ -176,7 +176,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(24);
+      expect(listedTools.tools).toHaveLength(28);
       const list = await a.instance.callTool({ name: 'list_projects', arguments: {} });
       expect(list.isError).not.toBe(true);
       const created = await a.instance.callTool({
@@ -346,10 +346,40 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         name: 'create_review_thread',
         arguments: {
           projectId: project.id,
-          thread: { viewId: 'overview', objectId: null, x: 1, y: 2, body: 'first', mentionIds: [] },
+          thread: {
+            viewId: 'overview',
+            objectId: null,
+            x: 1,
+            y: 2,
+            body: 'first',
+            mentionIds: [userB.id],
+          },
         },
       });
       const threadId = (thread.structuredContent as { id: string }).id;
+      const notifications = await b.instance.callTool({
+        name: 'list_notifications',
+        arguments: { unreadOnly: true, limit: 1 },
+      });
+      const ownNotification = (
+        notifications.structuredContent as {
+          notifications: Array<{ id: string; threadId: string }>;
+        }
+      ).notifications.find((item) => item.threadId === threadId);
+      expect(ownNotification).toBeDefined();
+      expect(
+        (
+          await a.instance.callTool({
+            name: 'update_notification',
+            arguments: { notificationId: ownNotification!.id, update: { read: true } },
+          })
+        ).isError,
+      ).toBe(true);
+      const readNotification = await b.instance.callTool({
+        name: 'update_notification',
+        arguments: { notificationId: ownNotification!.id, update: { read: true } },
+      });
+      expect(readNotification.structuredContent).toHaveProperty('read', true);
       const replied = await b.instance.callTool({
         name: 'reply_review_thread',
         arguments: { threadId, message: { body: 'reply', mentionIds: [] } },
@@ -692,6 +722,27 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
           removedPersonal.structuredContent as { state: { nodes: Array<{ objectId: string }> } }
         ).state.nodes.some((node) => node.objectId === 'users'),
       ).toBe(false);
+      const transfer = await a.instance.callTool({
+        name: 'export_project',
+        arguments: { projectId },
+      });
+      expect(transfer.structuredContent).toMatchObject({
+        format: 'ezerd-project',
+        document: { domains: [{ id: 'sales' }] },
+      });
+      const imported = await a.instance.callTool({
+        name: 'import_project',
+        arguments: { transfer: transfer.structuredContent },
+      });
+      expect(imported.isError).not.toBe(true);
+      const importedId = (imported.structuredContent as { id: string }).id;
+      expect(importedId).not.toBe(projectId);
+      projects.push(importedId);
+      const importedDocument = await a.instance.callTool({
+        name: 'get_project',
+        arguments: { projectId: importedId },
+      });
+      expect(importedDocument.structuredContent).toHaveProperty('document.tables.0.id', 'orders');
     } finally {
       await a.instance.close();
       await b.instance.close();

@@ -7,13 +7,16 @@ import {
   createThreadSchema,
   deleteProjectSchema,
   deleteThreadSchema,
+  notificationSchema,
   projectDocumentSchema,
+  projectTransferSchema,
   personalStateSnapshotSchema,
   projectQuerySchema,
   projectSchema,
   syncOperationResultSchema,
   threadSchema,
   updateProjectSchema,
+  updateNotificationSchema,
   updateThreadSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState } from '@ezerd/model';
@@ -274,6 +277,48 @@ export class McpServerFactory {
         ),
     );
     server.registerTool(
+      'list_notifications',
+      {
+        description: '인증된 사용자 자신의 알림을 최대 100개씩 조회합니다.',
+        inputSchema: z.strictObject({
+          limit: pageLimit,
+          cursor: z.string().min(1).max(500).optional(),
+          unreadOnly: z.boolean().default(false),
+        }),
+        outputSchema: z.strictObject({
+          notifications: z.array(notificationSchema),
+          nextCursor: z.string().nullable(),
+        }),
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ limit, cursor, unreadOnly }) =>
+        invoke('list_notifications', async () => {
+          const page = await this.reviews.listNotificationsPage(user.id, limit, cursor, unreadOnly);
+          return {
+            notifications: z.array(notificationSchema).parse(page.notifications),
+            nextCursor: page.nextCursor,
+          };
+        }),
+    );
+    server.registerTool(
+      'update_notification',
+      {
+        description: '인증된 사용자 자신의 알림 읽음 상태를 변경합니다.',
+        inputSchema: z.strictObject({
+          notificationId: idSchema,
+          update: updateNotificationSchema,
+        }),
+        outputSchema: notificationSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      ({ notificationId, update }) =>
+        invoke('update_notification', async () =>
+          notificationSchema.parse(
+            await this.reviews.updateNotification(notificationId, update, user),
+          ),
+        ),
+    );
+    server.registerTool(
       'create_project',
       {
         description: '새 EZERD 프로젝트를 생성합니다.',
@@ -284,6 +329,32 @@ export class McpServerFactory {
       (input) =>
         invoke('create_project', async () =>
           projectSchema.parse(await this.workspace.createProject(input)),
+        ),
+    );
+    server.registerTool(
+      'import_project',
+      {
+        description: '검증된 EZERD 프로젝트 전송 문서를 새 프로젝트로 가져옵니다.',
+        inputSchema: z.strictObject({ transfer: projectTransferSchema }),
+        outputSchema: projectSchema,
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      ({ transfer }) =>
+        invoke('import_project', async () =>
+          projectSchema.parse(await this.workspace.importProject(transfer)),
+        ),
+    );
+    server.registerTool(
+      'export_project',
+      {
+        description: '프로젝트의 공유 설계 문서를 EZERD 전송 형식으로 내보냅니다.',
+        inputSchema: z.strictObject({ projectId: idSchema }),
+        outputSchema: projectTransferSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId }) =>
+        invoke('export_project', async () =>
+          projectTransferSchema.parse(await this.workspace.exportProject(projectId)),
         ),
     );
     server.registerTool(

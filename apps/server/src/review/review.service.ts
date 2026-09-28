@@ -292,6 +292,41 @@ export class ReviewService {
     });
   }
 
+  listNotificationsPage(userId: string, limit: number, rawCursor?: string, unreadOnly = false) {
+    return operation(async () => {
+      const cursor = decodeUpdatedCursor(rawCursor);
+      const orderedTime = sql<Date>`date_trunc('milliseconds', ${notifications.createdAt})`;
+      const rows = await this.database.db
+        .select()
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            unreadOnly ? eq(notifications.read, false) : undefined,
+            cursor
+              ? or(
+                  lt(orderedTime, new Date(cursor.updatedAt)),
+                  and(eq(orderedTime, new Date(cursor.updatedAt)), gt(notifications.id, cursor.id)),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(orderedTime), asc(notifications.id))
+        .limit(limit + 1);
+      const page = rows.slice(0, limit);
+      return {
+        notifications: page.map(notification),
+        nextCursor:
+          rows.length > limit
+            ? encodeUpdatedCursor({
+                updatedAt: page.at(-1)!.createdAt.toISOString(),
+                id: page.at(-1)!.id,
+              })
+            : null,
+      };
+    });
+  }
+
   updateNotification(
     id: string,
     input: z.infer<typeof updateNotificationSchema>,
