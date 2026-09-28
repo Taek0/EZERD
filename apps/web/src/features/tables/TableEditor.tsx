@@ -10,7 +10,15 @@ import {
 import { EnumManager } from './EnumManager.js';
 import { columnTypeDisplay } from './column-type-display.js';
 import { primaryKeyChangeReason, setColumnPrimaryKey } from './column-primary-key.js';
-import { Fragment, useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
+import {
+  Fragment,
+  useMemo,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   type DesignDocument,
   type ModelScope,
@@ -421,6 +429,7 @@ export function TableNodeContent({
   useI18n();
   const confirm = useConfirm();
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const metrics = useMemo(() => tableCardMetrics(doc, tableId), [doc, tableId]);
   const table = doc.tables?.find((t) => t.id === tableId);
   if (!table) return null;
   const showNullable = table.canvasDisplay?.showNullable !== false,
@@ -431,7 +440,6 @@ export function TableNodeContent({
     (c) => c.tableId === tableId && isVisibleInView(c.scope, 'physical', table.scope),
   );
   const editable = !!onChange && !readOnly;
-  const metrics = tableCardMetrics(doc, tableId);
   const cell = (value: string, label: string, commit: (v: string) => DesignDocument) => (
     <InlineCell
       value={value}
