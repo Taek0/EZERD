@@ -148,6 +148,23 @@ export const designDocumentSchema = z
       ['layout', 'relations'],
     );
   });
+export const personalStateSchema = z.strictObject({
+  views: z.array(combinedViewSchema).max(1000),
+  notes: z.array(noteSchema).max(10000),
+  nodes: z.array(nodeLayoutSchema).max(12000),
+  viewports: z.array(viewportSchema).max(3001),
+  relations: z.array(relationLayoutSchema).max(20000),
+});
+export const personalStateSnapshotSchema = z.strictObject({
+  version: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  projectVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  syncSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  state: personalStateSchema,
+});
+export const savePersonalStateSchema = z.strictObject({
+  expectedVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  state: personalStateSchema,
+});
 const projectName = z.string().trim().min(1).max(120);
 export const usernameSchema = z.string().trim().toLowerCase().min(1).max(40);
 const username = usernameSchema;
@@ -209,3 +226,4 @@ export type User = z.infer<typeof userSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type ProjectDocument = z.infer<typeof projectDocumentSchema>;
 export type DesignDocument = z.infer<typeof designDocumentSchema>;
+export type PersonalState = z.infer<typeof personalStateSchema>;

@@ -17,7 +17,10 @@ import { McpAuthService } from './mcp/mcp-auth.service.js';
 import { McpServerFactory } from './mcp/mcp-server.js';
 import { McpLogger } from './mcp/logging.js';
 import { McpDocumentService } from './mcp/mcp-document.service.js';
+import { McpPersonalService } from './mcp/mcp-personal.service.js';
 import { LanAccessService } from './network/network-access.js';
+import { PersonalStateController } from './workspace/personal-state.controller.js';
+import { PersonalStateService } from './workspace/personal-state.service.js';
 
 @Module({
   controllers: [
@@ -28,6 +31,7 @@ import { LanAccessService } from './network/network-access.js';
     SyncController,
     McpTokenController,
     McpController,
+    PersonalStateController,
   ],
   providers: [
     DatabaseService,
@@ -42,7 +46,9 @@ import { LanAccessService } from './network/network-access.js';
     McpServerFactory,
     McpLogger,
     McpDocumentService,
+    McpPersonalService,
     LanAccessService,
+    PersonalStateService,
   ],
 })
 export class AppModule {}

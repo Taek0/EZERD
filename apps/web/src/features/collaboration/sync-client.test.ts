@@ -124,6 +124,107 @@ describe('sync client personal state', () => {
     expect(merged.layout.nodes.map((node) => node.id)).toContain('combined-node');
   });
 
+  it('loads personal views from the server and saves personal-only edits', async () => {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', {
+      configurable: true,
+      value: { protocol: 'http:', host: 'test.local' },
+    });
+    const shared = createEmptyDocument();
+    shared.domains = [{ id: 'sales', name: 'Sales', description: '' }];
+    shared.layout.nodes = [
+      {
+        id: 'node:sales',
+        objectId: 'sales',
+        viewId: 'overview',
+        x: 0,
+        y: 0,
+        width: 240,
+        height: 140,
+      },
+    ];
+    const personal = {
+      views: [{ id: 'combined', name: 'Old name', domainIds: ['sales'] }],
+      notes: [],
+      nodes: [],
+      viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }],
+      relations: [],
+    };
+    let remoteVersion = 2;
+    let remotePersonal = personal;
+    const snapshots: SyncSnapshot[] = [];
+    const saves: Array<{ expectedVersion: number; state: typeof personal }> = [];
+    const runtime = new ProjectSyncRuntime({
+      projectId: ids.project,
+      userId: ids.user,
+      clientId: ids.client,
+      session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt },
+      initialDocument: shared,
+      onChange: (snapshot) => snapshots.push(snapshot),
+      fetcher: (async (input, init) => {
+        const path = String(input);
+        if (path.endsWith('/sync-baseline'))
+          return json({
+            baselineId: ids.baseline,
+            sequence: 0,
+            baselineIssuedAt: issuedAt,
+            document: shared,
+          });
+        if (path.endsWith('/personal-state')) {
+          if (init?.method === 'PUT') {
+            const payload = JSON.parse(String(init.body)) as (typeof saves)[number];
+            saves.push(payload);
+            remoteVersion = 3;
+            remotePersonal = payload.state;
+            return json({
+              version: 3,
+              projectVersion: 0,
+              syncSequence: 0,
+              state: payload.state,
+            });
+          }
+          return json({
+            version: remoteVersion,
+            projectVersion: 0,
+            syncSequence: 0,
+            state: remotePersonal,
+          });
+        }
+        return json([]);
+      }) as typeof fetch,
+      socketFactory: socketStub,
+      store: new MemorySyncOperationStore(),
+    });
+    try {
+      await runtime.start();
+      expect(snapshots.at(-1)?.document.views?.[0]?.name).toBe('Old name');
+      const next = structuredClone(snapshots.at(-1)!.document);
+      next.views![0]!.name = 'New name';
+      await runtime.edit(next);
+      await vi.waitFor(() => expect(saves).toHaveLength(1));
+      await vi.waitFor(() =>
+        expect((runtime as unknown as { personalVersion: number }).personalVersion).toBe(3),
+      );
+      expect(saves[0]).toMatchObject({
+        expectedVersion: 2,
+        state: { views: [{ id: 'combined', name: 'New name' }] },
+      });
+      remoteVersion = 4;
+      remotePersonal = {
+        ...personal,
+        views: [{ id: 'combined', name: 'MCP name', domainIds: ['sales'] }],
+      };
+      await (runtime as unknown as { refreshPersonal(): Promise<void> }).refreshPersonal();
+      expect(snapshots.at(-1)?.document.views?.[0]?.name).toBe('MCP name');
+    } finally {
+      runtime.stop();
+      Object.defineProperty(globalThis, 'location', {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
   it('does not continue startup after stop wins a pending baseline request', async () => {
     let finishBaseline!: (response: Response) => void;
     const baseline = new Promise<Response>((resolve) => {

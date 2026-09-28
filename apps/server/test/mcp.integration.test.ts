@@ -176,7 +176,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(19);
+      expect(listedTools.tools).toHaveLength(21);
       const list = await a.instance.callTool({ name: 'list_projects', arguments: {} });
       expect(list.isError).not.toBe(true);
       const created = await a.instance.callTool({
@@ -189,6 +189,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         name: 'get_project',
         arguments: { projectId: project.id },
       });
+      expect(opened.isError).not.toBe(true);
       expect(opened.structuredContent).toMatchObject({
         project: { id: project.id },
         syncSequence: 0,
@@ -407,6 +408,236 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         ).isError,
       ).not.toBe(true);
       projects.splice(projects.indexOf(project.id), 1);
+    } finally {
+      await a.instance.close();
+      await b.instance.close();
+    }
+  });
+
+  it('stores combined views per user and exposes them to MCP and the web API', async () => {
+    const created = await api('/projects', 'POST', { name: 'Personal MCP views' }, userA.session);
+    expect(created.status).toBe(201);
+    const projectId = created.data.id as string;
+    projects.push(projectId);
+    const tokenA = await issue(userA.session, 'personal A');
+    const tokenB = await issue(userB.session, 'personal B');
+    const a = client(tokenA.token);
+    const b = client(tokenB.token);
+    await a.instance.connect(a.transport);
+    await b.instance.connect(b.transport);
+    try {
+      const shared = await a.instance.callTool({
+        name: 'apply_project_changes',
+        arguments: {
+          projectId,
+          expectedVersion: 0,
+          expectedSequence: 0,
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: randomUUID(),
+          commands: [
+            { type: 'upsert_domain', value: { id: 'sales', name: 'Sales', description: '' } },
+          ],
+        },
+      });
+      expect(shared.isError).not.toBe(true);
+      const before = await a.instance.callTool({
+        name: 'get_personal_state',
+        arguments: { projectId },
+      });
+      expect(before.isError).not.toBe(true);
+      expect(before.structuredContent).toMatchObject({ version: 0, state: { views: [] } });
+      const operationId = randomUUID();
+      const command = {
+        projectId,
+        expectedVersion: 0,
+        operationId,
+        commands: [
+          {
+            type: 'upsert_combined_view',
+            value: { id: 'sales-view', name: 'My sales', domainIds: ['sales'] },
+          },
+          { type: 'set_viewport', value: { viewId: 'sales-view', x: 10, y: 20, zoom: 1.2 } },
+        ],
+      };
+      const saved = await a.instance.callTool({
+        name: 'apply_personal_changes',
+        arguments: command,
+      });
+      expect(saved.isError).not.toBe(true);
+      expect(saved.structuredContent).toMatchObject({
+        version: 1,
+        state: { views: [{ id: 'sales-view' }] },
+      });
+      expect(
+        (
+          await a.instance.callTool({
+            name: 'apply_personal_changes',
+            arguments: command,
+          })
+        ).structuredContent,
+      ).toEqual(saved.structuredContent);
+      const ownSummary = await a.instance.callTool({
+        name: 'get_project_summary',
+        arguments: { projectId },
+      });
+      expect(
+        (ownSummary.structuredContent as { views: Array<{ id: string }> }).views,
+      ).toContainEqual(expect.objectContaining({ id: 'sales-view' }));
+      const other = await b.instance.callTool({
+        name: 'get_personal_state',
+        arguments: { projectId },
+      });
+      expect(other.structuredContent).toMatchObject({ version: 0, state: { views: [] } });
+      expect(
+        (
+          await b.instance.callTool({
+            name: 'apply_personal_changes',
+            arguments: command,
+          })
+        ).isError,
+      ).toBe(true);
+      const web = await api(
+        `/projects/${projectId}/personal-state`,
+        'GET',
+        undefined,
+        userA.session,
+      );
+      expect(web.status).toBe(200);
+      expect(web.data).toMatchObject({ version: 1, state: { views: [{ id: 'sales-view' }] } });
+      const updated = await api(
+        `/projects/${projectId}/personal-state`,
+        'PUT',
+        {
+          expectedVersion: 1,
+          state: {
+            ...web.data.state,
+            viewports: [
+              ...web.data.state.viewports.filter(
+                (item: { viewId: string }) => item.viewId !== 'sales-view',
+              ),
+              { viewId: 'sales-view', x: 30, y: 40, zoom: 1.5 },
+            ],
+          },
+        },
+        userA.session,
+      );
+      expect(updated.status).toBe(200);
+      expect(updated.data.version).toBe(2);
+      expect(
+        (await api(`/projects/${projectId}/personal-state`, 'GET', undefined, userB.session)).data,
+      ).toMatchObject({ version: 0, state: { views: [] } });
+      const properties = { common: {}, logical: {}, physical: {} };
+      const table = (id: string) => ({
+        id,
+        domainId: 'sales',
+        scope: 'both',
+        logical: { name: id, definition: '' },
+        physical: { name: id, schema: 'public', comment: '' },
+        customProperties: properties,
+      });
+      const tablesAdded = await a.instance.callTool({
+        name: 'apply_project_changes',
+        arguments: {
+          projectId,
+          expectedVersion: 1,
+          expectedSequence: 1,
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: randomUUID(),
+          commands: [
+            { type: 'upsert_table', value: table('orders'), placement: { x: 0, y: 0 } },
+            { type: 'upsert_table', value: table('users'), placement: { x: 300, y: 0 } },
+            {
+              type: 'upsert_table_relation',
+              value: {
+                id: 'orders-users',
+                sourceTableId: 'orders',
+                targetTableId: 'users',
+                scope: 'logical',
+                logical: { name: 'owner', cardinality: 'many-to-many', required: false },
+                physical: null,
+              },
+            },
+          ],
+        },
+      });
+      expect(tablesAdded.isError).not.toBe(true);
+      const layout = await a.instance.callTool({
+        name: 'apply_personal_changes',
+        arguments: {
+          projectId,
+          expectedVersion: 2,
+          operationId: randomUUID(),
+          commands: [
+            {
+              type: 'add_table_reference',
+              tableId: 'orders',
+              viewId: 'sales-view',
+              placement: { x: 0, y: 0, width: 260, height: 190 },
+            },
+            {
+              type: 'add_table_reference',
+              tableId: 'users',
+              viewId: 'sales-view',
+              placement: { x: 310, y: 0 },
+            },
+            {
+              type: 'update_node_layout',
+              nodeId: 'node:orders:sales-view',
+              patch: { x: 20 },
+            },
+            {
+              type: 'upsert_relation_layout',
+              value: { relationId: 'orders-users', viewId: 'sales-view', offset: 12 },
+            },
+            {
+              type: 'upsert_note',
+              value: { id: 'private-note', viewId: 'sales-view', text: 'Personal' },
+              placement: { x: 50, y: 300 },
+            },
+          ],
+        },
+      });
+      expect(layout.isError).not.toBe(true);
+      expect(layout.structuredContent).toMatchObject({
+        version: 3,
+        state: { notes: [{ id: 'private-note' }] },
+      });
+      const personalView = await a.instance.callTool({
+        name: 'get_project_view',
+        arguments: { projectId, viewId: 'sales-view' },
+      });
+      expect((personalView.structuredContent as { tables: unknown[] }).tables).toHaveLength(2);
+      expect(personalView.structuredContent).toHaveProperty('relationLayouts.0.offset', 12);
+      const otherView = await b.instance.callTool({
+        name: 'get_project_view',
+        arguments: { projectId, viewId: 'sales-view' },
+      });
+      expect(otherView.isError).toBe(true);
+      const removedPersonal = await a.instance.callTool({
+        name: 'apply_personal_changes',
+        arguments: {
+          projectId,
+          expectedVersion: 3,
+          operationId: randomUUID(),
+          commands: [
+            { type: 'delete_relation_layout', relationId: 'orders-users', viewId: 'sales-view' },
+            { type: 'remove_table_reference', nodeId: 'node:users:sales-view' },
+            { type: 'delete_note', id: 'private-note' },
+          ],
+        },
+      });
+      expect(removedPersonal.isError).not.toBe(true);
+      expect(removedPersonal.structuredContent).toMatchObject({
+        version: 4,
+        state: { relations: [], notes: [] },
+      });
+      expect(
+        (
+          removedPersonal.structuredContent as { state: { nodes: Array<{ objectId: string }> } }
+        ).state.nodes.some((node) => node.objectId === 'users'),
+      ).toBe(false);
     } finally {
       await a.instance.close();
       await b.instance.close();

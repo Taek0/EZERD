@@ -10,11 +10,12 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   timestamp,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { DesignDocument } from '@ezerd/model';
+import type { DesignDocument, PersonalState } from '@ezerd/model';
 import { sql } from 'drizzle-orm';
 
 export const projectStatus = pgEnum('project_status', ['active', 'archived']);
@@ -54,6 +55,51 @@ export const users = pgTable(
   (table) => [
     unique('users_username_unique').on(table.username),
     check('users_username_normalized', sql`${table.username} = lower(btrim(${table.username}))`),
+  ],
+);
+
+export const projectPersonalStates = pgTable(
+  'project_personal_states',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull().default(0),
+    state: jsonb('state')
+      .$type<PersonalState>()
+      .notNull()
+      .default({ views: [], notes: [], nodes: [], viewports: [], relations: [] }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.userId] })],
+);
+
+export const projectPersonalOperations = pgTable(
+  'project_personal_operations',
+  {
+    operationId: uuid('operation_id').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+    result: jsonb('result')
+      .$type<{
+        version: number;
+        state: PersonalState;
+        projectVersion: number;
+        syncSequence: number;
+      }>()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('project_personal_operations_project_user_idx').on(table.projectId, table.userId),
   ],
 );
 

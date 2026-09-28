@@ -23,3 +23,4 @@ export * from './document.js';
 export * from './postgres.js';
 export * from './layout.js';
 export * from './sync.js';
+export * from './personal.js';

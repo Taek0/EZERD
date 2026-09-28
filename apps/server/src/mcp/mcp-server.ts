@@ -8,6 +8,7 @@ import {
   deleteProjectSchema,
   deleteThreadSchema,
   projectDocumentSchema,
+  personalStateSnapshotSchema,
   projectQuerySchema,
   projectSchema,
   syncOperationResultSchema,
@@ -15,13 +16,14 @@ import {
   updateProjectSchema,
   updateThreadSchema,
 } from '@ezerd/contracts';
-import { diagnoseDocument } from '@ezerd/model';
+import { diagnoseDocument, mergeStoredPersonalState } from '@ezerd/model';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { ReviewService } from '../review/review.service.js';
 import { WorkspaceService } from '../workspace/workspace.service.js';
 import { SyncService } from '../sync/sync.service.js';
 import { McpLogger } from './logging.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
+import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
   listTables,
   listTablesInputSchema,
@@ -64,6 +66,7 @@ export class McpServerFactory {
     @Inject(McpLogger) private readonly logger: McpLogger,
     @Inject(SyncService) private readonly sync: SyncService,
     @Inject(McpDocumentService) private readonly documents: McpDocumentService,
+    @Inject(McpPersonalService) private readonly personal: McpPersonalService,
   ) {}
 
   create(user: AuthenticatedUser, tokenId: string, requestId: string): McpServer {
@@ -73,7 +76,7 @@ export class McpServerFactory {
         capabilities: { tools: {} },
         instructions:
           'EZERD 프로젝트와 리뷰를 조회하고 변경합니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
-          '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view로 대상 뷰의 최신 배치를 확인하세요. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
+          '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view로 대상 뷰의 최신 배치를 확인하세요. 결합 화면·개인 화면 위치는 get_personal_state로 개인 버전을 확인하고 apply_personal_changes로 변경하세요. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
           '같은 뷰의 카드 경계와 콘텐츠에 필요한 크기를 고려해 서로 겹치지 않게 배치하고 최소 40px 간격을 두세요. ' +
@@ -89,6 +92,16 @@ export class McpServerFactory {
     );
     const invoke = <T>(tool: string, callback: () => Promise<T>) =>
       this.invoke(tool, user, tokenId, requestId, callback);
+    const projectState = async (projectId: string) => {
+      const [shared, personal] = await Promise.all([
+        this.workspace.getProjectState(projectId),
+        this.personal.get(projectId, user),
+      ]);
+      return {
+        ...shared,
+        document: mergeStoredPersonalState(shared.document, personal.state),
+      };
+    };
     const requireAccepted = <
       T extends { status: 'accepted' | 'rejected'; reason?: string | undefined },
     >(
@@ -122,9 +135,7 @@ export class McpServerFactory {
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId }) =>
-        invoke('get_project', async () =>
-          projectStateSchema.parse(await this.workspace.getProjectState(projectId)),
-        ),
+        invoke('get_project', async () => projectStateSchema.parse(await projectState(projectId))),
     );
     server.registerTool(
       'get_project_summary',
@@ -136,9 +147,7 @@ export class McpServerFactory {
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId }) =>
-        invoke('get_project_summary', async () =>
-          projectSummary(await this.workspace.getProjectState(projectId)),
-        ),
+        invoke('get_project_summary', async () => projectSummary(await projectState(projectId))),
     );
     server.registerTool(
       'list_tables',
@@ -149,9 +158,7 @@ export class McpServerFactory {
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       (input) =>
-        invoke('list_tables', async () =>
-          listTables(await this.workspace.getProjectState(input.projectId), input),
-        ),
+        invoke('list_tables', async () => listTables(await projectState(input.projectId), input)),
     );
     server.registerTool(
       'get_project_view',
@@ -163,8 +170,19 @@ export class McpServerFactory {
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId, viewId }) =>
-        invoke('get_project_view', async () =>
-          projectView(await this.workspace.getProjectState(projectId), viewId),
+        invoke('get_project_view', async () => projectView(await projectState(projectId), viewId)),
+    );
+    server.registerTool(
+      'get_personal_state',
+      {
+        description: '인증된 사용자 자신의 결합 화면, 화면 배치·뷰포트와 개인 메모를 조회합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema }),
+        outputSchema: personalStateSnapshotSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId }) =>
+        invoke('get_personal_state', async () =>
+          personalStateSnapshotSchema.parse(await this.personal.get(projectId, user)),
         ),
     );
     server.registerTool(
@@ -177,7 +195,7 @@ export class McpServerFactory {
       },
       ({ projectId, tableId }) =>
         invoke('get_table_details', async () =>
-          tableDetails(await this.workspace.getProjectState(projectId), tableId),
+          tableDetails(await projectState(projectId), tableId),
         ),
     );
     server.registerTool(
@@ -290,7 +308,7 @@ export class McpServerFactory {
       },
       ({ projectId }) =>
         invoke('diagnose_project', async () => {
-          const { document } = await this.workspace.getProject(projectId);
+          const { document } = await projectState(projectId);
           return { diagnostics: z.array(diagnosticSchema).parse(diagnoseDocument(document)) };
         }),
     );
@@ -311,6 +329,20 @@ export class McpServerFactory {
             syncOperationResultSchema.parse(await this.documents.apply(input, user)),
             includeDocument,
           ),
+        ),
+    );
+    server.registerTool(
+      'apply_personal_changes',
+      {
+        description:
+          '인증된 사용자 자신의 결합 화면·참조 테이블·개인 배치·뷰포트·관계 경로·메모를 개인 버전 기준으로 변경합니다.',
+        inputSchema: applyPersonalChangesSchema,
+        outputSchema: personalStateSnapshotSchema,
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      (input) =>
+        invoke('apply_personal_changes', async () =>
+          personalStateSnapshotSchema.parse(await this.personal.apply(input, user)),
         ),
     );
     server.registerTool(

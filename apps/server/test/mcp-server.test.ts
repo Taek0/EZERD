@@ -25,6 +25,7 @@ describe('MCP server tools', () => {
     const workspace = {
       listProjects: vi.fn(async () => [project]),
       getProject: vi.fn(async () => ({ project, document })),
+      getProjectState: vi.fn(async () => ({ project, document, syncSequence: 0 })),
     };
     const reviewThread = {
       id: crypto.randomUUID(),
@@ -45,12 +46,28 @@ describe('MCP server tools', () => {
     const logger = { write: vi.fn(async () => undefined) };
     const sync = { history: vi.fn(async () => []) };
     const documents = { apply: vi.fn() };
+    const personal = {
+      get: vi.fn(async () => ({
+        version: 0,
+        projectVersion: 0,
+        syncSequence: 0,
+        state: {
+          views: [],
+          notes: [],
+          nodes: [],
+          viewports: document.layout.viewports,
+          relations: [],
+        },
+      })),
+      apply: vi.fn(),
+    };
     const factory = new McpServerFactory(
       workspace as never,
       reviews as never,
       logger as never,
       sync as never,
       documents as never,
+      personal as never,
     );
     const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
     const server = factory.create(actor, crypto.randomUUID(), crypto.randomUUID());
@@ -77,6 +94,7 @@ describe('MCP server tools', () => {
         'get_project_summary',
         'list_tables',
         'get_project_view',
+        'get_personal_state',
         'get_table_details',
         'list_review_threads',
         'create_project',
@@ -88,6 +106,7 @@ describe('MCP server tools', () => {
         'delete_review_thread',
         'diagnose_project',
         'apply_project_changes',
+        'apply_personal_changes',
         'get_project_history',
         'undo_project_operation',
         'restore_project_deletion',

@@ -56,6 +56,7 @@ export function sharedDocument(
   const { views: _personalViews, ...withoutPersonalViews } = document;
   return clone({
     ...withoutPersonalViews,
+    notes: document.notes.filter((note) => !combinedIds.has(note.viewId)),
     enums: document.enums ?? [],
     tables: document.tables ?? [],
     columns: document.columns ?? [],

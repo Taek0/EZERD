@@ -2,6 +2,8 @@ import {
   syncEventSchema,
   syncHistoryEntrySchema,
   syncOperationResultSchema,
+  personalStateSnapshotSchema,
+  type PersonalState,
   type SyncEvent,
   type SyncHistoryEntry,
   type SyncOperationInput,
@@ -11,6 +13,8 @@ import {
   applyChanges,
   applyOperationsOverlay,
   diffSharedDocument,
+  extractPersonalState,
+  mergeStoredPersonalState,
   sharedDocument,
   type DesignDocument,
   type DocumentChange,
@@ -92,24 +96,7 @@ export function mergePersonalState(
   shared: DesignDocument,
   personal: DesignDocument,
 ): DesignDocument {
-  const views = personal.views ?? [];
-  const combinedIds = new Set(views.map((view) => view.id));
-  return {
-    ...shared,
-    views,
-    layout: {
-      ...shared.layout,
-      viewports: personal.layout.viewports,
-      nodes: [
-        ...shared.layout.nodes,
-        ...personal.layout.nodes.filter((node) => combinedIds.has(node.viewId)),
-      ],
-      relations: [
-        ...(shared.layout.relations ?? []),
-        ...(personal.layout.relations ?? []).filter((route) => combinedIds.has(route.viewId)),
-      ],
-    },
-  };
+  return mergeStoredPersonalState(shared, extractPersonalState(personal));
 }
 
 export function stableClientId(
@@ -155,6 +142,11 @@ export class ProjectSyncRuntime {
   private baselineDocument: DesignDocument;
   private baselineRefresh: Promise<void> | undefined;
   private baselineRefreshFailed = false;
+  private personalVersion = 0;
+  private personalLoaded = false;
+  private personalPending: PersonalState | undefined;
+  private personalSaving = false;
+  private personalConflict = false;
   private cursor: SyncEventCursor<SyncEvent>;
   private readonly rebases = new Map<
     string,
@@ -213,6 +205,11 @@ export class ProjectSyncRuntime {
       }
     } catch {
       /* Existing durable operations remain usable while offline. */
+    }
+    try {
+      await this.refreshPersonal();
+    } catch {
+      /* Personal edits stay visible and can be saved after connectivity returns. */
     }
     if (this.stopped) return;
     const selected = this.options.store
@@ -288,6 +285,13 @@ export class ProjectSyncRuntime {
 
   async edit(next: DesignDocument) {
     const changes = diffSharedDocument(this.visibleDocument, next);
+    if (
+      JSON.stringify(extractPersonalState(this.visibleDocument)) !==
+      JSON.stringify(extractPersonalState(next))
+    ) {
+      this.personalPending = extractPersonalState(next);
+      void this.flushPersonal();
+    }
     this.visibleDocument = next;
     if (!changes.length) {
       this.publish();
@@ -752,7 +756,7 @@ export class ProjectSyncRuntime {
     const unresolved = this.pending.some((item) => item.state === 'unresolved');
     const active = this.pending.some((item) => item.state !== 'unresolved');
     const status: SyncStatus =
-      this.storageFailure || unresolved
+      this.storageFailure || unresolved || this.personalConflict
         ? 'action-needed'
         : active
           ? this.connected
@@ -838,6 +842,8 @@ export class ProjectSyncRuntime {
       for (const event of events) await this.cursor.receive(event);
       if (events.length) this.connected = true;
       await this.queue?.pump();
+      await this.refreshPersonal().catch(() => undefined);
+      void this.flushPersonal();
     } catch {
       if (this.stopped) return;
       this.connected = false;
@@ -854,6 +860,63 @@ export class ProjectSyncRuntime {
         ...init?.headers,
       },
     });
+  }
+
+  private async refreshPersonal() {
+    const snapshot = personalStateSnapshotSchema.parse(await this.api('/personal-state'));
+    if (this.stopped) return;
+    if (this.personalLoaded && snapshot.version <= this.personalVersion) return;
+    if (this.personalPending || this.personalSaving) {
+      if (this.personalLoaded) {
+        this.personalConflict = true;
+        this.error = '개인 화면이 다른 곳에서 변경되었습니다. 프로젝트를 다시 열어 주세요.';
+        this.publish();
+      } else {
+        this.personalVersion = snapshot.version;
+        this.personalLoaded = true;
+        void this.flushPersonal();
+      }
+      return;
+    }
+    this.personalVersion = snapshot.version;
+    this.personalLoaded = true;
+    this.visibleDocument = mergeStoredPersonalState(
+      sharedDocument(this.visibleDocument),
+      snapshot.state,
+    );
+    this.publish();
+    void this.flushPersonal();
+  }
+
+  private async flushPersonal() {
+    if (this.personalSaving || !this.personalLoaded || this.personalConflict) return;
+    this.personalSaving = true;
+    try {
+      while (!this.stopped && this.personalPending) {
+        const state = this.personalPending;
+        this.personalPending = undefined;
+        try {
+          const response = await this.raw('/personal-state', {
+            method: 'PUT',
+            body: JSON.stringify({ expectedVersion: this.personalVersion, state }),
+          });
+          if (!response.ok) {
+            if (response.status === 409) this.personalConflict = true;
+            throw new Error(`개인 화면을 저장하지 못했습니다 (${response.status}).`);
+          }
+          const saved = personalStateSnapshotSchema.parse(await response.json());
+          this.personalVersion = saved.version;
+          if (this.error?.startsWith('개인 화면을 저장하지 못했습니다')) this.error = undefined;
+        } catch (error) {
+          this.personalPending ??= state;
+          this.error = error instanceof Error ? error.message : '개인 화면을 저장하지 못했습니다.';
+          this.publish();
+          break;
+        }
+      }
+    } finally {
+      this.personalSaving = false;
+    }
   }
 
   private async api(path: string, init?: RequestInit): Promise<unknown> {
