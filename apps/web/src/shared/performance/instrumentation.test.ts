@@ -1,5 +1,22 @@
 import { expect, it } from 'vitest';
-import { instrumentFunctions } from '../../../performance/instrumentation.js';
+import { instrumentFunctions, measurementPlugin } from '../../../performance/instrumentation.js';
+
+it('only substitutes the frame queue in the explicit immediate measurement control', () => {
+  const id = '/workspace/apps/web/src/features/canvas/frame-queue.ts';
+  const normal = measurementPlugin('/collector').transform;
+  const control = measurementPlugin('/collector', 'immediate').transform;
+  if (typeof normal !== 'function' || typeof control !== 'function')
+    throw new Error('Unexpected transform hook');
+  expect(normal.call({} as never, 'original', id)).toBeUndefined();
+  const result = control.call({} as never, 'original', id) as { code: string };
+  const queue = new Function(result.code.replace('export ', '') + '; return createFrameQueue();')();
+  let calls = 0;
+  queue.enqueue(() => calls++);
+  queue.enqueue(() => calls++);
+  queue.flush();
+  queue.cancel();
+  expect(calls).toBe(2);
+});
 
 it('preserves early returns and exceptions, closing spans exactly once', () => {
   const input =

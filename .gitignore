@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-performance/
+dist-performance-immediate/
 artifacts/performance/
 coverage/
 .cache/

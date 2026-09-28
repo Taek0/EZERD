@@ -44,7 +44,10 @@ export function instrumentFunctions(
   };
 }
 
-export function measurementPlugin(collectorPath: string): Plugin {
+export function measurementPlugin(
+  collectorPath: string,
+  frameMode: 'raf' | 'immediate' = 'raf',
+): Plugin {
   const required = new Set([
     'tableCardMetrics',
     'tableCardSize',
@@ -58,6 +61,12 @@ export function measurementPlugin(collectorPath: string): Plugin {
     enforce: 'pre',
     transform(source, id) {
       const path = id.replaceAll('\\', '/').split('?')[0]!;
+      // Measurement-only causal control. The normal app build never loads this plugin.
+      if (frameMode === 'immediate' && path.endsWith('/features/canvas/frame-queue.ts'))
+        return {
+          code: 'export function createFrameQueue(){return {enqueue(task){task();},flush(){},cancel(){}}}',
+          map: null,
+        };
       let names: string[] = [];
       if (/\/packages\/model\/(dist|src)\/table-geometry\.(js|ts)$/.test(path))
         names = ['tableCardMetrics', 'tableCardSize'];

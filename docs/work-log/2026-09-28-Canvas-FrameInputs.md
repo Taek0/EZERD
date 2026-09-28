@@ -25,3 +25,9 @@
 - 큐는 비싼 경로 계산 자체를 빠르게 만들지 않으며 한 번의 계산이 긴 경우 여전히 main thread를 막을 수 있다.
 - rAF 외부 종료 flush는 마지막 값 보존을 위해 별도로 허용한다. flush를 프레임당 중복 갱신 위반으로 세지 않는다.
 - 실제 원격 서버·권한 전환·창 focus 변경과 브라우저 전체 lifecycle의 모든 조합은 수동 확인하지 않았다. queue 단위 검증과 코드상 context guard/cleanup을 적용했으며 남은 확인 사항으로 둔다.
+
+## 시간 변동 조사
+
+고정 커밋 `44fef72`의100개 EDIT/MOVE 각3회는 이전과 최종 문서·SVG paths가 동일했다. paced MOVE는 preview4회·경로400회로 그대로였다. 첫 비교의 경로 시간 중앙값은 EDIT49.4ms/MOVE177.3ms, 재측정은38.2ms/209.0ms로 변동했다. 이전 기록의36.9ms/163.1ms와 시간대가 달라 원인을 확정하지 않는다.
+
+동일 코드의 입력 병합만 바꾸는 측정 전용 제어를 추가한다. `EZERD_PERF_FRAME_MODE=immediate`로 perf:build하면 queue를 즉시 적용하는 test-only 빌드를 dist-performance-immediate에 생성한다. 기본은 raf이며 일반 제품 빌드에는 이 변환이 없다. metadata.frameMode로 구분하고 별도4176 포트에서 같은 fixture·입력으로 교차 비교한다. 이 제어는 과거 코드를 완전히 재현한 빌드가 아니라 병합 여부만 분리한 실험이다.

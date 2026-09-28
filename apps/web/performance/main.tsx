@@ -18,6 +18,7 @@ import './performance.css';
 
 declare const __PERF_COMMIT__: string;
 declare const __PERF_DIRTY__: boolean;
+declare const __PERF_FRAME_MODE__: 'raf' | 'immediate';
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
 function PerformanceFixture() {
@@ -138,6 +139,7 @@ function PerformanceFixture() {
         collector.start({
           commit: __PERF_COMMIT__,
           dirty: __PERF_DIRTY__,
+          frameMode: __PERF_FRAME_MODE__,
           collectSpans,
           fixtureVersion: 1,
           count,

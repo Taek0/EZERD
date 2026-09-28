@@ -1,13 +1,16 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 
-const [baselinePath, candidatePath] = process.argv.slice(2);
+const [baselinePath, candidatePath, countFilter] = process.argv.slice(2);
 if (!baselinePath || !candidatePath)
-  throw new Error('Usage: node compare-edit-move.mjs BASELINE_DIR CANDIDATE_DIR');
+  throw new Error('Usage: node compare-edit-move.mjs BASELINE_DIR CANDIDATE_DIR [COUNT]');
+if (countFilter && !['10', '50', '100', '300'].includes(countFilter))
+  throw new Error('Invalid count filter');
 const baseline = resolve(baselinePath),
   candidate = resolve(candidatePath);
 const names = (await readdir(baseline))
   .filter((name) => /^(EDIT|MOVE)-(10|50|100|300)-\d+\.json$/.test(name))
+  .filter((name) => !countFilter || name.split('-')[1] === countFilter)
   .sort();
 if (!names.length) throw new Error('No baseline repetitions');
 const rows = [];
