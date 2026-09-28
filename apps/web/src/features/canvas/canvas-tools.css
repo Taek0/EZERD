@@ -1,3 +1,50 @@
+.canvas-surface .zoom-controls {
+  box-shadow: none;
+}
+/* Canvas navigation stays flat independently of the shared action button theme. */
+.canvas-surface .zoom-controls .ui-button {
+  background: transparent;
+  color: var(--ui-control-secondary);
+  box-shadow: none;
+  transform: none;
+  transition: none;
+}
+.canvas-surface .zoom-controls .ui-button::before {
+  content: none;
+}
+.canvas-surface .zoom-controls .ui-button:hover:not(:disabled):not([data-disabled]) {
+  background: var(--ui-control-hover);
+  color: var(--ui-control-text);
+  box-shadow: none;
+  transform: none;
+}
+.canvas-surface
+  .zoom-controls
+  .ui-button:is([aria-pressed='true'], [aria-expanded='true'], .is-active, .is-selected) {
+  background: #4169e11a;
+  color: var(--accent);
+  box-shadow: none;
+  transform: none;
+}
+.canvas-surface
+  .zoom-controls
+  .ui-button:is([aria-pressed='true'], [aria-expanded='true'], .is-active, .is-selected):hover:not(
+    :disabled
+  ):not([data-disabled]),
+.canvas-surface
+  .zoom-controls
+  .ui-button:is(:active, [data-pressed]):not(:disabled):not([data-disabled]) {
+  background: #4169e126;
+  color: var(--accent);
+  box-shadow: none;
+  transform: none;
+}
+.canvas-surface .zoom-controls .ui-button:is(:disabled, [data-disabled]) {
+  background: transparent;
+  color: var(--ui-control-muted);
+  box-shadow: none;
+  transform: none;
+}
 .canvas-tool-picker {
   display: flex;
   align-items: center;
