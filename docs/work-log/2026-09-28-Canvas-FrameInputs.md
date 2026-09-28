@@ -31,3 +31,45 @@
 고정 커밋 `44fef72`의100개 EDIT/MOVE 각3회는 이전과 최종 문서·SVG paths가 동일했다. paced MOVE는 preview4회·경로400회로 그대로였다. 첫 비교의 경로 시간 중앙값은 EDIT49.4ms/MOVE177.3ms, 재측정은38.2ms/209.0ms로 변동했다. 이전 기록의36.9ms/163.1ms와 시간대가 달라 원인을 확정하지 않는다.
 
 동일 코드의 입력 병합만 바꾸는 측정 전용 제어를 추가한다. `EZERD_PERF_FRAME_MODE=immediate`로 perf:build하면 queue를 즉시 적용하는 test-only 빌드를 dist-performance-immediate에 생성한다. 기본은 raf이며 일반 제품 빌드에는 이 변환이 없다. metadata.frameMode로 구분하고 별도4176 포트에서 같은 fixture·입력으로 교차 비교한다. 이 제어는 과거 코드를 완전히 재현한 빌드가 아니라 병합 여부만 분리한 실험이다.
+
+## 고정 커밋 입력 검증
+
+- `44fef72` dirty=false 빌드의100개 EDIT/MOVE 각각 준비1+반복3회에서 기존 `f775bf4`와 최종 문서·전체 SVG paths가 동일했다.300개 MOVE1회도 기존 결과와 동일했다. 실제 paced MOVE는100개 경로400회,300개 경로1,200회로 줄지 않았다.
+- 300개 장면의 internal replay3회에서 wheel120개를 실제 listener에 전달해 moveViewport120회→applyCameraFrame1회, 문서 불변, 카메라 x=-120px, geometry0회를 확인했다. 이 결과는 native 입력 성능 측정이 아니다.
+- `scripts/performance/browser-wheel-burst.mjs`로 burst 결과를 재검증할 수 있다. 결과는 `artifacts/performance/44fef72-browser/`, 시간 재측정은 `44fef72-repeat/`에 저장했다.
+
+## 동일 코드 immediate/raf 대조
+
+도구 커밋 `c35aa63`에서 동일 제품 코드의 immediate/raf 두 빌드를 생성했다.100개·컬럼10·locale ko·1440×900 조건이다. 초기 두 탭 비교 중 viewport가 달랐던 첫 실패와 추가 input 이벤트가 섞인3개 표본은 제외했다. 해당 기록은 `artifacts/performance/c35aa63-paired/`와 excluded-samples.json에 보존했다. 추가 입력 발생 원인은 확정하지 않았다.
+
+탭 하나에서 같은 viewport로 immediate→raf→raf→immediate 순서로 다시 실행했다. 각 빌드 진입 후 준비1회·측정1회를 수행했고4개 모두 최종 문서·경로·입력 이벤트가 같았다. 경로 누적 시간은158.6 / 238.9 / 161.3 / 162.3ms였다. 높은 raf 표본에는 단일 경로59ms가 포함돼 있었으며 원인을 GC 등으로 단정하지 않고 그대로 보존했다. 이 표본을 제거해 속도 개선율을 만들지 않는다.
+
+같은 코드의 wheel burst 제어에서는 아래 결과를 확인했다.
+
+| 지표 | immediate | raf |
+| --- | --- | --- |
+| wheel 입력 | 120 | 120 |
+| 카메라 상태 반영 | 120 | 1 |
+| Canvas 렌더 | 1 | 1 |
+| 전체 x 이동 | -120px | -120px |
+| 문서 geometry 재계산 | 0 | 0 |
+
+React도 동기 이벤트 묶음의 렌더를 병합하므로, 상태 반영120→1을 렌더120→1이나120배 속도 개선으로 표현하지 않는다. 입력 누락 방지·프레임당 상태 반영 제한은 검증했지만 paced drag 속도 개선과 시간 회귀 원인은 아직 판정 보류다. 한 번의 관계 계산 자체가 긴 문제는 여전히 남는다.
+
+같은 탭 대조 원시 결과·summary·burst JSON·화면은 `artifacts/performance/c35aa63-single-tab/`에 저장했다. Git 제외 대상이며 증거 이미지는 frame-inputs.png다.
+
+```powershell
+# 임시 셸에서 immediate 제어 빌드 생성
+$env:EZERD_PERF_FRAME_MODE = 'immediate'
+pnpm perf:build
+Remove-Item Env:EZERD_PERF_FRAME_MODE
+pnpm perf:serve --outDir dist-performance-immediate --port 4176
+```
+
+기본 raf 빌드는 환경 변수 없이 perf:build/perf:serve를 사용한다. 비교 스크립트에 선택적인 크기 인수를 추가하여 `... BASELINE_DIR CANDIDATE_DIR 100`처럼 동일 크기만 명시적으로 비교할 수 있다.
+
+## 최종 상태
+
+프레임 입력 구현은 로컬 브랜치에 저장했다. 전체 lifecycle·권한 변경의 브라우저 자동화, 실제 입력 지연·GC/프레임 trace, paced drag의 통계적 속도 판정은 후속으로 남긴다. 이번 측정으로 이미 검증된 경로 최적화와 입력 병합 효과를 혼동하지 않는다. 테스트 탭·두 fixture 서버는 종료하며 원격 push는 수행하지 않는다.
+
+최종 `pnpm check`는390개 통과·DB 관련25개 skip, 전체 타입·포맷·일반 빌드 통과다. 기본 raf·immediate 측정 전용 빌드도 성공했다.
