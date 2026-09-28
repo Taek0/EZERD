@@ -232,6 +232,13 @@
   margin: 0;
   padding: 0;
 }
+.panel-list-detail {
+  display: flow-root;
+  min-width: 0;
+}
+.panel-list-detail > .panel-detail {
+  margin-block: 4px 8px;
+}
 .panel-row {
   display: flex;
   align-items: center;
@@ -571,8 +578,9 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   padding: 10px;
-  border-color: var(--line);
-  box-shadow: none;
+  border-color: var(--ui-brand-200);
+  background: var(--ui-brand-50);
+  box-shadow: inset 0 1px 0 #ffffff;
 }
 .table-column-editor > label:first-of-type,
 .table-column-editor > .panel-detail-head,

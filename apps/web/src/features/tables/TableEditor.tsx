@@ -8,7 +8,7 @@ import {
 import { EnumManager } from './EnumManager.js';
 import { columnTypeDisplay } from './column-type-display.js';
 import { primaryKeyChangeReason, setColumnPrimaryKey } from './column-primary-key.js';
-import { useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
+import { Fragment, useRef, useEffect, useLayoutEffect, useState, type CSSProperties } from 'react';
 import {
   type DesignDocument,
   type ModelScope,
@@ -49,7 +49,13 @@ import {
   Select,
   Textarea,
 } from '../../components/ui/index.js';
-import { PanelList, PanelNote, PanelRow, PanelSection } from '../../shared/editor/panel.js';
+import {
+  PanelList,
+  PanelListDetail,
+  PanelNote,
+  PanelRow,
+  PanelSection,
+} from '../../shared/editor/panel.js';
 export const physicalTypes = [
   'uuid',
   'integer',
@@ -760,8 +766,6 @@ export function TableInspector({
     if (!readOnly) onChange(next);
   };
   const patch = (p: Partial<Table>) => change(updateTable(doc, tableId, p));
-  const index = cols.findIndex((c) => c.id === columnId);
-  const active = index < 0 ? null : cols[index]!;
   const marker = (c: Column) =>
     [
       keys.some((k) => k.kind === 'primary' && k.columnIds.includes(c.id)) ? 'PK' : '',
@@ -810,72 +814,76 @@ export function TableInspector({
         <PanelSection title="컬럼" count={cols.length} defaultOpen>
           <PanelList empty="아직 컬럼이 없습니다. 아래 컬럼 추가에서 첫 컬럼을 만들어 주세요.">
             {cols.map((c, at) => (
-              <PanelRow
-                key={c.id}
-                className={
-                  dropColumn === c.id
-                    ? 'table-column-drop'
-                    : draggingColumn === c.id
-                      ? 'table-column-dragging'
-                      : ''
-                }
-                drag={{
-                  draggable: !readOnly,
-                  onDragStart: (e) => {
-                    setDraggingColumn(c.id);
-                    e.dataTransfer.effectAllowed = 'move';
-                    e.dataTransfer.setData('text/plain', c.id);
-                  },
-                  onDragOver: (e) => {
-                    if (!readOnly && draggingColumn && draggingColumn !== c.id) {
+              <Fragment key={c.id}>
+                <PanelRow
+                  className={
+                    dropColumn === c.id
+                      ? 'table-column-drop'
+                      : draggingColumn === c.id
+                        ? 'table-column-dragging'
+                        : ''
+                  }
+                  drag={{
+                    draggable: !readOnly,
+                    onDragStart: (e) => {
+                      setDraggingColumn(c.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', c.id);
+                    },
+                    onDragOver: (e) => {
+                      if (!readOnly && draggingColumn && draggingColumn !== c.id) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        setDropColumn(c.id);
+                      }
+                    },
+                    onDragLeave: () => setDropColumn(null),
+                    onDrop: (e) => {
                       e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                      setDropColumn(c.id);
+                      if (!readOnly && draggingColumn)
+                        change(reorderColumn(doc, draggingColumn, c.id));
+                      setDraggingColumn(null);
+                      setDropColumn(null);
+                    },
+                    onDragEnd: () => {
+                      setDraggingColumn(null);
+                      setDropColumn(null);
+                    },
+                  }}
+                  action={
+                    <span className="table-column-drag-hint" aria-hidden="true">
+                      ⠿
+                    </span>
+                  }
+                  active={c.id === columnId}
+                  expanded={c.id === columnId}
+                  controls={c.id === columnId ? `column-detail-${c.id}` : undefined}
+                  title={at + 1 + '. ' + columnName(c)}
+                  meta={columnTypeDisplay(c.physical.type, doc.enums)}
+                  badge={marker(c) || undefined}
+                  onSelect={() => setColumnId((value) => (value === c.id ? null : c.id))}
+                />
+                <PanelListDetail open={c.id === columnId} id={`column-detail-${c.id}`}>
+                  <ColumnEditor
+                    document={doc}
+                    column={c}
+                    index={at}
+                    count={cols.length}
+                    onChange={(p) => change(updateColumn(doc, c.id, p))}
+                    onPrimaryKeyChange={(checked) =>
+                      change(setColumnPrimaryKey(doc, c.id, checked))
                     }
-                  },
-                  onDragLeave: () => setDropColumn(null),
-                  onDrop: (e) => {
-                    e.preventDefault();
-                    if (!readOnly && draggingColumn)
-                      change(reorderColumn(doc, draggingColumn, c.id));
-                    setDraggingColumn(null);
-                    setDropColumn(null);
-                  },
-                  onDragEnd: () => {
-                    setDraggingColumn(null);
-                    setDropColumn(null);
-                  },
-                }}
-                action={
-                  <span className="table-column-drag-hint" aria-hidden="true">
-                    ⠿
-                  </span>
-                }
-                active={c.id === columnId}
-                title={at + 1 + '. ' + columnName(c)}
-                meta={columnTypeDisplay(c.physical.type, doc.enums)}
-                badge={marker(c) || undefined}
-                onSelect={() => setColumnId((value) => (value === c.id ? null : c.id))}
-              />
+                    onMove={(dir) => change(moveColumn(doc, c.id, dir))}
+                    onDelete={() => {
+                      change(removeColumn(doc, c.id));
+                      setColumnId(null);
+                    }}
+                    onClose={() => setColumnId(null)}
+                  />
+                </PanelListDetail>
+              </Fragment>
             ))}
           </PanelList>
-          {active && (
-            <ColumnEditor
-              key={active.id}
-              document={doc}
-              column={active}
-              index={index}
-              count={cols.length}
-              onChange={(p) => change(updateColumn(doc, active.id, p))}
-              onPrimaryKeyChange={(checked) => change(setColumnPrimaryKey(doc, active.id, checked))}
-              onMove={(dir) => change(moveColumn(doc, active.id, dir))}
-              onDelete={() => {
-                change(removeColumn(doc, active.id));
-                setColumnId(null);
-              }}
-              onClose={() => setColumnId(null)}
-            />
-          )}
           <PanelSection title="컬럼 추가" className="table-column-create-section">
             <ColumnCreationForm document={doc} tableId={tableId} onChange={change} />
           </PanelSection>

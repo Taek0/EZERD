@@ -69,8 +69,14 @@ try {
   const editor = page.locator('.table-column-editor');
   await editor.waitFor();
   assert.equal(
-    await editor.evaluate((e) => getComputedStyle(e).animationName),
-    'table-column-enter',
+    await editor.evaluate((e) =>
+      e.parentElement.previousElementSibling.textContent.includes('title'),
+    ),
+    true,
+  );
+  assert.equal(
+    await editor.evaluate((e) => getComputedStyle(e).backgroundColor),
+    'rgb(238, 243, 255)',
   );
   await editor.getByLabel('길이', { exact: true }).fill('48');
   assert.match(await card.innerText(), /VARCHAR\(48\)/);
@@ -80,6 +86,17 @@ try {
     (await state()).columns.filter((c) => c.tableId === 't1').map((c) => c.id),
     ['t1extra', 't1c'],
   );
+  assert.equal(
+    await editor.evaluate((e) =>
+      e.parentElement.previousElementSibling.textContent.includes('title'),
+    ),
+    true,
+  );
+  await editor.getByRole('button', { name: '컬럼 편집 닫기' }).click();
+  await editor.waitFor({ state: 'detached' });
+  assert.equal(await rows.first().getByRole('button').getAttribute('aria-expanded'), 'false');
+  await rows.first().getByRole('button').click();
+  await editor.waitFor();
   await card.locator('.table-column-row').filter({ hasText: 'title' }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: '컬럼 삭제', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '삭제', exact: true }).click();

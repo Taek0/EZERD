@@ -1,4 +1,4 @@
-import type { ReactNode, HTMLAttributes } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type HTMLAttributes } from 'react';
 import { Accordion, Button } from '../../components/ui/index.js';
 
 /**
@@ -65,6 +65,8 @@ export function PanelRow({
   action,
   drag,
   className,
+  expanded,
+  controls,
 }: {
   title: ReactNode;
   meta?: ReactNode;
@@ -74,6 +76,8 @@ export function PanelRow({
   onSelect: () => void;
   action?: ReactNode;
   className?: string;
+  expanded?: boolean;
+  controls?: string | undefined;
   drag?: Pick<
     HTMLAttributes<HTMLLIElement>,
     'draggable' | 'onDragStart' | 'onDragOver' | 'onDrop' | 'onDragEnd' | 'onDragLeave'
@@ -84,7 +88,13 @@ export function PanelRow({
       {...drag}
       className={['panel-row', active ? 'is-active' : '', className].filter(Boolean).join(' ')}
     >
-      <Button className="panel-row-main" aria-current={active || undefined} onClick={onSelect}>
+      <Button
+        className="panel-row-main"
+        aria-current={active || undefined}
+        aria-expanded={expanded}
+        aria-controls={controls}
+        onClick={onSelect}
+      >
         {accent ? (
           <span className="panel-row-dot" style={{ background: accent }} aria-hidden="true" />
         ) : null}
@@ -97,4 +107,56 @@ export function PanelRow({
       {action}
     </li>
   );
+}
+
+/** Keep only the selected detail and its closing animation mounted. */
+export function PanelListDetail({
+  open,
+  id,
+  children,
+}: {
+  open: boolean;
+  id: string;
+  children: ReactNode;
+}) {
+  const [present, setPresent] = useState(open);
+  const ref = useRef<HTMLLIElement>(null);
+  const interruptedHeight = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    if (open) setPresent(true);
+    if (!element.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setPresent(open);
+      interruptedHeight.current = null;
+      return;
+    }
+    const height = element.getBoundingClientRect().height;
+    const from = interruptedHeight.current ?? (open ? 0 : height);
+    interruptedHeight.current = null;
+    element.style.overflow = 'hidden';
+    const animation = element.animate(
+      [
+        { height: `${from}px`, opacity: open ? 0 : 1 },
+        { height: `${open ? height : 0}px`, opacity: open ? 1 : 0 },
+      ],
+      { duration: 180, easing: 'ease-out' },
+    );
+    let finished = false;
+    animation.onfinish = () => {
+      finished = true;
+      element.style.overflow = '';
+      setPresent(open);
+    };
+    return () => {
+      if (!finished) interruptedHeight.current = element.getBoundingClientRect().height;
+      animation.cancel();
+      element.style.overflow = '';
+    };
+  }, [open]);
+  return open || present ? (
+    <li ref={ref} id={id} className="panel-list-detail" inert={!open} aria-hidden={!open}>
+      {children}
+    </li>
+  ) : null;
 }
