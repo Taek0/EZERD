@@ -1,4 +1,4 @@
-import { createPathClear } from './obstacle-queries.js';
+// Test-only routing reference frozen before obstacle query indexing.
 import type { RelationAnchor, RelationLayout } from '@ezerd/model';
 export type Point = { x: number; y: number };
 export type RelationBounds = Point & { width: number; height: number };
@@ -333,7 +333,7 @@ function outsidePoint(point: Point, boxes: RelationBounds[]): Point {
   }
   return { x: Math.min(...boxes.map((r) => r.x)) - 44, y: point.y };
 }
-export function relationGeometry(
+export function relationGeometryReference(
   a: RelationBounds,
   b: RelationBounds,
   labelWidth: number,
@@ -347,8 +347,6 @@ export function relationGeometry(
     a === b || (a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
   const raw = [a, ...(self ? [] : [b]), ...obstacles];
   const boxes = raw.map((r) => expand(r, 18));
-  const rawClear = createPathClear(raw, segmentCrossesBounds);
-  const expandedClear = createPathClear(boxes, segmentCrossesBounds);
   const source = options.sourceAnchor ? [anchorPort(a, options.sourceAnchor)] : ports(a, lane),
     target = options.targetAnchor ? [anchorPort(b, options.targetAnchor)] : ports(b, lane);
   const requested = bend && !options.waypoints ? outsidePoint(bend, boxes) : undefined;
@@ -370,15 +368,15 @@ export function relationGeometry(
   for (const [si, s] of source.entries())
     for (const [ti, t] of target.entries()) {
       if (self && same(s.tip, t.tip)) continue;
-      if (!rawClear([s.tip, s.stub]) || !rawClear([t.stub, t.tip])) continue;
+      if (!clear([s.tip, s.stub], raw) || !clear([t.stub, t.tip], raw)) continue;
       if (boxes.some((r) => inside(s.stub, r) || inside(t.stub, r))) continue;
       candidates.push({ s, t });
     }
   const consider = (s: Port, t: Port, middle: Point[]) => {
-    if (!expandedClear(middle)) return;
+    if (!clear(middle, boxes)) return;
     const points = simplify([s.tip, ...middle, t.tip]);
     // Simplification must not reverse an attachment into the table.
-    if (!rawClear(points) || retraces(points)) return;
+    if (!clear(points, raw) || retraces(points)) return;
     if (requested && !points.slice(1, -1).some((p) => same(p, requested))) return;
     const cost = score(points);
     if (cost < bestScore) {
@@ -399,7 +397,7 @@ export function relationGeometry(
         !outward({ ...t, tip: endTip }, manual.at(-2)!)
       )
         continue;
-      if (!rawClear(manual) || retraces(manual)) continue;
+      if (!clear(manual, raw) || retraces(manual)) continue;
       const cost = score(manual);
       if (cost < bestScore) {
         best = manual;
