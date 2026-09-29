@@ -1,3 +1,4 @@
+import { canonicalPostgresTypeName as canonical, postgresTypeNames } from './postgres-types.js';
 import type { Column, DesignDocument, Table, TableKey, ProjectEnum } from './document.js';
 
 export interface PostgresDiagnostic {
@@ -10,50 +11,7 @@ export interface PostgresExport {
   diagnostics: PostgresDiagnostic[];
   canExport: boolean;
 }
-const supported = new Set([
-  'uuid',
-  'integer',
-  'bigint',
-  'smallint',
-  'serial',
-  'bigserial',
-  'smallserial',
-  'boolean',
-  'text',
-  'varchar',
-  'char',
-  'numeric',
-  'real',
-  'double precision',
-  'date',
-  'time',
-  'timetz',
-  'timestamp',
-  'timestamptz',
-  'json',
-  'jsonb',
-  'bytea',
-]);
-const aliases: Record<string, string> = {
-  int: 'integer',
-  int4: 'integer',
-  int8: 'bigint',
-  int2: 'smallint',
-  bool: 'boolean',
-  decimal: 'numeric',
-  'character varying': 'varchar',
-  character: 'char',
-  float4: 'real',
-  float8: 'double precision',
-  'timestamp with time zone': 'timestamptz',
-  'timestamp without time zone': 'timestamp',
-  'time with time zone': 'timetz',
-  'time without time zone': 'time',
-};
-const canonical = (name: string) => {
-  const value = name.trim().toLowerCase().replace(/\s+/g, ' ');
-  return aliases[value] ?? value;
-};
+const supported = new Set(postgresTypeNames);
 const serials = new Set(['serial', 'bigserial', 'smallserial']);
 const integers = new Set(['integer', 'bigint', 'smallint', 'serial', 'bigserial', 'smallserial']);
 const numeric = new Set([...integers, 'numeric', 'real', 'double precision']);

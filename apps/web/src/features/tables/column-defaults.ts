@@ -1,3 +1,4 @@
+import { canonicalPostgresTypeName } from '@ezerd/model';
 import { translate } from '../../shared/i18n/index.js';
 import './translations.js';
 import type { Column, DesignDocument } from '@ezerd/model';
@@ -6,12 +7,8 @@ type Physical = Column['physical'];
 export const autoIncrementDefault = '@auto';
 const serialTypes: Record<string, string> = {
   integer: 'serial',
-  int: 'serial',
-  int4: 'serial',
   bigint: 'bigserial',
-  int8: 'bigserial',
   smallint: 'smallserial',
-  int2: 'smallserial',
 };
 const integerTypes: Record<string, string> = {
   serial: 'integer',
@@ -19,10 +16,11 @@ const integerTypes: Record<string, string> = {
   smallserial: 'smallint',
 };
 export function isAutoIncrement(type: Physical['type']) {
-  return !type.enumId && !type.isArray && !!integerTypes[type.name];
+  return !type.enumId && !type.isArray && !!integerTypes[canonicalPostgresTypeName(type.name)];
 }
 export function columnDefaultOptions(physical: Physical, enums: DesignDocument['enums'] = []) {
   const { type, nullable } = physical;
+  const name = canonicalPostgresTypeName(type.name);
   const choices = [{ value: '', label: translate('기본값 없음') }];
   const add = (value: string, label = value) => choices.push({ value, label });
   if (isAutoIncrement(type)) {
@@ -36,41 +34,25 @@ export function columnDefaultOptions(physical: Physical, enums: DesignDocument['
       add("'" + value.replaceAll("'", "''") + "'", value);
     return choices;
   }
-  if (serialTypes[type.name]) add(autoIncrementDefault, translate('자동 증가 (1부터)'));
-  if (
-    serialTypes[type.name] ||
-    ['numeric', 'decimal', 'real', 'double precision', 'float4', 'float8'].includes(type.name)
-  ) {
+  if (serialTypes[name]) add(autoIncrementDefault, translate('자동 증가 (1부터)'));
+  if (serialTypes[name] || ['numeric', 'real', 'double precision'].includes(name)) {
     add('0');
-    if (
-      !['numeric', 'decimal'].includes(type.name) ||
-      type.precision === undefined ||
-      (type.scale ?? 0) < type.precision
-    )
+    if (name !== 'numeric' || type.precision === undefined || (type.scale ?? 0) < type.precision)
       add('1');
   }
-  if (
-    [
-      'timestamp',
-      'timestamptz',
-      'timestamp with time zone',
-      'timestamp without time zone',
-    ].includes(type.name)
-  ) {
+  if (['timestamp', 'timestamptz'].includes(name)) {
     add('now()', translate('현재 시각 · now()'));
     add('CURRENT_TIMESTAMP');
   }
-  if (type.name === 'date') add('CURRENT_DATE', translate('오늘 날짜 · CURRENT_DATE'));
-  if (['time', 'timetz', 'time with time zone', 'time without time zone'].includes(type.name))
-    add('CURRENT_TIME', translate('현재 시간 · CURRENT_TIME'));
-  if (['boolean', 'bool'].includes(type.name)) {
+  if (name === 'date') add('CURRENT_DATE', translate('오늘 날짜 · CURRENT_DATE'));
+  if (['time', 'timetz'].includes(name)) add('CURRENT_TIME', translate('현재 시간 · CURRENT_TIME'));
+  if (name === 'boolean') {
     add('TRUE');
     add('FALSE');
   }
-  if (['text', 'varchar', 'char', 'character varying', 'character'].includes(type.name))
-    add("''", translate('빈 문자열'));
-  if (type.name === 'uuid') add('gen_random_uuid()', translate('UUID 자동 생성'));
-  if (['json', 'jsonb'].includes(type.name)) {
+  if (['text', 'varchar', 'char'].includes(name)) add("''", translate('빈 문자열'));
+  if (name === 'uuid') add('gen_random_uuid()', translate('UUID 자동 생성'));
+  if (['json', 'jsonb'].includes(name)) {
     add("'{}'", translate('빈 객체 {}'));
     add("'[]'", translate('빈 배열 []'));
   }
@@ -85,14 +67,22 @@ export function applyColumnDefault(
   if (value === autoIncrementDefault)
     return {
       ...physical,
-      type: { name: serialTypes[physical.type.name] ?? physical.type.name, isArray: false },
+      type: {
+        name: serialTypes[canonicalPostgresTypeName(physical.type.name)] ?? physical.type.name,
+        isArray: false,
+      },
       nullable: false,
       defaultExpression: null,
     };
   return {
     ...physical,
     ...(isAutoIncrement(physical.type)
-      ? { type: { name: integerTypes[physical.type.name]!, isArray: false } }
+      ? {
+          type: {
+            name: integerTypes[canonicalPostgresTypeName(physical.type.name)]!,
+            isArray: false,
+          },
+        }
       : {}),
     defaultExpression: value || null,
   };

@@ -1,3 +1,5 @@
+import { canonicalPostgresTypeName, postgresTypeNames } from '@ezerd/model';
+import { columnTypeOptions, columnTypeValue } from './column-type-options.js';
 import { translate, useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
 import {
@@ -66,46 +68,18 @@ import {
   PanelRow,
   PanelSection,
 } from '../../shared/editor/panel.js';
-export const physicalTypes = [
-  'uuid',
-  'integer',
-  'bigint',
-  'smallint',
-  'serial',
-  'bigserial',
-  'smallserial',
-  'boolean',
-  'text',
-  'varchar',
-  'char',
-  'numeric',
-  'decimal',
-  'real',
-  'double precision',
-  'date',
-  'time',
-  'timetz',
-  'timestamp',
-  'timestamptz',
-  'json',
-  'jsonb',
-  'bytea',
-];
+export const physicalTypes = postgresTypeNames;
 export function typeParameterEnabled(
   type: Column['physical']['type'],
   parameter: 'length' | 'precision' | 'scale',
 ) {
   if (type.enumId) return false;
-  if (parameter === 'length')
-    return ['varchar', 'char', 'character varying', 'character', 'bit', 'bit varying'].includes(
-      type.name,
-    );
-  if (parameter === 'scale')
-    return ['numeric', 'decimal'].includes(type.name) && type.precision !== undefined;
-  return ['numeric', 'decimal', 'time', 'timetz', 'timestamp', 'timestamptz', 'interval'].includes(
-    type.name,
-  );
+  const name = canonicalPostgresTypeName(type.name);
+  if (parameter === 'length') return ['varchar', 'char', 'bit', 'bit varying'].includes(name);
+  if (parameter === 'scale') return name === 'numeric' && type.precision !== undefined;
+  return ['numeric', 'time', 'timetz', 'timestamp', 'timestamptz', 'interval'].includes(name);
 }
+
 export function canSaveKey(key: TableKey, columns: Column[], keys: TableKey[]) {
   return (
     key.columnIds.length > 0 &&
@@ -518,32 +492,10 @@ export function TableNodeContent({
                   <InlineType
                     display={columnTypeDisplay(c.physical.type, doc.enums)}
                     label={translate('{x0} 타입', { x0: columnName(c) })}
-                    value={
-                      c.physical.type.enumId
-                        ? `enum:${c.physical.type.enumId}`
-                        : c.physical.type.name
-                    }
-                    options={[
-                      ...[...new Set([...physicalTypes, c.physical.type.name])].map((value) => ({
-                        value,
-                        label:
-                          value === c.physical.type.name && !c.physical.type.enumId
-                            ? columnTypeDisplay(c.physical.type, doc.enums)
-                            : value.toUpperCase(),
-                      })),
-                      ...(doc.enums ?? []).map((type) => ({
-                        value: `enum:${type.id}`,
-                        label: type.name.toUpperCase(),
-                      })),
-                    ]}
+                    value={columnTypeValue(c.physical.type)}
+                    options={columnTypeOptions(c.physical.type, doc.enums)}
                     onValueChange={(value) => {
-                      if (
-                        value ===
-                        (c.physical.type.enumId
-                          ? `enum:${c.physical.type.enumId}`
-                          : c.physical.type.name)
-                      )
-                        return;
+                      if (value === columnTypeValue(c.physical.type)) return;
                       onChange?.(
                         patch({
                           type: {
@@ -1132,13 +1084,9 @@ function ColumnEditor({
           {translate('타입')}
           <SearchType
             label={translate('타입')}
-            value={c.physical.type.enumId ? `enum:${c.physical.type.enumId}` : c.physical.type.name}
+            value={columnTypeValue(c.physical.type)}
             onValueChange={(value) => {
-              if (
-                value ===
-                (c.physical.type.enumId ? `enum:${c.physical.type.enumId}` : c.physical.type.name)
-              )
-                return;
+              if (value === columnTypeValue(c.physical.type)) return;
               const enumType = doc.enums?.find((item) => `enum:${item.id}` === value);
               physical({
                 type: {
@@ -1150,24 +1098,7 @@ function ColumnEditor({
                 },
               });
             }}
-            options={[
-              ...[
-                ...new Set([
-                  ...physicalTypes,
-                  ...(!c.physical.type.enumId ? [c.physical.type.name] : []),
-                ]),
-              ].map((value) => ({
-                value,
-                label:
-                  value === c.physical.type.name && !c.physical.type.enumId
-                    ? columnTypeDisplay(c.physical.type, doc.enums)
-                    : value.toUpperCase(),
-              })),
-              ...(doc.enums ?? []).map((item) => ({
-                value: `enum:${item.id}`,
-                label: item.name.toUpperCase() + ' · ENUM',
-              })),
-            ]}
+            options={columnTypeOptions(c.physical.type, doc.enums)}
           />
         </label>
       </div>
@@ -1188,14 +1119,16 @@ function ColumnEditor({
               min={
                 key === 'scale'
                   ? -1000
-                  : key === 'precision' && !['numeric', 'decimal'].includes(c.physical.type.name)
+                  : key === 'precision' &&
+                      canonicalPostgresTypeName(c.physical.type.name) !== 'numeric'
                     ? 0
                     : 1
               }
               max={
                 key === 'length'
                   ? 10485760
-                  : key === 'precision' && !['numeric', 'decimal'].includes(c.physical.type.name)
+                  : key === 'precision' &&
+                      canonicalPostgresTypeName(c.physical.type.name) !== 'numeric'
                     ? 6
                     : 1000
               }
@@ -1209,14 +1142,14 @@ function ColumnEditor({
                       (key === 'scale'
                         ? -1000
                         : key === 'precision' &&
-                            !['numeric', 'decimal'].includes(c.physical.type.name)
+                            canonicalPostgresTypeName(c.physical.type.name) !== 'numeric'
                           ? 0
                           : 1) &&
                     value <=
                       (key === 'length'
                         ? 10485760
                         : key === 'precision' &&
-                            !['numeric', 'decimal'].includes(c.physical.type.name)
+                            canonicalPostgresTypeName(c.physical.type.name) !== 'numeric'
                           ? 6
                           : 1000))
                 )
@@ -1685,13 +1618,7 @@ function ColumnCreationForm({
               setType(value);
               setDefaultExpression(null);
             }}
-            options={[
-              ...physicalTypes.map((value) => ({ value, label: value.toUpperCase() })),
-              ...(doc.enums ?? []).map((e) => ({
-                value: `enum:${e.id}`,
-                label: e.name.toUpperCase(),
-              })),
-            ]}
+            options={columnTypeOptions(undefined, doc.enums)}
           />
         </label>
         <label>

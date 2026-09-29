@@ -75,6 +75,8 @@ function example() {
 describe('table editor rendered controls', () => {
   it.each([
     [{ name: 'varchar', length: 32, isArray: false }, 'VARCHAR(32)'],
+    [{ name: 'timestamp with time zone', precision: 3, isArray: true }, 'TIMESTAMPTZ(3)[]'],
+    [{ name: 'decimal', precision: 10, scale: 2, isArray: false }, 'NUMERIC(10,2)'],
     [{ name: 'numeric', precision: 10, scale: 2, isArray: true }, 'NUMERIC(10,2)[]'],
     [{ name: 'old', enumId: 'status', isArray: true }, '주문_상태[]'],
   ] as const)('provides the complete saved type for PNG export: %s', (type, display) => {
