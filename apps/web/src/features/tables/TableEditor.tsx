@@ -509,6 +509,7 @@ export function TableNodeContent({
               {cell(c.physical.name, translate('컬럼명'), (name) => patch({ name }))}
               <span
                 className="table-type-label table-direct-control"
+                data-export-text={columnTypeDisplay(c.physical.type, doc.enums)}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}

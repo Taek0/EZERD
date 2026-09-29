@@ -73,6 +73,31 @@ function example() {
   return doc;
 }
 describe('table editor rendered controls', () => {
+  it.each([
+    [{ name: 'varchar', length: 32, isArray: false }, 'VARCHAR(32)'],
+    [{ name: 'numeric', precision: 10, scale: 2, isArray: true }, 'NUMERIC(10,2)[]'],
+    [{ name: 'old', enumId: 'status', isArray: true }, '주문_상태[]'],
+  ] as const)('provides the complete saved type for PNG export: %s', (type, display) => {
+    const doc = example();
+    doc.columns![0]!.scope = 'physical';
+    doc.columns![0]!.physical.type = type;
+    doc.enums = [{ id: 'status', schema: 'public', name: '주문_상태', values: ['완료'] }];
+    for (const editable of [true, false]) {
+      const html = renderToStaticMarkup(
+        createElement(ConfirmProvider, {
+          children: createElement(TableNodeContent, {
+            document: doc,
+            tableId: 't',
+            viewMode: 'physical',
+            onChange: () => {},
+            readOnly: !editable,
+          }),
+        }),
+      );
+      expect(html).toContain(`data-export-text="${display}"`);
+    }
+  });
+
   it('switches editor labels while preserving schema names and SQL defaults', () => {
     const doc = example();
     doc.tables![0]!.physical.name = '결제_테이블';
