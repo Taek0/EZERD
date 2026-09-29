@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { designDocumentSchema } from './workspace.js';
+import {
+  rawDesignDocumentSchema,
+  rawStoredDesignDocumentSchema,
+  storedDesignDocumentSchema,
+} from './workspace.js';
 
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
@@ -44,8 +48,8 @@ export const syncOperationInputSchema = z.strictObject({
       (changes) => new Set(changes.map((change) => change.path)).size === changes.length,
       '한 작업에 같은 변경 경로가 중복되었습니다.',
     ),
-  baselineDocument: designDocumentSchema,
-  document: designDocumentSchema,
+  baselineDocument: rawStoredDesignDocumentSchema,
+  document: rawDesignDocumentSchema,
 });
 
 export const syncActorSchema = z.strictObject({
@@ -75,7 +79,7 @@ export const syncOperationResultSchema = z.strictObject({
   changedPaths: z.array(syncPathSchema).max(1000),
   createdAt: z.iso.datetime(),
   nextBaseline: syncBaselineSchema,
-  document: designDocumentSchema.optional(),
+  document: storedDesignDocumentSchema.optional(),
 });
 
 export const syncEventSchema = z.strictObject({
@@ -89,7 +93,7 @@ export const syncEventSchema = z.strictObject({
   changedPaths: z.array(syncPathSchema).max(1000),
   createdAt: z.iso.datetime(),
   nextBaseline: syncBaselineSchema,
-  document: designDocumentSchema.optional(),
+  document: storedDesignDocumentSchema.optional(),
 });
 
 export const syncHistoryEntrySchema = syncEventSchema.extend({

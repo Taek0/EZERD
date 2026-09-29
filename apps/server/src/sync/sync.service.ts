@@ -26,6 +26,7 @@ import {
   findFieldVersionConflicts,
   findInverseConflicts,
   inverseChanges,
+  normalizeDocumentPhysicalTypes,
   requestFingerprint,
   sharedDocument,
 } from '@ezerd/model';
@@ -190,8 +191,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (project.syncSequence >= MAX_SEQUENCE)
         throw new ConflictException('프로젝트 변경 순서 한도를 초과했습니다.');
 
-      const derived = deriveOperationChanges(input.baselineDocument, input.document);
-      const dependencyPaths = deriveStructuralDependencyPaths(input.document, derived);
+      const rawDerived = deriveOperationChanges(input.baselineDocument, input.document);
       const claimed: DocumentChange[] = input.changes.map((change) => ({
         path: change.path,
         before: change.before,
@@ -199,8 +199,14 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         ...(change.beforeExists !== undefined ? { beforeExists: change.beforeExists } : {}),
         ...(change.afterExists !== undefined ? { afterExists: change.afterExists } : {}),
       }));
-      if (!claimedChangesMatch(derived, claimed))
+      if (!claimedChangesMatch(rawDerived, claimed))
         throw new BadRequestException('문서와 변경 목록이 일치하지 않습니다.');
+      // Verify the caller's raw claim before canonicalizing aliases. Normalization must
+      // neither disguise a forged claim nor add unrelated type paths to conflict tracking.
+      const baselineDocument = normalizeDocumentPhysicalTypes(input.baselineDocument);
+      const document = normalizeDocumentPhysicalTypes(input.document);
+      const derived = deriveOperationChanges(baselineDocument, document);
+      const dependencyPaths = deriveStructuralDependencyPaths(document, derived);
 
       const versionRows = await tx
         .select({ path: syncFieldVersions.path, sequence: syncFieldVersions.sequence })
@@ -235,8 +241,8 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           baseline.lastSuccessfulSyncAt.getTime() !== issuedAt.getTime() ||
           baseline.lastSequence !== input.baseSequence ||
           input.baseSequence > project.syncSequence ||
-          requestFingerprint(sharedDocument(baseline.document)) !==
-            requestFingerprint(input.baselineDocument) ||
+          requestFingerprint(sharedDocument(normalizeDocumentPhysicalTypes(baseline.document))) !==
+            requestFingerprint(baselineDocument) ||
           Date.now() - baseline.lastSuccessfulSyncAt.getTime() > RECONNECT_MAX_AGE_MS)
       ) {
         reason = '서버가 발급한 동기화 기준이 만료되었거나 일치하지 않습니다.';
@@ -264,7 +270,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       let acceptedChanges: DocumentChange[] = [];
       if (!reason) {
         try {
-          nextDocument = applyChanges(project.document, derived);
+          nextDocument = applyChanges(normalizeDocumentPhysicalTypes(project.document), derived);
         } catch {
           reason = '변경 대상이 삭제되었거나 현재 문서에 없습니다.';
         }
@@ -274,7 +280,10 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         if (!valid.success) reason = '변경 후 문서 구조가 유효하지 않습니다.';
         else {
           nextDocument = valid.data;
-          acceptedChanges = deriveOperationChanges(project.document, nextDocument);
+          acceptedChanges = deriveOperationChanges(
+            normalizeDocumentPhysicalTypes(project.document),
+            nextDocument,
+          );
         }
       }
 
@@ -453,7 +462,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           sequence: project.sequence,
           events: rows.map(eventFrom),
           resetRequired,
-          ...(resetRequired ? { document: project.document } : {}),
+          ...(resetRequired ? { document: normalizeDocumentPhysicalTypes(project.document) } : {}),
         };
       },
       { isolationLevel: 'repeatable read', accessMode: 'read only' },
@@ -541,7 +550,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         );
       const now = new Date();
       const baselineId = randomUUID();
-      const document = sharedDocument(project.document);
+      const document = sharedDocument(normalizeDocumentPhysicalTypes(project.document));
       await tx.insert(syncClientBaselines).values({
         baselineId,
         projectId,
@@ -743,8 +752,10 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       candidate = applyChanges(baseline.document, filtered);
       changes.splice(0, changes.length, ...filtered);
     }
-    if (!designDocumentSchema.safeParse(candidate).success)
+    const parsedCandidate = designDocumentSchema.safeParse(candidate);
+    if (!parsedCandidate.success)
       throw new ConflictException('현재 문서 구조와 호환되는 범위를 복원할 수 없습니다.');
+    candidate = parsedCandidate.data;
     const restoredIds = new Set(
       changes.map((change) => String((change.after as { id?: unknown })?.id ?? '')).filter(Boolean),
     );

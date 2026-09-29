@@ -23,6 +23,43 @@ const operation = {
 };
 
 describe('sync contracts', () => {
+  it('preserves alias spellings for claim verification and accepts repair of legacy modifiers', () => {
+    const column = {
+      id: 'c',
+      tableId: 't',
+      scope: 'both',
+      logical: { name: '', definition: '', semanticType: '', required: false },
+      physical: {
+        name: 'c',
+        type: { name: ' FLOAT4 ', precision: 4, isArray: false },
+        nullable: true,
+        defaultExpression: null,
+        comment: '',
+      },
+      customProperties: { common: {}, logical: {}, physical: {} },
+    };
+    const before = { ...document, columns: [column] };
+    const after = {
+      ...document,
+      columns: [
+        { ...column, physical: { ...column.physical, type: { name: ' FLOAT4 ', isArray: false } } },
+      ],
+    };
+    const input = {
+      ...operation,
+      baselineDocument: before,
+      document: after,
+      changes: [
+        {
+          path: '/columns/c/physical/type',
+          before: column.physical.type,
+          after: after.columns[0]!.physical.type,
+        },
+      ],
+    };
+    expect(syncOperationInputSchema.parse(input)).toEqual(input);
+    expect(syncOperationInputSchema.safeParse({ ...input, document: before }).success).toBe(false);
+  });
   it('accepts a complete operation without a client-supplied actor', () => {
     expect(syncOperationInputSchema.parse(operation)).toEqual(operation);
     expect(

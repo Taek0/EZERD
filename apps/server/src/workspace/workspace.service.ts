@@ -10,7 +10,7 @@ import {
 import { and, asc, desc, eq, gt, ilike, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { projectTransferSchema, type ProjectTransfer } from '@ezerd/contracts';
-import { diagnoseDocument } from '@ezerd/model';
+import { diagnoseDocument, normalizeDocumentPhysicalTypes } from '@ezerd/model';
 import type {
   createProjectSchema,
   deleteProjectSchema,
@@ -146,7 +146,7 @@ export class WorkspaceService {
     return operation(async () => {
       const [row] = await this.database.db.select().from(projects).where(eq(projects.id, id));
       if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      return { project: project(row), document: row.document };
+      return { project: project(row), document: normalizeDocumentPhysicalTypes(row.document) };
     });
   }
 
@@ -154,7 +154,11 @@ export class WorkspaceService {
     return operation(async () => {
       const [row] = await this.database.db.select().from(projects).where(eq(projects.id, id));
       if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      return { project: project(row), document: row.document, syncSequence: row.syncSequence };
+      return {
+        project: project(row),
+        document: normalizeDocumentPhysicalTypes(row.document),
+        syncSequence: row.syncSequence,
+      };
     });
   }
 

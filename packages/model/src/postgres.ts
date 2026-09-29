@@ -1,4 +1,9 @@
-import { canonicalPostgresTypeName as canonical, postgresTypeNames } from './postgres-types.js';
+import {
+  canonicalPostgresTypeName as canonical,
+  normalizePhysicalType,
+  validatePhysicalType,
+  postgresTypeNames,
+} from './postgres-types.js';
 import type { Column, DesignDocument, Table, TableKey, ProjectEnum } from './document.js';
 
 export interface PostgresDiagnostic {
@@ -15,7 +20,7 @@ const supported = new Set(postgresTypeNames);
 const serials = new Set(['serial', 'bigserial', 'smallserial']);
 const integers = new Set(['integer', 'bigint', 'smallint', 'serial', 'bigserial', 'smallserial']);
 const numeric = new Set([...integers, 'numeric', 'real', 'double precision']);
-const temporal = new Set(['time', 'timetz', 'timestamp', 'timestamptz']);
+
 const quote = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 const literal = (value: string) =>
   "E'" + value.replaceAll('\\', '\\\\').replaceAll("'", "''") + "'";
@@ -28,17 +33,12 @@ function bytes(value: string) {
   return count;
 }
 function typeSql(column: Column, enums: Map<string, ProjectEnum>): string | null {
-  const value = column.physical.type,
-    name = canonical(value.name);
+  const value = normalizePhysicalType(column.physical.type),
+    name = value.name;
+  if (validatePhysicalType(value).length) return null;
   if (value.enumId !== undefined) {
     const definition = enums.get(value.enumId);
-    if (
-      !definition ||
-      value.length !== undefined ||
-      value.precision !== undefined ||
-      value.scale !== undefined
-    )
-      return null;
+    if (!definition) return null;
     return (
       quote(definition.schema || 'public') +
       '.' +
@@ -47,32 +47,6 @@ function typeSql(column: Column, enums: Map<string, ProjectEnum>): string | null
     );
   }
   if (!supported.has(name)) return null;
-  if (value.isArray && serials.has(name)) return null;
-  if (
-    value.length !== undefined &&
-    (!['varchar', 'char'].includes(name) ||
-      !Number.isInteger(value.length) ||
-      value.length < 1 ||
-      value.length > 10485760)
-  )
-    return null;
-  if (
-    value.precision !== undefined &&
-    (!['numeric', ...temporal].includes(name) ||
-      !Number.isInteger(value.precision) ||
-      value.precision < (name === 'numeric' ? 1 : 0) ||
-      value.precision > (name === 'numeric' ? 1000 : 6))
-  )
-    return null;
-  if (
-    value.scale !== undefined &&
-    (name !== 'numeric' ||
-      value.precision === undefined ||
-      !Number.isInteger(value.scale) ||
-      value.scale < -1000 ||
-      value.scale > 1000)
-  )
-    return null;
   let parameters = '';
   if (value.length !== undefined) parameters = `(${value.length})`;
   if (value.precision !== undefined)

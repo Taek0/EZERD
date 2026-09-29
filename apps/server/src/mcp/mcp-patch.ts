@@ -4,7 +4,7 @@ import {
   domainRelationSchema,
   domainSchema,
   noteSchema,
-  physicalTypeSchema,
+  physicalTypePatchSchema,
   projectEnumSchema,
   tableKeySchema,
   tableRelationSchema,
@@ -64,7 +64,7 @@ const columnPatch = nonEmpty(
     physical: columnSchema.shape.physical
       .omit({ type: true })
       .partial()
-      .extend({ type: physicalTypeSchema.partial().optional() })
+      .extend({ type: physicalTypePatchSchema.optional() })
       .optional(),
     customProperties: customPropertiesPatch.optional(),
   }),

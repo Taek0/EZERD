@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizePhysicalType, validatePhysicalType } from '@ezerd/model';
 const id = z
   .string()
   .trim()
@@ -27,7 +28,7 @@ export const tableSchema = z.strictObject({
   physical: z.strictObject({ name, schema: name, comment: description }),
   customProperties: customPropertiesSchema,
 });
-export const physicalTypeSchema = z.strictObject({
+export const physicalTypeInputSchema = z.strictObject({
   name,
   enumId: id.optional(),
   length: z.number().int().min(1).max(10485760).optional(),
@@ -35,6 +36,14 @@ export const physicalTypeSchema = z.strictObject({
   scale: z.number().int().min(-1000).max(1000).optional(),
   isArray: z.boolean(),
 });
+export const physicalTypePatchSchema = physicalTypeInputSchema.partial();
+export const storedPhysicalTypeSchema = physicalTypeInputSchema.overwrite(normalizePhysicalType);
+export const rawPhysicalTypeSchema = physicalTypeInputSchema.superRefine((value, ctx) => {
+  for (const issue of validatePhysicalType(value)) {
+    ctx.addIssue({ code: 'custom', path: [issue.path], message: issue.message });
+  }
+});
+export const physicalTypeSchema = rawPhysicalTypeSchema.overwrite(normalizePhysicalType);
 export const columnSchema = z.strictObject({
   id,
   tableId: id,
@@ -53,6 +62,15 @@ export const columnSchema = z.strictObject({
     comment: description,
   }),
   customProperties: customPropertiesSchema,
+});
+export const storedColumnSchema = columnSchema.extend({
+  physical: columnSchema.shape.physical.extend({ type: storedPhysicalTypeSchema }),
+});
+export const rawStoredColumnSchema = columnSchema.extend({
+  physical: columnSchema.shape.physical.extend({ type: physicalTypeInputSchema }),
+});
+export const rawColumnSchema = columnSchema.extend({
+  physical: columnSchema.shape.physical.extend({ type: rawPhysicalTypeSchema }),
 });
 export const tableKeySchema = z.strictObject({
   id,

@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, Inject, Injectable } from '@nes
 import { z } from 'zod';
 import {
   columnSchema,
+  designDocumentSchema,
   domainRelationSchema,
   domainSchema,
   noteSchema,
@@ -126,6 +127,7 @@ export class McpDocumentService {
     let candidate = structuredClone(baseline.document);
     try {
       for (const command of input.commands) candidate = this.applyCommand(candidate, command);
+      candidate = designDocumentSchema.parse(candidate);
     } catch (error) {
       throw new BadRequestException(
         error instanceof Error ? error.message : '문서 변경 명령을 적용할 수 없습니다.',
