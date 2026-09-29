@@ -6,4 +6,5 @@
 - 폰트 서브셋 판정은 변환된 복제본의 텍스트를 사용하여 편집 중 화면에 없던 저장된 타입 이름도 포함한다.
 - 검증: 타입 셀 SSR 및 DOM 대역 회귀 테스트를 포함한 2개 파일, 22개 테스트 통과. 웹 TypeScript 검사 통과. 변경 코드 Prettier 적용 완료.
 - 도구 검증은 `node node_modules/vitest/vitest.mjs run apps/web/src/features/canvas/canvas-export.test.ts apps/web/src/features/tables/TableEditor.test.ts`, `node node_modules/typescript/bin/tsc -p apps/web/tsconfig.json --noEmit`로 수행했다. 최초 `pnpm exec vitest` 호출은 실행 파일 연결 문제로 실패하여 같은 설치본의 진입점을 직접 실행했다.
-- 전체 `pnpm format:check`의 최초 실행에서는 브라우저 검증용 임시 파일 `apps/web/__png-type-qa.html`만 포맷 경고가 발생했다. 최종 검증에서는 임시 파일 정리 후 다시 확인한다.
+- 전체 `pnpm format:check`는 임시 브라우저 검증 파일 정리 후 통과했다.
+- 브라우저의 실제 테이블 컴포넌트에서 UUID, VARCHAR(32), NUMERIC(10,2), TEXT[] 표시를 확인했다. 다운로드 이벤트가 제한 시간 안에 수신되지 않아 최종 PNG 파일의 시각 검증은 완료하지 못했다. 내보내기 복제본의 타입 보존은 회귀 테스트로 확인했다. 임시 QA 파일과 개발 서버는 정리했다.
