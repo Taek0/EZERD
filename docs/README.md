@@ -47,6 +47,7 @@
 | --- | --- |
 | [문서 재분류 계획](./etc/2026-09-30-Docs-ClassificationPlan.md) / [결과·이동 목록](./etc/2026-09-30-Docs-ClassificationResult.md) | 분류 기준, 이동한 문서와 검증 |
 | [README 현행화](./etc/2026-09-30-Documentation-ReadmeRefreshResult.md) | 제품 소개 문서 정리 |
+| [공개 저장소 보안·main 관리 목록](./etc/2026-10-01-Repository-GitHubSettingsResult.md) | GitHub 설정 순서, 내부 주소 정리와 MIT 적용 기록 |
 | [Git 동기화](./etc/2026-09-21-Git-RebasePushResult.md) | 원격 main 반영·문서 커밋 게시 |
 | [Docker 장애 조사](./etc/2026-09-14-Docker-RootCauseResult.md) / [pnpm 경로 진단](./etc/2026-09-15-Toolchain-PnpmDiagnosisResult.md) | 로컬 개발 도구의 장애·환경 조사 |
 | [Notion 커버 제작](./etc/2026-09-15-Brand-NotionCoverResult.md) | 외부 소개용 이미지 제작 |
