@@ -9,7 +9,7 @@ import {
   projectEnumSchema,
 } from './relational.js';
 import { z } from 'zod';
-import { TABLES_VIEW_ID } from '@ezerd/model';
+import { TABLES_VIEW_ID, databaseKinds } from '@ezerd/model';
 export const MAX_DOCUMENT_BYTES = 1_500_000;
 function withinDocumentBudget(doc: unknown): boolean {
   let bytes = 0;
@@ -208,7 +208,7 @@ export const userSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
-export const databaseKindSchema = z.enum(['postgresql', 'mysql', 'sqlite']);
+export const databaseKindSchema = z.enum(databaseKinds);
 export type DatabaseKind = z.infer<typeof databaseKindSchema>;
 export const createProjectSchema = z.strictObject({
   name: z.string().trim().max(120).optional(),
