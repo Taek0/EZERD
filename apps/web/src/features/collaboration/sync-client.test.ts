@@ -1708,3 +1708,137 @@ describe('sync client personal state', () => {
     }
   });
 });
+
+it('stops websocket synchronization before notifying a workspace access change', async () => {
+  const originalLocation = globalThis.location;
+  Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: { protocol: 'http:', host: 'test.local' },
+  });
+  const socket = socketStub();
+  const close = vi.fn();
+  socket.close = close;
+  const changed = vi.fn(() => expect(close).toHaveBeenCalled());
+  const runtime = new ProjectSyncRuntime({
+    projectId: ids.project,
+    userId: ids.user,
+    clientId: ids.client,
+    session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt },
+    initialDocument: createEmptyDocument(),
+    onChange: () => {},
+    onWorkspaceAccessChange: changed,
+    socketFactory: () => socket,
+    store: new MemorySyncOperationStore(),
+    fetcher: (async (input) =>
+      String(input).endsWith('/sync-baseline')
+        ? json({
+            baselineId: ids.baseline,
+            sequence: 0,
+            baselineIssuedAt: issuedAt,
+            document: createEmptyDocument(),
+          })
+        : json([])) as typeof fetch,
+  });
+  try {
+    await runtime.start();
+    socket.onmessage?.call(
+      socket,
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'workspace-access-changed', workspaceId: 'space' }),
+      }),
+    );
+    expect(changed).toHaveBeenCalledWith('space');
+    socket.onmessage?.call(
+      socket,
+      new MessageEvent('message', {
+        data: JSON.stringify({ type: 'workspace-access-changed', workspaceId: 'space' }),
+      }),
+    );
+    expect(changed).toHaveBeenCalledTimes(1);
+  } finally {
+    runtime.stop();
+    Object.defineProperty(globalThis, 'location', { configurable: true, value: originalLocation });
+  }
+});
+
+it.each([false, true])(
+  'keeps shared writes queued with viewer access; personal read-only=%s',
+  async (personalReadOnly) => {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', {
+      configurable: true,
+      value: { protocol: 'http:', host: 'test.local' },
+    });
+    const store = new MemorySyncOperationStore<SyncOperationInput>();
+    await store.put({
+      ...operationItem(),
+      state: 'queued',
+      createdAt: Date.now(),
+      baselineAt: Date.parse(issuedAt),
+    });
+    const writes: string[] = [];
+    const reads: string[] = [];
+    let visible = createEmptyDocument();
+    const personal = { views: [], notes: [], nodes: [], viewports: [], relations: [] };
+    const runtime = new ProjectSyncRuntime({
+      projectId: ids.project,
+      userId: ids.user,
+      clientId: ids.client,
+      session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt },
+      initialDocument: createEmptyDocument(),
+      onChange: (snapshot) => {
+        visible = snapshot.document;
+      },
+      sharedReadOnly: true,
+      personalReadOnly,
+      socketFactory: socketStub,
+      store,
+      fetcher: (async (input, init) => {
+        const path = String(input);
+        if (init?.method && init.method !== 'GET') writes.push(path);
+        else reads.push(path);
+        if (path.endsWith('/sync-baseline'))
+          return json({
+            baselineId: ids.baseline,
+            sequence: 0,
+            baselineIssuedAt: issuedAt,
+            document: createEmptyDocument(),
+          });
+        if (path.endsWith('/personal-state'))
+          return json({
+            version: init?.method === 'PUT' ? 1 : 0,
+            projectVersion: 0,
+            syncSequence: 0,
+            state: init?.method === 'PUT' ? JSON.parse(String(init.body)).state : personal,
+          });
+        return json([]);
+      }) as typeof fetch,
+    });
+    try {
+      await runtime.start();
+      expect(reads.some((path) => path.includes('/events?since='))).toBe(true);
+      const personalEdit = structuredClone(visible);
+      personalEdit.layout.viewports = [{ viewId: 'overview', x: 12, y: 24, zoom: 1 }];
+      await runtime.edit(personalEdit);
+      if (!personalReadOnly)
+        await vi.waitFor(() =>
+          expect(writes.filter((path) => path.endsWith('/personal-state'))).toHaveLength(1),
+        );
+      const sharedEdit = createEmptyDocument();
+      sharedEdit.domains = [{ id: 'forbidden', name: 'Forbidden', description: '' }];
+      await runtime.edit(sharedEdit);
+      expect(writes.filter((path) => path.endsWith('/operations'))).toHaveLength(0);
+      if (personalReadOnly) {
+        expect(writes.filter((path) => path.endsWith('/personal-state'))).toHaveLength(0);
+        expect(writes.filter((path) => path.endsWith('/sync-baseline'))).toHaveLength(0);
+      }
+      expect(await store.list(`${ids.user}:${ids.project}`)).toHaveLength(1);
+    } finally {
+      runtime.stop();
+      Object.defineProperty(globalThis, 'location', {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  },
+);

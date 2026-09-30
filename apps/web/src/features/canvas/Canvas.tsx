@@ -30,6 +30,7 @@ import {
   type SetStateAction,
 } from 'react';
 import {
+  diffSharedDocument,
   type DesignDocument,
   type Table,
   upsertTableRelation,
@@ -110,12 +111,14 @@ type Props = {
   onChange: (document: DesignDocument) => void;
   onPreviewChange?: (document: DesignDocument) => void;
   readOnly: boolean;
+  personalReadOnly?: boolean;
 };
 export function Canvas({
   document: doc,
   onChange,
   onPreviewChange,
   readOnly,
+  personalReadOnly = readOnly,
   onContextChange,
   focusTarget,
   pins,
@@ -299,7 +302,8 @@ export function Canvas({
     };
   }, []);
   const activeCombined = doc.views?.find((v) => v.id === viewId);
-  const layoutPolicy = syncLayoutPolicy(readOnly, !!activeCombined);
+  const layoutPolicy = syncLayoutPolicy(readOnly, !!activeCombined, personalReadOnly);
+  const noteReadOnly = activeCombined ? personalReadOnly : readOnly;
   // Camera state does not change document-space geometry. Any new document invalidates it.
   const nodes = useMemo(
     () =>
@@ -503,10 +507,11 @@ export function Canvas({
     change({ ...doc, layout: arranged.layout });
   }
   function change(next: DesignDocument) {
-    if (!readOnly) onChange(next);
+    if (!readOnly || (!personalReadOnly && diffSharedDocument(doc, next).length === 0))
+      onChange(next);
   }
   function preview(next: DesignDocument) {
-    if (!readOnly) {
+    if (!readOnly || (!personalReadOnly && diffSharedDocument(doc, next).length === 0)) {
       live.current = next;
       (onPreviewChange ?? onChange)(next);
     }
@@ -576,7 +581,7 @@ export function Canvas({
     setMenu(null);
   }
   function newNote() {
-    if (readOnly) return;
+    if (noteReadOnly) return;
     const id = newId();
     change(addNote(doc, { id, viewId, text: '업무 설명을 입력하세요.' }, position()));
     pick(id);
@@ -963,7 +968,7 @@ export function Canvas({
               {tr('＋ 테이블')}
             </Button>
           )}
-          <Button disabled={readOnly} onClick={newNote}>
+          <Button disabled={noteReadOnly} onClick={newNote}>
             {tr('＋ 메모')}
           </Button>
         </div>
@@ -1052,7 +1057,7 @@ export function Canvas({
                   </div>
                   <div className="actions">
                     <Button
-                      disabled={readOnly || !selectedDomains.length}
+                      disabled={personalReadOnly || !selectedDomains.length}
                       onClick={() => {
                         const result = applyDomainSelection(
                           doc,
@@ -1547,7 +1552,7 @@ export function Canvas({
                       memo
                       name={tr('메모')}
                       value={n?.text ?? ''}
-                      readOnly={readOnly}
+                      readOnly={noteReadOnly}
                       onCommit={(text) => n && change(updateNote(doc, n.id, text))}
                     />
                   )}
@@ -2106,7 +2111,7 @@ export function Canvas({
                       <DomainColorPicker
                         label={tr('메모 색상')}
                         value={note?.color ?? '#fff3c4'}
-                        disabled={readOnly}
+                        disabled={noteReadOnly}
                         onChange={(color) => note && change(updateNote(doc, note.id, { color }))}
                       />
                       <label>
@@ -2114,7 +2119,7 @@ export function Canvas({
                         <Textarea
                           maxLength={20000}
                           value={note?.text ?? ''}
-                          disabled={readOnly}
+                          disabled={noteReadOnly}
                           onChange={(e) => note && change(updateNote(doc, note.id, e.target.value))}
                         />
                       </label>
@@ -2163,7 +2168,7 @@ export function Canvas({
                           }
                           max={key === 'x' || key === 'y' ? 10000000 : 10000}
                           value={Math.round(selectedNode[key])}
-                          disabled={readOnly}
+                          disabled={domain ? readOnly : noteReadOnly}
                           onChange={(e) => {
                             const number = Number(e.target.value);
                             if (
@@ -2181,7 +2186,7 @@ export function Canvas({
                   <Button
                     variant="danger"
                     className="danger"
-                    disabled={readOnly}
+                    disabled={domain ? readOnly : noteReadOnly}
                     onClick={async () => {
                       if (
                         !(await confirm({

@@ -18,7 +18,9 @@ it('renders auxiliary panels in English and switches back to Korean', () => {
     'No unapplied edits.',
   );
   expect(
-    renderToStaticMarkup(createElement(ProjectImportButton, { onImported: () => {} })),
+    renderToStaticMarkup(
+      createElement(ProjectImportButton, { workspaceId: 'workspace', onImported: () => {} }),
+    ),
   ).toContain('Import project');
   expect(renderToStaticMarkup(createElement(McpConnectionPanel, { onClose: () => {} }))).toContain(
     'MCP connection settings',
@@ -34,7 +36,9 @@ it('renders auxiliary panels in English and switches back to Korean', () => {
   ).toContain('Change user color');
   setLocale('ko');
   expect(
-    renderToStaticMarkup(createElement(ProjectImportButton, { onImported: () => {} })),
+    renderToStaticMarkup(
+      createElement(ProjectImportButton, { workspaceId: 'workspace', onImported: () => {} }),
+    ),
   ).toContain('프로젝트 가져오기');
 });
 

@@ -1,0 +1,48 @@
+import { registerTranslations } from '../../shared/i18n/index.js';
+
+registerTranslations({
+  '이름 저장': 'Save name',
+  워크스페이스: 'Workspace',
+  '워크스페이스 선택': 'Select workspace',
+  '워크스페이스 이름': 'Workspace name',
+  '워크스페이스 만들기': 'Create workspace',
+  '새 워크스페이스': 'New workspace',
+  '멤버 및 초대': 'Members and invitations',
+  '받은 초대': 'Invitation inbox',
+  '초대를 받으면 이곳에서 수락할 수 있습니다.': 'Accept workspace invitations here.',
+  '첫 워크스페이스를 만들어 설계를 시작하세요.': 'Create your first workspace to start designing.',
+  소유자: 'Owner',
+  편집자: 'Editor',
+  뷰어: 'Viewer',
+  역할: 'Role',
+  '멤버 제거': 'Remove member',
+  '이 멤버를 워크스페이스에서 제거할까요?': 'Remove this member from the workspace?',
+  '마지막 소유자는 변경하거나 제거할 수 없습니다.': 'The last owner cannot be changed or removed.',
+  '사용자명으로 초대': 'Invite by username',
+  사용자명: 'Username',
+  초대: 'Invite',
+  수락: 'Accept',
+  거절: 'Decline',
+  '초대 취소': 'Cancel invitation',
+  '초대 내역': 'Invitation history',
+  '초대 내역이 없습니다.': 'No invitations yet.',
+  '대기 중': 'Pending',
+  수락됨: 'Accepted',
+  거절됨: 'Declined',
+  취소됨: 'Cancelled',
+  만료됨: 'Expired',
+  '만료 {date}': 'Expires {date}',
+  '워크스페이스 관리': 'Manage workspace',
+  '워크스페이스 보관': 'Archive workspace',
+  '워크스페이스 복원': 'Restore workspace',
+  '워크스페이스 삭제': 'Delete workspace',
+  '워크스페이스를 보관하면 모든 프로젝트와 댓글이 읽기 전용이 됩니다.':
+    'Archiving makes all projects and comments read-only.',
+  '빈 워크스페이스만 삭제할 수 있습니다. 삭제하면 복원할 수 없습니다.':
+    'Only empty workspaces can be deleted. This cannot be undone.',
+  '이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.':
+    'This workspace is archived. An owner can restore it to enable editing.',
+  '뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.':
+    'You have viewer access. You can view designs and add pins and comments.',
+  '워크스페이스 접근 권한이 변경되었습니다.': 'Your workspace access has changed.',
+});

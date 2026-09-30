@@ -40,10 +40,12 @@ export async function exportProjectFile(projectId: string): Promise<void> {
 
 export function ProjectImportButton({
   onImported,
+  workspaceId,
   disabled = false,
 }: {
   onImported: (project: Project) => void;
   disabled?: boolean;
+  workspaceId: string;
 }) {
   useI18n();
   const input = useRef<HTMLInputElement>(null);
@@ -86,6 +88,7 @@ export function ProjectImportButton({
       {file && (
         <ProjectImportDialog
           file={file}
+          workspaceId={workspaceId}
           onCancel={() => setFile(null)}
           onImported={(project) => {
             setFile(null);
@@ -99,10 +102,12 @@ export function ProjectImportButton({
 
 function ProjectImportDialog({
   file,
+  workspaceId,
   onCancel,
   onImported,
 }: {
   file: ProjectTransfer;
+  workspaceId: string;
   onCancel: () => void;
   onImported: (project: Project) => void;
 }) {
@@ -147,7 +152,7 @@ function ProjectImportDialog({
               project: { name: name.trim() },
             });
             const project = projectSchema.parse(
-              await request('/api/projects/import', body('POST', transfer)),
+              await request('/api/projects/import', body('POST', { workspaceId, transfer })),
             );
             onImported(project);
           } catch (e) {

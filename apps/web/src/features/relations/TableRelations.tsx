@@ -76,7 +76,7 @@ export function TableRelationsSvg({
   onChange,
   onPreviewChange,
   readOnly = false,
-  layoutReadOnly = false,
+  layoutReadOnly = readOnly,
   controlsOnly = false,
   hideControls = false,
   visibleNodeIds,
@@ -152,7 +152,7 @@ export function TableRelationsSvg({
       active.element.releasePointerCapture(active.pointerId);
   };
   useEffect(() => {
-    if (readOnly || layoutReadOnly) finishDrag(false);
+    if (layoutReadOnly) finishDrag(false);
   }, [readOnly, layoutReadOnly]);
   useEffect(() => () => finishDrag(false), [viewId]);
   useEffect(() => {
@@ -218,7 +218,7 @@ export function TableRelationsSvg({
           event: ReactPointerEvent<SVGElement>,
           kind: number | 'sourceAnchor' | 'targetAnchor',
         ) => {
-          if (event.button !== 0 || readOnly || layoutReadOnly) return;
+          if (event.button !== 0 || layoutReadOnly) return;
           event.preventDefault();
           event.stopPropagation();
           event.currentTarget.focus({ preventScroll: true });
@@ -268,7 +268,7 @@ export function TableRelationsSvg({
             tabIndex={controlsOnly ? undefined : 0}
             aria-label={controlsOnly ? undefined : tr('테이블 관계 {name}', { name: fullLabel })}
             onContextMenu={(event) => {
-              if (readOnly || !onChange) return;
+              if ((readOnly && layoutReadOnly) || !onChange) return;
               event.preventDefault();
               event.stopPropagation();
               setMenu({ x: event.clientX, y: event.clientY, id: relation.id });
@@ -349,7 +349,7 @@ export function TableRelationsSvg({
                 </text>
               </>
             )}
-            {!hideControls && !readOnly && !layoutReadOnly && onChange && (
+            {!hideControls && !layoutReadOnly && onChange && (
               <g
                 data-route-controls="true"
                 data-export-hidden="true"
@@ -377,8 +377,7 @@ export function TableRelationsSvg({
                 }}
                 onPointerUp={(event) => {
                   event.stopPropagation();
-                  if (drag.current?.pointerId === event.pointerId)
-                    finishDrag(!readOnly && !layoutReadOnly);
+                  if (drag.current?.pointerId === event.pointerId) finishDrag(!layoutReadOnly);
                 }}
                 onPointerCancel={() => finishDrag(false)}
                 onLostPointerCapture={() => finishDrag(false)}
@@ -508,7 +507,7 @@ export function TableRelationsSvg({
                       id: 'reset-route',
                       label: tr('관계 선 자동 정리'),
                       onAction: () => {
-                        if (menu && !readOnly)
+                        if (menu && !layoutReadOnly)
                           onChange?.({
                             ...doc,
                             layout: {
@@ -522,14 +521,18 @@ export function TableRelationsSvg({
                     },
                   ]
                 : []),
-              {
-                id: 'delete',
-                label: tr('관계 삭제'),
-                destructive: true,
-                onAction: () => {
-                  if (menu && !readOnly) onChange?.(removeTableRelation(doc, menu.id));
-                },
-              },
+              ...(!readOnly
+                ? [
+                    {
+                      id: 'delete',
+                      label: tr('관계 삭제'),
+                      destructive: true,
+                      onAction: () => {
+                        if (menu && !readOnly) onChange?.(removeTableRelation(doc, menu.id));
+                      },
+                    },
+                  ]
+                : []),
             ]}
           />,
           document.body,

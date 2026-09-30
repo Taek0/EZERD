@@ -1,0 +1,108 @@
+.workspace-panel {
+  margin: 24px 0;
+  padding: 20px;
+  border: 1px solid var(--border, #dce4f1);
+  border-radius: 20px;
+  background: var(--surface, #f5f8fd);
+}
+.workspace-selector,
+.workspace-row-actions,
+.workspace-dialog-heading,
+.workspace-member,
+.workspace-danger-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.workspace-selector {
+  justify-content: space-between;
+}
+.workspace-selector > label {
+  display: grid;
+  gap: 8px;
+  min-width: min(100%, 260px);
+}
+.workspace-access-note {
+  color: var(--muted, #64748b);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.workspace-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 28px;
+  border: 1px solid #dce4f1;
+  border-radius: 24px;
+  background: #f5f8fd;
+  color: #213047;
+  box-shadow: 0 24px 80px #172b4d30;
+}
+.workspace-dialog::backdrop {
+  background: #182a4555;
+  backdrop-filter: blur(3px);
+}
+.workspace-dialog-heading {
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.workspace-dialog h2 {
+  margin: 0;
+  font-size: 22px;
+}
+.workspace-dialog h3 {
+  font-size: 15px;
+  margin: 22px 0 12px;
+}
+.workspace-dialog form {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.workspace-dialog label {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 130px;
+  font-size: 13px;
+}
+.workspace-dialog .workspace-invite-form h3 {
+  width: 100%;
+}
+.workspace-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+.workspace-member {
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid #dce4f1;
+}
+.workspace-member strong {
+  overflow-wrap: anywhere;
+}
+.workspace-member small {
+  display: block;
+  color: #64748b;
+  margin-top: 5px;
+}
+.workspace-danger-actions {
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1px solid #dce4f1;
+}
+@media (max-width: 560px) {
+  .workspace-dialog {
+    padding: 20px;
+  }
+  .workspace-selector > label,
+  .workspace-row-actions {
+    width: 100%;
+  }
+  .workspace-member {
+    align-items: start;
+  }
+}

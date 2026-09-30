@@ -62,10 +62,13 @@ type RuntimeOptions = {
   session: SyncSession;
   initialDocument: DesignDocument;
   initialSequence?: number;
+  sharedReadOnly?: boolean;
+  personalReadOnly?: boolean;
   fetcher?: typeof fetch;
   socketFactory?: (url: string) => WebSocket;
   store?: SyncOperationStore<SyncOperationInput>;
   onChange: (snapshot: SyncSnapshot) => void;
+  onWorkspaceAccessChange?: (workspaceId: string) => void;
 };
 
 function arrayPayload(value: unknown, key: 'events' | 'history'): unknown[] {
@@ -179,10 +182,14 @@ export class ProjectSyncRuntime {
 
   private async initialize() {
     try {
-      const baseline = (await this.api('/sync-baseline', {
-        method: 'POST',
-        body: JSON.stringify({ clientId: this.options.clientId }),
-      })) as {
+      const baseline = (
+        this.options.personalReadOnly
+          ? {}
+          : await this.api('/sync-baseline', {
+              method: 'POST',
+              body: JSON.stringify({ clientId: this.options.clientId }),
+            })
+      ) as {
         baselineId?: unknown;
         sequence?: unknown;
         baselineIssuedAt?: unknown;
@@ -271,7 +278,7 @@ export class ProjectSyncRuntime {
     this.connect();
     this.headTimer = setInterval(() => void this.pollHead(), 15_000);
     await Promise.allSettled([
-      this.queue.pump(),
+      this.pumpShared(),
       this.refreshHistory(),
       this.cursor.receiveHead(Number.MAX_SAFE_INTEGER),
     ]);
@@ -285,8 +292,14 @@ export class ProjectSyncRuntime {
     this.socket?.close();
   }
 
+  private async pumpShared() {
+    if (!this.stopped && !this.options.sharedReadOnly) await this.queue?.pump();
+  }
+
   async edit(next: DesignDocument) {
+    if (this.stopped || this.options.personalReadOnly) return;
     const changes = diffSharedDocument(this.visibleDocument, next);
+    if (this.options.sharedReadOnly && changes.length) return;
     if (
       JSON.stringify(extractPersonalState(this.visibleDocument)) !==
       JSON.stringify(extractPersonalState(next))
@@ -356,7 +369,7 @@ export class ProjectSyncRuntime {
         this.publish();
         return;
       }
-      void this.queue.pump();
+      void this.pumpShared();
     } catch (error) {
       this.error = error instanceof Error ? error.message : t('로컬 변경을 보관하지 못했습니다.');
     }
@@ -364,6 +377,7 @@ export class ProjectSyncRuntime {
   }
 
   async reapply(operationId: string) {
+    if (this.options.sharedReadOnly) return;
     await this.starting;
     if (this.stopped || !this.queue) return;
     const source = (await this.queue.items()).find(
@@ -407,7 +421,7 @@ export class ProjectSyncRuntime {
     this.ownPast.push({ operation });
     this.ownFuture = [];
     this.error = undefined;
-    void this.queue.pump();
+    void this.pumpShared();
   }
 
   async discard(operationId: string) {
@@ -420,11 +434,11 @@ export class ProjectSyncRuntime {
     await this.queue.discard(operationId);
     this.ownPast = this.ownPast.filter((value) => value.operation.operationId !== operationId);
     this.ownFuture = this.ownFuture.filter((value) => value.operation.operationId !== operationId);
-    void this.queue.pump();
+    void this.pumpShared();
   }
 
   async undo() {
-    if (this.historyBusy) return;
+    if (this.historyBusy || this.options.sharedReadOnly) return;
     this.historyBusy = true;
     try {
       await this.undoOne();
@@ -442,7 +456,7 @@ export class ProjectSyncRuntime {
       if (!discarded) {
         this.settlingOwn = own;
         try {
-          await this.queue.pump();
+          await this.pumpShared();
         } finally {
           this.settlingOwn = undefined;
         }
@@ -476,7 +490,7 @@ export class ProjectSyncRuntime {
       if (queued && (queued.state === 'sending' || queued.state === 'unknown')) {
         this.settlingOwn = own;
         try {
-          await this.queue.pump();
+          await this.pumpShared();
         } finally {
           this.settlingOwn = undefined;
         }
@@ -510,7 +524,7 @@ export class ProjectSyncRuntime {
   }
 
   async redo() {
-    if (this.historyBusy) return;
+    if (this.historyBusy || this.options.sharedReadOnly) return;
     this.historyBusy = true;
     try {
       await this.redoOne();
@@ -558,7 +572,7 @@ export class ProjectSyncRuntime {
     };
     await this.queue.enqueue(operation);
     this.ownPast.push({ operation });
-    void this.queue.pump();
+    void this.pumpShared();
   }
 
   private async toggleAcceptedEdit(own: OwnEdit) {
@@ -620,6 +634,7 @@ export class ProjectSyncRuntime {
   }
 
   private async ensureCurrentBaseline() {
+    if (this.options.personalReadOnly) return;
     while (!this.stopped && this.baselineSequence < this.sequence) {
       if (!this.baselineRefresh) {
         this.baselineRefreshFailed = false;
@@ -808,16 +823,22 @@ export class ProjectSyncRuntime {
         const value = JSON.parse(String(message.data)) as {
           type?: string;
           projectId?: string;
+          workspaceId?: string;
           sequence?: number;
           event?: unknown;
         };
+        if (value.type === 'workspace-access-changed' && value.workspaceId) {
+          this.stop();
+          this.options.onWorkspaceAccessChange?.(value.workspaceId);
+          return;
+        }
         if (value.projectId !== this.options.projectId) return;
         if (value.type === 'subscribed') {
           this.connected = true;
           this.error = undefined;
           void this.cursor
             .receiveHead(value.sequence ?? this.sequence)
-            .then(() => this.queue?.pump());
+            .then(() => this.pumpShared());
           this.publish();
         } else if (value.type === 'head')
           void this.cursor.receiveHead(value.sequence ?? this.sequence);
@@ -848,7 +869,7 @@ export class ProjectSyncRuntime {
       if (this.stopped) return;
       for (const event of events) await this.cursor.receive(event);
       if (events.length) this.connected = true;
-      await this.queue?.pump();
+      await this.pumpShared();
       await this.refreshPersonal().catch(() => undefined);
       void this.flushPersonal();
     } catch {
@@ -896,6 +917,7 @@ export class ProjectSyncRuntime {
   }
 
   private async flushPersonal() {
+    if (this.stopped || this.options.personalReadOnly) return;
     if (this.personalSaving || !this.personalLoaded || this.personalConflict) return;
     this.personalSaving = true;
     try {

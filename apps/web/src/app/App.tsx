@@ -1,3 +1,5 @@
+import { WorkspacePanel } from '../features/workspaces/WorkspacePanel.js';
+import { workspacePermissions, type Workspace } from '../features/workspaces/workspace-policy.js';
 import { useI18n } from '../shared/i18n/index.js';
 import { LanguageDialog } from '../shared/i18n/LanguageDialog.js';
 import '../shared/i18n/app-translations.js';
@@ -54,6 +56,7 @@ type User = {
 };
 export type Project = {
   id: string;
+  workspaceId: string;
   name: string;
   status: 'active' | 'archived';
   version: number;
@@ -123,6 +126,9 @@ export function App() {
   }
   const [username, setUsername] = useState(''),
     [editingName, setEditingName] = useState(false);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaceId, setWorkspaceId] = useState('');
+  const selectedWorkspace = workspaces.find((space) => space.id === workspaceId);
   const [projects, setProjects] = useState<Project[]>([]),
     [search, setSearch] = useState(''),
     [status, setStatus] = useState<'active' | 'archived'>('active');
@@ -132,6 +138,10 @@ export function App() {
     [loading, setLoading] = useState(false);
   const [opened, setOpened] = useState<OpenProject | null>(null),
     [refresh, setRefresh] = useState(0);
+  const projectWorkspace = workspaces.find((space) => space.id === opened?.project.workspaceId);
+  const permissions = workspacePermissions(opened ? projectWorkspace : selectedWorkspace);
+  const designReadOnly = !permissions.edit || opened?.project.status === 'archived';
+  const personalReadOnly = !permissions.personal || opened?.project.status === 'archived';
   const [sync, setSync] = useState<SyncSnapshot | null>(null);
   const [historyAction, setHistoryAction] = useState<string | null>(null);
   const [historyNotice, setHistoryNotice] = useState('');
@@ -167,10 +177,11 @@ export function App() {
     runtime.current = null;
     setSync(null);
     current.current = value;
+    if (value) setWorkspaceId(value.project.workspaceId);
     setOpened(value);
   }
   function restoreHistory(direction: 'undo' | 'redo') {
-    if (!current.current || current.current.project.status === 'archived' || busy) return;
+    if (!current.current || designReadOnly || busy) return;
     void runtime.current?.[direction]().catch((cause) => setError(message(cause)));
   }
   useEffect(() => {
@@ -190,7 +201,7 @@ export function App() {
         return;
       const key = event.key.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && !event.altKey && (key === 'z' || key === 'y')) {
-        if (!current.current || current.current.project.status === 'archived' || busy) return;
+        if (!current.current || designReadOnly || busy) return;
         event.preventDefault();
         restoreHistory(key === 'y' || event.shiftKey ? 'redo' : 'undo');
       }
@@ -283,13 +294,51 @@ export function App() {
     };
   }, []);
   useEffect(() => {
-    if (!user || opened) return;
+    if (!user || !session) return;
+    const controller = new AbortController();
+    const load = () =>
+      void request<Workspace[]>('/api/workspaces', { signal: controller.signal })
+        .then((spaces) => {
+          if (controller.signal.aborted) return;
+          setWorkspaces(spaces);
+          setWorkspaceId((id) =>
+            spaces.some((space) => space.id === id) ? id : (spaces[0]?.id ?? ''),
+          );
+          if (
+            current.current &&
+            !spaces.some((space) => space.id === current.current?.project.workspaceId)
+          ) {
+            replaceProject(null);
+            resetReview();
+            setError(t('워크스페이스 접근 권한이 변경되었습니다.'));
+          }
+        })
+        .catch((cause) => {
+          if (!controller.signal.aborted) setError(message(cause));
+        });
+    load();
+    const timer = window.setInterval(load, 15000);
+    window.addEventListener('focus', load);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      window.removeEventListener('focus', load);
+    };
+  }, [user?.id, session?.token, refresh]);
+  useEffect(() => {
+    if (!user || !session || opened || !workspaceId) {
+      setProjects([]);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
-    setError('');
-    void request<unknown[]>(`/api/projects?status=${status}&search=${encodeURIComponent(search)}`, {
-      signal: controller.signal,
-    })
+    setError((value) => (value === t('워크스페이스 접근 권한이 변경되었습니다.') ? value : ''));
+    void request<unknown[]>(
+      `/api/projects?workspaceId=${encodeURIComponent(workspaceId)}&status=${status}&search=${encodeURIComponent(search)}`,
+      {
+        signal: controller.signal,
+      },
+    )
       .then((values) => {
         if (!controller.signal.aborted) setProjects(values.map((v) => projectSchema.parse(v)));
       })
@@ -300,9 +349,10 @@ export function App() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [user, opened, status, search, refresh]);
+  }, [user, session, opened, workspaceId, status, search, refresh]);
   useEffect(() => {
-    if (!opened || !user || !session || opened.project.status === 'archived') return;
+    if (!opened || !user || !session || !projectWorkspace || opened.project.status === 'archived')
+      return;
     const projectId = opened.project.id;
     const instance = new ProjectSyncRuntime({
       projectId,
@@ -310,6 +360,15 @@ export function App() {
       clientId: stableClientId(),
       session,
       initialDocument: opened.document,
+      sharedReadOnly: designReadOnly,
+      personalReadOnly,
+      onWorkspaceAccessChange: (id) => {
+        if (autosave.current.timer) clearTimeout(autosave.current.timer);
+        autosave.current = { composing: false };
+        setDraftTarget(undefined);
+        setWorkspaces((spaces) => spaces.filter((space) => space.id !== id));
+        setRefresh((value) => value + 1);
+      },
       onChange: (snapshot) => {
         setSync(snapshot);
         const value = current.current;
@@ -336,7 +395,14 @@ export function App() {
       instance.stop();
       if (runtime.current === instance) runtime.current = null;
     };
-  }, [opened?.project.id, opened?.project.status, user?.id, session?.token]);
+  }, [
+    opened?.project.id,
+    opened?.project.status,
+    projectWorkspace?.role,
+    projectWorkspace?.status,
+    user?.id,
+    session?.token,
+  ]);
   async function identify(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -407,12 +473,13 @@ export function App() {
   }
   async function create(e: FormEvent) {
     e.preventDefault();
+    if (!permissions.edit || !workspaceId) return;
     const ticket = navigation.current.begin();
     setBusy(true);
     setError('');
     try {
       const project = projectSchema.parse(
-        await request('/api/projects', body('POST', { name: projectName.trim() })),
+        await request('/api/projects', body('POST', { name: projectName.trim(), workspaceId })),
       );
       if (!navigation.current.isCurrent(ticket)) return;
       setProjectName('');
@@ -431,6 +498,7 @@ export function App() {
       status?: 'active' | 'archived';
     },
   ) {
+    if (!permissions.edit) return false;
     setBusy(true);
     setError('');
     try {
@@ -449,7 +517,7 @@ export function App() {
     }
   }
   async function deleteProject(project: Project) {
-    if (busy || project.status !== 'archived') return;
+    if (!permissions.deleteProject || busy || project.status !== 'archived') return;
     if (
       !(await confirm({
         title: t('프로젝트 영구 삭제'),
@@ -485,7 +553,7 @@ export function App() {
   }
   function scheduleAutosave() {
     const draft = autosave.current;
-    if (draft.composing || !draft.document) return;
+    if (personalReadOnly || draft.composing || !draft.document) return;
     if (draft.timer) clearTimeout(draft.timer);
     draft.timer = setTimeout(() => {
       void flushAutosave();
@@ -493,22 +561,30 @@ export function App() {
   }
   async function flushAutosave() {
     const draft = autosave.current;
-    if (draft.composing || !draft.document) return;
+    if (personalReadOnly || draft.composing || !draft.document) return;
     if (draft.timer) clearTimeout(draft.timer);
     const document = draft.document;
     autosave.current = { composing: draft.composing };
     await runtime.current?.edit(document);
   }
   function previewEdit(document: DesignDocument) {
+    if (personalReadOnly) return;
     const previous = current.current?.document;
-    if (!previous || document === previous) return;
+    if (
+      !previous ||
+      document === previous ||
+      (designReadOnly && diffSharedDocument(previous, document).length > 0)
+    )
+      return;
     const draft = autosave.current;
     draft.base ??= previous;
     draft.document = document;
     applyDocument(document);
   }
   function edit(document: DesignDocument) {
+    if (personalReadOnly) return;
     const previous = current.current?.document;
+    if (previous && designReadOnly && diffSharedDocument(previous, document).length > 0) return;
     if (!previous || (document === previous && autosave.current.document !== document)) return;
     if (document !== previous) applyDocument(document);
     const active = globalThis.document?.activeElement;
@@ -545,7 +621,7 @@ export function App() {
   }
   async function restoreDeletion(operationId: string) {
     const value = current.current;
-    if (!value || !session || historyAction) return;
+    if (!value || !session || historyAction || designReadOnly) return;
     setHistoryAction(operationId);
     setHistoryNotice('');
     setError('');
@@ -579,7 +655,7 @@ export function App() {
   }
   async function resolvePendingEdit(action: 'reapply' | 'discard', operationId: string) {
     const instance = runtime.current;
-    if (!instance || historyAction) return;
+    if (!instance || historyAction || (action === 'reapply' && designReadOnly)) return;
     setHistoryAction(operationId);
     setError('');
     try {
@@ -782,7 +858,7 @@ export function App() {
               <Button
                 aria-label={t('실행 취소')}
                 title={t('실행 취소 (Ctrl+Z / ⌘Z)')}
-                disabled={busy || opened.project.status === 'archived' || !sync?.canUndo}
+                disabled={busy || designReadOnly || !sync?.canUndo}
                 onClick={() => restoreHistory('undo')}
               >
                 ↶
@@ -790,7 +866,7 @@ export function App() {
               <Button
                 aria-label={t('다시 실행')}
                 title={t('다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)')}
-                disabled={busy || opened.project.status === 'archived' || !sync?.canRedo}
+                disabled={busy || designReadOnly || !sync?.canRedo}
                 onClick={() => restoreHistory('redo')}
               >
                 ↷
@@ -808,6 +884,7 @@ export function App() {
                       : t('✓ 동기화됨')}
               </span>
               <SyncHistoryPanel
+                readOnly={designReadOnly}
                 snapshot={sync}
                 activeOperationId={historyAction}
                 notice={historyNotice}
@@ -823,6 +900,16 @@ export function App() {
               />
             </div>
           </div>
+          {projectWorkspace?.status === 'archived' && (
+            <div className="notice">
+              {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}
+            </div>
+          )}
+          {projectWorkspace?.status === 'active' && projectWorkspace.role === 'viewer' && (
+            <div className="notice">
+              {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
+            </div>
+          )}
           {opened.project.status === 'archived' && (
             <div className="notice">
               {t('보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.')}
@@ -873,14 +960,19 @@ export function App() {
               }
               onChange={edit}
               onPreviewChange={previewEdit}
-              readOnly={opened.project.status === 'archived'}
+              readOnly={designReadOnly}
+              personalReadOnly={personalReadOnly}
               onContextChange={setCanvasContext}
-              onCreatePin={(context) => {
-                setCanvasContext(context);
-                setFocusTarget(undefined);
-                setDraftTarget({ ...context, selectedObjectId: null, nonce: Date.now() });
-                setCommentsOpen(true);
-              }}
+              {...(!personalReadOnly
+                ? {
+                    onCreatePin: (context: CommentContext) => {
+                      setCanvasContext(context);
+                      setFocusTarget(undefined);
+                      setDraftTarget({ ...context, selectedObjectId: null, nonce: Date.now() });
+                      setCommentsOpen(true);
+                    },
+                  }
+                : {})}
               {...(focusTarget ? { focusTarget } : {})}
               pins={
                 <CommentPins
@@ -911,6 +1003,8 @@ export function App() {
                 />
               )}
               <CommentsPanel
+                readOnly={personalReadOnly}
+                workspaceId={opened.project.workspaceId}
                 onMembers={setMembers}
                 currentUserColor={user.color}
                 key={opened.project.id}
@@ -951,9 +1045,21 @@ export function App() {
               <small>PROJECTS</small>
             </div>
           </section>
+          <WorkspacePanel
+            workspaces={workspaces}
+            selected={selectedWorkspace}
+            onSelect={(id) => {
+              setWorkspaceId(id);
+              setProjects([]);
+              setSearch('');
+            }}
+            onRefresh={() => setRefresh((value) => value + 1)}
+          />
           <div className="gallery-tools">
             <ProjectImportButton
-              disabled={busy}
+              key={workspaceId}
+              workspaceId={workspaceId}
+              disabled={busy || !permissions.edit}
               onImported={() => {
                 setStatus('active');
                 setSearch('');
@@ -992,7 +1098,7 @@ export function App() {
               type="submit"
               variant="primary"
               className="primary"
-              disabled={busy || !projectName.trim()}
+              disabled={busy || !permissions.edit || !projectName.trim()}
             >
               <span aria-hidden="true">＋</span>
               <span>{t('프로젝트 만들기')}</span>
@@ -1047,14 +1153,17 @@ export function App() {
                     >
                       {t('내보내기')}
                     </Button>
-                    <Button disabled={busy} onClick={() => setRenamingProject(project)}>
+                    <Button
+                      disabled={busy || !permissions.edit}
+                      onClick={() => setRenamingProject(project)}
+                    >
                       {t('이름 수정')}
                     </Button>
                     <Button
                       className={
                         project.status === 'active' ? 'project-archive' : 'project-restore'
                       }
-                      disabled={busy}
+                      disabled={busy || !permissions.edit}
                       onClick={async () => {
                         if (
                           project.status === 'archived' ||
@@ -1078,7 +1187,7 @@ export function App() {
                       <Button
                         className="project-delete"
                         variant="danger"
-                        disabled={busy}
+                        disabled={busy || !permissions.deleteProject}
                         onClick={() => void deleteProject(project)}
                       >
                         {t('삭제')}

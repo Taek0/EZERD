@@ -219,6 +219,8 @@ function Composer({
   );
 }
 export function CommentsPanel({
+  readOnly = false,
+  workspaceId,
   projectId,
   userId,
   document,
@@ -232,6 +234,8 @@ export function CommentsPanel({
   onMembers,
   currentUserColor,
 }: {
+  readOnly?: boolean;
+  workspaceId: string;
   onMembers?: (members: Member[]) => void;
   currentUserColor?: string;
   draftTarget?: CommentContext & { nonce: number };
@@ -281,15 +285,19 @@ export function CommentsPanel({
       .catch((e) => {
         if (!controller.signal.aborted) setError(message(e));
       });
-    void request<unknown[]>('/api/users', { signal: controller.signal })
+    void request<Array<{ userId: string; username: string; color: string }>>(
+      `/api/workspaces/${workspaceId}/members`,
+      { signal: controller.signal },
+    )
       .then((values) => {
-        if (!controller.signal.aborted) setUsers(values.map((v) => userSchema.parse(v)));
+        if (!controller.signal.aborted)
+          setUsers(values.map((v) => ({ id: v.userId, username: v.username, color: v.color })));
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(message(e));
       });
     return () => controller.abort();
-  }, [projectId, refresh, activeThreadId, currentUserColor]);
+  }, [projectId, workspaceId, refresh, activeThreadId, currentUserColor]);
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (!mutation.current && !window.document.hidden) setRefresh((value) => value + 1);
@@ -322,7 +330,7 @@ export function CommentsPanel({
     value: unknown,
     navigate = true,
   ): Promise<boolean> {
-    if (mutation.current) return false;
+    if (readOnly || mutation.current) return false;
     mutation.current = true;
     ++threadRevision.current;
     setBusy(true);
@@ -348,7 +356,7 @@ export function CommentsPanel({
     }
   }
   async function deleteThread(thread: Thread) {
-    if (mutation.current) return;
+    if (readOnly || mutation.current) return;
     const accepted = await confirm({
       title: t('핀 삭제'),
       description: t('이 핀과 모든 답글을 삭제합니다. 삭제한 내용은 되돌릴 수 없습니다.'),
@@ -433,7 +441,7 @@ export function CommentsPanel({
                     : t('핀 위치로 이동 ↗')}
               </Button>
               <Button
-                disabled={busy}
+                disabled={busy || readOnly}
                 onClick={() =>
                   void mutate(
                     `/api/threads/${thread.id}`,
@@ -446,7 +454,7 @@ export function CommentsPanel({
                 {thread.resolved ? t('다시 열기') : t('해결')}
               </Button>
               <Button
-                disabled={busy}
+                disabled={busy || readOnly}
                 aria-label={t('핀 삭제')}
                 onClick={() => void deleteThread(thread)}
               >
@@ -516,7 +524,7 @@ export function CommentsPanel({
                 key={thread.id}
                 users={users}
                 authorName={users.find((u) => u.id === userId)?.username ?? t('나')}
-                busy={busy}
+                busy={busy || readOnly}
                 label={t('답글 등록')}
                 onSend={(text, mentionIds) =>
                   mutate(
@@ -535,7 +543,7 @@ export function CommentsPanel({
           </p>
         )}
       </div>
-      {draftContext && (
+      {draftContext && !readOnly && (
         <div className="new-thread" aria-label={t('선택한 위치에 핀 작성')}>
           <Button type="button" disabled={busy} onClick={onCancelPinDraft}>
             {t('작성 취소')}
@@ -545,7 +553,7 @@ export function CommentsPanel({
             key={draftContext.nonce}
             users={users}
             authorName={users.find((u) => u.id === userId)?.username ?? t('나')}
-            busy={busy}
+            busy={busy || readOnly}
             label={t('핀 등록')}
             focusNonce={draftContext.nonce}
             onSend={(text, mentionIds) =>
