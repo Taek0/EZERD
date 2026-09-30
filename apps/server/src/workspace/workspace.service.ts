@@ -58,14 +58,12 @@ export class WorkspaceService {
     return operation(async () => {
       return this.access.runWorkspace(actorId, input.workspaceId, 'createProject', async (tx) => {
         const [row] = await tx.insert(projects).values(input).returning();
-        await tx
-          .insert(workspaceAuditEvents)
-          .values({
-            workspaceId: input.workspaceId,
-            actorId,
-            action: 'project.created',
-            details: { projectId: row!.id, name: row!.name },
-          });
+        await tx.insert(workspaceAuditEvents).values({
+          workspaceId: input.workspaceId,
+          actorId,
+          action: 'project.created',
+          details: { projectId: row!.id, name: row!.name },
+        });
         return project(row!);
       });
     });
@@ -100,14 +98,12 @@ export class WorkspaceService {
             document: input.document,
           })
           .returning();
-        await tx
-          .insert(workspaceAuditEvents)
-          .values({
-            workspaceId,
-            actorId,
-            action: 'project.imported',
-            details: { projectId: row!.id, name: row!.name },
-          });
+        await tx.insert(workspaceAuditEvents).values({
+          workspaceId,
+          actorId,
+          action: 'project.imported',
+          details: { projectId: row!.id, name: row!.name },
+        });
         return project(row!);
       });
     });
@@ -238,14 +234,12 @@ export class WorkspaceService {
           )
           .returning();
         if (!row) return this.missingOrConflict(id);
-        await tx
-          .insert(workspaceAuditEvents)
-          .values({
-            workspaceId: row.workspaceId,
-            actorId,
-            action: 'project.updated',
-            details: { projectId: id, expectedVersion, version: row.version, ...changes },
-          });
+        await tx.insert(workspaceAuditEvents).values({
+          workspaceId: row.workspaceId,
+          actorId,
+          action: 'project.updated',
+          details: { projectId: id, expectedVersion, version: row.version, ...changes },
+        });
         return project(row);
       }),
     );
@@ -265,14 +259,12 @@ export class WorkspaceService {
           )
           .returning({ id: projects.id });
         if (removed) {
-          await tx
-            .insert(workspaceAuditEvents)
-            .values({
-              workspaceId: access.workspaceId,
-              actorId,
-              action: 'project.deleted',
-              details: { projectId: id, expectedVersion: input.expectedVersion },
-            });
+          await tx.insert(workspaceAuditEvents).values({
+            workspaceId: access.workspaceId,
+            actorId,
+            action: 'project.deleted',
+            details: { projectId: id, expectedVersion: input.expectedVersion },
+          });
           return { id: removed.id, deleted: true as const };
         }
         const [current] = await tx
