@@ -1,5 +1,6 @@
 export type ModelScope = 'both' | 'logical' | 'physical';
 export type ViewMode = ModelScope;
+export const TABLES_VIEW_ID = '__tables__';
 export interface CustomProperties {
   common: Record<string, string>;
   logical: Record<string, string>;
@@ -9,7 +10,8 @@ export interface Table {
   canvasDisplay?:
     { showNullable?: boolean | undefined; showComment?: boolean | undefined } | undefined;
   id: string;
-  domainId: string;
+  domainId: string | null;
+  color?: string | undefined;
   scope: ModelScope;
   logical: { name: string; definition: string };
   physical: { name: string; schema: string; comment: string };
@@ -151,12 +153,71 @@ export function createEmptyDocument(): DesignDocument {
     layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] },
   };
 }
+/** Adds deterministic shared placements to legacy documents without changing existing layouts. */
+export function ensureTableCanvasLayout(doc: DesignDocument): DesignDocument {
+  const placed = new Set(
+    doc.layout.nodes.filter((node) => node.viewId === TABLES_VIEW_ID).map((node) => node.objectId),
+  );
+  const missing = (doc.tables ?? [])
+    .filter((table) => !placed.has(table.id))
+    .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (!missing.length) return doc;
+  const nodes = [...doc.layout.nodes];
+  const ids = new Set(nodes.map((node) => node.id));
+  const occupied = nodes.filter((node) => node.viewId === TABLES_VIEW_ID);
+  for (const table of missing) {
+    const original = nodes.find(
+      (node) => node.objectId === table.id && node.viewId === table.domainId,
+    );
+    const width = original?.width ?? 320,
+      height = original?.height ?? 260;
+    let x = original?.x ?? 0,
+      y = original?.y ?? 0;
+    let slot = 0;
+    while (
+      occupied.some(
+        (node) =>
+          x < node.x + node.width + 80 &&
+          x + width + 80 > node.x &&
+          y < node.y + node.height + 80 &&
+          y + height + 80 > node.y,
+      )
+    ) {
+      // A fresh column after the occupied bounds avoids overlapping legacy domain origins.
+      x = Math.max(0, ...occupied.map((node) => node.x + node.width)) + 100;
+      y = slot++ * (height + 80);
+      if (x > 1e7 - width) {
+        x = 0;
+        y = Math.max(0, ...occupied.map((node) => node.y + node.height)) + 80;
+      }
+      position({ x, y });
+    }
+    const base = `node:${table.id}:${TABLES_VIEW_ID}`;
+    let id = base,
+      suffix = 1;
+    while (ids.has(id)) id = `${base}:${suffix++}`;
+    ids.add(id);
+    const node: NodeLayout = {
+      id,
+      objectId: table.id,
+      viewId: TABLES_VIEW_ID,
+      x,
+      y,
+      width,
+      height,
+    };
+    nodes.push(node);
+    occupied.push(node);
+  }
+  return { ...doc, layout: { ...doc.layout, nodes } };
+}
 function requireObject(found: unknown): asserts found {
   if (!found) throw new Error('대상을 찾을 수 없습니다.');
 }
 function requireView(doc: DesignDocument, viewId: string) {
   requireObject(
     viewId === 'overview' ||
+      viewId === TABLES_VIEW_ID ||
       doc.domains.some((d) => d.id === viewId) ||
       doc.views?.some((v) => v.id === viewId),
   );
@@ -166,6 +227,7 @@ function requireNewId(doc: DesignDocument, id: string) {
     !id.trim() ||
     id.length > 160 ||
     id === 'overview' ||
+    id === TABLES_VIEW_ID ||
     [
       ...doc.domains,
       ...(doc.views ?? []),
@@ -351,10 +413,13 @@ export function diagnoseDocument(doc: DesignDocument): DocumentDiagnostic[] {
   const objects = new Map([
     ...doc.domains.map((domain) => [domain.id, 'overview'] as const),
     ...doc.notes.map((note) => [note.id, note.viewId] as const),
-    ...(doc.tables ?? []).map((table) => [table.id, table.domainId] as const),
+    ...(doc.tables ?? []).map((table) => [table.id, table.domainId ?? TABLES_VIEW_ID] as const),
   ]);
   const validView = (id: string) =>
-    id === 'overview' || domains.has(id) || !!doc.views?.some((v) => v.id === id);
+    id === 'overview' ||
+    id === TABLES_VIEW_ID ||
+    domains.has(id) ||
+    !!doc.views?.some((v) => v.id === id);
   for (const view of doc.views ?? [])
     if (!view.domainIds.length || view.domainIds.some((id) => !domains.has(id)))
       report('missing-view-domain', view.id, '함께 보기의 도메인을 찾을 수 없습니다.');
@@ -372,7 +437,12 @@ export function diagnoseDocument(doc: DesignDocument): DocumentDiagnostic[] {
     ...(doc.tableRelations ?? []),
     ...(doc.enums ?? []),
   ]) {
-    if (seen.has(object.id) || !object.id.trim() || object.id === 'overview')
+    if (
+      seen.has(object.id) ||
+      !object.id.trim() ||
+      object.id === 'overview' ||
+      object.id === TABLES_VIEW_ID
+    )
       report('duplicate-id', object.id, '객체 ID가 비어 있거나 중복되었습니다.');
     seen.add(object.id);
   }
@@ -393,9 +463,13 @@ export function diagnoseDocument(doc: DesignDocument): DocumentDiagnostic[] {
     const pair = JSON.stringify([node.objectId, node.viewId]);
     const tablePlacement =
       tables.has(node.objectId) &&
-      (domains.has(node.viewId) ||
+      (node.viewId === TABLES_VIEW_ID ||
+        domains.has(node.viewId) ||
         !!doc.views?.some(
-          (v) => v.id === node.viewId && v.domainIds.includes(tables.get(node.objectId)!.domainId),
+          (v) =>
+            v.id === node.viewId &&
+            tables.get(node.objectId)!.domainId !== null &&
+            v.domainIds.includes(tables.get(node.objectId)!.domainId!),
         ));
     if (
       !objects.has(node.objectId) ||
@@ -415,8 +489,10 @@ export function diagnoseDocument(doc: DesignDocument): DocumentDiagnostic[] {
     if (!validView(viewport.viewId))
       report('missing-viewport-domain', viewport.viewId, '화면 위치의 도메인을 찾을 수 없습니다.');
   for (const table of tables.values()) {
-    if (!domains.has(table.domainId))
+    if (table.domainId !== null && !domains.has(table.domainId))
       report('missing-table-domain', table.id, '테이블의 소유 도메인을 찾을 수 없습니다.');
+    if (table.color !== undefined && !/^#[0-9a-f]{6}$/i.test(table.color))
+      report('invalid-table-color', table.id, '테이블 색상은 #RRGGBB 형식이어야 합니다.');
   }
   for (const column of columns.values()) {
     const table = tables.get(column.tableId);
@@ -540,7 +616,8 @@ export function addTableReference(
     doc.views?.some(
       (v) =>
         v.id === viewId &&
-        !v.domainIds.includes(doc.tables!.find((t) => t.id === tableId)!.domainId),
+        (doc.tables!.find((t) => t.id === tableId)!.domainId === null ||
+          !v.domainIds.includes(doc.tables!.find((t) => t.id === tableId)!.domainId!)),
     )
   )
     throw new Error('이 테이블은 선택한 도메인에 속하지 않습니다.');
@@ -573,7 +650,7 @@ export function removeTableReference(doc: DesignDocument, nodeId: string): Desig
   requireObject(node);
   const table = doc.tables?.find((item) => item.id === node.objectId);
   requireObject(table);
-  if (table.domainId === node.viewId)
+  if (table.domainId === node.viewId || node.viewId === TABLES_VIEW_ID)
     throw new Error('소유 화면의 테이블은 테이블 삭제로 제거해 주세요.');
   return {
     ...doc,
@@ -597,15 +674,20 @@ export function removeTableReference(doc: DesignDocument, nodeId: string): Desig
 
 export function addTable(doc: DesignDocument, table: Table, point: Position): DesignDocument {
   requireNewId(doc, table.id);
-  requireObject(doc.domains.find((domain) => domain.id === table.domainId));
+  if (table.domainId !== null)
+    requireObject(doc.domains.find((domain) => domain.id === table.domainId));
+  if (table.color !== undefined && !/^#[0-9a-f]{6}$/i.test(table.color))
+    throw new Error('테이블 색상은 #RRGGBB 형식이어야 합니다.');
   let next = addTableReference(
     { ...doc, tables: [...(doc.tables ?? []), cloneModel(table)] },
     table.id,
-    table.domainId,
+    table.domainId ?? TABLES_VIEW_ID,
     point,
   );
+  if (table.domainId !== null) next = ensureTableCanvasLayout(next);
   for (const view of next.views ?? [])
-    if (view.domainIds.includes(table.domainId)) next = upsertCombinedView(next, view);
+    if (table.domainId !== null && view.domainIds.includes(table.domainId))
+      next = upsertCombinedView(next, view);
   return next;
 }
 
@@ -617,8 +699,16 @@ export function updateTable(
   const current = doc.tables?.find((table) => table.id === id);
   requireObject(current);
   const next = { ...current, ...cloneModel(patch), id };
-  requireObject(doc.domains.find((domain) => domain.id === next.domainId));
-  let updated = { ...doc, tables: doc.tables!.map((table) => (table.id === id ? next : table)) };
+  if ('color' in patch && patch.color === undefined) delete next.color;
+  if (next.color !== undefined && !/^#[0-9a-f]{6}$/i.test(next.color))
+    throw new Error('테이블 색상은 #RRGGBB 형식이어야 합니다.');
+  if (next.domainId !== null)
+    requireObject(doc.domains.find((domain) => domain.id === next.domainId));
+  const withGlobal = ensureTableCanvasLayout(doc);
+  let updated = {
+    ...withGlobal,
+    tables: doc.tables!.map((table) => (table.id === id ? next : table)),
+  };
   const ownershipChanged = current.domainId !== next.domainId;
   if (ownershipChanged) {
     const domainIds = new Set(doc.domains.map((domain) => domain.id));
@@ -633,10 +723,15 @@ export function updateTable(
       },
     };
   }
-  if (!updated.layout.nodes.some((node) => node.objectId === id && node.viewId === next.domainId)) {
-    const previous = doc.layout.nodes.find(
-      (node) => node.objectId === id && node.viewId === current.domainId,
-    );
+  if (
+    next.domainId !== null &&
+    !updated.layout.nodes.some((node) => node.objectId === id && node.viewId === next.domainId)
+  ) {
+    const previous =
+      doc.layout.nodes.find((node) => node.objectId === id && node.viewId === current.domainId) ??
+      withGlobal.layout.nodes.find(
+        (node) => node.objectId === id && node.viewId === TABLES_VIEW_ID,
+      );
     updated = addTableReference(
       updated,
       id,
@@ -990,7 +1085,9 @@ export function upsertCombinedView(doc: DesignDocument, view: CombinedView): Des
   )
     throw new Error('함께 볼 도메인을 선택해 주세요.');
   if (!doc.views?.some((v) => v.id === view.id)) requireNewId(doc, view.id);
-  const tables = (doc.tables ?? []).filter((t) => view.domainIds.includes(t.domainId));
+  const tables = (doc.tables ?? []).filter(
+    (t) => t.domainId !== null && view.domainIds.includes(t.domainId),
+  );
   const tableIds = new Set(tables.map((t) => t.id));
   const nodes = doc.layout.nodes.filter(
     (n) =>

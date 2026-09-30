@@ -205,7 +205,7 @@ export function exportPostgres(doc: DesignDocument): PostgresExport {
       error('duplicate-table', table.id, '같은 스키마에 물리 테이블 이름이 중복됩니다.');
     tableNames.add(key);
     constraints.set(table.id, new Set());
-    if (!doc.domains.some((d) => d.id === table.domainId))
+    if (table.domainId !== null && !doc.domains.some((d) => d.id === table.domainId))
       error('missing-domain', table.id, '소유 도메인이 없습니다.');
     keysByTable.set(
       table.id,

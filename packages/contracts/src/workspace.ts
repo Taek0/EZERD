@@ -9,6 +9,7 @@ import {
   projectEnumSchema,
 } from './relational.js';
 import { z } from 'zod';
+import { TABLES_VIEW_ID } from '@ezerd/model';
 export const MAX_DOCUMENT_BYTES = 1_500_000;
 function withinDocumentBudget(doc: unknown): boolean {
   let bytes = 0;
@@ -21,8 +22,8 @@ function withinDocumentBudget(doc: unknown): boolean {
 }
 const id = z.string().trim().min(1).max(160);
 const objectId = id.refine(
-  (value) => value !== 'overview',
-  'overview is reserved for the domain map',
+  (value) => value !== 'overview' && value !== TABLES_VIEW_ID,
+  'Built-in view identities are reserved',
 );
 const name = z.string().max(120);
 const coordinate = z.number().min(-1e7).max(1e7);

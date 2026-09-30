@@ -6,6 +6,7 @@ import type {
   Viewport,
   RelationLayout,
 } from './document.js';
+import { TABLES_VIEW_ID } from './document.js';
 
 export interface PersonalState {
   views: CombinedView[];
@@ -71,7 +72,7 @@ export function reconcilePersonalState(
     const table = tables.get(node.objectId);
     return (
       notePairs.has(JSON.stringify([node.viewId, node.objectId])) ||
-      (!!table && view.domainIds.includes(table.domainId))
+      (!!table && table.domainId !== null && view.domainIds.includes(table.domainId))
     );
   });
   const nodePairs = new Set(nodes.map((node) => JSON.stringify([node.viewId, node.objectId])));
@@ -84,7 +85,7 @@ export function reconcilePersonalState(
       nodePairs.has(JSON.stringify([route.viewId, relation.targetTableId]))
     );
   });
-  const validViewIds = new Set(['overview', ...domainIds, ...viewIds]);
+  const validViewIds = new Set(['overview', TABLES_VIEW_ID, ...domainIds, ...viewIds]);
   return {
     views,
     notes,

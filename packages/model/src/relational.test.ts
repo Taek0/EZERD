@@ -61,6 +61,7 @@ describe('relational model snapshots', () => {
     expect(doc.columns![0]!.logical.name).toBe('c');
     expect(edited.layout.nodes.filter((n) => n.objectId === 't').map((n) => n.id)).toEqual([
       'node:t:a',
+      'node:t:__tables__',
       'node:t:b',
     ]);
     expect(diagnoseDocument(edited)).toEqual([]);
@@ -97,6 +98,7 @@ describe('relational model snapshots', () => {
     expect(after.tableRelations).toEqual([]);
     expect(after.layout.nodes.filter((n) => n.objectId === 'u').map((n) => n.viewId)).toEqual([
       'b',
+      '__tables__',
     ]);
     expect(doc.tables).toHaveLength(2);
   });
@@ -174,7 +176,7 @@ describe('relational ownership and independent properties', () => {
     expect(moved.tableRelations).toEqual(doc.tableRelations);
     expect(
       moved.layout.nodes.filter((node) => node.objectId === 't').map((node) => node.viewId),
-    ).toEqual(['b', 'both']);
+    ).toEqual(['__tables__', 'b', 'both']);
     expect(moved.layout.nodes.find((node) => node.id === 'node:t:b')).toEqual(
       doc.layout.nodes.find((node) => node.id === 'node:t:b'),
     );
@@ -214,6 +216,7 @@ describe('relational ownership and independent properties', () => {
     expect(doc.tables).toHaveLength(1);
     expect(doc.tables![0]!.logical.name).toBe('t');
     expect(doc.layout.nodes.filter((node) => node.objectId === 't')).toEqual([
+      expect.objectContaining({ viewId: '__tables__', x: 12, y: 34 }),
       expect.objectContaining({ viewId: 'b', x: 12, y: 34 }),
     ]);
     const after = removeDomain(doc, 'a');

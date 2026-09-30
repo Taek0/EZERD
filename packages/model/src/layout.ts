@@ -1,4 +1,5 @@
 import type { DesignDocument, NodeLayout } from './document.js';
+import { TABLES_VIEW_ID } from './document.js';
 
 const HORIZONTAL_GAP = 100;
 const VERTICAL_GAP = 64;
@@ -8,6 +9,7 @@ const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export function autoLayoutView(document: DesignDocument, viewId: string): DesignDocument {
   if (
     viewId !== 'overview' &&
+    viewId !== TABLES_VIEW_ID &&
     !document.domains.some((domain) => domain.id === viewId) &&
     !document.views?.some((view) => view.id === viewId)
   ) {

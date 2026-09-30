@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { normalizePhysicalType, validatePhysicalType } from '@ezerd/model';
+import { normalizePhysicalType, validatePhysicalType, TABLES_VIEW_ID } from '@ezerd/model';
 const id = z
   .string()
   .trim()
   .min(1)
   .max(160)
-  .refine((value) => value !== 'overview');
+  .refine((value) => value !== 'overview' && value !== TABLES_VIEW_ID);
 const name = z.string().max(120);
 const description = z.string().max(10000);
 const scope = z.enum(['both', 'logical', 'physical']);
@@ -22,7 +22,11 @@ export const tableSchema = z.strictObject({
     .strictObject({ showNullable: z.boolean().optional(), showComment: z.boolean().optional() })
     .optional(),
   id,
-  domainId: id,
+  domainId: id.nullable(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
   scope,
   logical: z.strictObject({ name, definition: description }),
   physical: z.strictObject({ name, schema: name, comment: description }),
