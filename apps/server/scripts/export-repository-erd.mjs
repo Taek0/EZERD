@@ -250,14 +250,20 @@ function layoutTables(viewId, names) {
     });
   }
 }
-for (const [index, [group, , names]] of groups.entries()) {
+const domainPositions = {
+  identity: { x: 0, y: 600 },
+  'workspace-domain': { x: 700, y: 0 },
+  project: { x: 1400, y: 600 },
+  review: { x: 2100, y: 0 },
+  sync: { x: 2100, y: 1200 },
+};
+for (const [group, , names] of groups) {
   // Taller overview cards accommodate the domain explanations.
   doc.layout.nodes.push({
     id: `node:domain:${group}`,
     objectId: group,
     viewId: 'overview',
-    x: index * 520,
-    y: 0,
+    ...domainPositions[group],
     width: 440,
     height: 420,
   });

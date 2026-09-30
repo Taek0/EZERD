@@ -4792,7 +4792,7 @@
           "objectId": "identity",
           "viewId": "overview",
           "x": 0,
-          "y": 0,
+          "y": 600,
           "width": 440,
           "height": 420
         },
@@ -4827,7 +4827,7 @@
           "id": "node:domain:workspace-domain",
           "objectId": "workspace-domain",
           "viewId": "overview",
-          "x": 520,
+          "x": 700,
           "y": 0,
           "width": 440,
           "height": 420
@@ -4872,8 +4872,8 @@
           "id": "node:domain:project",
           "objectId": "project",
           "viewId": "overview",
-          "x": 1040,
-          "y": 0,
+          "x": 1400,
+          "y": 600,
           "width": 440,
           "height": 420
         },
@@ -4908,7 +4908,7 @@
           "id": "node:domain:review",
           "objectId": "review",
           "viewId": "overview",
-          "x": 1560,
+          "x": 2100,
           "y": 0,
           "width": 440,
           "height": 420
@@ -4944,8 +4944,8 @@
           "id": "node:domain:sync",
           "objectId": "sync",
           "viewId": "overview",
-          "x": 2080,
-          "y": 0,
+          "x": 2100,
+          "y": 1200,
           "width": 440,
           "height": 420
         },
