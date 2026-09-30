@@ -160,6 +160,40 @@ describe('direct table canvas', () => {
     expect(reconcilePersonalState(shared, personal).viewports).toEqual(doc.layout.viewports);
   });
 
+  it('keeps overlapping legacy domain origins in a compact grid without changing owner layouts', () => {
+    const tables = Array.from({ length: 40 }, (_, index) => table(`t${index}`, 'a'));
+    const doc = addDomain(
+      createEmptyDocument(),
+      { id: 'a', name: '', description: '' },
+      { x: 0, y: 0 },
+    );
+    const legacy = {
+      ...doc,
+      tables,
+      layout: {
+        ...doc.layout,
+        nodes: [
+          ...doc.layout.nodes,
+          ...tables.map((item) => ({
+            id: `owner:${item.id}`,
+            objectId: item.id,
+            viewId: 'a',
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 260,
+          })),
+        ],
+      },
+    };
+    const normalized = ensureTableCanvasLayout(legacy);
+    const global = normalized.layout.nodes.filter((node) => node.viewId === TABLES_VIEW_ID);
+    expect(global).toHaveLength(40);
+    expect(Math.max(...global.map((node) => node.x))).toBeLessThan(3000);
+    expect(new Set(global.map((node) => JSON.stringify([node.x, node.y]))).size).toBe(40);
+    expect(diagnoseDocument(normalized)).toEqual([]);
+  });
+
   it('rejects unknown domains, invalid colors and reserved table/view identities', () => {
     expect(() => addTable(createEmptyDocument(), table('t', 'missing'), { x: 0, y: 0 })).toThrow();
     expect(() =>

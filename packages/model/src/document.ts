@@ -165,15 +165,34 @@ export function ensureTableCanvasLayout(doc: DesignDocument): DesignDocument {
   const nodes = [...doc.layout.nodes];
   const ids = new Set(nodes.map((node) => node.id));
   const occupied = nodes.filter((node) => node.viewId === TABLES_VIEW_ID);
+  const originals = new Map(
+    nodes
+      .filter((node) => node.viewId !== TABLES_VIEW_ID)
+      .map((node) => [JSON.stringify([node.objectId, node.viewId]), node]),
+  );
+  const sourceNodes = missing.map((table) =>
+    originals.get(JSON.stringify([table.id, table.domainId])),
+  );
+  const cellWidth =
+    Math.max(
+      320,
+      ...occupied.map((node) => node.width),
+      ...sourceNodes.map((node) => node?.width ?? 320),
+    ) + 100;
+  const cellHeight =
+    Math.max(
+      260,
+      ...occupied.map((node) => node.height),
+      ...sourceNodes.map((node) => node?.height ?? 260),
+    ) + 80;
+  const columns = Math.max(4, Math.ceil(Math.sqrt(missing.length + occupied.length)));
+  let slot = 0;
   for (const table of missing) {
-    const original = nodes.find(
-      (node) => node.objectId === table.id && node.viewId === table.domainId,
-    );
+    const original = originals.get(JSON.stringify([table.id, table.domainId]));
     const width = original?.width ?? 320,
       height = original?.height ?? 260;
     let x = original?.x ?? 0,
       y = original?.y ?? 0;
-    let slot = 0;
     while (
       occupied.some(
         (node) =>
@@ -183,13 +202,9 @@ export function ensureTableCanvasLayout(doc: DesignDocument): DesignDocument {
           y + height + 80 > node.y,
       )
     ) {
-      // A fresh column after the occupied bounds avoids overlapping legacy domain origins.
-      x = Math.max(0, ...occupied.map((node) => node.x + node.width)) + 100;
-      y = slot++ * (height + 80);
-      if (x > 1e7 - width) {
-        x = 0;
-        y = Math.max(0, ...occupied.map((node) => node.y + node.height)) + 80;
-      }
+      // Compact deterministic fallback avoids a very wide canvas when domain origins overlap.
+      x = (slot % columns) * cellWidth;
+      y = Math.floor(slot++ / columns) * cellHeight;
       position({ x, y });
     }
     const base = `node:${table.id}:${TABLES_VIEW_ID}`;
