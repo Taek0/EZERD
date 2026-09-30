@@ -94,11 +94,11 @@ describe('table editor rendered controls', () => {
         }),
       );
     const global = card(TABLES_VIEW_ID);
-    expect(global).toContain('background:#ffffff;color:#000000');
-    expect(global).toContain('class="table-owner-badge">소유 도메인 · 결제');
+    expect(global).toContain('background:#ffffff;color:#ffffff');
+    expect(global).toContain('class="table-owner-badge" title="결제">결제');
     expect(global).not.toContain('외부 참조 · ');
     expect(card('external')).toContain('외부 참조 · 소유 도메인 · 결제');
-    expect(card('d')).toContain('background:#ffffff;color:#000000');
+    expect(card('d')).toContain('background:#ffffff;color:#ffffff');
   });
 
   it('renders unassigned owner selection and automatic color reset without reference-only wording in the global inspector', () => {

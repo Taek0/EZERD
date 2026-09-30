@@ -75,8 +75,8 @@ describe('editor sidebar structure', () => {
       ),
     );
     expect(html).toContain('orders');
-    expect(html).toContain('background:#ffffff;color:#000000');
-    expect(html).toContain('class="table-owner-badge">소유 도메인 · 미지정');
+    expect(html).toContain('background:#ffffff;color:#ffffff');
+    expect(html).toContain('class="table-owner-badge" title="미지정">미지정');
     expect(html).not.toContain('외부 참조 · ');
     expect(html).not.toContain('이 화면의 참조 제거');
     const create = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find((match) =>

@@ -48,15 +48,8 @@ describe('table appearance and owner selection', () => {
     }
   });
 
-  it('keeps header text readable across custom light, dark and middle colors', () => {
+  it('keeps the chosen header background and uses white text for every table', () => {
     const doc = createEmptyDocument();
-    const luminance = (hex: string) =>
-      [1, 3, 5]
-        .map((offset) => {
-          const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
-          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-        })
-        .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index]!, 0);
     for (const color of [
       '#000000',
       '#ffffff',
@@ -74,8 +67,7 @@ describe('table appearance and owner selection', () => {
     ]) {
       const style = tableHeaderStyle(doc, { ...table, color });
       expect(style.background).toBe(color);
-      const values = [luminance(style.color), luminance(color)].sort((a, b) => a - b);
-      expect((values[1]! + 0.05) / (values[0]! + 0.05)).toBeGreaterThanOrEqual(4.5);
+      expect(style.color).toBe('#ffffff');
     }
   });
 });

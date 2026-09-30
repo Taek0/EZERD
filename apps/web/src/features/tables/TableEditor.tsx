@@ -255,11 +255,13 @@ function InlineCell({
   label,
   onCommit,
   disabled = false,
+  title = false,
 }: {
   value: string;
   label: string;
   onCommit: (value: string) => void;
   disabled?: boolean;
+  title?: boolean;
 }) {
   useI18n();
   const [editing, setEditing] = useState(false),
@@ -275,9 +277,10 @@ function InlineCell({
     if (!cancel.current && draft !== value) onCommit(draft);
     setEditing(false);
   };
+  const Field = title ? 'input' : Input;
   return (
     <span
-      className="table-inline"
+      className={title ? 'table-inline table-title-inline' : 'table-inline'}
       data-inline-cell
       tabIndex={disabled || editing ? -1 : 0}
       title={
@@ -295,7 +298,9 @@ function InlineCell({
       }}
     >
       {editing ? (
-        <Input
+        <Field
+          className={title ? 'table-title-input' : undefined}
+          maxLength={title ? 120 : undefined}
           autoFocus
           aria-label={label}
           value={draft}
@@ -305,6 +310,7 @@ function InlineCell({
           onBlur={commit}
           onKeyDown={(e) => {
             e.stopPropagation();
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === 'Escape') {
               e.preventDefault();
               cancel.current = true;
@@ -416,9 +422,9 @@ export function TableNodeContent({
   const metrics = useMemo(() => tableCardMetrics(doc, tableId), [doc, tableId]);
   const table = doc.tables?.find((t) => t.id === tableId);
   if (!table) return null;
-  const ownerTitle = translate('소유 도메인 · {domain}', {
-    domain: doc.domains.find((domain) => domain.id === table.domainId)?.name ?? translate('미지정'),
-  });
+  const ownerName =
+    doc.domains.find((domain) => domain.id === table.domainId)?.name ?? translate('미지정');
+  const ownerTitle = translate('소유 도메인 · {domain}', { domain: ownerName });
   const showNullable = table.canvasDisplay?.showNullable !== false,
     showComment = table.canvasDisplay?.showComment !== false;
   const display = (patch: NonNullable<Table['canvasDisplay']>) =>
@@ -451,11 +457,21 @@ export function TableNodeContent({
         title={`${viewId && viewId !== TABLES_VIEW_ID && viewId !== table.domainId ? translate('외부 참조 · ') : ''}${ownerTitle}`}
       >
         <strong>
-          {cell(table.physical.name, translate('테이블명'), (name) =>
-            updateTable(doc, tableId, { physical: { ...table.physical, name } }),
-          )}
+          <InlineCell
+            title
+            value={table.physical.name}
+            label={translate('테이블명')}
+            disabled={!editable}
+            onCommit={(name) =>
+              onChange?.(updateTable(doc, tableId, { physical: { ...table.physical, name } }))
+            }
+          />
         </strong>
-        {viewId === TABLES_VIEW_ID && <small className="table-owner-badge">{ownerTitle}</small>}
+        {viewId === TABLES_VIEW_ID && (
+          <small className="table-owner-badge" title={ownerName}>
+            {ownerName}
+          </small>
+        )}
       </header>
       <div className="table-columns">
         <div className="table-column-row table-column-head">
