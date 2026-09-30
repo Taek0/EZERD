@@ -8,6 +8,27 @@ import { prepareTableRelations } from './prepare-table-relations.js';
 import { relationGeometry } from './relation-routing.js';
 import { prepareTableRelationsReference } from './prepare-table-relations.reference.js';
 import * as cardGeometry from '../tables/table-geometry.js';
+import { TABLES_VIEW_ID, ensureTableCanvasLayout, updateTable } from '@ezerd/model';
+
+it('renders global relationships across assigned and unassigned owners and excludes unassigned endpoints from combined views', () => {
+  const doc = updateTable(ensureTableCanvasLayout(createTestDocument()), 't0', { domainId: null });
+  const before = structuredClone(doc);
+  const global = prepareTableRelations(doc, TABLES_VIEW_ID, 'physical').filter(Boolean);
+  expect(global).toHaveLength(10);
+  expect(global.some((item) => item?.relation.sourceTableId === 't0')).toBe(true);
+  expect(doc).toEqual(before);
+  const combined = {
+    ...doc,
+    views: [{ id: 'combined', name: 'Combined', domainIds: ['perf'] }],
+    layout: {
+      ...doc.layout,
+      nodes: doc.layout.nodes
+        .filter((node) => node.viewId === TABLES_VIEW_ID)
+        .map((node) => ({ ...node, viewId: 'combined' })),
+    },
+  };
+  expect(prepareTableRelations(combined, 'combined', 'physical').filter(Boolean)).toHaveLength(8);
+});
 
 it('calculates each participating card boundary once per preparation, including obstacles', () => {
   const doc = createTestDocument();

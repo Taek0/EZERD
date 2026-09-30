@@ -1,5 +1,5 @@
 import { designDocumentSchema } from '@ezerd/contracts';
-import { addTable, type DesignDocument, type NodeLayout } from '@ezerd/model';
+import { addTable, TABLES_VIEW_ID, type DesignDocument, type NodeLayout } from '@ezerd/model';
 
 const format = 'ezerd/tables-v1';
 let localClipboard = '';
@@ -42,8 +42,21 @@ export function copyTables(
         .filter((n) => tableIds.has(n.objectId))
         .map((n) => ({
           ...n,
-          viewId: tables.find((t) => t.id === n.objectId)!.domainId,
-        })),
+          viewId:
+            n.viewId === TABLES_VIEW_ID
+              ? TABLES_VIEW_ID
+              : (tables.find((t) => t.id === n.objectId)!.domainId ?? TABLES_VIEW_ID),
+        }))
+        .flatMap((primary) => [
+          primary,
+          ...doc.layout.nodes.filter(
+            (node) =>
+              node.objectId === primary.objectId &&
+              node.viewId !== primary.viewId &&
+              (node.viewId === TABLES_VIEW_ID ||
+                node.viewId === tables.find((table) => table.id === node.objectId)!.domainId),
+          ),
+        ]),
       viewports: [],
     },
   };
@@ -68,8 +81,17 @@ export function parseTableClipboard(text: string): DesignDocument | null {
       doc.views?.length ||
       [...tables.values()].some(
         (t) =>
-          !doc.domains.some((d) => d.id === t.domainId) ||
-          doc.layout.nodes.filter((n) => n.objectId === t.id).length !== 1,
+          (t.domainId !== null && !doc.domains.some((d) => d.id === t.domainId)) ||
+          !doc.layout.nodes.some((n) => n.objectId === t.id) ||
+          doc.layout.nodes
+            .filter((n) => n.objectId === t.id)
+            .some(
+              (n, index, layouts) =>
+                (n.viewId !== TABLES_VIEW_ID && n.viewId !== t.domainId) ||
+                layouts.some(
+                  (other, otherIndex) => otherIndex !== index && other.viewId === n.viewId,
+                ),
+            ),
       ) ||
       doc.layout.nodes.some((n) => !tables.has(n.objectId)) ||
       [...columns.values()].some(
@@ -108,11 +130,12 @@ function uniqueName(name: string, used: string[]): string {
 export function pasteTables(
   doc: DesignDocument,
   fragment: DesignDocument,
-  domainId: string,
+  domainId: string | null,
   point: { x: number; y: number },
   newId: () => string,
 ): { document: DesignDocument; ids: string[] } {
-  if (!doc.domains.some((d) => d.id === domainId)) throw new Error('Invalid destination');
+  if (domainId !== null && !doc.domains.some((d) => d.id === domainId))
+    throw new Error('Invalid destination');
   const source = structuredClone(fragment);
   const mapping = new Map<string, string>();
   for (const item of [
@@ -153,8 +176,12 @@ export function pasteTables(
         ],
       };
   }
-  const left = Math.min(...source.layout.nodes.map((n) => n.x));
-  const top = Math.min(...source.layout.nodes.map((n) => n.y));
+  // The first placement of each table is the selection's active-view snapshot.
+  const primaryNodes = (source.tables ?? []).map((table) =>
+    source.layout.nodes.find((node) => node.objectId === table.id)!,
+  );
+  const left = Math.min(...primaryNodes.map((n) => n.x));
+  const top = Math.min(...primaryNodes.map((n) => n.y));
   const ids: string[] = [];
   for (const table of source.tables ?? []) {
     const id = mapped(table.id);
@@ -189,11 +216,22 @@ export function pasteTables(
       ...next,
       layout: {
         ...next.layout,
-        nodes: next.layout.nodes.map((n) =>
-          n.objectId === id && n.viewId === domainId
-            ? { ...n, width: node.width, height: node.height }
-            : n,
-        ),
+        nodes: next.layout.nodes.map((n) => {
+          if (n.objectId !== id) return n;
+          const placement =
+            n.viewId === (domainId ?? TABLES_VIEW_ID)
+              ? node
+              : (source.layout.nodes.find(
+                  (item) => item.objectId === table.id && item.viewId === n.viewId,
+                ) ?? node);
+          return {
+            ...n,
+            x: point.x + placement.x - left,
+            y: point.y + placement.y - top,
+            width: placement.width,
+            height: placement.height,
+          };
+        }),
       },
     };
   }

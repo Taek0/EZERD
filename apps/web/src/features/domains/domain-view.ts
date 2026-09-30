@@ -1,10 +1,11 @@
-import { type DesignDocument, upsertCombinedView, setViewport } from '@ezerd/model';
+import { TABLES_VIEW_ID, type DesignDocument, upsertCombinedView, setViewport } from '@ezerd/model';
 import { tableCardSize } from '../tables/table-geometry.js';
 export function domainViewExitTarget(
   doc: DesignDocument,
   domainIds: string[],
   origin: string | null,
 ): string {
+  if (origin === TABLES_VIEW_ID) return TABLES_VIEW_ID;
   const available = domainIds.filter((id) => doc.domains.some((domain) => domain.id === id));
   return origin && available.includes(origin) ? origin : (available[0] ?? 'overview');
 }

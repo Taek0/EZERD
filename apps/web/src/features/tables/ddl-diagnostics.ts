@@ -1,6 +1,6 @@
 import { translate } from '../../shared/i18n/index.js';
 import './translations.js';
-import type { DesignDocument, Table } from '@ezerd/model';
+import { TABLES_VIEW_ID, type DesignDocument, type Table } from '@ezerd/model';
 type Destination = { viewId: string; objectId: string; x: number; y: number };
 export function diagnosticTarget(
   document: DesignDocument,
@@ -32,6 +32,10 @@ export function diagnosticTarget(
     (table &&
       document.layout.nodes.find(
         (item) => item.objectId === table.id && item.viewId === table.domainId,
+      )) ||
+    (table &&
+      document.layout.nodes.find(
+        (item) => item.objectId === table.id && item.viewId === TABLES_VIEW_ID,
       )) ||
     (domain &&
       document.layout.nodes.find(

@@ -1,4 +1,5 @@
 import { createFrameQueue } from './frame-queue.js';
+import { initialCanvasView, tableCanvasOwner, visibleCanvasTable } from './canvas-view.js';
 import {
   copyTables,
   acknowledgeSystemTableClipboard,
@@ -48,6 +49,7 @@ import {
   diffSharedDocument,
   type DesignDocument,
   type Table,
+  TABLES_VIEW_ID,
   upsertTableRelation,
   removeTableRelation,
   removeTable,
@@ -230,7 +232,7 @@ export function Canvas({
       /* Storage can be unavailable in private browsing. */
     }
   }, [inspectorOpen]);
-  const [requestedViewId, setViewId] = useState('overview'),
+  const [requestedViewId, setViewId] = useState(() => initialCanvasView(doc)),
     [selected, setSelectedState] = useState<string | null>(null),
     [relationId, setRelationId] = useState('');
   const [tool, setTool] = useState<CanvasTool>('select');
@@ -256,10 +258,16 @@ export function Canvas({
       ? relationNameDraft.value
       : editingDomainRelation.name
     : relationName;
-  const viewId = validViewId(requestedViewId, [
-    ...doc.domains.map((d) => d.id),
-    ...(doc.views ?? []).map((v) => v.id),
-  ]);
+  const viewId = validViewId(
+    requestedViewId,
+    [...doc.domains.map((d) => d.id), ...(doc.views ?? []).map((v) => v.id)],
+    initialCanvasView(doc),
+  );
+  const fullCanvas = viewId === TABLES_VIEW_ID;
+  const creationOwner = tableCanvasOwner(doc, viewId);
+  useEffect(() => {
+    if (requestedViewId !== viewId) setViewId(viewId);
+  }, [requestedViewId, viewId]);
   const [localViewports, setLocalViewports] = useState<
     Record<
       string,
@@ -355,12 +363,7 @@ export function Canvas({
         .filter((n) => {
           const table = (doc.tables ?? []).find((t) => t.id === n.objectId);
           return (
-            n.viewId === viewId &&
-            (!table ||
-              (isVisibleInView(table.scope, viewMode) &&
-                (activeCombined
-                  ? activeCombined.domainIds.includes(table.domainId)
-                  : table.domainId === viewId)))
+            n.viewId === viewId && (!table || visibleCanvasTable(doc, table, viewId, viewMode))
           );
         })
         .map((node) => {
@@ -389,11 +392,11 @@ export function Canvas({
     [doc, viewId, viewMode, visibleNodeIds],
   );
   const selectedNode = nodes.find((n) => n.objectId === selected),
-    domain = doc.domains.find((d) => d.id === selected),
-    note = doc.notes.find((n) => n.id === selected);
+    domain = selectedNode && doc.domains.find((d) => d.id === selected),
+    note = selectedNode && doc.notes.find((n) => n.id === selected);
   const selectedObjects = multiSelection.filter((id) => nodes.some((n) => n.objectId === id));
   const selectedTableIds = (
-    selectedObjects.length ? selectedObjects : selected ? [selected] : []
+    selectedObjects.length ? selectedObjects : selectedNode && selected ? [selected] : []
   ).filter((id) => doc.tables?.some((t) => t.id === id));
   const tableMenu = !!menu?.source && !!doc.tables?.some((t) => t.id === menu.source);
   function clipboardTarget(target: EventTarget | null) {
@@ -432,7 +435,7 @@ export function Canvas({
     }
   }
   function pasteSelection(text: string, atPointer = false) {
-    if (readOnly || !activeDomain || activeCombined) return;
+    if (readOnly || creationOwner === undefined) return;
     const fragment = parseTableClipboard(text);
     if (!fragment) {
       setClipboardError(tr('복사한 테이블이 없습니다.'));
@@ -445,7 +448,7 @@ export function Canvas({
         atPointer && blankPosition.current?.viewId === viewId
           ? blankPosition.current
           : { x: -camera.x / camera.zoom + offset, y: -camera.y / camera.zoom + offset };
-      const result = pasteTables(doc, fragment, activeDomain.id, point, newId);
+      const result = pasteTables(doc, fragment, creationOwner, point, newId);
       change(result.document);
       setSelectedState(result.ids[0] ?? null);
       setMultiSelection(result.ids);
@@ -483,12 +486,44 @@ export function Canvas({
       setRelationDescription('');
     }
   }, [doc.domains, doc.domainRelations, source, target, relationId]);
-  const table = (doc.tables ?? []).find((t) => t.id === selected);
-  const selectedTableRelation = (doc.tableRelations ?? []).find((r) => r.id === selected);
+  const table = selectedNode && (doc.tables ?? []).find((t) => t.id === selected);
+  const selectedTableRelation = tableRelations.find(
+    (item) => item?.relation.id === selected,
+  )?.relation;
+  const visibleSelection =
+    selectedNode ||
+    selectedTableRelation ||
+    (viewId === 'overview' && doc.domainRelations.some((relation) => relation.id === selected));
+  useEffect(() => {
+    if (selected && !visibleSelection) setSelected(null);
+    setMultiSelection((ids) => {
+      const visible = ids.filter((id) => nodes.some((node) => node.objectId === id));
+      return visible.length === ids.length ? ids : visible;
+    });
+    if (menu?.source && !nodes.some((node) => node.objectId === menu.source)) setMenu(null);
+    if (
+      fkSource &&
+      !doc.columns?.some(
+        (column) => column.id === fkSource && viewTables.some((item) => item.id === column.tableId),
+      )
+    ) {
+      setFkSource(null);
+      setFkTarget(null);
+    }
+  }, [doc, viewId, selected, visibleSelection, menu?.source, fkSource]);
+  useEffect(() => {
+    setMenu(null);
+    setViewPickerOpen(false);
+    setConnectSource(null);
+    setConnectPointer(null);
+    setFkSource(null);
+    setFkTarget(null);
+    resetRelation();
+  }, [viewId, readOnly]);
   useEffect(() => {
     contextCallback.current?.({
       viewId,
-      selectedObjectId: selected,
+      selectedObjectId: visibleSelection ? selected : null,
       position: selectedNode
         ? {
             x: selectedNode.x + selectedNode.width / 2,
@@ -501,6 +536,7 @@ export function Canvas({
   }, [
     viewId,
     selected,
+    !!visibleSelection,
     selectedNode?.x,
     selectedNode?.y,
     selectedNode?.width,
@@ -509,14 +545,22 @@ export function Canvas({
   useEffect(() => {
     if (!focusTarget) return;
     finish();
-    const destinationView = validViewId(focusTarget.viewId, [
-      ...doc.domains.map((d) => d.id),
-      ...(doc.views ?? []).map((v) => v.id),
-    ]);
+    const destinationView = validViewId(
+      focusTarget.viewId,
+      [...doc.domains.map((d) => d.id), ...(doc.views ?? []).map((v) => v.id)],
+      initialCanvasView(doc),
+    );
     setViewId(destinationView);
-    setSelected(destinationView === focusTarget.viewId ? focusTarget.objectId : null);
     const node = doc.layout.nodes.find(
       (n) => n.viewId === focusTarget.viewId && n.objectId === focusTarget.objectId,
+    );
+    const focusedTable = doc.tables?.find((item) => item.id === focusTarget.objectId);
+    setSelected(
+      destinationView === focusTarget.viewId &&
+        node &&
+        (!focusedTable || visibleCanvasTable(doc, focusedTable, destinationView, viewMode))
+        ? focusTarget.objectId
+        : null,
     );
     const rect = surface.current?.getBoundingClientRect();
     const next = clampLayoutPatch({
@@ -568,7 +612,7 @@ export function Canvas({
   const viewTables = (doc.tables ?? []).filter(
     (t) => isVisibleInView(t.scope, viewMode) && nodes.some((n) => n.objectId === t.id),
   );
-  const otherTables = referencedDomainTables(doc, viewId);
+  const otherTables = fullCanvas ? [] : referencedDomainTables(doc, viewId);
   const viewRelations = (doc.tableRelations ?? []).filter(
     (r) =>
       isVisibleInView(r.scope, viewMode) &&
@@ -713,14 +757,14 @@ export function Canvas({
     pick(id);
   }
   function newTable(name = '', at?: { x: number; y: number }) {
-    if (readOnly || viewId === 'overview' || activeCombined) return;
+    if (readOnly || creationOwner === undefined) return;
     const id = newId();
     change(
       addTable(
         doc,
         {
           id,
-          domainId: viewId,
+          domainId: creationOwner,
           scope: 'physical',
           logical: { name: '새 테이블', definition: '' },
           physical: { name, schema: 'public', comment: '' },
@@ -1046,7 +1090,9 @@ export function Canvas({
       globalThis.document.querySelector<HTMLInputElement>('[data-relation-name-input]')?.focus(),
     );
   }
-  const currentViewName = activeCombined?.name ?? activeDomain?.name ?? '';
+  const currentViewName = fullCanvas
+    ? tr('전체 테이블')
+    : (activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵'));
   const pathTrail = (
     <nav className="editor-path" aria-label={tr('현재 위치')}>
       <span className="path-sep" aria-hidden="true">
@@ -1099,7 +1145,7 @@ export function Canvas({
               {tr('＋ 도메인')}
             </Button>
           ) : (
-            <Button disabled={readOnly || !!activeCombined} onClick={() => newTable()}>
+            <Button disabled={readOnly || creationOwner === undefined} onClick={() => newTable()}>
               {tr('＋ 테이블')}
             </Button>
           )}
@@ -1109,6 +1155,12 @@ export function Canvas({
         </div>
         <span className="toolbar-divider" aria-hidden="true" />
         <div className="toolbar-group" role="group" aria-label={tr('보기와 내보내기')}>
+          <Button aria-pressed={fullCanvas} onClick={() => navigate(TABLES_VIEW_ID)}>
+            {tr('전체 테이블')}
+          </Button>
+          <Button aria-pressed={viewId === 'overview'} onClick={() => navigate('overview')}>
+            {tr('도메인 맵')}
+          </Button>
           {viewId !== 'overview' && (
             <DialogTrigger
               isOpen={viewPickerOpen}
@@ -1200,7 +1252,10 @@ export function Canvas({
                           activeCombined?.id ?? null,
                           newId,
                         );
-                        if (!activeCombined) domainViewOrigin.current = activeDomain?.id ?? null;
+                        if (!activeCombined)
+                          domainViewOrigin.current = fullCanvas
+                            ? TABLES_VIEW_ID
+                            : (activeDomain?.id ?? null);
                         change(result.document);
                         navigate(result.viewId);
                         setViewPickerOpen(false);
@@ -1280,11 +1335,7 @@ export function Canvas({
                   setExporting(true);
                   setExportError('');
                   try {
-                    await exportCanvasPng(
-                      world,
-                      nodes,
-                      activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵'),
-                    );
+                    await exportCanvasPng(world, nodes, currentViewName);
                   } catch {
                     setExportError(tr('이미지를 만들지 못했습니다. 다시 시도해 주세요.'));
                   } finally {
@@ -1337,7 +1388,7 @@ export function Canvas({
         copySelection(true, event.clipboardData);
       }}
       onPaste={(event) => {
-        if (!clipboardTarget(event.target) || readOnly || !activeDomain || activeCombined) return;
+        if (!clipboardTarget(event.target) || readOnly || creationOwner === undefined) return;
         const text = event.clipboardData.getData('text/plain');
         if (!parseTableClipboard(text)) return;
         event.preventDefault();
@@ -1353,8 +1404,7 @@ export function Canvas({
           !event.nativeEvent.isComposing &&
           event.key.toLowerCase() === 'v' &&
           !readOnly &&
-          activeDomain &&
-          !activeCombined &&
+          creationOwner !== undefined &&
           clipboardTarget(event.target) &&
           localTablePasteFallback()
         ) {
@@ -1483,7 +1533,9 @@ export function Canvas({
           aria-label={
             viewId === 'overview'
               ? tr('도메인 맵 캔버스')
-              : tr('{name} 내부 캔버스', { name: activeCombined?.name ?? activeDomain?.name ?? '' })
+              : fullCanvas
+                ? tr('전체 테이블 캔버스')
+                : tr('{name} 내부 캔버스', { name: currentViewName })
           }
           onPointerDown={(e) => begin(e, null)}
           onPointerMove={move}
@@ -1820,7 +1872,9 @@ export function Canvas({
               <h2>
                 {viewId === 'overview'
                   ? tr('큰 그림부터 시작하세요')
-                  : tr('이 도메인의 구조를 준비하세요')}
+                  : fullCanvas
+                    ? tr('테이블부터 시작하세요')
+                    : tr('이 도메인의 구조를 준비하세요')}
               </h2>
               <p>
                 {viewId === 'overview'
@@ -1837,6 +1891,16 @@ export function Canvas({
                   onClick={() => newDomain()}
                 >
                   {tr('첫 도메인 만들기')}
+                </Button>
+              )}
+              {fullCanvas && (
+                <Button
+                  variant="primary"
+                  disabled={readOnly}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => newTable()}
+                >
+                  {tr('첫 테이블 만들기')}
                 </Button>
               )}
             </div>
@@ -1950,7 +2014,7 @@ export function Canvas({
                       {
                         id: 'paste-tables',
                         label: tr('붙여넣기'),
-                        disabled: !activeDomain || !!activeCombined,
+                        disabled: creationOwner === undefined,
                         onAction: () => void pasteFromMenu(),
                       },
                     ]
@@ -2009,7 +2073,7 @@ export function Canvas({
                                 label: activeCombined
                                   ? tr('새 테이블은 소유 도메인 화면에서 생성하세요')
                                   : tr('새 테이블 생성'),
-                                disabled: !!activeCombined || !activeDomain,
+                                disabled: creationOwner === undefined,
                                 onAction: () =>
                                   newTable(
                                     '',
@@ -2100,10 +2164,8 @@ export function Canvas({
         <aside id="canvas-inspector" className="inspector" data-panel-tab={panelTab}>
           <div className="inspector-topbar">
             <div className="inspector-place">
-              <span>{viewId === 'overview' ? 'VIEW' : 'DOMAIN'}</span>
-              <strong title={activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵')}>
-                {activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵')}
-              </strong>
+              <span>{viewId === 'overview' || fullCanvas ? 'VIEW' : 'DOMAIN'}</span>
+              <strong title={currentViewName}>{currentViewName}</strong>
             </div>
             {selectionName && (
               <div className="inspector-selection">
@@ -2198,7 +2260,7 @@ export function Canvas({
                       defaultOpen
                     >
                       <PanelList
-                        empty={tr('이 도메인에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.')}
+                        empty={tr('이 화면에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.')}
                       >
                         {viewTables
                           .filter((t) => matches(t.physical.name, t.logical.name))
@@ -2212,7 +2274,14 @@ export function Canvas({
                                   (c) => c.tableId === t.id && isVisibleInView(c.scope, viewMode),
                                 ).length,
                               })}
-                              badge={t.domainId === viewId ? undefined : tr('참조')}
+                              badge={
+                                fullCanvas
+                                  ? (doc.domains.find((domain) => domain.id === t.domainId)?.name ??
+                                    tr('미지정'))
+                                  : t.domainId === viewId
+                                    ? undefined
+                                    : tr('참조')
+                              }
                               onSelect={() => pick(t.id)}
                             />
                           ))}
@@ -2244,7 +2313,7 @@ export function Canvas({
                           ))}
                       </PanelList>
                     </PanelSection>
-                    {!activeCombined && (
+                    {!activeCombined && !fullCanvas && (
                       <PanelSection title={tr('다른 도메인 테이블')} count={otherTables.length}>
                         <PanelNote>
                           {tr('도메인 뷰에서 현재 도메인과 키 관계로 연결된 참조 테이블입니다.')}
@@ -2292,7 +2361,7 @@ export function Canvas({
               </section>
             ) : table ? (
               <>
-                {selectedNode && !activeCombined && table.domainId !== viewId && (
+                {selectedNode && !activeCombined && !fullCanvas && table.domainId !== viewId && (
                   <Button
                     variant="danger"
                     className="danger"
@@ -2309,6 +2378,7 @@ export function Canvas({
                   key={table.id}
                   document={doc}
                   tableId={table.id}
+                  viewId={viewId}
                   onChange={change}
                   readOnly={readOnly}
                   onStartForeignKey={(columnId) => {
@@ -2695,7 +2765,7 @@ export function Canvas({
             ) : (
               <>
                 <div className="panel-empty">
-                  <strong>{activeCombined?.name ?? activeDomain?.name ?? tr('도메인')}</strong>
+                  <strong>{currentViewName}</strong>
                   <p>{tr('테이블을 선택하면 컬럼·키·관계를 여기에서 편집합니다.')}</p>
                 </div>
                 <div className="panel-summary">
@@ -2727,9 +2797,13 @@ export function Canvas({
                   </PanelSection>
                 )}
                 <PanelNote>
-                  {tr(
-                    '목록 탭에서 테이블과 다른 도메인의 참조 관계를 확인할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.',
-                  )}
+                  {fullCanvas
+                    ? tr(
+                        '전체 테이블의 컬럼·키·관계를 설계하고 속성에서 도메인과 색상을 지정할 수 있습니다.',
+                      )
+                    : tr(
+                        '목록 탭에서 테이블과 다른 도메인의 참조 관계를 확인할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.',
+                      )}
                 </PanelNote>
               </>
             )}
@@ -2759,6 +2833,10 @@ export function referencedDomainTables(doc: DesignDocument, domainId: string): T
       ),
   );
   return tables.filter(
-    (t) => t.domainId !== domainId && sharedDomains.has(t.domainId) && referencedIds.has(t.id),
+    (t) =>
+      t.domainId !== null &&
+      t.domainId !== domainId &&
+      sharedDomains.has(t.domainId) &&
+      referencedIds.has(t.id),
   );
 }

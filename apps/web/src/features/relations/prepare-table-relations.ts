@@ -71,7 +71,13 @@ export function prepareTableRelations(
       return null;
     if (visible && (!visible.has(a.id) || !visible.has(b.id))) return null;
     if (viewMode === 'physical' && !relation.physical) return null;
-    if (domainIds && (!domainIds.has(source.domainId) || !domainIds.has(target.domainId)))
+    if (
+      domainIds &&
+      (source.domainId === null ||
+        target.domainId === null ||
+        !domainIds.has(source.domainId) ||
+        !domainIds.has(target.domainId))
+    )
       return null;
     const physical = viewMode !== 'logical' && !!relation.physical && relation.scope !== 'logical';
     const fullLabel = tableRelationLabel(doc, relation, columns);

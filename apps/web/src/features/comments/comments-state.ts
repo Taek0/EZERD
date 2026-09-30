@@ -1,4 +1,4 @@
-import type { DesignDocument } from '@ezerd/model';
+import { TABLES_VIEW_ID, type DesignDocument } from '@ezerd/model';
 export type ReviewTarget = { viewId: string; objectId: string | null; x: number; y: number };
 export function pinPosition(document: DesignDocument, target: ReviewTarget) {
   const node = target.objectId
@@ -8,6 +8,7 @@ export function pinPosition(document: DesignDocument, target: ReviewTarget) {
     : undefined;
   const missingView =
     target.viewId !== 'overview' &&
+    target.viewId !== TABLES_VIEW_ID &&
     !document.domains.some((domain) => domain.id === target.viewId) &&
     !document.views?.some((view) => view.id === target.viewId);
   return {

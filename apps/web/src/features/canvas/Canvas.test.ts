@@ -1,7 +1,7 @@
 import { createElement as h } from 'react';
 import { renderToStaticMarkup as render } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { createEmptyDocument, addDomain, upsertDomainRelation } from '@ezerd/model';
+import { createEmptyDocument, addDomain, addTable, upsertDomainRelation } from '@ezerd/model';
 import { ConfirmProvider } from '../../components/ui/ConfirmProvider.js';
 import { Canvas } from './Canvas.js';
 import { setLocale } from '../../shared/i18n/index.js';
@@ -30,6 +30,60 @@ function markup(readOnly = false) {
 }
 
 describe('editor sidebar structure', () => {
+  it('starts an empty project globally and makes both canvas modes accessible without saving on render', () => {
+    const document = createEmptyDocument();
+    const before = structuredClone(document);
+    const changes: DesignDocument[] = [];
+    const html = render(
+      h(
+        ConfirmProvider,
+        null,
+        h(Canvas, { document, onChange: (doc) => changes.push(doc), readOnly: false }),
+      ),
+    );
+    expect(html).toContain('aria-label="전체 테이블 캔버스"');
+    expect(html).toContain('테이블부터 시작하세요');
+    expect(html).toContain('첫 테이블 만들기');
+    expect(html).toContain('＋ 테이블');
+    expect(html).toContain('도메인 맵');
+    expect(changes).toEqual([]);
+    expect(document).toEqual(before);
+    const legacy = markup();
+    expect(legacy).toContain('aria-label="도메인 맵 캔버스"');
+    expect(legacy).toContain('전체 테이블');
+  });
+
+  it('renders all unassigned physical tables globally with owner labels and keeps viewers read-only', () => {
+    const document = addTable(
+      createEmptyDocument(),
+      {
+        id: 't',
+        domainId: null,
+        scope: 'physical',
+        logical: { name: 'Order', definition: '' },
+        physical: { name: 'orders', schema: 'public', comment: '' },
+        customProperties: { common: {}, logical: {}, physical: {} },
+        color: '#ffffff',
+      },
+      { x: 10, y: 20 },
+    );
+    const html = render(
+      h(
+        ConfirmProvider,
+        null,
+        h(Canvas, { document, onChange: () => {}, readOnly: true, personalReadOnly: false }),
+      ),
+    );
+    expect(html).toContain('orders');
+    expect(html).toContain('background:#ffffff;color:#000000');
+    expect(html).toContain('class="table-owner-badge">소유 도메인 · 미지정');
+    expect(html).not.toContain('외부 참조 · ');
+    expect(html).not.toContain('이 화면의 참조 제거');
+    const create = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].find((match) =>
+      match[2]?.includes('＋ 테이블'),
+    );
+    expect(create?.[1]).toMatch(/\bdisabled=""/);
+  });
   it('switches editor labels to English while preserving user-authored domain content', () => {
     const doc = example();
     const before = JSON.stringify(doc);
@@ -101,12 +155,14 @@ describe('saved view reference table list', () => {
         { id: 'unrelated', domainId: 'b', scope: 'physical' },
         { id: 'not-shared', domainId: 'c', scope: 'physical' },
         { id: 'logical', domainId: 'b', scope: 'logical' },
+        { id: 'unassigned', domainId: null, scope: 'physical' },
       ],
       tableRelations: [
         { sourceTableId: 'own', targetTableId: 'parent', scope: 'physical', physical: {} },
         { sourceTableId: 'child', targetTableId: 'own', scope: 'physical', physical: {} },
         { sourceTableId: 'own', targetTableId: 'not-shared', scope: 'physical', physical: {} },
         { sourceTableId: 'own', targetTableId: 'logical', scope: 'both', physical: {} },
+        { sourceTableId: 'own', targetTableId: 'unassigned', scope: 'physical', physical: {} },
       ],
     } as unknown as DesignDocument;
     expect(referencedDomainTables(doc, 'a').map((t) => t.id)).toEqual(['parent', 'child']);

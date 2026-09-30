@@ -1,5 +1,14 @@
 import { canonicalPostgresTypeName, postgresTypeNames } from '@ezerd/model';
 import { columnTypeOptions, columnTypeValue } from './column-type-options.js';
+import {
+  tableColor,
+  tableHeaderStyle,
+  tableDomainValue,
+  tableDomainFromValue,
+  UNASSIGNED_DOMAIN_VALUE,
+} from './table-appearance.js';
+import { tableCanvasOwner } from '../canvas/canvas-view.js';
+import { DomainColorPicker } from '../domains/DomainColorPicker.js';
 import { translate, useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
 import {
@@ -23,6 +32,7 @@ import {
 } from 'react';
 import {
   type DesignDocument,
+  TABLES_VIEW_ID,
   type ModelScope,
   type Table,
   type Column,
@@ -406,6 +416,9 @@ export function TableNodeContent({
   const metrics = useMemo(() => tableCardMetrics(doc, tableId), [doc, tableId]);
   const table = doc.tables?.find((t) => t.id === tableId);
   if (!table) return null;
+  const ownerTitle = translate('소유 도메인 · {domain}', {
+    domain: doc.domains.find((domain) => domain.id === table.domainId)?.name ?? translate('미지정'),
+  });
   const showNullable = table.canvasDisplay?.showNullable !== false,
     showComment = table.canvasDisplay?.showComment !== false;
   const display = (patch: NonNullable<Table['canvasDisplay']>) =>
@@ -433,14 +446,16 @@ export function TableNodeContent({
       }}
     >
       <header
-        style={{ background: doc.domains.find((d) => d.id === table.domainId)?.color || '#8993a3' }}
-        title={`${viewId && viewId !== table.domainId ? translate('외부 참조 · ') : ''}${doc.domains.find((d) => d.id === table.domainId)?.name ?? ''}`}
+        className={viewId === TABLES_VIEW_ID ? 'table-global-header' : undefined}
+        style={tableHeaderStyle(doc, table)}
+        title={`${viewId && viewId !== TABLES_VIEW_ID && viewId !== table.domainId ? translate('외부 참조 · ') : ''}${ownerTitle}`}
       >
         <strong>
           {cell(table.physical.name, translate('테이블명'), (name) =>
             updateTable(doc, tableId, { physical: { ...table.physical, name } }),
           )}
         </strong>
+        {viewId === TABLES_VIEW_ID && <small className="table-owner-badge">{ownerTitle}</small>}
       </header>
       <div className="table-columns">
         <div className="table-column-row table-column-head">
@@ -675,15 +690,17 @@ export function TableWorkspaceTools({
       <Button
         variant="primary"
         className="primary"
-        disabled={readOnly || viewId === 'overview'}
+        disabled={readOnly || tableCanvasOwner(doc, viewId) === undefined}
         onClick={() => {
+          const domainId = tableCanvasOwner(doc, viewId);
+          if (readOnly || domainId === undefined) return;
           const id = newId();
           onChange(
             addTable(
               doc,
               {
                 id,
-                domainId: viewId,
+                domainId,
                 scope: 'physical',
                 logical: { name: translate('새 테이블'), definition: '' },
                 physical: { name, schema: 'public', comment: '' },
@@ -699,9 +716,11 @@ export function TableWorkspaceTools({
         {translate('+ 테이블')}
       </Button>
       <PanelNote>
-        {translate(
-          '이름을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이 화면으로 참조할 수 있습니다.',
-        )}
+        {viewId === TABLES_VIEW_ID
+          ? translate('도메인 없이 테이블을 만들고, 필요하면 속성에서 도메인을 지정하세요.')
+          : translate(
+              '이름을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이 화면으로 참조할 수 있습니다.',
+            )}
       </PanelNote>
     </div>
   );
@@ -709,12 +728,14 @@ export function TableWorkspaceTools({
 export function TableInspector({
   document: doc,
   tableId,
+  viewId,
   onChange,
   readOnly,
   onStartForeignKey,
 }: {
   document: DesignDocument;
   tableId: string;
+  viewId?: string;
   onChange: (d: DesignDocument) => void;
   readOnly: boolean;
   onStartForeignKey?: (id: string) => void;
@@ -758,9 +779,14 @@ export function TableInspector({
   return (
     <section className="table-inspector">
       <p className="table-owner">
-        {translate('소유 도메인 · {domain} · 참조 화면에서도 원본을 편집합니다.', {
-          domain: doc.domains.find((d) => d.id === table.domainId)?.name ?? '',
-        })}
+        {translate(
+          viewId === TABLES_VIEW_ID
+            ? '소유 도메인 · {domain}'
+            : '소유 도메인 · {domain} · 참조 화면에서도 원본을 편집합니다.',
+          {
+            domain: doc.domains.find((d) => d.id === table.domainId)?.name ?? translate('미지정'),
+          },
+        )}
       </p>
       <fieldset disabled={readOnly}>
         <PanelSection title={translate('기본 정보')} defaultOpen>
@@ -768,17 +794,25 @@ export function TableInspector({
             {translate('도메인')}
             <Select
               aria-label={translate('도메인')}
-              value={table.domainId}
+              value={tableDomainValue(table.domainId)}
               disabled={readOnly}
-              onValueChange={(domainId) => patch({ domainId })}
+              onValueChange={(value) => patch({ domainId: tableDomainFromValue(value) })}
             >
+              <option value={UNASSIGNED_DOMAIN_VALUE}>{translate('미지정')}</option>
               {doc.domains.map((domain) => (
-                <option key={domain.id} value={domain.id}>
+                <option key={domain.id} value={tableDomainValue(domain.id)}>
                   {domain.name}
                 </option>
               ))}
             </Select>
           </label>
+          <DomainColorPicker
+            label={translate('테이블 색상')}
+            value={tableColor(doc, table)}
+            disabled={readOnly}
+            onChange={(color) => patch({ color })}
+            onReset={() => patch({ color: undefined })}
+          />
           <TextField
             label={translate('테이블명')}
             value={table.physical.name}
@@ -1463,7 +1497,8 @@ export function RelationEditor({
             >
               {doc.tables?.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {doc.domains.find((d) => d.id === t.domainId)?.name} / {tableName(t)}
+                  {doc.domains.find((d) => d.id === t.domainId)?.name ?? translate('미지정')} /{' '}
+                  {tableName(t)}
                 </option>
               ))}
             </Select>

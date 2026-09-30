@@ -33,7 +33,14 @@ describe('table editor actions', () => {
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TableInspector, TableNodeContent, TableWorkspaceTools } from './TableEditor.js';
-import { createEmptyDocument, addDomain, addTable, addColumn } from '@ezerd/model';
+import {
+  createEmptyDocument,
+  addDomain,
+  addTable,
+  addColumn,
+  TABLES_VIEW_ID,
+  updateTable,
+} from '@ezerd/model';
 import { setLocale } from '../../shared/i18n/index.js';
 import { columnDefaultOptions } from './column-defaults.js';
 import { EnumManager } from './EnumManager.js';
@@ -73,6 +80,69 @@ function example() {
   return doc;
 }
 describe('table editor rendered controls', () => {
+  it('shows shared colors and visible ownership globally while distinguishing external domain references', () => {
+    const doc = updateTable(example(), 't', { color: '#ffffff' });
+    const card = (viewId: string) =>
+      renderToStaticMarkup(
+        createElement(ConfirmProvider, {
+          children: createElement(TableNodeContent, {
+            document: doc,
+            tableId: 't',
+            viewId,
+            viewMode: 'physical',
+          }),
+        }),
+      );
+    const global = card(TABLES_VIEW_ID);
+    expect(global).toContain('background:#ffffff;color:#000000');
+    expect(global).toContain('class="table-owner-badge">소유 도메인 · 결제');
+    expect(global).not.toContain('외부 참조 · ');
+    expect(card('external')).toContain('외부 참조 · 소유 도메인 · 결제');
+    expect(card('d')).toContain('background:#ffffff;color:#000000');
+  });
+
+  it('renders unassigned owner selection and automatic color reset without reference-only wording in the global inspector', () => {
+    const doc = updateTable(example(), 't', { domainId: null, color: '#465fff' });
+    for (const readOnly of [false, true]) {
+      const html = renderToStaticMarkup(
+        createElement(ConfirmProvider, {
+          children: createElement(TableInspector, {
+            document: doc,
+            tableId: 't',
+            viewId: TABLES_VIEW_ID,
+            onChange: () => {},
+            readOnly,
+          }),
+        }),
+      );
+      expect(html).toContain('미지정');
+      expect(html).toContain('테이블 색상');
+      expect(html).toContain('자동 색상으로 되돌리기');
+      expect(html).not.toContain('참조 화면에서도');
+      const buttons = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
+      for (const label of ['테이블 색상 선택', '도메인']) {
+        const button = buttons.find((match) => match[1]?.includes(`aria-label="${label}"`));
+        expect(button).toBeDefined();
+        expect(button![1]!.includes('disabled=""')).toBe(readOnly);
+      }
+      const reset = buttons.find((match) => match[2]?.includes('자동 색상으로 되돌리기'));
+      expect(reset![1]!.includes('disabled=""')).toBe(readOnly);
+    }
+    const tools = renderToStaticMarkup(
+      createElement(TableWorkspaceTools, {
+        document: doc,
+        viewId: TABLES_VIEW_ID,
+        viewMode: 'physical',
+        onViewModeChange: () => {},
+        onChange: () => {},
+        readOnly: false,
+        position: { x: 0, y: 0 },
+        onSelect: () => {},
+      }),
+    );
+    expect(tools).toContain('도메인 없이 테이블을 만들고');
+    expect(tools).not.toContain('다른 도메인의 테이블을 이 화면으로 참조');
+  });
   it.each([
     [{ name: 'varchar', length: 32, isArray: false }, 'VARCHAR(32)'],
     [{ name: 'timestamp with time zone', precision: 3, isArray: true }, 'TIMESTAMPTZ(3)[]'],

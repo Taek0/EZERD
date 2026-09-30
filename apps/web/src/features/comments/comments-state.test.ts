@@ -1,7 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { createEmptyDocument, addDomain, removeDomain, updateNodeLayout } from '@ezerd/model';
+import {
+  createEmptyDocument,
+  addDomain,
+  addTable,
+  TABLES_VIEW_ID,
+  removeDomain,
+  updateNodeLayout,
+} from '@ezerd/model';
 import { pinPosition, pinAttachment, selectedMentions, LatestRequest } from './comments-state.js';
 describe('review pins and mentions', () => {
+  it('keeps blank global pins valid and follows global table attachments without a domain', () => {
+    const blank = createEmptyDocument();
+    expect(pinPosition(blank, { viewId: TABLES_VIEW_ID, objectId: null, x: 7, y: 8 })).toEqual({
+      x: 7,
+      y: 8,
+      missing: false,
+    });
+    const document = addTable(
+      blank,
+      {
+        id: 't',
+        domainId: null,
+        scope: 'physical',
+        logical: { name: '', definition: '' },
+        physical: { name: 'orders', schema: 'public', comment: '' },
+        customProperties: { common: {}, logical: {}, physical: {} },
+      },
+      { x: 100, y: 200 },
+    );
+    const attachment = pinAttachment(document, TABLES_VIEW_ID, 't', { x: 112, y: 224 });
+    const node = document.layout.nodes.find((node) => node.objectId === 't')!;
+    expect(
+      pinPosition(updateNodeLayout(document, node.id, { x: 400 }), {
+        ...attachment,
+        viewId: TABLES_VIEW_ID,
+      }),
+    ).toEqual({ x: 412, y: 224, missing: false });
+  });
   const doc = addDomain(
     createEmptyDocument(),
     { id: 'd', name: 'Domain', description: '' },

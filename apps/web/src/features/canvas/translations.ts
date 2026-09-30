@@ -1,6 +1,15 @@
 import { registerTranslations } from '../../shared/i18n/index.js';
 
 registerTranslations({
+  '전체 테이블의 컬럼·키·관계를 설계하고 속성에서 도메인과 색상을 지정할 수 있습니다.':
+    'Design columns, keys and relationships for all tables. Set domains and colors in properties.',
+  '전체 테이블': 'All tables',
+  '전체 테이블 캔버스': 'All tables canvas',
+  '테이블부터 시작하세요': 'Start with tables',
+  '첫 테이블 만들기': 'Create your first table',
+  '이 화면에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.':
+    'No tables in this view. Add one with ＋ Table in the toolbar.',
+  '자동 색상으로 되돌리기': 'Reset to automatic color',
   '테이블 메뉴': 'Table menu',
   오려두기: 'Cut',
   복사하기: 'Copy',
