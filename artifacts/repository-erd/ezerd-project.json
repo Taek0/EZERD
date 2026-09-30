@@ -12,31 +12,31 @@
       {
         "id": "identity",
         "name": "인증",
-        "description": "apps/server/src/db/schema.ts에서 추출",
+        "description": "사용자 신원과 인증 수단을 관리한다. users는 공통 사용자 기준이며 sessions는 로그인 세션, mcp_tokens는 MCP 접근 토큰과 만료·폐기 상태를 저장한다. 사용자 PK는 멤버십, 개인 설정, 리뷰와 동기화 수행자를 연결한다.",
         "color": "#2563eb"
       },
       {
         "id": "workspace-domain",
         "name": "공간",
-        "description": "apps/server/src/db/schema.ts에서 추출",
+        "description": "협업 공간과 접근 권한을 관리한다. workspace는 공간, user_workspaces는 사용자별 역할, workspace_invitations는 초대 수신자·초대자·만료 상태를 저장한다. workspace_audit_events는 감사 이력이며 삭제 후 보존을 위해 물리 FK가 없다. 공간은 프로젝트의 상위 소유 단위다.",
         "color": "#16a34a"
       },
       {
         "id": "project",
         "name": "프로젝트",
-        "description": "apps/server/src/db/schema.ts에서 추출",
+        "description": "공간에 소속된 ERD 프로젝트와 사용자별 개인 화면을 관리한다. projects는 설계 JSONB와 버전·동기화 순번을 저장한다. project_personal_states는 사용자별 화면 상태, project_personal_operations는 개인 작업의 중복 처리 방지 결과를 저장한다. 프로젝트 삭제는 관련 하위 데이터에 전파된다.",
         "color": "#9333ea"
       },
       {
         "id": "review",
         "name": "리뷰",
-        "description": "apps/server/src/db/schema.ts에서 추출",
+        "description": "프로젝트 설계에 대한 리뷰와 알림을 관리한다. review_threads는 화면·객체 위치에 연결된 리뷰 스레드, review_messages는 작성자와 댓글, review_notifications는 사용자별 알림과 읽음 상태를 저장한다. 스레드가 부모이며 댓글과 알림은 같은 하위 계층이다. mention_ids는 JSONB로 저장한다.",
         "color": "#ea580c"
       },
       {
         "id": "sync",
         "name": "동기화",
-        "description": "apps/server/src/db/schema.ts에서 추출",
+        "description": "프로젝트 공동 편집의 변경 이력과 충돌 판정 정보를 관리한다. sync_operations는 작업과 처리 결과, sync_field_versions는 필드별 마지막 변경 순번, sync_client_baselines는 클라이언트 기준 문서, sync_tombstones는 삭제 객체 스냅샷을 저장한다. 네 테이블은 projects를 참조하는 동등한 하위 객체이며 서로 직접 FK는 없다.",
         "color": "#0891b2"
       }
     ],
@@ -4793,24 +4793,15 @@
           "viewId": "overview",
           "x": 0,
           "y": 0,
-          "width": 280,
-          "height": 210
+          "width": 440,
+          "height": 420
         },
         {
           "id": "node:identity:users",
           "objectId": "users",
           "viewId": "identity",
           "x": 0,
-          "y": 0,
-          "width": 409,
-          "height": 346
-        },
-        {
-          "id": "node:all-tables:users",
-          "objectId": "users",
-          "viewId": "all-tables",
-          "x": 0,
-          "y": 0,
+          "y": 232,
           "width": 409,
           "height": 346
         },
@@ -4818,16 +4809,7 @@
           "id": "node:identity:sessions",
           "objectId": "sessions",
           "viewId": "identity",
-          "x": 652,
-          "y": 0,
-          "width": 434,
-          "height": 346
-        },
-        {
-          "id": "node:all-tables:sessions",
-          "objectId": "sessions",
-          "viewId": "all-tables",
-          "x": 652,
+          "x": 589,
           "y": 0,
           "width": 434,
           "height": 346
@@ -4836,17 +4818,8 @@
           "id": "node:identity:mcp_tokens",
           "objectId": "mcp_tokens",
           "viewId": "identity",
-          "x": 652,
-          "y": 416,
-          "width": 434,
-          "height": 420
-        },
-        {
-          "id": "node:all-tables:mcp_tokens",
-          "objectId": "mcp_tokens",
-          "viewId": "all-tables",
-          "x": 652,
-          "y": 416,
+          "x": 589,
+          "y": 426,
           "width": 434,
           "height": 420
         },
@@ -4854,107 +4827,62 @@
           "id": "node:domain:workspace-domain",
           "objectId": "workspace-domain",
           "viewId": "overview",
-          "x": 340,
+          "x": 520,
           "y": 0,
-          "width": 280,
-          "height": 210
+          "width": 440,
+          "height": 420
         },
         {
           "id": "node:workspace-domain:workspace",
           "objectId": "workspace",
           "viewId": "workspace-domain",
           "x": 0,
-          "y": 0,
+          "y": 211,
           "width": 521,
           "height": 309
-        },
-        {
-          "id": "node:all-tables:workspace",
-          "objectId": "workspace",
-          "viewId": "all-tables",
-          "x": 0,
-          "y": 986,
-          "width": 521,
-          "height": 309
-        },
-        {
-          "id": "node:workspace-domain:user_workspaces",
-          "objectId": "user_workspaces",
-          "viewId": "workspace-domain",
-          "x": 652,
-          "y": 0,
-          "width": 471,
-          "height": 272
-        },
-        {
-          "id": "node:all-tables:user_workspaces",
-          "objectId": "user_workspaces",
-          "viewId": "all-tables",
-          "x": 652,
-          "y": 986,
-          "width": 471,
-          "height": 272
-        },
-        {
-          "id": "node:workspace-domain:workspace_invitations",
-          "objectId": "workspace_invitations",
-          "viewId": "workspace-domain",
-          "x": 652,
-          "y": 342,
-          "width": 552,
-          "height": 485
-        },
-        {
-          "id": "node:all-tables:workspace_invitations",
-          "objectId": "workspace_invitations",
-          "viewId": "all-tables",
-          "x": 652,
-          "y": 1328,
-          "width": 552,
-          "height": 485
         },
         {
           "id": "node:workspace-domain:workspace_audit_events",
           "objectId": "workspace_audit_events",
           "viewId": "workspace-domain",
           "x": 0,
-          "y": 379,
-          "width": 459,
+          "y": 600,
+          "width": 521,
           "height": 383
         },
         {
-          "id": "node:all-tables:workspace_audit_events",
-          "objectId": "workspace_audit_events",
-          "viewId": "all-tables",
-          "x": 0,
-          "y": 1365,
-          "width": 459,
-          "height": 383
+          "id": "node:workspace-domain:user_workspaces",
+          "objectId": "user_workspaces",
+          "viewId": "workspace-domain",
+          "x": 701,
+          "y": 0,
+          "width": 552,
+          "height": 272
+        },
+        {
+          "id": "node:workspace-domain:workspace_invitations",
+          "objectId": "workspace_invitations",
+          "viewId": "workspace-domain",
+          "x": 701,
+          "y": 352,
+          "width": 552,
+          "height": 485
         },
         {
           "id": "node:domain:project",
           "objectId": "project",
           "viewId": "overview",
-          "x": 680,
+          "x": 1040,
           "y": 0,
-          "width": 280,
-          "height": 210
+          "width": 440,
+          "height": 420
         },
         {
           "id": "node:project:projects",
           "objectId": "projects",
           "viewId": "project",
-          "x": 652,
-          "y": 0,
-          "width": 528,
-          "height": 522
-        },
-        {
-          "id": "node:all-tables:projects",
-          "objectId": "projects",
-          "viewId": "all-tables",
-          "x": 652,
-          "y": 1963,
+          "x": 0,
+          "y": 97,
           "width": 528,
           "height": 522
         },
@@ -4962,35 +4890,17 @@
           "id": "node:project:project_personal_states",
           "objectId": "project_personal_states",
           "viewId": "project",
-          "x": 1304,
+          "x": 708,
           "y": 0,
-          "width": 409,
-          "height": 309
-        },
-        {
-          "id": "node:all-tables:project_personal_states",
-          "objectId": "project_personal_states",
-          "viewId": "all-tables",
-          "x": 1304,
-          "y": 1963,
-          "width": 409,
+          "width": 460,
           "height": 309
         },
         {
           "id": "node:project:project_personal_operations",
           "objectId": "project_personal_operations",
           "viewId": "project",
-          "x": 1304,
-          "y": 379,
-          "width": 460,
-          "height": 346
-        },
-        {
-          "id": "node:all-tables:project_personal_operations",
-          "objectId": "project_personal_operations",
-          "viewId": "all-tables",
-          "x": 1304,
-          "y": 2342,
+          "x": 708,
+          "y": 389,
           "width": 460,
           "height": 346
         },
@@ -4998,26 +4908,17 @@
           "id": "node:domain:review",
           "objectId": "review",
           "viewId": "overview",
-          "x": 1020,
+          "x": 1560,
           "y": 0,
-          "width": 280,
-          "height": 210
+          "width": 440,
+          "height": 420
         },
         {
           "id": "node:review:review_threads",
           "objectId": "review_threads",
           "viewId": "review",
-          "x": 1304,
-          "y": 0,
-          "width": 471,
-          "height": 457
-        },
-        {
-          "id": "node:all-tables:review_threads",
-          "objectId": "review_threads",
-          "viewId": "all-tables",
-          "x": 1304,
-          "y": 2838,
+          "x": 0,
+          "y": 158,
           "width": 471,
           "height": 457
         },
@@ -5025,17 +4926,8 @@
           "id": "node:review:review_messages",
           "objectId": "review_messages",
           "viewId": "review",
-          "x": 1956,
+          "x": 651,
           "y": 0,
-          "width": 421,
-          "height": 346
-        },
-        {
-          "id": "node:all-tables:review_messages",
-          "objectId": "review_messages",
-          "viewId": "all-tables",
-          "x": 1956,
-          "y": 2838,
           "width": 421,
           "height": 346
         },
@@ -5043,44 +4935,26 @@
           "id": "node:review:review_notifications",
           "objectId": "review_notifications",
           "viewId": "review",
-          "x": 1956,
-          "y": 416,
-          "width": 409,
-          "height": 346
-        },
-        {
-          "id": "node:all-tables:review_notifications",
-          "objectId": "review_notifications",
-          "viewId": "all-tables",
-          "x": 1956,
-          "y": 3254,
-          "width": 409,
+          "x": 651,
+          "y": 426,
+          "width": 421,
           "height": 346
         },
         {
           "id": "node:domain:sync",
           "objectId": "sync",
           "viewId": "overview",
-          "x": 1360,
+          "x": 2080,
           "y": 0,
-          "width": 280,
-          "height": 210
+          "width": 440,
+          "height": 420
         },
         {
           "id": "node:sync:sync_operations",
           "objectId": "sync_operations",
           "viewId": "sync",
-          "x": 1304,
+          "x": 0,
           "y": 0,
-          "width": 501,
-          "height": 744
-        },
-        {
-          "id": "node:all-tables:sync_operations",
-          "objectId": "sync_operations",
-          "viewId": "all-tables",
-          "x": 1304,
-          "y": 3750,
           "width": 501,
           "height": 744
         },
@@ -5088,35 +4962,17 @@
           "id": "node:sync:sync_field_versions",
           "objectId": "sync_field_versions",
           "viewId": "sync",
-          "x": 1304,
-          "y": 814,
-          "width": 434,
-          "height": 309
-        },
-        {
-          "id": "node:all-tables:sync_field_versions",
-          "objectId": "sync_field_versions",
-          "viewId": "all-tables",
-          "x": 1304,
-          "y": 4564,
-          "width": 434,
+          "x": 0,
+          "y": 824,
+          "width": 501,
           "height": 309
         },
         {
           "id": "node:sync:sync_client_baselines",
           "objectId": "sync_client_baselines",
           "viewId": "sync",
-          "x": 1304,
-          "y": 1193,
-          "width": 501,
-          "height": 411
-        },
-        {
-          "id": "node:all-tables:sync_client_baselines",
-          "objectId": "sync_client_baselines",
-          "viewId": "all-tables",
-          "x": 1304,
-          "y": 4943,
+          "x": 0,
+          "y": 1213,
           "width": 501,
           "height": 411
         },
@@ -5124,19 +4980,163 @@
           "id": "node:sync:sync_tombstones",
           "objectId": "sync_tombstones",
           "viewId": "sync",
-          "x": 1304,
-          "y": 1674,
-          "width": 434,
+          "x": 0,
+          "y": 1704,
+          "width": 501,
           "height": 383
+        },
+        {
+          "id": "node:all-tables:users",
+          "objectId": "users",
+          "viewId": "all-tables",
+          "x": 0,
+          "y": 935,
+          "width": 521,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:workspace",
+          "objectId": "workspace",
+          "viewId": "all-tables",
+          "x": 0,
+          "y": 1408,
+          "width": 521,
+          "height": 309
+        },
+        {
+          "id": "node:all-tables:workspace_audit_events",
+          "objectId": "workspace_audit_events",
+          "viewId": "all-tables",
+          "x": 0,
+          "y": 1797,
+          "width": 521,
+          "height": 383
+        },
+        {
+          "id": "node:all-tables:sessions",
+          "objectId": "sessions",
+          "viewId": "all-tables",
+          "x": 701,
+          "y": 0,
+          "width": 552,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:mcp_tokens",
+          "objectId": "mcp_tokens",
+          "viewId": "all-tables",
+          "x": 701,
+          "y": 426,
+          "width": 552,
+          "height": 420
+        },
+        {
+          "id": "node:all-tables:user_workspaces",
+          "objectId": "user_workspaces",
+          "viewId": "all-tables",
+          "x": 701,
+          "y": 926,
+          "width": 552,
+          "height": 272
+        },
+        {
+          "id": "node:all-tables:workspace_invitations",
+          "objectId": "workspace_invitations",
+          "viewId": "all-tables",
+          "x": 701,
+          "y": 1278,
+          "width": 552,
+          "height": 485
+        },
+        {
+          "id": "node:all-tables:projects",
+          "objectId": "projects",
+          "viewId": "all-tables",
+          "x": 701,
+          "y": 1843,
+          "width": 552,
+          "height": 522
+        },
+        {
+          "id": "node:all-tables:review_threads",
+          "objectId": "review_threads",
+          "viewId": "all-tables",
+          "x": 1433,
+          "y": 158,
+          "width": 501,
+          "height": 457
+        },
+        {
+          "id": "node:all-tables:project_personal_states",
+          "objectId": "project_personal_states",
+          "viewId": "all-tables",
+          "x": 1433,
+          "y": 695,
+          "width": 501,
+          "height": 309
+        },
+        {
+          "id": "node:all-tables:project_personal_operations",
+          "objectId": "project_personal_operations",
+          "viewId": "all-tables",
+          "x": 1433,
+          "y": 1084,
+          "width": 501,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:sync_operations",
+          "objectId": "sync_operations",
+          "viewId": "all-tables",
+          "x": 1433,
+          "y": 1510,
+          "width": 501,
+          "height": 744
+        },
+        {
+          "id": "node:all-tables:sync_field_versions",
+          "objectId": "sync_field_versions",
+          "viewId": "all-tables",
+          "x": 1433,
+          "y": 2334,
+          "width": 501,
+          "height": 309
+        },
+        {
+          "id": "node:all-tables:sync_client_baselines",
+          "objectId": "sync_client_baselines",
+          "viewId": "all-tables",
+          "x": 1433,
+          "y": 2723,
+          "width": 501,
+          "height": 411
         },
         {
           "id": "node:all-tables:sync_tombstones",
           "objectId": "sync_tombstones",
           "viewId": "all-tables",
-          "x": 1304,
-          "y": 5424,
-          "width": 434,
+          "x": 1433,
+          "y": 3214,
+          "width": 501,
           "height": 383
+        },
+        {
+          "id": "node:all-tables:review_messages",
+          "objectId": "review_messages",
+          "viewId": "all-tables",
+          "x": 2114,
+          "y": 0,
+          "width": 421,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:review_notifications",
+          "objectId": "review_notifications",
+          "viewId": "all-tables",
+          "x": 2114,
+          "y": 426,
+          "width": 421,
+          "height": 346
         }
       ],
       "viewports": [
@@ -5183,7 +5183,800 @@
           "zoom": 0.15
         }
       ],
-      "relations": []
+      "relations": [
+        {
+          "relationId": "fk:mcp_tokens_user_id_users_id_fk",
+          "viewId": "identity",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 454,
+              "y": 636
+            },
+            {
+              "x": 454,
+              "y": 405
+            }
+          ]
+        },
+        {
+          "relationId": "fk:sessions_user_id_users_id_fk",
+          "viewId": "identity",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 472,
+              "y": 173
+            },
+            {
+              "x": 472,
+              "y": 405
+            }
+          ]
+        },
+        {
+          "relationId": "fk:user_workspaces_workspace_id_workspace_workspace_id_fk",
+          "viewId": "workspace-domain",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 566,
+              "y": 136
+            },
+            {
+              "x": 566,
+              "y": 365.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:workspace_invitations_workspace_id_workspace_workspace_id_fk",
+          "viewId": "workspace-domain",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 584,
+              "y": 594.5
+            },
+            {
+              "x": 584,
+              "y": 365.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:project_personal_operations_project_id_projects_id_fk",
+          "viewId": "project",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 573,
+              "y": 562
+            },
+            {
+              "x": 573,
+              "y": 358
+            }
+          ]
+        },
+        {
+          "relationId": "fk:project_personal_states_project_id_projects_id_fk",
+          "viewId": "project",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 591,
+              "y": 154.5
+            },
+            {
+              "x": 591,
+              "y": 358
+            }
+          ]
+        },
+        {
+          "relationId": "fk:review_messages_thread_id_review_threads_id_fk",
+          "viewId": "review",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 516,
+              "y": 173
+            },
+            {
+              "x": 516,
+              "y": 386.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:review_notifications_thread_id_review_threads_id_fk",
+          "viewId": "review",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 534,
+              "y": 599
+            },
+            {
+              "x": 534,
+              "y": 386.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:mcp_tokens_user_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 566,
+              "y": 636
+            },
+            {
+              "x": 566,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:review_messages_thread_id_review_threads_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1997,
+              "y": 173
+            },
+            {
+              "x": 1997,
+              "y": 386.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:review_messages_author_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 2033,
+              "y": 173
+            },
+            {
+              "x": 2033,
+              "y": -128
+            },
+            {
+              "x": 602,
+              "y": -128
+            },
+            {
+              "x": 602,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:review_notifications_user_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 2015,
+              "y": 599
+            },
+            {
+              "x": 2015,
+              "y": -152
+            },
+            {
+              "x": 620,
+              "y": -152
+            },
+            {
+              "x": 620,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:review_notifications_project_id_projects_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1997,
+              "y": 599
+            },
+            {
+              "x": 1997,
+              "y": -176
+            },
+            {
+              "x": 1370,
+              "y": -176
+            },
+            {
+              "x": 1370,
+              "y": 2104
+            }
+          ]
+        },
+        {
+          "relationId": "fk:review_notifications_thread_id_review_threads_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1979,
+              "y": 599
+            },
+            {
+              "x": 1979,
+              "y": 386.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:project_personal_operations_project_id_projects_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1316,
+              "y": 1257
+            },
+            {
+              "x": 1316,
+              "y": 2104
+            }
+          ]
+        },
+        {
+          "relationId": "fk:project_personal_operations_user_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1352,
+              "y": 1257
+            },
+            {
+              "x": 1352,
+              "y": -248
+            },
+            {
+              "x": 602,
+              "y": -248
+            },
+            {
+              "x": 602,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:project_personal_states_project_id_projects_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1352,
+              "y": 849.5
+            },
+            {
+              "x": 1352,
+              "y": 2104
+            }
+          ]
+        },
+        {
+          "relationId": "fk:project_personal_states_user_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1316,
+              "y": 849.5
+            },
+            {
+              "x": 1316,
+              "y": -296
+            },
+            {
+              "x": 638,
+              "y": -296
+            },
+            {
+              "x": 638,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:projects_workspace_id_workspace_workspace_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 566,
+              "y": 2104
+            },
+            {
+              "x": 566,
+              "y": 1562.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:sessions_user_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 584,
+              "y": 173
+            },
+            {
+              "x": 584,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:sync_client_baselines_project_id_projects_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1334,
+              "y": 2928.5
+            },
+            {
+              "x": 1334,
+              "y": 2104
+            }
+          ]
+        },
+        {
+          "relationId": "fk:sync_client_baselines_user_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1334,
+              "y": 2928.5
+            },
+            {
+              "x": 1334,
+              "y": -392
+            },
+            {
+              "x": 620,
+              "y": -392
+            },
+            {
+              "x": 620,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:sync_field_versions_project_id_projects_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1370,
+              "y": 2488.5
+            },
+            {
+              "x": 1370,
+              "y": 2104
+            }
+          ]
+        },
+        {
+          "relationId": "fk:sync_operations_project_id_projects_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1298,
+              "y": 1882
+            },
+            {
+              "x": 1298,
+              "y": 2104
+            }
+          ]
+        },
+        {
+          "relationId": "fk:sync_operations_actor_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1370,
+              "y": 1882
+            },
+            {
+              "x": 1370,
+              "y": -464
+            },
+            {
+              "x": 584,
+              "y": -464
+            },
+            {
+              "x": 584,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:sync_tombstones_project_id_projects_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1334,
+              "y": 3405.5
+            },
+            {
+              "x": 1334,
+              "y": 2104
+            }
+          ]
+        },
+        {
+          "relationId": "fk:review_threads_project_id_projects_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 1352,
+              "y": 386.5
+            },
+            {
+              "x": 1352,
+              "y": 2104
+            }
+          ]
+        },
+        {
+          "relationId": "fk:user_workspaces_workspace_id_workspace_workspace_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 638,
+              "y": 1062
+            },
+            {
+              "x": 638,
+              "y": 1562.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:user_workspaces_user_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 566,
+              "y": 1062
+            },
+            {
+              "x": 566,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:workspace_invitations_workspace_id_workspace_workspace_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 584,
+              "y": 1520.5
+            },
+            {
+              "x": 584,
+              "y": 1562.5
+            }
+          ]
+        },
+        {
+          "relationId": "fk:workspace_invitations_invited_user_id_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 602,
+              "y": 1520.5
+            },
+            {
+              "x": 602,
+              "y": 1108
+            }
+          ]
+        },
+        {
+          "relationId": "fk:workspace_invitations_invited_by_users_id_fk",
+          "viewId": "all-tables",
+          "offset": 0,
+          "sourceAnchor": {
+            "side": "left",
+            "ratio": 0.5
+          },
+          "targetAnchor": {
+            "side": "right",
+            "ratio": 0.5
+          },
+          "waypoints": [
+            {
+              "x": 620,
+              "y": 1520.5
+            },
+            {
+              "x": 620,
+              "y": 1108
+            }
+          ]
+        }
+      ]
     }
   }
 }

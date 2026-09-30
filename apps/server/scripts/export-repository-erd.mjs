@@ -47,7 +47,21 @@ const domainColors = {
   review: '#ea580c',
   sync: '#0891b2',
 };
-for (const domain of doc.domains) domain.color = domainColors[domain.id];
+const domainDescriptions = {
+  identity:
+    '사용자 신원과 인증 수단을 관리한다. users는 공통 사용자 기준이며 sessions는 로그인 세션, mcp_tokens는 MCP 접근 토큰과 만료·폐기 상태를 저장한다. 사용자 PK는 멤버십, 개인 설정, 리뷰와 동기화 수행자를 연결한다.',
+  'workspace-domain':
+    '협업 공간과 접근 권한을 관리한다. workspace는 공간, user_workspaces는 사용자별 역할, workspace_invitations는 초대 수신자·초대자·만료 상태를 저장한다. workspace_audit_events는 감사 이력이며 삭제 후 보존을 위해 물리 FK가 없다. 공간은 프로젝트의 상위 소유 단위다.',
+  project:
+    '공간에 소속된 ERD 프로젝트와 사용자별 개인 화면을 관리한다. projects는 설계 JSONB와 버전·동기화 순번을 저장한다. project_personal_states는 사용자별 화면 상태, project_personal_operations는 개인 작업의 중복 처리 방지 결과를 저장한다. 프로젝트 삭제는 관련 하위 데이터에 전파된다.',
+  review:
+    '프로젝트 설계에 대한 리뷰와 알림을 관리한다. review_threads는 화면·객체 위치에 연결된 리뷰 스레드, review_messages는 작성자와 댓글, review_notifications는 사용자별 알림과 읽음 상태를 저장한다. 스레드가 부모이며 댓글과 알림은 같은 하위 계층이다. mention_ids는 JSONB로 저장한다.',
+  sync: '프로젝트 공동 편집의 변경 이력과 충돌 판정 정보를 관리한다. sync_operations는 작업과 처리 결과, sync_field_versions는 필드별 마지막 변경 순번, sync_client_baselines는 클라이언트 기준 문서, sync_tombstones는 삭제 객체 스냅샷을 저장한다. 네 테이블은 projects를 참조하는 동등한 하위 객체이며 서로 직접 FK는 없다.',
+};
+for (const domain of doc.domains) {
+  domain.color = domainColors[domain.id];
+  domain.description = domainDescriptions[domain.id];
+}
 const literal = (v) =>
   typeof v === 'string'
     ? `'${v.replaceAll("'", "''")}'`
@@ -162,48 +176,112 @@ for (const config of configs) {
     });
   }
 }
-// Parent tables sit to the left; each domain forms a horizontal band.
-const depth = (name, seen = new Set()) => {
-  if (seen.has(name)) throw new Error('Cyclic FK requires explicit layout');
-  const parents = doc.tableRelations
-    .filter((r) => r.sourceTableId === name)
-    .map((r) => r.targetTableId);
-  return parents.length
-    ? 1 + Math.max(...parents.map((p) => depth(p, new Set([...seen, name]))))
-    : 0;
-};
 const sizes = Object.fromEntries(doc.tables.map((t) => [t.id, tableCardMetrics(doc, t.id)]));
-const maxWidth = Math.ceil(Math.max(...Object.values(sizes).map((s) => s.width)));
-let bandY = 0;
+function layoutTables(viewId, names) {
+  const edges = doc.tableRelations.filter(
+    (r) => names.includes(r.sourceTableId) && names.includes(r.targetTableId),
+  );
+  const depth = (name, seen = new Set()) => {
+    if (seen.has(name)) throw new Error('Cyclic FK requires explicit layout');
+    const parents = edges.filter((r) => r.sourceTableId === name).map((r) => r.targetTableId);
+    return parents.length
+      ? 1 + Math.max(...parents.map((p) => depth(p, new Set([...seen, name]))))
+      : 0;
+  };
+  const layers = [];
+  for (const name of names) (layers[depth(name)] ??= []).push(name);
+  const nodes = [];
+  let x = 0;
+  for (const layer of layers) {
+    const width = Math.ceil(Math.max(...layer.map((name) => sizes[name].width)));
+    let y = 0;
+    for (const name of layer) {
+      const height = Math.ceil(sizes[name].height);
+      nodes.push({ id: `node:${viewId}:${name}`, objectId: name, viewId, x, y, width, height });
+      y += height + 80;
+    }
+    x += width + 180;
+  }
+  // Center parents on their direct children, packing each rank without overlaps.
+  for (const layer of layers.toReversed()) {
+    let bottom = 0;
+    for (const name of layer) {
+      const node = nodes.find((n) => n.objectId === name);
+      const children = nodes.filter((n) =>
+        edges.some((r) => r.targetTableId === name && r.sourceTableId === n.objectId),
+      );
+      const center = children.length
+        ? children.reduce((sum, n) => sum + n.y + n.height / 2, 0) / children.length
+        : node.y + node.height / 2;
+      node.y = Math.max(bottom, Math.round(center - node.height / 2));
+      bottom = node.y + node.height + 80;
+    }
+  }
+  doc.layout.nodes.push(...nodes);
+  for (const [edgeIndex, edge] of edges.entries()) {
+    const parent = nodes.find((n) => n.objectId === edge.targetTableId);
+    const child = nodes.find((n) => n.objectId === edge.sourceTableId);
+    if (parent.x + parent.width >= child.x) throw new Error(`Invalid hierarchy: ${edge.id}`);
+    const parentY = parent.y + parent.height / 2;
+    const childY = child.y + child.height / 2;
+    const lane = 45 + (edgeIndex % 5) * 18;
+    const parentX = parent.x + parent.width + lane;
+    const childX = child.x - lane;
+    const skipRank = depth(child.objectId) - depth(parent.objectId) > 1;
+    const routeY = -80 - edgeIndex * 24;
+    const waypoints = skipRank
+      ? [
+          { x: childX, y: childY },
+          { x: childX, y: routeY },
+          { x: parentX, y: routeY },
+          { x: parentX, y: parentY },
+        ]
+      : [
+          { x: parentX, y: childY },
+          { x: parentX, y: parentY },
+        ];
+    doc.layout.relations.push({
+      relationId: edge.id,
+      viewId,
+      offset: 0,
+      sourceAnchor: { side: 'left', ratio: 0.5 },
+      targetAnchor: { side: 'right', ratio: 0.5 },
+      waypoints,
+    });
+  }
+}
 for (const [index, [group, , names]] of groups.entries()) {
+  // Taller overview cards accommodate the domain explanations.
   doc.layout.nodes.push({
     id: `node:domain:${group}`,
     objectId: group,
     viewId: 'overview',
-    x: index * 340,
+    x: index * 520,
     y: 0,
-    width: 280,
-    height: 210,
+    width: 440,
+    height: 420,
   });
-  const offsets = {};
-  for (const name of names) {
-    const level = depth(name);
-    const y = offsets[level] ?? 0;
-    const size = sizes[name];
-    for (const viewId of [group, 'all-tables'])
-      doc.layout.nodes.push({
-        id: `node:${viewId}:${name}`,
-        objectId: name,
-        viewId,
-        x: level * (maxWidth + 100),
-        y: y + (viewId === 'all-tables' ? bandY : 0),
-        width: Math.ceil(size.width),
-        height: Math.ceil(size.height),
-      });
-    offsets[level] = y + Math.ceil(size.height) + 70;
-  }
-  bandY += Math.max(...Object.values(offsets)) + 80;
+  layoutTables(group, names);
 }
+layoutTables('all-tables', [
+  'users',
+  'workspace',
+  'sessions',
+  'mcp_tokens',
+  'user_workspaces',
+  'workspace_invitations',
+  'projects',
+  'review_threads',
+  'review_messages',
+  'review_notifications',
+  'project_personal_states',
+  'project_personal_operations',
+  'sync_operations',
+  'sync_field_versions',
+  'sync_client_baselines',
+  'sync_tombstones',
+  'workspace_audit_events',
+]);
 for (const r of doc.tableRelations) {
   const source = doc.tables.find((t) => t.id === r.sourceTableId);
   const target = doc.tables.find((t) => t.id === r.targetTableId);
