@@ -1,0 +1,5184 @@
+{
+  "format": "ezerd-project",
+  "formatVersion": 1,
+  "exportedAt": "2026-09-30T00:00:00.000Z",
+  "project": {
+    "name": "EZERD 코드 ERD · 2026-09-30",
+    "databaseKind": "postgresql"
+  },
+  "document": {
+    "schemaVersion": 1,
+    "domains": [
+      {
+        "id": "identity",
+        "name": "인증",
+        "description": "apps/server/src/db/schema.ts에서 추출"
+      },
+      {
+        "id": "workspace-domain",
+        "name": "공간",
+        "description": "apps/server/src/db/schema.ts에서 추출"
+      },
+      {
+        "id": "project",
+        "name": "프로젝트",
+        "description": "apps/server/src/db/schema.ts에서 추출"
+      },
+      {
+        "id": "review",
+        "name": "리뷰",
+        "description": "apps/server/src/db/schema.ts에서 추출"
+      },
+      {
+        "id": "sync",
+        "name": "동기화",
+        "description": "apps/server/src/db/schema.ts에서 추출"
+      }
+    ],
+    "domainRelations": [
+      {
+        "id": "domain-rel:identity:review",
+        "sourceDomainId": "identity",
+        "targetDomainId": "review",
+        "name": "PK → FK",
+        "direction": "forward",
+        "description": "실제 외래키 의존 관계"
+      },
+      {
+        "id": "domain-rel:project:review",
+        "sourceDomainId": "project",
+        "targetDomainId": "review",
+        "name": "PK → FK",
+        "direction": "forward",
+        "description": "실제 외래키 의존 관계"
+      },
+      {
+        "id": "domain-rel:identity:project",
+        "sourceDomainId": "identity",
+        "targetDomainId": "project",
+        "name": "PK → FK",
+        "direction": "forward",
+        "description": "실제 외래키 의존 관계"
+      },
+      {
+        "id": "domain-rel:workspace-domain:project",
+        "sourceDomainId": "workspace-domain",
+        "targetDomainId": "project",
+        "name": "PK → FK",
+        "direction": "forward",
+        "description": "실제 외래키 의존 관계"
+      },
+      {
+        "id": "domain-rel:project:sync",
+        "sourceDomainId": "project",
+        "targetDomainId": "sync",
+        "name": "PK → FK",
+        "direction": "forward",
+        "description": "실제 외래키 의존 관계"
+      },
+      {
+        "id": "domain-rel:identity:sync",
+        "sourceDomainId": "identity",
+        "targetDomainId": "sync",
+        "name": "PK → FK",
+        "direction": "forward",
+        "description": "실제 외래키 의존 관계"
+      },
+      {
+        "id": "domain-rel:identity:workspace-domain",
+        "sourceDomainId": "identity",
+        "targetDomainId": "workspace-domain",
+        "name": "PK → FK",
+        "direction": "forward",
+        "description": "실제 외래키 의존 관계"
+      }
+    ],
+    "tables": [
+      {
+        "id": "mcp_tokens",
+        "domainId": "identity",
+        "scope": "both",
+        "logical": {
+          "name": "mcp_tokens",
+          "definition": ""
+        },
+        "physical": {
+          "name": "mcp_tokens",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"mcp_tokens_token_hash_unique\",\"unique\":true,\"columns\":[\"token_hash\"],\"where\":null},{\"name\":\"mcp_tokens_user_idx\",\"unique\":false,\"columns\":[\"user_id\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "review_messages",
+        "domainId": "review",
+        "scope": "both",
+        "logical": {
+          "name": "review_messages",
+          "definition": ""
+        },
+        "physical": {
+          "name": "review_messages",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"review_messages_thread_idx\",\"unique\":false,\"columns\":[\"thread_id\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "review_notifications",
+        "domainId": "review",
+        "scope": "both",
+        "logical": {
+          "name": "review_notifications",
+          "definition": ""
+        },
+        "physical": {
+          "name": "review_notifications",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"review_notifications_user_idx\",\"unique\":false,\"columns\":[\"user_id\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "project_personal_operations",
+        "domainId": "project",
+        "scope": "both",
+        "logical": {
+          "name": "project_personal_operations",
+          "definition": ""
+        },
+        "physical": {
+          "name": "project_personal_operations",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"project_personal_operations_project_user_idx\",\"unique\":false,\"columns\":[\"project_id\",\"user_id\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "project_personal_states",
+        "domainId": "project",
+        "scope": "both",
+        "logical": {
+          "name": "project_personal_states",
+          "definition": ""
+        },
+        "physical": {
+          "name": "project_personal_states",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "projects",
+        "domainId": "project",
+        "scope": "both",
+        "logical": {
+          "name": "projects",
+          "definition": ""
+        },
+        "physical": {
+          "name": "projects",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"projects_workspace_status_updated_idx\",\"unique\":false,\"columns\":[\"workspace_id\",\"status\",\"updated_at\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "sessions",
+        "domainId": "identity",
+        "scope": "both",
+        "logical": {
+          "name": "sessions",
+          "definition": ""
+        },
+        "physical": {
+          "name": "sessions",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"sessions_token_hash_unique\",\"unique\":true,\"columns\":[\"token_hash\"],\"where\":null},{\"name\":\"sessions_user_idx\",\"unique\":false,\"columns\":[\"user_id\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "sync_client_baselines",
+        "domainId": "sync",
+        "scope": "both",
+        "logical": {
+          "name": "sync_client_baselines",
+          "definition": ""
+        },
+        "physical": {
+          "name": "sync_client_baselines",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"sync_client_baselines_identity_idx\",\"unique\":false,\"columns\":[\"project_id\",\"client_id\",\"user_id\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "sync_field_versions",
+        "domainId": "sync",
+        "scope": "both",
+        "logical": {
+          "name": "sync_field_versions",
+          "definition": ""
+        },
+        "physical": {
+          "name": "sync_field_versions",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "sync_operations",
+        "domainId": "sync",
+        "scope": "both",
+        "logical": {
+          "name": "sync_operations",
+          "definition": ""
+        },
+        "physical": {
+          "name": "sync_operations",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"sync_operations_project_created_idx\",\"unique\":false,\"columns\":[\"project_id\",\"created_at\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "sync_tombstones",
+        "domainId": "sync",
+        "scope": "both",
+        "logical": {
+          "name": "sync_tombstones",
+          "definition": ""
+        },
+        "physical": {
+          "name": "sync_tombstones",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"sync_tombstones_expiry_idx\",\"unique\":false,\"columns\":[\"expires_at\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "review_threads",
+        "domainId": "review",
+        "scope": "both",
+        "logical": {
+          "name": "review_threads",
+          "definition": ""
+        },
+        "physical": {
+          "name": "review_threads",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"review_threads_project_idx\",\"unique\":false,\"columns\":[\"project_id\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "user_workspaces",
+        "domainId": "workspace-domain",
+        "scope": "both",
+        "logical": {
+          "name": "user_workspaces",
+          "definition": ""
+        },
+        "physical": {
+          "name": "user_workspaces",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"user_workspaces_user_workspace_idx\",\"unique\":false,\"columns\":[\"user_id\",\"workspace_id\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "users",
+        "domainId": "identity",
+        "scope": "both",
+        "logical": {
+          "name": "users",
+          "definition": ""
+        },
+        "physical": {
+          "name": "users",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[]",
+            "checks": "[{\"name\":\"users_username_normalized\",\"expression\":\"\\\"users\\\".\\\"username\\\" = lower(btrim(\\\"users\\\".\\\"username\\\"))\"}]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "workspace_audit_events",
+        "domainId": "workspace-domain",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_audit_events",
+          "definition": "감사 기록 보존을 위해 workspace_id, actor_id, target_user_id에 물리 FK 없음"
+        },
+        "physical": {
+          "name": "workspace_audit_events",
+          "schema": "public",
+          "comment": "감사 기록 보존을 위해 workspace_id, actor_id, target_user_id에 물리 FK 없음"
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"workspace_audit_workspace_created_idx\",\"unique\":false,\"columns\":[\"workspace_id\",\"created_at\"],\"where\":null}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "workspace_invitations",
+        "domainId": "workspace-domain",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_invitations",
+          "definition": ""
+        },
+        "physical": {
+          "name": "workspace_invitations",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[{\"name\":\"workspace_invitations_user_status_idx\",\"unique\":false,\"columns\":[\"invited_user_id\",\"status\"],\"where\":null},{\"name\":\"workspace_invitations_pending_unique\",\"unique\":true,\"columns\":[\"workspace_id\",\"invited_user_id\"],\"where\":\"\\\"workspace_invitations\\\".\\\"status\\\" = 'pending'\"}]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      },
+      {
+        "id": "workspace",
+        "domainId": "workspace-domain",
+        "scope": "both",
+        "logical": {
+          "name": "workspace",
+          "definition": ""
+        },
+        "physical": {
+          "name": "workspace",
+          "schema": "public",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {
+            "source": "apps/server/src/db/schema.ts"
+          },
+          "logical": {},
+          "physical": {
+            "indexes": "[]",
+            "checks": "[]"
+          }
+        },
+        "canvasDisplay": {
+          "showComment": false,
+          "showNullable": true
+        }
+      }
+    ],
+    "columns": [
+      {
+        "id": "col:mcp_tokens:id",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:mcp_tokens:user_id",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "logical": {
+          "name": "user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:mcp_tokens:name",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "logical": {
+          "name": "name",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "name",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 80
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:mcp_tokens:token_hash",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "logical": {
+          "name": "token_hash",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "token_hash",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 64
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:mcp_tokens:created_at",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:mcp_tokens:expires_at",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "logical": {
+          "name": "expires_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "expires_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:mcp_tokens:revoked_at",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "logical": {
+          "name": "revoked_at",
+          "definition": "",
+          "semanticType": "",
+          "required": false
+        },
+        "physical": {
+          "name": "revoked_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": true,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:mcp_tokens:last_used_at",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "logical": {
+          "name": "last_used_at",
+          "definition": "",
+          "semanticType": "",
+          "required": false
+        },
+        "physical": {
+          "name": "last_used_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": true,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_messages:id",
+        "tableId": "review_messages",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_messages:thread_id",
+        "tableId": "review_messages",
+        "scope": "both",
+        "logical": {
+          "name": "thread_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "thread_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_messages:author_id",
+        "tableId": "review_messages",
+        "scope": "both",
+        "logical": {
+          "name": "author_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "author_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_messages:body",
+        "tableId": "review_messages",
+        "scope": "both",
+        "logical": {
+          "name": "body",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "body",
+          "type": {
+            "name": "text",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_messages:mention_ids",
+        "tableId": "review_messages",
+        "scope": "both",
+        "logical": {
+          "name": "mention_ids",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "mention_ids",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "'[]'",
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_messages:created_at",
+        "tableId": "review_messages",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_notifications:id",
+        "tableId": "review_notifications",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_notifications:user_id",
+        "tableId": "review_notifications",
+        "scope": "both",
+        "logical": {
+          "name": "user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_notifications:project_id",
+        "tableId": "review_notifications",
+        "scope": "both",
+        "logical": {
+          "name": "project_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "project_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_notifications:thread_id",
+        "tableId": "review_notifications",
+        "scope": "both",
+        "logical": {
+          "name": "thread_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "thread_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_notifications:read",
+        "tableId": "review_notifications",
+        "scope": "both",
+        "logical": {
+          "name": "read",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "read",
+          "type": {
+            "name": "boolean",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "false",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_notifications:created_at",
+        "tableId": "review_notifications",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_operations:operation_id",
+        "tableId": "project_personal_operations",
+        "scope": "both",
+        "logical": {
+          "name": "operation_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "operation_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_operations:project_id",
+        "tableId": "project_personal_operations",
+        "scope": "both",
+        "logical": {
+          "name": "project_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "project_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_operations:user_id",
+        "tableId": "project_personal_operations",
+        "scope": "both",
+        "logical": {
+          "name": "user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_operations:fingerprint",
+        "tableId": "project_personal_operations",
+        "scope": "both",
+        "logical": {
+          "name": "fingerprint",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "fingerprint",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 64
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_operations:result",
+        "tableId": "project_personal_operations",
+        "scope": "both",
+        "logical": {
+          "name": "result",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "result",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_operations:created_at",
+        "tableId": "project_personal_operations",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_states:project_id",
+        "tableId": "project_personal_states",
+        "scope": "both",
+        "logical": {
+          "name": "project_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "project_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_states:user_id",
+        "tableId": "project_personal_states",
+        "scope": "both",
+        "logical": {
+          "name": "user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_states:version",
+        "tableId": "project_personal_states",
+        "scope": "both",
+        "logical": {
+          "name": "version",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "version",
+          "type": {
+            "name": "integer",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "0",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_states:state",
+        "tableId": "project_personal_states",
+        "scope": "both",
+        "logical": {
+          "name": "state",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "state",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "'{\"views\":[],\"notes\":[],\"nodes\":[],\"viewports\":[],\"relations\":[]}'",
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:project_personal_states:updated_at",
+        "tableId": "project_personal_states",
+        "scope": "both",
+        "logical": {
+          "name": "updated_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "updated_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:id",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:workspace_id",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "workspace_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:name",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "name",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "name",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 120
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:database_kind",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "database_kind",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "database_kind",
+          "type": {
+            "name": "project_database_kind",
+            "isArray": false,
+            "enumId": "enum:project_database_kind"
+          },
+          "nullable": false,
+          "defaultExpression": "'postgresql'",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:status",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "status",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "status",
+          "type": {
+            "name": "project_status",
+            "isArray": false,
+            "enumId": "enum:project_status"
+          },
+          "nullable": false,
+          "defaultExpression": "'active'",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:version",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "version",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "version",
+          "type": {
+            "name": "integer",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "0",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:sync_sequence",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "sync_sequence",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "sync_sequence",
+          "type": {
+            "name": "integer",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "0",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:document",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "document",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "document",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "'{\"schemaVersion\":1,\"domains\":[],\"domainRelations\":[],\"notes\":[],\"layout\":{\"nodes\":[],\"viewports\":[{\"viewId\":\"overview\",\"x\":0,\"y\":0,\"zoom\":1}]}}'",
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:created_at",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:projects:updated_at",
+        "tableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "updated_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "updated_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sessions:id",
+        "tableId": "sessions",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sessions:user_id",
+        "tableId": "sessions",
+        "scope": "both",
+        "logical": {
+          "name": "user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sessions:token_hash",
+        "tableId": "sessions",
+        "scope": "both",
+        "logical": {
+          "name": "token_hash",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "token_hash",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 64
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sessions:expires_at",
+        "tableId": "sessions",
+        "scope": "both",
+        "logical": {
+          "name": "expires_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "expires_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sessions:created_at",
+        "tableId": "sessions",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sessions:last_seen_at",
+        "tableId": "sessions",
+        "scope": "both",
+        "logical": {
+          "name": "last_seen_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "last_seen_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_client_baselines:baseline_id",
+        "tableId": "sync_client_baselines",
+        "scope": "both",
+        "logical": {
+          "name": "baseline_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "baseline_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_client_baselines:project_id",
+        "tableId": "sync_client_baselines",
+        "scope": "both",
+        "logical": {
+          "name": "project_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "project_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_client_baselines:client_id",
+        "tableId": "sync_client_baselines",
+        "scope": "both",
+        "logical": {
+          "name": "client_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "client_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_client_baselines:user_id",
+        "tableId": "sync_client_baselines",
+        "scope": "both",
+        "logical": {
+          "name": "user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_client_baselines:last_successful_sync_at",
+        "tableId": "sync_client_baselines",
+        "scope": "both",
+        "logical": {
+          "name": "last_successful_sync_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "last_successful_sync_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_client_baselines:last_sequence",
+        "tableId": "sync_client_baselines",
+        "scope": "both",
+        "logical": {
+          "name": "last_sequence",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "last_sequence",
+          "type": {
+            "name": "integer",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_client_baselines:document",
+        "tableId": "sync_client_baselines",
+        "scope": "both",
+        "logical": {
+          "name": "document",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "document",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_field_versions:project_id",
+        "tableId": "sync_field_versions",
+        "scope": "both",
+        "logical": {
+          "name": "project_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "project_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_field_versions:path",
+        "tableId": "sync_field_versions",
+        "scope": "both",
+        "logical": {
+          "name": "path",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "path",
+          "type": {
+            "name": "text",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_field_versions:sequence",
+        "tableId": "sync_field_versions",
+        "scope": "both",
+        "logical": {
+          "name": "sequence",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "sequence",
+          "type": {
+            "name": "integer",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_field_versions:operation_id",
+        "tableId": "sync_field_versions",
+        "scope": "both",
+        "logical": {
+          "name": "operation_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "operation_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_field_versions:updated_at",
+        "tableId": "sync_field_versions",
+        "scope": "both",
+        "logical": {
+          "name": "updated_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "updated_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:id",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:project_id",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "project_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "project_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:operation_id",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "operation_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "operation_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:group_id",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "group_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "group_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:client_id",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "client_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "client_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:actor_id",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "actor_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "actor_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:sequence",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "sequence",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "sequence",
+          "type": {
+            "name": "integer",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:base_sequence",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "base_sequence",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "base_sequence",
+          "type": {
+            "name": "integer",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:baseline_issued_at",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "baseline_issued_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "baseline_issued_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:baseline_id",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "baseline_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "baseline_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:kind",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "kind",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "kind",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 16
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:fingerprint",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "fingerprint",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "fingerprint",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 64
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:changes",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "changes",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "changes",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:result",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "result",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "result",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:deletion_snapshot",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "deletion_snapshot",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": false
+        },
+        "physical": {
+          "name": "deletion_snapshot",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": true,
+          "defaultExpression": null,
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_operations:created_at",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_tombstones:project_id",
+        "tableId": "sync_tombstones",
+        "scope": "both",
+        "logical": {
+          "name": "project_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "project_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_tombstones:object_id",
+        "tableId": "sync_tombstones",
+        "scope": "both",
+        "logical": {
+          "name": "object_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "object_id",
+          "type": {
+            "name": "text",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_tombstones:operation_id",
+        "tableId": "sync_tombstones",
+        "scope": "both",
+        "logical": {
+          "name": "operation_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "operation_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_tombstones:sequence",
+        "tableId": "sync_tombstones",
+        "scope": "both",
+        "logical": {
+          "name": "sequence",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "sequence",
+          "type": {
+            "name": "integer",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_tombstones:snapshot",
+        "tableId": "sync_tombstones",
+        "scope": "both",
+        "logical": {
+          "name": "snapshot",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "snapshot",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_tombstones:created_at",
+        "tableId": "sync_tombstones",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:sync_tombstones:expires_at",
+        "tableId": "sync_tombstones",
+        "scope": "both",
+        "logical": {
+          "name": "expires_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "expires_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:id",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:project_id",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "project_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "project_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:view_id",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "view_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "view_id",
+          "type": {
+            "name": "text",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:object_id",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "object_id",
+          "definition": "",
+          "semanticType": "",
+          "required": false
+        },
+        "physical": {
+          "name": "object_id",
+          "type": {
+            "name": "text",
+            "isArray": false
+          },
+          "nullable": true,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:x",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "x",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "x",
+          "type": {
+            "name": "double precision",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:y",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "y",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "y",
+          "type": {
+            "name": "double precision",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:resolved",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "resolved",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "resolved",
+          "type": {
+            "name": "boolean",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "false",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:created_at",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:review_threads:updated_at",
+        "tableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "updated_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "updated_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:user_workspaces:workspace_id",
+        "tableId": "user_workspaces",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "workspace_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:user_workspaces:user_id",
+        "tableId": "user_workspaces",
+        "scope": "both",
+        "logical": {
+          "name": "user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:user_workspaces:role",
+        "tableId": "user_workspaces",
+        "scope": "both",
+        "logical": {
+          "name": "role",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "role",
+          "type": {
+            "name": "workspace_role",
+            "isArray": false,
+            "enumId": "enum:workspace_role"
+          },
+          "nullable": false,
+          "defaultExpression": "'viewer'",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:user_workspaces:joined_at",
+        "tableId": "user_workspaces",
+        "scope": "both",
+        "logical": {
+          "name": "joined_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "joined_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:users:id",
+        "tableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:users:username",
+        "tableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "username",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "username",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 40
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:users:pin_hash",
+        "tableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "pin_hash",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "pin_hash",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 64
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:users:color",
+        "tableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "color",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "color",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 7
+          },
+          "nullable": false,
+          "defaultExpression": "'#4169e1'",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:users:created_at",
+        "tableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:users:updated_at",
+        "tableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "updated_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "updated_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_audit_events:id",
+        "tableId": "workspace_audit_events",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_audit_events:workspace_id",
+        "tableId": "workspace_audit_events",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "workspace_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_audit_events:actor_id",
+        "tableId": "workspace_audit_events",
+        "scope": "both",
+        "logical": {
+          "name": "actor_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "actor_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_audit_events:action",
+        "tableId": "workspace_audit_events",
+        "scope": "both",
+        "logical": {
+          "name": "action",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "action",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 64
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_audit_events:target_user_id",
+        "tableId": "workspace_audit_events",
+        "scope": "both",
+        "logical": {
+          "name": "target_user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": false
+        },
+        "physical": {
+          "name": "target_user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": true,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_audit_events:details",
+        "tableId": "workspace_audit_events",
+        "scope": "both",
+        "logical": {
+          "name": "details",
+          "definition": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "details",
+          "type": {
+            "name": "jsonb",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "'{}'",
+          "comment": "JSONB 문서/배열 저장; 내부 객체는 별도 물리 테이블이 아님"
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_audit_events:created_at",
+        "tableId": "workspace_audit_events",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:id",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:workspace_id",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "workspace_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:invited_user_id",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "invited_user_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "invited_user_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:invited_by",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "invited_by",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "invited_by",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:role",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "role",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "role",
+          "type": {
+            "name": "workspace_role",
+            "isArray": false,
+            "enumId": "enum:workspace_role"
+          },
+          "nullable": false,
+          "defaultExpression": "'viewer'",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:status",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "status",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "status",
+          "type": {
+            "name": "workspace_invitation_status",
+            "isArray": false,
+            "enumId": "enum:workspace_invitation_status"
+          },
+          "nullable": false,
+          "defaultExpression": "'pending'",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:expires_at",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "expires_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "expires_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:created_at",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace_invitations:updated_at",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "logical": {
+          "name": "updated_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "updated_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace:workspace_id",
+        "tableId": "workspace",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_id",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "workspace_id",
+          "type": {
+            "name": "uuid",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "gen_random_uuid()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace:workspace_name",
+        "tableId": "workspace",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_name",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "workspace_name",
+          "type": {
+            "name": "varchar",
+            "isArray": false,
+            "length": 64
+          },
+          "nullable": false,
+          "defaultExpression": null,
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace:status",
+        "tableId": "workspace",
+        "scope": "both",
+        "logical": {
+          "name": "status",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "status",
+          "type": {
+            "name": "workspace_status",
+            "isArray": false,
+            "enumId": "enum:workspace_status"
+          },
+          "nullable": false,
+          "defaultExpression": "'active'",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace:created_at",
+        "tableId": "workspace",
+        "scope": "both",
+        "logical": {
+          "name": "created_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "created_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      },
+      {
+        "id": "col:workspace:updated_at",
+        "tableId": "workspace",
+        "scope": "both",
+        "logical": {
+          "name": "updated_at",
+          "definition": "",
+          "semanticType": "",
+          "required": true
+        },
+        "physical": {
+          "name": "updated_at",
+          "type": {
+            "name": "timestamp with time zone",
+            "isArray": false
+          },
+          "nullable": false,
+          "defaultExpression": "now()",
+          "comment": ""
+        },
+        "customProperties": {
+          "common": {},
+          "logical": {},
+          "physical": {}
+        }
+      }
+    ],
+    "keys": [
+      {
+        "id": "key:mcp_tokens:mcp_tokens_pkey",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "kind": "primary",
+        "name": "mcp_tokens_pkey",
+        "columnIds": [
+          "col:mcp_tokens:id"
+        ]
+      },
+      {
+        "id": "key:mcp_tokens:mcp_tokens_token_hash_unique",
+        "tableId": "mcp_tokens",
+        "scope": "both",
+        "kind": "unique",
+        "name": "mcp_tokens_token_hash_unique",
+        "columnIds": [
+          "col:mcp_tokens:token_hash"
+        ]
+      },
+      {
+        "id": "key:review_messages:review_messages_pkey",
+        "tableId": "review_messages",
+        "scope": "both",
+        "kind": "primary",
+        "name": "review_messages_pkey",
+        "columnIds": [
+          "col:review_messages:id"
+        ]
+      },
+      {
+        "id": "key:review_notifications:review_notifications_pkey",
+        "tableId": "review_notifications",
+        "scope": "both",
+        "kind": "primary",
+        "name": "review_notifications_pkey",
+        "columnIds": [
+          "col:review_notifications:id"
+        ]
+      },
+      {
+        "id": "key:project_personal_operations:project_personal_operations_pkey",
+        "tableId": "project_personal_operations",
+        "scope": "both",
+        "kind": "primary",
+        "name": "project_personal_operations_pkey",
+        "columnIds": [
+          "col:project_personal_operations:operation_id"
+        ]
+      },
+      {
+        "id": "key:project_personal_states:project_personal_states_project_id_user_id_pk",
+        "tableId": "project_personal_states",
+        "scope": "both",
+        "kind": "primary",
+        "name": "project_personal_states_project_id_user_id_pk",
+        "columnIds": [
+          "col:project_personal_states:project_id",
+          "col:project_personal_states:user_id"
+        ]
+      },
+      {
+        "id": "key:projects:projects_pkey",
+        "tableId": "projects",
+        "scope": "both",
+        "kind": "primary",
+        "name": "projects_pkey",
+        "columnIds": [
+          "col:projects:id"
+        ]
+      },
+      {
+        "id": "key:sessions:sessions_pkey",
+        "tableId": "sessions",
+        "scope": "both",
+        "kind": "primary",
+        "name": "sessions_pkey",
+        "columnIds": [
+          "col:sessions:id"
+        ]
+      },
+      {
+        "id": "key:sessions:sessions_token_hash_unique",
+        "tableId": "sessions",
+        "scope": "both",
+        "kind": "unique",
+        "name": "sessions_token_hash_unique",
+        "columnIds": [
+          "col:sessions:token_hash"
+        ]
+      },
+      {
+        "id": "key:sync_client_baselines:sync_client_baselines_id_unique",
+        "tableId": "sync_client_baselines",
+        "scope": "both",
+        "kind": "unique",
+        "name": "sync_client_baselines_id_unique",
+        "columnIds": [
+          "col:sync_client_baselines:project_id",
+          "col:sync_client_baselines:baseline_id"
+        ]
+      },
+      {
+        "id": "key:sync_field_versions:sync_field_versions_project_path_unique",
+        "tableId": "sync_field_versions",
+        "scope": "both",
+        "kind": "unique",
+        "name": "sync_field_versions_project_path_unique",
+        "columnIds": [
+          "col:sync_field_versions:project_id",
+          "col:sync_field_versions:path"
+        ]
+      },
+      {
+        "id": "key:sync_operations:sync_operations_pkey",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "kind": "primary",
+        "name": "sync_operations_pkey",
+        "columnIds": [
+          "col:sync_operations:id"
+        ]
+      },
+      {
+        "id": "key:sync_operations:sync_operations_project_operation_unique",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "kind": "unique",
+        "name": "sync_operations_project_operation_unique",
+        "columnIds": [
+          "col:sync_operations:project_id",
+          "col:sync_operations:operation_id"
+        ]
+      },
+      {
+        "id": "key:sync_operations:sync_operations_project_sequence_unique",
+        "tableId": "sync_operations",
+        "scope": "both",
+        "kind": "unique",
+        "name": "sync_operations_project_sequence_unique",
+        "columnIds": [
+          "col:sync_operations:project_id",
+          "col:sync_operations:sequence"
+        ]
+      },
+      {
+        "id": "key:sync_tombstones:sync_tombstones_project_object_unique",
+        "tableId": "sync_tombstones",
+        "scope": "both",
+        "kind": "unique",
+        "name": "sync_tombstones_project_object_unique",
+        "columnIds": [
+          "col:sync_tombstones:project_id",
+          "col:sync_tombstones:object_id"
+        ]
+      },
+      {
+        "id": "key:review_threads:review_threads_pkey",
+        "tableId": "review_threads",
+        "scope": "both",
+        "kind": "primary",
+        "name": "review_threads_pkey",
+        "columnIds": [
+          "col:review_threads:id"
+        ]
+      },
+      {
+        "id": "key:user_workspaces:user_workspaces_workspace_id_user_id_pk",
+        "tableId": "user_workspaces",
+        "scope": "both",
+        "kind": "primary",
+        "name": "user_workspaces_workspace_id_user_id_pk",
+        "columnIds": [
+          "col:user_workspaces:workspace_id",
+          "col:user_workspaces:user_id"
+        ]
+      },
+      {
+        "id": "key:users:users_pkey",
+        "tableId": "users",
+        "scope": "both",
+        "kind": "primary",
+        "name": "users_pkey",
+        "columnIds": [
+          "col:users:id"
+        ]
+      },
+      {
+        "id": "key:users:users_username_unique",
+        "tableId": "users",
+        "scope": "both",
+        "kind": "unique",
+        "name": "users_username_unique",
+        "columnIds": [
+          "col:users:username"
+        ]
+      },
+      {
+        "id": "key:workspace_audit_events:workspace_audit_events_pkey",
+        "tableId": "workspace_audit_events",
+        "scope": "both",
+        "kind": "primary",
+        "name": "workspace_audit_events_pkey",
+        "columnIds": [
+          "col:workspace_audit_events:id"
+        ]
+      },
+      {
+        "id": "key:workspace_invitations:workspace_invitations_pkey",
+        "tableId": "workspace_invitations",
+        "scope": "both",
+        "kind": "primary",
+        "name": "workspace_invitations_pkey",
+        "columnIds": [
+          "col:workspace_invitations:id"
+        ]
+      },
+      {
+        "id": "key:workspace:workspace_pkey",
+        "tableId": "workspace",
+        "scope": "both",
+        "kind": "primary",
+        "name": "workspace_pkey",
+        "columnIds": [
+          "col:workspace:workspace_id"
+        ]
+      }
+    ],
+    "tableRelations": [
+      {
+        "id": "fk:mcp_tokens_user_id_users_id_fk",
+        "sourceTableId": "mcp_tokens",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "mcp_tokens_user_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "mcp_tokens_user_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:mcp_tokens:user_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:review_messages_thread_id_review_threads_id_fk",
+        "sourceTableId": "review_messages",
+        "targetTableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "review_messages_thread_id_review_threads_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "review_messages_thread_id_review_threads_id_fk",
+          "sourceColumnIds": [
+            "col:review_messages:thread_id"
+          ],
+          "targetColumnIds": [
+            "col:review_threads:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:review_messages_author_id_users_id_fk",
+        "sourceTableId": "review_messages",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "review_messages_author_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "review_messages_author_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:review_messages:author_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "NO ACTION",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:review_notifications_user_id_users_id_fk",
+        "sourceTableId": "review_notifications",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "review_notifications_user_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "review_notifications_user_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:review_notifications:user_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:review_notifications_project_id_projects_id_fk",
+        "sourceTableId": "review_notifications",
+        "targetTableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "review_notifications_project_id_projects_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "review_notifications_project_id_projects_id_fk",
+          "sourceColumnIds": [
+            "col:review_notifications:project_id"
+          ],
+          "targetColumnIds": [
+            "col:projects:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:review_notifications_thread_id_review_threads_id_fk",
+        "sourceTableId": "review_notifications",
+        "targetTableId": "review_threads",
+        "scope": "both",
+        "logical": {
+          "name": "review_notifications_thread_id_review_threads_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "review_notifications_thread_id_review_threads_id_fk",
+          "sourceColumnIds": [
+            "col:review_notifications:thread_id"
+          ],
+          "targetColumnIds": [
+            "col:review_threads:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:project_personal_operations_project_id_projects_id_fk",
+        "sourceTableId": "project_personal_operations",
+        "targetTableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "project_personal_operations_project_id_projects_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "project_personal_operations_project_id_projects_id_fk",
+          "sourceColumnIds": [
+            "col:project_personal_operations:project_id"
+          ],
+          "targetColumnIds": [
+            "col:projects:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:project_personal_operations_user_id_users_id_fk",
+        "sourceTableId": "project_personal_operations",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "project_personal_operations_user_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "project_personal_operations_user_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:project_personal_operations:user_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:project_personal_states_project_id_projects_id_fk",
+        "sourceTableId": "project_personal_states",
+        "targetTableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "project_personal_states_project_id_projects_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "project_personal_states_project_id_projects_id_fk",
+          "sourceColumnIds": [
+            "col:project_personal_states:project_id"
+          ],
+          "targetColumnIds": [
+            "col:projects:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:project_personal_states_user_id_users_id_fk",
+        "sourceTableId": "project_personal_states",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "project_personal_states_user_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "project_personal_states_user_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:project_personal_states:user_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:projects_workspace_id_workspace_workspace_id_fk",
+        "sourceTableId": "projects",
+        "targetTableId": "workspace",
+        "scope": "both",
+        "logical": {
+          "name": "projects_workspace_id_workspace_workspace_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "projects_workspace_id_workspace_workspace_id_fk",
+          "sourceColumnIds": [
+            "col:projects:workspace_id"
+          ],
+          "targetColumnIds": [
+            "col:workspace:workspace_id"
+          ],
+          "onDelete": "RESTRICT",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:sessions_user_id_users_id_fk",
+        "sourceTableId": "sessions",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "sessions_user_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "sessions_user_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:sessions:user_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:sync_client_baselines_project_id_projects_id_fk",
+        "sourceTableId": "sync_client_baselines",
+        "targetTableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "sync_client_baselines_project_id_projects_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "sync_client_baselines_project_id_projects_id_fk",
+          "sourceColumnIds": [
+            "col:sync_client_baselines:project_id"
+          ],
+          "targetColumnIds": [
+            "col:projects:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:sync_client_baselines_user_id_users_id_fk",
+        "sourceTableId": "sync_client_baselines",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "sync_client_baselines_user_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "sync_client_baselines_user_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:sync_client_baselines:user_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:sync_field_versions_project_id_projects_id_fk",
+        "sourceTableId": "sync_field_versions",
+        "targetTableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "sync_field_versions_project_id_projects_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "sync_field_versions_project_id_projects_id_fk",
+          "sourceColumnIds": [
+            "col:sync_field_versions:project_id"
+          ],
+          "targetColumnIds": [
+            "col:projects:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:sync_operations_project_id_projects_id_fk",
+        "sourceTableId": "sync_operations",
+        "targetTableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "sync_operations_project_id_projects_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "sync_operations_project_id_projects_id_fk",
+          "sourceColumnIds": [
+            "col:sync_operations:project_id"
+          ],
+          "targetColumnIds": [
+            "col:projects:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:sync_operations_actor_id_users_id_fk",
+        "sourceTableId": "sync_operations",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "sync_operations_actor_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "sync_operations_actor_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:sync_operations:actor_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "NO ACTION",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:sync_tombstones_project_id_projects_id_fk",
+        "sourceTableId": "sync_tombstones",
+        "targetTableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "sync_tombstones_project_id_projects_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "sync_tombstones_project_id_projects_id_fk",
+          "sourceColumnIds": [
+            "col:sync_tombstones:project_id"
+          ],
+          "targetColumnIds": [
+            "col:projects:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:review_threads_project_id_projects_id_fk",
+        "sourceTableId": "review_threads",
+        "targetTableId": "projects",
+        "scope": "both",
+        "logical": {
+          "name": "review_threads_project_id_projects_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "review_threads_project_id_projects_id_fk",
+          "sourceColumnIds": [
+            "col:review_threads:project_id"
+          ],
+          "targetColumnIds": [
+            "col:projects:id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:user_workspaces_workspace_id_workspace_workspace_id_fk",
+        "sourceTableId": "user_workspaces",
+        "targetTableId": "workspace",
+        "scope": "both",
+        "logical": {
+          "name": "user_workspaces_workspace_id_workspace_workspace_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "user_workspaces_workspace_id_workspace_workspace_id_fk",
+          "sourceColumnIds": [
+            "col:user_workspaces:workspace_id"
+          ],
+          "targetColumnIds": [
+            "col:workspace:workspace_id"
+          ],
+          "onDelete": "NO ACTION",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:user_workspaces_user_id_users_id_fk",
+        "sourceTableId": "user_workspaces",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "user_workspaces_user_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "user_workspaces_user_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:user_workspaces:user_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "NO ACTION",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:workspace_invitations_workspace_id_workspace_workspace_id_fk",
+        "sourceTableId": "workspace_invitations",
+        "targetTableId": "workspace",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_invitations_workspace_id_workspace_workspace_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "workspace_invitations_workspace_id_workspace_workspace_id_fk",
+          "sourceColumnIds": [
+            "col:workspace_invitations:workspace_id"
+          ],
+          "targetColumnIds": [
+            "col:workspace:workspace_id"
+          ],
+          "onDelete": "CASCADE",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:workspace_invitations_invited_user_id_users_id_fk",
+        "sourceTableId": "workspace_invitations",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_invitations_invited_user_id_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "workspace_invitations_invited_user_id_users_id_fk",
+          "sourceColumnIds": [
+            "col:workspace_invitations:invited_user_id"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "NO ACTION",
+          "onUpdate": "NO ACTION"
+        }
+      },
+      {
+        "id": "fk:workspace_invitations_invited_by_users_id_fk",
+        "sourceTableId": "workspace_invitations",
+        "targetTableId": "users",
+        "scope": "both",
+        "logical": {
+          "name": "workspace_invitations_invited_by_users_id_fk",
+          "cardinality": "one-to-many",
+          "required": true,
+          "sourceCardinality": {
+            "min": 0,
+            "max": "many"
+          },
+          "targetCardinality": {
+            "min": 1,
+            "max": 1
+          }
+        },
+        "physical": {
+          "name": "workspace_invitations_invited_by_users_id_fk",
+          "sourceColumnIds": [
+            "col:workspace_invitations:invited_by"
+          ],
+          "targetColumnIds": [
+            "col:users:id"
+          ],
+          "onDelete": "NO ACTION",
+          "onUpdate": "NO ACTION"
+        }
+      }
+    ],
+    "enums": [
+      {
+        "id": "enum:workspace_invitation_status",
+        "name": "workspace_invitation_status",
+        "schema": "public",
+        "values": [
+          "pending",
+          "accepted",
+          "declined",
+          "cancelled",
+          "expired"
+        ]
+      },
+      {
+        "id": "enum:project_database_kind",
+        "name": "project_database_kind",
+        "schema": "public",
+        "values": [
+          "postgresql",
+          "mysql",
+          "sqlite"
+        ]
+      },
+      {
+        "id": "enum:project_status",
+        "name": "project_status",
+        "schema": "public",
+        "values": [
+          "active",
+          "archived"
+        ]
+      },
+      {
+        "id": "enum:workspace_role",
+        "name": "workspace_role",
+        "schema": "public",
+        "values": [
+          "owner",
+          "editor",
+          "viewer"
+        ]
+      },
+      {
+        "id": "enum:workspace_status",
+        "name": "workspace_status",
+        "schema": "public",
+        "values": [
+          "active",
+          "archived"
+        ]
+      }
+    ],
+    "notes": [],
+    "views": [
+      {
+        "id": "all-tables",
+        "name": "전체 물리 ERD",
+        "domainIds": [
+          "identity",
+          "workspace-domain",
+          "project",
+          "review",
+          "sync"
+        ]
+      }
+    ],
+    "layout": {
+      "nodes": [
+        {
+          "id": "node:domain:identity",
+          "objectId": "identity",
+          "viewId": "overview",
+          "x": 0,
+          "y": 0,
+          "width": 280,
+          "height": 210
+        },
+        {
+          "id": "node:identity:users",
+          "objectId": "users",
+          "viewId": "identity",
+          "x": 0,
+          "y": 0,
+          "width": 409,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:users",
+          "objectId": "users",
+          "viewId": "all-tables",
+          "x": 0,
+          "y": 0,
+          "width": 409,
+          "height": 346
+        },
+        {
+          "id": "node:identity:sessions",
+          "objectId": "sessions",
+          "viewId": "identity",
+          "x": 652,
+          "y": 0,
+          "width": 434,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:sessions",
+          "objectId": "sessions",
+          "viewId": "all-tables",
+          "x": 652,
+          "y": 0,
+          "width": 434,
+          "height": 346
+        },
+        {
+          "id": "node:identity:mcp_tokens",
+          "objectId": "mcp_tokens",
+          "viewId": "identity",
+          "x": 652,
+          "y": 416,
+          "width": 434,
+          "height": 420
+        },
+        {
+          "id": "node:all-tables:mcp_tokens",
+          "objectId": "mcp_tokens",
+          "viewId": "all-tables",
+          "x": 652,
+          "y": 416,
+          "width": 434,
+          "height": 420
+        },
+        {
+          "id": "node:domain:workspace-domain",
+          "objectId": "workspace-domain",
+          "viewId": "overview",
+          "x": 340,
+          "y": 0,
+          "width": 280,
+          "height": 210
+        },
+        {
+          "id": "node:workspace-domain:workspace",
+          "objectId": "workspace",
+          "viewId": "workspace-domain",
+          "x": 0,
+          "y": 0,
+          "width": 521,
+          "height": 309
+        },
+        {
+          "id": "node:all-tables:workspace",
+          "objectId": "workspace",
+          "viewId": "all-tables",
+          "x": 0,
+          "y": 986,
+          "width": 521,
+          "height": 309
+        },
+        {
+          "id": "node:workspace-domain:user_workspaces",
+          "objectId": "user_workspaces",
+          "viewId": "workspace-domain",
+          "x": 652,
+          "y": 0,
+          "width": 471,
+          "height": 272
+        },
+        {
+          "id": "node:all-tables:user_workspaces",
+          "objectId": "user_workspaces",
+          "viewId": "all-tables",
+          "x": 652,
+          "y": 986,
+          "width": 471,
+          "height": 272
+        },
+        {
+          "id": "node:workspace-domain:workspace_invitations",
+          "objectId": "workspace_invitations",
+          "viewId": "workspace-domain",
+          "x": 652,
+          "y": 342,
+          "width": 552,
+          "height": 485
+        },
+        {
+          "id": "node:all-tables:workspace_invitations",
+          "objectId": "workspace_invitations",
+          "viewId": "all-tables",
+          "x": 652,
+          "y": 1328,
+          "width": 552,
+          "height": 485
+        },
+        {
+          "id": "node:workspace-domain:workspace_audit_events",
+          "objectId": "workspace_audit_events",
+          "viewId": "workspace-domain",
+          "x": 0,
+          "y": 379,
+          "width": 459,
+          "height": 383
+        },
+        {
+          "id": "node:all-tables:workspace_audit_events",
+          "objectId": "workspace_audit_events",
+          "viewId": "all-tables",
+          "x": 0,
+          "y": 1365,
+          "width": 459,
+          "height": 383
+        },
+        {
+          "id": "node:domain:project",
+          "objectId": "project",
+          "viewId": "overview",
+          "x": 680,
+          "y": 0,
+          "width": 280,
+          "height": 210
+        },
+        {
+          "id": "node:project:projects",
+          "objectId": "projects",
+          "viewId": "project",
+          "x": 652,
+          "y": 0,
+          "width": 528,
+          "height": 522
+        },
+        {
+          "id": "node:all-tables:projects",
+          "objectId": "projects",
+          "viewId": "all-tables",
+          "x": 652,
+          "y": 1963,
+          "width": 528,
+          "height": 522
+        },
+        {
+          "id": "node:project:project_personal_states",
+          "objectId": "project_personal_states",
+          "viewId": "project",
+          "x": 1304,
+          "y": 0,
+          "width": 409,
+          "height": 309
+        },
+        {
+          "id": "node:all-tables:project_personal_states",
+          "objectId": "project_personal_states",
+          "viewId": "all-tables",
+          "x": 1304,
+          "y": 1963,
+          "width": 409,
+          "height": 309
+        },
+        {
+          "id": "node:project:project_personal_operations",
+          "objectId": "project_personal_operations",
+          "viewId": "project",
+          "x": 1304,
+          "y": 379,
+          "width": 460,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:project_personal_operations",
+          "objectId": "project_personal_operations",
+          "viewId": "all-tables",
+          "x": 1304,
+          "y": 2342,
+          "width": 460,
+          "height": 346
+        },
+        {
+          "id": "node:domain:review",
+          "objectId": "review",
+          "viewId": "overview",
+          "x": 1020,
+          "y": 0,
+          "width": 280,
+          "height": 210
+        },
+        {
+          "id": "node:review:review_threads",
+          "objectId": "review_threads",
+          "viewId": "review",
+          "x": 1304,
+          "y": 0,
+          "width": 471,
+          "height": 457
+        },
+        {
+          "id": "node:all-tables:review_threads",
+          "objectId": "review_threads",
+          "viewId": "all-tables",
+          "x": 1304,
+          "y": 2838,
+          "width": 471,
+          "height": 457
+        },
+        {
+          "id": "node:review:review_messages",
+          "objectId": "review_messages",
+          "viewId": "review",
+          "x": 1956,
+          "y": 0,
+          "width": 421,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:review_messages",
+          "objectId": "review_messages",
+          "viewId": "all-tables",
+          "x": 1956,
+          "y": 2838,
+          "width": 421,
+          "height": 346
+        },
+        {
+          "id": "node:review:review_notifications",
+          "objectId": "review_notifications",
+          "viewId": "review",
+          "x": 1956,
+          "y": 416,
+          "width": 409,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:review_notifications",
+          "objectId": "review_notifications",
+          "viewId": "all-tables",
+          "x": 1956,
+          "y": 3254,
+          "width": 409,
+          "height": 346
+        },
+        {
+          "id": "node:domain:sync",
+          "objectId": "sync",
+          "viewId": "overview",
+          "x": 1360,
+          "y": 0,
+          "width": 280,
+          "height": 210
+        },
+        {
+          "id": "node:sync:sync_operations",
+          "objectId": "sync_operations",
+          "viewId": "sync",
+          "x": 1304,
+          "y": 0,
+          "width": 501,
+          "height": 744
+        },
+        {
+          "id": "node:all-tables:sync_operations",
+          "objectId": "sync_operations",
+          "viewId": "all-tables",
+          "x": 1304,
+          "y": 3750,
+          "width": 501,
+          "height": 744
+        },
+        {
+          "id": "node:sync:sync_field_versions",
+          "objectId": "sync_field_versions",
+          "viewId": "sync",
+          "x": 1304,
+          "y": 814,
+          "width": 434,
+          "height": 309
+        },
+        {
+          "id": "node:all-tables:sync_field_versions",
+          "objectId": "sync_field_versions",
+          "viewId": "all-tables",
+          "x": 1304,
+          "y": 4564,
+          "width": 434,
+          "height": 309
+        },
+        {
+          "id": "node:sync:sync_client_baselines",
+          "objectId": "sync_client_baselines",
+          "viewId": "sync",
+          "x": 1304,
+          "y": 1193,
+          "width": 501,
+          "height": 411
+        },
+        {
+          "id": "node:all-tables:sync_client_baselines",
+          "objectId": "sync_client_baselines",
+          "viewId": "all-tables",
+          "x": 1304,
+          "y": 4943,
+          "width": 501,
+          "height": 411
+        },
+        {
+          "id": "node:sync:sync_tombstones",
+          "objectId": "sync_tombstones",
+          "viewId": "sync",
+          "x": 1304,
+          "y": 1674,
+          "width": 434,
+          "height": 383
+        },
+        {
+          "id": "node:all-tables:sync_tombstones",
+          "objectId": "sync_tombstones",
+          "viewId": "all-tables",
+          "x": 1304,
+          "y": 5424,
+          "width": 434,
+          "height": 383
+        }
+      ],
+      "viewports": [
+        {
+          "viewId": "overview",
+          "x": 40,
+          "y": 40,
+          "zoom": 0.55
+        },
+        {
+          "viewId": "identity",
+          "x": 40,
+          "y": 40,
+          "zoom": 0.55
+        },
+        {
+          "viewId": "workspace-domain",
+          "x": 40,
+          "y": 40,
+          "zoom": 0.55
+        },
+        {
+          "viewId": "project",
+          "x": 40,
+          "y": 40,
+          "zoom": 0.55
+        },
+        {
+          "viewId": "review",
+          "x": 40,
+          "y": 40,
+          "zoom": 0.55
+        },
+        {
+          "viewId": "sync",
+          "x": 40,
+          "y": 40,
+          "zoom": 0.55
+        },
+        {
+          "viewId": "all-tables",
+          "x": 40,
+          "y": 40,
+          "zoom": 0.15
+        }
+      ],
+      "relations": []
+    }
+  }
+}
