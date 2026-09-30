@@ -1,5 +1,14 @@
 import { createFrameQueue } from './frame-queue.js';
 import {
+  copyTables,
+  acknowledgeSystemTableClipboard,
+  localTablePasteFallback,
+  parseTableClipboard,
+  pasteTables,
+  readLocalTableClipboard,
+  rememberTableClipboard,
+} from './table-clipboard.js';
+import {
   canvasToolShortcut,
   toolShortcutInputSelector,
   toolShortcutOverlaySelector,
@@ -152,6 +161,15 @@ export function Canvas({
   const [combinedName, setCombinedName] = useState('함께 보기');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [clipboardError, setClipboardError] = useState('');
+  const pasteCount = useRef(0);
+  const clipboardActive = useRef(true);
+  useEffect(() => {
+    clipboardActive.current = true;
+    return () => {
+      clipboardActive.current = false;
+    };
+  }, []);
   const viewMode = 'physical' as const;
   const [inspectorOpen, setInspectorOpen] = useState(() => {
     try {
@@ -374,6 +392,88 @@ export function Canvas({
     domain = doc.domains.find((d) => d.id === selected),
     note = doc.notes.find((n) => n.id === selected);
   const selectedObjects = multiSelection.filter((id) => nodes.some((n) => n.objectId === id));
+  const selectedTableIds = (
+    selectedObjects.length ? selectedObjects : selected ? [selected] : []
+  ).filter((id) => doc.tables?.some((t) => t.id === id));
+  const tableMenu = !!menu?.source && !!doc.tables?.some((t) => t.id === menu.source);
+  function clipboardTarget(target: EventTarget | null) {
+    return (
+      target instanceof Element &&
+      surface.current?.contains(target) &&
+      !target.closest(toolShortcutInputSelector) &&
+      !document.querySelector(toolShortcutOverlaySelector) &&
+      tool === 'select' &&
+      !drag.current
+    );
+  }
+  function copySelection(cut: boolean, transfer?: DataTransfer) {
+    if (!selectedTableIds.length || (cut && readOnly)) return;
+    try {
+      const text = copyTables(doc, selectedTableIds, nodes);
+      if (!parseTableClipboard(text)) throw new Error();
+      if (transfer) transfer.setData('text/plain', text);
+      rememberTableClipboard(text, !transfer);
+      pasteCount.current = 0;
+      if (!transfer)
+        void navigator.clipboard
+          ?.writeText(text)
+          .then(() => acknowledgeSystemTableClipboard(text))
+          .catch(() => {
+            // LAN / denied clipboard access: preserve the complete in-tab snapshot.
+          });
+      if (cut) {
+        change(selectedTableIds.reduce((next, id) => removeTable(next, id), doc));
+        setSelected(null);
+      }
+      setClipboardError('');
+      surface.current?.focus({ preventScroll: true });
+    } catch {
+      setClipboardError(tr('테이블을 클립보드에 보관하지 못했습니다.'));
+    }
+  }
+  function pasteSelection(text: string, atPointer = false) {
+    if (readOnly || !activeDomain || activeCombined) return;
+    const fragment = parseTableClipboard(text);
+    if (!fragment) {
+      setClipboardError(tr('복사한 테이블이 없습니다.'));
+      return;
+    }
+    try {
+      const camera = cameraCurrent.current;
+      const offset = 32 * (pasteCount.current + 1);
+      const point =
+        atPointer && blankPosition.current?.viewId === viewId
+          ? blankPosition.current
+          : { x: -camera.x / camera.zoom + offset, y: -camera.y / camera.zoom + offset };
+      const result = pasteTables(doc, fragment, activeDomain.id, point, newId);
+      change(result.document);
+      setSelectedState(result.ids[0] ?? null);
+      setMultiSelection(result.ids);
+      pasteCount.current++;
+      setClipboardError('');
+      surface.current?.focus({ preventScroll: true });
+    } catch {
+      setClipboardError(tr('테이블을 붙여넣지 못했습니다. 문서 크기와 내용을 확인해 주세요.'));
+    }
+  }
+  async function pasteFromMenu() {
+    const original = doc;
+    let text = readLocalTableClipboard();
+    try {
+      if (navigator.clipboard?.readText && !localTablePasteFallback())
+        text = await navigator.clipboard.readText();
+    } catch {
+      // Retain the local copy when system clipboard access is unavailable.
+    }
+    if (
+      !clipboardActive.current ||
+      latestDeletion.current.doc !== original ||
+      latestDeletion.current.readOnly ||
+      gestureContext.current.viewId !== viewId
+    )
+      return;
+    pasteSelection(text, true);
+  }
   useEffect(() => {
     if (source && !doc.domains.some((d) => d.id === source)) setSource('');
     if (target && !doc.domains.some((d) => d.id === target)) setTarget('');
@@ -1224,7 +1324,45 @@ export function Canvas({
   return (
     <div
       ref={workspaceRef}
+      onCopy={(event) => {
+        if (!clipboardTarget(event.target) || !selectedTableIds.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        copySelection(false, event.clipboardData);
+      }}
+      onCut={(event) => {
+        if (!clipboardTarget(event.target) || !selectedTableIds.length || readOnly) return;
+        event.preventDefault();
+        event.stopPropagation();
+        copySelection(true, event.clipboardData);
+      }}
+      onPaste={(event) => {
+        if (!clipboardTarget(event.target) || readOnly || !activeDomain || activeCombined) return;
+        const text = event.clipboardData.getData('text/plain');
+        if (!parseTableClipboard(text)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        pasteSelection(text);
+      }}
       onKeyDown={async (event) => {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          !event.altKey &&
+          !event.shiftKey &&
+          !event.repeat &&
+          !event.nativeEvent.isComposing &&
+          event.key.toLowerCase() === 'v' &&
+          !readOnly &&
+          activeDomain &&
+          !activeCombined &&
+          clipboardTarget(event.target) &&
+          localTablePasteFallback()
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          pasteSelection(localTablePasteFallback());
+          return;
+        }
         if (
           event.key !== 'Delete' ||
           event.repeat ||
@@ -1296,6 +1434,7 @@ export function Canvas({
         {pathHost ? createPortal(pathTrail, pathHost) : pathTrail}
         {toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
         {exportError && <p role="alert">{exportError}</p>}
+        {clipboardError && <p role="alert">{clipboardError}</p>}
 
         <div
           ref={surface}
@@ -1514,15 +1653,31 @@ export function Canvas({
                     } as CSSProperties
                   }
                   onPointerDown={(e) => begin(e, node.id)}
-                  onContextMenu={(e) => {
+                  onContextMenuCapture={(e) => {
+                    if (
+                      !t ||
+                      selectedObjects.length < 2 ||
+                      !selectedObjects.includes(t.id) ||
+                      (e.target as Element).closest('input,textarea,[contenteditable="true"]')
+                    )
+                      return;
                     e.preventDefault();
-                    if (!d || (readOnly && !onCreatePin)) return;
+                    e.stopPropagation();
+                    menuPointer.current = { x: e.clientX, y: e.clientY };
+                    e.currentTarget.focus();
+                    setMenu({ source: t.id, x: e.clientX, y: e.clientY });
+                  }}
+                  onContextMenu={(e) => {
+                    if ((e.target as Element).closest('input,textarea,[contenteditable="true"]'))
+                      return;
+                    e.preventDefault();
+                    if ((!d && !t) || (d && readOnly && !onCreatePin)) return;
                     menuPointer.current = { x: e.clientX, y: e.clientY };
                     e.stopPropagation();
                     e.currentTarget.focus();
-                    setSelected(d.id);
+                    if (!selectedObjects.includes(node.objectId)) setSelected(node.objectId);
                     setMenu({
-                      source: d.id,
+                      source: node.objectId,
                       x: Math.max(8, Math.min(e.clientX, window.innerWidth - 290)),
                       y: Math.max(8, Math.min(e.clientY, window.innerHeight - 320)),
                     });
@@ -1541,17 +1696,17 @@ export function Canvas({
                       navigate(d.id);
                       return;
                     }
-                    if (!layoutPolicy.moveNodes) return;
-                    if (d && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
+                    if ((d || t) && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
                       e.preventDefault();
                       const rect = e.currentTarget.getBoundingClientRect();
                       setMenu({
-                        source: d.id,
+                        source: node.objectId,
                         x: Math.max(8, Math.min(rect.left, window.innerWidth - 290)),
                         y: Math.max(8, Math.min(rect.top + 40, window.innerHeight - 320)),
                       });
                       return;
                     }
+                    if (!layoutPolicy.moveNodes) return;
                     const delta = e.shiftKey ? 10 : 1;
                     const offsets: Record<string, [number, number]> = {
                       ArrowLeft: [-delta, 0],
@@ -1767,11 +1922,39 @@ export function Canvas({
       )}
       <ContextMenu
         position={menu ? { x: menu.x, y: menu.y } : null}
-        label={menu?.source ? tr('도메인 관계 설정') : tr('캔버스 메뉴')}
+        label={
+          tableMenu ? tr('테이블 메뉴') : menu?.source ? tr('도메인 관계 설정') : tr('캔버스 메뉴')
+        }
         onClose={() => setMenu(null)}
         items={
           menu
             ? [
+                ...(tableMenu
+                  ? [
+                      {
+                        id: 'cut-tables',
+                        label: tr('오려두기'),
+                        disabled: readOnly || !selectedTableIds.length,
+                        onAction: () => copySelection(true),
+                      },
+                      {
+                        id: 'copy-tables',
+                        label: tr('복사하기'),
+                        disabled: !selectedTableIds.length,
+                        onAction: () => copySelection(false),
+                      },
+                    ]
+                  : []),
+                ...(!readOnly && !menu.source && viewId !== 'overview'
+                  ? [
+                      {
+                        id: 'paste-tables',
+                        label: tr('붙여넣기'),
+                        disabled: !activeDomain || !!activeCombined,
+                        onAction: () => void pasteFromMenu(),
+                      },
+                    ]
+                  : []),
                 ...(onCreatePin
                   ? [
                       {
@@ -1781,7 +1964,7 @@ export function Canvas({
                       },
                     ]
                   : []),
-                ...(!readOnly
+                ...(!readOnly && !tableMenu
                   ? menu.source
                     ? [
                         {

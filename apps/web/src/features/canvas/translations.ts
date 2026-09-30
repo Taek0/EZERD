@@ -1,6 +1,14 @@
 import { registerTranslations } from '../../shared/i18n/index.js';
 
 registerTranslations({
+  '테이블 메뉴': 'Table menu',
+  오려두기: 'Cut',
+  복사하기: 'Copy',
+  붙여넣기: 'Paste',
+  '테이블을 클립보드에 보관하지 못했습니다.': 'Could not copy the tables to the clipboard.',
+  '복사한 테이블이 없습니다.': 'No copied tables are available.',
+  '테이블을 붙여넣지 못했습니다. 문서 크기와 내용을 확인해 주세요.':
+    'Could not paste the tables. Check the document size and contents.',
   공유: 'Share',
   '내보내는 중…': 'Exporting…',
   '프로젝트 내보내기': 'Export project',
