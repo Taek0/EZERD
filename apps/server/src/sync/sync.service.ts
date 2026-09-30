@@ -8,7 +8,12 @@ import {
 } from '@nestjs/common';
 import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { and, asc, eq, gt, lt, sql } from 'drizzle-orm';
-import { designDocumentSchema, syncEventSchema, syncOperationResultSchema } from '@ezerd/contracts';
+import {
+  designDocumentSchema,
+  nodeLayoutSchema,
+  syncEventSchema,
+  syncOperationResultSchema,
+} from '@ezerd/contracts';
 import type {
   SyncActor,
   SyncEvent,
@@ -54,8 +59,14 @@ function fingerprint(input: SyncOperationInput): string {
 function actor(user: AuthenticatedUser): SyncActor {
   return { id: user.id, username: user.username, color: user.color };
 }
+function storedResult(value: unknown): SyncOperationResult {
+  const result = syncOperationResultSchema.parse(value);
+  return result.document
+    ? { ...result, document: normalizeServerDocument(result.document) }
+    : result;
+}
 function eventFrom(row: typeof syncOperations.$inferSelect): SyncEvent {
-  const result = syncOperationResultSchema.parse(row.result);
+  const result = storedResult(row.result);
   return syncEventSchema.parse({ ...result, changes: row.changes });
 }
 type ApplyOptions = {
@@ -167,7 +178,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (replay) {
         if (replay.fingerprint !== requestHash || replay.actorId !== user.id)
           throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
-        return { result: syncOperationResultSchema.parse(replay.result), event: undefined };
+        return { result: storedResult(replay.result), event: undefined };
       }
 
       const [project] = await tx
@@ -188,7 +199,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (lockedReplay) {
         if (lockedReplay.fingerprint !== requestHash || lockedReplay.actorId !== user.id)
           throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
-        return { result: syncOperationResultSchema.parse(lockedReplay.result), event: undefined };
+        return { result: storedResult(lockedReplay.result), event: undefined };
       }
       if (project.status !== 'active')
         throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
@@ -264,7 +275,74 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
 
       if (!reason)
         for (const change of derived) {
-          if (change.before === null && change.after && versions.has(change.path)) {
+          const entityCreation =
+            /^\/(?:domains|domainRelations|tables|columns|keys|tableRelations|notes|enums|views)\/[^/]+$/.test(
+              change.path,
+            ) || /^\/layout\/(?:nodes|relations)\/[^/]+$/.test(change.path);
+          if (
+            entityCreation &&
+            change.before === null &&
+            change.after &&
+            versions.has(change.path)
+          ) {
+            // Owner placements are derived from table membership. Reassignment may
+            // recreate that canonical node, but never revive an entity or repurpose
+            // another layout's ID. Require the latest tombstone to prove the pair.
+            const parsed = nodeLayoutSchema.safeParse(change.after);
+            if (change.path.startsWith('/layout/nodes/') && parsed.success) {
+              const node = parsed.data;
+              const table = document.tables?.find((item) => item.id === node.objectId);
+              const continuousTable =
+                baselineDocument.tables?.some((item) => item.id === node.objectId) &&
+                project.document.tables?.some((item) => item.id === node.objectId);
+              const continuousDomain =
+                document.domains.some((item) => item.id === node.viewId) &&
+                baselineDocument.domains.some((item) => item.id === node.viewId) &&
+                project.document.domains.some((item) => item.id === node.viewId);
+              const canonicalOwner =
+                node.id === `node:${node.objectId}:${node.viewId}` &&
+                table?.domainId === node.viewId &&
+                continuousTable &&
+                continuousDomain &&
+                !project.document.layout.nodes.some((item) => item.id === node.id);
+              if (canonicalOwner) {
+                const [retired] = await tx
+                  .select()
+                  .from(syncTombstones)
+                  .where(
+                    and(
+                      eq(syncTombstones.projectId, projectId),
+                      eq(syncTombstones.objectId, change.path.split('/').at(-1)!),
+                    ),
+                  );
+                const deleted = retired?.snapshot as
+                  { path?: string; snapshot?: unknown } | undefined;
+                const original = nodeLayoutSchema.safeParse(deleted?.snapshot);
+                if (!retired) {
+                  // Deletion snapshots expire. Use a fresh owner-layout ID rather
+                  // than reusing an identity whose original pair cannot be proved.
+                  // Canonical global placements are never renamed here.
+                  let replacement: string;
+                  do replacement = `node:owner:${randomUUID()}`;
+                  while (
+                    versions.has(`/layout/nodes/${replacement}`) ||
+                    document.layout.nodes.some((item) => item.id === replacement)
+                  );
+                  change.path = `/layout/nodes/${replacement}`;
+                  change.after = { ...node, id: replacement };
+                  continue;
+                }
+                if (
+                  retired?.sequence === versions.get(change.path) &&
+                  deleted?.path === change.path &&
+                  original.success &&
+                  original.data.id === node.id &&
+                  original.data.objectId === node.objectId &&
+                  original.data.viewId === node.viewId
+                )
+                  continue;
+              }
+            }
             reason = '과거에 삭제되거나 사용된 객체 ID는 다시 사용할 수 없습니다.';
             break;
           }
@@ -420,7 +498,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         );
       if (!row) throw new NotFoundException('작업 결과를 찾을 수 없습니다.');
       // All collaborators can inspect project history, but authentication is mandatory.
-      return syncOperationResultSchema.parse(row.result);
+      return storedResult(row.result);
     });
   }
 
@@ -440,7 +518,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (!row) return undefined;
       if (row.actorId !== user.id || row.fingerprint !== requestHash)
         throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
-      return syncOperationResultSchema.parse(row.result);
+      return storedResult(row.result);
     });
   }
 
@@ -623,7 +701,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       )
         throw new ConflictException('같은 복원 작업 ID에 다른 요청을 사용할 수 없습니다.');
       return {
-        result: syncOperationResultSchema.parse(replay.result),
+        result: storedResult(replay.result),
         omittedRelations: metadata.omittedRelations,
       };
     }
@@ -819,7 +897,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         replay.clientId !== request.clientId
       )
         throw new ConflictException('같은 실행 취소 작업 ID에 다른 요청을 사용할 수 없습니다.');
-      return syncOperationResultSchema.parse(replay.result);
+      return storedResult(replay.result);
     }
     if (!source) throw new NotFoundException('되돌릴 작업을 찾을 수 없습니다.');
     if (source.actorId !== user.id)

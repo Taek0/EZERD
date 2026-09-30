@@ -26,7 +26,8 @@ import {
   workspaceMemberSchema,
   workspaceInvitationSchema,
 } from '@ezerd/contracts';
-import { diagnoseDocument, mergeStoredPersonalState } from '@ezerd/model';
+import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
+import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { ReviewService } from '../review/review.service.js';
 import { WorkspaceService } from '../workspace/workspace.service.js';
@@ -110,7 +111,7 @@ export class McpServerFactory {
         instructions:
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
           ' active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
-          '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view의 모든 페이지로 대상 뷰의 최신 배치를 확인하세요. 화면의 관계는 list_view_relations로 조회하세요. 결합 화면·개인 화면 위치는 get_personal_state로 개인 버전을 확인하고 apply_personal_changes로 변경하세요. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
+          '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view의 모든 페이지로 대상 뷰의 최신 배치를 확인하세요. 화면의 관계는 list_view_relations로 조회하세요. 테이블 캔버스는 __tables__의 공유 배치를 사용하며, 도메인·기존 결합 화면 ID 조회는 같은 공유 좌표의 도메인 필터입니다. 필터 조회에서도 반환된 공유 노드 ID로 apply_project_changes를 사용하세요. 개인 카메라와 기존 개인 기록은 get_personal_state 및 apply_personal_changes로 다룹니다. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
           '같은 뷰의 카드 경계와 콘텐츠에 필요한 크기를 고려해 서로 겹치지 않게 배치하고 최소 40px 간격을 두세요. ' +
@@ -207,7 +208,7 @@ export class McpServerFactory {
       'get_project_view',
       {
         description:
-          '한 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. 전체 테이블 화면의 viewId는 __tables__입니다. 테이블 컬럼은 포함하지 않습니다.',
+          '한 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. 전체 테이블 화면의 viewId는 __tables__입니다. 도메인·기존 결합 화면 ID는 전체 공유 좌표의 도메인 필터이며 노드·메모·경로의 viewId는 __tables__를 유지합니다. 테이블 컬럼은 포함하지 않습니다.',
         inputSchema: projectViewInputSchema,
         outputSchema: projectViewSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -221,7 +222,7 @@ export class McpServerFactory {
       'list_view_relations',
       {
         description:
-          '한 화면에 실제로 보이는 도메인·테이블 관계와 관계선 경로를 최대 100개씩 조회합니다.',
+          '한 화면에 실제로 보이는 도메인·테이블 관계와 관계선 경로를 최대 100개씩 조회합니다. 도메인·기존 결합 화면 필터는 양쪽 테이블이 표시되는 관계와 전체 공유 캔버스 경로를 반환합니다.',
         inputSchema: viewRelationsInputSchema,
         outputSchema: viewRelationsSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -475,7 +476,16 @@ export class McpServerFactory {
         invoke('diagnose_layout', async () => {
           const state = await projectState(projectId);
           if (viewId) projectView(state, viewId);
-          return diagnoseLayout(state.document, viewId, limit);
+          const nodes = viewId
+            ? sharedCanvasNodes(state.document, viewId)
+            : state.document.layout.nodes.filter(
+                (node) => node.viewId === 'overview' || node.viewId === TABLES_VIEW_ID,
+              );
+          return diagnoseLayout(
+            { ...state.document, layout: { ...state.document.layout, nodes } },
+            viewId ? sharedCanvasSelection(state.document, viewId)!.layoutViewId : undefined,
+            limit,
+          );
         }),
     );
     server.registerTool(

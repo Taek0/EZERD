@@ -185,6 +185,8 @@ export class McpDocumentService {
           })
         : next;
     };
+    const sharedViewId = (viewId: string) =>
+      document.domains.some((domain) => domain.id === viewId) ? TABLES_VIEW_ID : viewId;
     switch (command.type) {
       case 'upsert_domain':
         return document.domains.some((item) => item.id === command.value.id)
@@ -205,13 +207,9 @@ export class McpDocumentService {
           ? resize(
               updateTable(document, command.value.id, command.value),
               command.value.id,
-              command.value.domainId ?? TABLES_VIEW_ID,
+              TABLES_VIEW_ID,
             )
-          : resize(
-              addTable(document, command.value, point),
-              command.value.id,
-              command.value.domainId ?? TABLES_VIEW_ID,
-            );
+          : resize(addTable(document, command.value, point), command.value.id, TABLES_VIEW_ID);
       case 'delete_table':
         return removeTable(document, command.id);
       case 'upsert_column':
@@ -232,22 +230,16 @@ export class McpDocumentService {
         return upsertTableRelation(document, command.value);
       case 'delete_table_relation':
         return removeTableRelation(document, command.id);
-      case 'upsert_note':
+      case 'upsert_note': {
+        const value = { ...command.value, viewId: sharedViewId(command.value.viewId) };
         if (document.notes.some((item) => item.id === command.value.id)) {
           const current = document.notes.find((item) => item.id === command.value.id)!;
-          if (current.viewId !== command.value.viewId)
+          if (current.viewId !== value.viewId)
             throw new Error('메모는 다른 화면으로 이동할 수 없습니다.');
-          return resize(
-            updateNote(document, command.value.id, command.value),
-            command.value.id,
-            command.value.viewId,
-          );
+          return resize(updateNote(document, value.id, value), value.id, value.viewId);
         }
-        return resize(
-          addNote(document, command.value, point),
-          command.value.id,
-          command.value.viewId,
-        );
+        return resize(addNote(document, value, point), value.id, value.viewId);
+      }
       case 'delete_note':
         return removeNote(document, command.id);
       case 'upsert_enum':
@@ -272,7 +264,10 @@ export class McpDocumentService {
       case 'upsert_relation_layout':
         if (document.views?.some((view) => view.id === command.value.viewId))
           throw new Error('개인 결합 화면의 관계 경로는 공유 문서 명령으로 변경할 수 없습니다.');
-        return upsertRelationLayout(document, command.value);
+        return upsertRelationLayout(document, {
+          ...command.value,
+          viewId: sharedViewId(command.value.viewId),
+        });
       case 'delete_relation_layout':
         if (document.views?.some((view) => view.id === command.viewId))
           throw new Error('개인 결합 화면의 관계 경로는 공유 문서 명령으로 변경할 수 없습니다.');
@@ -282,7 +277,9 @@ export class McpDocumentService {
             ...document.layout,
             ...(document.layout.relations && {
               relations: document.layout.relations.filter(
-                (item) => item.relationId !== command.relationId || item.viewId !== command.viewId,
+                (item) =>
+                  item.relationId !== command.relationId ||
+                  item.viewId !== sharedViewId(command.viewId),
               ),
             }),
           },

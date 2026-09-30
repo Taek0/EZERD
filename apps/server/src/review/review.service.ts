@@ -18,6 +18,7 @@ import type {
 } from '@ezerd/contracts';
 import { TABLES_VIEW_ID } from '@ezerd/model';
 import { normalizeServerDocument } from '../shared/normalize-document.js';
+import { sharedCanvasNodes } from '../shared/table-canvas-view.js';
 import { DatabaseService } from '../db/database.service.js';
 import { messages, notifications, projects, threads, users, userWorkspaces } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
@@ -210,13 +211,18 @@ export class ReviewService {
         )
           throw new BadRequestException('댓글을 남길 화면을 찾을 수 없습니다.');
         if (input.objectId !== null) {
+          const sharedTableView =
+            input.viewId === TABLES_VIEW_ID ||
+            doc.domains.some((domain) => domain.id === input.viewId);
+          const objectViewId = sharedTableView ? TABLES_VIEW_ID : input.viewId;
           const exists =
             (input.viewId === 'overview' &&
               doc.domains.some((domain) => domain.id === input.objectId)) ||
-            doc.notes.some((note) => note.id === input.objectId && note.viewId === input.viewId) ||
+            doc.notes.some((note) => note.id === input.objectId && note.viewId === objectViewId) ||
             (doc.tables ?? []).some((table) => table.id === input.objectId);
-          const placed = doc.layout.nodes.some(
-            (node) => node.objectId === input.objectId && node.viewId === input.viewId,
+          const nodes = sharedTableView ? sharedCanvasNodes(doc, input.viewId) : doc.layout.nodes;
+          const placed = nodes.some(
+            (node) => node.objectId === input.objectId && node.viewId === objectViewId,
           );
           if (!exists || !placed)
             throw new BadRequestException('이 화면에서 댓글 대상을 찾을 수 없습니다.');

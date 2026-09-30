@@ -15,6 +15,7 @@ import {
 } from '@ezerd/contracts';
 import type { DesignDocument, Project } from '@ezerd/contracts';
 import { TABLES_VIEW_ID } from '@ezerd/model';
+import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
 
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const objectId = z.string().trim().min(1).max(160);
@@ -208,9 +209,10 @@ export function projectView(state: ProjectState, viewId: string, limit = 50, cur
   const { project, document, syncSequence } = state;
   const view = views(document).find((item) => item.id === viewId);
   if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
-  const allNodes = document.layout.nodes
-    .filter((node) => node.viewId === viewId)
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const layoutViewId = sharedCanvasSelection(document, viewId)!.layoutViewId;
+  const allNodes = sharedCanvasNodes(document, viewId).sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
   const page = allNodes.filter((node) => !cursor || node.id > cursor).slice(0, limit + 1);
   const nodes = page.slice(0, limit);
   const visible = new Set(nodes.map((node) => node.objectId));
@@ -235,7 +237,7 @@ export function projectView(state: ProjectState, viewId: string, limit = 50, cur
       .filter((domain) => visible.has(domain.id))
       .map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })),
     tables: (document.tables ?? []).filter((table) => visible.has(table.id)).map(tableSummary),
-    notes: document.notes.filter((note) => note.viewId === viewId && visible.has(note.id)),
+    notes: document.notes.filter((note) => note.viewId === layoutViewId && visible.has(note.id)),
     domainRelations: document.domainRelations
       .filter(
         (relation) => visible.has(relation.sourceDomainId) && visible.has(relation.targetDomainId),
@@ -249,9 +251,10 @@ export function projectView(state: ProjectState, viewId: string, limit = 50, cur
     tableRelations,
     nodes,
     relationLayouts: (document.layout.relations ?? []).filter(
-      (relation) => relation.viewId === viewId && visibleRelationIds.has(relation.relationId),
+      (relation) => relation.viewId === layoutViewId && visibleRelationIds.has(relation.relationId),
     ),
-    viewport: document.layout.viewports.find((viewport) => viewport.viewId === viewId) ?? null,
+    viewport:
+      document.layout.viewports.find((viewport) => viewport.viewId === layoutViewId) ?? null,
   });
 }
 
@@ -264,12 +267,11 @@ export function listViewRelations(
   const { project, document, syncSequence } = state;
   const view = views(document).find((item) => item.id === viewId);
   if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
-  const visible = new Set(
-    document.layout.nodes.filter((node) => node.viewId === viewId).map((node) => node.objectId),
-  );
+  const layoutViewId = sharedCanvasSelection(document, viewId)!.layoutViewId;
+  const visible = new Set(sharedCanvasNodes(document, viewId).map((node) => node.objectId));
   const layouts = new Map(
     (document.layout.relations ?? [])
-      .filter((item) => item.viewId === viewId)
+      .filter((item) => item.viewId === layoutViewId)
       .map((item) => [item.relationId, item]),
   );
   const relations = [

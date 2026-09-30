@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { McpDocumentService, mcpDocumentCommandSchema } from '../src/mcp/mcp-document.service.js';
 import { TABLES_VIEW_ID, type DesignDocument } from '@ezerd/model';
+import { normalizeServerDocument } from '../src/shared/normalize-document.js';
 import { ForbiddenException } from '@nestjs/common';
 
 const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
@@ -33,6 +34,102 @@ const request = {
 };
 
 describe('MCP document changes', () => {
+  it('writes owned table placements and legacy domain annotations to the canonical shared canvas', async () => {
+    let document: DesignDocument = normalizeServerDocument({
+      ...empty,
+      domains: [{ id: 'sales', name: 'Sales', description: '' }],
+      tables: [
+        {
+          id: 'orders',
+          domainId: 'sales',
+          scope: 'both',
+          logical: { name: 'Orders', definition: '' },
+          physical: { name: 'orders', schema: 'public', comment: '' },
+          customProperties: { common: {}, logical: {}, physical: {} },
+        },
+      ],
+      notes: [{ id: 'note', viewId: 'sales', text: 'Old' }],
+      layout: {
+        nodes: [
+          {
+            id: 'owner-node',
+            objectId: 'orders',
+            viewId: 'sales',
+            x: 10,
+            y: 20,
+            width: 320,
+            height: 260,
+          },
+          {
+            id: 'note-node',
+            objectId: 'note',
+            viewId: 'sales',
+            x: 70,
+            y: 80,
+            width: 200,
+            height: 120,
+          },
+        ],
+        viewports: empty.layout.viewports,
+      },
+    });
+    const sync = {
+      findReplay: vi.fn(async () => undefined),
+      establishBaseline: vi.fn(async () => ({
+        baselineId: crypto.randomUUID(),
+        sequence: 3,
+        baselineIssuedAt: new Date().toISOString(),
+        document,
+      })),
+      apply: vi.fn(async (_projectId, operation) => {
+        document = operation.document;
+        return { status: 'accepted' as const, document };
+      }),
+    };
+    const service = new McpDocumentService(sync as never);
+    await service.apply(
+      {
+        ...request,
+        commands: [
+          {
+            type: 'upsert_table',
+            value: document.tables![0]!,
+            placement: { x: 800, y: 900, width: 400, height: 300 },
+          },
+          {
+            type: 'upsert_note',
+            value: { id: 'note', viewId: 'sales', text: 'Updated' },
+            placement: { x: 600, y: 700 },
+          },
+          {
+            type: 'upsert_note',
+            value: { id: 'new-note', viewId: 'sales', text: 'New' },
+            placement: { x: 120, y: 240 },
+          },
+        ],
+      },
+      actor,
+    );
+    expect(
+      document.layout.nodes.find(
+        (node) => node.objectId === 'orders' && node.viewId === TABLES_VIEW_ID,
+      ),
+    ).toMatchObject({ x: 800, y: 900, width: 400, height: 300 });
+    expect(document.layout.nodes.find((node) => node.id === 'owner-node')).toMatchObject({
+      x: 10,
+      y: 20,
+    });
+    expect(document.layout.nodes.find((node) => node.id === 'note-node')).toMatchObject({
+      viewId: TABLES_VIEW_ID,
+      x: 600,
+      y: 700,
+    });
+    expect(document.notes).toEqual([
+      { id: 'note', viewId: TABLES_VIEW_ID, text: 'Updated' },
+      { id: 'new-note', viewId: TABLES_VIEW_ID, text: 'New' },
+    ]);
+  });
+
   it('creates a direct table, preserves its global placement across assignment and edits global geometry', async () => {
     let document: DesignDocument = empty;
     const sync = {
@@ -360,7 +457,7 @@ describe('MCP document changes', () => {
         baselineId: crypto.randomUUID(),
         sequence: 3,
         baselineIssuedAt: new Date().toISOString(),
-        document: baseline,
+        document: normalizeServerDocument(baseline),
       })),
       apply: vi.fn(async (_projectId, operation) => ({
         status: 'accepted' as const,
@@ -401,7 +498,7 @@ describe('MCP document changes', () => {
       physical: { name: id, schema: 'public', comment: '' },
       customProperties: properties,
     });
-    let baseline = {
+    let baseline: DesignDocument = {
       ...empty,
       domains: [{ id: 'sales', name: 'Sales', description: '' }],
       tables: [table('orders'), table('users')],
@@ -455,7 +552,7 @@ describe('MCP document changes', () => {
         baselineId: crypto.randomUUID(),
         sequence: 3,
         baselineIssuedAt: new Date().toISOString(),
-        document: baseline,
+        document: normalizeServerDocument(baseline),
       })),
       apply: vi.fn(async (_projectId, operation) => ({
         status: 'accepted' as const,
@@ -488,7 +585,7 @@ describe('MCP document changes', () => {
     );
     expect(edited.layout.relations).toContainEqual({
       relationId: 'orders-users',
-      viewId: 'sales',
+      viewId: TABLES_VIEW_ID,
       offset: 12,
     });
 

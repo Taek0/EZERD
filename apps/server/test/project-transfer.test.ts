@@ -18,6 +18,7 @@ import {
 import { designDocumentSchema, MAX_DOCUMENT_BYTES } from '@ezerd/contracts';
 import { WorkspaceService } from '../src/workspace/workspace.service.js';
 import { WorkspaceController } from '../src/workspace/workspace.controller.js';
+import { normalizeServerDocument } from '../src/shared/normalize-document.js';
 
 const document = addNote(
   addDomain(
@@ -208,8 +209,15 @@ describe('project file transfer', () => {
     const { service, inserted } = setup();
     await service.importProject(actorId, { workspaceId, transfer: { ...file, document: owned } });
     const saved = inserted[0]!.document as typeof owned;
-    expect(saved.layout.nodes).toEqual(expect.arrayContaining(owned.layout.nodes));
-    expect(saved.layout.nodes.find((node) => node.viewId === TABLES_VIEW_ID)).toMatchObject({
+    expect(saved).toEqual(normalizeServerDocument(owned));
+    expect(saved.layout.nodes).toContainEqual(
+      owned.layout.nodes.find((node) => node.objectId === 'owned')!,
+    );
+    expect(
+      saved.layout.nodes.find(
+        (node) => node.viewId === TABLES_VIEW_ID && node.objectId === 'owned',
+      ),
+    ).toMatchObject({
       objectId: 'owned',
       x: 120,
       y: 340,
@@ -223,8 +231,18 @@ describe('project file transfer', () => {
     expect(first.id).not.toBe(second.id);
     expect(first).toMatchObject({ workspaceId, version: 0, status: 'active' });
     expect(inserted).toEqual([
-      { name: '설계', databaseKind: 'postgresql', workspaceId, document },
-      { name: '설계', databaseKind: 'postgresql', workspaceId, document },
+      {
+        name: '설계',
+        databaseKind: 'postgresql',
+        workspaceId,
+        document: normalizeServerDocument(document),
+      },
+      {
+        name: '설계',
+        databaseKind: 'postgresql',
+        workspaceId,
+        document: normalizeServerDocument(document),
+      },
     ]);
     expect(access.runWorkspace).toHaveBeenCalledTimes(2);
     expect(access.runWorkspace).toHaveBeenCalledWith(

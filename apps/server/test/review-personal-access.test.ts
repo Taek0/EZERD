@@ -121,6 +121,80 @@ function store(role: 'owner' | 'editor' | 'viewer' | null = 'viewer', status = '
 const pin = { viewId: 'overview', objectId: null, x: 0, y: 0, body: 'pin', mentionIds: [] };
 
 describe('review membership boundaries', () => {
+  it('validates domain object pins using global placements while preserving domain context', async () => {
+    const fixture = store();
+    const document = createEmptyDocument();
+    document.domains = [
+      { id: 'sales', name: 'Sales', description: '' },
+      { id: 'identity', name: 'Identity', description: '' },
+    ];
+    document.tables = [
+      {
+        id: 'orders',
+        domainId: 'sales',
+        scope: 'both',
+        logical: { name: 'Orders', definition: '' },
+        physical: { name: 'orders', schema: 'public', comment: '' },
+        customProperties: { common: {}, logical: {}, physical: {} },
+      },
+    ];
+    document.notes = [{ id: 'note', viewId: TABLES_VIEW_ID, text: 'Shared' }];
+    document.layout.nodes = [
+      {
+        id: 'order-global',
+        objectId: 'orders',
+        viewId: TABLES_VIEW_ID,
+        x: 600,
+        y: 700,
+        width: 320,
+        height: 260,
+      },
+      {
+        id: 'note-global',
+        objectId: 'note',
+        viewId: TABLES_VIEW_ID,
+        x: 400,
+        y: 500,
+        width: 200,
+        height: 120,
+      },
+    ];
+    fixture.rows.set(projects, [[{ ...project, document }]]);
+    fixture.rows.set(messages, [[]]);
+    for (const objectId of ['orders', 'note', null]) {
+      await fixture.review.create(
+        project.id,
+        { ...pin, viewId: 'sales', objectId, x: 615, y: 725 },
+        actor,
+      );
+      expect(fixture.writes).toContainEqual({
+        table: threads,
+        value: expect.objectContaining({ viewId: 'sales', objectId, x: 615, y: 725 }),
+      });
+    }
+    await expect(
+      fixture.review.create(project.id, { ...pin, viewId: 'identity', objectId: 'orders' }, actor),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      fixture.review.create(project.id, { ...pin, viewId: 'missing', objectId: null }, actor),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('retains old personal pin metadata on reads without reclassifying it as shared', async () => {
+    const fixture = store();
+    fixture.rows.set(threads, [
+      [{ ...thread, viewId: 'private-view', objectId: 'orders', x: 987, y: 654 }],
+    ]);
+    fixture.rows.set(messages, [[]]);
+    expect(await fixture.review.getThread(thread.id, actor.id)).toMatchObject({
+      viewId: 'private-view',
+      objectId: 'orders',
+      x: 987,
+      y: 654,
+    });
+    expect(fixture.writes).toEqual([]);
+  });
+
   it('allows pins on a legacy table normalized into the global canvas', async () => {
     const fixture = store();
     const legacy = createEmptyDocument();
@@ -294,6 +368,29 @@ describe('review membership boundaries', () => {
 });
 
 describe('personal state membership boundaries', () => {
+  it('rejects attempts to change shared global placements through the viewer personal API', async () => {
+    const fixture = store();
+    fixture.rows.set(projectPersonalStates, [[]]);
+    const state = {
+      ...extractPersonalState(project.document),
+      nodes: [
+        {
+          id: 'global',
+          objectId: 'orders',
+          viewId: TABLES_VIEW_ID,
+          x: 500,
+          y: 500,
+          width: 320,
+          height: 260,
+        },
+      ],
+    };
+    await expect(fixture.personal.save(project.id, actor, 0, state)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(fixture.writes).toEqual([]);
+  });
+
   it('requires membership for reads and permits reads in archived workspaces', async () => {
     const rejected = store(null);
     await expect(rejected.personal.get(project.id, actor)).rejects.toBeInstanceOf(

@@ -20,6 +20,9 @@ import {
   updateTable,
   upsertKey,
   upsertTableRelation,
+  addTableReference,
+  updateNodeLayout,
+  upsertRelationLayout,
   type DesignDocument,
   type Table,
   type Column,
@@ -307,6 +310,47 @@ describe.runIf(process.env.EZERD_DIRECT_TABLE_DB_TEST === '1')(
       expect((await request(`/projects/${projectId}`)).data.document.layout.viewports).toEqual(
         before.layout.viewports,
       );
+    }, 20000);
+    it('shares legacy domain annotations and canonical geometry with another member', async () => {
+      const response = await operation((doc) => {
+        let next = updateTable(doc, 'users', { domainId: 'sales' });
+        const owner = next.layout.nodes.find(
+          (node) => node.objectId === 'users' && node.viewId === 'sales',
+        )!;
+        next = updateNodeLayout(next, owner.id, { x: 900, y: 800 });
+        next = addTableReference(next, 'orders', 'sales', { x: 1300, y: 800 });
+        next = addNote(
+          next,
+          { id: 'domain-note', viewId: 'sales', text: 'Shared domain note' },
+          { x: 910, y: 820 },
+        );
+        return upsertRelationLayout(next, {
+          relationId: 'fk',
+          viewId: 'sales',
+          offset: 12,
+          bend: { x: 1000, y: 1000 },
+        });
+      });
+      expect(response.status).toBe(201);
+      expect(response.data.status, response.data.reason).toBe('accepted');
+      const snapshot = (await request(`/projects/${projectId}`, 'GET', undefined, viewerToken)).data
+        .document as DesignDocument;
+      expect(snapshot.notes.find((note) => note.id === 'domain-note')).toMatchObject({
+        viewId: TABLES_VIEW_ID,
+        text: 'Shared domain note',
+      });
+      expect(snapshot.layout.nodes.find((node) => node.objectId === 'domain-note')).toMatchObject({
+        viewId: TABLES_VIEW_ID,
+        x: 20,
+        y: 40,
+      });
+      expect(snapshot.layout.relations!.find((route) => route.relationId === 'fk')).toMatchObject({
+        viewId: TABLES_VIEW_ID,
+        offset: 12,
+        bend: { x: 110, y: 220 },
+      });
+      expect(snapshot.layout.relations!.some((route) => route.viewId === 'sales')).toBe(false);
+      expect(diagnoseDocument(snapshot)).toEqual([]);
     }, 20000);
   },
 );
