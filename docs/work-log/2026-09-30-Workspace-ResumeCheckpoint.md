@@ -32,5 +32,5 @@
 ## 도구 정보
 
 - node v24.18.1, pnpm 11.24.0. 실행 진입점 node node_modules/prettier/bin/prettier.cjs 및 node node_modules/vitest/vitest.mjs를 사용할 수 있다.
-- 운영 서버 MCP URL은 http://192.168.0.178:3001/mcp, 감사 로그는 .data/logs/mcp/2026-09-30.jsonl이다. .env나 MCP config의 credential 원문은 출력하지 않는다.
+- 운영 서버 MCP URL 형식은 `http://<host-private-ip>:3001/mcp`, 감사 로그는 .data/logs/mcp/2026-09-30.jsonl이다. 실제 운영 주소는 로컬 `.env` 또는 비공개 운영 문서에서 확인한다. .env나 MCP config의 credential 원문은 출력하지 않는다.
 - 앱 fork_thread로 사용자가 승인한 현재 작업 폴더 포크를 수행하고 이어서 GPT-6.1 Sol high로 작업한다.
