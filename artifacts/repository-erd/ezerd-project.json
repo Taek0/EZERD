@@ -4775,7 +4775,7 @@
     "views": [
       {
         "id": "all-tables",
-        "name": "전체 물리 ERD",
+        "name": "인증 · 공간 외 3개",
         "domainIds": [
           "identity",
           "workspace-domain",
@@ -4986,146 +4986,47 @@
           "height": 383
         },
         {
-          "id": "node:all-tables:users",
-          "objectId": "users",
-          "viewId": "all-tables",
-          "x": 0,
-          "y": 935,
-          "width": 521,
-          "height": 346
-        },
-        {
-          "id": "node:all-tables:workspace",
-          "objectId": "workspace",
-          "viewId": "all-tables",
-          "x": 0,
-          "y": 1408,
-          "width": 521,
-          "height": 309
-        },
-        {
-          "id": "node:all-tables:workspace_audit_events",
-          "objectId": "workspace_audit_events",
-          "viewId": "all-tables",
-          "x": 0,
-          "y": 1797,
-          "width": 521,
-          "height": 383
-        },
-        {
-          "id": "node:all-tables:sessions",
-          "objectId": "sessions",
-          "viewId": "all-tables",
-          "x": 701,
-          "y": 0,
-          "width": 552,
-          "height": 346
-        },
-        {
           "id": "node:all-tables:mcp_tokens",
           "objectId": "mcp_tokens",
           "viewId": "all-tables",
-          "x": 701,
-          "y": 426,
-          "width": 552,
+          "x": 589,
+          "y": 1589,
+          "width": 434,
           "height": 420
-        },
-        {
-          "id": "node:all-tables:user_workspaces",
-          "objectId": "user_workspaces",
-          "viewId": "all-tables",
-          "x": 701,
-          "y": 926,
-          "width": 552,
-          "height": 272
-        },
-        {
-          "id": "node:all-tables:workspace_invitations",
-          "objectId": "workspace_invitations",
-          "viewId": "all-tables",
-          "x": 701,
-          "y": 1278,
-          "width": 552,
-          "height": 485
-        },
-        {
-          "id": "node:all-tables:projects",
-          "objectId": "projects",
-          "viewId": "all-tables",
-          "x": 701,
-          "y": 1843,
-          "width": 552,
-          "height": 522
-        },
-        {
-          "id": "node:all-tables:review_threads",
-          "objectId": "review_threads",
-          "viewId": "all-tables",
-          "x": 1433,
-          "y": 158,
-          "width": 501,
-          "height": 457
-        },
-        {
-          "id": "node:all-tables:project_personal_states",
-          "objectId": "project_personal_states",
-          "viewId": "all-tables",
-          "x": 1433,
-          "y": 695,
-          "width": 501,
-          "height": 309
         },
         {
           "id": "node:all-tables:project_personal_operations",
           "objectId": "project_personal_operations",
           "viewId": "all-tables",
-          "x": 1433,
-          "y": 1084,
-          "width": 501,
+          "x": 3189.3333333333335,
+          "y": 1607.5,
+          "width": 460,
           "height": 346
         },
         {
-          "id": "node:all-tables:sync_operations",
-          "objectId": "sync_operations",
+          "id": "node:all-tables:project_personal_states",
+          "objectId": "project_personal_states",
           "viewId": "all-tables",
-          "x": 1433,
-          "y": 1510,
-          "width": 501,
-          "height": 744
-        },
-        {
-          "id": "node:all-tables:sync_field_versions",
-          "objectId": "sync_field_versions",
-          "viewId": "all-tables",
-          "x": 1433,
-          "y": 2334,
-          "width": 501,
+          "x": 3189.3333333333335,
+          "y": 1218.5,
+          "width": 460,
           "height": 309
         },
         {
-          "id": "node:all-tables:sync_client_baselines",
-          "objectId": "sync_client_baselines",
+          "id": "node:all-tables:projects",
+          "objectId": "projects",
           "viewId": "all-tables",
-          "x": 1433,
-          "y": 2723,
-          "width": 501,
-          "height": 411
-        },
-        {
-          "id": "node:all-tables:sync_tombstones",
-          "objectId": "sync_tombstones",
-          "viewId": "all-tables",
-          "x": 1433,
-          "y": 3214,
-          "width": 501,
-          "height": 383
+          "x": 2481.3333333333335,
+          "y": 1315.5,
+          "width": 528,
+          "height": 522
         },
         {
           "id": "node:all-tables:review_messages",
           "objectId": "review_messages",
           "viewId": "all-tables",
-          "x": 2114,
-          "y": 0,
+          "x": 4457.25,
+          "y": 105.5,
           "width": 421,
           "height": 346
         },
@@ -5133,10 +5034,109 @@
           "id": "node:all-tables:review_notifications",
           "objectId": "review_notifications",
           "viewId": "all-tables",
-          "x": 2114,
-          "y": 426,
+          "x": 4457.25,
+          "y": 531.5,
           "width": 421,
           "height": 346
+        },
+        {
+          "id": "node:all-tables:review_threads",
+          "objectId": "review_threads",
+          "viewId": "all-tables",
+          "x": 3806.25,
+          "y": 263.5,
+          "width": 471,
+          "height": 457
+        },
+        {
+          "id": "node:all-tables:sessions",
+          "objectId": "sessions",
+          "viewId": "all-tables",
+          "x": 589,
+          "y": 1163,
+          "width": 434,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:sync_client_baselines",
+          "objectId": "sync_client_baselines",
+          "viewId": "all-tables",
+          "x": 4091.75,
+          "y": 2850,
+          "width": 501,
+          "height": 411
+        },
+        {
+          "id": "node:all-tables:sync_field_versions",
+          "objectId": "sync_field_versions",
+          "viewId": "all-tables",
+          "x": 4091.75,
+          "y": 2461,
+          "width": 501,
+          "height": 309
+        },
+        {
+          "id": "node:all-tables:sync_operations",
+          "objectId": "sync_operations",
+          "viewId": "all-tables",
+          "x": 4091.75,
+          "y": 1637.0000000000002,
+          "width": 501,
+          "height": 744
+        },
+        {
+          "id": "node:all-tables:sync_tombstones",
+          "objectId": "sync_tombstones",
+          "viewId": "all-tables",
+          "x": 4091.75,
+          "y": 3341,
+          "width": 501,
+          "height": 383
+        },
+        {
+          "id": "node:all-tables:user_workspaces",
+          "objectId": "user_workspaces",
+          "viewId": "all-tables",
+          "x": 1862.9166666666667,
+          "y": 0,
+          "width": 552,
+          "height": 272
+        },
+        {
+          "id": "node:all-tables:users",
+          "objectId": "users",
+          "viewId": "all-tables",
+          "x": 0,
+          "y": 1395,
+          "width": 409,
+          "height": 346
+        },
+        {
+          "id": "node:all-tables:workspace",
+          "objectId": "workspace",
+          "viewId": "all-tables",
+          "x": 1161.9166666666667,
+          "y": 211,
+          "width": 521,
+          "height": 309
+        },
+        {
+          "id": "node:all-tables:workspace_audit_events",
+          "objectId": "workspace_audit_events",
+          "viewId": "all-tables",
+          "x": 1161.9166666666667,
+          "y": 600,
+          "width": 521,
+          "height": 383
+        },
+        {
+          "id": "node:all-tables:workspace_invitations",
+          "objectId": "workspace_invitations",
+          "viewId": "all-tables",
+          "x": 1862.9166666666667,
+          "y": 352,
+          "width": 552,
+          "height": 485
         }
       ],
       "viewports": [
@@ -5378,16 +5378,16 @@
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "waypoints": [
             {
-              "x": 566,
-              "y": 636
+              "x": 488.75,
+              "y": 1799
             },
             {
-              "x": 566,
-              "y": 1108
+              "x": 488.75,
+              "y": 1625.6666666666667
             }
           ]
         },
@@ -5397,20 +5397,20 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "waypoints": [
             {
-              "x": 1997,
-              "y": 173
+              "x": 4295.5,
+              "y": 220.83333333333331
             },
             {
-              "x": 1997,
-              "y": 386.5
+              "x": 4295.5,
+              "y": 415.8333333333333
             }
           ]
         },
@@ -5420,28 +5420,28 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.16666666666666666
           },
           "waypoints": [
             {
-              "x": 2033,
-              "y": 173
+              "x": 4422.45,
+              "y": 336.16666666666663
             },
             {
-              "x": 2033,
-              "y": -128
+              "x": 4422.45,
+              "y": -34
             },
             {
-              "x": 602,
-              "y": -128
+              "x": 443.8,
+              "y": -34
             },
             {
-              "x": 602,
-              "y": 1108
+              "x": 443.8,
+              "y": 1452.6666666666667
             }
           ]
         },
@@ -5451,28 +5451,28 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.75
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.4166666666666667
           },
           "waypoints": [
             {
-              "x": 2015,
-              "y": 599
+              "x": 4422.05,
+              "y": 791
             },
             {
-              "x": 2015,
-              "y": -152
+              "x": 4422.05,
+              "y": 1127
             },
             {
-              "x": 620,
-              "y": -152
+              "x": 524.2,
+              "y": 1127
             },
             {
-              "x": 620,
-              "y": 1108
+              "x": 524.2,
+              "y": 1539.1666666666667
             }
           ]
         },
@@ -5486,24 +5486,24 @@
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.2222222222222222
           },
           "waypoints": [
             {
-              "x": 1997,
-              "y": 599
+              "x": 4421.65,
+              "y": 704.5
             },
             {
-              "x": 1997,
-              "y": -176
+              "x": 4421.65,
+              "y": 1547
             },
             {
-              "x": 1370,
-              "y": -176
+              "x": 3044.9333333333334,
+              "y": 1547
             },
             {
-              "x": 1370,
-              "y": 2104
+              "x": 3044.9333333333334,
+              "y": 1431.5
             }
           ]
         },
@@ -5513,20 +5513,20 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.25
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "waypoints": [
             {
-              "x": 1979,
-              "y": 599
+              "x": 4295.5,
+              "y": 618
             },
             {
-              "x": 1979,
-              "y": 386.5
+              "x": 4295.5,
+              "y": 568.1666666666666
             }
           ]
         },
@@ -5536,20 +5536,20 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.4444444444444444
           },
           "waypoints": [
             {
-              "x": 1316,
-              "y": 1257
+              "x": 3171.0833333333335,
+              "y": 1722.8333333333333
             },
             {
-              "x": 1316,
-              "y": 2104
+              "x": 3171.0833333333335,
+              "y": 1547.5
             }
           ]
         },
@@ -5559,28 +5559,28 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.75
           },
           "waypoints": [
             {
-              "x": 1352,
-              "y": 1257
+              "x": 3152.5333333333333,
+              "y": 1838.1666666666667
             },
             {
-              "x": 1352,
-              "y": -248
+              "x": 3152.5333333333333,
+              "y": 2053
             },
             {
-              "x": 602,
-              "y": -248
+              "x": 485.8,
+              "y": 2053
             },
             {
-              "x": 602,
-              "y": 1108
+              "x": 485.8,
+              "y": 1654.5
             }
           ]
         },
@@ -5590,20 +5590,20 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "waypoints": [
             {
-              "x": 1352,
-              "y": 849.5
+              "x": 3027.5833333333335,
+              "y": 1321.5
             },
             {
-              "x": 1352,
-              "y": 2104
+              "x": 3027.5833333333335,
+              "y": 1489.5
             }
           ]
         },
@@ -5613,28 +5613,28 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.5833333333333334
           },
           "waypoints": [
             {
-              "x": 1316,
-              "y": 849.5
+              "x": 3151.7333333333336,
+              "y": 1424.5
             },
             {
-              "x": 1316,
-              "y": -296
+              "x": 3151.7333333333336,
+              "y": 1115
             },
             {
-              "x": 638,
-              "y": -296
+              "x": 526.6,
+              "y": 1115
             },
             {
-              "x": 638,
-              "y": 1108
+              "x": 526.6,
+              "y": 1596.8333333333333
             }
           ]
         },
@@ -5648,16 +5648,24 @@
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.75
           },
           "waypoints": [
             {
-              "x": 566,
-              "y": 2104
+              "x": 2443.3333333333335,
+              "y": 1576.5
             },
             {
-              "x": 566,
-              "y": 1562.5
+              "x": 2443.3333333333335,
+              "y": 322
+            },
+            {
+              "x": 1720.9166666666667,
+              "y": 322
+            },
+            {
+              "x": 1720.9166666666667,
+              "y": 442.75
             }
           ]
         },
@@ -5675,12 +5683,12 @@
           },
           "waypoints": [
             {
-              "x": 584,
-              "y": 173
+              "x": 529.75,
+              "y": 1336
             },
             {
-              "x": 584,
-              "y": 1108
+              "x": 529.75,
+              "y": 1568
             }
           ]
         },
@@ -5690,20 +5698,20 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.7777777777777778
           },
           "waypoints": [
             {
-              "x": 1334,
-              "y": 2928.5
+              "x": 3150.635416666667,
+              "y": 2987
             },
             {
-              "x": 1334,
-              "y": 2104
+              "x": 3150.635416666667,
+              "y": 1721.5
             }
           ]
         },
@@ -5713,28 +5721,28 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.9166666666666666
           },
           "waypoints": [
             {
-              "x": 1334,
-              "y": 2928.5
+              "x": 4052.55,
+              "y": 3124
             },
             {
-              "x": 1334,
-              "y": -392
+              "x": 4052.55,
+              "y": 3285
             },
             {
-              "x": 620,
-              "y": -392
+              "x": 448.2,
+              "y": 3285
             },
             {
-              "x": 620,
-              "y": 1108
+              "x": 448.2,
+              "y": 1712.1666666666665
             }
           ]
         },
@@ -5748,16 +5756,24 @@
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "waypoints": [
             {
-              "x": 1370,
-              "y": 2488.5
+              "x": 4052.15,
+              "y": 2615.5
             },
             {
-              "x": 1370,
-              "y": 2104
+              "x": 4052.15,
+              "y": 2067
+            },
+            {
+              "x": 3168.9333333333334,
+              "y": 2067
+            },
+            {
+              "x": 3168.9333333333334,
+              "y": 1663.5
             }
           ]
         },
@@ -5767,20 +5783,20 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.5555555555555556
           },
           "waypoints": [
             {
-              "x": 1298,
-              "y": 1882
+              "x": 3683.84375,
+              "y": 1885.0000000000002
             },
             {
-              "x": 1298,
-              "y": 2104
+              "x": 3683.84375,
+              "y": 1605.5
             }
           ]
         },
@@ -5790,28 +5806,28 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.8333333333333334
           },
           "waypoints": [
             {
-              "x": 1370,
-              "y": 1882
+              "x": 4051.35,
+              "y": 2133
             },
             {
-              "x": 1370,
-              "y": -464
+              "x": 4051.35,
+              "y": 2071
             },
             {
-              "x": 584,
-              "y": -464
+              "x": 449.4,
+              "y": 2071
             },
             {
-              "x": 584,
-              "y": 1108
+              "x": 449.4,
+              "y": 1683.3333333333335
             }
           ]
         },
@@ -5825,16 +5841,16 @@
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.8888888888888888
           },
           "waypoints": [
             {
-              "x": 1334,
-              "y": 3405.5
+              "x": 3083.984375,
+              "y": 3532.5
             },
             {
-              "x": 1334,
-              "y": 2104
+              "x": 3083.984375,
+              "y": 1779.5
             }
           ]
         },
@@ -5848,16 +5864,24 @@
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.1111111111111111
           },
           "waypoints": [
             {
-              "x": 1352,
-              "y": 386.5
+              "x": 3765.05,
+              "y": 492
             },
             {
-              "x": 1352,
-              "y": 2104
+              "x": 3765.05,
+              "y": 1541.5
+            },
+            {
+              "x": 3050.5333333333333,
+              "y": 1541.5
+            },
+            {
+              "x": 3050.5333333333333,
+              "y": 1373.5
             }
           ]
         },
@@ -5867,20 +5891,20 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.25
           },
           "waypoints": [
             {
-              "x": 638,
-              "y": 1062
+              "x": 1701.1666666666667,
+              "y": 90.66666666666666
             },
             {
-              "x": 638,
-              "y": 1562.5
+              "x": 1701.1666666666667,
+              "y": 288.25
             }
           ]
         },
@@ -5890,20 +5914,28 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.6666666666666666
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.08333333333333333
           },
           "waypoints": [
             {
-              "x": 566,
-              "y": 1062
+              "x": 1820.9166666666667,
+              "y": 181.33333333333331
             },
             {
-              "x": 566,
-              "y": 1108
+              "x": 1820.9166666666667,
+              "y": 193.5
+            },
+            {
+              "x": 451,
+              "y": 193.5
+            },
+            {
+              "x": 451,
+              "y": 1423.8333333333333
             }
           ]
         },
@@ -5913,7 +5945,7 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.25
           },
           "targetAnchor": {
             "side": "right",
@@ -5921,12 +5953,12 @@
           },
           "waypoints": [
             {
-              "x": 584,
-              "y": 1520.5
+              "x": 1701.1666666666667,
+              "y": 473.25
             },
             {
-              "x": 584,
-              "y": 1562.5
+              "x": 1701.1666666666667,
+              "y": 365.5
             }
           ]
         },
@@ -5936,20 +5968,28 @@
           "offset": 0,
           "sourceAnchor": {
             "side": "left",
-            "ratio": 0.5
+            "ratio": 0.75
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.3333333333333333
           },
           "waypoints": [
             {
-              "x": 602,
-              "y": 1520.5
+              "x": 1820.1166666666668,
+              "y": 715.75
             },
             {
-              "x": 602,
-              "y": 1108
+              "x": 1820.1166666666668,
+              "y": 1089
+            },
+            {
+              "x": 491.8,
+              "y": 1089
+            },
+            {
+              "x": 491.8,
+              "y": 1510.3333333333333
             }
           ]
         },
@@ -5963,16 +6003,24 @@
           },
           "targetAnchor": {
             "side": "right",
-            "ratio": 0.5
+            "ratio": 0.25
           },
           "waypoints": [
             {
-              "x": 620,
-              "y": 1520.5
+              "x": 1819.7166666666667,
+              "y": 594.5
             },
             {
-              "x": 620,
-              "y": 1108
+              "x": 1819.7166666666667,
+              "y": 1087
+            },
+            {
+              "x": 452.2,
+              "y": 1087
+            },
+            {
+              "x": 452.2,
+              "y": 1481.5
             }
           ]
         }
