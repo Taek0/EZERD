@@ -527,6 +527,20 @@ describe('direct table server normalization boundaries', () => {
           {
             operationId: sourceId,
             createdAt: new Date(),
+            result: {
+              operationId: sourceId,
+              groupId: crypto.randomUUID(),
+              sequence: 1,
+              status: 'accepted',
+              actor,
+              changedPaths: [],
+              createdAt: new Date().toISOString(),
+              nextBaseline: {
+                baselineId: crypto.randomUUID(),
+                baseSequence: 1,
+                baselineIssuedAt: new Date().toISOString(),
+              },
+            },
             deletionSnapshot: { items: deletionSnapshots(deriveOperationChanges(before, deleted)) },
           },
         ],

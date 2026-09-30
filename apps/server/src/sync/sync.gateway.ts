@@ -96,7 +96,11 @@ export class SyncGateway implements OnApplicationShutdown {
   private async subscribe(client: Client, projectId: string): Promise<void> {
     const access = await this.access.requireProject(client.actor.id, projectId, 'read');
     const [project] = await this.database.db
-      .select({ status: projects.status, sequence: projects.syncSequence })
+      .select({
+        status: projects.status,
+        sequence: projects.syncSequence,
+        databaseRevision: projects.databaseRevision,
+      })
       .from(projects)
       .where(eq(projects.id, projectId));
     if (!project || project.status !== 'active')
@@ -109,13 +113,21 @@ export class SyncGateway implements OnApplicationShutdown {
     client.projects.set(projectId, access.workspaceId);
     // A membership change can have committed while the first check was in flight.
     await this.access.requireProject(client.actor.id, projectId, 'read');
-    this.send(client, { type: 'subscribed', projectId, sequence: project.sequence });
+    this.send(client, {
+      type: 'subscribed',
+      projectId,
+      sequence: project.sequence,
+      databaseRevision: project.databaseRevision ?? 0,
+    });
   }
   publish(projectId: string, event: unknown): void {
     void this.deliver(projectId, { type: 'operation', projectId, event });
   }
   publishReview(projectId: string, event: unknown): void {
     void this.deliver(projectId, { type: 'review', projectId, event });
+  }
+  publishDatabaseContext(projectId: string, sequence: number, databaseRevision: number): void {
+    void this.deliver(projectId, { type: 'head', projectId, sequence, databaseRevision });
   }
   private async deliver(projectId: string, message: unknown): Promise<void> {
     for (const client of [...this.clients]) {
@@ -145,14 +157,23 @@ export class SyncGateway implements OnApplicationShutdown {
       const ids = new Set([...this.clients].flatMap((client) => [...client.projects.keys()]));
       for (const projectId of ids) {
         const [project] = await this.database.db
-          .select({ sequence: projects.syncSequence, status: projects.status })
+          .select({
+            sequence: projects.syncSequence,
+            status: projects.status,
+            databaseRevision: projects.databaseRevision,
+          })
           .from(projects)
           .where(eq(projects.id, projectId));
         if (!project || project.status !== 'active') {
           for (const client of this.clients) if (client.projects.has(projectId)) this.close(client);
           continue;
         }
-        await this.deliver(projectId, { type: 'head', projectId, sequence: project.sequence });
+        await this.deliver(projectId, {
+          type: 'head',
+          projectId,
+          sequence: project.sequence,
+          databaseRevision: project.databaseRevision ?? 0,
+        });
       }
     } catch {
       /* The next interval retries; socket event handlers stay alive. */

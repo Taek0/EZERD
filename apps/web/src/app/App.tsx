@@ -63,6 +63,7 @@ export type Project = {
   name: string;
   status: 'active' | 'archived';
   databaseKind?: 'postgresql' | 'mysql' | 'sqlite';
+  databaseRevision?: number | undefined;
   preview?:
     | {
         tableCount: number;
@@ -203,9 +204,10 @@ export function App() {
     [refresh, setRefresh] = useState(0);
   const projectWorkspace = workspaces.find((space) => space.id === opened?.project.workspaceId);
   const permissions = workspacePermissions(opened ? projectWorkspace : selectedWorkspace);
-  const designReadOnly = !permissions.edit || opened?.project.status === 'archived';
+  const designPermissionReadOnly = !permissions.edit || opened?.project.status === 'archived';
   const personalReadOnly = !permissions.personal || opened?.project.status === 'archived';
   const [sync, setSync] = useState<SyncSnapshot | null>(null);
+  const designReadOnly = designPermissionReadOnly || sync?.databaseContextChanged === true;
   const latestSync = useRef<SyncSnapshot | null>(null);
   const [historyAction, setHistoryAction] = useState<string | null>(null);
   const [historyNotice, setHistoryNotice] = useState('');
@@ -442,7 +444,8 @@ export function App() {
       clientId: stableClientId(),
       session,
       initialDocument: opened.document,
-      sharedReadOnly: designReadOnly,
+      initialDatabaseRevision: opened.project.databaseRevision ?? 0,
+      sharedReadOnly: designPermissionReadOnly,
       personalReadOnly,
       onWorkspaceAccessChange: (id) => {
         if (autosave.current.timer) clearTimeout(autosave.current.timer);

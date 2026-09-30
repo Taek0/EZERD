@@ -28,6 +28,8 @@ export class DatabaseService implements OnApplicationShutdown {
         workspaceId: schema.projects.workspaceId,
         version: schema.projects.version,
         document: schema.projects.document,
+        databaseProfileId: schema.projects.databaseProfileId,
+        databaseRevision: schema.projects.databaseRevision,
       })
       .from(schema.projects)
       .limit(1);
@@ -43,6 +45,7 @@ export class DatabaseService implements OnApplicationShutdown {
     await this.db.select().from(schema.syncOperations).limit(1);
     await this.db.select().from(schema.syncFieldVersions).limit(1);
     await this.db.select().from(schema.syncClientBaselines).limit(1);
+    await this.db.select().from(schema.projectDatabaseOperations).limit(1);
     await this.db.select().from(schema.syncTombstones).limit(1);
     await this.db.select().from(schema.projectPersonalStates).limit(1);
     await this.db.select().from(schema.projectPersonalOperations).limit(1);

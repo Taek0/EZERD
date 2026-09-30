@@ -15,7 +15,8 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { DesignDocument, PersonalState } from '@ezerd/model';
+import type { DesignDocument, PersonalState, DatabaseProfileId } from '@ezerd/model';
+import type { ProjectDatabaseChangeResult } from '@ezerd/contracts';
 import { sql } from 'drizzle-orm';
 
 export const projectDatabaseKind = pgEnum('project_database_kind', [
@@ -49,6 +50,8 @@ export const projects = pgTable(
       .references(() => workspaces.id, { onDelete: 'restrict' }),
     name: varchar('name', { length: 120 }).notNull(),
     databaseKind: projectDatabaseKind('database_kind').notNull().default('postgresql'),
+    databaseProfileId: varchar('database_profile_id', { length: 80 }).$type<DatabaseProfileId>(),
+    databaseRevision: integer('database_revision').notNull().default(0),
     status: projectStatus('status').notNull().default('active'),
     version: integer('version').notNull().default(0),
     syncSequence: integer('sync_sequence').notNull().default(0),
@@ -66,6 +69,14 @@ export const projects = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    check('projects_database_revision_nonnegative', sql`${table.databaseRevision} >= 0`),
+    check(
+      'projects_database_profile_matches',
+      sql`${table.databaseProfileId} IS NULL OR
+      (${table.databaseKind} = 'postgresql' AND ${table.databaseProfileId} = 'postgresql-18-v1') OR
+      (${table.databaseKind} = 'mysql' AND ${table.databaseProfileId} = 'mysql-8.4-innodb-v1') OR
+      (${table.databaseKind} = 'sqlite' AND ${table.databaseProfileId} = 'sqlite-3.45-v1')`,
+    ),
     index('projects_workspace_status_updated_idx').on(
       table.workspaceId,
       table.status,
@@ -75,6 +86,22 @@ export const projects = pgTable(
 );
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+export const projectDatabaseOperations = pgTable(
+  'project_database_operations',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    operationId: uuid('operation_id').notNull(),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => users.id),
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+    result: jsonb('result').$type<ProjectDatabaseChangeResult>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.operationId] })],
+);
 
 // Names are stored normalized and unique independently of the PIN.
 export const users = pgTable(
@@ -348,6 +375,7 @@ export const syncClientBaselines = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     lastSuccessfulSyncAt: timestamp('last_successful_sync_at', { withTimezone: true }).notNull(),
     lastSequence: integer('last_sequence').notNull(),
+    databaseRevision: integer('database_revision').notNull().default(0),
     document: jsonb('document').$type<DesignDocument>().notNull(),
   },
   (table) => [

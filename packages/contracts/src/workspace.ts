@@ -10,6 +10,7 @@ import {
 } from './relational.js';
 import { z } from 'zod';
 import { TABLES_VIEW_ID, databaseKinds } from '@ezerd/model';
+import { databaseProfileIdSchema, databaseRevisionSchema } from './database-state.js';
 export const MAX_DOCUMENT_BYTES = 1_500_000;
 function withinDocumentBudget(doc: unknown): boolean {
   let bytes = 0;
@@ -251,6 +252,8 @@ export const projectSchema = z.strictObject({
   id: z.uuid(),
   name: projectName,
   databaseKind: databaseKindSchema.default('postgresql'),
+  databaseProfileId: databaseProfileIdSchema.optional(),
+  databaseRevision: databaseRevisionSchema.optional(),
   preview: projectPreviewSchema.optional(),
   status: z.enum(['active', 'archived']),
   version,

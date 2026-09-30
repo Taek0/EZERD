@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import {
   databaseKinds,
-  databaseProfiles,
-  getDatabaseProfile,
   getDatabaseType,
   nativeBuiltinFunctionIds,
   validateDatabaseTypeParameters,
@@ -26,6 +24,8 @@ import {
   databaseKindSchema,
 } from './workspace.js';
 import { MAX_PROJECT_TRANSFER_BYTES } from './project-transfer.js';
+import { databaseContextSchema, databaseProfileIdSchema } from './database-state.js';
+export { databaseContextSchema } from './database-state.js';
 
 const id = z.string().trim().min(1).max(160);
 const objectId = id.refine(
@@ -33,20 +33,6 @@ const objectId = id.refine(
   'document.reserved-identity',
 );
 const database = z.enum(databaseKinds);
-const profileId = z.enum(databaseProfiles.map((profile) => profile.id));
-export const databaseContextSchema = z
-  .strictObject({ kind: database, profileId })
-  .superRefine((value, ctx) => {
-    try {
-      getDatabaseProfile(value);
-    } catch {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['profileId'],
-        message: 'database.profile-unsupported',
-      });
-    }
-  });
 const name = z.string().max(120);
 const array = z.strictObject({ dimensions: z.number().int().min(1).max(6) });
 function definedParameters(
@@ -495,7 +481,7 @@ export const nativeProjectTransferSchema = z
     project: z.strictObject({
       name: z.string().trim().min(1).max(120),
       databaseKind: databaseKindSchema,
-      databaseProfileId: profileId,
+      databaseProfileId: databaseProfileIdSchema,
     }),
     document: nativeStoredDesignDocumentSchema,
   })

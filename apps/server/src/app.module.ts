@@ -25,6 +25,7 @@ import { SpaceController } from './workspace/space.controller.js';
 import { SpaceService } from './workspace/space.service.js';
 import { WorkspaceAccessService } from './workspace/workspace-access.service.js';
 import { WorkspaceEventsService } from './workspace/workspace-events.service.js';
+import { ProjectDatabaseService } from './workspace/project-database.service.js';
 
 @Module({
   controllers: [
@@ -44,6 +45,7 @@ import { WorkspaceEventsService } from './workspace/workspace-events.service.js'
     SyncGateway,
     SyncService,
     WorkspaceService,
+    ProjectDatabaseService,
     ReviewService,
     RateLimitService,
     McpTokenService,

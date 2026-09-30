@@ -94,7 +94,15 @@ describe('physical type write boundaries', () => {
       const issuedAt = new Date();
       const selections = [
         [],
-        [{ document: stored, syncSequence: 0, status: 'active' }],
+        [
+          {
+            document: stored,
+            syncSequence: 0,
+            status: 'active',
+            databaseKind: 'postgresql',
+            databaseRevision: 0,
+          },
+        ],
         [],
         [],
         [{ document: baseline, lastSuccessfulSyncAt: issuedAt, lastSequence: 0 }],

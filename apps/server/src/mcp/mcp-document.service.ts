@@ -95,6 +95,7 @@ export const applyProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
   expectedVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   expectedSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  expectedDatabaseRevision: z.number().int().nonnegative().max(2147483647).optional(),
   operationId: z.uuid(),
   groupId: z.uuid(),
   clientId: z.uuid(),
@@ -124,6 +125,9 @@ export class McpDocumentService {
     const baseline = await this.sync.establishBaseline(input.projectId, input.clientId, user, {
       version: input.expectedVersion,
       sequence: input.expectedSequence,
+      ...(input.expectedDatabaseRevision !== undefined && {
+        databaseRevision: input.expectedDatabaseRevision,
+      }),
     });
     let candidate = structuredClone(baseline.document);
     try {
@@ -143,6 +147,7 @@ export class McpDocumentService {
       baselineId: baseline.baselineId,
       baseSequence: baseline.sequence,
       baselineIssuedAt: baseline.baselineIssuedAt,
+      databaseRevision: baseline.databaseRevision,
       kind: 'reconnect',
       dependencyPaths: [],
       changes,

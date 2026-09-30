@@ -29,6 +29,8 @@ import {
   updateProjectSchema,
   usernameInputSchema,
   updateUserSchema,
+  previewProjectDatabaseSchema,
+  changeProjectDatabaseSchema,
 } from '@ezerd/contracts';
 import type { User } from '@ezerd/contracts';
 import { DatabaseService } from '../db/database.service.js';
@@ -36,6 +38,7 @@ import { users } from '../db/schema.js';
 import { isUsernameConflict } from '../identity/user-conflicts.js';
 import { requireSession, SessionService } from '../identity/session.js';
 import { WorkspaceService } from './workspace.service.js';
+import { ProjectDatabaseService } from './project-database.service.js';
 import { RateLimitService } from '../shared/rate-limit.service.js';
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -75,6 +78,7 @@ export class WorkspaceController {
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(WorkspaceService) private readonly workspace: WorkspaceService,
     @Inject(RateLimitService) private readonly rateLimits: RateLimitService,
+    @Inject(ProjectDatabaseService) private readonly projectDatabase?: ProjectDatabaseService,
   ) {}
 
   @Post('users')
@@ -217,6 +221,38 @@ export class WorkspaceController {
     const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
     return this.workspace.deleteProject(actor.id, id, parse(deleteProjectSchema, body));
+  }
+
+  @Post('projects/:id/database/preview')
+  async previewDatabase(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+    @Body() input: unknown,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
+    if (!this.projectDatabase)
+      throw new ServiceUnavailableException('DB 설정 기능을 불러올 수 없습니다.');
+    return this.projectDatabase.preview(
+      actor.id,
+      parse(idSchema, rawId),
+      parse(previewProjectDatabaseSchema, input),
+    );
+  }
+
+  @Post('projects/:id/database/change')
+  async changeDatabase(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+    @Body() input: unknown,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
+    if (!this.projectDatabase)
+      throw new ServiceUnavailableException('DB 설정 기능을 불러올 수 없습니다.');
+    return this.projectDatabase.change(
+      actor.id,
+      parse(idSchema, rawId),
+      parse(changeProjectDatabaseSchema, input),
+    );
   }
 
   @Put('projects/:id/document')

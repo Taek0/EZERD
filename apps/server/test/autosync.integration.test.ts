@@ -1,11 +1,13 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
 import {
   addDomain,
+  addTable,
   deriveOperationChanges,
   removeKey,
   removeTable,
@@ -97,6 +99,258 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
       await pool.end();
     }
     if (app) await app.close();
+  });
+
+  it('changes an empty physical design atomically and keeps old editing contexts out', async () => {
+    const created = await request('/projects', 'POST', {
+      name: `database-context-${randomUUID()}`,
+    });
+    expect(created.status).toBe(201);
+    const id = created.data.id;
+    const path = `/projects/${id}`;
+    try {
+      expect(created.data).toMatchObject({
+        databaseKind: 'postgresql',
+        databaseProfileId: 'postgresql-18-v1',
+        databaseRevision: 0,
+      });
+      const clientId = randomUUID();
+      const baseline = (await request(`${path}/sync-baseline`, 'POST', { clientId })).data;
+      const document = addDomain(
+        baseline.document,
+        { id: randomUUID(), name: 'logical-only', description: '' },
+        { x: 0, y: 0 },
+      );
+      const makeOperation = (base: typeof baseline, next: DesignDocument) => ({
+        operationId: randomUUID(),
+        groupId: randomUUID(),
+        clientId,
+        baselineId: base.baselineId,
+        baseSequence: base.sequence,
+        baselineIssuedAt: base.baselineIssuedAt,
+        databaseRevision: base.databaseRevision,
+        kind: 'online',
+        dependencyPaths: [],
+        baselineDocument: base.document,
+        document: next,
+        changes: deriveOperationChanges(base.document, next),
+      });
+      const firstInput = makeOperation(baseline, document);
+      const first = await request(`${path}/operations`, 'POST', firstInput);
+      expect(first.data.status).toBe('accepted');
+      const oldBaseline = (await request(`${path}/sync-baseline`, 'POST', { clientId })).data;
+      const oldPending = makeOperation(
+        oldBaseline,
+        updateDomain(oldBaseline.document, document.domains[0]!.id, { name: 'offline intent' }),
+      );
+      const snapshot = (await request(path)).data;
+      const input = {
+        expectedVersion: snapshot.project.version,
+        expectedSequence: first.data.sequence,
+        expectedDatabaseRevision: 0,
+        targetKind: 'mysql',
+        operationId: randomUUID(),
+      };
+      const preview = await request(`${path}/database/preview`, 'POST', {
+        expectedVersion: input.expectedVersion,
+        expectedSequence: input.expectedSequence,
+        targetKind: 'mysql',
+      });
+      expect(preview.data).toMatchObject({
+        canChange: true,
+        current: { revision: 0 },
+        target: { kind: 'mysql', profileId: 'mysql-8.4-innodb-v1' },
+      });
+      expect(
+        (
+          await request(`${path}/database/change`, 'POST', {
+            ...input,
+            targetProfileId: 'sqlite-3.45-v1',
+          })
+        ).status,
+      ).toBe(400);
+      expect((await request(`${path}/database/change`, 'POST', input, false)).status).toBe(401);
+      const simultaneous = await Promise.all([
+        request(`${path}/database/change`, 'POST', input),
+        request(`${path}/database/change`, 'POST', {
+          ...input,
+          operationId: randomUUID(),
+          targetKind: 'sqlite',
+        }),
+      ]);
+      expect(simultaneous.map((result) => result.status).sort()).toEqual([201, 409]);
+      // Either serialized winner is valid; duplicate requests return the original result.
+      const winnerIndex = simultaneous.findIndex((result) => result.status === 201);
+      const winningInput =
+        winnerIndex === 0
+          ? input
+          : { ...input, operationId: simultaneous[1]!.data.operationId, targetKind: 'sqlite' };
+      const changed = simultaneous[winnerIndex]!.data;
+      expect(changed).toMatchObject({
+        changed: true,
+        database: { revision: 1 },
+        sequence: first.data.sequence,
+      });
+      expect((await request(`${path}/database/change`, 'POST', winningInput)).data).toEqual(
+        changed,
+      );
+      expect(
+        (
+          await request(`${path}/database/change`, 'POST', {
+            ...winningInput,
+            targetKind: 'postgresql',
+          })
+        ).status,
+      ).toBe(409);
+      const unchangedDocument = (await request(path)).data;
+      expect(unchangedDocument.document).toEqual(snapshot.document);
+      expect(unchangedDocument.project.databaseRevision).toBe(1);
+      expect((await request(`${path}/events?since=${changed.sequence}`)).data).toMatchObject({
+        databaseRevision: 1,
+        events: [],
+      });
+      expect((await request(`${path}/operations`, 'POST', firstInput)).data).toEqual(first.data);
+      const rejected = await request(`${path}/operations`, 'POST', oldPending);
+      expect(rejected.data).toMatchObject({
+        status: 'rejected',
+        reasonCode: 'database.context-changed',
+        databaseRevision: 1,
+        nextBaseline: { databaseRevision: 0 },
+      });
+      expect((await request(`${path}/operations`, 'POST', oldPending)).data).toEqual(rejected.data);
+      expect(
+        (
+          await request(`${path}/operations/${firstInput.operationId}/undo`, 'POST', {
+            operationId: randomUUID(),
+            groupId: randomUUID(),
+            clientId,
+          })
+        ).status,
+      ).toBe(409);
+      // A forged revision cannot relabel a deleted, old baseline as current.
+      expect(
+        (
+          await request(`${path}/operations`, 'POST', {
+            ...oldPending,
+            operationId: randomUUID(),
+            databaseRevision: 1,
+          })
+        ).data.status,
+      ).toBe('rejected');
+      const fresh = (await request(`${path}/sync-baseline`, 'POST', { clientId })).data;
+      expect(fresh.databaseRevision).toBe(1);
+      const resumed = makeOperation(
+        fresh,
+        updateDomain(fresh.document, document.domains[0]!.id, { name: 'fresh context' }),
+      );
+      const accepted = await request(`${path}/operations`, 'POST', resumed);
+      expect(accepted.data.status, accepted.data.reason).toBe('accepted');
+      const current = (await request(path)).data;
+      const same = await request(`${path}/database/change`, 'POST', {
+        operationId: randomUUID(),
+        expectedVersion: current.project.version,
+        expectedDatabaseRevision: 1,
+        targetKind: changed.database.kind,
+      });
+      expect(same.data).toMatchObject({ changed: false, database: { revision: 1 } });
+      expect(same.data.version).toBe(current.project.version);
+      const withPhysical = addTable(
+        accepted.data.document,
+        {
+          id: randomUUID(),
+          domainId: null,
+          scope: 'physical',
+          logical: { name: '', definition: '' },
+          physical: { name: 'items', schema: '', comment: '' },
+          customProperties: { common: {}, logical: {}, physical: {} },
+        },
+        { x: 0, y: 0 },
+      );
+      const tableBaseline = {
+        ...accepted.data.nextBaseline,
+        sequence: accepted.data.nextBaseline.baseSequence,
+        document: sharedDocument(accepted.data.document),
+      };
+      const tableWrite = await request(
+        `${path}/operations`,
+        'POST',
+        makeOperation(tableBaseline, withPhysical),
+      );
+      expect(tableWrite.data.status, JSON.stringify(tableWrite.data)).toBe('accepted');
+      const full = (await request(path)).data;
+      expect(
+        (
+          await request(`${path}/database/preview`, 'POST', {
+            expectedVersion: full.project.version,
+            targetKind: 'postgresql',
+          })
+        ).data,
+      ).toMatchObject({ canChange: false, reasonCode: 'database.conversion-required' });
+      expect(
+        (
+          await request(`${path}/database/change`, 'POST', {
+            operationId: randomUUID(),
+            expectedVersion: full.project.version,
+            expectedDatabaseRevision: 1,
+            targetKind: 'postgresql',
+          })
+        ).status,
+      ).toBe(409);
+      expect(
+        (
+          await request(path, 'PATCH', {
+            expectedVersion: full.project.version,
+            databaseKind: 'postgresql',
+          })
+        ).status,
+      ).toBe(409);
+      expect((await request(path)).data.document).toEqual(full.document);
+      // Replay the migration's backfill against a legacy row; JSON is never converted.
+      await pool.query('update projects set database_profile_id=NULL where id=$1', [id]);
+      const migration = readFileSync(
+        new URL('../drizzle/0014_database_context.sql', import.meta.url),
+        'utf8',
+      );
+      await pool.query(migration.split('--> statement-breakpoint').at(-1)!);
+      const backfilled = (await request(path)).data;
+      expect(backfilled.document).toEqual(full.document);
+      expect(backfilled.project.databaseProfileId).toBe(changed.database.profileId);
+      await expect(
+        pool.query("update projects set database_profile_id='postgresql-18-v1' where id=$1", [id]),
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        pool.query('update projects set database_revision=-1 where id=$1', [id]),
+      ).rejects.toMatchObject({ code: '23514' });
+      expect(
+        (
+          await request(path, 'PATCH', {
+            expectedVersion: full.project.version,
+            status: 'archived',
+          })
+        ).status,
+      ).toBe(200);
+      const archived = (await request(path)).data;
+      expect(
+        (
+          await request(`${path}/database/preview`, 'POST', {
+            expectedVersion: archived.project.version,
+            targetKind: changed.database.kind,
+          })
+        ).data,
+      ).toMatchObject({ canChange: false, reasonCode: 'database.project-archived' });
+      expect(
+        (
+          await request(`${path}/database/change`, 'POST', {
+            operationId: randomUUID(),
+            expectedVersion: archived.project.version,
+            expectedDatabaseRevision: 1,
+            targetKind: changed.database.kind,
+          })
+        ).status,
+      ).toBe(409);
+    } finally {
+      await pool.query('delete from projects where id=$1', [id]);
+    }
   });
 
   it('accepts the canonical shared baseline returned to a browser', async () => {

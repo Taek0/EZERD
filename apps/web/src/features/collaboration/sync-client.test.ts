@@ -297,6 +297,149 @@ function acceptedResult(sequence: number, name: string, baselineId: string): Syn
   };
 }
 
+describe('database context sync protection', () => {
+  async function fixture(
+    revision: number,
+    initialRevision: number | undefined = undefined,
+    pending?: StoredSyncOperation<SyncOperationInput>,
+  ) {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', {
+      configurable: true,
+      value: { protocol: 'http:', host: 'test.local' },
+    });
+    const store = new MemorySyncOperationStore<SyncOperationInput>();
+    if (pending) await store.put(pending);
+    const socket = socketStub();
+    const snapshots: SyncSnapshot[] = [];
+    const submitted: SyncOperationInput[] = [];
+    const document = createEmptyDocument();
+    const runtime = new ProjectSyncRuntime({
+      projectId: ids.project,
+      userId: ids.user,
+      clientId: ids.client,
+      session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt },
+      initialDocument: document,
+      ...(initialRevision === undefined ? {} : { initialDatabaseRevision: initialRevision }),
+      store,
+      socketFactory: () => socket,
+      onChange: (snapshot) => snapshots.push(snapshot),
+      fetcher: (async (input, init) => {
+        const path = String(input);
+        if (path.endsWith('/sync-baseline'))
+          return json({
+            baselineId: ids.baseline,
+            sequence: 0,
+            baselineIssuedAt: issuedAt,
+            document,
+            databaseRevision: revision,
+          });
+        if (path.endsWith('/personal-state'))
+          return json({
+            version: 0,
+            state: extractPersonalState(document),
+            projectVersion: 0,
+            syncSequence: 0,
+          });
+        if (path.endsWith('/operations')) {
+          const operation = JSON.parse(String(init?.body)) as SyncOperationInput;
+          submitted.push(operation);
+          return json({
+            ...acceptedResult(1, 'x', ids.nextBaseline),
+            operationId: operation.operationId,
+            groupId: operation.groupId,
+            status: 'rejected',
+            reasonCode: 'database.context-changed',
+            databaseRevision: revision,
+          });
+        }
+        if (path.includes('/operations/')) return json({}, 404);
+        if (path.includes('/events?'))
+          return json({ sequence: 0, events: [], databaseRevision: revision });
+        return json([]);
+      }) as typeof fetch,
+    });
+    await runtime.start();
+    return {
+      runtime,
+      socket,
+      store,
+      snapshots,
+      submitted,
+      cleanup: () => {
+        runtime.stop();
+        Object.defineProperty(globalThis, 'location', {
+          configurable: true,
+          value: originalLocation,
+        });
+      },
+    };
+  }
+  it('locks editing when the database changed between opening and issuing a baseline', async () => {
+    const value = await fixture(1, 0);
+    try {
+      expect(value.snapshots.at(-1)).toMatchObject({
+        status: 'action-needed',
+        databaseContextChanged: true,
+        canUndo: false,
+        canRedo: false,
+      });
+      const next = createEmptyDocument();
+      next.domains = [{ id: 'd', name: 'blocked', description: '' }];
+      await value.runtime.edit(next);
+      expect(value.submitted).toEqual([]);
+    } finally {
+      value.cleanup();
+    }
+  });
+  it('detects a revision change on a head without any new edit sequence', async () => {
+    const value = await fixture(0, 0);
+    try {
+      value.socket.onmessage?.({
+        data: JSON.stringify({
+          type: 'head',
+          projectId: ids.project,
+          sequence: 0,
+          databaseRevision: 1,
+        }),
+      } as MessageEvent);
+      expect(value.snapshots.at(-1)).toMatchObject({
+        databaseContextChanged: true,
+        status: 'action-needed',
+      });
+      value.socket.onmessage?.({
+        data: JSON.stringify({
+          type: 'head',
+          projectId: ids.project,
+          sequence: 0,
+          databaseRevision: 0,
+        }),
+      } as MessageEvent);
+      expect(value.snapshots.at(-1)?.databaseContextChanged).toBe(true);
+    } finally {
+      value.cleanup();
+    }
+  });
+  it('keeps an old durable edit with its original revision and blocks explicit reapplication after reopening', async () => {
+    const pending = operationItem();
+    pending.state = 'queued';
+    pending.createdAt = Date.now();
+    pending.baselineAt = Date.parse(issuedAt);
+    const value = await fixture(1, 1, pending);
+    try {
+      expect(value.submitted).toHaveLength(1);
+      expect(value.submitted[0]).toEqual(pending.operation);
+      const retained = (await value.store.list(`${ids.user}:${ids.project}`))[0]!;
+      expect(retained.state).toBe('unresolved');
+      await value.runtime.reapply(retained.operationId);
+      expect(value.submitted).toHaveLength(1);
+      expect(await value.store.list(`${ids.user}:${ids.project}`)).toHaveLength(1);
+    } finally {
+      value.cleanup();
+    }
+  });
+});
+
 describe('sync client personal state', () => {
   it('keeps a stable client id in browser storage', () => {
     const values = new Map<string, string>();

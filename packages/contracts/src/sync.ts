@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { databaseRevisionSchema, databaseContextSchema } from './database-state.js';
 import {
   rawDesignDocumentSchema,
   rawStoredDesignDocumentSchema,
@@ -38,6 +39,7 @@ export const syncOperationInputSchema = z.strictObject({
   baselineId: z.uuid(),
   baseSequence: sequence,
   baselineIssuedAt: z.iso.datetime(),
+  databaseRevision: databaseRevisionSchema.optional(),
   kind: z.enum(['online', 'reconnect']),
   dependencyPaths: z.array(syncPathSchema).max(1000).default([]),
   changes: z
@@ -67,6 +69,7 @@ export const syncBaselineSchema = z.strictObject({
   baselineId: z.uuid(),
   baseSequence: sequence,
   baselineIssuedAt: z.iso.datetime(),
+  databaseRevision: databaseRevisionSchema.optional(),
 });
 
 export const syncOperationResultSchema = z.strictObject({
@@ -75,6 +78,9 @@ export const syncOperationResultSchema = z.strictObject({
   sequence,
   status: syncOperationStatusSchema,
   reason: z.string().max(10000).optional(),
+  reasonCode: z.string().optional(),
+  database: databaseContextSchema.optional(),
+  databaseRevision: databaseRevisionSchema.optional(),
   actor: syncActorSchema,
   changedPaths: z.array(syncPathSchema).max(1000),
   createdAt: z.iso.datetime(),
@@ -88,6 +94,9 @@ export const syncEventSchema = z.strictObject({
   sequence,
   status: syncOperationStatusSchema,
   reason: z.string().max(10000).optional(),
+  reasonCode: z.string().optional(),
+  database: databaseContextSchema.optional(),
+  databaseRevision: databaseRevisionSchema.optional(),
   actor: syncActorSchema,
   changes: z.array(syncChangeSchema).max(1000),
   changedPaths: z.array(syncPathSchema).max(1000),

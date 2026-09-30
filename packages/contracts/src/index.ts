@@ -28,3 +28,4 @@ export * from './sync.js';
 export * from './project-transfer.js';
 export * from './spaces.js';
 export * from './native-document.js';
+export * from './database-state.js';

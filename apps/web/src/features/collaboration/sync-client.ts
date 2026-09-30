@@ -41,6 +41,7 @@ export type SyncSnapshot = {
   error?: string;
   canUndo: boolean;
   canRedo: boolean;
+  databaseContextChanged?: boolean;
 };
 
 type OwnEdit = {
@@ -50,6 +51,7 @@ type OwnEdit = {
 };
 type RebasedSyncOperation = SyncOperationInput & { rebaseAncestors?: string[] };
 type IssuedBaseline = {
+  databaseRevision?: number;
   baselineId: string;
   sequence: number;
   baselineIssuedAt: string;
@@ -62,6 +64,7 @@ type RuntimeOptions = {
   session: SyncSession;
   initialDocument: DesignDocument;
   initialSequence?: number;
+  initialDatabaseRevision?: number;
   sharedReadOnly?: boolean;
   personalReadOnly?: boolean;
   fetcher?: typeof fetch;
@@ -144,6 +147,8 @@ export class ProjectSyncRuntime {
   private baselineSequence: number;
   private baselineIssuedAt: string;
   private baselineId = newId();
+  private databaseRevision: number;
+  private databaseContextChanged = false;
   private baselineDocument: DesignDocument;
   private baselineRefresh: Promise<void> | undefined;
   private baselineRefreshFailed = false;
@@ -158,7 +163,13 @@ export class ProjectSyncRuntime {
   private cursor: SyncEventCursor<SyncEvent>;
   private readonly rebases = new Map<
     string,
-    { baselineId: string; baseSequence: number; baselineIssuedAt: string; document: DesignDocument }
+    {
+      baselineId: string;
+      baseSequence: number;
+      baselineIssuedAt: string;
+      databaseRevision: number;
+      document: DesignDocument;
+    }
   >();
 
   constructor(private readonly options: RuntimeOptions) {
@@ -168,6 +179,7 @@ export class ProjectSyncRuntime {
     this.baselineDocument = this.serverDocument;
     this.visibleDocument = options.initialDocument;
     this.sequence = options.initialSequence ?? 0;
+    this.databaseRevision = options.initialDatabaseRevision ?? 0;
     this.baselineSequence = this.sequence;
     this.baselineIssuedAt = options.session.baselineIssuedAt;
     this.cursor = new SyncEventCursor(
@@ -197,9 +209,17 @@ export class ProjectSyncRuntime {
         sequence?: unknown;
         baselineIssuedAt?: unknown;
         document?: unknown;
+        databaseRevision?: number;
       };
       if (this.stopped) return;
-      if (typeof baseline.sequence === 'number' && typeof baseline.baselineIssuedAt === 'string') {
+      if (this.options.initialDatabaseRevision === undefined)
+        this.databaseRevision = baseline.databaseRevision ?? 0;
+      this.observeDatabaseRevision(baseline.databaseRevision);
+      if (
+        !this.databaseContextChanged &&
+        typeof baseline.sequence === 'number' &&
+        typeof baseline.baselineIssuedAt === 'string'
+      ) {
         this.sequence = baseline.sequence;
         this.baselineSequence = baseline.sequence;
         this.baselineIssuedAt = baseline.baselineIssuedAt;
@@ -241,7 +261,9 @@ export class ProjectSyncRuntime {
             .map((baselineId) => this.rebases.get(baselineId))
             .filter(
               (value): value is NonNullable<typeof value> =>
-                !!value && value.baseSequence >= operation.baseSequence,
+                !!value &&
+                value.baseSequence >= operation.baseSequence &&
+                value.databaseRevision === (operation.databaseRevision ?? 0),
             )
             .sort((left, right) => right.baseSequence - left.baseSequence)[0];
           if (!rebase) return operation;
@@ -329,6 +351,10 @@ export class ProjectSyncRuntime {
   private async applyEdit(next: DesignDocument) {
     if (this.stopped || this.options.personalReadOnly) return;
     const changes = diffSharedDocument(this.visibleDocument, next);
+    if (this.databaseContextChanged && changes.length) {
+      this.publish();
+      return;
+    }
     if (this.options.sharedReadOnly && changes.length) return;
     if (
       JSON.stringify(extractPersonalState(this.visibleDocument)) !==
@@ -377,6 +403,7 @@ export class ProjectSyncRuntime {
       baselineId: this.baselineId,
       baseSequence: this.baselineSequence,
       baselineIssuedAt: this.baselineIssuedAt,
+      databaseRevision: this.databaseRevision,
       kind: this.connected ? 'online' : 'reconnect',
       dependencyPaths: [],
       changes: claimed,
@@ -409,7 +436,7 @@ export class ProjectSyncRuntime {
   }
 
   async reapply(operationId: string) {
-    if (this.options.sharedReadOnly) return;
+    if (this.options.sharedReadOnly || this.databaseContextChanged) return;
     await this.starting;
     if (this.stopped || !this.queue) return;
     const source = (await this.queue.items()).find(
@@ -418,6 +445,14 @@ export class ProjectSyncRuntime {
     if (!source) return;
     await this.ensureCurrentBaseline();
     if (this.stopped) return;
+    if (
+      this.databaseContextChanged ||
+      (source.operation.databaseRevision ?? 0) !== this.databaseRevision
+    ) {
+      this.error = t('DB 설정 변경 전의 편집은 재적용할 수 없습니다.');
+      this.publish();
+      return;
+    }
     const operationBaseline = sharedDocument(this.baselineDocument);
     let candidate: DesignDocument;
     try {
@@ -470,7 +505,7 @@ export class ProjectSyncRuntime {
   }
 
   async undo() {
-    if (this.historyBusy || this.options.sharedReadOnly) return;
+    if (this.historyBusy || this.options.sharedReadOnly || this.databaseContextChanged) return;
     this.historyBusy = true;
     try {
       await this.undoOne();
@@ -556,7 +591,7 @@ export class ProjectSyncRuntime {
   }
 
   async redo() {
-    if (this.historyBusy || this.options.sharedReadOnly) return;
+    if (this.historyBusy || this.options.sharedReadOnly || this.databaseContextChanged) return;
     this.historyBusy = true;
     try {
       await this.redoOne();
@@ -621,6 +656,8 @@ export class ProjectSyncRuntime {
     );
     if (result.status !== 'accepted')
       throw new Error(result.reason ?? t('서버가 작업을 되돌리지 않았습니다.'));
+    this.observeDatabaseRevision(result.databaseRevision);
+    if (this.databaseContextChanged) return;
     own.commandSourceId = result.operationId;
     own.acceptedSequence = result.sequence;
     const newest = result.sequence >= this.sequence;
@@ -662,12 +699,14 @@ export class ProjectSyncRuntime {
 
   private async fetchEvents(since: number) {
     const payload = await this.api(`/events?since=${since}`);
+    if (payload && typeof payload === 'object')
+      this.observeDatabaseRevision((payload as { databaseRevision?: number }).databaseRevision);
     return arrayPayload(payload, 'events').map((value) => syncEventSchema.parse(value));
   }
 
   private async ensureCurrentBaseline() {
     if (this.options.personalReadOnly) return;
-    while (!this.stopped && this.baselineSequence < this.sequence) {
+    while (!this.stopped && !this.databaseContextChanged && this.baselineSequence < this.sequence) {
       if (!this.baselineRefresh) {
         this.baselineRefreshFailed = false;
         const refresh = (async () => {
@@ -684,6 +723,8 @@ export class ProjectSyncRuntime {
               !value.document
             )
               return;
+            this.observeDatabaseRevision(value.databaseRevision);
+            if (this.databaseContextChanged) return;
             if (value.sequence < this.sequence) return;
             this.baselineId = value.baselineId;
             this.baselineSequence = value.sequence;
@@ -714,6 +755,9 @@ export class ProjectSyncRuntime {
 
   private applyEvent(event: SyncEvent) {
     if (this.stopped) return;
+    this.observeDatabaseRevision(event.databaseRevision);
+    if (this.databaseContextChanged || (event.databaseRevision ?? 0) !== this.databaseRevision)
+      return;
     if (event.sequence <= this.sequence) return;
     this.sequence = event.sequence;
     if (event.status === 'accepted') {
@@ -731,6 +775,11 @@ export class ProjectSyncRuntime {
       this.rebuildVisible();
     } else if (event.type === 'ack') {
       const result = event.result;
+      this.observeDatabaseRevision(result.databaseRevision);
+      if (this.databaseContextChanged || (result.databaseRevision ?? 0) !== this.databaseRevision) {
+        this.publish();
+        return;
+      }
       if (result.status === 'accepted') {
         const newest = result.sequence >= this.sequence;
         this.sequence = Math.max(this.sequence, result.sequence);
@@ -755,6 +804,7 @@ export class ProjectSyncRuntime {
                 baselineId: result.nextBaseline.baselineId,
                 baseSequence: result.nextBaseline.baseSequence,
                 baselineIssuedAt: result.nextBaseline.baselineIssuedAt,
+                databaseRevision: result.databaseRevision ?? 0,
                 document: sharedDocument(result.document),
               });
             }
@@ -810,7 +860,7 @@ export class ProjectSyncRuntime {
     const unresolved = this.pending.some((item) => item.state === 'unresolved');
     const active = this.pending.some((item) => item.state !== 'unresolved');
     const status: SyncStatus =
-      this.storageFailure || unresolved || this.personalConflict
+      this.storageFailure || unresolved || this.personalConflict || this.databaseContextChanged
         ? 'action-needed'
         : active
           ? this.connected
@@ -825,9 +875,16 @@ export class ProjectSyncRuntime {
       pending: this.pending,
       history: this.history,
       ...(this.storageFailure ? { storageFailure: this.storageFailure } : {}),
-      ...(this.error ? { error: this.error } : {}),
-      canUndo: this.ownPast.length > 0,
-      canRedo: this.ownFuture.length > 0,
+      ...(this.databaseContextChanged
+        ? {
+            error: t('프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.'),
+            databaseContextChanged: true,
+          }
+        : this.error
+          ? { error: this.error }
+          : {}),
+      canUndo: !this.databaseContextChanged && this.ownPast.length > 0,
+      canRedo: !this.databaseContextChanged && this.ownFuture.length > 0,
     });
   }
 
@@ -857,6 +914,7 @@ export class ProjectSyncRuntime {
           projectId?: string;
           workspaceId?: string;
           sequence?: number;
+          databaseRevision?: number;
           event?: unknown;
         };
         if (value.type === 'workspace-access-changed' && value.workspaceId) {
@@ -865,6 +923,7 @@ export class ProjectSyncRuntime {
           return;
         }
         if (value.projectId !== this.options.projectId) return;
+        this.observeDatabaseRevision(value.databaseRevision);
         if (value.type === 'subscribed') {
           this.connected = true;
           this.error = undefined;
@@ -907,6 +966,14 @@ export class ProjectSyncRuntime {
     } catch {
       if (this.stopped) return;
       this.connected = false;
+      this.publish();
+    }
+  }
+
+  private observeDatabaseRevision(revision: number | undefined) {
+    // Old acknowledgements are replayable, so they must not roll the current context back.
+    if (typeof revision === 'number' && revision > this.databaseRevision) {
+      this.databaseContextChanged = true;
       this.publish();
     }
   }

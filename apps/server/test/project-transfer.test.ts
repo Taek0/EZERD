@@ -234,12 +234,14 @@ describe('project file transfer', () => {
       {
         name: '설계',
         databaseKind: 'postgresql',
+        databaseProfileId: 'postgresql-18-v1',
         workspaceId,
         document: normalizeServerDocument(document),
       },
       {
         name: '설계',
         databaseKind: 'postgresql',
+        databaseProfileId: 'postgresql-18-v1',
         workspaceId,
         document: normalizeServerDocument(document),
       },

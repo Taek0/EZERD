@@ -34,6 +34,7 @@ import {
   TABLES_VIEW_ID,
   requestFingerprint,
   sharedDocument,
+  resolveProjectDatabaseState,
 } from '@ezerd/model';
 import type { DesignDocument, DocumentChange } from '@ezerd/model';
 import { normalizeServerDocument } from '../shared/normalize-document.js';
@@ -205,6 +206,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
       if (project.syncSequence >= MAX_SEQUENCE)
         throw new ConflictException('프로젝트 변경 순서 한도를 초과했습니다.');
+      const database = resolveProjectDatabaseState(project);
 
       const rawDerived = deriveOperationChanges(input.baselineDocument, input.document);
       const claimed: DocumentChange[] = input.changes.map((change) => ({
@@ -229,7 +231,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         .where(eq(syncFieldVersions.projectId, projectId));
       const versions = new Map(versionRows.map((row) => [row.path, row.sequence]));
       let reason: string | undefined;
-      if (options.inverseGuard) {
+      let reasonCode: string | undefined;
+      if ((input.databaseRevision ?? 0) !== database.revision) {
+        reasonCode = 'database.context-changed';
+        reason = '프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.';
+      }
+      if (!reason && options.inverseGuard) {
         const conflicts = findInverseConflicts(
           options.inverseGuard.paths.map((path) => ({ path, before: null, after: null })),
           options.inverseGuard.acceptedSequence,
@@ -250,6 +257,10 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           ),
         );
       const issuedAt = new Date(input.baselineIssuedAt);
+      if (!reason && baseline && (baseline.databaseRevision ?? 0) !== database.revision) {
+        reasonCode = 'database.context-changed';
+        reason = '프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.';
+      }
       if (
         !reason &&
         (!baseline ||
@@ -382,6 +393,9 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         sequence,
         status: reason ? 'rejected' : 'accepted',
         ...(reason && { reason }),
+        ...(reasonCode && { reasonCode }),
+        database: { kind: database.kind, profileId: database.profileId },
+        databaseRevision: database.revision,
         actor: actor(user),
         changedPaths: reason ? [] : acceptedChanges.map((change) => change.path),
         createdAt: createdAt.toISOString(),
@@ -390,6 +404,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           baselineId: nextBaselineId,
           baseSequence: nextBaselineSequence,
           baselineIssuedAt: nextBaselineIssuedAt,
+          databaseRevision: reason ? (input.databaseRevision ?? 0) : database.revision,
         },
       });
       const snapshots = reason ? [] : deletionSnapshots(acceptedChanges);
@@ -475,6 +490,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           userId: user.id,
           lastSuccessfulSyncAt: createdAt,
           lastSequence: sequence,
+          databaseRevision: database.revision,
           document: sharedDocument(nextDocument!),
         });
       const event = syncEventSchema.parse({ ...result, changes: acceptedChanges });
@@ -530,13 +546,18 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     sequence: number;
     events: SyncEvent[];
     resetRequired: boolean;
+    databaseRevision: number;
     document?: DesignDocument;
   }> {
     return this.database.db.transaction(
       async (tx) => {
         await this.access.requireProject(actorId, projectId, 'read', tx);
         const [project] = await tx
-          .select({ sequence: projects.syncSequence, document: projects.document })
+          .select({
+            sequence: projects.syncSequence,
+            document: projects.document,
+            databaseRevision: projects.databaseRevision,
+          })
           .from(projects)
           .where(eq(projects.id, projectId));
         if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
@@ -550,6 +571,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         return {
           sequence: project.sequence,
           events: rows.map(eventFrom),
+          databaseRevision: project.databaseRevision ?? 0,
           resetRequired,
           ...(resetRequired ? { document: normalizeServerDocument(project.document) } : {}),
         };
@@ -615,11 +637,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     projectId: string,
     clientId: string,
     user: AuthenticatedUser,
-    expected?: { version: number; sequence: number },
+    expected?: { version: number; sequence: number; databaseRevision?: number },
   ): Promise<{
     baselineId: string;
     sequence: number;
     baselineIssuedAt: string;
+    databaseRevision: number;
     document: DesignDocument;
   }> {
     return this.database.db.transaction(async (tx) => {
@@ -630,9 +653,13 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           version: projects.version,
           status: projects.status,
           document: projects.document,
+          databaseKind: projects.databaseKind,
+          databaseProfileId: projects.databaseProfileId,
+          databaseRevision: projects.databaseRevision,
         })
         .from(projects)
-        .where(eq(projects.id, projectId));
+        .where(eq(projects.id, projectId))
+        .for('share');
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
       if (expected && project.status !== 'active')
         throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
@@ -643,6 +670,15 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         throw new ConflictException(
           '프로젝트가 변경되었습니다. 최신 내용과 동기화 순서를 다시 확인해주세요.',
         );
+      const database = resolveProjectDatabaseState(project);
+      if (
+        expected?.databaseRevision !== undefined &&
+        expected.databaseRevision !== database.revision
+      )
+        throw new ConflictException({
+          code: 'database.context-changed',
+          message: '프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.',
+        });
       const now = new Date();
       const baselineId = randomUUID();
       const document = sharedDocument(normalizeServerDocument(project.document));
@@ -653,12 +689,14 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         userId: user.id,
         lastSuccessfulSyncAt: now,
         lastSequence: project.sequence,
+        databaseRevision: database.revision,
         document,
       });
       return {
         baselineId,
         sequence: project.sequence,
         baselineIssuedAt: now.toISOString(),
+        databaseRevision: database.revision,
         document,
       };
     });
@@ -797,6 +835,11 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     if (!changes.length)
       throw new ConflictException('현재 문서에 유효하게 복원할 객체가 없습니다.');
     const baseline = await this.establishBaseline(projectId, request.clientId, user);
+    if ((storedResult(source.result).databaseRevision ?? 0) !== baseline.databaseRevision)
+      throw new ConflictException({
+        code: 'database.context-changed',
+        message: 'DB 설정 변경 전의 작업은 복원할 수 없습니다.',
+      });
     let candidate = normalizeServerDocument(applyChanges(baseline.document, changes));
     const restoredRelationIds = new Set(
       changes
@@ -853,6 +896,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       baselineId: baseline.baselineId,
       baseSequence: baseline.sequence,
       baselineIssuedAt: baseline.baselineIssuedAt,
+      databaseRevision: baseline.databaseRevision,
       kind: 'online',
       dependencyPaths: [],
       changes: derived,
@@ -909,6 +953,11 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       return (await this.restore(projectId, sourceOperationId, request, user, 'undo')).result;
     }
     const baseline = await this.establishBaseline(projectId, request.clientId, user);
+    if ((sourceResult.databaseRevision ?? 0) !== baseline.databaseRevision)
+      throw new ConflictException({
+        code: 'database.context-changed',
+        message: 'DB 설정 변경 전의 작업은 실행 취소할 수 없습니다.',
+      });
     const changes = inverseChanges(source.changes as DocumentChange[]);
     let candidate: DesignDocument;
     try {
@@ -923,6 +972,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       baselineId: baseline.baselineId,
       baseSequence: baseline.sequence,
       baselineIssuedAt: baseline.baselineIssuedAt,
+      databaseRevision: baseline.databaseRevision,
       kind: 'online',
       dependencyPaths: [],
       changes: deriveOperationChanges(baseline.document, candidate),

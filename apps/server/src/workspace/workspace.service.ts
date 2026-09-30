@@ -15,7 +15,13 @@ import {
   projectTransferSchema,
   type ProjectTransfer,
 } from '@ezerd/contracts';
-import { diagnoseDocument } from '@ezerd/model';
+import {
+  diagnoseDocument,
+  defaultDatabaseContext,
+  resolveProjectDatabaseState,
+  hasPhysicalDatabaseDesign,
+  nextDatabaseRevision,
+} from '@ezerd/model';
 import type {
   createProjectSchema,
   deleteProjectSchema,
@@ -25,7 +31,12 @@ import type {
 } from '@ezerd/contracts';
 import { normalizeServerDocument } from '../shared/normalize-document.js';
 import { DatabaseService } from '../db/database.service.js';
-import { projects, userWorkspaces, workspaceAuditEvents } from '../db/schema.js';
+import {
+  projects,
+  userWorkspaces,
+  workspaceAuditEvents,
+  syncClientBaselines,
+} from '../db/schema.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
 import type { ProjectRow } from '../db/schema.js';
 import { projectPreview } from './project-preview.js';
@@ -33,11 +44,17 @@ import { nextAutomaticProjectName } from './project-name.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
 
 function project(row: ProjectRow): Project {
+  const database = resolveProjectDatabaseState({
+    ...row,
+    databaseKind: row.databaseKind ?? 'postgresql',
+  });
   return {
     id: row.id,
     workspaceId: row.workspaceId,
     name: row.name,
     databaseKind: row.databaseKind,
+    databaseProfileId: database.profileId,
+    databaseRevision: database.revision,
     ...(row.document ? { preview: projectPreview(row.document) } : {}),
     status: row.status,
     version: row.version,
@@ -79,7 +96,11 @@ export class WorkspaceService {
           );
         const [row] = await tx
           .insert(projects)
-          .values({ ...input, name })
+          .values({
+            ...input,
+            name,
+            databaseProfileId: defaultDatabaseContext(input.databaseKind ?? 'postgresql').profileId,
+          })
           .returning();
         await tx.insert(workspaceAuditEvents).values({
           workspaceId: input.workspaceId,
@@ -123,6 +144,8 @@ export class WorkspaceService {
           .values({
             name: input.project.name,
             databaseKind: input.project.databaseKind ?? 'postgresql',
+            databaseProfileId: defaultDatabaseContext(input.project.databaseKind ?? 'postgresql')
+              .profileId,
             workspaceId,
             document,
           })
@@ -249,13 +272,42 @@ export class WorkspaceService {
     const { expectedVersion, ...changes } = input;
     return operation(() =>
       this.access.runProject(actorId, id, 'manageProject', async (tx) => {
+        const [current] = await tx.select().from(projects).where(eq(projects.id, id)).for('update');
+        if (!current) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+        const databaseChanged =
+          changes.databaseKind !== undefined && changes.databaseKind !== current.databaseKind;
+        if (databaseChanged && hasPhysicalDatabaseDesign(current.document))
+          throw new ConflictException({
+            code: 'database.conversion-required',
+            message: '물리 설계가 있는 프로젝트는 DB 종류 변경 전에 변환이 필요합니다.',
+          });
+        const database = resolveProjectDatabaseState(current);
+        let databaseRevision = database.revision;
+        if (databaseChanged) {
+          try {
+            databaseRevision = nextDatabaseRevision(database);
+          } catch {
+            throw new ConflictException({
+              code: 'database.revision-limit',
+              message: 'DB 설정 변경 한도를 초과했습니다.',
+            });
+          }
+        }
         const unarchivesWithoutOtherEdits =
           changes.status === 'active' &&
           changes.name === undefined &&
           changes.databaseKind === undefined;
         const [row] = await tx
           .update(projects)
-          .set({ ...changes, version: sql`${projects.version} + 1`, updatedAt: new Date() })
+          .set({
+            ...changes,
+            ...(databaseChanged && {
+              databaseRevision,
+              databaseProfileId: defaultDatabaseContext(changes.databaseKind!).profileId,
+            }),
+            version: sql`${projects.version} + 1`,
+            updatedAt: new Date(),
+          })
           .where(
             and(
               eq(projects.id, id),
@@ -265,6 +317,8 @@ export class WorkspaceService {
           )
           .returning();
         if (!row) return this.missingOrConflict(id);
+        if (databaseChanged)
+          await tx.delete(syncClientBaselines).where(eq(syncClientBaselines.projectId, id));
         await tx.insert(workspaceAuditEvents).values({
           workspaceId: row.workspaceId,
           actorId,
