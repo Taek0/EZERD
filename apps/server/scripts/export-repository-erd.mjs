@@ -40,6 +40,14 @@ const doc = {
   views: [{ id: 'all-tables', name: '전체 물리 ERD', domainIds: groups.map(([id]) => id) }],
   layout: { nodes: [], viewports: [], relations: [] },
 };
+const domainColors = {
+  identity: '#2563eb',
+  'workspace-domain': '#16a34a',
+  project: '#9333ea',
+  review: '#ea580c',
+  sync: '#0891b2',
+};
+for (const domain of doc.domains) domain.color = domainColors[domain.id];
 const literal = (v) =>
   typeof v === 'string'
     ? `'${v.replaceAll("'", "''")}'`
@@ -213,6 +221,54 @@ for (const r of doc.tableRelations) {
       direction: 'forward',
       description: '실제 외래키 의존 관계',
     });
+}
+const relationMeanings = {
+  'identity:workspace-domain': [
+    '멤버십·초대 사용자 연결',
+    '사용자는 공간에 멤버로 참여하고 초대 수신자 또는 초대자로 연결된다. user_workspaces는 공간과 사용자 사이의 N:M 연결 테이블이다. 감사 로그의 actor_id와 target_user_id는 보존 목적상 FK가 없어 이 관계에 포함하지 않는다.',
+  ],
+  'workspace-domain:project': [
+    '공간별 프로젝트 소유',
+    '각 프로젝트는 하나의 공간에 소속된다. 공간 하나에 여러 프로젝트가 존재할 수 있으며 프로젝트가 남아 있으면 공간 삭제가 RESTRICT로 차단된다.',
+  ],
+  'identity:project': [
+    '사용자별 개인 화면·작업 기록',
+    '프로젝트별 사용자 개인 화면과 개인 작업 중복 처리 방지 기록을 사용자에 연결한다. 사용자 삭제 시 해당 개인 상태와 작업 기록도 삭제된다.',
+  ],
+  'identity:review': [
+    '댓글 작성자·알림 수신자',
+    '댓글은 작성 사용자를, 알림은 수신 사용자를 참조한다. 알림은 사용자 삭제 시 함께 삭제되지만 작성 댓글이 남아 있는 사용자의 삭제는 NO ACTION 제약을 받는다. mention_ids는 JSONB 배열이며 별도 FK가 아니다.',
+  ],
+  'project:review': [
+    '프로젝트 리뷰·알림 관리',
+    '리뷰 스레드와 알림은 프로젝트에 속한다. 프로젝트 삭제 시 해당 스레드와 알림이 삭제되고 스레드에 연결된 댓글도 연쇄 삭제된다.',
+  ],
+  'identity:sync': [
+    '동기화 수행자·사용자 기준점',
+    '공유 동기화 작업에는 수행 사용자를, 클라이언트 기준점에는 사용자를 기록한다. 작업 이력의 actor_id는 NO ACTION이며 사용자별 기준점은 사용자 삭제 시 CASCADE로 삭제된다.',
+  ],
+  'project:sync': [
+    '프로젝트 변경 이력·충돌 관리',
+    '프로젝트별 동기화 작업, 필드 버전, 클라이언트 기준점, 삭제 객체 스냅샷을 보관한다. 프로젝트 삭제 시 네 종류의 동기화 데이터가 모두 연쇄 삭제된다. operation_id와 client_id는 이름만으로 별도 FK 관계를 추가하지 않는다.',
+  ],
+};
+for (const relation of doc.domainRelations) {
+  const [name, meaning] = relationMeanings[`${relation.sourceDomainId}:${relation.targetDomainId}`];
+  const fks = doc.tableRelations.filter(
+    (r) =>
+      doc.tables.find((t) => t.id === r.targetTableId).domainId === relation.sourceDomainId &&
+      doc.tables.find((t) => t.id === r.sourceTableId).domainId === relation.targetDomainId,
+  );
+  relation.name = `${name} (${fks.length} FK)`;
+  relation.description = [
+    meaning,
+    '방향: 부모 PK → 자식 FK. 각 FK는 부모 1건에 자식 0..N건, 자식은 부모 1건을 필수 참조한다.',
+    ...fks.map((r) => {
+      const columns = (ids) =>
+        ids.map((id) => doc.columns.find((c) => c.id === id).physical.name).join(', ');
+      return `${r.targetTableId}(${columns(r.physical.targetColumnIds)}) → ${r.sourceTableId}(${columns(r.physical.sourceColumnIds)}): ON DELETE ${r.physical.onDelete}, ON UPDATE ${r.physical.onUpdate}.`;
+    }),
+  ].join('\n');
 }
 for (const viewId of ['overview', ...groups.map(([id]) => id), 'all-tables'])
   doc.layout.viewports.push({ viewId, x: 40, y: 40, zoom: viewId === 'all-tables' ? 0.15 : 0.55 });

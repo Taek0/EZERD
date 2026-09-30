@@ -12,27 +12,32 @@
       {
         "id": "identity",
         "name": "인증",
-        "description": "apps/server/src/db/schema.ts에서 추출"
+        "description": "apps/server/src/db/schema.ts에서 추출",
+        "color": "#2563eb"
       },
       {
         "id": "workspace-domain",
         "name": "공간",
-        "description": "apps/server/src/db/schema.ts에서 추출"
+        "description": "apps/server/src/db/schema.ts에서 추출",
+        "color": "#16a34a"
       },
       {
         "id": "project",
         "name": "프로젝트",
-        "description": "apps/server/src/db/schema.ts에서 추출"
+        "description": "apps/server/src/db/schema.ts에서 추출",
+        "color": "#9333ea"
       },
       {
         "id": "review",
         "name": "리뷰",
-        "description": "apps/server/src/db/schema.ts에서 추출"
+        "description": "apps/server/src/db/schema.ts에서 추출",
+        "color": "#ea580c"
       },
       {
         "id": "sync",
         "name": "동기화",
-        "description": "apps/server/src/db/schema.ts에서 추출"
+        "description": "apps/server/src/db/schema.ts에서 추출",
+        "color": "#0891b2"
       }
     ],
     "domainRelations": [
@@ -40,57 +45,57 @@
         "id": "domain-rel:identity:review",
         "sourceDomainId": "identity",
         "targetDomainId": "review",
-        "name": "PK → FK",
+        "name": "댓글 작성자·알림 수신자 (2 FK)",
         "direction": "forward",
-        "description": "실제 외래키 의존 관계"
+        "description": "댓글은 작성 사용자를, 알림은 수신 사용자를 참조한다. 알림은 사용자 삭제 시 함께 삭제되지만 작성 댓글이 남아 있는 사용자의 삭제는 NO ACTION 제약을 받는다. mention_ids는 JSONB 배열이며 별도 FK가 아니다.\n방향: 부모 PK → 자식 FK. 각 FK는 부모 1건에 자식 0..N건, 자식은 부모 1건을 필수 참조한다.\nusers(id) → review_messages(author_id): ON DELETE NO ACTION, ON UPDATE NO ACTION.\nusers(id) → review_notifications(user_id): ON DELETE CASCADE, ON UPDATE NO ACTION."
       },
       {
         "id": "domain-rel:project:review",
         "sourceDomainId": "project",
         "targetDomainId": "review",
-        "name": "PK → FK",
+        "name": "프로젝트 리뷰·알림 관리 (2 FK)",
         "direction": "forward",
-        "description": "실제 외래키 의존 관계"
+        "description": "리뷰 스레드와 알림은 프로젝트에 속한다. 프로젝트 삭제 시 해당 스레드와 알림이 삭제되고 스레드에 연결된 댓글도 연쇄 삭제된다.\n방향: 부모 PK → 자식 FK. 각 FK는 부모 1건에 자식 0..N건, 자식은 부모 1건을 필수 참조한다.\nprojects(id) → review_notifications(project_id): ON DELETE CASCADE, ON UPDATE NO ACTION.\nprojects(id) → review_threads(project_id): ON DELETE CASCADE, ON UPDATE NO ACTION."
       },
       {
         "id": "domain-rel:identity:project",
         "sourceDomainId": "identity",
         "targetDomainId": "project",
-        "name": "PK → FK",
+        "name": "사용자별 개인 화면·작업 기록 (2 FK)",
         "direction": "forward",
-        "description": "실제 외래키 의존 관계"
+        "description": "프로젝트별 사용자 개인 화면과 개인 작업 중복 처리 방지 기록을 사용자에 연결한다. 사용자 삭제 시 해당 개인 상태와 작업 기록도 삭제된다.\n방향: 부모 PK → 자식 FK. 각 FK는 부모 1건에 자식 0..N건, 자식은 부모 1건을 필수 참조한다.\nusers(id) → project_personal_operations(user_id): ON DELETE CASCADE, ON UPDATE NO ACTION.\nusers(id) → project_personal_states(user_id): ON DELETE CASCADE, ON UPDATE NO ACTION."
       },
       {
         "id": "domain-rel:workspace-domain:project",
         "sourceDomainId": "workspace-domain",
         "targetDomainId": "project",
-        "name": "PK → FK",
+        "name": "공간별 프로젝트 소유 (1 FK)",
         "direction": "forward",
-        "description": "실제 외래키 의존 관계"
+        "description": "각 프로젝트는 하나의 공간에 소속된다. 공간 하나에 여러 프로젝트가 존재할 수 있으며 프로젝트가 남아 있으면 공간 삭제가 RESTRICT로 차단된다.\n방향: 부모 PK → 자식 FK. 각 FK는 부모 1건에 자식 0..N건, 자식은 부모 1건을 필수 참조한다.\nworkspace(workspace_id) → projects(workspace_id): ON DELETE RESTRICT, ON UPDATE NO ACTION."
       },
       {
         "id": "domain-rel:project:sync",
         "sourceDomainId": "project",
         "targetDomainId": "sync",
-        "name": "PK → FK",
+        "name": "프로젝트 변경 이력·충돌 관리 (4 FK)",
         "direction": "forward",
-        "description": "실제 외래키 의존 관계"
+        "description": "프로젝트별 동기화 작업, 필드 버전, 클라이언트 기준점, 삭제 객체 스냅샷을 보관한다. 프로젝트 삭제 시 네 종류의 동기화 데이터가 모두 연쇄 삭제된다. operation_id와 client_id는 이름만으로 별도 FK 관계를 추가하지 않는다.\n방향: 부모 PK → 자식 FK. 각 FK는 부모 1건에 자식 0..N건, 자식은 부모 1건을 필수 참조한다.\nprojects(id) → sync_client_baselines(project_id): ON DELETE CASCADE, ON UPDATE NO ACTION.\nprojects(id) → sync_field_versions(project_id): ON DELETE CASCADE, ON UPDATE NO ACTION.\nprojects(id) → sync_operations(project_id): ON DELETE CASCADE, ON UPDATE NO ACTION.\nprojects(id) → sync_tombstones(project_id): ON DELETE CASCADE, ON UPDATE NO ACTION."
       },
       {
         "id": "domain-rel:identity:sync",
         "sourceDomainId": "identity",
         "targetDomainId": "sync",
-        "name": "PK → FK",
+        "name": "동기화 수행자·사용자 기준점 (2 FK)",
         "direction": "forward",
-        "description": "실제 외래키 의존 관계"
+        "description": "공유 동기화 작업에는 수행 사용자를, 클라이언트 기준점에는 사용자를 기록한다. 작업 이력의 actor_id는 NO ACTION이며 사용자별 기준점은 사용자 삭제 시 CASCADE로 삭제된다.\n방향: 부모 PK → 자식 FK. 각 FK는 부모 1건에 자식 0..N건, 자식은 부모 1건을 필수 참조한다.\nusers(id) → sync_client_baselines(user_id): ON DELETE CASCADE, ON UPDATE NO ACTION.\nusers(id) → sync_operations(actor_id): ON DELETE NO ACTION, ON UPDATE NO ACTION."
       },
       {
         "id": "domain-rel:identity:workspace-domain",
         "sourceDomainId": "identity",
         "targetDomainId": "workspace-domain",
-        "name": "PK → FK",
+        "name": "멤버십·초대 사용자 연결 (3 FK)",
         "direction": "forward",
-        "description": "실제 외래키 의존 관계"
+        "description": "사용자는 공간에 멤버로 참여하고 초대 수신자 또는 초대자로 연결된다. user_workspaces는 공간과 사용자 사이의 N:M 연결 테이블이다. 감사 로그의 actor_id와 target_user_id는 보존 목적상 FK가 없어 이 관계에 포함하지 않는다.\n방향: 부모 PK → 자식 FK. 각 FK는 부모 1건에 자식 0..N건, 자식은 부모 1건을 필수 참조한다.\nusers(id) → user_workspaces(user_id): ON DELETE NO ACTION, ON UPDATE NO ACTION.\nusers(id) → workspace_invitations(invited_user_id): ON DELETE NO ACTION, ON UPDATE NO ACTION.\nusers(id) → workspace_invitations(invited_by): ON DELETE NO ACTION, ON UPDATE NO ACTION."
       }
     ],
     "tables": [
