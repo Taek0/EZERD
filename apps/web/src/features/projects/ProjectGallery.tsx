@@ -7,10 +7,14 @@ import { ProjectImportButton } from './ProjectTransfer.js';
 import { WorkspaceNotice } from '../workspaces/WorkspacePanel.js';
 import type { Workspace } from '../workspaces/workspace-policy.js';
 import './project-gallery.css';
+import { sortProjects, type ProjectSort } from './project-gallery-order.js';
 
 registerTranslations({
   '전체 프로젝트': 'All projects',
   '최근 수정순': 'Last updated',
+  생성순: 'Creation order',
+  '프로젝트 메뉴': 'Project menu',
+  '새 프로젝트 생성': 'Create project',
   이름순: 'Name',
   '프로젝트 정렬': 'Sort projects',
   '프로젝트 수정': 'Edit project',
@@ -63,7 +67,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
   const pending = useRef<Promise<boolean> | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [sort, setSort] = useState<'recent' | 'name'>('recent');
+  const [sort, setSort] = useState<ProjectSort>('created');
   const input = useRef<HTMLInputElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState({ width: 0, transform: 'translateX(0)' });
@@ -138,9 +142,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
       databaseKind: project?.databaseKind ?? 'postgresql',
     });
   }
-  const sorted = [...p.projects].sort((a, b) =>
-    sort === 'name' ? a.name.localeCompare(b.name, locale) : b.updatedAt.localeCompare(a.updatedAt),
-  );
+  const sorted = sortProjects(p.projects, sort, locale);
   const disabled = p.busy || saving;
   function preview(project?: Project) {
     const summary = project?.preview;
@@ -302,10 +304,27 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
             label={t('프로젝트 정렬')}
             trigger={
               <Button className="erd-sort" disabled={disabled}>
-                {t(sort === 'recent' ? '최근 수정순' : '이름순')} <span aria-hidden="true">⌄</span>
+                <span className="erd-sort-label">
+                  {['생성순', '최근 수정순', '이름순'].map((label) => (
+                    <span className="erd-sort-size" aria-hidden="true" key={label}>
+                      {t(label)}
+                    </span>
+                  ))}
+                  <span>
+                    {t(
+                      sort === 'created' ? '생성순' : sort === 'recent' ? '최근 수정순' : '이름순',
+                    )}
+                  </span>
+                </span>{' '}
+                <span aria-hidden="true">⌄</span>
               </Button>
             }
             items={[
+              {
+                id: 'created',
+                label: t('생성순'),
+                onAction: () => void act(() => setSort('created')),
+              },
               {
                 id: 'recent',
                 label: t('최근 수정순'),
@@ -315,21 +334,37 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
             ]}
           />
           {p.canEdit && (
-            <Button
-              className="erd-add"
-              aria-label={t('새 프로젝트')}
-              title={t('새 프로젝트')}
+            <ProjectImportButton
+              key={p.workspaceId}
+              workspaceId={p.workspaceId}
               disabled={disabled}
-              onClick={() => void begin()}
-            >
-              ＋
-            </Button>
+              onImported={p.onImported}
+              renderTrigger={(openImport, importDisabled) => (
+                <Dropdown
+                  label={t('프로젝트 메뉴')}
+                  popoverClassName="erd-project-actions"
+                  trigger={
+                    <Button className="erd-add" aria-label={t('프로젝트 메뉴')} disabled={disabled}>
+                      ⋯
+                    </Button>
+                  }
+                  items={[
+                    { id: 'create', label: t('새 프로젝트 생성'), onAction: () => void begin() },
+                    {
+                      id: 'import',
+                      label: t('프로젝트 가져오기'),
+                      disabled: importDisabled,
+                      onAction: () => void act(openImport),
+                    },
+                  ]}
+                />
+              )}
+            />
           )}
         </div>
       </div>
       {p.loading && <p role="status">{t('프로젝트를 불러오는 중…')}</p>}
       <section className="erd-grid" key={p.status} aria-label={t('프로젝트 목록')}>
-        {edit && !edit.project && editor(edit)}
         {sorted.map((project) =>
           edit?.project?.id === project.id ? (
             <div key={project.id}>{editor(edit)}</div>
@@ -412,6 +447,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
             </article>
           ),
         )}
+        {edit && !edit.project && editor(edit)}
         {p.status === 'active' && p.canEdit && (
           <button
             type="button"
@@ -437,12 +473,6 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
       </section>
       <footer>
         <span>EZERD — TEAM WORKSPACE</span>
-        <ProjectImportButton
-          key={p.workspaceId}
-          workspaceId={p.workspaceId}
-          disabled={disabled || !p.canEdit}
-          onImported={p.onImported}
-        />
       </footer>
     </main>
   );

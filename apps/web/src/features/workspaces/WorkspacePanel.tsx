@@ -52,6 +52,7 @@ export function WorkspacePanel({
   const { t, locale } = useI18n();
   const confirm = useConfirm();
   const [mode, setMode] = useState<'create' | 'manage' | 'inbox' | null>(null);
+  const [closing, setClosing] = useState(false);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [role, setRole] = useState<WorkspaceRole>('editor');
@@ -118,6 +119,20 @@ export function WorkspacePanel({
       trigger.current?.focus();
     };
   }, [mode]);
+  useEffect(() => {
+    if (!closing) return;
+    const timer = window.setTimeout(
+      () => {
+        setMode(null);
+        setClosing(false);
+      },
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 160,
+    );
+    return () => window.clearTimeout(timer);
+  }, [closing]);
+  function closeDialog() {
+    setClosing(true);
+  }
   async function mutate(
     url: string,
     method: string,
@@ -319,10 +334,12 @@ export function WorkspacePanel({
           <dialog
             ref={dialog}
             className="workspace-dialog"
+            data-mode={mode}
+            data-closing={closing || undefined}
             aria-labelledby="workspace-dialog-title"
             onCancel={(event) => {
               event.preventDefault();
-              if (!busy) setMode(null);
+              if (!busy) closeDialog();
             }}
           >
             <div className="workspace-dialog-heading">
@@ -335,98 +352,189 @@ export function WorkspacePanel({
                       : '워크스페이스 관리',
                 )}
               </h2>
-              <Button disabled={busy} onClick={() => setMode(null)}>
+              <Button disabled={busy || closing} onClick={closeDialog}>
                 {t('닫기')}
               </Button>
             </div>
-            {error && (
-              <p className="notice error" role="alert">
-                {error}
-              </p>
-            )}
-            {mode === 'create' && (
-              <form
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  if (
-                    await mutate('/api/workspaces', 'POST', { name: name.trim() }, (result) =>
-                      onSelect((result as Workspace).id),
-                    )
-                  )
-                    setMode(null);
-                }}
-              >
-                <label>
-                  {t('워크스페이스 이름')}
-                  <Input
-                    autoFocus
-                    required
-                    maxLength={64}
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </label>
-                <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
-                  {t('워크스페이스 만들기')}
-                </Button>
-              </form>
-            )}
-            {mode === 'inbox' && (
-              <>
-                <p>{t('초대를 받으면 이곳에서 수락할 수 있습니다.')}</p>
-                <ul className="workspace-list">{inbox.map((item) => invitationRow(item, true))}</ul>
-              </>
-            )}
-            {mode === 'manage' && selected && (
-              <>
-                {selected.role === 'owner' ? (
-                  <form
-                    className="workspace-name-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void mutate(`/api/workspaces/${selected.id}`, 'PATCH', { name: name.trim() });
-                    }}
-                  >
-                    <label>
-                      {t('워크스페이스 이름')}
-                      <Input
-                        required
-                        maxLength={64}
-                        value={name}
-                        onChange={(event) => setName(event.target.value)}
-                      />
-                    </label>
-                    <Button type="submit" disabled={busy || !name.trim()}>
-                      {t('이름 저장')}
-                    </Button>
-                  </form>
-                ) : (
-                  <h3>{selected.name}</h3>
-                )}
-                <p className="workspace-access-note">
-                  {t('마지막 소유자는 변경하거나 제거할 수 없습니다.')}
+            <div className="workspace-dialog-body" inert={closing}>
+              {error && (
+                <p className="notice error" role="alert">
+                  {error}
                 </p>
-                <ul className="workspace-list">
-                  {members.map((member) => {
-                    const lastOwner =
-                      member.role === 'owner' &&
-                      members.filter((item) => item.role === 'owner').length === 1;
-                    return (
-                      <li key={member.userId} className="workspace-member">
-                        <strong>{member.username}</strong>
-                        {selected.role === 'owner' ? (
-                          <div className="workspace-row-actions">
+              )}
+              {mode === 'create' && (
+                <form
+                  className="workspace-create-form"
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    if (
+                      await mutate('/api/workspaces', 'POST', { name: name.trim() }, (result) =>
+                        onSelect((result as Workspace).id),
+                      )
+                    )
+                      closeDialog();
+                  }}
+                >
+                  <label>
+                    {t('워크스페이스 이름')}
+                    <Input
+                      autoFocus
+                      required
+                      maxLength={64}
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                    />
+                  </label>
+                  <Button type="submit" variant="primary" disabled={busy || !name.trim()}>
+                    {t('워크스페이스 만들기')}
+                  </Button>
+                </form>
+              )}
+              {mode === 'inbox' && (
+                <>
+                  <p className="workspace-access-note">
+                    {t('초대를 받으면 이곳에서 수락할 수 있습니다.')}
+                  </p>
+                  <ul className="workspace-list">
+                    {inbox.map((item) => invitationRow(item, true))}
+                  </ul>
+                  {!inbox.length && <p className="workspace-empty">{t('초대 내역이 없습니다.')}</p>}
+                </>
+              )}
+              {mode === 'manage' && selected && (
+                <>
+                  <section className="workspace-section workspace-overview">
+                    <div className="workspace-section-heading">
+                      <h3>{t('워크스페이스')}</h3>
+                      <div className="workspace-row-actions">
+                        <Badge variant="plain">{t(roleLabels[selected.role])}</Badge>
+                        {selected.status === 'archived' && (
+                          <Badge variant="plain">{t('보관됨')}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    {selected.role === 'owner' ? (
+                      <form
+                        className="workspace-name-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void mutate(`/api/workspaces/${selected.id}`, 'PATCH', {
+                            name: name.trim(),
+                          });
+                        }}
+                      >
+                        <label>
+                          {t('워크스페이스 이름')}
+                          <Input
+                            required
+                            maxLength={64}
+                            value={name}
+                            onChange={(event) => setName(event.target.value)}
+                          />
+                        </label>
+                        <Button type="submit" disabled={busy || !name.trim()}>
+                          {t('이름 저장')}
+                        </Button>
+                      </form>
+                    ) : (
+                      <h3>{selected.name}</h3>
+                    )}
+                  </section>
+                  <section className="workspace-section">
+                    <div className="workspace-section-heading">
+                      <h3>{t('멤버 및 초대')}</h3>
+                      <span className="workspace-section-count">{members.length}</span>
+                    </div>
+                    <p className="workspace-access-note">
+                      {t('마지막 소유자는 변경하거나 제거할 수 없습니다.')}
+                    </p>
+                    <ul className="workspace-list">
+                      {members.map((member) => {
+                        const lastOwner =
+                          member.role === 'owner' &&
+                          members.filter((item) => item.role === 'owner').length === 1;
+                        return (
+                          <li key={member.userId} className="workspace-member">
+                            <strong>{member.username}</strong>
+                            {selected.role === 'owner' ? (
+                              <div className="workspace-row-actions">
+                                <Select
+                                  aria-label={`${member.username} ${t('역할')}`}
+                                  value={member.role}
+                                  disabled={busy || lastOwner}
+                                  onValueChange={(next) =>
+                                    void mutate(
+                                      `/api/workspaces/${selected.id}/members/${member.userId}`,
+                                      'PATCH',
+                                      { role: next },
+                                    )
+                                  }
+                                >
+                                  {Object.entries(roleLabels).map(([value, label]) => (
+                                    <option key={value} value={value}>
+                                      {t(label)}
+                                    </option>
+                                  ))}
+                                </Select>
+                                <Button
+                                  disabled={busy || lastOwner}
+                                  onClick={async () => {
+                                    if (
+                                      await confirm({
+                                        title: t('멤버 제거'),
+                                        description: t('이 멤버를 워크스페이스에서 제거할까요?'),
+                                        confirmLabel: t('멤버 제거'),
+                                        destructive: true,
+                                      })
+                                    )
+                                      void mutate(
+                                        `/api/workspaces/${selected.id}/members/${member.userId}`,
+                                        'DELETE',
+                                      );
+                                  }}
+                                >
+                                  {t('멤버 제거')}
+                                </Button>
+                              </div>
+                            ) : (
+                              <Badge variant="plain">{t(roleLabels[member.role])}</Badge>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                  {selected.role === 'owner' && (
+                    <>
+                      <section className="workspace-section">
+                        <h3>{t('사용자명으로 초대')}</h3>
+                        <form
+                          className="workspace-invite-form"
+                          onSubmit={async (event) => {
+                            event.preventDefault();
+                            if (
+                              await mutate(`/api/workspaces/${selected.id}/invitations`, 'POST', {
+                                username: username.trim(),
+                                role,
+                              })
+                            )
+                              setUsername('');
+                          }}
+                        >
+                          <label>
+                            {t('사용자명')}
+                            <Input
+                              required
+                              maxLength={40}
+                              value={username}
+                              onChange={(event) => setUsername(event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            {t('역할')}
                             <Select
-                              aria-label={`${member.username} ${t('역할')}`}
-                              value={member.role}
-                              disabled={busy || lastOwner}
-                              onValueChange={(next) =>
-                                void mutate(
-                                  `/api/workspaces/${selected.id}/members/${member.userId}`,
-                                  'PATCH',
-                                  { role: next },
-                                )
-                              }
+                              value={role}
+                              onValueChange={(value) => setRole(value as WorkspaceRole)}
                             >
                               {Object.entries(roleLabels).map(([value, label]) => (
                                 <option key={value} value={value}>
@@ -434,128 +542,76 @@ export function WorkspacePanel({
                                 </option>
                               ))}
                             </Select>
-                            <Button
-                              disabled={busy || lastOwner}
-                              onClick={async () => {
-                                if (
-                                  await confirm({
-                                    title: t('멤버 제거'),
-                                    description: t('이 멤버를 워크스페이스에서 제거할까요?'),
-                                    confirmLabel: t('멤버 제거'),
-                                    destructive: true,
-                                  })
-                                )
-                                  void mutate(
-                                    `/api/workspaces/${selected.id}/members/${member.userId}`,
-                                    'DELETE',
-                                  );
-                              }}
-                            >
-                              {t('멤버 제거')}
-                            </Button>
-                          </div>
-                        ) : (
-                          <Badge variant="plain">{t(roleLabels[member.role])}</Badge>
+                          </label>
+                          <Button
+                            type="submit"
+                            variant="primary"
+                            disabled={busy || !username.trim()}
+                          >
+                            {t('초대')}
+                          </Button>
+                        </form>
+                      </section>
+                      <section className="workspace-section">
+                        <h3>{t('초대 내역')}</h3>
+                        <ul className="workspace-list">
+                          {invitations.map((item) => invitationRow(item, false))}
+                        </ul>
+                        {!invitations.length && (
+                          <p className="workspace-empty">{t('초대 내역이 없습니다.')}</p>
                         )}
-                      </li>
-                    );
-                  })}
-                </ul>
-                {selected.role === 'owner' && (
-                  <>
-                    <form
-                      className="workspace-invite-form"
-                      onSubmit={async (event) => {
-                        event.preventDefault();
-                        if (
-                          await mutate(`/api/workspaces/${selected.id}/invitations`, 'POST', {
-                            username: username.trim(),
-                            role,
-                          })
-                        )
-                          setUsername('');
-                      }}
-                    >
-                      <h3>{t('사용자명으로 초대')}</h3>
-                      <label>
-                        {t('사용자명')}
-                        <Input
-                          required
-                          maxLength={40}
-                          value={username}
-                          onChange={(event) => setUsername(event.target.value)}
-                        />
-                      </label>
-                      <label>
-                        {t('역할')}
-                        <Select
-                          value={role}
-                          onValueChange={(value) => setRole(value as WorkspaceRole)}
+                      </section>
+                      <div className="workspace-danger-actions">
+                        <Button
+                          disabled={busy}
+                          onClick={async () => {
+                            if (
+                              selected.status === 'archived' ||
+                              (await confirm({
+                                title: t('워크스페이스 보관'),
+                                description: t(
+                                  '워크스페이스를 보관하면 모든 프로젝트와 댓글이 읽기 전용이 됩니다.',
+                                ),
+                                confirmLabel: t('보관'),
+                              }))
+                            )
+                              void mutate(`/api/workspaces/${selected.id}`, 'PATCH', {
+                                status: selected.status === 'active' ? 'archived' : 'active',
+                              });
+                          }}
                         >
-                          {Object.entries(roleLabels).map(([value, label]) => (
-                            <option key={value} value={value}>
-                              {t(label)}
-                            </option>
-                          ))}
-                        </Select>
-                      </label>
-                      <Button type="submit" variant="primary" disabled={busy || !username.trim()}>
-                        {t('초대')}
-                      </Button>
-                    </form>
-                    <h3>{t('초대 내역')}</h3>
-                    <ul className="workspace-list">
-                      {invitations.map((item) => invitationRow(item, false))}
-                    </ul>
-                    {!invitations.length && <p>{t('초대 내역이 없습니다.')}</p>}
-                    <div className="workspace-danger-actions">
-                      <Button
-                        disabled={busy}
-                        onClick={async () => {
-                          if (
-                            selected.status === 'archived' ||
-                            (await confirm({
-                              title: t('워크스페이스 보관'),
-                              description: t(
-                                '워크스페이스를 보관하면 모든 프로젝트와 댓글이 읽기 전용이 됩니다.',
-                              ),
-                              confirmLabel: t('보관'),
-                            }))
-                          )
-                            void mutate(`/api/workspaces/${selected.id}`, 'PATCH', {
-                              status: selected.status === 'active' ? 'archived' : 'active',
-                            });
-                        }}
-                      >
-                        {t(
-                          selected.status === 'active' ? '워크스페이스 보관' : '워크스페이스 복원',
-                        )}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        disabled={busy}
-                        onClick={async () => {
-                          if (
-                            await confirm({
-                              title: t('워크스페이스 삭제'),
-                              description: t(
-                                '빈 워크스페이스만 삭제할 수 있습니다. 삭제하면 복원할 수 없습니다.',
-                              ),
-                              confirmLabel: t('삭제'),
-                              destructive: true,
-                            })
-                          )
-                            if (await mutate(`/api/workspaces/${selected.id}`, 'DELETE'))
-                              setMode(null);
-                        }}
-                      >
-                        {t('워크스페이스 삭제')}
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
+                          {t(
+                            selected.status === 'active'
+                              ? '워크스페이스 보관'
+                              : '워크스페이스 복원',
+                          )}
+                        </Button>
+                        <Button
+                          variant="danger"
+                          disabled={busy}
+                          onClick={async () => {
+                            if (
+                              await confirm({
+                                title: t('워크스페이스 삭제'),
+                                description: t(
+                                  '빈 워크스페이스만 삭제할 수 있습니다. 삭제하면 복원할 수 없습니다.',
+                                ),
+                                confirmLabel: t('삭제'),
+                                destructive: true,
+                              })
+                            )
+                              if (await mutate(`/api/workspaces/${selected.id}`, 'DELETE'))
+                                closeDialog();
+                          }}
+                        >
+                          {t('워크스페이스 삭제')}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
           </dialog>,
           document.body,
         )}

@@ -1,6 +1,6 @@
 import { translate as t, useI18n } from '../../shared/i18n/index.js';
 import '../collaboration/translations.js';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   MAX_PROJECT_TRANSFER_BYTES,
@@ -42,10 +42,12 @@ export function ProjectImportButton({
   onImported,
   workspaceId,
   disabled = false,
+  renderTrigger,
 }: {
   onImported: (project: Project) => void;
   disabled?: boolean;
   workspaceId: string;
+  renderTrigger?: (open: () => void, disabled: boolean) => ReactNode;
 }) {
   useI18n();
   const input = useRef<HTMLInputElement>(null);
@@ -54,9 +56,15 @@ export function ProjectImportButton({
   const [reading, setReading] = useState(false);
   return (
     <>
-      <Button disabled={disabled || reading} onClick={() => input.current?.click()}>
-        {reading ? t('파일 확인 중…') : t('프로젝트 가져오기')}
-      </Button>
+      {renderTrigger ? (
+        renderTrigger(() => {
+          if (!disabled && !reading) input.current?.click();
+        }, disabled || reading)
+      ) : (
+        <Button disabled={disabled || reading} onClick={() => input.current?.click()}>
+          {reading ? t('파일 확인 중…') : t('프로젝트 가져오기')}
+        </Button>
+      )}
       <input
         ref={input}
         type="file"
