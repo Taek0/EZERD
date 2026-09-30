@@ -225,6 +225,21 @@
 .app-header .notifications {
   flex-shrink: 0;
 }
+.app-shell .app-header .notifications > .notification-trigger {
+  position: relative;
+  width: 40px;
+  min-width: 40px;
+  padding-inline: 8px;
+}
+.notification-trigger .notification-count {
+  position: absolute;
+  right: -4px;
+  top: -5px;
+  min-width: 16px;
+  padding: 1px 4px;
+  font-size: 10px;
+  line-height: 14px;
+}
 .app-header .notifications > button {
   min-height: 44px;
   white-space: nowrap;

@@ -1,6 +1,7 @@
-import { WorkspacePanel, WorkspaceNotice } from '../features/workspaces/WorkspacePanel.js';
+import { WorkspacePanel } from '../features/workspaces/WorkspacePanel.js';
 import { workspacePermissions, type Workspace } from '../features/workspaces/workspace-policy.js';
 import { useI18n } from '../shared/i18n/index.js';
+import { HelpDialog } from '../features/projects/HelpDialog.js';
 import { LanguageDialog } from '../shared/i18n/LanguageDialog.js';
 import '../shared/i18n/app-translations.js';
 import { PinPanelResizer } from '../features/comments/PinPanelResizer.js';
@@ -12,7 +13,6 @@ import {
   applyChanges,
   diffSharedDocument,
   type DesignDocument,
-  createEmptyDocument,
   mergeStoredPersonalState,
 } from '@ezerd/model';
 import {
@@ -32,7 +32,6 @@ import {
   Notifications,
   type CommentContext,
 } from '../features/comments/CommentsPanel.js';
-import { RenameDialog } from '../components/ui/RenameDialog.js';
 import { useConfirm } from '../components/ui/ConfirmProvider.js';
 import { LatestRequest } from '../features/comments/comments-state.js';
 import {
@@ -42,10 +41,11 @@ import {
   type SyncSnapshot,
 } from '../features/collaboration/sync-client.js';
 import { SyncHistoryPanel } from '../features/collaboration/sync-history-panel.js';
-import { Avatar, Badge, Button, Dropdown, Input, TabButton } from '../components/ui/index.js';
+import { Avatar, Badge, Button, Dropdown, Input } from '../components/ui/index.js';
 import '../styles/responsive-shell.css';
 import { McpConnectionPanel } from '../features/mcp/McpConnectionPanel.js';
-import { ProjectImportButton, exportProjectFile } from '../features/projects/ProjectTransfer.js';
+import { exportProjectFile } from '../features/projects/ProjectTransfer.js';
+import { ProjectGallery, type GalleryHandle } from '../features/projects/ProjectGallery.js';
 
 type User = {
   id: string;
@@ -59,6 +59,14 @@ export type Project = {
   workspaceId: string;
   name: string;
   status: 'active' | 'archived';
+  databaseKind?: 'postgresql' | 'mysql' | 'sqlite';
+  preview?:
+    | {
+        tableCount: number;
+        relationCount: number;
+        tables: { name: string; columns: { name: string; type: string; primaryKey: boolean }[] }[];
+      }
+    | undefined;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -145,10 +153,11 @@ export async function clearSignIn(
 export function App() {
   const { t, locale } = useI18n();
   const [editingLanguage, setEditingLanguage] = useState(false);
+  const [showingHelp, setShowingHelp] = useState(false);
   const confirm = useConfirm();
   const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
-  const [renamingProject, setRenamingProject] = useState<Project | null>(null);
+  const gallery = useRef<GalleryHandle>(null);
   const [draftTarget, setDraftTarget] = useState<CommentContext & { nonce: number }>();
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true);
@@ -182,8 +191,7 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>([]),
     [search, setSearch] = useState(''),
     [status, setStatus] = useState<'active' | 'archived'>('active');
-  const [projectName, setProjectName] = useState(''),
-    [error, setError] = useState(''),
+  const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false);
   const [opened, setOpened] = useState<OpenProject | null>(null),
@@ -280,6 +288,7 @@ export function App() {
     setCanvasContext({ viewId: 'overview', selectedObjectId: null, position: { x: 120, y: 120 } });
   }
   async function visitNotification(notification: Notification): Promise<boolean> {
+    if (gallery.current && !(await gallery.current.flush())) return false;
     if (busy) return false;
     const sameProject = current.current?.project.id === notification.projectId;
     const ticket = navigation.current.begin();
@@ -539,30 +548,22 @@ export function App() {
       if (navigation.current.isCurrent(ticket)) setBusy(false);
     }
   }
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    if (!permissions.edit || !workspaceId) return;
-    const ticket = navigation.current.begin();
-    setBusy(true);
-    setError('');
-    try {
-      const project = projectSchema.parse(
-        await request('/api/projects', body('POST', { name: projectName.trim(), workspaceId })),
-      );
-      if (!navigation.current.isCurrent(ticket)) return;
-      setProjectName('');
-      resetReview();
-      replaceProject({ project, document: createEmptyDocument() });
-    } catch (e) {
-      if (navigation.current.isCurrent(ticket)) setError(message(e));
-    } finally {
-      if (navigation.current.isCurrent(ticket)) setBusy(false);
-    }
+  async function createGalleryProject(
+    name: string,
+    databaseKind: 'postgresql' | 'mysql' | 'sqlite',
+  ) {
+    if (!permissions.edit || !workspaceId) throw new Error(t('프로젝트를 만들 수 없습니다.'));
+    const project = projectSchema.parse(
+      await request('/api/projects', body('POST', { name, databaseKind, workspaceId })),
+    );
+    setProjects((items) => [project, ...items]);
+    setRefresh((value) => value + 1);
   }
   async function changeProject(
     project: Project,
     patch: {
       name?: string;
+      databaseKind?: 'postgresql' | 'mysql' | 'sqlite';
       status?: 'active' | 'archived';
     },
   ) {
@@ -672,6 +673,7 @@ export function App() {
     void runtime.current?.edit(document);
   }
   async function signOut() {
+    if (gallery.current && !(await gallery.current.flush())) return;
     if (busy) return;
     setBusy(true);
     navigation.current.begin();
@@ -698,9 +700,7 @@ export function App() {
     setWorkspaceId('');
     setProjects([]);
     setMembers([]);
-    setRenamingProject(null);
     setCommentsOpen(false);
-    setProjectName('');
     setSearch('');
     setStatus('active');
     setBusy(false);
@@ -714,6 +714,7 @@ export function App() {
   }
   const workspaceSwitchPending = useRef(false);
   async function selectWorkspace(id: string) {
+    if (gallery.current && !(await gallery.current.flush())) return;
     if (workspaceSwitchPending.current || busy || (id === workspaceId && !current.current)) return;
     workspaceSwitchPending.current = true;
     setBusy(true);
@@ -738,6 +739,7 @@ export function App() {
     }
   }
   async function leave() {
+    if (gallery.current && !(await gallery.current.flush())) return;
     if (
       current.current &&
       !(await confirm({
@@ -869,7 +871,15 @@ export function App() {
       <a className="skip-link" href="#main">
         {t('본문으로 이동')}
       </a>
-      <header className="app-header">
+      <header
+        className="app-header"
+        onPointerDownCapture={() => {
+          void gallery.current?.flush();
+        }}
+        onFocusCapture={() => {
+          void gallery.current?.flush();
+        }}
+      >
         <Button className="brand" onClick={leave} aria-label={t('EZERD 프로젝트 갤러리')}>
           EZERD<span>.</span>
         </Button>
@@ -936,6 +946,16 @@ export function App() {
                   setEditingMcp(true);
                 },
               },
+              {
+                id: 'help',
+                label: t('도움말'),
+                onAction: () => {
+                  setEditingName(false);
+                  setEditingColor(false);
+                  setEditingMcp(false);
+                  setShowingHelp(true);
+                },
+              },
             ]}
             trigger={
               <Button
@@ -953,6 +973,7 @@ export function App() {
           />
         )}
       </header>
+      {showingHelp && <HelpDialog onClose={() => setShowingHelp(false)} />}
       {editingLanguage && <LanguageDialog onClose={() => setEditingLanguage(false)} />}
       {editingColor && user && (
         <UserColorEditor
@@ -1178,201 +1199,55 @@ export function App() {
           </div>
         </main>
       ) : (
-        <main id="main" className="gallery">
-          <div className="section-marker">
-            01 / WORKSPACE
-            <span />
-          </div>
-          <section className="gallery-hero">
-            <div>
-              <p className="eyebrow">{t('도메인에서 시작하는 데이터 설계')}</p>
-              <h1>
-                {t('우리 팀의 설계')}
-                <span>.</span>
-              </h1>
-              <p>{t('아이디어를 연결하고, 함께 구조를 만들어 가세요.')}</p>
-            </div>
-            <div className="hero-index">
-              {String(projects.length).padStart(2, '0')}
-              <small>PROJECTS</small>
-            </div>
-          </section>
-          <WorkspaceNotice selected={selectedWorkspace} />
-          <div className="gallery-tools">
-            <ProjectImportButton
-              key={workspaceId}
-              workspaceId={workspaceId}
-              disabled={busy || !permissions.edit}
-              onImported={() => {
-                setStatus('active');
-                setSearch('');
-                setError('');
-                setRefresh((value) => value + 1);
-              }}
-            />
-            <div className="tabs" aria-label={t('프로젝트 상태')}>
-              <TabButton selected={status === 'active'} onClick={() => setStatus('active')}>
-                {t('진행 중')}
-              </TabButton>
-              <TabButton selected={status === 'archived'} onClick={() => setStatus('archived')}>
-                {t('보관함')}
-              </TabButton>
-            </div>
-            <label className="search">
-              <span>{t('검색')}</span>
-              <Input
-                aria-label={t('프로젝트 검색')}
-                placeholder={t('프로젝트 이름 검색')}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </label>
-          </div>
-          <form className="create-project" onSubmit={(e) => void create(e)}>
-            <Input
-              aria-label={t('새 프로젝트 이름')}
-              placeholder={t('새 프로젝트 이름')}
-              maxLength={120}
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              required
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              className="primary"
-              disabled={busy || !permissions.edit || !projectName.trim()}
-            >
-              <span aria-hidden="true">＋</span>
-              <span>{t('프로젝트 만들기')}</span>
-            </Button>
-          </form>
-          {loading ? (
-            <p role="status">{t('프로젝트를 불러오는 중…')}</p>
-          ) : (
-            <section className="project-grid" aria-label={t('프로젝트 목록')}>
-              {projects.map((project, index) => (
-                <article className="project-card" key={project.id}>
-                  <div className="card-top">
-                    <span>{String(index + 1).padStart(2, '0')}</span>
-                    <Badge
-                      variant="plain"
-                      tone={project.status === 'active' ? 'blue' : 'neutral'}
-                      className="project-state"
-                    >
-                      {project.status === 'active' ? t('진행 중') : t('보관됨')}
-                    </Badge>
-                  </div>
-                  <Button
-                    className="project-open"
-                    title={project.name}
-                    disabled={busy}
-                    onClick={() => void open(project.id)}
-                  >
-                    <h2>{project.name}</h2>
-                    <span aria-hidden="true">↗</span>
-                  </Button>
-                  <p>
-                    {t('수정', undefined, 'date')}{' '}
-                    {new Date(project.updatedAt).toLocaleDateString(
-                      locale === 'en' ? 'en-US' : 'ko-KR',
-                    )}
-                  </p>
-                  <div className="card-actions">
-                    <Button
-                      disabled={busy}
-                      aria-label={t('{name} 내보내기', { name: project.name })}
-                      onClick={async () => {
-                        setBusy(true);
-                        setError('');
-                        try {
-                          await exportProjectFile(project.id);
-                        } catch (error) {
-                          setError(message(error));
-                        } finally {
-                          setBusy(false);
-                        }
-                      }}
-                    >
-                      {t('내보내기')}
-                    </Button>
-                    <Button
-                      disabled={busy || !permissions.edit}
-                      onClick={() => setRenamingProject(project)}
-                    >
-                      {t('이름 수정')}
-                    </Button>
-                    <Button
-                      className={
-                        project.status === 'active' ? 'project-archive' : 'project-restore'
-                      }
-                      disabled={busy || !permissions.edit}
-                      onClick={async () => {
-                        if (
-                          project.status === 'archived' ||
-                          (await confirm({
-                            title: t('프로젝트 보관'),
-                            description: t(
-                              '“{name}” 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.',
-                              { name: project.name },
-                            ),
-                            confirmLabel: t('보관'),
-                          }))
-                        )
-                          void changeProject(project, {
-                            status: project.status === 'active' ? 'archived' : 'active',
-                          });
-                      }}
-                    >
-                      {project.status === 'active' ? t('보관') : t('복원')}
-                    </Button>
-                    {project.status === 'archived' && (
-                      <Button
-                        className="project-delete"
-                        variant="danger"
-                        disabled={busy || !permissions.deleteProject}
-                        onClick={() => void deleteProject(project)}
-                      >
-                        {t('삭제')}
-                      </Button>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </section>
-          )}
-          {!loading && !projects.length && (
-            <div className="empty-gallery">
-              <span aria-hidden="true">＋</span>
-              <h2>
-                {search
-                  ? t('검색 결과가 없습니다')
-                  : status === 'archived'
-                    ? t('보관한 프로젝트가 없습니다')
-                    : t('첫 설계의 큰 그림을 그려 보세요')}
-              </h2>
-              <p>
-                {search
-                  ? t('다른 프로젝트 이름으로 검색해 주세요.')
-                  : t('프로젝트를 만들면 도메인과 업무 관계를 정리할 수 있습니다.')}
-              </p>
-            </div>
-          )}
-          <footer>
-            <span>EZERD — TEAM WORKSPACE</span>
-            <span>{t('명확한 구조. 함께 만드는 설계.')}</span>
-          </footer>
-        </main>
-      )}
-      {renamingProject && (
-        <RenameDialog
-          title={t('프로젝트 이름 수정')}
-          label={t('프로젝트 이름')}
-          initialValue={renamingProject.name}
-          maxLength={120}
-          onCancel={() => setRenamingProject(null)}
-          onSave={async (name) => {
-            if (await changeProject(renamingProject, { name })) setRenamingProject(null);
+        <ProjectGallery
+          key={workspaceId}
+          ref={gallery}
+          workspace={selectedWorkspace}
+          workspaceId={workspaceId}
+          projects={projects}
+          loading={loading}
+          busy={busy}
+          canEdit={permissions.edit}
+          canDelete={permissions.deleteProject}
+          status={status}
+          search={search}
+          onSearch={setSearch}
+          onStatus={setStatus}
+          onCreate={createGalleryProject}
+          onEdit={changeProject}
+          onOpen={(id) => void open(id)}
+          onExport={async (project) => {
+            setBusy(true);
+            setError('');
+            try {
+              await exportProjectFile(project.id);
+            } catch (cause) {
+              setError(message(cause));
+            } finally {
+              setBusy(false);
+            }
+          }}
+          onArchive={async (project) => {
+            if (
+              project.status === 'archived' ||
+              (await confirm({
+                title: t('프로젝트 보관'),
+                description: t('“{name}” 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.', {
+                  name: project.name,
+                }),
+                confirmLabel: t('보관'),
+              }))
+            )
+              await changeProject(project, {
+                status: project.status === 'active' ? 'archived' : 'active',
+              });
+          }}
+          onDelete={(project) => void deleteProject(project)}
+          onImported={() => {
+            setStatus('active');
+            setSearch('');
+            setError('');
+            setRefresh((value) => value + 1);
           }}
         />
       )}

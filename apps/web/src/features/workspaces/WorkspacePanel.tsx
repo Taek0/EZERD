@@ -215,12 +215,20 @@ export function WorkspacePanel({
             {Array.from(selected?.name ?? 'W')[0]?.toUpperCase()}
           </span>
           <span className="workspace-trigger-copy">
-            <small>{t('워크스페이스')}</small>
             <strong>{selected?.name ?? t('워크스페이스 선택')}</strong>
           </span>
-          <span className="workspace-chevron" aria-hidden="true">
-            ⌄
-          </span>
+          <svg
+            className="workspace-chevron"
+            aria-hidden="true"
+            width="14"
+            height="14"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+          >
+            <path d="m5 7.5 5 5 5-5" />
+          </svg>
         </MenuButton>
         <Popover className="workspace-popover" placement="bottom start" offset={10}>
           <div className="workspace-menu-heading">
@@ -259,19 +267,6 @@ export function WorkspacePanel({
             <Separator className="workspace-menu-separator" />
             <MenuSection aria-label={t('워크스페이스 관리')}>
               <MenuItem
-                id="workspace-create"
-                textValue={t('새 워크스페이스')}
-                className="workspace-menu-action"
-                onAction={() => {
-                  setName('');
-                  setError('');
-                  setMode('create');
-                }}
-              >
-                <span aria-hidden="true">＋</span>
-                {t('새 워크스페이스')}
-              </MenuItem>
-              <MenuItem
                 id="workspace-manage"
                 textValue={t('워크스페이스 관리')}
                 isDisabled={!selected}
@@ -297,9 +292,21 @@ export function WorkspacePanel({
                 {t('받은 초대')}
                 <span className="workspace-invitation-count">{inbox.filter(pending).length}</span>
               </MenuItem>
+              <MenuItem
+                id="workspace-create"
+                textValue={t('새 워크스페이스')}
+                className="workspace-menu-action"
+                onAction={() => {
+                  setName('');
+                  setError('');
+                  setMode('create');
+                }}
+              >
+                <span aria-hidden="true">＋</span>
+                {t('새 워크스페이스')}
+              </MenuItem>
             </MenuSection>
           </Menu>
-          <div className="workspace-menu-footer">{t('선택한 공간의 프로젝트만 표시됩니다.')}</div>
           {error && !mode && (
             <p className="notice error" role="alert">
               {error}

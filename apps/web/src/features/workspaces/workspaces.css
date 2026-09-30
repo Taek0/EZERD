@@ -288,3 +288,49 @@
     align-items: start;
   }
 }
+/* Compact workspace control shared with the project gallery. */
+.workspace-switcher-trigger {
+  width: auto;
+  min-width: 148px;
+  max-width: 228px;
+  height: 36px;
+  min-height: 36px;
+  padding: 6px 10px;
+  gap: 9px;
+}
+.workspace-switcher-trigger .workspace-initial {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.workspace-chevron {
+  display: block;
+  flex-shrink: 0;
+  transform: rotate(0);
+  transform-origin: center;
+  transition: transform 150ms ease;
+}
+.workspace-switcher-trigger[aria-expanded='true'] .workspace-chevron {
+  transform: rotate(180deg);
+}
+.workspace-popover {
+  width: 286px;
+}
+.workspace-menu-action {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px;
+}
+.workspace-menu-action > [aria-hidden] {
+  width: 18px;
+  font-size: 18px;
+}
+.workspace-menu-heading {
+  padding: 17px 18px 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-chevron {
+    transition: none;
+  }
+}
