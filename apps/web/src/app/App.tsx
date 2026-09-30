@@ -534,7 +534,11 @@ export function App() {
         );
       }
     } catch (e) {
-      setError(message(e));
+      setError(
+        (!user || !session) && e instanceof ApiError && (e.status === 409 || e.status === 401)
+          ? t('이미 사용중인 이름이거나 올바르지 않은 PIN 입니다')
+          : message(e),
+      );
     } finally {
       setBusy(false);
     }

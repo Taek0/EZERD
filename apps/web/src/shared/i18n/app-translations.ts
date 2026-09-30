@@ -1,6 +1,8 @@
 import { registerTranslations } from './index.js';
 
 registerTranslations({
+  '이미 사용중인 이름이거나 올바르지 않은 PIN 입니다':
+    'This name is already in use or the PIN is incorrect.',
   로그아웃: 'Sign out',
   '이 브라우저에서 로그아웃했습니다. 서버 세션 종료는 확인하지 못했습니다.':
     'You are signed out in this browser. Server session revocation could not be confirmed.',
