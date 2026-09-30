@@ -206,7 +206,7 @@ scripts/setup.mjs            로컬 환경 파일 준비
 
 ## 개발 문서
 
-[문서 분류와 전체 목록](./docs/README.md)에서 계획·설계와 진행 작업을 나눠 확인할 수 있습니다.
+[문서 분류와 전체 목록](./docs/README.md)에서 제품 계획·설계(`planning`), 구현·검증(`work-log`), 기타 보조 작업(`etc`)을 나눠 확인할 수 있습니다.
 
 UI 폰트는 Apple SD Gothic Neo이며, 제공받은 폰트의 프로젝트 내부 서브셋을 사용합니다. 굵기별 용도와 자산 위치는 [디자인 문서](./docs/planning/DESIGN_SYSTEM.md)에 있습니다.
 
@@ -239,5 +239,5 @@ UI 폰트는 Apple SD Gothic Neo이며, 제공받은 폰트의 프로젝트 내�
 - [패키지 전체 버전](./docs/work-log/DEPENDENCY_VERSIONS.md)
 - [공통 UI 컴포넌트와 사용법](./docs/work-log/SHARED_UI.md)
 - [디자인 방향과 토큰](./docs/planning/DESIGN_SYSTEM.md)
-- [Drizzle 첫 단계](./docs/work-log/DRIZZLE_START.md)
+- [Drizzle 첫 단계](./docs/etc/DRIZZLE_START.md)
 - [환경 검증 기록](./docs/work-log/SETUP_VERIFICATION.md)
