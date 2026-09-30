@@ -22,6 +22,8 @@ import { DatabaseService } from '../db/database.service.js';
 import { projects, userWorkspaces, workspaceAuditEvents } from '../db/schema.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
 import type { ProjectRow } from '../db/schema.js';
+import { projectPreview } from './project-preview.js';
+import { nextAutomaticProjectName } from './project-name.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
 
 function project(row: ProjectRow): Project {
@@ -29,6 +31,8 @@ function project(row: ProjectRow): Project {
     id: row.id,
     workspaceId: row.workspaceId,
     name: row.name,
+    databaseKind: row.databaseKind,
+    ...(row.document ? { preview: projectPreview(row.document) } : {}),
     status: row.status,
     version: row.version,
     createdAt: row.createdAt.toISOString(),
@@ -57,7 +61,20 @@ export class WorkspaceService {
   createProject(actorId: string, input: z.infer<typeof createProjectSchema>) {
     return operation(async () => {
       return this.access.runWorkspace(actorId, input.workspaceId, 'createProject', async (tx) => {
-        const [row] = await tx.insert(projects).values(input).returning();
+        const name =
+          input.name?.trim() ||
+          nextAutomaticProjectName(
+            (
+              await tx
+                .select({ name: projects.name })
+                .from(projects)
+                .where(eq(projects.workspaceId, input.workspaceId))
+            ).map((row) => row.name),
+          );
+        const [row] = await tx
+          .insert(projects)
+          .values({ ...input, name })
+          .returning();
         await tx.insert(workspaceAuditEvents).values({
           workspaceId: input.workspaceId,
           actorId,
@@ -75,7 +92,7 @@ export class WorkspaceService {
       format: 'ezerd-project',
       formatVersion: 1,
       exportedAt: new Date().toISOString(),
-      project: { name: snapshot.project.name },
+      project: { name: snapshot.project.name, databaseKind: snapshot.project.databaseKind },
       document: snapshot.document,
     });
   }
@@ -94,6 +111,7 @@ export class WorkspaceService {
           .insert(projects)
           .values({
             name: input.project.name,
+            databaseKind: input.project.databaseKind ?? 'postgresql',
             workspaceId,
             document: input.document,
           })
@@ -221,7 +239,9 @@ export class WorkspaceService {
     return operation(() =>
       this.access.runProject(actorId, id, 'manageProject', async (tx) => {
         const unarchivesWithoutOtherEdits =
-          changes.status === 'active' && changes.name === undefined;
+          changes.status === 'active' &&
+          changes.name === undefined &&
+          changes.databaseKind === undefined;
         const [row] = await tx
           .update(projects)
           .set({ ...changes, version: sql`${projects.version} + 1`, updatedAt: new Date() })

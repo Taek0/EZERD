@@ -207,23 +207,50 @@ export const userSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
-export const createProjectSchema = z.strictObject({ name: projectName, workspaceId: z.uuid() });
+export const databaseKindSchema = z.enum(['postgresql', 'mysql', 'sqlite']);
+export type DatabaseKind = z.infer<typeof databaseKindSchema>;
+export const createProjectSchema = z.strictObject({
+  name: z.string().trim().max(120).optional(),
+  workspaceId: z.uuid(),
+  databaseKind: databaseKindSchema.optional(),
+});
 export const updateProjectSchema = z
   .strictObject({
     expectedVersion: version,
     name: projectName.optional(),
+    databaseKind: databaseKindSchema.optional(),
     status: z.enum(['active', 'archived']).optional(),
   })
-  .refine((input) => input.name !== undefined || input.status !== undefined, 'No update supplied.');
+  .refine(
+    (input) =>
+      input.name !== undefined || input.status !== undefined || input.databaseKind !== undefined,
+    'No update supplied.',
+  );
 export const projectQuerySchema = z.strictObject({
   workspaceId: z.uuid().optional(),
   status: z.enum(['active', 'archived']).default('active'),
   search: z.string().trim().max(120).default(''),
 });
+export const projectPreviewSchema = z.strictObject({
+  tableCount: z.number().int().nonnegative(),
+  relationCount: z.number().int().nonnegative(),
+  tables: z
+    .array(
+      z.strictObject({
+        name: z.string(),
+        columns: z
+          .array(z.strictObject({ name: z.string(), type: z.string(), primaryKey: z.boolean() }))
+          .max(3),
+      }),
+    )
+    .max(2),
+});
 export const projectSchema = z.strictObject({
   workspaceId: z.uuid(),
   id: z.uuid(),
   name: projectName,
+  databaseKind: databaseKindSchema.default('postgresql'),
+  preview: projectPreviewSchema.optional(),
   status: z.enum(['active', 'archived']),
   version,
   createdAt: z.iso.datetime(),

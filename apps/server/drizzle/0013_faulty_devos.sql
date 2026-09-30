@@ -1,0 +1,2 @@
+CREATE TYPE "public"."project_database_kind" AS ENUM('postgresql', 'mysql', 'sqlite');--> statement-breakpoint
+ALTER TABLE "projects" ADD COLUMN "database_kind" "project_database_kind" DEFAULT 'postgresql' NOT NULL;

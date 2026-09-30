@@ -18,6 +18,11 @@ import {
 import type { DesignDocument, PersonalState } from '@ezerd/model';
 import { sql } from 'drizzle-orm';
 
+export const projectDatabaseKind = pgEnum('project_database_kind', [
+  'postgresql',
+  'mysql',
+  'sqlite',
+]);
 export const projectStatus = pgEnum('project_status', ['active', 'archived']);
 export const workspaceStatus = pgEnum('workspace_status', ['active', 'archived']);
 export const workspaceRole = pgEnum('workspace_role', ['owner', 'editor', 'viewer']);
@@ -43,6 +48,7 @@ export const projects = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'restrict' }),
     name: varchar('name', { length: 120 }).notNull(),
+    databaseKind: projectDatabaseKind('database_kind').notNull().default('postgresql'),
     status: projectStatus('status').notNull().default('active'),
     version: integer('version').notNull().default(0),
     syncSequence: integer('sync_sequence').notNull().default(0),

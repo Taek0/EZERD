@@ -335,7 +335,8 @@ export class McpServerFactory {
     server.registerTool(
       'create_project',
       {
-        description: '새 EZERD 프로젝트를 생성합니다.',
+        description:
+          '새 EZERD 프로젝트를 생성합니다. 이름 생략/공백은 워크스페이스에서 새 프로젝트 및 증가하는 숫자로 자동 지정합니다. databaseKind는 선택 DB 메타데이터이며 현재 설계/DDL은 PostgreSQL 기준입니다.',
         inputSchema: createProjectSchema,
         outputSchema: projectSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -374,7 +375,8 @@ export class McpServerFactory {
     server.registerTool(
       'update_project',
       {
-        description: '최신 expectedVersion을 기준으로 프로젝트 이름 또는 보관 상태를 변경합니다.',
+        description:
+          '최신 expectedVersion을 기준으로 프로젝트 이름, 선택 DB 메타데이터 또는 보관 상태를 변경합니다. databaseKind 변경은 설계나 DDL 방언을 변환하지 않습니다.',
         inputSchema: z.strictObject({ projectId: idSchema, update: updateProjectSchema }),
         outputSchema: projectSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },

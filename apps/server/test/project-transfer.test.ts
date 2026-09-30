@@ -65,8 +65,8 @@ describe('project file transfer', () => {
     expect(first.id).not.toBe(second.id);
     expect(first).toMatchObject({ workspaceId, version: 0, status: 'active' });
     expect(inserted).toEqual([
-      { name: '설계', workspaceId, document },
-      { name: '설계', workspaceId, document },
+      { name: '설계', databaseKind: 'postgresql', workspaceId, document },
+      { name: '설계', databaseKind: 'postgresql', workspaceId, document },
     ]);
     expect(access.runWorkspace).toHaveBeenCalledTimes(2);
     expect(access.runWorkspace).toHaveBeenCalledWith(
@@ -111,6 +111,7 @@ describe('project file transfer', () => {
         id: randomUUID(),
         workspaceId,
         name: '서버 이름',
+        databaseKind: 'mysql',
         status: 'archived',
         version: 12,
         createdAt: '',
@@ -123,7 +124,7 @@ describe('project file transfer', () => {
     expect(result).toEqual({
       ...file,
       exportedAt: expect.any(String),
-      project: { name: '서버 이름' },
+      project: { name: '서버 이름', databaseKind: 'mysql' },
     });
     expect(get).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith(actorId, projectId);
@@ -134,6 +135,14 @@ describe('project file transfer', () => {
       'project',
       'document',
     ]);
+  });
+  it('preserves a selected database kind on import', async () => {
+    const { service } = setup();
+    const result = await service.importProject(actorId, {
+      workspaceId,
+      transfer: { ...file, project: { ...file.project, databaseKind: 'sqlite' } },
+    });
+    expect(result.databaseKind).toBe('sqlite');
   });
   it('authenticates import before accessing the workspace', async () => {
     const importProject = vi.fn();

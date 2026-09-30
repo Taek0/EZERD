@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { designDocumentSchema } from './workspace.js';
+import { databaseKindSchema, designDocumentSchema } from './workspace.js';
 
 export const MAX_PROJECT_TRANSFER_BYTES = 2_000_000;
 export const projectTransferSchema = z
@@ -7,7 +7,10 @@ export const projectTransferSchema = z
     format: z.literal('ezerd-project'),
     formatVersion: z.literal(1),
     exportedAt: z.iso.datetime(),
-    project: z.strictObject({ name: z.string().trim().min(1).max(120) }),
+    project: z.strictObject({
+      name: z.string().trim().min(1).max(120),
+      databaseKind: databaseKindSchema.optional(),
+    }),
     document: designDocumentSchema,
   })
   .superRefine((file, ctx) => {

@@ -24,6 +24,15 @@ describe('API input boundaries', () => {
       name: '주문',
       workspaceId,
     });
+    expect(createProjectSchema.parse({ name: '   ', workspaceId }).name).toBe('');
+    expect(createProjectSchema.safeParse({ workspaceId }).success).toBe(true);
+    expect(
+      updateProjectSchema.safeParse({ expectedVersion: 0, databaseKind: 'sqlite' }).success,
+    ).toBe(true);
+    expect(
+      updateProjectSchema.safeParse({ expectedVersion: 0, databaseKind: 'oracle' }).success,
+    ).toBe(false);
+    expect(updateProjectSchema.safeParse({ expectedVersion: 0, name: '   ' }).success).toBe(false);
     expect(createProjectSchema.safeParse({ name: '주문' }).success).toBe(false);
     expect(usernameInputSchema.safeParse({ username: '  ' }).success).toBe(false);
     expect(createProjectSchema.safeParse({ name: 'x'.repeat(121), workspaceId }).success).toBe(

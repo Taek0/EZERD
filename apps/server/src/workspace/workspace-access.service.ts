@@ -46,10 +46,12 @@ export class WorkspaceAccessService {
       .where(eq(workspaces.id, workspaceId));
     // Reads also run in PostgreSQL READ ONLY snapshots, which reject row locks.
     // Writes hold SHARE until commit so owner/status changes wait for them.
+    // Project creation takes UPDATE immediately to serialize automatic name allocation.
+    // Upgrading SHARE inside the callback would deadlock concurrent creators.
     const [workspace] =
       executor === this.database.db || permission === 'read'
         ? await query
-        : await query.for('share');
+        : await query.for(permission === 'createProject' ? 'update' : 'share');
     if (!workspace) throw new NotFoundException('워크스페이스를 찾을 수 없습니다.');
     const [membership] = await executor
       .select({ role: userWorkspaces.role })

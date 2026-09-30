@@ -9,6 +9,7 @@ const project = {
   id: crypto.randomUUID(),
   workspaceId: crypto.randomUUID(),
   name: 'MCP project',
+  databaseKind: 'postgresql' as const,
   status: 'active' as const,
   version: 0,
   createdAt: now,
