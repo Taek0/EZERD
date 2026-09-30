@@ -24,7 +24,7 @@ import {
   type Thread,
   type Notification,
 } from '@ezerd/contracts';
-import { body, message, newId, request } from '../shared/api/client.js';
+import { ApiError, body, message, newId, request } from '../shared/api/client.js';
 import { Canvas } from '../features/canvas/Canvas.js';
 import {
   CommentsPanel,
@@ -92,6 +92,56 @@ async function loadProjectWithPersonal(id: string): Promise<OpenProject> {
   };
 }
 const identityKey = 'ezerd.userId';
+export function cachedIdentitySession(
+  raw: string | null,
+  userId: string | null,
+): SyncSession | null {
+  if (!raw || !userId) return null;
+  try {
+    const value = JSON.parse(raw) as SyncSession & { userId?: string };
+    return value.userId === userId &&
+      typeof value.token === 'string' &&
+      !!value.token &&
+      typeof value.baselineIssuedAt === 'string' &&
+      Date.parse(value.expiresAt) > Date.now()
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+export function sessionForIdentity(
+  previousUserId: string | undefined,
+  nextUserId: string,
+  session: SyncSession | null,
+) {
+  return previousUserId === nextUserId && session && Date.parse(session.expiresAt) > Date.now()
+    ? session
+    : null;
+}
+export async function clearSignIn(
+  revoke: () => Promise<unknown>,
+  persistent: Pick<Storage, 'removeItem'>,
+  tab: Pick<Storage, 'removeItem'>,
+): Promise<'remote' | 'storage' | null> {
+  let failure: 'remote' | 'storage' | null = null;
+  try {
+    await revoke();
+  } catch {
+    failure = 'remote';
+  }
+  for (const [storage, key] of [
+    [persistent, identityKey],
+    [tab, 'ezerd.sync.session'],
+  ] as const) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      failure = 'storage';
+    }
+  }
+  return failure;
+}
 export function App() {
   const { t, locale } = useI18n();
   const [editingLanguage, setEditingLanguage] = useState(false);
@@ -261,30 +311,45 @@ export function App() {
   useEffect(() => {
     let live = true;
     let id: string | null = null;
+    let candidate: SyncSession | null = null;
+    const clearCached = () =>
+      clearSignIn(
+        async () => {},
+        { removeItem: (key) => localStorage.removeItem(key) },
+        { removeItem: (key) => sessionStorage.removeItem(key) },
+      );
     try {
       id = localStorage.getItem(identityKey);
-      const storedSession = sessionStorage.getItem('ezerd.sync.session');
-      if (storedSession) {
-        const parsed = JSON.parse(storedSession) as SyncSession;
-        if (Date.parse(parsed.expiresAt) > Date.now()) setSession(parsed);
-      }
+      candidate = cachedIdentitySession(sessionStorage.getItem('ezerd.sync.session'), id);
     } catch {
-      /* private browser storage may be unavailable */
+      /* Private browser storage may be unavailable. */
     }
-    if (!id) {
+    if (!id || !candidate) {
+      void clearCached();
       setChecking(false);
       return;
     }
-    void request(`/api/users/${encodeURIComponent(id)}`)
+    const validatedCandidate = candidate;
+    void request(`/api/users/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${validatedCandidate.token}` },
+    })
       .then((value) => {
         if (live) {
           const restored = userSchema.parse(value);
+          setSession(validatedCandidate);
           setUser(restored);
           setUsername(restored.username);
         }
       })
-      .catch((e) => {
-        if (live) setError(message(e));
+      .catch(async (e) => {
+        if (!live) return;
+        if (e instanceof ApiError && [401, 403, 404].includes(e.status)) {
+          await clearCached();
+          if (!live) return;
+          setSession(null);
+          setUser(null);
+        }
+        setError(message(e));
       })
       .finally(() => {
         if (live) setChecking(false);
@@ -420,7 +485,7 @@ export function App() {
                 body('POST', { username: username.trim(), pin: registrationPin }),
               ),
             ));
-      let nextSession = session;
+      let nextSession = sessionForIdentity(user?.id, value.id, session);
       if (!nextSession) {
         const result = await request<{
           token: string;
@@ -434,7 +499,10 @@ export function App() {
         };
         setSession(nextSession);
         try {
-          sessionStorage.setItem('ezerd.sync.session', JSON.stringify(nextSession));
+          sessionStorage.setItem(
+            'ezerd.sync.session',
+            JSON.stringify({ ...nextSession, userId: value.id }),
+          );
         } catch {
           /* Login remains valid in this tab. */
         }
@@ -602,6 +670,47 @@ export function App() {
     if (autosave.current.timer) clearTimeout(autosave.current.timer);
     autosave.current = { composing: false };
     void runtime.current?.edit(document);
+  }
+  async function signOut() {
+    if (busy) return;
+    setBusy(true);
+    navigation.current.begin();
+    if (autosave.current.timer) clearTimeout(autosave.current.timer);
+    autosave.current = { composing: false };
+    runtime.current?.stop();
+    setEditingName(false);
+    setEditingColor(false);
+    setEditingLanguage(false);
+    setEditingMcp(false);
+    const failure = await clearSignIn(
+      () =>
+        request('/api/sessions/logout', { ...body('POST', {}), signal: AbortSignal.timeout(5000) }),
+      { removeItem: (key) => localStorage.removeItem(key) },
+      { removeItem: (key) => sessionStorage.removeItem(key) },
+    );
+    replaceProject(null);
+    resetReview();
+    setSession(null);
+    setUser(null);
+    setUsername('');
+    setRegistrationPin('');
+    setWorkspaces([]);
+    setWorkspaceId('');
+    setProjects([]);
+    setMembers([]);
+    setRenamingProject(null);
+    setCommentsOpen(false);
+    setProjectName('');
+    setSearch('');
+    setStatus('active');
+    setBusy(false);
+    setError(
+      failure === 'remote'
+        ? t('이 브라우저에서 로그아웃했습니다. 서버 세션 종료는 확인하지 못했습니다.')
+        : failure === 'storage'
+          ? t('브라우저의 로그인 정보를 지우지 못했습니다. 이 탭을 닫아 주세요.')
+          : '',
+    );
   }
   async function leave() {
     if (
@@ -773,6 +882,14 @@ export function App() {
                   setEditingColor(false);
                   setEditingMcp(false);
                   setEditingLanguage(true);
+                },
+              },
+              {
+                id: 'sign-out',
+                label: t('로그아웃'),
+                disabled: busy,
+                onAction: () => {
+                  void signOut();
                 },
               },
               {

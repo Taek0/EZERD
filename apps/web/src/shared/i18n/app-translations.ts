@@ -1,6 +1,11 @@
 import { registerTranslations } from './index.js';
 
 registerTranslations({
+  로그아웃: 'Sign out',
+  '이 브라우저에서 로그아웃했습니다. 서버 세션 종료는 확인하지 못했습니다.':
+    'You are signed out in this browser. Server session revocation could not be confirmed.',
+  '브라우저의 로그인 정보를 지우지 못했습니다. 이 탭을 닫아 주세요.':
+    'Could not clear the browser sign-in information. Please close this tab.',
   '알림의 댓글을 찾을 수 없습니다.': 'The comment for this notification could not be found.',
   '이 브라우저에서는 이름을 기억할 수 없습니다. 다음 방문에 이름을 다시 설정해 주세요.':
     'This browser cannot remember your name. Please set it again on your next visit.',

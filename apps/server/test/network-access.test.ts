@@ -76,7 +76,7 @@ describe('LAN network access', () => {
   });
 
   it('rejects a WebSocket upgrade before session authentication', () => {
-    const sessions = { authenticateToken: vi.fn() };
+    const sessions = { authenticateToken: vi.fn(), onSessionRevoked: () => () => undefined };
     const network = { isAllowed: vi.fn(() => false) };
     const gateway = new SyncGateway(
       {} as never,

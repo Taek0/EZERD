@@ -1,4 +1,5 @@
 import type { IncomingMessage, Server } from 'node:http';
+import { createHash } from 'node:crypto';
 import type { Duplex } from 'node:stream';
 import { Inject, Injectable } from '@nestjs/common';
 import type { OnApplicationShutdown } from '@nestjs/common';
@@ -25,6 +26,7 @@ export class SyncGateway implements OnApplicationShutdown {
   private headTimer?: NodeJS.Timeout;
   private server?: Server;
   private readonly stopAccessListener: () => void;
+  private readonly stopSessionListener: () => void;
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SessionService) private readonly sessions: SessionService,
@@ -32,6 +34,11 @@ export class SyncGateway implements OnApplicationShutdown {
     @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
     @Inject(WorkspaceEventsService) events: WorkspaceEventsService,
   ) {
+    this.stopSessionListener = sessions.onSessionRevoked((tokenHash) => {
+      for (const client of [...this.clients])
+        if (createHash('sha256').update(client.token).digest('hex') === tokenHash)
+          this.close(client);
+    });
     this.stopAccessListener = events.onAccessChanged(({ workspaceId, userId }) => {
       for (const client of [...this.clients])
         if (
@@ -164,6 +171,7 @@ export class SyncGateway implements OnApplicationShutdown {
       client.socket.close(1008);
   }
   onApplicationShutdown(): void {
+    this.stopSessionListener();
     this.stopAccessListener();
     if (this.headTimer) clearInterval(this.headTimer);
     if (this.server) this.server.off('upgrade', this.upgrade);

@@ -414,6 +414,30 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       );
     });
 
+    it('revokes only the current login session and immediately closes its live subscriptions', async () => {
+      const second = await api(
+        '/sessions',
+        'POST',
+        { userId: accounts.viewer!.id, pin: '0424' },
+        'none',
+      );
+      accounts.secondViewer = { ...accounts.viewer!, token: second.data.token };
+      const current = await subscribe('viewer');
+      const other = await subscribe('secondViewer');
+      await Promise.all([current.response, other.response]);
+      const closed = once(current.socket, 'close');
+      expect((await api('/sessions/logout', 'POST', {}, 'none')).status).toBe(401);
+      const revoked = await api('/sessions/logout', 'POST', {}, 'viewer');
+      expect(revoked.status).toBe(201);
+      expect(revoked.data).toEqual({ revoked: true });
+      expect((await closed)[0]).toBe(1008);
+      expect((await api(`/projects/${projectId}`, 'GET', undefined, 'viewer')).status).toBe(401);
+      expect((await api(`/projects/${projectId}`, 'GET', undefined, 'secondViewer')).status).toBe(
+        200,
+      );
+      expect(other.socket.readyState).toBe(WebSocket.OPEN);
+    });
+
     it('transfers only explicit legacy identities atomically, preserves all rows, and safely reruns', async () => {
       const client = await pool.connect();
       const legacyId = randomUUID();
