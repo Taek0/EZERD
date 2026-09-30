@@ -27,3 +27,4 @@ export * from './personal.js';
 export * from './table-geometry.js';
 export * from './table-canvas.js';
 export * from './postgres-types.js';
+export * from './database/index.js';

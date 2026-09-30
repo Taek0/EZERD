@@ -62,6 +62,7 @@
 | 부동 소수 | float, double | precision 별칭; deprecated (M,D), unsigned, zerofill 구문은 별도 레거시 처리 | T1 |
 | 비트 | bit | bitLength 1~64 | T1 |
 | 논리 별칭 | bool, boolean | tinyint(1) 별칭으로 정의; 0/1 제약을 자동 생성하지 않음 | T1 |
+| 생성 별칭 | serial | BIGINT UNSIGNED + NOT NULL + AUTO_INCREMENT + UNIQUE로 해석. PG serial과 전역 공통 별칭으로 묶지 않음 | T1/F1 |
 | 날짜·시간 | date, datetime, timestamp, time, year | fractional precision, 시간 기본값 및 ON UPDATE; YEAR(4) 대신 YEAR | T1 |
 | 문자 | char, varchar | 문자 길이, charset/collation 정책 | T1 |
 | 이진 | binary, varbinary | 바이트 길이 | T1 |
