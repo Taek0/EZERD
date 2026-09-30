@@ -4,6 +4,7 @@ import { MCP_TOKEN_PREFIX, McpTokenService, hashMcpToken } from '../src/mcp/mcp-
 import { RateLimitService } from '../src/shared/rate-limit.service.js';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
+import { McpAuthService } from '../src/mcp/mcp-auth.service.js';
 
 it('only deletes revoked token records belonging to the authenticated owner', async () => {
   const userId = crypto.randomUUID(),
@@ -41,6 +42,34 @@ it('rejects a missing, active or other-owner token without logging a deletion', 
 });
 
 describe('MCP tokens', () => {
+  it('checks current token ownership, expiry and revocation for every tool execution', async () => {
+    const tokenId = crypto.randomUUID(),
+      userId = crypto.randomUUID();
+    let predicate: SQL | undefined;
+    let rows = [{ id: tokenId }];
+    const database = {
+      db: {
+        select: () => ({
+          from: () => ({
+            innerJoin: () => ({
+              where: async (condition: SQL) => {
+                predicate = condition;
+                return rows;
+              },
+            }),
+          }),
+        }),
+      },
+    };
+    const auth = new McpAuthService(database as never);
+    await expect(auth.assertActiveToken(tokenId, userId)).resolves.toBeUndefined();
+    const query = new PgDialect().sqlToQuery(predicate!);
+    expect(query.params.slice(0, 2)).toEqual([tokenId, userId]);
+    expect(query.sql).toContain('"mcp_tokens"."expires_at" >');
+    expect(query.sql).toContain('"mcp_tokens"."revoked_at" is null');
+    rows = [];
+    await expect(auth.assertActiveToken(tokenId, userId)).rejects.toMatchObject({ status: 401 });
+  });
   it('returns the secret once while storing only its SHA-256 hash', async () => {
     let inserted: Record<string, unknown> | undefined;
     const database = {

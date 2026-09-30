@@ -11,8 +11,10 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
   let app: NestExpressApplication;
   let pool: pg.Pool;
   let base: string;
-  let userA: { id: string; session: string };
-  let userB: { id: string; session: string };
+  let userA: { id: string; username: string; session: string };
+  let userB: { id: string; username: string; session: string };
+  let workspaceId: string;
+  const workspaces: string[] = [];
   const users: string[] = [];
   const projects: string[] = [];
 
@@ -42,7 +44,11 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     users.push(created.data.id);
     const login = await api('/sessions', 'POST', { userId: created.data.id, pin: '0012' });
     expect(login.status).toBe(201);
-    return { id: created.data.id as string, session: login.data.token as string };
+    return {
+      id: created.data.id as string,
+      username: created.data.username as string,
+      session: login.data.token as string,
+    };
   }
 
   async function issue(session: string, name: string) {
@@ -77,12 +83,45 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     process.env.MCP_PUBLIC_URL = `${base}/mcp`;
     userA = await createUser('a');
     userB = await createUser('b');
+    const space = await api('/workspaces', 'POST', { name: 'MCP integration' }, userA.session);
+    expect(space.status).toBe(201);
+    workspaceId = space.data.id;
+    workspaces.push(workspaceId);
+    const invitation = await api(
+      `/workspaces/${workspaceId}/invitations`,
+      'POST',
+      { username: userB.username, role: 'editor' },
+      userA.session,
+    );
+    expect(invitation.status).toBe(201);
+    expect(
+      (
+        await api(
+          `/workspace-invitations/${invitation.data.id}/accept`,
+          'POST',
+          undefined,
+          userB.session,
+        )
+      ).status,
+    ).toBe(201);
   });
 
   afterAll(async () => {
     if (pool) {
       if (projects.length)
         await pool.query('DELETE FROM projects WHERE id = ANY($1::uuid[])', [projects]);
+      if (workspaces.length) {
+        await pool.query('DELETE FROM user_workspaces WHERE workspace_id = ANY($1::uuid[])', [
+          workspaces,
+        ]);
+        await pool.query('DELETE FROM workspace WHERE workspace_id = ANY($1::uuid[])', [
+          workspaces,
+        ]);
+        await pool.query(
+          'DELETE FROM workspace_audit_events WHERE workspace_id = ANY($1::uuid[])',
+          [workspaces],
+        );
+      }
       if (users.length) await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [users]);
       await pool.end();
     }
@@ -167,6 +206,211 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     ).toBe(401);
   });
 
+  it('enforces workspace lifecycle, viewer limits and revoked membership through MCP', async () => {
+    const tokenA = await issue(userA.session, 'workspace owner');
+    const tokenB = await issue(userB.session, 'workspace viewer');
+    const a = client(tokenA.token),
+      b = client(tokenB.token);
+    await a.instance.connect(a.transport);
+    await b.instance.connect(b.transport);
+    const call = async (connection: typeof a, name: string, args: Record<string, unknown> = {}) => {
+      const result = await connection.instance.callTool({ name, arguments: args });
+      expect(result.isError, `${name}: ${JSON.stringify(result.content)}`).not.toBe(true);
+      return result.structuredContent as Record<string, any>;
+    };
+    try {
+      expect(await call(a, 'whoami')).toMatchObject({ userId: userA.id, username: userA.username });
+      const space = await call(a, 'create_workspace', { name: 'MCP private workspace' });
+      const id = space.id as string;
+      workspaces.push(id);
+      expect((await call(a, 'list_workspaces')).workspaces).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id })]),
+      );
+      expect(
+        (await b.instance.callTool({ name: 'get_workspace', arguments: { workspaceId: id } }))
+          .isError,
+      ).toBe(true);
+      let invitation = await call(a, 'create_workspace_invitation', {
+        workspaceId: id,
+        invitation: { username: userB.username, role: 'viewer' },
+      });
+      expect(
+        (await call(a, 'list_workspace_invitations', { workspaceId: id })).invitations,
+      ).toHaveLength(1);
+      expect((await call(b, 'list_my_workspace_invitations')).invitations).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: invitation.id })]),
+      );
+      expect(
+        (
+          await call(a, 'cancel_workspace_invitation', {
+            workspaceId: id,
+            invitationId: invitation.id,
+          })
+        ).status,
+      ).toBe('cancelled');
+      invitation = await call(a, 'create_workspace_invitation', {
+        workspaceId: id,
+        invitation: { username: userB.username, role: 'viewer' },
+      });
+      expect(
+        (await call(b, 'decline_workspace_invitation', { invitationId: invitation.id })).status,
+      ).toBe('declined');
+      invitation = await call(a, 'create_workspace_invitation', {
+        workspaceId: id,
+        invitation: { username: userB.username, role: 'viewer' },
+      });
+      expect(
+        (await call(b, 'accept_workspace_invitation', { invitationId: invitation.id })).status,
+      ).toBe('accepted');
+      expect(await call(b, 'get_workspace', { workspaceId: id })).toMatchObject({
+        id,
+        role: 'viewer',
+      });
+      expect((await call(b, 'list_workspace_members', { workspaceId: id })).members).toHaveLength(
+        2,
+      );
+      const project = await call(a, 'create_project', {
+        workspaceId: id,
+        name: 'Private MCP project',
+      });
+      const projectId = project.id as string;
+      projects.push(projectId);
+      expect(project.workspaceId).toBe(id);
+      expect((await call(b, 'list_projects', { workspaceId: id })).projects).toHaveLength(1);
+      await call(b, 'get_project_summary', { projectId });
+      const transfer = await call(b, 'export_project', { projectId });
+      expect(transfer.project).toEqual({ name: project.name });
+      expect(
+        (
+          await b.instance.callTool({
+            name: 'create_project',
+            arguments: { workspaceId: id, name: 'Viewer denied' },
+          })
+        ).isError,
+      ).toBe(true);
+      expect(
+        (
+          await b.instance.callTool({
+            name: 'import_project',
+            arguments: { workspaceId: id, transfer },
+          })
+        ).isError,
+      ).toBe(true);
+      expect(
+        (
+          await b.instance.callTool({
+            name: 'apply_project_changes',
+            arguments: {
+              projectId,
+              expectedVersion: 0,
+              expectedSequence: 0,
+              operationId: randomUUID(),
+              groupId: randomUUID(),
+              clientId: randomUUID(),
+              commands: [
+                { type: 'upsert_domain', value: { id: 'denied', name: 'Denied', description: '' } },
+              ],
+            },
+          })
+        ).isError,
+      ).toBe(true);
+      await call(b, 'create_review_thread', {
+        projectId,
+        thread: {
+          viewId: 'overview',
+          objectId: null,
+          x: 0,
+          y: 0,
+          body: 'Viewer review',
+          mentionIds: [],
+        },
+      });
+      await call(b, 'apply_personal_changes', {
+        projectId,
+        expectedVersion: 0,
+        operationId: randomUUID(),
+        commands: [{ type: 'set_viewport', value: { viewId: 'overview', x: 10, y: 0, zoom: 1 } }],
+      });
+      await call(a, 'update_workspace', { workspaceId: id, update: { status: 'archived' } });
+      expect(
+        (
+          await b.instance.callTool({
+            name: 'create_review_thread',
+            arguments: {
+              projectId,
+              thread: {
+                viewId: 'overview',
+                objectId: null,
+                x: 0,
+                y: 0,
+                body: 'Archived denied',
+                mentionIds: [],
+              },
+            },
+          })
+        ).isError,
+      ).toBe(true);
+      await call(b, 'get_project', { projectId });
+      await call(a, 'update_workspace', {
+        workspaceId: id,
+        update: { status: 'active', name: 'Renamed space' },
+      });
+      expect(
+        (
+          await call(a, 'update_workspace_member', {
+            workspaceId: id,
+            userId: userB.id,
+            update: { role: 'editor' },
+          })
+        ).role,
+      ).toBe('editor');
+      await call(a, 'remove_workspace_member', { workspaceId: id, userId: userB.id });
+      for (const name of [
+        'get_project',
+        'get_project_summary',
+        'get_project_history',
+        'list_review_threads',
+        'get_personal_state',
+        'export_project',
+        'diagnose_project',
+      ]) {
+        const rejected = await b.instance.callTool({ name, arguments: { projectId } });
+        expect(rejected.isError, name).toBe(true);
+        expect(rejected.structuredContent).toBeUndefined();
+      }
+      expect(
+        (await call(b, 'list_projects')).projects.some(
+          (item: { id: string }) => item.id === projectId,
+        ),
+      ).toBe(false);
+      invitation = await call(a, 'create_workspace_invitation', {
+        workspaceId: id,
+        invitation: { username: userB.username, role: 'viewer' },
+      });
+      await call(b, 'accept_workspace_invitation', { invitationId: invitation.id });
+      await call(b, 'leave_workspace', { workspaceId: id });
+      expect(
+        (await a.instance.callTool({ name: 'leave_workspace', arguments: { workspaceId: id } }))
+          .isError,
+      ).toBe(true);
+      expect(
+        (await a.instance.callTool({ name: 'delete_workspace', arguments: { workspaceId: id } }))
+          .isError,
+      ).toBe(true);
+      const archived = await call(a, 'update_project', {
+        projectId,
+        update: { expectedVersion: 0, status: 'archived' },
+      });
+      await call(a, 'delete_project', { projectId, delete: { expectedVersion: archived.version } });
+      projects.splice(projects.indexOf(projectId), 1);
+      await call(a, 'delete_workspace', { workspaceId: id });
+      workspaces.splice(workspaces.indexOf(id), 1);
+    } finally {
+      await a.instance.close();
+      await b.instance.close();
+    }
+  });
+
   it('executes every MCP tool with concurrency, replay and actor protections', async () => {
     const tokenA = await issue(userA.session, 'tool actor A');
     const tokenB = await issue(userB.session, 'tool actor B');
@@ -176,12 +420,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(28);
+      expect(listedTools.tools).toHaveLength(44);
       const list = await a.instance.callTool({ name: 'list_projects', arguments: {} });
       expect(list.isError).not.toBe(true);
       const created = await a.instance.callTool({
         name: 'create_project',
-        arguments: { name: 'MCP integration' },
+        arguments: { workspaceId, name: 'MCP integration' },
       });
       const project = created.structuredContent as { id: string; version: number };
       projects.push(project.id);
@@ -451,7 +695,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
   });
 
   it('stores combined views per user and exposes them to MCP and the web API', async () => {
-    const created = await api('/projects', 'POST', { name: 'Personal MCP views' }, userA.session);
+    const created = await api(
+      '/projects',
+      'POST',
+      { workspaceId, name: 'Personal MCP views' },
+      userA.session,
+    );
     expect(created.status).toBe(201);
     const projectId = created.data.id as string;
     projects.push(projectId);
@@ -732,7 +981,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       const imported = await a.instance.callTool({
         name: 'import_project',
-        arguments: { transfer: transfer.structuredContent },
+        arguments: { workspaceId, transfer: transfer.structuredContent },
       });
       expect(imported.isError).not.toBe(true);
       const importedId = (imported.structuredContent as { id: string }).id;
@@ -758,7 +1007,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       for (let index = 0; index < 3; index++) {
         const created = await connection.instance.callTool({
           name: 'create_project',
-          arguments: { name: `${search}-${index}` },
+          arguments: { workspaceId, name: `${search}-${index}` },
         });
         projects.push((created.structuredContent as { id: string }).id);
       }

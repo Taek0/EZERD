@@ -3,6 +3,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   createMessageSchema,
+  createWorkspaceSchema,
+  createWorkspaceInvitationSchema,
   createProjectSchema,
   createThreadSchema,
   deleteProjectSchema,
@@ -18,13 +20,20 @@ import {
   updateProjectSchema,
   updateNotificationSchema,
   updateThreadSchema,
+  updateWorkspaceSchema,
+  updateWorkspaceMemberSchema,
+  workspaceSchema,
+  workspaceMemberSchema,
+  workspaceInvitationSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState } from '@ezerd/model';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { ReviewService } from '../review/review.service.js';
 import { WorkspaceService } from '../workspace/workspace.service.js';
+import { SpaceService } from '../workspace/space.service.js';
 import { SyncService } from '../sync/sync.service.js';
 import { McpLogger } from './logging.js';
+import { McpAuthService } from './mcp-auth.service.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
@@ -89,6 +98,8 @@ export class McpServerFactory {
     @Inject(SyncService) private readonly sync: SyncService,
     @Inject(McpDocumentService) private readonly documents: McpDocumentService,
     @Inject(McpPersonalService) private readonly personal: McpPersonalService,
+    @Inject(SpaceService) private readonly spaces: SpaceService,
+    @Inject(McpAuthService) private readonly auth: McpAuthService,
   ) {}
 
   create(user: AuthenticatedUser, tokenId: string, requestId: string): McpServer {
@@ -97,7 +108,8 @@ export class McpServerFactory {
       {
         capabilities: { tools: {} },
         instructions:
-          'EZERD 프로젝트와 리뷰를 조회하고 변경합니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
+          'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
+          ' active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
           '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view의 모든 페이지로 대상 뷰의 최신 배치를 확인하세요. 화면의 관계는 list_view_relations로 조회하세요. 결합 화면·개인 화면 위치는 get_personal_state로 개인 버전을 확인하고 apply_personal_changes로 변경하세요. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
@@ -116,7 +128,7 @@ export class McpServerFactory {
       this.invoke(tool, user, tokenId, requestId, callback);
     const projectState = async (projectId: string) => {
       const [shared, personal] = await Promise.all([
-        this.workspace.getProjectState(projectId),
+        this.workspace.getProjectState(user.id, projectId),
         this.personal.get(projectId, user),
       ]);
       return {
@@ -134,6 +146,8 @@ export class McpServerFactory {
       return result;
     };
 
+    this.registerWorkspaceTools(server, user, invoke);
+
     server.registerTool(
       'list_projects',
       {
@@ -147,7 +161,7 @@ export class McpServerFactory {
       },
       (input) =>
         invoke('list_projects', async () => {
-          const page = await this.workspace.listProjectsPage(input);
+          const page = await this.workspace.listProjectsPage(user.id, input);
           return {
             projects: z.array(projectSchema).parse(page.projects),
             nextCursor: page.nextCursor,
@@ -256,7 +270,7 @@ export class McpServerFactory {
       },
       ({ projectId, limit, cursor }) =>
         invoke('list_review_threads', async () => {
-          const page = await this.reviews.listPage(projectId, limit, cursor);
+          const page = await this.reviews.listPage(projectId, user.id, limit, cursor);
           return {
             threads: z.array(threadSchema.omit({ messages: true })).parse(page.threads),
             nextCursor: page.nextCursor,
@@ -273,7 +287,7 @@ export class McpServerFactory {
       },
       ({ threadId }) =>
         invoke('get_review_thread', async () =>
-          threadSchema.parse(await this.reviews.getThread(threadId)),
+          threadSchema.parse(await this.reviews.getThread(threadId, user.id)),
         ),
     );
     server.registerTool(
@@ -328,20 +342,20 @@ export class McpServerFactory {
       },
       (input) =>
         invoke('create_project', async () =>
-          projectSchema.parse(await this.workspace.createProject(input)),
+          projectSchema.parse(await this.workspace.createProject(user.id, input)),
         ),
     );
     server.registerTool(
       'import_project',
       {
         description: '검증된 EZERD 프로젝트 전송 문서를 새 프로젝트로 가져옵니다.',
-        inputSchema: z.strictObject({ transfer: projectTransferSchema }),
+        inputSchema: z.strictObject({ workspaceId: idSchema, transfer: projectTransferSchema }),
         outputSchema: projectSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
-      ({ transfer }) =>
+      (input) =>
         invoke('import_project', async () =>
-          projectSchema.parse(await this.workspace.importProject(transfer)),
+          projectSchema.parse(await this.workspace.importProject(user.id, input)),
         ),
     );
     server.registerTool(
@@ -354,7 +368,7 @@ export class McpServerFactory {
       },
       ({ projectId }) =>
         invoke('export_project', async () =>
-          projectTransferSchema.parse(await this.workspace.exportProject(projectId)),
+          projectTransferSchema.parse(await this.workspace.exportProject(user.id, projectId)),
         ),
     );
     server.registerTool(
@@ -367,7 +381,7 @@ export class McpServerFactory {
       },
       ({ projectId, update }) =>
         invoke('update_project', async () =>
-          projectSchema.parse(await this.workspace.updateProject(projectId, update)),
+          projectSchema.parse(await this.workspace.updateProject(user.id, projectId, update)),
         ),
     );
     server.registerTool(
@@ -379,7 +393,7 @@ export class McpServerFactory {
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       ({ projectId, delete: input }) =>
-        invoke('delete_project', () => this.workspace.deleteProject(projectId, input)),
+        invoke('delete_project', () => this.workspace.deleteProject(user.id, projectId, input)),
     );
     server.registerTool(
       'create_review_thread',
@@ -505,7 +519,7 @@ export class McpServerFactory {
       },
       ({ projectId, since, limit, ...options }) =>
         invoke('get_project_history', async () =>
-          projectHistory(await this.sync.historyPage(projectId, since, limit), options),
+          projectHistory(await this.sync.historyPage(user.id, projectId, since, limit), options),
         ),
     );
     server.registerTool(
@@ -564,6 +578,246 @@ export class McpServerFactory {
     return server;
   }
 
+  private registerWorkspaceTools(
+    server: McpServer,
+    user: AuthenticatedUser,
+    invoke: <T>(tool: string, callback: () => Promise<T>) => ReturnType<McpServerFactory['invoke']>,
+  ) {
+    const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+    const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+    const destructive = { ...write, destructiveHint: true };
+    const workspaceIdInput = z.strictObject({ workspaceId: idSchema });
+    const invitationIdInput = z.strictObject({ invitationId: idSchema });
+    const memberInput = workspaceIdInput.extend({ userId: idSchema });
+    server.registerTool(
+      'whoami',
+      {
+        description: '현재 MCP 토큰으로 인증된 사용자 ID, 이름과 색상을 조회합니다.',
+        inputSchema: z.strictObject({}),
+        outputSchema: z.strictObject({ userId: idSchema, username: z.string(), color: z.string() }),
+        annotations: read,
+      },
+      () =>
+        invoke('whoami', async () => ({
+          userId: user.id,
+          username: user.username,
+          color: user.color,
+        })),
+    );
+    server.registerTool(
+      'create_workspace',
+      {
+        description: '인증된 사용자를 owner로 지정하여 새 공간을 생성합니다.',
+        inputSchema: createWorkspaceSchema,
+        outputSchema: workspaceSchema,
+        annotations: write,
+      },
+      (input) =>
+        invoke('create_workspace', async () =>
+          workspaceSchema.parse(await this.spaces.createWorkspace(user.id, input)),
+        ),
+    );
+    server.registerTool(
+      'list_workspaces',
+      {
+        description: '인증된 사용자가 현재 멤버인 공간과 자신의 역할을 조회합니다.',
+        inputSchema: z.strictObject({}),
+        outputSchema: z.strictObject({ workspaces: z.array(workspaceSchema) }),
+        annotations: read,
+      },
+      () =>
+        invoke('list_workspaces', async () => ({
+          workspaces: z.array(workspaceSchema).parse(await this.spaces.listWorkspaces(user.id)),
+        })),
+    );
+    server.registerTool(
+      'get_workspace',
+      {
+        description: '공간과 인증된 사용자의 현재 역할을 조회합니다.',
+        inputSchema: workspaceIdInput,
+        outputSchema: workspaceSchema,
+        annotations: read,
+      },
+      ({ workspaceId }) =>
+        invoke('get_workspace', async () =>
+          workspaceSchema.parse(await this.spaces.getWorkspace(user.id, workspaceId)),
+        ),
+    );
+    server.registerTool(
+      'update_workspace',
+      {
+        description: 'owner가 공간 이름 또는 보관 상태를 변경합니다.',
+        inputSchema: workspaceIdInput.extend({ update: updateWorkspaceSchema }),
+        outputSchema: workspaceSchema,
+        annotations: write,
+      },
+      ({ workspaceId, update }) =>
+        invoke('update_workspace', async () =>
+          workspaceSchema.parse(
+            await this.spaces.updateWorkspace(user.id, workspaceId, {
+              ...(update.name !== undefined ? { name: update.name } : {}),
+              ...(update.status !== undefined ? { status: update.status } : {}),
+            }),
+          ),
+        ),
+    );
+    server.registerTool(
+      'delete_workspace',
+      {
+        description: 'owner가 프로젝트가 없는 공간을 영구 삭제합니다.',
+        inputSchema: workspaceIdInput,
+        outputSchema: z.strictObject({ deleted: z.literal(true) }),
+        annotations: destructive,
+      },
+      ({ workspaceId }) =>
+        invoke('delete_workspace', () => this.spaces.deleteWorkspace(user.id, workspaceId)),
+    );
+    server.registerTool(
+      'list_workspace_members',
+      {
+        description: '공간의 현재 멤버와 역할을 조회합니다.',
+        inputSchema: workspaceIdInput,
+        outputSchema: z.strictObject({ members: z.array(workspaceMemberSchema) }),
+        annotations: read,
+      },
+      ({ workspaceId }) =>
+        invoke('list_workspace_members', async () => ({
+          members: z
+            .array(workspaceMemberSchema)
+            .parse(await this.spaces.listMembers(user.id, workspaceId)),
+        })),
+    );
+    server.registerTool(
+      'update_workspace_member',
+      {
+        description: 'owner가 멤버 역할을 변경합니다. 마지막 owner의 강등은 거부됩니다.',
+        inputSchema: memberInput.extend({ update: updateWorkspaceMemberSchema }),
+        outputSchema: workspaceMemberSchema,
+        annotations: write,
+      },
+      ({ workspaceId, userId, update }) =>
+        invoke('update_workspace_member', async () =>
+          workspaceMemberSchema.parse(
+            await this.spaces.updateMember(user.id, workspaceId, userId, update),
+          ),
+        ),
+    );
+    server.registerTool(
+      'remove_workspace_member',
+      {
+        description: 'owner가 공간 멤버를 제거합니다. 마지막 owner의 제거는 거부됩니다.',
+        inputSchema: memberInput,
+        outputSchema: z.strictObject({ removed: z.literal(true) }),
+        annotations: destructive,
+      },
+      ({ workspaceId, userId }) =>
+        invoke('remove_workspace_member', () =>
+          this.spaces.removeMember(user.id, workspaceId, userId),
+        ),
+    );
+    server.registerTool(
+      'leave_workspace',
+      {
+        description: '인증된 사용자가 공간에서 탈퇴합니다. 마지막 owner의 탈퇴는 거부됩니다.',
+        inputSchema: workspaceIdInput,
+        outputSchema: z.strictObject({ removed: z.literal(true) }),
+        annotations: destructive,
+      },
+      ({ workspaceId }) =>
+        invoke('leave_workspace', () => this.spaces.leaveWorkspace(user.id, workspaceId)),
+    );
+    server.registerTool(
+      'create_workspace_invitation',
+      {
+        description: 'owner가 앱 내부 사용자명으로 공간 초대를 생성합니다.',
+        inputSchema: workspaceIdInput.extend({ invitation: createWorkspaceInvitationSchema }),
+        outputSchema: workspaceInvitationSchema,
+        annotations: write,
+      },
+      ({ workspaceId, invitation }) =>
+        invoke('create_workspace_invitation', async () =>
+          workspaceInvitationSchema.parse(
+            await this.spaces.createInvitation(user.id, workspaceId, invitation),
+          ),
+        ),
+    );
+    server.registerTool(
+      'list_workspace_invitations',
+      {
+        description: 'owner가 공간의 초대 상태를 조회합니다.',
+        inputSchema: workspaceIdInput,
+        outputSchema: z.strictObject({ invitations: z.array(workspaceInvitationSchema) }),
+        annotations: read,
+      },
+      ({ workspaceId }) =>
+        invoke('list_workspace_invitations', async () => ({
+          invitations: z
+            .array(workspaceInvitationSchema)
+            .parse(await this.spaces.listInvitations(user.id, workspaceId)),
+        })),
+    );
+    server.registerTool(
+      'list_my_workspace_invitations',
+      {
+        description: '인증된 사용자에게 온 공간 초대를 조회합니다.',
+        inputSchema: z.strictObject({}),
+        outputSchema: z.strictObject({ invitations: z.array(workspaceInvitationSchema) }),
+        annotations: read,
+      },
+      () =>
+        invoke('list_my_workspace_invitations', async () => ({
+          invitations: z
+            .array(workspaceInvitationSchema)
+            .parse(await this.spaces.invitationInbox(user.id)),
+        })),
+    );
+    server.registerTool(
+      'accept_workspace_invitation',
+      {
+        description: '인증된 사용자에게 온 유효한 공간 초대를 수락하고 멤버로 참여합니다.',
+        inputSchema: invitationIdInput,
+        outputSchema: workspaceInvitationSchema,
+        annotations: write,
+      },
+      ({ invitationId }) =>
+        invoke('accept_workspace_invitation', async () =>
+          workspaceInvitationSchema.parse(
+            await this.spaces.acceptInvitation(user.id, invitationId),
+          ),
+        ),
+    );
+    server.registerTool(
+      'decline_workspace_invitation',
+      {
+        description: '인증된 사용자에게 온 공간 초대를 거절합니다.',
+        inputSchema: invitationIdInput,
+        outputSchema: workspaceInvitationSchema,
+        annotations: write,
+      },
+      ({ invitationId }) =>
+        invoke('decline_workspace_invitation', async () =>
+          workspaceInvitationSchema.parse(
+            await this.spaces.declineInvitation(user.id, invitationId),
+          ),
+        ),
+    );
+    server.registerTool(
+      'cancel_workspace_invitation',
+      {
+        description: 'owner가 공간의 대기 중인 초대를 취소합니다.',
+        inputSchema: workspaceIdInput.extend({ invitationId: idSchema }),
+        outputSchema: workspaceInvitationSchema,
+        annotations: write,
+      },
+      ({ workspaceId, invitationId }) =>
+        invoke('cancel_workspace_invitation', async () =>
+          workspaceInvitationSchema.parse(
+            await this.spaces.cancelInvitation(user.id, workspaceId, invitationId),
+          ),
+        ),
+    );
+  }
+
   private async invoke<T>(
     tool: string,
     user: AuthenticatedUser,
@@ -573,6 +827,7 @@ export class McpServerFactory {
   ) {
     const started = Date.now();
     try {
+      await this.auth.assertActiveToken(tokenId, user.id);
       let timer: NodeJS.Timeout | undefined;
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(

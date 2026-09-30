@@ -13,6 +13,7 @@ const now = new Date().toISOString();
 const properties = { common: {}, logical: {}, physical: {} };
 const project: Project = {
   id: crypto.randomUUID(),
+  workspaceId: crypto.randomUUID(),
   name: 'Scoped reads',
   status: 'active',
   version: 7,

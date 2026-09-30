@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { McpDocumentService } from '../src/mcp/mcp-document.service.js';
+import { ForbiddenException } from '@nestjs/common';
 
 const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
 const empty = {
@@ -31,6 +32,25 @@ const request = {
 };
 
 describe('MCP document changes', () => {
+  it('does not build or apply a document when the secured replay lookup denies current access', async () => {
+    const sync = {
+      findReplay: vi.fn(async () => {
+        throw new ForbiddenException('공간 접근 권한이 없습니다.');
+      }),
+      establishBaseline: vi.fn(),
+      apply: vi.fn(),
+    };
+    const service = new McpDocumentService(sync as never);
+    await expect(service.apply(request, actor)).rejects.toMatchObject({ status: 403 });
+    expect(sync.findReplay).toHaveBeenCalledWith(
+      request.projectId,
+      request.operationId,
+      expect.any(String),
+      actor,
+    );
+    expect(sync.establishBaseline).not.toHaveBeenCalled();
+    expect(sync.apply).not.toHaveBeenCalled();
+  });
   it('uses caller-observed version and sequence with a stable command fingerprint', async () => {
     const accepted = {
       operationId: request.operationId,
