@@ -26,11 +26,12 @@ import {
   findFieldVersionConflicts,
   findInverseConflicts,
   inverseChanges,
-  normalizeDocumentPhysicalTypes,
+  TABLES_VIEW_ID,
   requestFingerprint,
   sharedDocument,
 } from '@ezerd/model';
 import type { DesignDocument, DocumentChange } from '@ezerd/model';
+import { normalizeServerDocument } from '../shared/normalize-document.js';
 import { DatabaseService } from '../db/database.service.js';
 import {
   projects,
@@ -204,10 +205,10 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       }));
       if (!claimedChangesMatch(rawDerived, claimed))
         throw new BadRequestException('문서와 변경 목록이 일치하지 않습니다.');
-      // Verify the caller's raw claim before canonicalizing aliases. Normalization must
-      // neither disguise a forged claim nor add unrelated type paths to conflict tracking.
-      const baselineDocument = normalizeDocumentPhysicalTypes(input.baselineDocument);
-      const document = normalizeDocumentPhysicalTypes(input.document);
+      // Verify raw claims first: normalization must not disguise forged changes.
+      // Normalize both sides and the stored document to the same canvas baseline.
+      const baselineDocument = normalizeServerDocument(input.baselineDocument);
+      const document = normalizeServerDocument(input.document);
       const derived = deriveOperationChanges(baselineDocument, document);
       const dependencyPaths = deriveStructuralDependencyPaths(document, derived);
 
@@ -244,7 +245,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           baseline.lastSuccessfulSyncAt.getTime() !== issuedAt.getTime() ||
           baseline.lastSequence !== input.baseSequence ||
           input.baseSequence > project.syncSequence ||
-          requestFingerprint(sharedDocument(normalizeDocumentPhysicalTypes(baseline.document))) !==
+          requestFingerprint(sharedDocument(normalizeServerDocument(baseline.document))) !==
             requestFingerprint(baselineDocument) ||
           Date.now() - baseline.lastSuccessfulSyncAt.getTime() > RECONNECT_MAX_AGE_MS)
       ) {
@@ -273,7 +274,9 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       let acceptedChanges: DocumentChange[] = [];
       if (!reason) {
         try {
-          nextDocument = applyChanges(normalizeDocumentPhysicalTypes(project.document), derived);
+          nextDocument = normalizeServerDocument(
+            applyChanges(normalizeServerDocument(project.document), derived),
+          );
         } catch {
           reason = '변경 대상이 삭제되었거나 현재 문서에 없습니다.';
         }
@@ -284,7 +287,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         else {
           nextDocument = valid.data;
           acceptedChanges = deriveOperationChanges(
-            normalizeDocumentPhysicalTypes(project.document),
+            normalizeServerDocument(project.document),
             nextDocument,
           );
         }
@@ -470,7 +473,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           sequence: project.sequence,
           events: rows.map(eventFrom),
           resetRequired,
-          ...(resetRequired ? { document: normalizeDocumentPhysicalTypes(project.document) } : {}),
+          ...(resetRequired ? { document: normalizeServerDocument(project.document) } : {}),
         };
       },
       { isolationLevel: 'repeatable read', accessMode: 'read only' },
@@ -564,7 +567,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         );
       const now = new Date();
       const baselineId = randomUUID();
-      const document = sharedDocument(normalizeDocumentPhysicalTypes(project.document));
+      const document = sharedDocument(normalizeServerDocument(project.document));
       await tx.insert(syncClientBaselines).values({
         baselineId,
         projectId,
@@ -643,7 +646,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (snapshot && typeof snapshot === 'object' && typeof snapshot.id === 'string')
         idMap.set(snapshot.id, randomUUID());
     }
-    const existingIds = new Set<string>(['overview']);
+    const existingIds = new Set<string>(['overview', TABLES_VIEW_ID]);
     const collect = (items: unknown[] | undefined) =>
       items?.forEach((item) => {
         if (item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string')
@@ -716,7 +719,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     if (!changes.length)
       throw new ConflictException('현재 문서에 유효하게 복원할 객체가 없습니다.');
     const baseline = await this.establishBaseline(projectId, request.clientId, user);
-    let candidate = applyChanges(baseline.document, changes);
+    let candidate = normalizeServerDocument(applyChanges(baseline.document, changes));
     const restoredRelationIds = new Set(
       changes
         .filter((change) => change.path.startsWith('/tableRelations/'))
@@ -747,7 +750,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         }
         return true;
       });
-      candidate = applyChanges(baseline.document, filtered);
+      candidate = normalizeServerDocument(applyChanges(baseline.document, filtered));
       changes.splice(0, changes.length, ...filtered);
     }
     const parsedCandidate = designDocumentSchema.safeParse(candidate);

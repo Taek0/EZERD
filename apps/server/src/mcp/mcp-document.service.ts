@@ -20,6 +20,7 @@ import {
   addDomain,
   addNote,
   addTable,
+  TABLES_VIEW_ID,
   diffSharedDocument,
   removeColumn,
   removeDomain,
@@ -204,12 +205,12 @@ export class McpDocumentService {
           ? resize(
               updateTable(document, command.value.id, command.value),
               command.value.id,
-              command.value.domainId,
+              command.value.domainId ?? TABLES_VIEW_ID,
             )
           : resize(
               addTable(document, command.value, point),
               command.value.id,
-              command.value.domainId,
+              command.value.domainId ?? TABLES_VIEW_ID,
             );
       case 'delete_table':
         return removeTable(document, command.id);

@@ -46,6 +46,16 @@ const relation = (
 });
 
 describe('project gallery preview', () => {
+  it('includes unassigned tables without relying on domain membership or card color', () => {
+    const document = createEmptyDocument();
+    document.tables = [{ ...table('users'), domainId: null, color: '#123456' }];
+    document.columns = [column('id')];
+    expect(projectPreview(document)).toEqual({
+      tableCount: 1,
+      relationCount: 0,
+      tables: [{ name: 'users', columns: [{ name: 'id', type: 'INTEGER', primaryKey: false }] }],
+    });
+  });
   it('returns actual empty counts without invented tables', () => {
     expect(projectPreview(createEmptyDocument())).toEqual({
       tableCount: 0,

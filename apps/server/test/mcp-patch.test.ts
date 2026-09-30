@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEmptyDocument } from '@ezerd/model';
+import { createEmptyDocument, ensureTableCanvasLayout, TABLES_VIEW_ID } from '@ezerd/model';
 import { applyPatchCommand, patchCommandSchema } from '../src/mcp/mcp-patch.js';
 
 const properties = { common: {}, logical: {}, physical: {} };
@@ -71,6 +71,37 @@ function fixture() {
 }
 
 describe('MCP partial patches', () => {
+  it('sets and resets table colors while unassigning without moving the global card', () => {
+    const source = ensureTableCanvasLayout(fixture());
+    const global = source.layout.nodes.find((node) => node.viewId === TABLES_VIEW_ID)!;
+    const colored = applyPatchCommand(
+      source,
+      patchCommandSchema.parse({
+        type: 'patch_table',
+        id: 'orders',
+        patch: { color: '#aabbcc' },
+      }),
+    );
+    expect(colored.tables![0]!.color).toBe('#aabbcc');
+    const unassigned = applyPatchCommand(
+      colored,
+      patchCommandSchema.parse({
+        type: 'patch_table',
+        id: 'orders',
+        patch: { domainId: null, color: null },
+      }),
+    );
+    expect(unassigned.tables![0]!.domainId).toBeNull();
+    expect(unassigned.tables![0]!).not.toHaveProperty('color');
+    expect(unassigned.layout.nodes.find((node) => node.viewId === TABLES_VIEW_ID)).toEqual(global);
+    expect(
+      patchCommandSchema.safeParse({
+        type: 'patch_table',
+        id: 'orders',
+        patch: { color: 'red' },
+      }).success,
+    ).toBe(false);
+  });
   it('changes selected nested fields and preserves other properties', () => {
     let document = fixture();
     const commands = [

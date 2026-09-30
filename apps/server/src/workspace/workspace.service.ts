@@ -9,8 +9,13 @@ import {
 } from '@nestjs/common';
 import { and, asc, desc, eq, gt, ilike, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import { importProjectSchema, projectTransferSchema, type ProjectTransfer } from '@ezerd/contracts';
-import { diagnoseDocument, normalizeDocumentPhysicalTypes } from '@ezerd/model';
+import {
+  designDocumentSchema,
+  importProjectSchema,
+  projectTransferSchema,
+  type ProjectTransfer,
+} from '@ezerd/contracts';
+import { diagnoseDocument } from '@ezerd/model';
 import type {
   createProjectSchema,
   deleteProjectSchema,
@@ -18,6 +23,7 @@ import type {
   updateProjectSchema,
   Project,
 } from '@ezerd/contracts';
+import { normalizeServerDocument } from '../shared/normalize-document.js';
 import { DatabaseService } from '../db/database.service.js';
 import { projects, userWorkspaces, workspaceAuditEvents } from '../db/schema.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
@@ -102,7 +108,12 @@ export class WorkspaceService {
     if (!parsed.success)
       throw new BadRequestException('프로젝트 파일 형식, 버전 또는 크기를 확인해 주세요.');
     const { transfer: input, workspaceId } = parsed.data;
-    const issue = diagnoseDocument(input.document)[0];
+    const document = normalizeServerDocument(input.document);
+    if (!designDocumentSchema.safeParse(document).success)
+      throw new BadRequestException(
+        '전체 캔버스를 포함한 설계 데이터의 구조나 크기를 확인해 주세요.',
+      );
+    const issue = diagnoseDocument(document)[0];
     if (issue) throw new BadRequestException(`설계 데이터를 확인해 주세요: ${issue.message}`);
     return operation(async () => {
       // One row contains the whole design: insertion is atomic, with fresh DB defaults.
@@ -113,7 +124,7 @@ export class WorkspaceService {
             name: input.project.name,
             databaseKind: input.project.databaseKind ?? 'postgresql',
             workspaceId,
-            document: input.document,
+            document,
           })
           .returning();
         await tx.insert(workspaceAuditEvents).values({
@@ -204,7 +215,7 @@ export class WorkspaceService {
       this.access.runProject(actorId, id, 'read', async (tx) => {
         const [row] = await tx.select().from(projects).where(eq(projects.id, id));
         if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-        return { project: project(row), document: normalizeDocumentPhysicalTypes(row.document) };
+        return { project: project(row), document: normalizeServerDocument(row.document) };
       }),
     );
   }
@@ -216,7 +227,7 @@ export class WorkspaceService {
         if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
         return {
           project: project(row),
-          document: normalizeDocumentPhysicalTypes(row.document),
+          document: normalizeServerDocument(row.document),
           syncSequence: row.syncSequence,
         };
       }),

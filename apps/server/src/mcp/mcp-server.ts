@@ -194,7 +194,8 @@ export class McpServerFactory {
     server.registerTool(
       'list_tables',
       {
-        description: '테이블 이름과 ID를 도메인·검색어로 좁혀 최대 100개씩 조회합니다.',
+        description:
+          '테이블 이름과 ID를 도메인·검색어로 좁혀 최대 100개씩 조회합니다. domainId를 생략하면 전체, null이면 미소속 테이블을 조회합니다.',
         inputSchema: listTablesInputSchema,
         outputSchema: tableListSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -206,7 +207,7 @@ export class McpServerFactory {
       'get_project_view',
       {
         description:
-          '한 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. 테이블 컬럼은 포함하지 않습니다.',
+          '한 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. 전체 테이블 화면의 viewId는 __tables__입니다. 테이블 컬럼은 포함하지 않습니다.',
         inputSchema: projectViewInputSchema,
         outputSchema: projectViewSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { McpDocumentService } from '../src/mcp/mcp-document.service.js';
+import { McpDocumentService, mcpDocumentCommandSchema } from '../src/mcp/mcp-document.service.js';
+import { TABLES_VIEW_ID, type DesignDocument } from '@ezerd/model';
 import { ForbiddenException } from '@nestjs/common';
 
 const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
@@ -32,6 +33,116 @@ const request = {
 };
 
 describe('MCP document changes', () => {
+  it('creates a direct table, preserves its global placement across assignment and edits global geometry', async () => {
+    let document: DesignDocument = empty;
+    const sync = {
+      findReplay: vi.fn(async () => undefined),
+      establishBaseline: vi.fn(async () => ({
+        baselineId: crypto.randomUUID(),
+        sequence: 3,
+        baselineIssuedAt: new Date().toISOString(),
+        document,
+      })),
+      apply: vi.fn(async (_projectId, operation) => {
+        document = operation.document;
+        return { status: 'accepted' as const, document };
+      }),
+    };
+    const service = new McpDocumentService(sync as never);
+    const table = {
+      id: 'orders',
+      domainId: null,
+      color: '#123456',
+      scope: 'both' as const,
+      logical: { name: 'Orders', definition: '' },
+      physical: { name: 'orders', schema: 'public', comment: '' },
+      customProperties: { common: {}, logical: {}, physical: {} },
+    };
+    await service.apply(
+      {
+        ...request,
+        commands: [
+          {
+            type: 'upsert_table',
+            value: table,
+            placement: { x: 10, y: 20, width: 400, height: 280 },
+          },
+        ],
+      },
+      actor,
+    );
+    const global = document.layout.nodes.find((node) => node.objectId === 'orders')!;
+    expect(global).toMatchObject({ viewId: TABLES_VIEW_ID, x: 10, y: 20, width: 400, height: 280 });
+    await service.apply(
+      {
+        ...request,
+        operationId: crypto.randomUUID(),
+        commands: [
+          { type: 'upsert_domain', value: { id: 'sales', name: 'Sales', description: '' } },
+          { type: 'patch_table', id: 'orders', patch: { domainId: 'sales' } },
+          { type: 'update_node_layout', nodeId: global.id, patch: { x: 600 } },
+          {
+            type: 'upsert_table_relation',
+            value: {
+              id: 'self',
+              sourceTableId: 'orders',
+              targetTableId: 'orders',
+              scope: 'logical',
+              logical: { name: 'Self', cardinality: 'one-to-many', required: false },
+              physical: null,
+            },
+          },
+          {
+            type: 'upsert_relation_layout',
+            value: {
+              viewId: TABLES_VIEW_ID,
+              relationId: 'self',
+              offset: 12,
+            },
+          },
+        ],
+      },
+      actor,
+    );
+    expect(document.layout.nodes.find((node) => node.id === global.id)).toMatchObject({
+      x: 600,
+      y: 20,
+      width: 400,
+      height: 280,
+      viewId: TABLES_VIEW_ID,
+    });
+    expect(
+      document.layout.nodes.find((node) => node.objectId === 'orders' && node.viewId === 'sales'),
+    ).toMatchObject({ x: 10, y: 20 });
+    expect(document.tables![0]!).toMatchObject({ domainId: 'sales', color: '#123456' });
+    await service.apply(
+      {
+        ...request,
+        operationId: crypto.randomUUID(),
+        commands: [
+          { type: 'patch_table', id: 'orders', patch: { domainId: null, color: null } },
+          { type: 'delete_relation_layout', relationId: 'self', viewId: TABLES_VIEW_ID },
+        ],
+      },
+      actor,
+    );
+    expect(document.tables![0]!.domainId).toBeNull();
+    expect(document.tables![0]!).not.toHaveProperty('color');
+    expect(document.layout.nodes.filter((node) => node.objectId === 'orders')).toHaveLength(1);
+    expect(document.layout.relations).toEqual([]);
+    for (const id of ['overview', TABLES_VIEW_ID]) {
+      expect(
+        mcpDocumentCommandSchema.safeParse({ type: 'upsert_table', value: { ...table, id } })
+          .success,
+      ).toBe(false);
+      expect(
+        mcpDocumentCommandSchema.safeParse({
+          type: 'upsert_domain',
+          value: { id, name: 'Reserved', description: '' },
+        }).success,
+      ).toBe(false);
+    }
+  });
   it('does not build or apply a document when the secured replay lookup denies current access', async () => {
     const sync = {
       findReplay: vi.fn(async () => {

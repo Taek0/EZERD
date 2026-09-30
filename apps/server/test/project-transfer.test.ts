@@ -6,7 +6,16 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
-import { createEmptyDocument, addDomain, addNote } from '@ezerd/model';
+import {
+  createEmptyDocument,
+  addDomain,
+  addNote,
+  addTable,
+  diagnoseDocument,
+  ensureTableCanvasLayout,
+  TABLES_VIEW_ID,
+} from '@ezerd/model';
+import { designDocumentSchema, MAX_DOCUMENT_BYTES } from '@ezerd/contracts';
 import { WorkspaceService } from '../src/workspace/workspace.service.js';
 import { WorkspaceController } from '../src/workspace/workspace.controller.js';
 
@@ -58,6 +67,155 @@ function setup(fail = false) {
   return { service: new WorkspaceService({ db } as never, access as never), db, inserted, access };
 }
 describe('project file transfer', () => {
+  it.each(['bytes', 'nodes'] as const)(
+    'rejects legacy imports exceeding normalized %s limits before insertion',
+    (limit) => {
+      const legacy = addTable(
+        structuredClone(document),
+        {
+          id: 't',
+          domainId: 'domain',
+          scope: 'both',
+          logical: { name: 'T', definition: '' },
+          physical: { name: 't', schema: 'public', comment: '' },
+          customProperties: { common: {}, logical: {}, physical: {} },
+        },
+        { x: 0, y: 0 },
+      );
+      legacy.layout.nodes = legacy.layout.nodes.filter((node) => node.viewId !== TABLES_VIEW_ID);
+      if (limit === 'bytes') {
+        for (let index = 0; index < 74; index++) {
+          legacy.notes.push({ id: `padding${index}`, viewId: 'overview', text: 'x'.repeat(20000) });
+          legacy.layout.nodes.push({
+            id: `np${index}`,
+            objectId: `padding${index}`,
+            viewId: 'overview',
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+          });
+        }
+        const padding = { id: 'remaining', viewId: 'overview', text: '' };
+        legacy.notes.push(padding);
+        legacy.layout.nodes.push({
+          id: 'nr',
+          objectId: 'remaining',
+          viewId: 'overview',
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        });
+        const remaining =
+          MAX_DOCUMENT_BYTES - Buffer.byteLength(JSON.stringify(legacy), 'utf8') - 32;
+        expect(remaining).toBeGreaterThan(0);
+        expect(remaining).toBeLessThanOrEqual(20000);
+        padding.text = 'x'.repeat(remaining);
+      } else {
+        legacy.notes = [];
+        legacy.domains = Array.from({ length: 1000 }, (_, index) => ({
+          id: `d${index}`,
+          name: '',
+          description: '',
+        }));
+        legacy.tables = Array.from({ length: 11 }, (_, index) => ({
+          ...legacy.tables![0]!,
+          id: `t${index}`,
+          domainId: 'd0',
+        }));
+        legacy.layout.nodes = legacy.domains.map((domain, index) => ({
+          id: `d${index}`,
+          objectId: domain.id,
+          viewId: 'overview',
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        }));
+        for (const domain of legacy.domains)
+          for (const table of legacy.tables)
+            legacy.layout.nodes.push({
+              id: `${domain.id}${table.id}`,
+              objectId: table.id,
+              viewId: domain.id,
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 1,
+            });
+        expect(legacy.layout.nodes).toHaveLength(12000);
+      }
+      expect(diagnoseDocument(legacy)).toEqual([]);
+      expect(designDocumentSchema.safeParse(legacy).success).toBe(true);
+      expect(designDocumentSchema.safeParse(ensureTableCanvasLayout(legacy)).success).toBe(false);
+      const { service, db } = setup();
+      expect(() =>
+        service.importProject(actorId, {
+          workspaceId,
+          transfer: { ...file, document: legacy },
+        }),
+      ).toThrow(BadRequestException);
+      expect(db.insert).not.toHaveBeenCalled();
+    },
+  );
+  it('imports version 1 direct tables with colors and global placements intact', async () => {
+    const direct = addTable(
+      createEmptyDocument(),
+      {
+        id: 'free',
+        domainId: null,
+        color: '#123456',
+        scope: 'both',
+        logical: { name: 'Free', definition: '' },
+        physical: { name: 'free', schema: 'public', comment: '' },
+        customProperties: { common: {}, logical: {}, physical: {} },
+      },
+      { x: 120, y: 340 },
+    );
+    const { service, inserted } = setup();
+    const result = await service.importProject(actorId, {
+      workspaceId,
+      transfer: { ...file, document: direct },
+    });
+    expect(result.preview?.tableCount).toBe(1);
+    expect(inserted[0]!.document).toEqual(direct);
+    vi.spyOn(service, 'getProject').mockResolvedValue({ project: result, document: direct });
+    const exported = await service.exportProject(actorId, result.id);
+    expect(exported).toMatchObject({ formatVersion: 1, document: direct });
+    expect(exported.document.layout.nodes[0]).toMatchObject({
+      viewId: TABLES_VIEW_ID,
+      x: 120,
+      y: 340,
+    });
+  });
+
+  it('normalizes owner-only legacy version 1 imports while retaining the old owner placement', async () => {
+    const owned = addTable(
+      document,
+      {
+        id: 'owned',
+        domainId: 'domain',
+        scope: 'both',
+        logical: { name: 'Owned', definition: '' },
+        physical: { name: 'owned', schema: 'public', comment: '' },
+        customProperties: { common: {}, logical: {}, physical: {} },
+      },
+      { x: 120, y: 340 },
+    );
+    owned.layout.nodes = owned.layout.nodes.filter((node) => node.viewId !== TABLES_VIEW_ID);
+    const original = structuredClone(owned);
+    const { service, inserted } = setup();
+    await service.importProject(actorId, { workspaceId, transfer: { ...file, document: owned } });
+    const saved = inserted[0]!.document as typeof owned;
+    expect(saved.layout.nodes).toEqual(expect.arrayContaining(owned.layout.nodes));
+    expect(saved.layout.nodes.find((node) => node.viewId === TABLES_VIEW_ID)).toMatchObject({
+      objectId: 'owned',
+      x: 120,
+      y: 340,
+    });
+    expect(owned).toEqual(original);
+  });
   it('creates independent projects and preserves document-local identities in workspace transactions', async () => {
     const { service, inserted, db, access } = setup();
     const first = await service.importProject(actorId, input);

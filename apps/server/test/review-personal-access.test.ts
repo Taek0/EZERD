@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
-import { createEmptyDocument, extractPersonalState } from '@ezerd/model';
+import { createEmptyDocument, extractPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import { describe, expect, it, vi } from 'vitest';
 import {
   messages,
@@ -121,6 +121,48 @@ function store(role: 'owner' | 'editor' | 'viewer' | null = 'viewer', status = '
 const pin = { viewId: 'overview', objectId: null, x: 0, y: 0, body: 'pin', mentionIds: [] };
 
 describe('review membership boundaries', () => {
+  it('allows pins on a legacy table normalized into the global canvas', async () => {
+    const fixture = store();
+    const legacy = createEmptyDocument();
+    legacy.domains = [{ id: 'sales', name: 'Sales', description: '' }];
+    legacy.tables = [
+      {
+        id: 'orders',
+        domainId: 'sales',
+        scope: 'both',
+        logical: { name: 'Orders', definition: '' },
+        physical: { name: 'orders', schema: 'public', comment: '' },
+        customProperties: { common: {}, logical: {}, physical: {} },
+      },
+    ];
+    legacy.layout.nodes = [
+      {
+        id: 'node:orders',
+        objectId: 'orders',
+        viewId: 'sales',
+        x: 10,
+        y: 20,
+        width: 320,
+        height: 260,
+      },
+    ];
+    fixture.rows.set(projects, [[{ ...project, document: legacy }]]);
+    fixture.rows.set(messages, [[]]);
+    await fixture.review.create(
+      project.id,
+      {
+        ...pin,
+        viewId: TABLES_VIEW_ID,
+        objectId: 'orders',
+      },
+      actor,
+    );
+    expect(fixture.writes).toContainEqual({
+      table: threads,
+      value: expect.objectContaining({ viewId: TABLES_VIEW_ID, objectId: 'orders' }),
+    });
+    expect(legacy.layout.nodes).toHaveLength(1);
+  });
   it.each(['list', 'listPage', 'getThread'] as const)(
     'rejects a nonmember on %s without loading messages',
     async (method) => {
@@ -287,6 +329,20 @@ describe('personal state membership boundaries', () => {
       },
     ]);
     expect(project.document).toEqual(original);
+  });
+
+  it('persists a global viewport without changing shared card placements', async () => {
+    const fixture = store();
+    fixture.rows.set(projectPersonalStates, [[]]);
+    const state = {
+      ...extractPersonalState(project.document),
+      viewports: [{ viewId: TABLES_VIEW_ID, x: 12, y: 34, zoom: 0.8 }],
+    };
+    await expect(fixture.personal.save(project.id, actor, 0, state)).resolves.toMatchObject({
+      version: 1,
+      state,
+    });
+    expect(fixture.writes.some((write) => write.table === projects)).toBe(false);
   });
 
   it('rechecks MCP personal permission before loading an operation replay', async () => {

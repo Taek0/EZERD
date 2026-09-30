@@ -14,6 +14,7 @@ import {
   viewportSchema,
 } from '@ezerd/contracts';
 import type { DesignDocument, Project } from '@ezerd/contracts';
+import { TABLES_VIEW_ID } from '@ezerd/model';
 
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const objectId = z.string().trim().min(1).max(160);
@@ -22,6 +23,7 @@ const tableSummarySchema = tableSchema
     id: true,
     domainId: true,
     scope: true,
+    color: true,
   })
   .extend({
     logicalName: z.string(),
@@ -33,7 +35,7 @@ const domainSummarySchema = domainSchema.pick({ id: true, name: true }).extend({
 const viewSummarySchema = z.strictObject({
   id: objectId,
   name: z.string(),
-  kind: z.enum(['overview', 'domain', 'combined']),
+  kind: z.enum(['overview', 'tables', 'domain', 'combined']),
   domainIds: z.array(objectId),
 });
 const baseSchema = z.strictObject({ project: projectSchema, syncSequence: sequence });
@@ -53,7 +55,7 @@ export const projectSummarySchema = baseSchema.extend({
 });
 export const listTablesInputSchema = z.strictObject({
   projectId: z.uuid(),
-  domainId: objectId.optional(),
+  domainId: objectId.nullable().optional(),
   search: z.string().trim().max(120).default(''),
   cursor: objectId.optional(),
   limit: z.number().int().min(1).max(100).default(50),
@@ -114,7 +116,7 @@ export const viewRelationsSchema = baseSchema.extend({
 });
 export const tableDetailsSchema = baseSchema.extend({
   table: tableSchema,
-  domain: domainSchema.pick({ id: true, name: true, color: true }),
+  domain: domainSchema.pick({ id: true, name: true, color: true }).nullable(),
   columns: z.array(columnSchema),
   keys: z.array(tableKeySchema),
   relations: z.array(tableRelationSchema),
@@ -130,6 +132,7 @@ function tableSummary(table: NonNullable<DesignDocument['tables']>[number]) {
     id: table.id,
     domainId: table.domainId,
     scope: table.scope,
+    ...(table.color !== undefined ? { color: table.color } : {}),
     logicalName: table.logical.name,
     physicalName: table.physical.name,
   };
@@ -138,6 +141,7 @@ function tableSummary(table: NonNullable<DesignDocument['tables']>[number]) {
 function views(document: DesignDocument) {
   return [
     { id: 'overview', name: 'Overview', kind: 'overview' as const, domainIds: [] },
+    { id: TABLES_VIEW_ID, name: 'Tables', kind: 'tables' as const, domainIds: [] },
     ...document.domains.map((domain) => ({
       id: domain.id,
       name: domain.name,
@@ -181,7 +185,7 @@ export function listTables(state: ProjectState, input: z.infer<typeof listTables
   const filtered = (state.document.tables ?? [])
     .filter(
       (table) =>
-        (!input.domainId || table.domainId === input.domainId) &&
+        (input.domainId === undefined || table.domainId === input.domainId) &&
         (!input.cursor || table.id > input.cursor) &&
         (!search ||
           table.id.toLocaleLowerCase().includes(search) ||
@@ -308,7 +312,8 @@ export function tableDetails(state: ProjectState, tableId: string) {
   const table = document.tables?.find((item) => item.id === tableId);
   if (!table) throw new NotFoundException('테이블을 찾을 수 없습니다.');
   const domain = document.domains.find((item) => item.id === table.domainId);
-  if (!domain) throw new NotFoundException('테이블의 도메인을 찾을 수 없습니다.');
+  if (table.domainId !== null && !domain)
+    throw new NotFoundException('테이블의 도메인을 찾을 수 없습니다.');
   const columns = (document.columns ?? []).filter((column) => column.tableId === tableId);
   const relations = (document.tableRelations ?? []).filter(
     (relation) => relation.sourceTableId === tableId || relation.targetTableId === tableId,
@@ -322,11 +327,13 @@ export function tableDetails(state: ProjectState, tableId: string) {
     project,
     syncSequence,
     table,
-    domain: {
-      id: domain.id,
-      name: domain.name,
-      ...(domain.color ? { color: domain.color } : {}),
-    },
+    domain: domain
+      ? {
+          id: domain.id,
+          name: domain.name,
+          ...(domain.color ? { color: domain.color } : {}),
+        }
+      : null,
     columns,
     keys: (document.keys ?? []).filter((key) => key.tableId === tableId),
     relations,

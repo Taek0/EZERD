@@ -16,6 +16,8 @@ import type {
   updateNotificationSchema,
   updateThreadSchema,
 } from '@ezerd/contracts';
+import { TABLES_VIEW_ID } from '@ezerd/model';
+import { normalizeServerDocument } from '../shared/normalize-document.js';
 import { DatabaseService } from '../db/database.service.js';
 import { messages, notifications, projects, threads, users, userWorkspaces } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
@@ -199,9 +201,10 @@ export class ReviewService {
       const result = await this.database.db.transaction(async (tx) => {
         await this.access.requireProject(actor.id, projectId, 'review', tx);
         const project = await lockActiveProject(tx, projectId);
-        const doc = project.document;
+        const doc = normalizeServerDocument(project.document);
         if (
           input.viewId !== 'overview' &&
+          input.viewId !== TABLES_VIEW_ID &&
           !doc.domains.some((domain) => domain.id === input.viewId) &&
           !doc.views?.some((view) => view.id === input.viewId)
         )

@@ -17,9 +17,11 @@ import {
   extractPersonalState,
   mergeStoredPersonalState,
   reconcilePersonalState,
+  TABLES_VIEW_ID,
   type DesignDocument,
 } from '@ezerd/model';
 import { DatabaseService } from '../db/database.service.js';
+import { normalizeServerDocument } from '../shared/normalize-document.js';
 import { projectPersonalOperations, projectPersonalStates, projects } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
@@ -30,7 +32,7 @@ function defaultState(document: DesignDocument): PersonalState {
     ...extracted,
     viewports: extracted.viewports.length
       ? extracted.viewports
-      : [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }],
+      : [{ viewId: document.domains.length ? 'overview' : TABLES_VIEW_ID, x: 0, y: 0, zoom: 1 }],
   };
 }
 
@@ -45,6 +47,7 @@ export class PersonalStateService {
     return this.access.runProject(user.id, projectId, 'read', async (tx) => {
       const [project] = await tx.select().from(projects).where(eq(projects.id, projectId));
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+      const document = normalizeServerDocument(project.document);
       const [row] = await tx
         .select()
         .from(projectPersonalStates)
@@ -58,10 +61,7 @@ export class PersonalStateService {
         version: row?.version ?? 0,
         projectVersion: project.version,
         syncSequence: project.syncSequence,
-        state: reconcilePersonalState(
-          project.document,
-          row?.state ?? defaultState(project.document),
-        ),
+        state: reconcilePersonalState(document, row?.state ?? defaultState(document)),
       });
     });
   }
@@ -131,24 +131,22 @@ export class PersonalStateService {
       const version = row?.version ?? 0;
       if (version !== expectedVersion)
         throw new ConflictException('개인 화면이 변경되었습니다. 최신 상태를 다시 조회해주세요.');
-      const current = reconcilePersonalState(
-        project.document,
-        row?.state ?? defaultState(project.document),
-      );
-      const merged = mergeStoredPersonalState(project.document, current);
+      const document = normalizeServerDocument(project.document);
+      const current = reconcilePersonalState(document, row?.state ?? defaultState(document));
+      const merged = mergeStoredPersonalState(document, current);
       const changed = change(merged);
       const nextState = personalStateSchema.safeParse(
         'schemaVersion' in changed ? extractPersonalState(changed) : changed,
       );
       if (!nextState.success)
         throw new BadRequestException('개인 화면 데이터가 올바르지 않습니다.');
-      const reconciled = reconcilePersonalState(project.document, nextState.data);
+      const reconciled = reconcilePersonalState(document, nextState.data);
       if (JSON.stringify(reconciled) !== JSON.stringify(nextState.data))
         throw new BadRequestException('개인 화면의 도메인·테이블 참조가 올바르지 않습니다.');
       if (JSON.stringify(current) === JSON.stringify(nextState.data))
         throw new BadRequestException('실제 개인 화면 변경이 없습니다.');
-      const candidate = mergeStoredPersonalState(project.document, nextState.data);
-      if (diffSharedDocument(project.document, candidate).length)
+      const candidate = mergeStoredPersonalState(document, nextState.data);
+      if (diffSharedDocument(document, candidate).length)
         throw new BadRequestException('개인 화면 요청에서 공유 문서를 변경할 수 없습니다.');
       if (!designDocumentSchema.safeParse(candidate).success)
         throw new BadRequestException('개인 화면의 문서 구조나 크기가 올바르지 않습니다.');

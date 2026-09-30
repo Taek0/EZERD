@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DesignDocument, Project } from '@ezerd/contracts';
+import { TABLES_VIEW_ID } from '@ezerd/model';
+import { normalizeServerDocument } from '../src/shared/normalize-document.js';
 import {
   listTables,
   listViewRelations,
@@ -123,6 +125,35 @@ const document: DesignDocument = {
 const state: ProjectState = { project, document, syncSequence: 12 };
 
 describe('MCP scoped reads', () => {
+  it('exposes the global tables view and filters unassigned tables with explicit null', () => {
+    const direct = structuredClone(document);
+    direct.tables![1]!.domainId = null;
+    direct.tables![1]!.color = '#123456';
+    const directState = { ...state, document: normalizeServerDocument(direct) };
+    expect(projectSummary(directState).views).toContainEqual({
+      id: TABLES_VIEW_ID,
+      name: 'Tables',
+      kind: 'tables',
+      domainIds: [],
+    });
+    const filtered = listTables(directState, {
+      projectId: project.id,
+      domainId: null,
+      search: '',
+      limit: 50,
+    });
+    expect(filtered.tables).toEqual([
+      expect.objectContaining({ id: 'users', domainId: null, color: '#123456' }),
+    ]);
+    expect(tableDetails(directState, 'users')).toMatchObject({
+      table: { domainId: null, color: '#123456' },
+      domain: null,
+    });
+    expect(projectView(directState, TABLES_VIEW_ID).tables).toHaveLength(2);
+    expect(listViewRelations(directState, TABLES_VIEW_ID).relations).toContainEqual(
+      expect.objectContaining({ id: 'orders-users', kind: 'table' }),
+    );
+  });
   it('summarizes the project without returning the document', () => {
     const result = projectSummary(state);
     expect(result.project.version).toBe(7);
