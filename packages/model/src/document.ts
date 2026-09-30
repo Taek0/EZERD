@@ -687,18 +687,27 @@ export function removeTableReference(doc: DesignDocument, nodeId: string): Desig
   };
 }
 
-export function addTable(doc: DesignDocument, table: Table, point: Position): DesignDocument {
+export function addTable(
+  doc: DesignDocument,
+  table: Table,
+  point: Position,
+  placementViewId = table.domainId ?? TABLES_VIEW_ID,
+): DesignDocument {
   requireNewId(doc, table.id);
   if (table.domainId !== null)
     requireObject(doc.domains.find((domain) => domain.id === table.domainId));
   if (table.color !== undefined && !/^#[0-9a-f]{6}$/i.test(table.color))
     throw new Error('테이블 색상은 #RRGGBB 형식이어야 합니다.');
+  if (placementViewId !== TABLES_VIEW_ID && placementViewId !== table.domainId)
+    throw new Error('테이블을 생성할 화면이 유효하지 않습니다.');
   let next = addTableReference(
     { ...doc, tables: [...(doc.tables ?? []), cloneModel(table)] },
     table.id,
-    table.domainId ?? TABLES_VIEW_ID,
+    placementViewId,
     point,
   );
+  if (table.domainId !== null && placementViewId === TABLES_VIEW_ID)
+    next = addTableReference(next, table.id, table.domainId, point);
   if (table.domainId !== null) next = ensureTableCanvasLayout(next);
   for (const view of next.views ?? [])
     if (table.domainId !== null && view.domainIds.includes(table.domainId))
