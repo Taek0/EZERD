@@ -34,5 +34,8 @@
 - 신규 빈 DB: pnpm db:migrate.
 - 기존 데이터의 준비만 필요하면 node apps/server/scripts/prepare-workspace-migration.mjs(0011까지만 적용). 별도 승인한 소속/owner 매핑 후 일반 db:migrate로 0012를 적용한다. 이번 승인 전용 script를 다른 계정이나 프로젝트에 사용하지 않는다.
 - 이번 배정 재검증: node apps/server/scripts/workspace-transfer.mjs(dry run), node apps/server/scripts/verify-workspace-mcp.mjs(read-only 실제 MCP). 원문 토큰을 출력하지 않는다.
-- 전체 격리 통합 검증: node apps/server/scripts/test-workspaces.mjs. 새 DB에서 준비→최종 마이그레이션과 38개 API/sync/MCP/권한/WebSocket/초대/owner 동시성/이관 보존 테스트 통과.
-- 현재 전체 코드 검사: format/check, 타입 검사, 빌드와 일반 테스트 525개 통과. 최종 UI 인증 검증과 작업 트리 정리는 후속 결과에 기록한다.
+- 전체 격리 통합 검증: node apps/server/scripts/test-workspaces.mjs. 새 DB에서 준비→최종 마이그레이션과 39개 API/sync/MCP/권한/WebSocket/초대/owner 동시성/이관 보존/로그아웃 테스트 통과.
+- 최종 pnpm check(format:check, typecheck, test, build)가 통과했다. 일반 테스트 530개 통과, opt-in 통합 테스트는 격리 실행에서 별도로 확인했다. 기존 웹 단일 번들의 크기 안내만 남으며 빌드는 성공했다.
+- 사용자 승인 후 실제 브라우저에서 owner 공간/프로젝트 생성, viewer 초대·수락, viewer의 설계 비활성화와 실제 핀·댓글 작성, 역할 변경, 공간 보관/복원, 한국어/영어, 정상 로그아웃/계정 전환을 확인했다. 화면 검증 산출물은 .data/workspace-viewer-qa-2026-09-30.png다.
+- 마지막 운영 서버를 4a7dc5e 코드의 최신 빌드로 갱신했다. 로컬/LAN readiness와 실제 현재 토큰의 whoami/list_workspaces/list_projects를 다시 확인했고 모두 통과했다.
+- 승인된 UI QA 계정에서 로그아웃하고 임시 브라우저 탭/preview 프로세스 및 이번 작업이 만든 임시 DB를 정리했다. 운영 데이터와 운영 서버는 유지했다. 모든 구현과 기록은 논리 단위별 커밋으로 남겼고 작업 트리를 정리했다.
