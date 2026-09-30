@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Button as MenuButton,
@@ -36,13 +36,17 @@ const statusLabels = {
   expired: '만료됨',
 };
 
+export type WorkspacePanelHandle = { openCreate: () => void };
+
 export function WorkspacePanel({
+  ref,
   workspaces,
   selected,
   onSelect,
   onRefresh,
   disabled = false,
 }: {
+  ref?: Ref<WorkspacePanelHandle>;
   workspaces: Workspace[];
   selected: Workspace | undefined;
   onSelect: (id: string) => void;
@@ -65,6 +69,14 @@ export function WorkspacePanel({
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const submitting = useRef(false);
+  useImperativeHandle(ref, () => ({
+    openCreate() {
+      if (disabled || busy || closing) return;
+      setName('');
+      setError('');
+      setMode('create');
+    },
+  }));
   useEffect(() => {
     const controller = new AbortController();
     void request<Invitation[]>('/api/workspace-invitations', { signal: controller.signal })

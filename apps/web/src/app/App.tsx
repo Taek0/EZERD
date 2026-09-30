@@ -1,4 +1,7 @@
-import { WorkspacePanel } from '../features/workspaces/WorkspacePanel.js';
+import {
+  WorkspacePanel,
+  type WorkspacePanelHandle,
+} from '../features/workspaces/WorkspacePanel.js';
 import { workspacePermissions, type Workspace } from '../features/workspaces/workspace-policy.js';
 import { useI18n } from '../shared/i18n/index.js';
 import { HelpDialog } from '../features/projects/HelpDialog.js';
@@ -186,6 +189,8 @@ export function App() {
   const [username, setUsername] = useState(''),
     [editingName, setEditingName] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
+  const workspacePanel = useRef<WorkspacePanelHandle>(null);
   const [workspaceId, setWorkspaceId] = useState('');
   const selectedWorkspace = workspaces.find((space) => space.id === workspaceId);
   const [projects, setProjects] = useState<Project[]>([]),
@@ -375,6 +380,7 @@ export function App() {
         .then((spaces) => {
           if (controller.signal.aborted) return;
           setWorkspaces(spaces);
+          setWorkspacesLoaded(true);
           setWorkspaceId((id) =>
             spaces.some((space) => space.id === id) ? id : (spaces[0]?.id ?? ''),
           );
@@ -697,6 +703,7 @@ export function App() {
     setUsername('');
     setRegistrationPin('');
     setWorkspaces([]);
+    setWorkspacesLoaded(false);
     setWorkspaceId('');
     setProjects([]);
     setMembers([]);
@@ -885,6 +892,7 @@ export function App() {
         </Button>
         {user ? (
           <WorkspacePanel
+            ref={workspacePanel}
             workspaces={workspaces}
             selected={selectedWorkspace}
             disabled={busy}
@@ -1204,6 +1212,8 @@ export function App() {
           ref={gallery}
           workspace={selectedWorkspace}
           workspaceId={workspaceId}
+          needsWorkspace={workspacesLoaded && workspaces.length === 0}
+          onCreateWorkspace={() => workspacePanel.current?.openCreate()}
           projects={projects}
           loading={loading}
           busy={busy}

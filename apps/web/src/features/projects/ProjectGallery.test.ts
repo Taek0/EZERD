@@ -4,10 +4,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { setLocale } from '../../shared/i18n/index.js';
 import { ProjectGallery } from './ProjectGallery.js';
 
-const render = (canEdit = true) =>
+const render = (canEdit = true, needsWorkspace = false) =>
   renderToStaticMarkup(
     createElement(ProjectGallery, {
       workspaceId: 'space',
+      needsWorkspace,
+      onCreateWorkspace: () => {},
       projects: [],
       loading: false,
       busy: false,
@@ -44,3 +46,17 @@ it('omits project creation and import controls for viewers', () => {
   expect(markup).not.toContain('aria-label="프로젝트 메뉴"');
   expect(markup).not.toContain('type="file"');
 });
+it.each([
+  ['ko', '첫 워크스페이스를 만들어 보세요', '워크스페이스 만들기'],
+  ['en', 'Create your first workspace', 'Create workspace'],
+] as const)(
+  'offers workspace creation only for users without a workspace in %s',
+  (locale, title, action) => {
+    setLocale(locale);
+    const markup = render(false, true);
+    expect(markup).toContain(title);
+    expect(markup).toContain(`>${action}</span></button>`);
+    expect(markup).not.toContain('type="file"');
+    expect(render(false)).not.toContain('workspace-onboarding-title');
+  },
+);

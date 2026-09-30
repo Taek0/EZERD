@@ -27,6 +27,9 @@ registerTranslations({
   '프로젝트를 열어 설계를 확인하세요': 'Open the project to explore its design',
   '아직 설계가 없습니다': 'No design yet',
   '미리보기 없음': 'No preview available',
+  '첫 워크스페이스를 만들어 보세요': 'Create your first workspace',
+  '프로젝트를 만들려면 워크스페이스가 필요합니다. 워크스페이스를 만들고 설계를 시작하세요.':
+    'You need a workspace to create projects. Create one to start designing.',
   '테이블 {tables}개 · 관계 {relations}개': '{tables} tables · {relations} relations',
 });
 type DatabaseKind = 'postgresql' | 'mysql' | 'sqlite';
@@ -40,6 +43,8 @@ export type GalleryHandle = { flush: () => Promise<boolean>; hasDraft: () => boo
 type Props = {
   workspace?: Workspace | undefined;
   workspaceId: string;
+  needsWorkspace?: boolean;
+  onCreateWorkspace?: () => void;
   projects: Project[];
   loading: boolean;
   busy: boolean;
@@ -265,7 +270,20 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
           <p>{t('아이디어를 구조로, 함께 만드는 데이터 설계.')}</p>
         </div>
       </section>
-      <WorkspaceNotice selected={p.workspace} />
+      {p.workspace && <WorkspaceNotice selected={p.workspace} />}
+      {p.needsWorkspace && (
+        <section className="workspace-onboarding" aria-labelledby="workspace-onboarding-title">
+          <h2 id="workspace-onboarding-title">{t('첫 워크스페이스를 만들어 보세요')}</h2>
+          <p>
+            {t(
+              '프로젝트를 만들려면 워크스페이스가 필요합니다. 워크스페이스를 만들고 설계를 시작하세요.',
+            )}
+          </p>
+          <Button variant="primary" disabled={disabled} onClick={p.onCreateWorkspace}>
+            {t('워크스페이스 만들기')}
+          </Button>
+        </section>
+      )}
       <div className="erd-toolbar">
         <div ref={tabs} className="erd-tabs" role="group" aria-label={t('프로젝트 상태')}>
           <span className="erd-tab-indicator" style={indicator} />
