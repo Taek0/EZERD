@@ -83,8 +83,11 @@ export class WorkspaceAccessService {
       access: WorkspaceAccess,
     ) => Promise<T>,
   ): Promise<T> {
-    return this.database.db.transaction(async (tx) =>
-      callback(tx, await this.requireProject(userId, projectId, permission, tx)),
+    return this.database.db.transaction(
+      async (tx) => callback(tx, await this.requireProject(userId, projectId, permission, tx)),
+      permission === 'read'
+        ? { isolationLevel: 'repeatable read', accessMode: 'read only' }
+        : undefined,
     );
   }
 
@@ -97,8 +100,11 @@ export class WorkspaceAccessService {
       access: WorkspaceAccess,
     ) => Promise<T>,
   ): Promise<T> {
-    return this.database.db.transaction(async (tx) =>
-      callback(tx, await this.requireWorkspace(userId, workspaceId, permission, tx)),
+    return this.database.db.transaction(
+      async (tx) => callback(tx, await this.requireWorkspace(userId, workspaceId, permission, tx)),
+      permission === 'read'
+        ? { isolationLevel: 'repeatable read', accessMode: 'read only' }
+        : undefined,
     );
   }
 }
