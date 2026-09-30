@@ -1,4 +1,4 @@
-import { WorkspacePanel } from '../features/workspaces/WorkspacePanel.js';
+import { WorkspacePanel, WorkspaceNotice } from '../features/workspaces/WorkspacePanel.js';
 import { workspacePermissions, type Workspace } from '../features/workspaces/workspace-policy.js';
 import { useI18n } from '../shared/i18n/index.js';
 import { LanguageDialog } from '../shared/i18n/LanguageDialog.js';
@@ -712,6 +712,31 @@ export function App() {
           : '',
     );
   }
+  const workspaceSwitchPending = useRef(false);
+  async function selectWorkspace(id: string) {
+    if (workspaceSwitchPending.current || busy || (id === workspaceId && !current.current)) return;
+    workspaceSwitchPending.current = true;
+    setBusy(true);
+    setError('');
+    const ticket = navigation.current.begin();
+    try {
+      await flushAutosave();
+      await runtime.current?.prepareToLeave();
+      if (!navigation.current.isCurrent(ticket)) return;
+      resetReview();
+      replaceProject(null);
+      setWorkspaceId(id);
+      setProjects([]);
+      setSearch('');
+      setStatus('active');
+      setCommentsOpen(false);
+    } catch (cause) {
+      if (navigation.current.isCurrent(ticket)) setError(message(cause));
+    } finally {
+      workspaceSwitchPending.current = false;
+      if (navigation.current.isCurrent(ticket)) setBusy(false);
+    }
+  }
   async function leave() {
     if (
       current.current &&
@@ -848,11 +873,21 @@ export function App() {
         <Button className="brand" onClick={leave} aria-label={t('EZERD 프로젝트 갤러리')}>
           EZERD<span>.</span>
         </Button>
-        <span className="header-caption">
-          A SHARED SPACE
-          <br />
-          FOR CLEAR THINKING.
-        </span>
+        {user ? (
+          <WorkspacePanel
+            workspaces={workspaces}
+            selected={selectedWorkspace}
+            disabled={busy}
+            onSelect={(id) => void selectWorkspace(id)}
+            onRefresh={() => setRefresh((value) => value + 1)}
+          />
+        ) : (
+          <span className="header-caption">
+            A SHARED SPACE
+            <br />
+            FOR CLEAR THINKING.
+          </span>
+        )}
         {user && <Notifications userId={user.id} onNavigate={visitNotification} />}
         {user && (
           <Dropdown
@@ -960,7 +995,7 @@ export function App() {
           {userForm}
         </main>
       ) : opened ? (
-        <main id="main" className="editor">
+        <main id="main" className="editor" inert={workspaceSwitchPending.current}>
           <div className="editor-heading">
             <div className="project-title" role="group" aria-label={t('프로젝트 이동')}>
               <Button className="gallery-return" onClick={leave}>
@@ -1162,16 +1197,7 @@ export function App() {
               <small>PROJECTS</small>
             </div>
           </section>
-          <WorkspacePanel
-            workspaces={workspaces}
-            selected={selectedWorkspace}
-            onSelect={(id) => {
-              setWorkspaceId(id);
-              setProjects([]);
-              setSearch('');
-            }}
-            onRefresh={() => setRefresh((value) => value + 1)}
-          />
+          <WorkspaceNotice selected={selectedWorkspace} />
           <div className="gallery-tools">
             <ProjectImportButton
               key={workspaceId}

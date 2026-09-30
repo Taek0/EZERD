@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createEmptyDocument } from '@ezerd/model';
+import { createEmptyDocument, extractPersonalState } from '@ezerd/model';
 import type { SyncOperationInput, SyncOperationResult } from '@ezerd/contracts';
-import { MemorySyncOperationStore, type StoredSyncOperation } from './sync-storage.js';
+import {
+  MemorySyncOperationStore,
+  type StoredSyncOperation,
+  type SyncOperationStore,
+} from './sync-storage.js';
 import {
   mergePersonalState,
   ProjectSyncRuntime,
@@ -43,6 +47,207 @@ function socketStub() {
   };
   return socket as unknown as WebSocket;
 }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe('sync client navigation persistence', () => {
+  async function fixture(
+    durable = true,
+    intercept?: (path: string, init?: RequestInit) => Promise<Response> | undefined,
+    put?: SyncOperationStore<SyncOperationInput>['put'],
+  ) {
+    const originalLocation = globalThis.location;
+    Object.defineProperty(globalThis, 'location', {
+      configurable: true,
+      value: { protocol: 'http:', host: 'test.local' },
+    });
+    const memory = new MemorySyncOperationStore<SyncOperationInput>();
+    const store: SyncOperationStore<SyncOperationInput> = {
+      durable,
+      put: put ?? ((item) => memory.put(item)),
+      delete: (id) => memory.delete(id),
+      list: (id) => memory.list(id),
+    };
+    const document = createEmptyDocument();
+    const runtime = new ProjectSyncRuntime({
+      projectId: ids.project,
+      userId: ids.user,
+      clientId: ids.client,
+      session: { token: 'token', expiresAt: issuedAt, baselineIssuedAt: issuedAt },
+      initialDocument: document,
+      store,
+      socketFactory: socketStub,
+      onChange: () => {},
+      fetcher: (async (input, init) => {
+        const path = String(input);
+        const intercepted = intercept?.(path, init);
+        if (intercepted) return intercepted;
+        if (path.endsWith('/sync-baseline'))
+          return json({
+            baselineId: ids.baseline,
+            sequence: 0,
+            baselineIssuedAt: issuedAt,
+            document,
+          });
+        if (path.endsWith('/personal-state'))
+          return json({
+            version: 1,
+            state: extractPersonalState(document),
+            projectVersion: 1,
+            syncSequence: 0,
+          });
+        if (path.endsWith('/operations')) throw new Error('offline');
+        return json([]);
+      }) as typeof fetch,
+    });
+    await runtime.start();
+    return {
+      runtime,
+      store,
+      cleanup: () => {
+        runtime.stop();
+        Object.defineProperty(globalThis, 'location', {
+          configurable: true,
+          value: originalLocation,
+        });
+      },
+    };
+  }
+
+  it('waits for an in-flight edit to become durable without awaiting the shared network', async () => {
+    const putStarted = deferred<void>();
+    const releasePut = deferred<void>();
+    const network = deferred<Response>();
+    const memory = new MemorySyncOperationStore<SyncOperationInput>();
+    let first = true;
+    const value = await fixture(
+      true,
+      (path) => (path.endsWith('/operations') ? network.promise : undefined),
+      async (item) => {
+        if (first) {
+          first = false;
+          putStarted.resolve();
+          await releasePut.promise;
+        }
+        await memory.put(item);
+      },
+    );
+    // The store wrapper must expose the same journal that receives the delayed put.
+    value.store.list = (id) => memory.list(id);
+    value.store.delete = (id) => memory.delete(id);
+    try {
+      const document = createEmptyDocument();
+      document.domains = [{ id: 'domain', name: 'pending', description: '' }];
+      const edit = value.runtime.edit(document);
+      await putStarted.promise;
+      let left = false;
+      const preparing = value.runtime.prepareToLeave().then(() => {
+        left = true;
+      });
+      await Promise.resolve();
+      expect(left).toBe(false);
+      releasePut.resolve();
+      await preparing;
+      await edit;
+      expect(await value.store.list(`${ids.user}:${ids.project}`)).toHaveLength(1);
+    } finally {
+      value.cleanup();
+      network.resolve(json({}, 503));
+    }
+  });
+
+  it('waits for both the active personal save and a newer personal edit', async () => {
+    const saves = [deferred<Response>(), deferred<Response>()];
+    const payloads: unknown[] = [];
+    const value = await fixture(true, (path, init) => {
+      if (!path.endsWith('/personal-state') || init?.method !== 'PUT') return;
+      payloads.push(JSON.parse(String(init.body)));
+      return saves[payloads.length - 1]!.promise;
+    });
+    try {
+      const first = createEmptyDocument();
+      first.layout.viewports = [{ viewId: 'overview', x: 1, y: 2, zoom: 1 }];
+      await value.runtime.edit(first);
+      const latest = structuredClone(first);
+      latest.layout.viewports[0]!.x = 20;
+      await value.runtime.edit(latest);
+      let left = false;
+      const preparing = value.runtime.prepareToLeave().then(() => {
+        left = true;
+      });
+      saves[0]!.resolve(
+        json({
+          version: 2,
+          state: extractPersonalState(first),
+          projectVersion: 1,
+          syncSequence: 0,
+        }),
+      );
+      await vi.waitFor(() => expect(payloads).toHaveLength(2));
+      expect(left).toBe(false);
+      saves[1]!.resolve(
+        json({
+          version: 3,
+          state: extractPersonalState(latest),
+          projectVersion: 1,
+          syncSequence: 0,
+        }),
+      );
+      await preparing;
+      expect(payloads[1]).toEqual({ expectedVersion: 2, state: extractPersonalState(latest) });
+    } finally {
+      value.cleanup();
+    }
+  });
+
+  it.each([503, 409])('rejects navigation after a personal save fails (%s)', async (status) => {
+    const value = await fixture(true, (path, init) =>
+      path.endsWith('/personal-state') && init?.method === 'PUT'
+        ? Promise.resolve(json({}, status))
+        : undefined,
+    );
+    try {
+      const document = createEmptyDocument();
+      document.layout.viewports = [{ viewId: 'overview', x: 1, y: 2, zoom: 1 }];
+      await value.runtime.edit(document);
+      await expect(value.runtime.prepareToLeave()).rejects.toThrow();
+    } finally {
+      value.cleanup();
+    }
+  });
+
+  it('rejects navigation when shared edits exist only in memory', async () => {
+    const value = await fixture(false);
+    try {
+      const document = createEmptyDocument();
+      document.domains = [{ id: 'domain', name: 'pending', description: '' }];
+      await value.runtime.edit(document);
+      await expect(value.runtime.prepareToLeave()).rejects.toThrow();
+    } finally {
+      value.cleanup();
+    }
+  });
+
+  it('rejects navigation when a shared edit could not enter the local journal', async () => {
+    const value = await fixture(true, undefined, async () => {
+      throw new Error('disk full');
+    });
+    try {
+      const document = createEmptyDocument();
+      document.domains = [{ id: 'domain', name: 'pending', description: '' }];
+      await value.runtime.edit(document);
+      await expect(value.runtime.prepareToLeave()).rejects.toThrow();
+    } finally {
+      value.cleanup();
+    }
+  });
+});
 
 function operationItem(baselineId = ids.baseline): StoredSyncOperation<SyncOperationInput> {
   const document = createEmptyDocument();

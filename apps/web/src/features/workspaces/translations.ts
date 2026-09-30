@@ -1,6 +1,8 @@
 import { registerTranslations } from '../../shared/i18n/index.js';
 
 registerTranslations({
+  '현재 선택됨': 'Currently selected',
+  '선택한 공간의 프로젝트만 표시됩니다.': 'Only projects in the selected workspace are shown.',
   '이름 저장': 'Save name',
   워크스페이스: 'Workspace',
   '워크스페이스 선택': 'Select workspace',

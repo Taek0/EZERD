@@ -151,7 +151,10 @@ export class ProjectSyncRuntime {
   private personalLoaded = false;
   private personalPending: PersonalState | undefined;
   private personalSaving = false;
+  private personalSave: Promise<void> | undefined;
   private personalConflict = false;
+  private readonly editing = new Set<Promise<void>>();
+  private unsavedSharedEdit = false;
   private cursor: SyncEventCursor<SyncEvent>;
   private readonly rebases = new Map<
     string,
@@ -292,11 +295,38 @@ export class ProjectSyncRuntime {
     this.socket?.close();
   }
 
+  /** Waits for local edit persistence and personal saves before changing projects. */
+  async prepareToLeave() {
+    while (this.editing.size) await Promise.all([...this.editing]);
+    if (this.unsavedSharedEdit) throw new Error(t('로컬 변경을 보관하지 못했습니다.'));
+    if (this.personalPending && !this.personalLoaded) await this.refreshPersonal();
+    await this.flushPersonal();
+    if (this.personalPending || this.personalConflict || this.personalSaving)
+      throw new Error(this.error ?? t('개인 화면을 저장하지 못했습니다.'));
+    // Sending/unknown operations remain recoverable by operation id in durable storage.
+    // Do not wait for server acknowledgements when an offline queue can be restored.
+    if (!this.store?.durable && (await this.queue?.items())?.length)
+      throw new Error(t('로컬 변경을 보관하지 못했습니다.'));
+  }
+
   private async pumpShared() {
     if (!this.stopped && !this.options.sharedReadOnly) await this.queue?.pump();
   }
 
-  async edit(next: DesignDocument) {
+  edit(next: DesignDocument) {
+    const edit = this.applyEdit(next);
+    this.editing.add(edit);
+    void edit.then(
+      () => this.editing.delete(edit),
+      () => {
+        this.unsavedSharedEdit = true;
+        this.editing.delete(edit);
+      },
+    );
+    return edit;
+  }
+
+  private async applyEdit(next: DesignDocument) {
     if (this.stopped || this.options.personalReadOnly) return;
     const changes = diffSharedDocument(this.visibleDocument, next);
     if (this.options.sharedReadOnly && changes.length) return;
@@ -317,6 +347,7 @@ export class ProjectSyncRuntime {
     await this.ensureCurrentBaseline();
     if (this.stopped) return;
     if (!this.queue) {
+      this.unsavedSharedEdit = true;
       this.error = t('동기화 대기열이 준비되지 않아 편집을 보관하지 못했습니다.');
       this.publish();
       return;
@@ -371,6 +402,7 @@ export class ProjectSyncRuntime {
       }
       void this.pumpShared();
     } catch (error) {
+      this.unsavedSharedEdit = true;
       this.error = error instanceof Error ? error.message : t('로컬 변경을 보관하지 못했습니다.');
     }
     this.publish();
@@ -916,7 +948,22 @@ export class ProjectSyncRuntime {
     void this.flushPersonal();
   }
 
-  private async flushPersonal() {
+  private flushPersonal(): Promise<void> {
+    if (this.personalSave) return this.personalSave;
+    const save = this.savePersonal();
+    this.personalSave = save;
+    void save.then(
+      () => {
+        if (this.personalSave === save) this.personalSave = undefined;
+      },
+      () => {
+        if (this.personalSave === save) this.personalSave = undefined;
+      },
+    );
+    return save;
+  }
+
+  private async savePersonal() {
     if (this.stopped || this.options.personalReadOnly) return;
     if (this.personalSaving || !this.personalLoaded || this.personalConflict) return;
     this.personalSaving = true;

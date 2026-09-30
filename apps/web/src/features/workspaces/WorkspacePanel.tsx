@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  Button as MenuButton,
+  Menu,
+  MenuItem,
+  MenuSection,
+  MenuTrigger,
+  Popover,
+  Separator,
+} from 'react-aria-components';
 import { Button, Input, Select, Badge } from '../../components/ui/index.js';
 import { useConfirm } from '../../components/ui/ConfirmProvider.js';
 import { body, message, request } from '../../shared/api/client.js';
@@ -32,11 +41,13 @@ export function WorkspacePanel({
   selected,
   onSelect,
   onRefresh,
+  disabled = false,
 }: {
   workspaces: Workspace[];
   selected: Workspace | undefined;
   onSelect: (id: string) => void;
   onRefresh: () => void;
+  disabled?: boolean;
 }) {
   const { t, locale } = useI18n();
   const confirm = useConfirm();
@@ -51,6 +62,7 @@ export function WorkspacePanel({
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const submitting = useRef(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -99,12 +111,11 @@ export function WorkspacePanel({
   }, [selected?.id, selected?.role, mode, revision]);
   useEffect(() => {
     if (!mode) return;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const element = dialog.current;
     element?.showModal();
     return () => {
       element?.close();
-      previous?.focus();
+      trigger.current?.focus();
     };
   }, [mode]);
   async function mutate(
@@ -192,70 +203,110 @@ export function WorkspacePanel({
     );
   }
   return (
-    <section className="workspace-panel" aria-label={t('워크스페이스')}>
-      <div className="workspace-selector">
-        <label>
-          <span>{t('워크스페이스')}</span>
-          <Select
-            aria-label={t('워크스페이스 선택')}
-            value={selected?.id ?? ''}
-            onValueChange={onSelect}
-          >
-            {!selected && <option value="">{t('워크스페이스 선택')}</option>}
-            {workspaces.map((space) => (
-              <option key={space.id} value={space.id}>
-                {space.name} · {t(roleLabels[space.role])}
-                {space.status === 'archived' ? ` · ${t('보관됨')}` : ''}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <div className="workspace-row-actions">
-          <Button
-            onClick={() => {
-              setName('');
-              setError('');
-              setMode('create');
-            }}
-          >
-            {t('새 워크스페이스')}
-          </Button>
-          {selected && (
-            <Button
-              onClick={() => {
-                setError('');
-                setMode('manage');
-              }}
-            >
-              {t('멤버 및 초대')}
-            </Button>
+    <div className="workspace-switcher">
+      <MenuTrigger>
+        <MenuButton
+          ref={trigger}
+          className="workspace-switcher-trigger"
+          isDisabled={disabled}
+          aria-label={t('워크스페이스 선택')}
+        >
+          <span className="workspace-initial" aria-hidden="true">
+            {Array.from(selected?.name ?? 'W')[0]?.toUpperCase()}
+          </span>
+          <span className="workspace-trigger-copy">
+            <small>{t('워크스페이스')}</small>
+            <strong>{selected?.name ?? t('워크스페이스 선택')}</strong>
+          </span>
+          <span className="workspace-chevron" aria-hidden="true">
+            ⌄
+          </span>
+        </MenuButton>
+        <Popover className="workspace-popover" placement="bottom start" offset={10}>
+          <div className="workspace-menu-heading">
+            <span>{t('워크스페이스')}</span>
+            <span>{workspaces.length}</span>
+          </div>
+          <Menu className="workspace-menu" aria-label={t('워크스페이스 선택')}>
+            <MenuSection aria-label={t('워크스페이스')}>
+              {workspaces.map((space) => (
+                <MenuItem
+                  key={space.id}
+                  id={space.id}
+                  textValue={space.name}
+                  className="workspace-menu-row"
+                  onAction={() => onSelect(space.id)}
+                  aria-label={`${space.name}, ${t(roleLabels[space.role])}${space.status === 'archived' ? `, ${t('보관됨')}` : ''}${space.id === selected?.id ? `, ${t('현재 선택됨')}` : ''}`}
+                >
+                  <span className="workspace-initial" aria-hidden="true">
+                    {Array.from(space.name)[0]?.toUpperCase()}
+                  </span>
+                  <span className="workspace-row-copy">
+                    <strong>{space.name}</strong>
+                    <small>
+                      {t(roleLabels[space.role])}
+                      {space.status === 'archived' ? ` · ${t('보관됨')}` : ''}
+                    </small>
+                  </span>
+                  {space.id === selected?.id && (
+                    <span className="workspace-selected-check" aria-hidden="true">
+                      ✓
+                    </span>
+                  )}
+                </MenuItem>
+              ))}
+            </MenuSection>
+            <Separator className="workspace-menu-separator" />
+            <MenuSection aria-label={t('워크스페이스 관리')}>
+              <MenuItem
+                id="workspace-create"
+                textValue={t('새 워크스페이스')}
+                className="workspace-menu-action"
+                onAction={() => {
+                  setName('');
+                  setError('');
+                  setMode('create');
+                }}
+              >
+                <span aria-hidden="true">＋</span>
+                {t('새 워크스페이스')}
+              </MenuItem>
+              <MenuItem
+                id="workspace-manage"
+                textValue={t('워크스페이스 관리')}
+                isDisabled={!selected}
+                className="workspace-menu-action"
+                onAction={() => {
+                  setError('');
+                  setMode('manage');
+                }}
+              >
+                <span aria-hidden="true">⚙</span>
+                {t('워크스페이스 관리')}
+              </MenuItem>
+              <MenuItem
+                id="workspace-inbox"
+                textValue={t('받은 초대')}
+                className="workspace-menu-action"
+                onAction={() => {
+                  setError('');
+                  setMode('inbox');
+                }}
+              >
+                <span aria-hidden="true">✉</span>
+                {t('받은 초대')}
+                <span className="workspace-invitation-count">{inbox.filter(pending).length}</span>
+              </MenuItem>
+            </MenuSection>
+          </Menu>
+          <div className="workspace-menu-footer">{t('선택한 공간의 프로젝트만 표시됩니다.')}</div>
+          {error && !mode && (
+            <p className="notice error" role="alert">
+              {error}
+            </p>
           )}
-          <Button
-            onClick={() => {
-              setError('');
-              setMode('inbox');
-            }}
-          >
-            {t('받은 초대')} <Badge variant="plain">{inbox.filter(pending).length}</Badge>
-          </Button>
-        </div>
-      </div>
-      {!selected && <p>{t('첫 워크스페이스를 만들어 설계를 시작하세요.')}</p>}
-      {selected?.status === 'archived' && (
-        <p className="notice">
-          {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}
-        </p>
-      )}
-      {selected?.status === 'active' && selected.role === 'viewer' && (
-        <p className="workspace-access-note">
-          {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
-        </p>
-      )}
-      {error && !mode && (
-        <p className="notice error" role="alert">
-          {error}
-        </p>
-      )}
+        </Popover>
+      </MenuTrigger>
       {mode &&
         createPortal(
           <dialog
@@ -501,6 +552,27 @@ export function WorkspacePanel({
           </dialog>,
           document.body,
         )}
-    </section>
+    </div>
   );
+}
+
+export function WorkspaceNotice({ selected }: { selected: Workspace | undefined }) {
+  const { t } = useI18n();
+  if (!selected)
+    return (
+      <p className="workspace-access-note">{t('첫 워크스페이스를 만들어 설계를 시작하세요.')}</p>
+    );
+  if (selected.status === 'archived')
+    return (
+      <p className="notice">
+        {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}
+      </p>
+    );
+  if (selected.role === 'viewer')
+    return (
+      <p className="workspace-access-note">
+        {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
+      </p>
+    );
+  return null;
 }
