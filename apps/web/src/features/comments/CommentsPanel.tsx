@@ -14,7 +14,12 @@ import { body, message, request } from '../../shared/api/client.js';
 import { pinRequest, replyRequest } from './pin-request.js';
 import { usePanelDismiss } from '../../shared/hooks/use-panel-dismiss.js';
 import '../../styles/collaboration-panels.css';
-import { pinAttachment, pinPosition, selectedMentions } from './comments-state.js';
+import {
+  pinAttachment,
+  pinPosition,
+  pinVisibleInCanvas,
+  selectedMentions,
+} from './comments-state.js';
 import {
   Avatar,
   Badge,
@@ -34,6 +39,7 @@ type Member = {
 export type CommentContext = {
   viewId: string;
   selectedObjectId: string | null;
+  visibleObjectIds?: string[];
   position: {
     x: number;
     y: number;
@@ -45,8 +51,10 @@ export function CommentPins({
   viewId,
   onOpen,
   memberColors = {},
+  visibleObjectIds,
 }: {
   threads: Thread[];
+  visibleObjectIds?: readonly string[];
   memberColors?: Record<string, string>;
   document: DesignDocument;
   viewId: string;
@@ -56,7 +64,7 @@ export function CommentPins({
   return (
     <>
       {threads
-        .filter((t) => t.viewId === viewId && !t.resolved)
+        .filter((t) => pinVisibleInCanvas(document, t, viewId, visibleObjectIds) && !t.resolved)
         .map((thread, index) => {
           const point = pinPosition(document, thread);
           if (point.missing) return null;
@@ -394,7 +402,9 @@ export function CommentsPanel({
     }
   }
   const visible = threads.filter(
-    (t) => (allViews || t.viewId === context.viewId) && (showResolved || !t.resolved),
+    (t) =>
+      (allViews || pinVisibleInCanvas(document, t, context.viewId, context.visibleObjectIds)) &&
+      (showResolved || !t.resolved),
   );
   return (
     <aside className="comments-panel" aria-label={t('핀')}>

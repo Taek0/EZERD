@@ -683,6 +683,7 @@ export function TableNodeContent({
 export function TableWorkspaceTools({
   document: doc,
   viewId,
+  creationOwner,
   onChange,
   readOnly,
   position,
@@ -690,6 +691,7 @@ export function TableWorkspaceTools({
 }: {
   document: DesignDocument;
   viewId: string;
+  creationOwner?: string | null;
   viewMode: ModelScope;
   onViewModeChange: (v: ModelScope) => void;
   onChange: (d: DesignDocument) => void;
@@ -706,9 +708,12 @@ export function TableWorkspaceTools({
       <Button
         variant="primary"
         className="primary"
-        disabled={readOnly || tableCanvasOwner(doc, viewId) === undefined}
+        disabled={
+          readOnly || (creationOwner === undefined && tableCanvasOwner(doc, viewId) === undefined)
+        }
         onClick={() => {
-          const domainId = tableCanvasOwner(doc, viewId);
+          const domainId =
+            creationOwner === undefined ? tableCanvasOwner(doc, viewId) : creationOwner;
           if (readOnly || domainId === undefined) return;
           const id = newId();
           onChange(
@@ -723,6 +728,7 @@ export function TableWorkspaceTools({
                 customProperties: emptyMetadata(),
               },
               position,
+              viewId === TABLES_VIEW_ID ? TABLES_VIEW_ID : (domainId ?? TABLES_VIEW_ID),
             ),
           );
           setName('');
@@ -733,7 +739,12 @@ export function TableWorkspaceTools({
       </Button>
       <PanelNote>
         {viewId === TABLES_VIEW_ID
-          ? translate('도메인 없이 테이블을 만들고, 필요하면 속성에서 도메인을 지정하세요.')
+          ? creationOwner
+            ? translate('{domain} 도메인에 테이블을 생성합니다.', {
+                domain:
+                  doc.domains.find((domain) => domain.id === creationOwner)?.name ?? creationOwner,
+              })
+            : translate('도메인 없이 테이블을 만들고, 필요하면 속성에서 도메인을 지정하세요.')
           : translate(
               '이름을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이 화면으로 참조할 수 있습니다.',
             )}

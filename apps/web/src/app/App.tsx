@@ -28,7 +28,7 @@ import {
   type Notification,
 } from '@ezerd/contracts';
 import { ApiError, body, message, newId, request } from '../shared/api/client.js';
-import { Canvas } from '../features/canvas/Canvas.js';
+import { Canvas, type CanvasContext } from '../features/canvas/Canvas.js';
 import {
   CommentsPanel,
   CommentPins,
@@ -220,7 +220,7 @@ export function App() {
   current.current = opened;
   const [commentsOpen, setCommentsOpen] = useState(false),
     [threads, setThreads] = useState<Thread[]>([]);
-  const [canvasContext, setCanvasContext] = useState<CommentContext>({
+  const [canvasContext, setCanvasContext] = useState<CanvasContext>({
     viewId: 'overview',
     selectedObjectId: null,
     position: { x: 120, y: 120 },
@@ -1178,6 +1178,9 @@ export function App() {
                   threads={threads}
                   document={opened.document}
                   viewId={canvasContext.viewId}
+                  {...(canvasContext.visibleObjectIds
+                    ? { visibleObjectIds: canvasContext.visibleObjectIds }
+                    : {})}
                   onOpen={focusThread}
                 />
               }

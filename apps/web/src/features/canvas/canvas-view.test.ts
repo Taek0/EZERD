@@ -10,7 +10,6 @@ import {
 import { initialCanvasView, tableCanvasOwner, visibleCanvasTable } from './canvas-view.js';
 import { validViewId } from '../../shared/api/client.js';
 import { syncLayoutPolicy } from '../collaboration/sync-layout-policy.js';
-import { domainViewExitTarget } from '../domains/domain-view.js';
 
 const table: Table = {
   id: 'table',
@@ -22,7 +21,7 @@ const table: Table = {
 };
 
 describe('direct table canvas workflow', () => {
-  it('starts blank and unassigned projects with tables and keeps the domain map for existing domain projects', () => {
+  it('starts every project on the shared global table canvas', () => {
     const blank = createEmptyDocument();
     const unassigned = addTable(blank, table, { x: 10, y: 20 });
     const assigned = addDomain(
@@ -32,10 +31,10 @@ describe('direct table canvas workflow', () => {
     );
     expect(initialCanvasView(blank)).toBe(TABLES_VIEW_ID);
     expect(initialCanvasView(unassigned)).toBe(TABLES_VIEW_ID);
-    expect(initialCanvasView(assigned)).toBe('overview');
+    expect(initialCanvasView(assigned)).toBe(TABLES_VIEW_ID);
     expect(validViewId(TABLES_VIEW_ID, [])).toBe(TABLES_VIEW_ID);
     expect(validViewId('deleted', [], initialCanvasView(blank))).toBe(TABLES_VIEW_ID);
-    expect(validViewId('deleted', ['orders'], initialCanvasView(assigned))).toBe('overview');
+    expect(validViewId('deleted', ['orders'], initialCanvasView(assigned))).toBe(TABLES_VIEW_ID);
   });
 
   it('creates globally without an owner and keeps the domain-first creation path', () => {
@@ -100,7 +99,6 @@ describe('direct table canvas workflow', () => {
     expect(unassigned.layout.nodes.find((node) => node.viewId === TABLES_VIEW_ID)).toEqual(
       globalPlacement,
     );
-    expect(domainViewExitTarget(unassigned, ['orders'], TABLES_VIEW_ID)).toBe(TABLES_VIEW_ID);
   });
 
   it('uses shared design permissions for full-canvas placement and relation routes even when personal editing is allowed', () => {

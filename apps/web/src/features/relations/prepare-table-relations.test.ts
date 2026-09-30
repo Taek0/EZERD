@@ -212,3 +212,36 @@ it('updates card bounds and unrelated obstacles when the document changes', () =
   const filtered = prepareTableRelations(next, 'perf', 'physical', ['node-t0', 'node-t1'])[0]!;
   expect(filtered.obstacles).toEqual([]);
 });
+
+it('filters global relations by both endpoints while using only shared routes and canonical table coordinates', () => {
+  const doc = createTestDocument();
+  const globalView = '__tables__';
+  const originals = doc.layout.nodes.filter((n) => n.viewId === 'perf');
+  doc.layout.nodes.push(
+    ...originals.map((n) => ({
+      ...n,
+      id: 'global-' + n.id,
+      viewId: globalView,
+      x: n.x + 500,
+      y: n.y + 800,
+    })),
+  );
+  doc.views = [{ id: 'personal', name: 'Personal', domainIds: ['perf'] }];
+  doc.layout.relations = [
+    { relationId: 'r0', viewId: 'personal', offset: 999, waypoints: [{ x: 9000, y: 9000 }] },
+    { relationId: 'r0', viewId: globalView, offset: 21 },
+  ];
+  const before = structuredClone(doc);
+  const filtered = prepareTableRelations(doc, globalView, 'physical', [
+    'global-node-t0',
+    'global-node-t1',
+  ]).filter((r) => r !== null);
+  expect(filtered).toHaveLength(1);
+  expect(filtered[0]!.route).toEqual({ relationId: 'r0', viewId: globalView, offset: 21 });
+  expect(filtered[0]!.sourceBounds.x).toBe(originals.find((n) => n.objectId === 't0')!.x + 500);
+  expect(filtered[0]!.obstacles).toEqual([]);
+  expect(
+    prepareTableRelations(doc, globalView, 'physical', ['global-node-t0']).filter(Boolean),
+  ).toHaveLength(0);
+  expect(doc).toEqual(before);
+});
