@@ -5,6 +5,7 @@ import { config } from 'dotenv';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { prepareWorkspaceMigration } from './prepare-workspace-migration.mjs';
 
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true });
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -21,6 +22,7 @@ try {
   const testUrl = configuredUrl.toString();
   const pool = new pg.Pool({ connectionString: testUrl });
   try {
+    await prepareWorkspaceMigration(drizzle(pool));
     await migrate(drizzle(pool), {
       migrationsFolder: fileURLToPath(new URL('../drizzle/', import.meta.url)),
     });
