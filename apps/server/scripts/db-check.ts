@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { readConfig } from '../src/config.js';
-import { projects } from '../src/db/schema.js';
+import { projects, workspaces } from '../src/db/schema.js';
 
 const pool = new pg.Pool({
   connectionString: readConfig().DATABASE_URL,
@@ -15,7 +15,13 @@ const rollback = new Error('intentional smoke-test rollback');
 try {
   await db
     .transaction(async (tx) => {
-      await tx.insert(projects).values({ id, name: '개발 환경 연결 검증' });
+      const [workspace] = await tx
+        .insert(workspaces)
+        .values({ name: '연결 검증 공간' })
+        .returning();
+      await tx
+        .insert(projects)
+        .values({ id, workspaceId: workspace!.id, name: '개발 환경 연결 검증' });
       const [project] = await tx.select().from(projects).where(eq(projects.id, id));
       if (!project || project.status !== 'active')
         throw new Error('Drizzle insert/select verification failed.');

@@ -21,6 +21,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
   let token = '';
   let projectId = '';
   let userId = '';
+  let workspaceId = '';
+  const otherUserIds: string[] = [];
   const request = async (
     path: string,
     method = 'GET',
@@ -29,13 +31,17 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
   ) => {
     const requestToken =
       typeof authentication === 'string' ? authentication : authentication ? token : '';
+    const input =
+      path === '/projects' && method === 'POST' && body && typeof body === 'object'
+        ? { workspaceId, ...body }
+        : body;
     const response = await fetch(`${base}/api${path}`, {
       method,
       headers: {
         'content-type': 'application/json',
         ...(requestToken ? { authorization: `Bearer ${requestToken}` } : {}),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(input === undefined ? {} : { body: JSON.stringify(input) }),
     });
     const text = await response.text();
     return {
@@ -69,6 +75,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
     const session = await request('/sessions', 'POST', { userId, pin: '0424' }, false);
     token = session.data.token;
     expect(session.status).toBe(201);
+    const workspace = await request('/workspaces', 'POST', { name: `sync-${randomUUID()}` });
+    expect(workspace.status).toBe(201);
+    workspaceId = workspace.data.id;
     const project = await request('/projects', 'POST', { name: `sync-${randomUUID()}` });
     projectId = project.data.id;
     expect(project.status).toBe(201);
@@ -76,6 +85,14 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
   afterAll(async () => {
     if (pool) {
       if (projectId) await pool.query('DELETE FROM projects WHERE id=$1', [projectId]);
+      if (workspaceId) {
+        await pool.query('DELETE FROM workspace_invitations WHERE workspace_id=$1', [workspaceId]);
+        await pool.query('DELETE FROM user_workspaces WHERE workspace_id=$1', [workspaceId]);
+        await pool.query('DELETE FROM workspace WHERE workspace_id=$1', [workspaceId]);
+        await pool.query('DELETE FROM workspace_audit_events WHERE workspace_id=$1', [workspaceId]);
+      }
+      if (otherUserIds.length)
+        await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])', [otherUserIds]);
       if (userId) await pool.query('DELETE FROM users WHERE id=$1', [userId]);
       await pool.end();
     }
@@ -419,6 +436,24 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
       { userId: other.data.id, pin: '0424' },
       false,
     );
+    expect(other.status).toBe(201);
+    otherUserIds.push(other.data.id);
+    expect(otherSession.status).toBe(201);
+    const invitation = await request(`/workspaces/${workspaceId}/invitations`, 'POST', {
+      username: other.data.username,
+      role: 'editor',
+    });
+    expect(invitation.status).toBe(201);
+    expect(
+      (
+        await request(
+          `/workspace-invitations/${invitation.data.id}/accept`,
+          'POST',
+          {},
+          otherSession.data.token,
+        )
+      ).status,
+    ).toBe(201);
     expect(
       (
         await request(
@@ -429,7 +464,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
         )
       ).status,
     ).toBe(409);
-    await pool.query('delete from users where id=$1', [other.data.id]);
   });
 
   it('replays an accepted result before validating an expired server baseline', async () => {

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LanAccessService } from '../src/network/network-access.js';
 import { isPrivateIPv4, parseAllowedCidrs } from '../src/network/network-policy.js';
 import { SyncGateway } from '../src/sync/sync.gateway.js';
+import { WorkspaceEventsService } from '../src/workspace/workspace-events.service.js';
 
 const original = {
   NODE_ENV: process.env.NODE_ENV,
@@ -77,7 +78,13 @@ describe('LAN network access', () => {
   it('rejects a WebSocket upgrade before session authentication', () => {
     const sessions = { authenticateToken: vi.fn() };
     const network = { isAllowed: vi.fn(() => false) };
-    const gateway = new SyncGateway({} as never, sessions as never, network as never);
+    const gateway = new SyncGateway(
+      {} as never,
+      sessions as never,
+      network as never,
+      {} as never,
+      new WorkspaceEventsService(),
+    );
     const server = new EventEmitter();
     gateway.attach(server as never);
     const socket = { destroy: vi.fn() };
@@ -94,5 +101,6 @@ describe('LAN network access', () => {
     expect(network.isAllowed).toHaveBeenCalledWith('8.8.8.8');
     expect(socket.destroy).toHaveBeenCalledOnce();
     expect(sessions.authenticateToken).not.toHaveBeenCalled();
+    gateway.onApplicationShutdown();
   });
 });

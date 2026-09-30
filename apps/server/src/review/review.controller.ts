@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Headers,
   Inject,
@@ -36,8 +37,12 @@ export class ReviewController {
   ) {}
 
   @Get('projects/:projectId/threads')
-  list(@Param('projectId') rawId: string) {
-    return this.reviews.list(parse(idSchema, rawId));
+  async list(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('projectId') rawId: string,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
+    return this.reviews.list(parse(idSchema, rawId), actor.id);
   }
 
   @Post('projects/:projectId/threads')
@@ -81,8 +86,15 @@ export class ReviewController {
   }
 
   @Get('users/:id/notifications')
-  listNotifications(@Param('id') rawId: string) {
-    return this.reviews.listNotifications(parse(idSchema, rawId));
+  async listNotifications(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
+    const userId = parse(idSchema, rawId);
+    if (userId !== actor.id)
+      throw new ForbiddenException('다른 사용자의 알림을 조회할 수 없습니다.');
+    return this.reviews.listNotifications(userId);
   }
 
   @Patch('notifications/:id')

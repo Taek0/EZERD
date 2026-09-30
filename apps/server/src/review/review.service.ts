@@ -17,10 +17,11 @@ import type {
   updateThreadSchema,
 } from '@ezerd/contracts';
 import { DatabaseService } from '../db/database.service.js';
-import { messages, notifications, projects, threads, users } from '../db/schema.js';
+import { messages, notifications, projects, threads, users, userWorkspaces } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncGateway } from '../sync/sync.gateway.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
+import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
 
 type Transaction = Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0];
 type Store = DatabaseService['db'] | Transaction;
@@ -55,11 +56,23 @@ async function loadThread(db: Store, id: string) {
     })),
   };
 }
-async function validatePeople(db: Store, mentionIds: string[]) {
+function accessibleNotification(userId: string) {
+  return sql`exists (
+    select 1 from ${projects}
+    inner join ${userWorkspaces} on ${userWorkspaces.workspaceId} = ${projects.workspaceId}
+    where ${projects.id} = ${notifications.projectId} and ${userWorkspaces.userId} = ${userId}
+  )`;
+}
+async function validatePeople(db: Store, projectId: string, mentionIds: string[]) {
   const ids = [...new Set(mentionIds)];
   if (!ids.length) return;
-  const found = await db.select({ id: users.id }).from(users).where(inArray(users.id, ids));
-  if (found.length !== ids.length) throw new BadRequestException('멘션 사용자를 찾을 수 없습니다.');
+  const found = await db
+    .select({ id: userWorkspaces.userId })
+    .from(userWorkspaces)
+    .innerJoin(projects, eq(projects.workspaceId, userWorkspaces.workspaceId))
+    .where(and(eq(projects.id, projectId), inArray(userWorkspaces.userId, ids)));
+  if (found.length !== ids.length)
+    throw new BadRequestException('멘션할 공간 멤버를 찾을 수 없습니다.');
 }
 async function addMessage(
   db: Transaction,
@@ -69,7 +82,7 @@ async function addMessage(
   input: z.infer<typeof createMessageSchema>,
 ) {
   const mentionIds = [...new Set(input.mentionIds)];
-  await validatePeople(db, mentionIds);
+  await validatePeople(db, projectId, mentionIds);
   await db.insert(messages).values({ threadId, authorId, body: input.body, mentionIds });
   const recipientIds = mentionIds.filter((id) => id !== authorId);
   if (recipientIds.length)
@@ -89,12 +102,18 @@ async function lockActiveProject(db: Transaction, projectId: string) {
     throw new ConflictException('보관된 프로젝트는 변경할 수 없습니다.');
   return project;
 }
-async function lockActiveThread(db: Transaction, id: string) {
+async function lockActiveThread(
+  db: Transaction,
+  id: string,
+  userId: string,
+  access: WorkspaceAccessService,
+) {
   const [reference] = await db
     .select({ projectId: threads.projectId })
     .from(threads)
     .where(eq(threads.id, id));
   if (!reference) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+  await access.requireProject(userId, reference.projectId, 'review', db);
   await lockActiveProject(db, reference.projectId);
   const [thread] = await db.select().from(threads).where(eq(threads.id, id)).for('update');
   if (!thread) throw new NotFoundException('댓글을 찾을 수 없습니다.');
@@ -106,74 +125,79 @@ export class ReviewService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SyncGateway) private readonly gateway: SyncGateway,
+    @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
   ) {}
 
-  list(projectId: string) {
-    return operation(async () => {
-      const [project] = await this.database.db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(eq(projects.id, projectId));
-      if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      const rows = await this.database.db
-        .select({ id: threads.id })
-        .from(threads)
-        .where(eq(threads.projectId, projectId))
-        .orderBy(desc(threads.updatedAt), asc(threads.id));
-      return Promise.all(rows.map((row) => loadThread(this.database.db, row.id)));
-    });
+  list(projectId: string, userId: string) {
+    return operation(() =>
+      this.access.runProject(userId, projectId, 'read', async (tx) => {
+        const rows = await tx
+          .select({ id: threads.id })
+          .from(threads)
+          .where(eq(threads.projectId, projectId))
+          .orderBy(desc(threads.updatedAt), asc(threads.id));
+        return Promise.all(rows.map((row) => loadThread(tx, row.id)));
+      }),
+    );
   }
 
-  listPage(projectId: string, limit: number, rawCursor?: string) {
-    return operation(async () => {
-      const cursor = decodeUpdatedCursor(rawCursor);
-      const [project] = await this.database.db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(eq(projects.id, projectId));
-      if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      const orderedTime = sql<Date>`date_trunc('milliseconds', ${threads.updatedAt})`;
-      const rows = await this.database.db
-        .select()
-        .from(threads)
-        .where(
-          and(
-            eq(threads.projectId, projectId),
-            cursor
-              ? or(
-                  lt(orderedTime, new Date(cursor.updatedAt)),
-                  and(eq(orderedTime, new Date(cursor.updatedAt)), gt(threads.id, cursor.id)),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(desc(orderedTime), asc(threads.id))
-        .limit(limit + 1);
-      const page = rows.slice(0, limit);
-      return {
-        threads: page.map((row) => ({
-          ...row,
-          createdAt: row.createdAt.toISOString(),
-          updatedAt: row.updatedAt.toISOString(),
-        })),
-        nextCursor:
-          rows.length > limit
-            ? encodeUpdatedCursor({
-                updatedAt: page.at(-1)!.updatedAt.toISOString(),
-                id: page.at(-1)!.id,
-              })
-            : null,
-      };
-    });
+  listPage(projectId: string, userId: string, limit: number, rawCursor?: string) {
+    return operation(() =>
+      this.access.runProject(userId, projectId, 'read', async (tx) => {
+        const cursor = decodeUpdatedCursor(rawCursor);
+        const orderedTime = sql<Date>`date_trunc('milliseconds', ${threads.updatedAt})`;
+        const rows = await tx
+          .select()
+          .from(threads)
+          .where(
+            and(
+              eq(threads.projectId, projectId),
+              cursor
+                ? or(
+                    lt(orderedTime, new Date(cursor.updatedAt)),
+                    and(eq(orderedTime, new Date(cursor.updatedAt)), gt(threads.id, cursor.id)),
+                  )
+                : undefined,
+            ),
+          )
+          .orderBy(desc(orderedTime), asc(threads.id))
+          .limit(limit + 1);
+        const page = rows.slice(0, limit);
+        return {
+          threads: page.map((row) => ({
+            ...row,
+            createdAt: row.createdAt.toISOString(),
+            updatedAt: row.updatedAt.toISOString(),
+          })),
+          nextCursor:
+            rows.length > limit
+              ? encodeUpdatedCursor({
+                  updatedAt: page.at(-1)!.updatedAt.toISOString(),
+                  id: page.at(-1)!.id,
+                })
+              : null,
+        };
+      }),
+    );
   }
 
-  getThread(id: string) {
-    return operation(() => loadThread(this.database.db, id));
+  getThread(id: string, userId: string) {
+    return operation(async () => {
+      const [reference] = await this.database.db
+        .select({ projectId: threads.projectId })
+        .from(threads)
+        .where(eq(threads.id, id));
+      if (!reference) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+      return this.access.runProject(userId, reference.projectId, 'read', (tx) =>
+        loadThread(tx, id),
+      );
+    });
   }
 
   create(projectId: string, input: z.infer<typeof createThreadSchema>, actor: AuthenticatedUser) {
     return operation(async () => {
       const result = await this.database.db.transaction(async (tx) => {
+        await this.access.requireProject(actor.id, projectId, 'review', tx);
         const project = await lockActiveProject(tx, projectId);
         const doc = project.document;
         if (
@@ -220,7 +244,7 @@ export class ReviewService {
   remove(id: string, input: z.infer<typeof deleteThreadSchema>, actor: AuthenticatedUser) {
     return operation(async () => {
       const result = await this.database.db.transaction(async (tx) => {
-        const thread = await lockActiveThread(tx, id);
+        const thread = await lockActiveThread(tx, id, actor.id, this.access);
         if (thread.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime())
           throw new ConflictException(
             '새 답글 또는 상태 변경이 있습니다. 최신 핀을 확인한 후 삭제해주세요.',
@@ -241,7 +265,7 @@ export class ReviewService {
   reply(id: string, input: z.infer<typeof createMessageSchema>, actor: AuthenticatedUser) {
     return operation(async () => {
       const result = await this.database.db.transaction(async (tx) => {
-        const thread = await lockActiveThread(tx, id);
+        const thread = await lockActiveThread(tx, id, actor.id, this.access);
         await addMessage(tx, id, thread.projectId, actor.id, input);
         return { projectId: thread.projectId, thread: await loadThread(tx, id) };
       });
@@ -258,7 +282,7 @@ export class ReviewService {
   update(id: string, input: z.infer<typeof updateThreadSchema>, actor: AuthenticatedUser) {
     return operation(async () => {
       const result = await this.database.db.transaction(async (tx) => {
-        const thread = await lockActiveThread(tx, id);
+        const thread = await lockActiveThread(tx, id, actor.id, this.access);
         await tx
           .update(threads)
           .set({ ...input, updatedAt: nextThreadTimestamp })
@@ -286,7 +310,7 @@ export class ReviewService {
         await this.database.db
           .select()
           .from(notifications)
-          .where(eq(notifications.userId, id))
+          .where(and(eq(notifications.userId, id), accessibleNotification(id)))
           .orderBy(desc(notifications.createdAt), asc(notifications.id))
       ).map(notification);
     });
@@ -302,6 +326,7 @@ export class ReviewService {
         .where(
           and(
             eq(notifications.userId, userId),
+            accessibleNotification(userId),
             unreadOnly ? eq(notifications.read, false) : undefined,
             cursor
               ? or(
@@ -339,6 +364,7 @@ export class ReviewService {
           .from(notifications)
           .where(and(eq(notifications.id, id), eq(notifications.userId, actor.id)));
         if (!reference) throw new NotFoundException('알림을 찾을 수 없습니다.');
+        await this.access.requireProject(actor.id, reference.projectId, 'review', tx);
         await lockActiveProject(tx, reference.projectId);
         const [row] = await tx
           .update(notifications)

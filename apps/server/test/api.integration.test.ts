@@ -22,6 +22,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   let pool: pg.Pool;
   let base: string;
   let defaultToken: string;
+  let workspaceId: string;
   const projectIds: string[] = [];
   const userIds: string[] = [];
   async function request(
@@ -31,13 +32,20 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     authorization?: string | null,
   ) {
     const token = authorization === null ? undefined : (authorization ?? defaultToken);
+    // Legacy project fixtures all live in this suite's isolated workspace.
+    const input =
+      path === '/projects' && method === 'POST' && body && typeof body === 'object'
+        ? { workspaceId, ...body }
+        : path === '/projects/import' && method === 'POST'
+          ? { workspaceId, transfer: body }
+          : body;
     const response = await fetch(`${base}/api${path}`, {
       method,
       headers: {
         'content-type': 'application/json',
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(input === undefined ? {} : { body: JSON.stringify(input) }),
     });
     const text = await response.text();
     return {
@@ -50,6 +58,24 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   async function login(userId: string, pin = '0012'): Promise<string> {
     const response = await request('/sessions', 'POST', { userId, pin }, null);
     expect(response.status).toBe(201);
+    if (workspaceId) {
+      const person = await request(`/users/${userId}`);
+      const invitation = await request(`/workspaces/${workspaceId}/invitations`, 'POST', {
+        username: person.data.username,
+        role: 'editor',
+      });
+      expect(invitation.status).toBe(201);
+      expect(
+        (
+          await request(
+            `/workspace-invitations/${invitation.data.id}/accept`,
+            'POST',
+            {},
+            response.data.token,
+          )
+        ).status,
+      ).toBe(201);
+    }
     return response.data.token;
   }
   async function syncDocument(
@@ -106,11 +132,20 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(fixture.status).toBe(201);
     userIds.push(fixture.data.id);
     defaultToken = await login(fixture.data.id);
+    const workspace = await request('/workspaces', 'POST', { name: `api-${randomUUID()}` });
+    expect(workspace.status).toBe(201);
+    workspaceId = workspace.data.id;
   });
   afterAll(async () => {
     if (pool) {
       if (projectIds.length)
         await pool.query('DELETE FROM projects WHERE id = ANY($1::uuid[])', [projectIds]);
+      if (workspaceId) {
+        await pool.query('DELETE FROM workspace_invitations WHERE workspace_id=$1', [workspaceId]);
+        await pool.query('DELETE FROM user_workspaces WHERE workspace_id=$1', [workspaceId]);
+        await pool.query('DELETE FROM workspace WHERE workspace_id=$1', [workspaceId]);
+        await pool.query('DELETE FROM workspace_audit_events WHERE workspace_id=$1', [workspaceId]);
+      }
       if (userIds.length)
         await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [userIds]);
       await pool.end();
@@ -508,13 +543,14 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   it('deletes only version-matched archived projects and cascades pins without deleting people', async () => {
     const author = await request('/users', 'POST', {
       pin: '0012',
-      username: 'delete fixture author',
+      username: `delete-author-${randomUUID().slice(0, 12)}`,
     });
     const recipient = await request('/users', 'POST', {
       pin: '0012',
-      username: 'delete fixture recipient',
+      username: `delete-recipient-${randomUUID().slice(0, 12)}`,
     });
     const authorToken = await login(author.data.id);
+    const recipientToken = await login(recipient.data.id);
     userIds.push(author.data.id, recipient.data.id);
     const created = await request('/projects', 'POST', { name: 'delete fixture project' });
     const other = await request('/projects', 'POST', { name: 'retained fixture project' });
@@ -557,7 +593,16 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
         )
       ).status,
     ).toBe(404);
-    expect((await request('/users/' + recipient.data.id + '/notifications')).data).toEqual([]);
+    expect(
+      (
+        await request(
+          '/users/' + recipient.data.id + '/notifications',
+          'GET',
+          undefined,
+          recipientToken,
+        )
+      ).data,
+    ).toEqual([]);
     expect((await request('/users/' + author.data.id)).status).toBe(200);
     expect((await request('/projects/' + other.data.id)).status).toBe(200);
     expect(
@@ -572,7 +617,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   it('stores blank pins in design views and retains their threads after view removal', async () => {
     const person = await request('/users', 'POST', {
       pin: '0012',
-      username: 'combined pin author',
+      username: `combined-pin-${randomUUID().slice(0, 12)}`,
     });
     userIds.push(person.data.id);
     const personToken = await login(person.data.id);
@@ -610,14 +655,18 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   });
 
   it('deletes a pin and replies atomically but rejects deletion after a new reply', async () => {
-    const author = await request('/users', 'POST', { pin: '0012', username: 'pin delete author' });
+    const author = await request('/users', 'POST', {
+      pin: '0012',
+      username: `pin-author-${randomUUID().slice(0, 12)}`,
+    });
     userIds.push(author.data.id);
     const authorToken = await login(author.data.id);
     const recipient = await request('/users', 'POST', {
       pin: '0012',
-      username: 'pin delete recipient',
+      username: `pin-recipient-${randomUUID().slice(0, 12)}`,
     });
     userIds.push(recipient.data.id);
+    const recipientToken = await login(recipient.data.id);
     const created = await request('/projects', 'POST', { name: 'pin delete fixture' });
     const id = created.data.id;
     projectIds.push(id);
@@ -658,7 +707,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(removed.data).toEqual({ id: first.data.id, deleted: true });
     const pins = await request('/projects/' + id + '/threads');
     expect(pins.data.map((p: { id: string }) => p.id)).toEqual([retained.data.id]);
-    const alerts = await request('/users/' + recipient.data.id + '/notifications');
+    const alerts = await request(
+      '/users/' + recipient.data.id + '/notifications',
+      'GET',
+      undefined,
+      recipientToken,
+    );
     expect(alerts.data.map((n: { threadId: string }) => n.threadId)).toEqual([retained.data.id]);
     expect(
       (
@@ -711,7 +765,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
   });
 
   it('does not expose database error details', async () => {
-    const { WorkspaceController } = await import('../dist/workspace.controller.js');
+    const { WorkspaceController } = await import('../dist/workspace/workspace.controller.js');
     const brokenDatabase = {
       db: {
         insert: () => {
@@ -846,10 +900,17 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(reopened.data.document).toEqual(saved.data.document);
   });
   it('keeps review threads independent from design saves and atomically validates mentions', async () => {
-    const author = (await request('/users', 'POST', { pin: '0012', username: 'review author' }))
-      .data;
+    const author = (
+      await request('/users', 'POST', {
+        pin: '0012',
+        username: `review-author-${randomUUID().slice(0, 12)}`,
+      })
+    ).data;
     const mentioned = (
-      await request('/users', 'POST', { pin: '0012', username: 'review teammate' })
+      await request('/users', 'POST', {
+        pin: '0012',
+        username: `review-teammate-${randomUUID().slice(0, 12)}`,
+      })
     ).data;
     const authorToken = await login(author.id);
     const mentionedToken = await login(mentioned.id);
@@ -891,10 +952,14 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(created.status).toBe(201);
     const thread = created.data;
     expect(thread.messages[0].mentionIds).toEqual([mentioned.id, author.id]);
-    const alerts = (await request(`/users/${mentioned.id}/notifications`)).data;
+    const alerts = (
+      await request(`/users/${mentioned.id}/notifications`, 'GET', undefined, mentionedToken)
+    ).data;
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatchObject({ projectId: project.id, threadId: thread.id, read: false });
-    expect((await request(`/users/${author.id}/notifications`)).data).toEqual([]);
+    expect(
+      (await request(`/users/${author.id}/notifications`, 'GET', undefined, authorToken)).data,
+    ).toEqual([]);
     expect(
       (await request(`/notifications/${alerts[0].id}`, 'PATCH', { read: true }, authorToken))
         .status,
@@ -971,7 +1036,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       (await request(`/threads/${thread.id}`, 'PATCH', { resolved: false })).data.resolved,
     ).toBe(false);
     expect((await request(`/projects/${project.id}/threads`)).data[0].messages).toHaveLength(2);
-    expect((await request(`/users/${author.id}/notifications`)).data).toHaveLength(1);
+    expect(
+      (await request(`/users/${author.id}/notifications`, 'GET', undefined, authorToken)).data,
+    ).toHaveLength(1);
     expect((await request(`/threads/${randomUUID()}`, 'PATCH', { resolved: true })).status).toBe(
       404,
     );

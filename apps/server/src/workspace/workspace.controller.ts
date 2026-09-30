@@ -105,7 +105,8 @@ export class WorkspaceController {
   }
 
   @Get('users')
-  listUsers() {
+  async listUsers(@Headers('authorization') authorization: string | undefined) {
+    await requireSession(this.sessions, authorization);
     return databaseOperation(async () =>
       (await this.database.db.select().from(users).orderBy(asc(users.username), asc(users.id))).map(
         user,
@@ -114,7 +115,11 @@ export class WorkspaceController {
   }
 
   @Get('users/:id')
-  getUser(@Param('id') rawId: string) {
+  async getUser(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+  ) {
+    await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
     return databaseOperation(async () => {
       const [row] = await this.database.db.select().from(users).where(eq(users.id, id));
@@ -149,15 +154,19 @@ export class WorkspaceController {
     @Headers('authorization') authorization: string | undefined,
     @Body() body: unknown,
   ) {
-    await requireSession(this.sessions, authorization);
+    const actor = await requireSession(this.sessions, authorization);
     const input = parse(createProjectSchema, body);
-    return this.workspace.createProject(input);
+    return this.workspace.createProject(actor.id, input);
   }
 
   @Get('projects')
-  listProjects(@Query() query: unknown) {
+  async listProjects(
+    @Headers('authorization') authorization: string | undefined,
+    @Query() query: unknown,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
     const input = parse(projectQuerySchema, query);
-    return this.workspace.listProjects(input);
+    return this.workspace.listProjects(actor.id, input);
   }
 
   @Post('projects/import')
@@ -165,19 +174,27 @@ export class WorkspaceController {
     @Headers('authorization') authorization: string | undefined,
     @Body() body: unknown,
   ) {
-    await requireSession(this.sessions, authorization);
-    return this.workspace.importProject(body);
+    const actor = await requireSession(this.sessions, authorization);
+    return this.workspace.importProject(actor.id, body);
   }
 
   @Get('projects/:id/export')
-  exportProject(@Param('id') rawId: string) {
-    return this.workspace.exportProject(parse(idSchema, rawId));
+  async exportProject(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
+    return this.workspace.exportProject(actor.id, parse(idSchema, rawId));
   }
 
   @Get('projects/:id')
-  getProject(@Param('id') rawId: string) {
+  async getProject(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
-    return this.workspace.getProject(id);
+    return this.workspace.getProject(actor.id, id);
   }
 
   @Patch('projects/:id')
@@ -186,9 +203,9 @@ export class WorkspaceController {
     @Param('id') rawId: string,
     @Body() body: unknown,
   ) {
-    await requireSession(this.sessions, authorization);
+    const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
-    return this.workspace.updateProject(id, parse(updateProjectSchema, body));
+    return this.workspace.updateProject(actor.id, id, parse(updateProjectSchema, body));
   }
 
   @Delete('projects/:id')
@@ -197,9 +214,9 @@ export class WorkspaceController {
     @Param('id') rawId: string,
     @Body() body: unknown,
   ) {
-    await requireSession(this.sessions, authorization);
+    const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
-    return this.workspace.deleteProject(id, parse(deleteProjectSchema, body));
+    return this.workspace.deleteProject(actor.id, id, parse(deleteProjectSchema, body));
   }
 
   @Put('projects/:id/document')

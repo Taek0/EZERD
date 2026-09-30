@@ -123,6 +123,7 @@ describe('physical type write boundaries', () => {
       const service = new SyncService(
         { db: { transaction: async (run: (value: typeof tx) => unknown) => run(tx) } } as never,
         gateway as never,
+        { requireProject: vi.fn(async () => undefined) } as never,
       );
       const changes = deriveOperationChanges(baseline, proposed);
       if (forged)
@@ -243,27 +244,36 @@ describe('physical type write boundaries', () => {
       ],
     }));
     const db = { insert: vi.fn(() => ({ values })) };
-    const service = new WorkspaceService({ db } as never);
-    await service.importProject({
-      format: 'ezerd-project',
-      formatVersion: 1,
-      exportedAt: new Date().toISOString(),
-      project: { name: 'Import' },
-      document: document({ name, isArray: false }),
+    const access = {
+      runWorkspace: vi.fn(async (_actorId, _workspaceId, _permission, run) => run(db)),
+    };
+    const service = new WorkspaceService({ db } as never, access as never);
+    await service.importProject(actor.id, {
+      workspaceId: crypto.randomUUID(),
+      transfer: {
+        format: 'ezerd-project',
+        formatVersion: 1,
+        exportedAt: new Date().toISOString(),
+        project: { name: 'Import' },
+        document: document({ name, isArray: false }),
+      },
     });
     expect(values.mock.calls[0]![0].document.columns[0].physical.type.name).toBe(expected);
   });
 
   it('rejects invalid types before import insertion', () => {
     const db = { insert: vi.fn() };
-    const service = new WorkspaceService({ db } as never);
+    const service = new WorkspaceService({ db } as never, {} as never);
     expect(() =>
-      service.importProject({
-        format: 'ezerd-project',
-        formatVersion: 1,
-        exportedAt: new Date().toISOString(),
-        project: { name: 'Import' },
-        document: document({ name: 'integer', length: 12, isArray: false }),
+      service.importProject(actor.id, {
+        workspaceId: crypto.randomUUID(),
+        transfer: {
+          format: 'ezerd-project',
+          formatVersion: 1,
+          exportedAt: new Date().toISOString(),
+          project: { name: 'Import' },
+          document: document({ name: 'integer', length: 12, isArray: false }),
+        },
       }),
     ).toThrow(BadRequestException);
     expect(db.insert).not.toHaveBeenCalled();

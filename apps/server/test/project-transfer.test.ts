@@ -26,6 +26,9 @@ const file = {
   project: { name: '설계' },
   document,
 };
+const actorId = randomUUID();
+const workspaceId = randomUUID();
+const input = { workspaceId, transfer: file };
 function setup(fail = false) {
   const inserted: Array<Record<string, unknown>> = [];
   const db = {
@@ -49,20 +52,29 @@ function setup(fail = false) {
       }),
     })),
   };
-  return { service: new WorkspaceService({ db } as never), db, inserted };
+  const access = {
+    runWorkspace: vi.fn(async (_actorId, _workspaceId, _permission, run) => run(db)),
+  };
+  return { service: new WorkspaceService({ db } as never, access as never), db, inserted, access };
 }
 describe('project file transfer', () => {
-  it('creates independent projects and preserves document-local identities with one atomic insert each', async () => {
-    const { service, inserted, db } = setup();
-    const first = await service.importProject(file);
-    const second = await service.importProject(file);
+  it('creates independent projects and preserves document-local identities in workspace transactions', async () => {
+    const { service, inserted, db, access } = setup();
+    const first = await service.importProject(actorId, input);
+    const second = await service.importProject(actorId, input);
     expect(first.id).not.toBe(second.id);
-    expect(first).toMatchObject({ version: 0, status: 'active' });
+    expect(first).toMatchObject({ workspaceId, version: 0, status: 'active' });
     expect(inserted).toEqual([
-      { name: '설계', document },
-      { name: '설계', document },
+      { name: '설계', workspaceId, document },
+      { name: '설계', workspaceId, document },
     ]);
-    expect(db.insert).toHaveBeenCalledTimes(2);
+    expect(access.runWorkspace).toHaveBeenCalledTimes(2);
+    expect(access.runWorkspace).toHaveBeenCalledWith(
+      actorId,
+      workspaceId,
+      'createProject',
+      expect.any(Function),
+    );
   });
   it('rejects invalid references, unsupported versions, and private fields before insertion', () => {
     const { service, db } = setup();
@@ -80,12 +92,16 @@ describe('project file transfer', () => {
         },
       },
     ])
-      expect(() => service.importProject(invalid)).toThrow(BadRequestException);
+      expect(() => service.importProject(actorId, { workspaceId, transfer: invalid })).toThrow(
+        BadRequestException,
+      );
     expect(db.insert).not.toHaveBeenCalled();
   });
   it('reports storage failure without a partially created design', async () => {
     const { service, inserted } = setup(true);
-    await expect(service.importProject(file)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    await expect(service.importProject(actorId, input)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
     expect(inserted).toEqual([]);
   });
   it('exports only the name and document from a single server snapshot', async () => {
@@ -93,6 +109,7 @@ describe('project file transfer', () => {
     const get = vi.spyOn(service, 'getProject').mockResolvedValue({
       project: {
         id: randomUUID(),
+        workspaceId,
         name: '서버 이름',
         status: 'archived',
         version: 12,
@@ -101,13 +118,15 @@ describe('project file transfer', () => {
       },
       document,
     });
-    const result = await service.exportProject(randomUUID());
+    const projectId = randomUUID();
+    const result = await service.exportProject(actorId, projectId);
     expect(result).toEqual({
       ...file,
       exportedAt: expect.any(String),
       project: { name: '서버 이름' },
     });
     expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith(actorId, projectId);
     expect(Object.keys(result)).toEqual([
       'format',
       'formatVersion',
@@ -129,7 +148,7 @@ describe('project file transfer', () => {
       { importProject } as never,
       {} as never,
     );
-    await expect(controller.importProject(undefined, file)).rejects.toBeInstanceOf(
+    await expect(controller.importProject(undefined, input)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
     expect(importProject).not.toHaveBeenCalled();

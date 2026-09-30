@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ReviewController } from '../src/review/review.controller.js';
 import { ReviewService } from '../src/review/review.service.js';
 import { WorkspaceController } from '../src/workspace/workspace.controller.js';
+import { PersonalStateController } from '../src/workspace/personal-state.controller.js';
 
 const actor = { id: randomUUID(), username: 'actor', color: '#4169e1' };
 
@@ -34,6 +35,7 @@ describe('authenticated write paths', () => {
       {} as never,
     );
     const review = new ReviewController(session as never, domainService as never);
+    const personal = new PersonalStateController(session as never, domainService as never);
     const id = randomUUID();
 
     const writes = [
@@ -54,10 +56,33 @@ describe('authenticated write paths', () => {
       review.update(undefined, id, { resolved: true }),
       review.remove(undefined, id, { expectedUpdatedAt: new Date().toISOString() }),
       review.updateNotification(undefined, id, { read: true }),
+      personal.save(undefined, id, {}),
     ];
 
     for (const write of writes) await expect(write).rejects.toBeInstanceOf(UnauthorizedException);
     expect(session.authenticateHeader).toHaveBeenCalledTimes(writes.length);
+  });
+
+  it('authenticates review, notifications, and personal reads before service access', async () => {
+    const domainService = new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('domain service must not be accessed');
+        },
+      },
+    );
+    const session = rejectingSession();
+    const review = new ReviewController(session as never, domainService as never);
+    const personal = new PersonalStateController(session as never, domainService as never);
+    const id = randomUUID();
+    const reads = [
+      review.list(undefined, id),
+      review.listNotifications(undefined, id),
+      personal.get(undefined, id),
+    ];
+    for (const read of reads) await expect(read).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(session.authenticateHeader).toHaveBeenCalledTimes(reads.length);
   });
 
   it('returns 410 for authenticated whole-document replacement attempts', async () => {
@@ -126,7 +151,8 @@ describe('authenticated write paths', () => {
     };
     const session = { authenticateHeader: vi.fn(async () => actor) };
     const gateway = { publishReview: vi.fn(() => expect(committed).toBe(true)) };
-    const service = new ReviewService(database as never, gateway as never);
+    const access = { requireProject: vi.fn(async () => ({ role: 'viewer', status: 'active' })) };
+    const service = new ReviewService(database as never, gateway as never, access as never);
     const controller = new ReviewController(session as never, service);
 
     await expect(
@@ -150,6 +176,7 @@ describe('authenticated write paths', () => {
     });
 
     expect(result.messages).toEqual([]);
+    expect(access.requireProject).toHaveBeenCalledWith(actor.id, project.id, 'review', tx);
     expect(insertedMessages).toContainEqual(
       expect.objectContaining({ authorId: actor.id, body: 'message' }),
     );

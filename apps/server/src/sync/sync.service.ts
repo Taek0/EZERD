@@ -41,6 +41,7 @@ import {
 } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncGateway } from './sync.gateway.js';
+import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
 
 const RECONNECT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -128,6 +129,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SyncGateway) private readonly gateway: SyncGateway,
+    @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
   ) {}
 
   onModuleInit(): void {
@@ -150,6 +152,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
   ): Promise<SyncOperationResult> {
     const requestHash = options.requestHash ?? fingerprint(input);
     const outcome = await this.database.db.transaction(async (tx) => {
+      await this.access.requireProject(user.id, projectId, 'design', tx);
       // Idempotency is checked before age, baseline, status, and conflict validation.
       const [replay] = await tx
         .select()
@@ -405,16 +408,17 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     operationId: string,
     user: AuthenticatedUser,
   ): Promise<SyncOperationResult> {
-    const [row] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
-      );
-    if (!row) throw new NotFoundException('작업 결과를 찾을 수 없습니다.');
-    // All collaborators can inspect project history, but authentication is mandatory.
-    void user;
-    return syncOperationResultSchema.parse(row.result);
+    return this.access.runProject(user.id, projectId, 'read', async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(syncOperations)
+        .where(
+          and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
+        );
+      if (!row) throw new NotFoundException('작업 결과를 찾을 수 없습니다.');
+      // All collaborators can inspect project history, but authentication is mandatory.
+      return syncOperationResultSchema.parse(row.result);
+    });
   }
 
   async findReplay(
@@ -423,19 +427,22 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     requestHash: string,
     user: AuthenticatedUser,
   ): Promise<SyncOperationResult | undefined> {
-    const [row] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
-      );
-    if (!row) return undefined;
-    if (row.actorId !== user.id || row.fingerprint !== requestHash)
-      throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
-    return syncOperationResultSchema.parse(row.result);
+    return this.access.runProject(user.id, projectId, 'design', async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(syncOperations)
+        .where(
+          and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
+        );
+      if (!row) return undefined;
+      if (row.actorId !== user.id || row.fingerprint !== requestHash)
+        throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
+      return syncOperationResultSchema.parse(row.result);
+    });
   }
 
   async events(
+    actorId: string,
     projectId: string,
     since: number,
   ): Promise<{
@@ -446,6 +453,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
   }> {
     return this.database.db.transaction(
       async (tx) => {
+        await this.access.requireProject(actorId, projectId, 'read', tx);
         const [project] = await tx
           .select({ sequence: projects.syncSequence, document: projects.document })
           .from(projects)
@@ -469,42 +477,14 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     );
   }
 
-  async history(projectId: string, since: number): Promise<SyncHistoryEntry[]> {
-    const rows = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
-      .orderBy(asc(syncOperations.sequence));
-    return rows.map((row) => {
-      const snapshot = row.deletionSnapshot as { items?: unknown[] } | null;
-      return {
-        ...eventFrom(row),
-        clientId: row.clientId,
-        kind: row.kind as 'online' | 'reconnect',
-        ...(snapshot?.items?.length ? { deletionSnapshot: { items: snapshot.items } } : {}),
-      };
-    });
-  }
-
-  async historyPage(
-    projectId: string,
-    since: number,
-    limit: number,
-  ): Promise<{ history: SyncHistoryEntry[]; nextSince: number | null }> {
-    const [project] = await this.database.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.id, projectId));
-    if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-    const rows = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
-      .orderBy(asc(syncOperations.sequence))
-      .limit(limit + 1);
-    const page = rows.slice(0, limit);
-    return {
-      history: page.map((row) => {
+  async history(actorId: string, projectId: string, since: number): Promise<SyncHistoryEntry[]> {
+    return this.access.runProject(actorId, projectId, 'read', async (tx) => {
+      const rows = await tx
+        .select()
+        .from(syncOperations)
+        .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
+        .orderBy(asc(syncOperations.sequence));
+      return rows.map((row) => {
         const snapshot = row.deletionSnapshot as { items?: unknown[] } | null;
         return {
           ...eventFrom(row),
@@ -512,9 +492,42 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           kind: row.kind as 'online' | 'reconnect',
           ...(snapshot?.items?.length ? { deletionSnapshot: { items: snapshot.items } } : {}),
         };
-      }),
-      nextSince: rows.length > limit ? page.at(-1)!.sequence : null,
-    };
+      });
+    });
+  }
+
+  async historyPage(
+    actorId: string,
+    projectId: string,
+    since: number,
+    limit: number,
+  ): Promise<{ history: SyncHistoryEntry[]; nextSince: number | null }> {
+    return this.access.runProject(actorId, projectId, 'read', async (tx) => {
+      const [project] = await tx
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+      if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+      const rows = await tx
+        .select()
+        .from(syncOperations)
+        .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
+        .orderBy(asc(syncOperations.sequence))
+        .limit(limit + 1);
+      const page = rows.slice(0, limit);
+      return {
+        history: page.map((row) => {
+          const snapshot = row.deletionSnapshot as { items?: unknown[] } | null;
+          return {
+            ...eventFrom(row),
+            clientId: row.clientId,
+            kind: row.kind as 'online' | 'reconnect',
+            ...(snapshot?.items?.length ? { deletionSnapshot: { items: snapshot.items } } : {}),
+          };
+        }),
+        nextSince: rows.length > limit ? page.at(-1)!.sequence : null,
+      };
+    });
   }
 
   async establishBaseline(
@@ -529,6 +542,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     document: DesignDocument;
   }> {
     return this.database.db.transaction(async (tx) => {
+      await this.access.requireProject(user.id, projectId, expected ? 'design' : 'personal', tx);
       const [project] = await tx
         .select({
           sequence: projects.syncSequence,
@@ -588,15 +602,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         }),
       )
       .digest('hex');
-    const [replay] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(
-          eq(syncOperations.projectId, projectId),
-          eq(syncOperations.operationId, request.operationId),
-        ),
-      );
+    const { replay, source, project } = await this.commandSnapshot(
+      user.id,
+      projectId,
+      request.operationId,
+      deletedOperationId,
+    );
     if (replay) {
       const metadata = restoreMetadata(replay.deletionSnapshot);
       if (
@@ -613,15 +624,6 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         omittedRelations: metadata.omittedRelations,
       };
     }
-    const [source] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(
-          eq(syncOperations.projectId, projectId),
-          eq(syncOperations.operationId, deletedOperationId),
-        ),
-      );
     const rawItems = (
       source?.deletionSnapshot as { items?: Array<{ path: string; snapshot: unknown }> } | null
     )?.items;
@@ -631,10 +633,6 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       source.createdAt.getTime() < Date.now() - HISTORY_RETENTION_MS
     )
       throw new NotFoundException('복원 가능한 삭제 기록을 찾을 수 없습니다.');
-    const [project] = await this.database.db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
     if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
     if (project.status !== 'active')
       throw new ConflictException('보관된 프로젝트는 복원할 수 없습니다.');
@@ -804,15 +802,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     const commandHash = createHash('sha256')
       .update(requestFingerprint({ command: 'undo', projectId, sourceOperationId, ...request }))
       .digest('hex');
-    const [replay] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(
-          eq(syncOperations.projectId, projectId),
-          eq(syncOperations.operationId, request.operationId),
-        ),
-      );
+    const { replay, source } = await this.commandSnapshot(
+      user.id,
+      projectId,
+      request.operationId,
+      sourceOperationId,
+    );
     if (replay) {
       if (
         replay.actorId !== user.id ||
@@ -823,15 +818,6 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         throw new ConflictException('같은 실행 취소 작업 ID에 다른 요청을 사용할 수 없습니다.');
       return syncOperationResultSchema.parse(replay.result);
     }
-    const [source] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(
-          eq(syncOperations.projectId, projectId),
-          eq(syncOperations.operationId, sourceOperationId),
-        ),
-      );
     if (!source) throw new NotFoundException('되돌릴 작업을 찾을 수 없습니다.');
     if (source.actorId !== user.id)
       throw new ConflictException('내가 승인받은 작업만 실행 취소할 수 있습니다.');
@@ -874,6 +860,33 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         paths: [...changes.map((change) => change.path), ...dependencies],
         acceptedSequence: source.sequence,
       },
+    });
+  }
+
+  private commandSnapshot(
+    userId: string,
+    projectId: string,
+    operationId: string,
+    sourceOperationId: string,
+  ) {
+    return this.access.runProject(userId, projectId, 'design', async (tx) => {
+      const [replay] = await tx
+        .select()
+        .from(syncOperations)
+        .where(
+          and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
+        );
+      const [source] = await tx
+        .select()
+        .from(syncOperations)
+        .where(
+          and(
+            eq(syncOperations.projectId, projectId),
+            eq(syncOperations.operationId, sourceOperationId),
+          ),
+        );
+      const [project] = await tx.select().from(projects).where(eq(projects.id, projectId));
+      return { replay, source, project };
     });
   }
 

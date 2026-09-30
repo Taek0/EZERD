@@ -87,7 +87,7 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
       if (created) {
         if (!/^ezerd_workspace_test_[a-f0-9]{32}$/.test(databaseName))
           throw new Error('Invalid isolated test database name.');
-        await admin.query(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
+        await admin.query(`DROP DATABASE "${databaseName}"`);
       }
       await admin?.end();
     });
@@ -107,6 +107,12 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
       const before = await spaces.listWorkspaces(owner.id);
       await expect(spaces.createWorkspace(randomUUID(), { name: 'Rollback' })).rejects.toThrow();
       expect(await spaces.listWorkspaces(owner.id)).toEqual(before);
+      expect(
+        await database.db
+          .select()
+          .from(schema.workspaces)
+          .where(eq(schema.workspaces.name, 'Rollback')),
+      ).toEqual([]);
     });
 
     it('creates membership only on acceptance and concurrent acceptance is idempotent', async () => {
@@ -168,6 +174,23 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
       await expect(
         spaces.leaveWorkspace(remainingOwner[0]!.userId, workspace.id),
       ).rejects.toBeInstanceOf(ConflictException);
+      const leaveSpace = await spaces.createWorkspace(owner.id, { name: 'Concurrent owner leave' });
+      const leaveInvite = await spaces.createInvitation(owner.id, leaveSpace.id, {
+        username: peer.username,
+        role: 'owner',
+      });
+      await spaces.acceptInvitation(peer.id, leaveInvite.id);
+      const leaves = await Promise.allSettled([
+        spaces.leaveWorkspace(owner.id, leaveSpace.id),
+        spaces.leaveWorkspace(peer.id, leaveSpace.id),
+      ]);
+      expect(leaves.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const afterLeave = await database.db
+        .select()
+        .from(schema.userWorkspaces)
+        .where(eq(schema.userWorkspaces.workspaceId, leaveSpace.id));
+      expect(afterLeave).toHaveLength(1);
+      expect(afterLeave[0]!.role).toBe('owner');
     });
 
     it('expires invitations durably, supports decline/cancel, and never creates membership', async () => {

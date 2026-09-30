@@ -8,12 +8,14 @@ import { DatabaseService } from '../db/database.service.js';
 import { projects } from '../db/schema.js';
 import { SessionService, type AuthenticatedUser } from '../identity/session.js';
 import { LanAccessService } from '../network/network-access.js';
+import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
+import { WorkspaceEventsService } from '../workspace/workspace-events.service.js';
 
 type Client = {
   socket: WebSocket;
   actor: AuthenticatedUser;
   token: string;
-  projects: Set<string>;
+  projects: Map<string, string>;
   authenticatedAt: number;
 };
 @Injectable()
@@ -22,11 +24,25 @@ export class SyncGateway implements OnApplicationShutdown {
   private readonly webSocketServer = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
   private headTimer?: NodeJS.Timeout;
   private server?: Server;
+  private readonly stopAccessListener: () => void;
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(LanAccessService) private readonly network: LanAccessService,
-  ) {}
+    @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
+    @Inject(WorkspaceEventsService) events: WorkspaceEventsService,
+  ) {
+    this.stopAccessListener = events.onAccessChanged(({ workspaceId, userId }) => {
+      for (const client of [...this.clients])
+        if (
+          (!userId || client.actor.id === userId) &&
+          [...client.projects.values()].includes(workspaceId)
+        ) {
+          this.send(client, { type: 'workspace-access-changed', workspaceId });
+          this.close(client);
+        }
+    });
+  }
   attach(server: Server): void {
     if (this.server) return;
     this.server = server;
@@ -53,7 +69,7 @@ export class SyncGateway implements OnApplicationShutdown {
       socket,
       actor,
       token,
-      projects: new Set(),
+      projects: new Map(),
       authenticatedAt: Date.now(),
     };
     this.clients.add(client);
@@ -71,6 +87,7 @@ export class SyncGateway implements OnApplicationShutdown {
     socket.on('error', () => this.clients.delete(client));
   }
   private async subscribe(client: Client, projectId: string): Promise<void> {
+    const access = await this.access.requireProject(client.actor.id, projectId, 'read');
     const [project] = await this.database.db
       .select({ status: projects.status, sequence: projects.syncSequence })
       .from(projects)
@@ -81,17 +98,28 @@ export class SyncGateway implements OnApplicationShutdown {
         projectId,
         message: '활성 프로젝트를 찾을 수 없습니다.',
       });
-    client.projects.add(projectId);
+    if (!this.clients.has(client)) return;
+    client.projects.set(projectId, access.workspaceId);
+    // A membership change can have committed while the first check was in flight.
+    await this.access.requireProject(client.actor.id, projectId, 'read');
     this.send(client, { type: 'subscribed', projectId, sequence: project.sequence });
   }
   publish(projectId: string, event: unknown): void {
-    for (const client of this.clients)
-      if (client.projects.has(projectId))
-        this.send(client, { type: 'operation', projectId, event });
+    void this.deliver(projectId, { type: 'operation', projectId, event });
   }
   publishReview(projectId: string, event: unknown): void {
-    for (const client of this.clients)
-      if (client.projects.has(projectId)) this.send(client, { type: 'review', projectId, event });
+    void this.deliver(projectId, { type: 'review', projectId, event });
+  }
+  private async deliver(projectId: string, message: unknown): Promise<void> {
+    for (const client of [...this.clients]) {
+      if (!client.projects.has(projectId)) continue;
+      try {
+        await this.access.requireProject(client.actor.id, projectId, 'read');
+        this.send(client, message);
+      } catch {
+        this.close(client);
+      }
+    }
   }
   private async sendHeads(): Promise<void> {
     try {
@@ -107,7 +135,7 @@ export class SyncGateway implements OnApplicationShutdown {
           }
         }
       }
-      const ids = new Set([...this.clients].flatMap((client) => [...client.projects]));
+      const ids = new Set([...this.clients].flatMap((client) => [...client.projects.keys()]));
       for (const projectId of ids) {
         const [project] = await this.database.db
           .select({ sequence: projects.syncSequence, status: projects.status })
@@ -117,16 +145,15 @@ export class SyncGateway implements OnApplicationShutdown {
           for (const client of this.clients) if (client.projects.has(projectId)) this.close(client);
           continue;
         }
-        for (const client of this.clients)
-          if (client.projects.has(projectId))
-            this.send(client, { type: 'head', projectId, sequence: project.sequence });
+        await this.deliver(projectId, { type: 'head', projectId, sequence: project.sequence });
       }
     } catch {
       /* The next interval retries; socket event handlers stay alive. */
     }
   }
   private send(client: Client, message: unknown): void {
-    if (client.socket.readyState === WebSocket.OPEN) client.socket.send(JSON.stringify(message));
+    if (this.clients.has(client) && client.socket.readyState === WebSocket.OPEN)
+      client.socket.send(JSON.stringify(message));
   }
   private close(client: Client): void {
     this.clients.delete(client);
@@ -137,6 +164,7 @@ export class SyncGateway implements OnApplicationShutdown {
       client.socket.close(1008);
   }
   onApplicationShutdown(): void {
+    this.stopAccessListener();
     if (this.headTimer) clearInterval(this.headTimer);
     if (this.server) this.server.off('upgrade', this.upgrade);
     for (const client of this.clients) this.close(client);

@@ -25,12 +25,17 @@ export class DatabaseService implements OnApplicationShutdown {
     await this.db
       .select({
         id: schema.projects.id,
+        workspaceId: schema.projects.workspaceId,
         version: schema.projects.version,
         document: schema.projects.document,
       })
       .from(schema.projects)
       .limit(1);
     await this.db.select({ id: schema.users.id }).from(schema.users).limit(1);
+    await this.db.select().from(schema.workspaces).limit(1);
+    await this.db.select().from(schema.userWorkspaces).limit(1);
+    await this.db.select().from(schema.workspaceInvitations).limit(1);
+    await this.db.select().from(schema.workspaceAuditEvents).limit(1);
     await this.db.select().from(schema.threads).limit(1);
     await this.db.select().from(schema.messages).limit(1);
     await this.db.select().from(schema.notifications).limit(1);

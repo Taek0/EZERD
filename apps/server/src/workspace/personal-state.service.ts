@@ -22,6 +22,7 @@ import {
 import { DatabaseService } from '../db/database.service.js';
 import { projectPersonalOperations, projectPersonalStates, projects } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
+import { WorkspaceAccessService } from './workspace-access.service.js';
 
 function defaultState(document: DesignDocument): PersonalState {
   const extracted = extractPersonalState(document);
@@ -35,28 +36,33 @@ function defaultState(document: DesignDocument): PersonalState {
 
 @Injectable()
 export class PersonalStateService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
+  ) {}
 
   async get(projectId: string, user: AuthenticatedUser) {
-    const [project] = await this.database.db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
-    if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-    const [row] = await this.database.db
-      .select()
-      .from(projectPersonalStates)
-      .where(
-        and(
-          eq(projectPersonalStates.projectId, projectId),
-          eq(projectPersonalStates.userId, user.id),
+    return this.access.runProject(user.id, projectId, 'read', async (tx) => {
+      const [project] = await tx.select().from(projects).where(eq(projects.id, projectId));
+      if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+      const [row] = await tx
+        .select()
+        .from(projectPersonalStates)
+        .where(
+          and(
+            eq(projectPersonalStates.projectId, projectId),
+            eq(projectPersonalStates.userId, user.id),
+          ),
+        );
+      return personalStateSnapshotSchema.parse({
+        version: row?.version ?? 0,
+        projectVersion: project.version,
+        syncSequence: project.syncSequence,
+        state: reconcilePersonalState(
+          project.document,
+          row?.state ?? defaultState(project.document),
         ),
-      );
-    return personalStateSnapshotSchema.parse({
-      version: row?.version ?? 0,
-      projectVersion: project.version,
-      syncSequence: project.syncSequence,
-      state: reconcilePersonalState(project.document, row?.state ?? defaultState(project.document)),
+      });
     });
   }
 
@@ -73,6 +79,7 @@ export class PersonalStateService {
     operation?: { id: string; fingerprint: string },
   ) {
     return this.database.db.transaction(async (tx) => {
+      await this.access.requireProject(user.id, projectId, 'personal', tx);
       if (operation) {
         const [replay] = await tx
           .select()
