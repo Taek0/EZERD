@@ -53,6 +53,7 @@ export interface DatabaseFeatureDefinition {
 export interface DatabaseFeatureFacts {
   typeId?: DatabaseTypeId;
   array?: boolean;
+  projectEnum?: boolean;
   nullable?: boolean;
   primaryKeyColumns?: number;
   isPrimaryKeyColumn?: boolean;
@@ -127,7 +128,12 @@ export function checkDatabaseFeature(
   if (facts.strict && type && !type.sqliteStrict) return reject('type.not-supported');
 
   if (featureId === 'array') {
-    if (!type || !type.array || facts.generation === 'serial' || facts.generation === 'identity')
+    if (
+      (!type && !facts.projectEnum) ||
+      (type && !type.array) ||
+      facts.generation === 'serial' ||
+      facts.generation === 'identity'
+    )
       return reject('type.option-not-supported');
   }
   if (['serial', 'identity', 'autoIncrement'].includes(featureId)) {

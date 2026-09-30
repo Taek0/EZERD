@@ -12,10 +12,11 @@
 | C1 카탈로그/조건 | 완료 | `d7d8ddd`, [결과](2026-10-01-Database-CatalogImplementation.md). PG 65/MySQL 37/SQLite 추천 23 타입, 33 기능. 정의만 된 항목은 활성화하지 않음 |
 | C2a native 모델/v1 순수 어댑터 | 완료 | `bf3d835`, [결과](2026-10-01-Database-NativeDocumentModel.md). 원본 보존/serial 분리/제한 식 및 참조 remap |
 | C2b 구조 계약/전송 reader | 완료 | [결과](2026-10-01-Database-NativeDocumentContracts.md). 전체 `pnpm check` 통과, 678개 통과/43개 건너뜀 |
+| C3a 순수 native 정책/복구 검증 | 완료 | [결과](2026-10-01-Database-NativeValidation.md). 엔진 규칙/활성 상태/초안 및 이전 원인별 복구를 분리. DB 모듈 43개 테스트 통과 |
 
 ## 다음 작업
 
-1. 프로젝트 profile/revision 저장 계약·DB 마이그레이션과 C3 순수 DB 문맥 검증을 구현한다.
+1. 프로젝트 profile/revision 저장 계약·DB 마이그레이션을 구현한다. C3 순수 검증은 위 완료 단위를 재사용한다.
 2. 서버 lock 아래 최종 후보/legacy 원본 비교, DB 변경/업그레이드 API, offline/baseline/undo/restore 보호를 연결한다.
 3. C4 프로젝트 DB별 타입/옵션/기능 편집 UI와 MCP를 연결한다.
 4. C5 세 DB native DDL/공유 메뉴/실제 파일·DB 실행 검증을 완성한다.
