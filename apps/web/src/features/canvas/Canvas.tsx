@@ -1,4 +1,10 @@
 import { createFrameQueue } from './frame-queue.js';
+import {
+  canvasToolShortcut,
+  toolShortcutInputSelector,
+  toolShortcutOverlaySelector,
+  type CanvasTool,
+} from './canvas-tool-shortcuts.js';
 import { prepareTableRelations } from '../relations/prepare-table-relations.js';
 import { translate as tr, useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
@@ -206,7 +212,7 @@ export function Canvas({
   const [requestedViewId, setViewId] = useState('overview'),
     [selected, setSelectedState] = useState<string | null>(null),
     [relationId, setRelationId] = useState('');
-  const [tool, setTool] = useState<'select' | 'hand'>('select');
+  const [tool, setTool] = useState<CanvasTool>('select');
   const [multiSelection, setMultiSelection] = useState<string[]>([]);
   const [marquee, setMarquee] = useState<ReturnType<typeof selectionRect> | null>(null);
   function setSelected(value: SetStateAction<string | null>) {
@@ -277,6 +283,23 @@ export function Canvas({
   previewLatest.current = preview;
   const finishLatest = useRef(finish);
   finishLatest.current = finish;
+  const switchToolLatest = useRef(switchTool);
+  switchToolLatest.current = switchTool;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const nextTool = canvasToolShortcut(event, {
+        editing: !!target?.closest(toolShortcutInputSelector),
+        overlayOpen: !!document.querySelector(toolShortcutOverlaySelector),
+        dragging: !!drag.current || !!inspectorDrag.current,
+      });
+      if (!nextTool) return;
+      event.preventDefault();
+      switchToolLatest.current(nextTool);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   useLayoutEffect(() => {
     setMarquee(null);
     return () => {
@@ -870,6 +893,15 @@ export function Canvas({
         setMultiSelection(ids);
       }
     }
+  }
+  function switchTool(nextTool: CanvasTool) {
+    finish();
+    setTool(nextTool);
+    if (nextTool === 'hand') setSelected(null);
+    setConnectSource(null);
+    setConnectPointer(null);
+    setFkSource(null);
+    setFkTarget(null);
   }
   function editRelation(id: string) {
     const relation = doc.domainRelations.find((r) => r.id === id);
@@ -1625,15 +1657,11 @@ export function Canvas({
             <div className="canvas-tool-picker" role="group" aria-label={tr('캔버스 도구')}>
               <IconButton
                 aria-label={tr('커서 도구')}
-                title={tr('커서 · 드래그로 여러 객체 선택')}
+                title={`${tr('커서 · 드래그로 여러 객체 선택')} (V)`}
+                tooltip={`${tr('커서 · 드래그로 여러 객체 선택')} (V)`}
+                aria-keyshortcuts="V"
                 aria-pressed={tool === 'select'}
-                onClick={() => {
-                  finish();
-                  setTool('select');
-                  setConnectSource(null);
-                  setFkSource(null);
-                  setFkTarget(null);
-                }}
+                onClick={() => switchTool('select')}
               >
                 <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path
@@ -1646,16 +1674,11 @@ export function Canvas({
               </IconButton>
               <IconButton
                 aria-label={tr('손 도구')}
-                title={tr('손 · 화면 이동만')}
+                title={`${tr('손 · 화면 이동만')} (H)`}
+                tooltip={`${tr('손 · 화면 이동만')} (H)`}
+                aria-keyshortcuts="H"
                 aria-pressed={tool === 'hand'}
-                onClick={() => {
-                  finish();
-                  setTool('hand');
-                  setSelected(null);
-                  setConnectSource(null);
-                  setFkSource(null);
-                  setFkTarget(null);
-                }}
+                onClick={() => switchTool('hand')}
               >
                 <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path
