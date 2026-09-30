@@ -19,6 +19,7 @@
       @media(max-width:700px){.app-header{padding-inline:16px;gap:10px}.left-header{gap:12px}.right-header{gap:8px}.right-header .quiet{display:none}.header-divider{display:none}.brand{font-size:28px}.switch-trigger{min-width:120px;padding:6px 8px;gap:7px}.main{padding:30px 20px}.gallery-hero{padding:30px 0 24px}.gallery-hero h1{font-size:36px}.gallery-hero .eyebrow{font-size:13px}.gallery-hero .subline{max-width:240px}.toolbar{gap:14px}.tabs{width:100%;border-bottom:1px solid var(--line)}.toolbar-right{width:100%;padding-bottom:10px}.tab.active:after{bottom:-1px}.dropdown{left:-70px}.user-button{padding:7px 9px;gap:6px}.notification-button{width:36px}.header-divider{display:none}}
       @media(max-width:400px){.app-header{flex-wrap:wrap;height:auto;padding-block:16px;row-gap:14px}.left-header{flex:1}.right-header{margin-left:auto}.gallery-hero{align-items:flex-start;gap:14px}.gallery-hero h1{font-size:32px}.gallery-hero .subline{font-size:13px}.create-erd{padding-inline:10px}}
       .tabs{position:relative}.tab.active:after{display:none}.tab-indicator{position:absolute;left:0;bottom:-1px;height:2px;background:var(--accent);pointer-events:none;transition:transform 220ms ease,width 220ms ease}.toolbar-right{margin-left:auto;gap:14px}.toolbar-right .search{flex:0 1 auto;min-width:0}.sort-anchor{flex:0 0 122px;width:122px}.sort{width:122px;justify-content:space-between;gap:8px}.create-erd{white-space:nowrap;flex-shrink:0}.profile-anchor{position:relative}.profile-anchor .compact-menu{position:absolute;right:0;top:calc(100% + 8px)}.gallery-hero h1{white-space:pre-wrap}.gallery.enter{animation:appear 220ms ease-out}@media(max-width:1000px){.toolbar{flex-wrap:wrap}.tabs{width:100%}.toolbar-right{width:100%;justify-content:flex-end}}@media(max-width:620px){.toolbar-right{display:grid;grid-template-columns:minmax(0,1fr) 122px;gap:10px}.toolbar-right .search{width:100%}.toolbar-right .create-erd{grid-column:1/-1;justify-self:end}.tab-indicator{bottom:-1px}}
+      .empty-diagram{font-size:13px;color:#8b99a7}.create-erd{width:36px;height:36px;min-height:36px;padding:0;font-size:23px;line-height:1}.editing-card:hover{transform:none}.editing-card{border-color:#90a9c4}.inline-name{width:100%;height:28px;padding:1px 6px;border:1px solid #b4c4d6;background:#fff;border-radius:5px;font-size:18px;font-weight:650;letter-spacing:-.2px}.inline-name::placeholder{color:#8b98a5;font-weight:400}.editing-card .card-copy{padding-top:13px;padding-bottom:11px}.inline-name:focus-visible{outline-offset:1px;outline-width:2px}.db-anchor{position:relative}.db-trigger{display:flex;align-items:center;gap:9px;height:27px}.db-trigger:hover,.db-trigger[aria-expanded=true]{background:#d5e3f0}.db-anchor .compact-menu{position:absolute;left:0;top:calc(100% + 6px);width:154px}.inline-actions{display:flex;gap:6px}.inline-actions button{font-size:12px;padding:5px 9px;border-radius:5px;background:#e5ebf1;color:#6c7d8f}.inline-actions .inline-save{background:#dbe6f5;color:#345f90;font-weight:650}.inline-error{font-size:12px;color:#b64242;margin-top:6px}.inline-error:empty{display:none}.editing-card .card-footer{margin-top:16px}@media(max-width:620px){.toolbar-right{grid-template-columns:minmax(0,1fr) 122px 36px}.toolbar-right .create-erd{grid-column:auto;justify-self:end}}
     </style>
   </head>
   <body>
@@ -187,8 +188,13 @@
               </button>
             </div>
           </div>
-          <button class="ui-button ui-button--primary create-erd" data-create>
-            ＋ &nbsp;새 프로젝트
+          <button
+            class="ui-button ui-button--primary create-erd"
+            data-create
+            aria-label="새 프로젝트"
+            title="새 프로젝트"
+          >
+            <span aria-hidden="true">＋</span>
           </button>
         </div>
       </div>
@@ -198,44 +204,6 @@
         ><span style="margin-left:auto">소유자 · TY</span>
       </div>
     </main>
-    <dialog
-      class="confirmation-dialog rename-dialog"
-      id="project-dialog"
-      aria-labelledby="dialog-title"
-    >
-      <form id="project-form">
-        <h2 id="dialog-title">새 프로젝트</h2>
-        <p>선택한 워크스페이스에 새로운 설계를 추가합니다.</p>
-        <label for="project-name">프로젝트 이름</label>
-        <div class="ui-input-group">
-          <input
-            class="ui-input"
-            id="project-name"
-            maxlength="60"
-            required
-            autocomplete="off"
-            placeholder="예: service-backend"
-          />
-        </div>
-        <fieldset id="database-field">
-          <legend>데이터베이스</legend>
-          <div class="database-options">
-            <label
-              ><input type="radio" name="database" value="PostgreSQL" checked /><span
-                >PostgreSQL</span
-              ></label
-            >
-            <label><input type="radio" name="database" value="MySQL" /><span>MySQL</span></label>
-            <label><input type="radio" name="database" value="SQLite" /><span>SQLite</span></label>
-          </div>
-          <p class="database-hint">선택한 종류가 프로젝트 카드에 표시됩니다.</p>
-        </fieldset>
-        <div class="confirmation-dialog-actions">
-          <button type="button" class="ui-button ui-button--secondary" data-cancel>취소</button
-          ><button class="ui-button ui-button--primary" type="submit">확인</button>
-        </div>
-      </form>
-    </dialog>
     <div
       id="manage-menu"
       class="compact-menu project-menu"
@@ -243,7 +211,7 @@
       aria-label="프로젝트 관리"
       hidden
     >
-      <button role="menuitem" id="rename">이름 변경</button
+      <button role="menuitem" id="rename">프로젝트 수정</button
       ><button role="menuitem" id="export">내보내기</button
       ><button role="menuitem" id="archive">보관하기</button>
     </div>
@@ -251,26 +219,63 @@
     <script>
       const $ = id => document.getElementById(id);
       const spaces=[{name:'Edusync',initial:'E',projects:[{id:1,name:'klassboard-backend',tables:18,relations:14,time:'2시간 전',entities:['users','classrooms']}]},{name:'TY',initial:'T',projects:[{id:2,name:'ezerd',tables:12,relations:8,time:'어제',entities:['projects','tables']},{id:3,name:'monya',tables:8,relations:4,time:'어제',entities:['accounts','transactions']}]}];
-      let current=0,open=false,archived=false,selected=null,editing=false,toastTimer,sort='recent',menuTrigger=null;
+      let current=0,open=false,archived=false,selected=null,editing=null,toastTimer,sort='recent',menuTrigger=null;
       const escapeHTML=text=>String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const avatar=s=>`<span class="avatar ${s.initial==='T'?'ty':''}">${s.initial}</span>`;
       function header(){const s=spaces[current];$('switch').innerHTML=`${avatar(s)}<span class="trigger-copy">${s.name}</span><svg class="chevron" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>`;$('switch').setAttribute('aria-label',`${s.name}, 워크스페이스 선택`);$('workspace-list').innerHTML=spaces.map((s,i)=>`<button class="workspace-row ${i===current?'selected':''}" role="menuitemradio" aria-checked="${i===current}" data-space="${i}">${avatar(s)}<span class="row-label"><strong>${s.name}</strong><small>소유자 · 프로젝트 ${s.projects.filter(p=>!p.archived).length}개</small></span>${i===current?'<span class="selected-check" aria-hidden="true">✓</span>':''}</button>`).join('');$('workspace-title').textContent=s.name+' ';$('foot').textContent=`${s.name}의 프로젝트만 보고 있어요`;}
-      function gallery(animate=false){closeMenus();const s=spaces[current];const query=$('search').value.trim().toLowerCase();let projects=s.projects.filter(p=>Boolean(p.archived)===archived&&p.name.toLowerCase().includes(query));if(sort==='name')projects=[...projects].sort((a,b)=>a.name.localeCompare(b.name));$('count').textContent=s.projects.filter(p=>!p.archived).length;$('archived-count').textContent=s.projects.filter(p=>p.archived).length?`· ${s.projects.filter(p=>p.archived).length}`:'';for(const id of ['all','archived']){const active=(id==='archived')===archived;$(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',active)}$('gallery').innerHTML=projects.map(p=>`<article class="erd-card"><button class="card-open" data-open="${p.id}" aria-label="${escapeHTML(p.name)} 프로젝트 열기"><div class="preview"><div class="diagram">${p.entities.map((name,i)=>`<div class="mini-table ${i?'offset':''}"><b>${name}</b><span>⌑ id <i>uuid</i></span><span>${i?'↳ '+p.entities[0]+'_id':'name'} <i>${i?'uuid':'varchar'}</i></span><span>${i?'title':'created_at'} <i>${i?'varchar':'date'}</i></span>${i?'<span>updated_at <i>date</i></span>':''}</div>`).join('')}</div></div><div class="card-copy"><div class="card-title">${escapeHTML(p.name)}</div><div class="card-detail">테이블 ${p.tables}개 &nbsp;·&nbsp; 관계 ${p.relations}개</div><div class="card-footer"><span class="db-tag">${p.database||'PostgreSQL'}</span><span>${p.time} 수정</span></div></div></button><button class="more" data-manage="${p.id}" aria-label="${escapeHTML(p.name)} 프로젝트 관리" aria-haspopup="menu" aria-expanded="false" aria-controls="manage-menu">⋯</button></article>`).join('')+(!archived&&!query?'<button class="new-card" data-create><span class="plus">＋</span><strong>새 프로젝트</strong><small>새로운 데이터 설계를 시작하세요</small><span class="tile-footer">이름과 데이터베이스를 선택해 만들기</span></button>':'')+(!projects.length&&(archived||query)?'<p class="empty">'+(query?'검색 결과가 없어요.':'보관된 프로젝트가 없어요.')+'</p>':'');updateTabIndicator();if(animate){$('gallery').classList.remove('enter');void $('gallery').offsetWidth;$('gallery').classList.add('enter')}}
+      function gallery(animate=false){closeMenus();const s=spaces[current];const query=$('search').value.trim().toLowerCase();let projects=s.projects.filter(p=>(editing?.id===p.id)||(Boolean(p.archived)===archived&&p.name.toLowerCase().includes(query)));if(sort==='name')projects=[...projects].sort((a,b)=>a.name.localeCompare(b.name));$('count').textContent=s.projects.filter(p=>!p.archived).length;$('archived-count').textContent=s.projects.filter(p=>p.archived).length?`· ${s.projects.filter(p=>p.archived).length}`:'';for(const id of ['all','archived']){const active=(id==='archived')===archived;$(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',active)}$('gallery').innerHTML=projects.map(projectCard).join('')+(!archived&&!query?'<button class="new-card" data-create><span class="plus">＋</span><strong>새 프로젝트</strong><small>새로운 데이터 설계를 시작하세요</small><span class="tile-footer">이름과 데이터베이스를 선택해 만들기</span></button>':'')+(!projects.length&&(archived||query)?'<p class="empty">'+(query?'검색 결과가 없어요.':'보관된 프로젝트가 없어요.')+'</p>':'');updateTabIndicator();if(animate){$('gallery').classList.remove('enter');void $('gallery').offsetWidth;$('gallery').classList.add('enter')}}
       function updateTabIndicator(){const active=$(archived?'archived':'all');$('tab-indicator').style.width=active.offsetWidth+'px';$('tab-indicator').style.transform='translateX('+active.offsetLeft+'px)'}
       function setOpen(value,keyboard=false){open=value;$('switch').setAttribute('aria-expanded',value);$('workspace-menu').classList.toggle('open',value);$('workspace-menu').inert=!value;if(value&&keyboard)$('workspace-list').querySelector('[aria-checked=true]').focus();}
       function toast(message){clearTimeout(toastTimer);document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.setAttribute('role','status');el.textContent=message;document.body.append(el);toastTimer=setTimeout(()=>el.remove(),3200)}
-      function createProject(){closeMenus();setOpen(false);editing=false;$('database-field').hidden=false;document.querySelector('[name=database][value=PostgreSQL]').checked=true;$('dialog-title').textContent='새 프로젝트';$('project-name').value='';$('project-dialog').showModal();$('project-name').focus()}
+      function projectCard(p){
+        const active=editing?.id===p.id;
+        const preview=`<div class="preview"><div class="diagram">${p.entities.length?p.entities.map((name,i)=>`<div class="mini-table ${i?'offset':''}"><b>${escapeHTML(name)}</b><span>⌑ id <i>uuid</i></span><span>${i?'↳ '+escapeHTML(p.entities[0])+'_id':'name'} <i>${i?'uuid':'varchar'}</i></span><span>${i?'title':'created_at'} <i>${i?'varchar':'date'}</i></span>${i?'<span>updated_at <i>date</i></span>':''}</div>`).join(''):'<span class="empty-diagram">아직 테이블이 없어요</span>'}</div></div>`;
+        const details=`<div class="card-detail">테이블 ${p.tables}개 &nbsp;·&nbsp; 관계 ${p.relations}개</div>`;
+        const database=p.database||'PostgreSQL';
+        if(active)return `<article class="erd-card editing-card" data-card="${p.id}">${preview}<form class="card-copy" id="inline-form" novalidate><label class="sr-only" for="inline-name">프로젝트명</label><input id="inline-name" class="inline-name" maxlength="60" autocomplete="off" placeholder="프로젝트명 입력" value="${escapeHTML(editing.name)}" aria-describedby="inline-error" />${details}<div class="card-footer"><div class="db-anchor"><button type="button" id="db-trigger" class="db-tag db-trigger" aria-label="데이터베이스 종류" aria-haspopup="menu" aria-expanded="false" aria-controls="db-menu">${editing.database}<span aria-hidden="true">⌄</span></button><div id="db-menu" class="compact-menu" role="menu" aria-label="데이터베이스 종류" hidden>${['PostgreSQL','MySQL','SQLite'].map(db=>`<button type="button" role="menuitemradio" data-db="${db}" aria-checked="${db===editing.database}">${db}<span>${db===editing.database?'✓':''}</span></button>`).join('')}</div></div><div class="inline-actions"><button type="button" data-edit-cancel>취소</button><button type="submit" class="inline-save">저장</button></div></div><p id="inline-error" class="inline-error" role="status"></p></form></article>`;
+        return `<article class="erd-card" data-card="${p.id}"><button class="card-open" data-open="${p.id}" aria-label="${escapeHTML(p.name)} 프로젝트 열기">${preview}<div class="card-copy"><div class="card-title">${escapeHTML(p.name)}</div>${details}<div class="card-footer"><span class="db-tag">${database}</span><span>${p.time} 수정</span></div></div></button><button class="more" data-manage="${p.id}" aria-label="${escapeHTML(p.name)} 프로젝트 관리" aria-haspopup="menu" aria-expanded="false" aria-controls="manage-menu">⋯</button></article>`;
+      }
+      function focusEditor(){ $('inline-name')?.focus({preventScroll:true}); }
+      function saveEdit(render=true){
+        if(!editing)return true;
+        const name=editing.name.trim();
+        if(!name){$('inline-error').textContent='프로젝트명을 입력해 주세요.';$('inline-name').setAttribute('aria-invalid','true');focusEditor();return false;}
+        const p=spaces[current].projects.find(p=>p.id===editing.id);p.name=name;p.database=editing.database;p.time='방금';delete p.draft;editing=null;
+        if(render){header();gallery();document.querySelector(`[data-open="${p.id}"]`)?.focus({preventScroll:true});}
+        return true;
+      }
+      function cancelEdit(){if(!editing)return;const {id,fresh}=editing;if(fresh)spaces[current].projects=spaces[current].projects.filter(p=>p.id!==id);editing=null;header();gallery();(fresh?document.querySelector('.create-erd'):document.querySelector(`[data-manage="${id}"]`))?.focus({preventScroll:true});}
+      function createProject(){if(!saveEdit(false))return;closeMenus();setOpen(false);archived=false;$('search').value='';const p={id:Date.now(),name:'',database:'PostgreSQL',tables:0,relations:0,time:'방금',entities:[],draft:true};spaces[current].projects.push(p);editing={id:p.id,name:'',database:'PostgreSQL',fresh:true};header();gallery();focusEditor();$('inline-name').scrollIntoView({block:'nearest',behavior:'smooth'});}
+      function closeDatabase(){if($('db-menu'))$('db-menu').hidden=true;$('db-trigger')?.setAttribute('aria-expanded','false');}
+      document.addEventListener('input',event=>{if(event.target.id==='inline-name'){editing.name=event.target.value;$('inline-error').textContent='';event.target.removeAttribute('aria-invalid');}});
+      document.addEventListener('submit',event=>{if(event.target.id==='inline-form'){event.preventDefault();saveEdit();}});
+      document.addEventListener('click',event=>{
+        if(!event.target.closest('.db-anchor'))closeDatabase();
+        const button=event.target.closest('button');
+        if(button?.hasAttribute('data-edit-cancel')){cancelEdit();return;}
+        if(button?.id==='db-trigger'){const show=$('db-menu').hidden;closeMenus();$('db-menu').hidden=!show;button.setAttribute('aria-expanded',show);if(show&&event.detail===0)$('db-menu').querySelector('[aria-checked=true]').focus();return;}
+        if(button?.dataset.db){editing.database=button.dataset.db;$('db-trigger').innerHTML=editing.database+'<span aria-hidden="true">⌄</span>';for(const item of $('db-menu').querySelectorAll('button')){item.setAttribute('aria-checked',item.dataset.db===editing.database);item.querySelector('span').textContent=item.dataset.db===editing.database?'✓':'';}closeDatabase();$('db-trigger').focus();}
+      });
+      document.addEventListener('keydown',event=>{
+        if(event.target.id==='db-trigger'&&['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();$('db-menu').hidden=false;event.target.setAttribute('aria-expanded','true');$('db-menu').querySelector('[aria-checked=true]').focus();}
+        if(event.target.closest('#db-menu')&&['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const items=[...$('db-menu').querySelectorAll('button')],index=items.indexOf(document.activeElement);items[event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length].focus();}
+        if(event.key==='Escape'&&$('db-menu')&&!$('db-menu').hidden){event.preventDefault();event.stopImmediatePropagation();closeDatabase();$('db-trigger').focus();return;}
+        if(event.key==='Escape'&&editing&&!open&&$('sort-menu').hidden&&$('profile-menu').hidden&&$('manage-menu').hidden){event.preventDefault();cancelEdit();}
+      });
+      // Validate before navigation; an unfinished name keeps the current editor visible.
+      document.addEventListener('click',event=>{const button=event.target.closest('button');if(editing&&button&&!button.closest('.editing-card')&&(button.matches('[data-home],[data-space],[data-create],[data-manage],[data-open],#all,#archived,[data-sort]'))){if(!saveEdit(false)){event.preventDefault();event.stopImmediatePropagation();}else if(button.matches('[data-manage],[data-open]')){const attr=button.hasAttribute('data-manage')?'data-manage':'data-open',value=button.getAttribute(attr);event.stopImmediatePropagation();header();gallery();document.querySelector(`[${attr}="${value}"]`)?.click();}}},true);
+      $('search').addEventListener('focus',()=>{if(editing&&!saveEdit())focusEditor();});
+      document.addEventListener('focusin',event=>{if(!event.target.closest('.db-anchor'))closeDatabase();});
       $('switch').addEventListener('click',event=>{event.stopPropagation();setOpen(!open,event.detail===0)});
       $('switch').addEventListener('keydown',event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();setOpen(true,true)}});
       $('workspace-menu').addEventListener('keydown',event=>{const items=[...$('workspace-menu').querySelectorAll('button')];const index=items.indexOf(document.activeElement);if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;items[next].focus()}});
-      document.addEventListener('click',event=>{const button=event.target.closest('button');if(!event.target.closest('.sort-anchor')&&!event.target.closest('.profile-anchor')&&!event.target.closest('#manage-menu')&&!button?.dataset.manage)closeMenus();if(button?.hasAttribute('data-home')){archived=false;$('search').value='';gallery(true);return}if(button?.hasAttribute('data-space')){current=Number(button.dataset.space);setOpen(false);$('search').value='';archived=false;header();gallery(true);$('switch').focus({preventScroll:true});$('live').textContent=`${spaces[current].name} 워크스페이스로 전환했습니다.`;return}if(button?.hasAttribute('data-create')){createProject();return}if(button?.dataset.manage){selected=spaces[current].projects.find(p=>p.id===Number(button.dataset.manage));const wasOpen=menuTrigger===button&&!$('manage-menu').hidden;closeMenus();setOpen(false);if(!wasOpen){menuTrigger=button;button.setAttribute('aria-expanded','true');$('archive').textContent=selected.archived?'보관 해제':'보관하기';$('manage-menu').hidden=false;const rect=button.getBoundingClientRect();$('manage-menu').style.left=Math.max(8,Math.min(rect.right-166,innerWidth-174))+'px';$('manage-menu').style.top=Math.max(8,Math.min(rect.bottom+6,innerHeight-$('manage-menu').offsetHeight-8))+'px';if(event.detail===0)$('rename').focus()}return}if(button?.hasAttribute('data-cancel')){button.closest('dialog').close();return}if(button?.dataset.open){toast('갤러리 목업입니다. 편집기는 승인 후 연결합니다.');return}if(button?.dataset.info){closeMenus();setOpen(false);toast(`${button.dataset.info} · 상세 화면은 승인 후 구현합니다.`)}if(open&&!event.target.closest('.workspace-anchor'))setOpen(false)});
+      document.addEventListener('click',event=>{const button=event.target.closest('button');if(!event.target.closest('.db-anchor')&&!event.target.closest('.sort-anchor')&&!event.target.closest('.profile-anchor')&&!event.target.closest('#manage-menu')&&!button?.dataset.manage)closeMenus();if(button?.hasAttribute('data-home')){archived=false;$('search').value='';gallery(true);return}if(button?.hasAttribute('data-space')){current=Number(button.dataset.space);setOpen(false);$('search').value='';archived=false;header();gallery(true);$('switch').focus({preventScroll:true});$('live').textContent=`${spaces[current].name} 워크스페이스로 전환했습니다.`;return}if(button?.hasAttribute('data-create')){createProject();return}if(button?.dataset.manage){selected=spaces[current].projects.find(p=>p.id===Number(button.dataset.manage));const wasOpen=menuTrigger===button&&!$('manage-menu').hidden;closeMenus();setOpen(false);if(!wasOpen){menuTrigger=button;button.setAttribute('aria-expanded','true');$('archive').textContent=selected.archived?'보관 해제':'보관하기';$('manage-menu').hidden=false;const rect=button.getBoundingClientRect();$('manage-menu').style.left=Math.max(8,Math.min(rect.right-166,innerWidth-174))+'px';$('manage-menu').style.top=Math.max(8,Math.min(rect.bottom+6,innerHeight-$('manage-menu').offsetHeight-8))+'px';if(event.detail===0)$('rename').focus()}return}if(button?.dataset.open){toast('갤러리 목업입니다. 편집기는 승인 후 연결합니다.');return}if(button?.dataset.info){closeMenus();setOpen(false);toast(`${button.dataset.info} · 상세 화면은 승인 후 구현합니다.`)}if(open&&!event.target.closest('.workspace-anchor'))setOpen(false)});
       document.addEventListener('keydown',event=>{if(event.key==='Escape'&&(!$('sort-menu').hidden||!$('manage-menu').hidden||!$('profile-menu').hidden)){event.preventDefault();const trigger=menuTrigger||(!$('profile-menu').hidden?$('profile'):$('sort'));closeMenus();trigger.focus();return}if(event.key==='Escape'&&open){event.preventDefault();setOpen(false);$('switch').focus()}});
       document.addEventListener('focusin',event=>{if(open&&!event.target.closest('.workspace-anchor'))setOpen(false)});
       $('search').addEventListener('input',()=>gallery());$('all').addEventListener('click',()=>{archived=false;gallery(true)});$('archived').addEventListener('click',()=>{archived=true;gallery(true)});
-      $('rename').addEventListener('click',()=>{editing=true;closeMenus();$('database-field').hidden=true;$('dialog-title').textContent='프로젝트 이름 변경';$('project-name').value=selected.name;$('project-dialog').showModal();$('project-name').focus()});
+      $('rename').addEventListener('click',()=>{if(!saveEdit(false))return;editing={id:selected.id,name:selected.name,database:selected.database||'PostgreSQL',fresh:false};closeMenus();gallery();focusEditor();});
       $('archive').addEventListener('click',()=>{selected.archived=!selected.archived;closeMenus();header();gallery();toast(selected.archived?'프로젝트를 보관했어요. 보관함에서 다시 꺼낼 수 있어요.':'프로젝트의 보관을 해제했어요.')});
-      $('project-form').addEventListener('submit',event=>{event.preventDefault();const name=$('project-name').value.trim();if(!name){$('project-name').setCustomValidity('프로젝트 이름을 입력해 주세요.');$('project-name').reportValidity();return}if(editing){selected.name=name;selected.time='방금'}else{spaces[current].projects.unshift({id:Date.now(),name,database:document.querySelector('[name=database]:checked').value,tables:0,relations:0,time:'방금',entities:['new_table','new_relation']});archived=false;$('search').value=''}$('project-dialog').close();header();gallery(true);toast(editing?'프로젝트 이름을 변경했어요.':'샘플 프로젝트를 만들었어요.')});$('project-name').addEventListener('input',()=>$('project-name').setCustomValidity(''));
-      function closeMenus(){ $('profile-menu').hidden=true;$('profile').setAttribute('aria-expanded','false'); $('sort-menu').hidden=true;$('sort').setAttribute('aria-expanded','false');$('manage-menu').hidden=true;menuTrigger?.setAttribute('aria-expanded','false');menuTrigger=null; }
+      function closeMenus(){closeDatabase(); $('profile-menu').hidden=true;$('profile').setAttribute('aria-expanded','false'); $('sort-menu').hidden=true;$('sort').setAttribute('aria-expanded','false');$('manage-menu').hidden=true;menuTrigger?.setAttribute('aria-expanded','false');menuTrigger=null; }
       $('profile').addEventListener('click',event=>{const visible=$('profile-menu').hidden;closeMenus();setOpen(false);$('profile-menu').hidden=!visible;$('profile').setAttribute('aria-expanded',visible);if(visible&&event.detail===0)$('profile-menu').querySelector('button').focus()});
       $('profile').addEventListener('keydown',event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();if($('profile-menu').hidden)$('profile').click();const items=$('profile-menu').querySelectorAll('button');items[event.key==='ArrowUp'?items.length-1:0].focus()}});
       $('sort').addEventListener('click',event=>{const visible=$('sort-menu').hidden;closeMenus();setOpen(false);$('sort-menu').hidden=!visible;$('sort').setAttribute('aria-expanded',visible);if(visible&&event.detail===0)$('sort-menu').querySelector('[aria-checked=true]').focus()});
@@ -278,7 +283,7 @@
       for(const id of ['sort-menu','manage-menu','profile-menu'])$(id).addEventListener('keydown',event=>{const items=[...$(id).querySelectorAll('button')];const index=items.indexOf(document.activeElement);if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();items[event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length].focus()}});
       for(const id of ['sort'])$(id).addEventListener('keydown',event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();if($('sort-menu').hidden)$(id).click();$('sort-menu').querySelector('button').focus()}});
       $('switch').addEventListener('click',closeMenus);
-      window.addEventListener('resize',()=>{closeMenus();updateTabIndicator()});document.fonts.ready.then(updateTabIndicator);window.addEventListener('scroll',closeMenus);
+      window.addEventListener('resize',()=>{closeMenus();updateTabIndicator()});document.fonts.ready.then(updateTabIndicator);window.addEventListener('scroll',()=>{if(!$('manage-menu').hidden){$('manage-menu').hidden=true;menuTrigger?.setAttribute('aria-expanded','false');menuTrigger=null;}});
       document.addEventListener('focusin',event=>{if(!$('profile-menu').hidden&&!event.target.closest('.profile-anchor'))closeMenus();if(!$('sort-menu').hidden&&!event.target.closest('.sort-anchor'))closeMenus();if(!$('manage-menu').hidden&&!event.target.closest('#manage-menu')&&event.target!==menuTrigger)closeMenus()});
       $('export').addEventListener('click',()=>{const blob=new Blob([JSON.stringify(selected,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=selected.name+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);closeMenus();toast('샘플 프로젝트를 JSON으로 내보냈어요.')});
       header();gallery();
