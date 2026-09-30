@@ -1,6 +1,8 @@
 import { registerTranslations } from './index.js';
 
 registerTranslations({
+  '변경 내용이 저장된 뒤 다시 내보내 주세요.':
+    'Wait for your changes to be saved, then export again.',
   '이미 사용중인 이름이거나 올바르지 않은 PIN 입니다':
     'This name is already in use or the PIN is incorrect.',
   로그아웃: 'Sign out',

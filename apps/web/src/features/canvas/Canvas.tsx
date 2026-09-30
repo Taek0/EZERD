@@ -79,11 +79,12 @@ import {
   EnumDialog,
   emptyMetadata,
 } from '../tables/TableEditor.js';
-import { clampLayoutPatch, newId, validViewId } from '../../shared/api/client.js';
+import { clampLayoutPatch, message, newId, validViewId } from '../../shared/api/client.js';
 import {
   Button,
   Checkbox,
   ContextMenu,
+  Dropdown,
   IconButton,
   Input,
   Select,
@@ -102,6 +103,7 @@ type Props = {
   toolbarHost?: HTMLElement | null;
   pathHost?: HTMLElement | null;
   panelToggle?: ReactNode;
+  onExportProject?: () => Promise<void>;
   onCreatePin?: (context: CanvasContext) => void;
   onContextChange?: (context: CanvasContext) => void;
   focusTarget?: {
@@ -132,6 +134,7 @@ export function Canvas({
   toolbarHost,
   pathHost,
   panelToggle,
+  onExportProject,
 }: Props) {
   useI18n();
   const confirm = useConfirm();
@@ -1125,31 +1128,72 @@ export function Canvas({
             </Button>
           )}
           <Button onClick={() => setEnumOpen(true)}>ENUM</Button>
-          <Button
-            disabled={exporting || !nodes.length}
-            onClick={async () => {
-              const world = surface.current?.querySelector<HTMLElement>('.canvas-world');
-              if (!world) return;
-              setExporting(true);
-              setExportError('');
-              try {
-                await exportCanvasPng(
-                  world,
-                  nodes,
-                  activeCombined?.name ??
-                    activeCombined?.name ??
-                    activeDomain?.name ??
-                    tr('도메인 맵'),
-                );
-              } catch {
-                setExportError(tr('이미지를 만들지 못했습니다. 다시 시도해 주세요.'));
-              } finally {
-                setExporting(false);
-              }
-            }}
-          >
-            {exporting ? tr('이미지 생성 중…') : tr('고화질 PNG')}
-          </Button>
+          <Dropdown
+            label={tr('공유')}
+            trigger={
+              <IconButton
+                aria-label={tr('공유')}
+                title={exporting ? tr('내보내는 중…') : tr('공유')}
+                aria-busy={exporting}
+                disabled={exporting}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  aria-hidden="true"
+                >
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+                </svg>
+              </IconButton>
+            }
+            items={[
+              {
+                id: 'project-export',
+                label: tr('프로젝트 내보내기'),
+                disabled: exporting || !onExportProject,
+                onAction: async () => {
+                  setExporting(true);
+                  setExportError('');
+                  try {
+                    await onExportProject?.();
+                  } catch (cause) {
+                    setExportError(message(cause));
+                  } finally {
+                    setExporting(false);
+                  }
+                },
+              },
+              {
+                id: 'png-export',
+                label: tr('고화질 PNG'),
+                disabled: exporting || !nodes.length,
+                onAction: async () => {
+                  const world = surface.current?.querySelector<HTMLElement>('.canvas-world');
+                  if (!world) return;
+                  setExporting(true);
+                  setExportError('');
+                  try {
+                    await exportCanvasPng(
+                      world,
+                      nodes,
+                      activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵'),
+                    );
+                  } catch {
+                    setExportError(tr('이미지를 만들지 못했습니다. 다시 시도해 주세요.'));
+                  } finally {
+                    setExporting(false);
+                  }
+                },
+              },
+            ]}
+          />
         </div>
         <span className="toolbar-divider" aria-hidden="true" />
         <div

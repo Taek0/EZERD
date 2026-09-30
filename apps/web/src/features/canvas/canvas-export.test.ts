@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { prepareExportContent } from './canvas-export.js';
+import { exportStyleValue, prepareExportContent } from './canvas-export.js';
+
+describe('PNG SVG resource references', () => {
+  it('keeps relation markers local to the exported SVG', () => {
+    expect(
+      exportStyleValue(
+        'url("https://example.com/editor#arrow")',
+        'https://example.com/editor#view',
+      ),
+    ).toBe('url("#arrow")');
+    expect(exportStyleValue('url(#arrow)', 'https://example.com/editor')).toBe('url("#arrow")');
+  });
+  it('preserves external resources and ordinary styles', () => {
+    expect(
+      exportStyleValue('url("https://example.com/asset.svg#arrow")', 'https://example.com/editor'),
+    ).toBe('url("https://example.com/asset.svg#arrow")');
+    expect(exportStyleValue('rgb(0, 0, 0)', 'https://example.com/editor')).toBe('rgb(0, 0, 0)');
+  });
+});
 
 // Minimal DOM tree for the node test environment, including textContent's child replacement.
 class ExportElement {

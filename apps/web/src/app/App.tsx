@@ -206,6 +206,7 @@ export function App() {
   const designReadOnly = !permissions.edit || opened?.project.status === 'archived';
   const personalReadOnly = !permissions.personal || opened?.project.status === 'archived';
   const [sync, setSync] = useState<SyncSnapshot | null>(null);
+  const latestSync = useRef<SyncSnapshot | null>(null);
   const [historyAction, setHistoryAction] = useState<string | null>(null);
   const [historyNotice, setHistoryNotice] = useState('');
   const current = useRef(opened),
@@ -239,6 +240,7 @@ export function App() {
     runtime.current?.stop();
     runtime.current = null;
     setSync(null);
+    latestSync.current = null;
     current.current = value;
     if (value) setWorkspaceId(value.project.workspaceId);
     setOpened(value);
@@ -451,6 +453,7 @@ export function App() {
       },
       onChange: (snapshot) => {
         setSync(snapshot);
+        latestSync.current = snapshot;
         const value = current.current;
         if (!value || value.project.id !== projectId) return;
         let document = snapshot.document;
@@ -1124,6 +1127,13 @@ export function App() {
             <Canvas
               key={opened.project.id}
               document={opened.document}
+              onExportProject={async () => {
+                await flushAutosave();
+                await runtime.current?.prepareToLeave();
+                if (latestSync.current?.pending.length || latestSync.current?.storageFailure)
+                  throw new Error(t('변경 내용이 저장된 뒤 다시 내보내 주세요.'));
+                await exportProjectFile(opened.project.id);
+              }}
               toolbarHost={toolbarHost}
               pathHost={pathHost}
               panelToggle={

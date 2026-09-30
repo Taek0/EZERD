@@ -1,6 +1,9 @@
 import { registerTranslations } from '../../shared/i18n/index.js';
 
 registerTranslations({
+  공유: 'Share',
+  '내보내는 중…': 'Exporting…',
+  '프로젝트 내보내기': 'Export project',
   '이름 없는 테이블': 'Unnamed table',
   '테이블 관계': 'Table relations',
   테이블: 'Table',

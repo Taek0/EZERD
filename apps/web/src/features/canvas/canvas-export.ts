@@ -1,5 +1,18 @@
 type Bounds = { x: number; y: number; width: number; height: number };
 
+/** Computed SVG styles resolve local marker references against the page URL. */
+export function exportStyleValue(value: string, pageUrl: string): string {
+  if (!value.includes('url(')) return value;
+  const page = new URL(pageUrl);
+  page.hash = '';
+  return value.replace(/url\(["']?([^"')]+)["']?\)/g, (original, reference: string) => {
+    const target = new URL(reference, pageUrl);
+    const hash = target.hash;
+    target.hash = '';
+    return hash && target.href === page.href ? `url("${hash}")` : original;
+  });
+}
+
 /** Keep model-backed text while stripping interactive controls from the styled clone. */
 export function prepareExportContent(clone: HTMLElement): void {
   clone.querySelectorAll<HTMLElement>('[data-export-text]').forEach((element) => {
@@ -42,7 +55,7 @@ export async function exportCanvasPng(
     const target = copies[index] as HTMLElement | SVGElement;
     const computed = getComputedStyle(element);
     const style = Array.from(computed)
-      .map((key) => `${key}:${computed.getPropertyValue(key)};`)
+      .map((key) => `${key}:${exportStyleValue(computed.getPropertyValue(key), document.URL)};`)
       .join('');
     target.setAttribute('style', style);
     if (element instanceof HTMLInputElement) target.setAttribute('value', element.value);
@@ -119,6 +132,8 @@ export async function exportCanvasPng(
   const link = document.createElement('a');
   link.href = url;
   link.download = `${name.replace(/[\\/:*?"<>|]/g, '_')}-2x.png`;
+  document.body.append(link);
   link.click();
+  link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
