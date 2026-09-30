@@ -207,7 +207,7 @@ export const userSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
-export const createProjectSchema = z.strictObject({ name: projectName });
+export const createProjectSchema = z.strictObject({ name: projectName, workspaceId: z.uuid() });
 export const updateProjectSchema = z
   .strictObject({
     expectedVersion: version,
@@ -216,10 +216,12 @@ export const updateProjectSchema = z
   })
   .refine((input) => input.name !== undefined || input.status !== undefined, 'No update supplied.');
 export const projectQuerySchema = z.strictObject({
+  workspaceId: z.uuid().optional(),
   status: z.enum(['active', 'archived']).default('active'),
   search: z.string().trim().max(120).default(''),
 });
 export const projectSchema = z.strictObject({
+  workspaceId: z.uuid(),
   id: z.uuid(),
   name: projectName,
   status: z.enum(['active', 'archived']),

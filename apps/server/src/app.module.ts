@@ -21,6 +21,10 @@ import { McpPersonalService } from './mcp/mcp-personal.service.js';
 import { LanAccessService } from './network/network-access.js';
 import { PersonalStateController } from './workspace/personal-state.controller.js';
 import { PersonalStateService } from './workspace/personal-state.service.js';
+import { SpaceController } from './workspace/space.controller.js';
+import { SpaceService } from './workspace/space.service.js';
+import { WorkspaceAccessService } from './workspace/workspace-access.service.js';
+import { WorkspaceEventsService } from './workspace/workspace-events.service.js';
 
 @Module({
   controllers: [
@@ -32,6 +36,7 @@ import { PersonalStateService } from './workspace/personal-state.service.js';
     McpTokenController,
     McpController,
     PersonalStateController,
+    SpaceController,
   ],
   providers: [
     DatabaseService,
@@ -49,6 +54,9 @@ import { PersonalStateService } from './workspace/personal-state.service.js';
     McpPersonalService,
     LanAccessService,
     PersonalStateService,
+    SpaceService,
+    WorkspaceAccessService,
+    WorkspaceEventsService,
   ],
 })
 export class AppModule {}

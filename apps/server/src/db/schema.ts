@@ -19,25 +19,54 @@ import type { DesignDocument, PersonalState } from '@ezerd/model';
 import { sql } from 'drizzle-orm';
 
 export const projectStatus = pgEnum('project_status', ['active', 'archived']);
-export const projects = pgTable('projects', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 120 }).notNull(),
-  status: projectStatus('status').notNull().default('active'),
-  version: integer('version').notNull().default(0),
-  syncSequence: integer('sync_sequence').notNull().default(0),
-  document: jsonb('document')
-    .$type<DesignDocument>()
-    .notNull()
-    .default({
-      schemaVersion: 1,
-      domains: [],
-      domainRelations: [],
-      notes: [],
-      layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] },
-    }),
+export const workspaceStatus = pgEnum('workspace_status', ['active', 'archived']);
+export const workspaceRole = pgEnum('workspace_role', ['owner', 'editor', 'viewer']);
+export const invitationStatus = pgEnum('workspace_invitation_status', [
+  'pending',
+  'accepted',
+  'declined',
+  'cancelled',
+  'expired',
+]);
+export const workspaces = pgTable('workspace', {
+  id: uuid('workspace_id').primaryKey().defaultRandom(),
+  name: varchar('workspace_name', { length: 64 }).notNull(),
+  status: workspaceStatus('status').notNull().default('active'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+export const projects = pgTable(
+  'projects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'restrict' }),
+    name: varchar('name', { length: 120 }).notNull(),
+    status: projectStatus('status').notNull().default('active'),
+    version: integer('version').notNull().default(0),
+    syncSequence: integer('sync_sequence').notNull().default(0),
+    document: jsonb('document')
+      .$type<DesignDocument>()
+      .notNull()
+      .default({
+        schemaVersion: 1,
+        domains: [],
+        domainRelations: [],
+        notes: [],
+        layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] },
+      }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('projects_workspace_status_updated_idx').on(
+      table.workspaceId,
+      table.status,
+      table.updatedAt,
+    ),
+  ],
+);
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 
@@ -55,6 +84,68 @@ export const users = pgTable(
   (table) => [
     unique('users_username_unique').on(table.username),
     check('users_username_normalized', sql`${table.username} = lower(btrim(${table.username}))`),
+  ],
+);
+
+export const userWorkspaces = pgTable(
+  'user_workspaces',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'no action' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'no action' }),
+    role: workspaceRole('role').notNull().default('viewer'),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.userId] }),
+    index('user_workspaces_user_workspace_idx').on(table.userId, table.workspaceId),
+  ],
+);
+
+export const workspaceInvitations = pgTable(
+  'workspace_invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    invitedUserId: uuid('invited_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'no action' }),
+    invitedBy: uuid('invited_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'no action' }),
+    role: workspaceRole('role').notNull().default('viewer'),
+    status: invitationStatus('status').notNull().default('pending'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('workspace_invitations_user_status_idx').on(table.invitedUserId, table.status),
+    uniqueIndex('workspace_invitations_pending_unique')
+      .on(table.workspaceId, table.invitedUserId)
+      .where(sql`${table.status} = 'pending'`),
+  ],
+);
+
+export const workspaceAuditEvents = pgTable(
+  'workspace_audit_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Intentionally retain audit records after an empty workspace is deleted.
+    workspaceId: uuid('workspace_id').notNull(),
+    actorId: uuid('actor_id').notNull(),
+    action: varchar('action', { length: 64 }).notNull(),
+    targetUserId: uuid('target_user_id'),
+    details: jsonb('details').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('workspace_audit_workspace_created_idx').on(table.workspaceId, table.createdAt),
   ],
 );
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createProjectSchema, designDocumentSchema } from './workspace.js';
+import { designDocumentSchema } from './workspace.js';
 
 export const MAX_PROJECT_TRANSFER_BYTES = 2_000_000;
 export const projectTransferSchema = z
@@ -7,7 +7,7 @@ export const projectTransferSchema = z
     format: z.literal('ezerd-project'),
     formatVersion: z.literal(1),
     exportedAt: z.iso.datetime(),
-    project: createProjectSchema.strict(),
+    project: z.strictObject({ name: z.string().trim().min(1).max(120) }),
     document: designDocumentSchema,
   })
   .superRefine((file, ctx) => {
@@ -21,3 +21,7 @@ export const projectTransferSchema = z
       ctx.addIssue({ code: 'custom', message: '프로젝트 파일은 2 MB까지 가져올 수 있습니다.' });
   });
 export type ProjectTransfer = z.infer<typeof projectTransferSchema>;
+export const importProjectSchema = z.strictObject({
+  workspaceId: z.uuid(),
+  transfer: projectTransferSchema,
+});
