@@ -361,7 +361,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           arguments: { projectId: id },
         });
         expect(personal.isError).not.toBe(true);
-        const unsupported = await client.callTool({
+        const savedPersonal = await client.callTool({
           name: 'apply_personal_changes',
           arguments: {
             projectId: id,
@@ -372,7 +372,13 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             ],
           },
         });
-        expect(unsupported.isError).toBe(true);
+        expect(savedPersonal.isError).not.toBe(true);
+        expect(savedPersonal.structuredContent).toMatchObject({
+          version: 1,
+          state: {
+            viewports: expect.arrayContaining([{ viewId: '__tables__', x: 12, y: 34, zoom: 1 }]),
+          },
+        });
         expect(
           (await client.callTool({ name: 'get_project', arguments: { projectId: id } })).isError,
         ).toBe(true);
@@ -413,6 +419,288 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         await other.close();
       }
     });
+    it.each(['postgresql', 'mysql', 'sqlite'])(
+      'applies real MCP personal commands to %s native sources with replay, atomicity and user isolation',
+      async (kind) => {
+        const id = await createProject(kind);
+        const source = migrateDesignDocumentV1(
+          legacyDocument(),
+          defaultDatabaseContext(kind as 'postgresql' | 'mysql' | 'sqlite'),
+        ).document;
+        source.domains = [{ id: 'd', name: 'Domain', description: '' }];
+        source.tables![0]!.domainId = 'd';
+        source.tables!.push({
+          ...structuredClone(source.tables![0]!),
+          id: 't2',
+          physical: { ...structuredClone(source.tables![0]!.physical), name: 'table2' },
+        });
+        source.columns!.push({ ...structuredClone(source.columns![0]!), id: 'c2', tableId: 't2' });
+        source.tableRelations = [
+          {
+            id: 'r',
+            sourceTableId: 't',
+            targetTableId: 't2',
+            scope: 'both',
+            logical: { name: 'Relation', cardinality: 'one-to-many', required: false },
+            physical: null,
+          },
+        ];
+        source.indexes = [
+          {
+            id: 'index',
+            tableId: 't',
+            name: 'index',
+            scope: 'logical',
+            unique: false,
+            parts: [{ direction: 'asc', expression: { kind: 'column', columnId: 'c' } }],
+            options:
+              kind === 'mysql'
+                ? { database: 'mysql', kind: 'btree' }
+                : kind === 'sqlite'
+                  ? { database: 'sqlite' }
+                  : { database: 'postgresql', method: 'btree' },
+          },
+        ];
+        source.layout.nodes = [
+          { id: 'node-d', objectId: 'd', viewId: 'overview', x: 0, y: 0, width: 240, height: 160 },
+          ...['t', 't2'].map((objectId, i) => ({
+            id: 'global-' + objectId,
+            objectId,
+            viewId: '__tables__',
+            x: i * 400 + 100,
+            y: 200,
+            width: 320,
+            height: 260,
+          })),
+        ];
+        await pool.query(
+          'UPDATE projects SET document=$2::jsonb, version=7, sync_sequence=11 WHERE id=$1',
+          [id, JSON.stringify(source)],
+        );
+        const before = await stored(id);
+        const issued = await request('/mcp-tokens', 'POST', { name: 'native personal commands' });
+        const client = new Client({ name: 'native-personal-fixture', version: '1.0.0' });
+        const call = (arguments_: Record<string, unknown>) =>
+          client.callTool({ name: 'apply_personal_changes', arguments: arguments_ });
+        try {
+          await client.connect(
+            new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+              requestInit: { headers: { Authorization: `Bearer ${issued.data.token}` } },
+            }),
+          );
+          const input = {
+            projectId: id,
+            expectedVersion: 0,
+            operationId: randomUUID(),
+            commands: [
+              {
+                type: 'upsert_combined_view',
+                value: { id: 'view', name: 'Own', domainIds: ['d'] },
+              },
+              { type: 'set_viewport', value: { viewId: 'view', x: 120, y: 30, zoom: 1.5 } },
+              {
+                type: 'upsert_note',
+                value: { id: 'note', viewId: 'view', text: 'Original', color: '#123456' },
+                placement: { x: 10, y: 20 },
+              },
+              { type: 'patch_note', id: 'note', patch: { text: 'Updated', color: null } },
+              { type: 'update_node_layout', nodeId: 'node:t:view', patch: { x: 80, width: 600 } },
+              {
+                type: 'upsert_relation_layout',
+                value: { relationId: 'r', viewId: 'view', offset: 15 },
+              },
+              { type: 'patch_combined_view', id: 'view', patch: { name: 'Renamed' } },
+            ],
+          };
+          const result = await call(input);
+          expect(result.isError).not.toBe(true);
+          expect(result.structuredContent).toMatchObject({
+            version: 1,
+            projectVersion: 7,
+            syncSequence: 11,
+            state: {
+              views: [{ id: 'view', name: 'Renamed' }],
+              notes: [{ id: 'note', text: 'Updated' }],
+              relations: [{ relationId: 'r', viewId: 'view', offset: 15 }],
+            },
+          });
+          const saved = (await request(`/projects/${id}/personal-state`)).data;
+          expect(saved).toEqual(result.structuredContent);
+          expect(saved.state.nodes).toContainEqual(
+            expect.objectContaining({ objectId: 't', viewId: 'view', x: 80, width: 600 }),
+          );
+          expect(saved.state.notes[0]).not.toHaveProperty('color');
+          expect((await call(input)).structuredContent).toEqual(saved);
+          expect(
+            (
+              await call({
+                ...input,
+                commands: [
+                  { type: 'set_viewport', value: { viewId: '__tables__', x: 0, y: 0, zoom: 1 } },
+                ],
+              })
+            ).isError,
+          ).toBe(true);
+          expect((await call({ ...input, operationId: randomUUID() })).isError).toBe(true);
+          const invalid = {
+            projectId: id,
+            expectedVersion: 1,
+            operationId: randomUUID(),
+            commands: [
+              { type: 'patch_note', id: 'note', patch: { text: 'Must roll back', color: null } },
+              {
+                type: 'upsert_relation_layout',
+                value: { relationId: 'missing', viewId: 'view', offset: 1 },
+              },
+            ],
+          };
+          expect((await call(invalid)).isError).toBe(true);
+          expect((await request(`/projects/${id}/personal-state`)).data).toEqual(saved);
+          expect(
+            (
+              await call({
+                ...invalid,
+                operationId: randomUUID(),
+                commands: [
+                  {
+                    type: 'upsert_note',
+                    value: { id: 'index', viewId: 'view', text: 'Collision' },
+                  },
+                ],
+              })
+            ).isError,
+          ).toBe(true);
+          expect(
+            (
+              await pool.query(
+                'SELECT COUNT(*) FROM project_personal_operations WHERE project_id=$1',
+                [id],
+              )
+            ).rows[0].count,
+          ).toBe('1');
+          expect(await stored(id)).toEqual(before);
+          for (const table of ['sync_client_baselines', 'sync_operations'])
+            expect(
+              (await pool.query(`SELECT COUNT(*) FROM ${table} WHERE project_id=$1`, [id])).rows[0]
+                .count,
+            ).toBe('0');
+
+          const other = await request(
+            '/users',
+            'POST',
+            { username: `native-private-${randomUUID().slice(0, 16)}`, pin: '0024' },
+            null,
+          );
+          userIds.push(other.data.id);
+          const session = (
+            await request('/sessions', 'POST', { userId: other.data.id, pin: '0024' }, null)
+          ).data.token;
+          const otherIssued = await request(
+            '/mcp-tokens',
+            'POST',
+            { name: 'other native personal' },
+            session,
+          );
+          const viewer = new Client({ name: 'native-personal-viewer', version: '1.0.0' });
+          try {
+            await viewer.connect(
+              new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+                requestInit: { headers: { Authorization: `Bearer ${otherIssued.data.token}` } },
+              }),
+            );
+            expect(
+              (
+                await viewer.callTool({
+                  name: 'apply_personal_changes',
+                  arguments: {
+                    projectId: id,
+                    expectedVersion: 0,
+                    operationId: randomUUID(),
+                    commands: [
+                      {
+                        type: 'set_viewport',
+                        value: { viewId: '__tables__', x: 1, y: 2, zoom: 1 },
+                      },
+                    ],
+                  },
+                })
+              ).isError,
+            ).toBe(true);
+            const invitation = await request(`/workspaces/${workspaceId}/invitations`, 'POST', {
+              username: other.data.username,
+              role: 'viewer',
+            });
+            expect(
+              (
+                await request(
+                  `/workspace-invitations/${invitation.data.id}/accept`,
+                  'POST',
+                  {},
+                  session,
+                )
+              ).status,
+            ).toBe(201);
+            expect(
+              (await viewer.callTool({ name: 'get_personal_state', arguments: { projectId: id } }))
+                .structuredContent,
+            ).toMatchObject({ version: 0, state: { views: [], notes: [] } });
+            expect(
+              (
+                await viewer.callTool({
+                  name: 'apply_personal_changes',
+                  arguments: { ...input, expectedVersion: 0 },
+                })
+              ).isError,
+            ).toBe(true);
+            const own = await viewer.callTool({
+              name: 'apply_personal_changes',
+              arguments: {
+                projectId: id,
+                expectedVersion: 0,
+                operationId: randomUUID(),
+                commands: [
+                  { type: 'set_viewport', value: { viewId: '__tables__', x: 1, y: 2, zoom: 1 } },
+                ],
+              },
+            });
+            expect(own.isError).not.toBe(true);
+            expect(own.structuredContent).toMatchObject({
+              version: 1,
+              state: { views: [], notes: [] },
+            });
+            expect((await request(`/projects/${id}/personal-state`)).data).toEqual(saved);
+          } finally {
+            await viewer.close();
+          }
+          const current = (await request(`/projects/${id}/personal-state`)).data;
+          const deleted = await call({
+            projectId: id,
+            expectedVersion: current.version,
+            operationId: randomUUID(),
+            commands: [
+              { type: 'remove_table_reference', nodeId: 'node:t:view' },
+              {
+                type: 'add_table_reference',
+                tableId: 't',
+                viewId: 'view',
+                placement: { x: 60, y: 70, width: 500 },
+              },
+              { type: 'delete_relation_layout', relationId: 'r', viewId: 'view' },
+              { type: 'delete_note', id: 'note' },
+              { type: 'delete_combined_view', id: 'view' },
+            ],
+          });
+          expect(deleted.isError).not.toBe(true);
+          expect(deleted.structuredContent).toMatchObject({
+            version: 2,
+            state: { views: [], notes: [], nodes: [], relations: [] },
+          });
+          expect(await stored(id)).toEqual(before);
+        } finally {
+          await client.close();
+        }
+      },
+    );
     it.each(['postgresql', 'mysql', 'sqlite'])(
       'stores only personal state and reviews on a %s native canvas',
       async (kind) => {

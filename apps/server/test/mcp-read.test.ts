@@ -214,6 +214,33 @@ describe('MCP scoped reads', () => {
     expect(result.nodes.map((node) => node.id)).toEqual(['domain-node']);
     expect(result.tables).toEqual([]);
   });
+  it('uses authenticated personal combined coordinates, notes and routes while leaving shared aliases canonical', () => {
+    const document = structuredClone(state.document);
+    document.views![0]!.domainIds = ['sales', 'identity'];
+    document.notes.push({ id: 'private', viewId: 'combined', text: 'Mine' });
+    document.layout.nodes.push({
+      id: 'node-private',
+      objectId: 'private',
+      viewId: 'combined',
+      x: 10,
+      y: 20,
+      width: 240,
+      height: 160,
+    });
+    document.layout.relations = [{ relationId: 'orders-users', viewId: 'combined', offset: 12 }];
+    const personal = { ...state, document, personalViewIds: ['combined'] };
+    const result = projectView(personal, 'combined');
+    expect(result.nodes.every((node) => node.viewId === 'combined')).toBe(true);
+    expect(result.notes).toEqual([{ id: 'private', viewId: 'combined', text: 'Mine' }]);
+    expect(result.relationLayouts).toEqual(document.layout.relations);
+    expect(listViewRelations(personal, 'combined').relations[0]!.layout).toEqual(
+      document.layout.relations[0],
+    );
+    expect(
+      projectView(personal, 'sales').nodes.every((node) => node.viewId === TABLES_VIEW_ID),
+    ).toBe(true);
+    expect(projectView({ ...state, document }, 'combined').notes).toEqual([]);
+  });
 
   it('exposes the global tables view and filters unassigned tables with explicit null', () => {
     const direct = structuredClone(document);

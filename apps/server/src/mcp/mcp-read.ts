@@ -126,7 +126,12 @@ export const tableDetailsSchema = baseSchema.extend({
   nodes: z.array(nodeLayoutSchema),
 });
 
-export type ProjectState = { project: Project; document: DesignDocument; syncSequence: number };
+export type ProjectState = {
+  project: Project;
+  document: DesignDocument;
+  syncSequence: number;
+  personalViewIds?: readonly string[];
+};
 
 function tableSummary(table: NonNullable<DesignDocument['tables']>[number]) {
   return {
@@ -209,8 +214,8 @@ export function projectView(state: ProjectState, viewId: string, limit = 50, cur
   const { project, document, syncSequence } = state;
   const view = views(document).find((item) => item.id === viewId);
   if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
-  const layoutViewId = sharedCanvasSelection(document, viewId)!.layoutViewId;
-  const allNodes = sharedCanvasNodes(document, viewId).sort((a, b) =>
+  const layoutViewId = sharedCanvasSelection(document, viewId, state.personalViewIds)!.layoutViewId;
+  const allNodes = sharedCanvasNodes(document, viewId, state.personalViewIds).sort((a, b) =>
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
   );
   const page = allNodes.filter((node) => !cursor || node.id > cursor).slice(0, limit + 1);
@@ -267,8 +272,10 @@ export function listViewRelations(
   const { project, document, syncSequence } = state;
   const view = views(document).find((item) => item.id === viewId);
   if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
-  const layoutViewId = sharedCanvasSelection(document, viewId)!.layoutViewId;
-  const visible = new Set(sharedCanvasNodes(document, viewId).map((node) => node.objectId));
+  const layoutViewId = sharedCanvasSelection(document, viewId, state.personalViewIds)!.layoutViewId;
+  const visible = new Set(
+    sharedCanvasNodes(document, viewId, state.personalViewIds).map((node) => node.objectId),
+  );
   const layouts = new Map(
     (document.layout.relations ?? [])
       .filter((item) => item.viewId === layoutViewId)

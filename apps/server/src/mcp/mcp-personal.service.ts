@@ -21,10 +21,10 @@ import {
   upsertCombinedView,
   upsertRelationLayout,
   type DesignDocument,
+  type NativeDesignDocument,
 } from '@ezerd/model';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { PersonalStateService } from '../workspace/personal-state.service.js';
-import { requireLegacyServerDocument } from '../shared/normalize-document.js';
 
 const objectId = z.string().trim().min(1).max(160);
 const coordinate = z.number().min(-1e7).max(1e7);
@@ -111,8 +111,7 @@ export class McpPersonalService {
         user,
         input.expectedVersion,
         (source) => {
-          requireLegacyServerDocument(source);
-          let candidate = structuredClone(source as DesignDocument);
+          let candidate = source;
           try {
             for (const command of input.commands) candidate = this.applyCommand(candidate, command);
           } catch (error) {
@@ -127,10 +126,10 @@ export class McpPersonalService {
       .then((value) => personalStateSnapshotSchema.parse(value));
   }
 
-  private applyCommand(
-    document: DesignDocument,
+  private applyCommand<T extends DesignDocument | NativeDesignDocument>(
+    document: T,
     command: z.infer<typeof personalCommandSchema>,
-  ): DesignDocument {
+  ): T {
     const isCombined = (viewId: string) => document.views?.some((view) => view.id === viewId);
     const requireCombined = (viewId: string) => {
       if (!isCombined(viewId)) throw new Error('개인 결합 화면을 찾을 수 없습니다.');

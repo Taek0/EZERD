@@ -144,6 +144,21 @@ export interface DesignDocument {
   tableRelations?: TableRelation[] | undefined;
   layout: { nodes: NodeLayout[]; viewports: Viewport[]; relations?: RelationLayout[] | undefined };
 }
+/** Canvas commands only inspect ownership/identity, never a database's physical payload. */
+export interface CanvasDocument extends Pick<
+  DesignDocument,
+  'domains' | 'domainRelations' | 'notes' | 'views' | 'layout'
+> {
+  schemaVersion?: 1 | 2;
+  tables?: readonly { id: string; domainId: string | null }[] | undefined;
+  columns?: readonly { id: string }[] | undefined;
+  keys?: readonly { id: string }[] | undefined;
+  enums?: readonly { id: string }[] | undefined;
+  indexes?: readonly { id: string }[] | undefined;
+  checks?: readonly { id: string }[] | undefined;
+  tableRelations?:
+    readonly { id: string; sourceTableId: string; targetTableId: string }[] | undefined;
+}
 export function createEmptyDocument(): DesignDocument {
   return {
     schemaVersion: 1,
@@ -236,7 +251,7 @@ export function ensureTableCanvasLayout<T extends TableCanvasDocument>(
 function requireObject(found: unknown): asserts found {
   if (!found) throw new Error('대상을 찾을 수 없습니다.');
 }
-function requireView(doc: DesignDocument, viewId: string) {
+function requireView(doc: CanvasDocument, viewId: string) {
   requireObject(
     viewId === 'overview' ||
       viewId === TABLES_VIEW_ID ||
@@ -244,7 +259,7 @@ function requireView(doc: DesignDocument, viewId: string) {
       doc.views?.some((v) => v.id === viewId),
   );
 }
-function requireNewId(doc: DesignDocument, id: string) {
+function requireNewId(doc: CanvasDocument, id: string) {
   if (
     !id.trim() ||
     id.length > 160 ||
@@ -260,6 +275,8 @@ function requireNewId(doc: DesignDocument, id: string) {
       ...(doc.keys ?? []),
       ...(doc.tableRelations ?? []),
       ...(doc.enums ?? []),
+      ...(doc.indexes ?? []),
+      ...(doc.checks ?? []),
     ].some((o) => o.id === id)
   )
     throw new Error('객체 ID는 고유해야 합니다.');
@@ -273,13 +290,26 @@ function position(value: Position) {
   )
     throw new Error('좌표가 유효하지 않습니다.');
 }
-function attachNode(
-  doc: DesignDocument,
+function canvasNodeId(doc: CanvasDocument, base: string, nodes = doc.layout.nodes): string {
+  if (doc.schemaVersion !== 2) return base;
+  let prefix = '';
+  for (const char of base) {
+    if ((prefix + char).length > 150) break;
+    prefix += char;
+  }
+  let id = prefix,
+    counter = 2;
+  const occupied = new Set(nodes.map((node) => node.id));
+  while (occupied.has(id)) id = `${prefix}:${counter++}`;
+  return id;
+}
+function attachNode<T extends CanvasDocument>(
+  doc: T,
   objectId: string,
   viewId: string,
   point: Position,
   height: number,
-): DesignDocument {
+): T {
   position(point);
   return {
     ...doc,
@@ -287,7 +317,14 @@ function attachNode(
       ...doc.layout,
       nodes: [
         ...doc.layout.nodes,
-        { id: `node:${objectId}`, objectId, viewId, ...point, width: 240, height },
+        {
+          id: canvasNodeId(doc, `node:${objectId}`),
+          objectId,
+          viewId,
+          ...point,
+          width: 240,
+          height,
+        },
       ],
     },
   };
@@ -357,7 +394,7 @@ export function upsertDomainRelation(
 export function removeDomainRelation(doc: DesignDocument, id: string): DesignDocument {
   return { ...doc, domainRelations: doc.domainRelations.filter((r) => r.id !== id) };
 }
-export function addNote(doc: DesignDocument, note: Note, point: Position): DesignDocument {
+export function addNote<T extends CanvasDocument>(doc: T, note: Note, point: Position): T {
   requireNewId(doc, note.id);
   requireView(doc, note.viewId);
   return attachNode(
@@ -368,29 +405,29 @@ export function addNote(doc: DesignDocument, note: Note, point: Position): Desig
     160,
   );
 }
-export function updateNote(
-  doc: DesignDocument,
+export function updateNote<T extends CanvasDocument>(
+  doc: T,
   id: string,
   value: string | Partial<Pick<Note, 'text' | 'color'>>,
-): DesignDocument {
+): T {
   requireObject(doc.notes.find((n) => n.id === id));
   const patch = typeof value === 'string' ? { text: value } : value;
   if (patch.color !== undefined && !/^#[0-9a-f]{6}$/i.test(patch.color))
     throw new Error('메모 색상을 확인하세요.');
   return { ...doc, notes: doc.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)) };
 }
-export function removeNote(doc: DesignDocument, id: string): DesignDocument {
+export function removeNote<T extends CanvasDocument>(doc: T, id: string): T {
   return {
     ...doc,
     notes: doc.notes.filter((n) => n.id !== id),
     layout: { ...doc.layout, nodes: doc.layout.nodes.filter((n) => n.objectId !== id) },
   };
 }
-export function updateNodeLayout(
-  doc: DesignDocument,
+export function updateNodeLayout<T extends CanvasDocument>(
+  doc: T,
   id: string,
   patch: Partial<Pick<NodeLayout, 'x' | 'y' | 'width' | 'height'>>,
-): DesignDocument {
+): T {
   const node = doc.layout.nodes.find((n) => n.id === id);
   requireObject(node);
   const next = { ...node, ...patch, id };
@@ -402,7 +439,7 @@ export function updateNodeLayout(
     layout: { ...doc.layout, nodes: doc.layout.nodes.map((n) => (n.id === id ? next : n)) },
   };
 }
-export function setViewport(doc: DesignDocument, viewport: Viewport): DesignDocument {
+export function setViewport<T extends CanvasDocument>(doc: T, viewport: Viewport): T {
   requireView(doc, viewport.viewId);
   position(viewport);
   if (!Number.isFinite(viewport.zoom) || viewport.zoom < 0.1 || viewport.zoom > 4)
@@ -625,12 +662,12 @@ export function diagnoseDocument(doc: DesignDocument): DocumentDiagnostic[] {
 }
 
 /** Each placement points to one shared table identity; references never clone its model. */
-export function addTableReference(
-  doc: DesignDocument,
+export function addTableReference<T extends CanvasDocument>(
+  doc: T,
   tableId: string,
   viewId: string,
   point: Position,
-): DesignDocument {
+): T {
   requireObject(doc.tables?.find((table) => table.id === tableId));
   requireView(doc, viewId);
   if (
@@ -654,7 +691,7 @@ export function addTableReference(
       nodes: [
         ...doc.layout.nodes,
         {
-          id: `node:${tableId}:${viewId}`,
+          id: canvasNodeId(doc, `node:${tableId}:${viewId}`),
           objectId: tableId,
           viewId,
           x: point.x,
@@ -667,7 +704,7 @@ export function addTableReference(
   };
 }
 
-export function removeTableReference(doc: DesignDocument, nodeId: string): DesignDocument {
+export function removeTableReference<T extends CanvasDocument>(doc: T, nodeId: string): T {
   const node = doc.layout.nodes.find((item) => item.id === nodeId);
   requireObject(node);
   const table = doc.tables?.find((item) => item.id === node.objectId);
@@ -1091,7 +1128,7 @@ export function createForeignKeyFromPrimaryKey(
   };
 }
 
-export function removeCombinedView(doc: DesignDocument, id: string): DesignDocument {
+export function removeCombinedView<T extends CanvasDocument>(doc: T, id: string): T {
   return {
     ...doc,
     views: (doc.views ?? []).filter((v) => v.id !== id),
@@ -1108,7 +1145,7 @@ export function removeCombinedView(doc: DesignDocument, id: string): DesignDocum
 }
 
 /** Combined views contain owner tables, never copies imported into a selected domain. */
-export function upsertCombinedView(doc: DesignDocument, view: CombinedView): DesignDocument {
+export function upsertCombinedView<T extends CanvasDocument>(doc: T, view: CombinedView): T {
   if (
     !view.domainIds.length ||
     new Set(view.domainIds).size !== view.domainIds.length ||
@@ -1129,16 +1166,19 @@ export function upsertCombinedView(doc: DesignDocument, view: CombinedView): Des
   let right = 0;
   for (const domainId of view.domainIds) {
     const owned = tables.filter((t) => t.domainId === domainId);
-    const originals = owned.flatMap((t) =>
-      doc.layout.nodes.filter((n) => n.objectId === t.id && n.viewId === domainId),
-    );
+    const originals = owned.flatMap((t) => {
+      const placement =
+        doc.layout.nodes.find((n) => n.objectId === t.id && n.viewId === domainId) ??
+        doc.layout.nodes.find((n) => n.objectId === t.id && n.viewId === TABLES_VIEW_ID);
+      return placement ? [placement] : [];
+    });
     const originX = originals.length ? Math.min(...originals.map((n) => n.x)) : 0;
     const originY = originals.length ? Math.min(...originals.map((n) => n.y)) : 0;
     for (const original of originals)
       if (!nodes.some((n) => n.viewId === view.id && n.objectId === original.objectId))
         nodes.push({
           ...original,
-          id: `node:${original.objectId}:${view.id}`,
+          id: canvasNodeId(doc, `node:${original.objectId}:${view.id}`, nodes),
           viewId: view.id,
           x: original.x - originX + right,
           y: original.y - originY,
@@ -1167,7 +1207,7 @@ export function upsertCombinedView(doc: DesignDocument, view: CombinedView): Des
   };
 }
 
-export function upsertRelationLayout(doc: DesignDocument, route: RelationLayout): DesignDocument {
+export function upsertRelationLayout<T extends CanvasDocument>(doc: T, route: RelationLayout): T {
   requireView(doc, route.viewId);
   const relation = doc.tableRelations?.find((r) => r.id === route.relationId);
   requireObject(relation);
