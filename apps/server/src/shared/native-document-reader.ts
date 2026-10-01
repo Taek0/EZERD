@@ -11,7 +11,23 @@ import {
   type NativeMigrationIssue,
   type ProjectDatabaseState,
 } from '@ezerd/model';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { normalizeServerDocument } from './normalize-document.js';
+
+/** Common canvas consumers can read native data, while ordinary v1 design consumers remain guarded. */
+export function normalizeCurrentServerDocument(
+  document: DesignDocument | NativeDesignDocument,
+  state: ProjectDatabaseState,
+): DesignDocument | NativeDesignDocument {
+  if (document.schemaVersion === 1) return normalizeServerDocument(document);
+  const result = readNativeProjectDocument(document, state);
+  if (result.status !== 'available')
+    throw new ConflictException({
+      code: result.code,
+      message: '현재 설계의 DB 문맥 또는 화면 배치를 확인해 주세요.',
+    });
+  return result.preview;
+}
 
 interface NativeDocumentReadBase {
   /** Exact source snapshot, including legacy aliases; it is never replaced by the preview. */

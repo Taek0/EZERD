@@ -16,11 +16,24 @@ import type {
   updateNotificationSchema,
   updateThreadSchema,
 } from '@ezerd/contracts';
-import { TABLES_VIEW_ID } from '@ezerd/model';
-import { normalizeServerDocument } from '../shared/normalize-document.js';
+import {
+  TABLES_VIEW_ID,
+  resolveProjectDatabaseState,
+  mergeStoredPersonalState,
+  reconcilePersonalState,
+} from '@ezerd/model';
+import { normalizeCurrentServerDocument } from '../shared/native-document-reader.js';
 import { sharedCanvasNodes } from '../shared/table-canvas-view.js';
 import { DatabaseService } from '../db/database.service.js';
-import { messages, notifications, projects, threads, users, userWorkspaces } from '../db/schema.js';
+import {
+  messages,
+  notifications,
+  projects,
+  projectPersonalStates,
+  threads,
+  users,
+  userWorkspaces,
+} from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncGateway } from '../sync/sync.gateway.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
@@ -202,7 +215,25 @@ export class ReviewService {
       const result = await this.database.db.transaction(async (tx) => {
         await this.access.requireProject(actor.id, projectId, 'review', tx);
         const project = await lockActiveProject(tx, projectId);
-        const doc = normalizeServerDocument(project.document);
+        const shared = normalizeCurrentServerDocument(
+          project.document,
+          resolveProjectDatabaseState({
+            ...project,
+            databaseKind: project.databaseKind ?? 'postgresql',
+          }),
+        );
+        const [personal] = await tx
+          .select()
+          .from(projectPersonalStates)
+          .where(
+            and(
+              eq(projectPersonalStates.projectId, projectId),
+              eq(projectPersonalStates.userId, actor.id),
+            ),
+          );
+        const doc = personal
+          ? mergeStoredPersonalState(shared, reconcilePersonalState(shared, personal.state))
+          : shared;
         if (
           input.viewId !== 'overview' &&
           input.viewId !== TABLES_VIEW_ID &&

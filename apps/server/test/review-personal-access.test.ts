@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
-import { createEmptyDocument, extractPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
+import {
+  createEmptyDocument,
+  createEmptyNativeDocument,
+  defaultDatabaseContext,
+  extractPersonalState,
+  TABLES_VIEW_ID,
+} from '@ezerd/model';
 import { describe, expect, it, vi } from 'vitest';
 import {
   messages,
@@ -428,6 +434,32 @@ describe('personal state membership boundaries', () => {
     expect(project.document).toEqual(original);
   });
 
+  it('keeps a native trusted current detached from callback mutations when validating personal references', async () => {
+    const fixture = store();
+    const native = createEmptyNativeDocument(defaultDatabaseContext('postgresql'));
+    native.domains = [{ id: 'd', name: '', description: '' }];
+    fixture.rows.set(projects, [
+      [
+        {
+          ...project,
+          document: native,
+          databaseKind: 'postgresql',
+          databaseProfileId: 'postgresql-18-v1',
+          databaseRevision: 0,
+        },
+      ],
+    ]);
+    fixture.rows.set(projectPersonalStates, [[]]);
+    await expect(
+      fixture.personal.mutate(project.id, actor, 0, (doc) => {
+        doc.domains[0]!.id = 'forged';
+        doc.views = [{ id: 'view', name: '', domainIds: ['forged'] }];
+        return doc;
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(native.domains[0]!.id).toBe('d');
+    expect(fixture.writes).toEqual([]);
+  });
   it('persists a global viewport without changing shared card placements', async () => {
     const fixture = store();
     fixture.rows.set(projectPersonalStates, [[]]);

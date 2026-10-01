@@ -1,7 +1,7 @@
-import { TABLES_VIEW_ID, type DesignDocument } from '@ezerd/model';
+import { TABLES_VIEW_ID, type PersonalCanvasDocument } from '@ezerd/model';
 
 /** Legacy domain/combined IDs select tables without selecting a separate layout. */
-export function sharedCanvasSelection(document: DesignDocument, viewId: string) {
+export function sharedCanvasSelection(document: PersonalCanvasDocument, viewId: string) {
   if (viewId === 'overview') return { layoutViewId: 'overview', tableIds: null };
   if (viewId === TABLES_VIEW_ID) return { layoutViewId: TABLES_VIEW_ID, tableIds: null };
   const domainIds = document.domains.some((domain) => domain.id === viewId)
@@ -18,7 +18,7 @@ export function sharedCanvasSelection(document: DesignDocument, viewId: string) 
   };
 }
 
-export function sharedCanvasNodes(document: DesignDocument, viewId: string) {
+export function sharedCanvasNodes(document: PersonalCanvasDocument, viewId: string) {
   const selection = sharedCanvasSelection(document, viewId);
   if (!selection) return [];
   const noteIds = new Set(

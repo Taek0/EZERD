@@ -7,6 +7,13 @@ import type {
   RelationLayout,
 } from './document.js';
 import { TABLES_VIEW_ID } from './document.js';
+import type { TableCanvasDocument } from './document.js';
+
+export interface PersonalCanvasDocument
+  extends TableCanvasDocument, Pick<DesignDocument, 'domains' | 'views' | 'notes'> {
+  tableRelations?:
+    readonly { id: string; sourceTableId: string; targetTableId: string }[] | undefined;
+}
 
 export interface PersonalState {
   views: CombinedView[];
@@ -16,7 +23,7 @@ export interface PersonalState {
   relations: RelationLayout[];
 }
 
-export function extractPersonalState(document: DesignDocument): PersonalState {
+export function extractPersonalState(document: PersonalCanvasDocument): PersonalState {
   const combinedIds = new Set((document.views ?? []).map((view) => view.id));
   return {
     views: document.views ?? [],
@@ -27,11 +34,11 @@ export function extractPersonalState(document: DesignDocument): PersonalState {
   };
 }
 
-export function mergeStoredPersonalState(
-  shared: DesignDocument,
+export function mergeStoredPersonalState<T extends PersonalCanvasDocument>(
+  shared: T,
   personal: PersonalState,
-): DesignDocument {
-  const combinedIds = new Set(personal.views.map((view) => view.id));
+): T {
+  const combinedIds = new Set([...(shared.views ?? []), ...personal.views].map((view) => view.id));
   return {
     ...shared,
     views: personal.views,
@@ -52,7 +59,7 @@ export function mergeStoredPersonalState(
 }
 
 export function reconcilePersonalState(
-  shared: DesignDocument,
+  shared: PersonalCanvasDocument,
   personal: PersonalState,
 ): PersonalState {
   const domainIds = new Set(shared.domains.map((domain) => domain.id));

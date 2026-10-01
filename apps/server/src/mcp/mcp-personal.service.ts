@@ -24,6 +24,7 @@ import {
 } from '@ezerd/model';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { PersonalStateService } from '../workspace/personal-state.service.js';
+import { requireLegacyServerDocument } from '../shared/normalize-document.js';
 
 const objectId = z.string().trim().min(1).max(160);
 const coordinate = z.number().min(-1e7).max(1e7);
@@ -110,7 +111,8 @@ export class McpPersonalService {
         user,
         input.expectedVersion,
         (source) => {
-          let candidate = structuredClone(source);
+          requireLegacyServerDocument(source);
+          let candidate = structuredClone(source as DesignDocument);
           try {
             for (const command of input.commands) candidate = this.applyCommand(candidate, command);
           } catch (error) {

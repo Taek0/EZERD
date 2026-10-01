@@ -130,7 +130,8 @@ describe('authenticated write paths', () => {
         return {
           from: () => {
             if (index === 0) return { where: () => ({ for: async () => [project] }) };
-            if (index === 1) return { where: async () => [thread] };
+            if (index === 1) return { where: async () => [] };
+            if (index === 2) return { where: async () => [thread] };
             return { where: () => ({ orderBy: async () => [] }) };
           },
         };

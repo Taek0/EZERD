@@ -356,6 +356,23 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         expect(result.isError).not.toBe(true);
         expect(result.structuredContent).toEqual(expected);
         expect(projectDocumentStateSchema.safeParse(result.structuredContent).success).toBe(true);
+        const personal = await client.callTool({
+          name: 'get_personal_state',
+          arguments: { projectId: id },
+        });
+        expect(personal.isError).not.toBe(true);
+        const unsupported = await client.callTool({
+          name: 'apply_personal_changes',
+          arguments: {
+            projectId: id,
+            expectedVersion: 0,
+            operationId: randomUUID(),
+            commands: [
+              { type: 'set_viewport', value: { viewId: '__tables__', x: 12, y: 34, zoom: 1 } },
+            ],
+          },
+        });
+        expect(unsupported.isError).toBe(true);
         expect(
           (await client.callTool({ name: 'get_project', arguments: { projectId: id } })).isError,
         ).toBe(true);
@@ -396,6 +413,191 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         await other.close();
       }
     });
+    it.each(['postgresql', 'mysql', 'sqlite'])(
+      'stores only personal state and reviews on a %s native canvas',
+      async (kind) => {
+        const id = await createProject(kind);
+        const source = migrateDesignDocumentV1(
+          legacyDocument(),
+          defaultDatabaseContext(kind as 'postgresql' | 'mysql' | 'sqlite'),
+        ).document;
+        source.domains = [{ id: 'd', name: 'domain', description: '' }];
+        source.tables![0]!.domainId = 'd';
+        source.indexes = [
+          {
+            id: 'index',
+            tableId: 't',
+            name: '',
+            scope: 'logical',
+            unique: false,
+            parts: [{ direction: 'asc', expression: { kind: 'column', columnId: 'c' } }],
+            options:
+              kind === 'mysql'
+                ? { database: 'mysql', kind: 'btree' }
+                : kind === 'sqlite'
+                  ? { database: 'sqlite' }
+                  : { database: 'postgresql', method: 'btree' },
+          },
+        ];
+        source.layout.nodes = [
+          {
+            id: 'domain-node',
+            objectId: 'd',
+            viewId: 'overview',
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 160,
+          },
+          {
+            id: 'table-node',
+            objectId: 't',
+            viewId: '__tables__',
+            x: 100,
+            y: 200,
+            width: 320,
+            height: 260,
+          },
+        ];
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(source),
+        ]);
+        const before = await stored(id);
+        const first = await request(`/projects/${id}/personal-state`);
+        expect(first.status).toBe(200);
+        const state = {
+          ...first.data.state,
+          views: [{ id: 'view', name: 'mine', domainIds: ['d'] }],
+          notes: [{ id: 'note', viewId: 'view', text: 'my private note' }],
+          nodes: [
+            {
+              id: 'private-node',
+              objectId: 'note',
+              viewId: 'view',
+              x: 0,
+              y: 0,
+              width: 240,
+              height: 160,
+            },
+          ],
+          viewports: [{ viewId: '__tables__', x: 12, y: 34, zoom: 0.8 }],
+        };
+        const saved = await request(`/projects/${id}/personal-state`, 'PUT', {
+          expectedVersion: first.data.version,
+          state,
+        });
+        expect(saved).toMatchObject({ status: 200, data: { version: 1, state } });
+        expect((await request(`/projects/${id}/personal-state`)).data.state).toEqual(state);
+        const collision = structuredClone(state);
+        collision.notes[0].id = 'index';
+        collision.nodes[0].objectId = 'index';
+        expect(
+          (
+            await request(`/projects/${id}/personal-state`, 'PUT', {
+              expectedVersion: 1,
+              state: collision,
+            })
+          ).status,
+        ).toBe(400);
+        const pin = await request(`/projects/${id}/threads`, 'POST', {
+          viewId: 'd',
+          objectId: 't',
+          x: 100,
+          y: 200,
+          body: 'native canvas review',
+          mentionIds: [],
+        });
+        expect(pin.status).toBe(201);
+        expect(pin.data.messages[0].authorId).toBe(actorId);
+        const privatePin = await request(`/projects/${id}/threads`, 'POST', {
+          viewId: 'view',
+          objectId: 'note',
+          x: 0,
+          y: 0,
+          body: 'my private placement review',
+          mentionIds: [],
+        });
+        expect(privatePin.status).toBe(201);
+        expect(
+          (
+            await request(`/projects/${id}/threads`, 'POST', {
+              viewId: 'd',
+              objectId: 'missing',
+              x: 0,
+              y: 0,
+              body: 'invalid',
+              mentionIds: [],
+            })
+          ).status,
+        ).toBe(400);
+        const other = await request(
+          '/users',
+          'POST',
+          { username: `viewer-${randomUUID().slice(0, 20)}`, pin: '0024' },
+          null,
+        );
+        userIds.push(other.data.id);
+        const session = (
+          await request('/sessions', 'POST', { userId: other.data.id, pin: '0024' }, null)
+        ).data.token;
+        expect(
+          (await request(`/projects/${id}/personal-state`, 'GET', undefined, session)).status,
+        ).toBe(403);
+        const invitation = await request(`/workspaces/${workspaceId}/invitations`, 'POST', {
+          username: other.data.username,
+          role: 'viewer',
+        });
+        expect(
+          (
+            await request(
+              `/workspace-invitations/${invitation.data.id}/accept`,
+              'POST',
+              {},
+              session,
+            )
+          ).status,
+        ).toBe(201);
+        const viewer = await request(`/projects/${id}/personal-state`, 'GET', undefined, session);
+        expect(viewer.data.state.notes).toEqual([]);
+        expect(viewer.data.version).toBe(0);
+        expect(
+          (
+            await request(
+              `/projects/${id}/threads`,
+              'POST',
+              {
+                viewId: 'view',
+                objectId: 'note',
+                x: 0,
+                y: 0,
+                body: 'not my private placement',
+                mentionIds: [],
+              },
+              session,
+            )
+          ).status,
+        ).toBe(400);
+        expect(
+          (
+            await request(
+              `/projects/${id}/personal-state`,
+              'PUT',
+              {
+                expectedVersion: 0,
+                state: {
+                  ...viewer.data.state,
+                  viewports: [{ viewId: '__tables__', x: 50, y: 60, zoom: 1 }],
+                },
+              },
+              session,
+            )
+          ).status,
+        ).toBe(200);
+        expect((await request(`/projects/${id}/personal-state`)).data.state).toEqual(state);
+        expect(await stored(id)).toEqual(before);
+      },
+    );
     it('keeps a native DB mismatch explicit instead of interpreting it in the project dialect', async () => {
       const id = await createProject('mysql');
       const source = migrateDesignDocumentV1(
