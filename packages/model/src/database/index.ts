@@ -7,3 +7,4 @@ export * from './migration.js';
 export * from './validation.js';
 export * from './state.js';
 export * from './capabilities.js';
+export * from './deletion.js';

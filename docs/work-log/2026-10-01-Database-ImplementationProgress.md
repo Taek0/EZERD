@@ -18,13 +18,15 @@
 | C2d/C3 native sync 순수 모델 | 완료(해당 부분) | [결과](2026-10-01-Database-NativeSyncModel.md). indexes/checks/AST 원자 변경·snapshot·참조 read-set, DB/profile/문서 버전 보호. 전체 check 716개 통과, 44개 건너뜀 |
 | C2e/C3 native sync 전송 계약 | 완료(해당 부분) | [결과](2026-10-01-Database-NativeSyncTransport.md). protocol v2/revision 필수·문맥 일치·v1 원본/재생 호환. 전체 check 720개 통과, 44개 건너뜀. live v2 쓰기는 비활성 |
 | Native 삭제 역연산 순서 보존 | 완료(해당 부분) | [결과](2026-10-01-Database-NativeDeletionUndoOrder.md). v2 컬럼/키 등 삭제 전 순서 복원, v1 claim 유지. sync 34개 통과. 삭제 planner는 별도 단위로 진행 중 |
+| C2f native 삭제·참조 정리 | 완료(순수 모델) | [결과](2026-10-01-Database-NativeDeletionReferences.md). review 가능한 영향/차단 목록, 명시 generated 연쇄 삭제, key/FK/index/check/layout 정리. 전체 check 737개 통과/44개 건너뜀 |
 
 ## 다음 작업
 
 1. C3 나머지: 서버 lock 아래 native 최종 후보/legacy 원본 비교, v2 업그레이드/import와 native sync/이력 소비를 연결한다. 실제 소비 경로 준비 전에는 v2 저장을 활성화하지 않는다.
-2. 다음 작은 단위는 native 편집/삭제 cascade와 clipboard/remap이다. sync 순수 코어와 v2 전송 계약은 위 단위를 사용한다. 화면 어댑터를 준비해 저장 활성화 시 기존 클라이언트의 v1 재저장을 방지한다.
+2. 다음 작은 단위는 native clipboard/remap 및 편집 생성/갱신이다. 삭제/sync/전송 순수 모델은 위 단위를 사용한다. 화면 어댑터를 준비해 저장 활성화 시 기존 클라이언트의 v1 재저장을 방지한다.
 3. C4 프로젝트 DB별 타입/옵션/기능 편집 UI와 MCP를 연결한다.
 4. C5 세 DB native DDL/공유 메뉴/실제 파일·DB 실행 검증을 완성한다.
 5. C6/C7 고급 기본 타입·ERD 기능 및 C8 검증된 DB 변환/전체 QA를 이어서 수행한다.
+6. FK 대체 후보(non-deferrable key/non-partial unique index 등)는 C3 검증기·planner·sync·DDL에서 공통화하고 실제 DB로 확인한다. 기존 전체 API/MCP 통합 실패 5건도 전체 QA 전에 해소한다.
 
 전체 작업은 미완료다. 현재 모델/계약은 v1 API와 병존하며 실제 제품 화면과 서버 저장은 아직 v1이다. 신규 native 기능은 사용 가능으로 활성화하지 않았다. 다음 작업에서도 기존 데이터/공유 캔버스/사용자 관리 파일을 보존하고 독립 단위마다 planning/work-log/커밋을 완료한다.
