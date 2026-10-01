@@ -28,11 +28,12 @@
 | C4 versioned MCP snapshot 소비 | 완료(MCP 읽기) | [결과](2026-10-01-Database-VersionedMcpRead.md). 실제 get_project_document_state/annotations·전체 계약/권한·REST 일치. 전체 check 800개 통과/51개 건너뜀, 격리 HTTP/MCP 7개 통과 |
 | C3 native personal/review common canvas | 완료(개인 상태·리뷰 소비) | [결과](2026-10-01-Database-NativePersonalReview.md). 세 DB personal JSON 저장/읽기·리뷰·사용자 격리·전체 후보·원본 보호. 전체 check 803개 통과/54개 건너뜀, 최종 빌드 후 격리 HTTP/MCP/autosync 18개 통과 |
 | C4 웹 versioned snapshot/native 조회 | 완료(조회 소비) | [결과](2026-10-02-Database-NativeWebRead.md). source 분기·personal merge·DB별 표시·이동/권한 보호, 세 DB 브라우저 GET/원본 보호 및 v1 WS 확인. 전체 check 813개 통과/54개 건너뜀, 격리 HTTP/MCP/autosync 18개 통과. native 편집/공유 저장은 미연결 |
+| C4 native 생성·갱신/FK 파생 모델 | 완료(순수 모델/patch 계약) | [결과](2026-10-02-Database-NativeEditModel.md). DB profile 기본값·부분 갱신·원문/ID·FK base type/생성 옵션 분리·MySQL 상속 charset/collation·strict patch. 전체 check 833개 통과/54개 건너뜀, 단위 테스트 20개 통과. UI/shared ACK·SQL 실행은 미연결 |
 
 ## 다음 작업
 
 1. C3 나머지: versioned REST/MCP/web snapshot 읽기와 review/personal JSON 소비는 연결했다. 서버 후보 helper를 SyncService에서 사용하며 v2 업그레이드/import/history 경로를 완성한다. lock 아래 최종 후보를 검사하고 replay는 새 검증보다 먼저 기존 응답을 유지한다. restore는 trusted history/deletion provenance가 필요하다. MCP personal 명령은 아직 v1 전용이다. 실제 편집 소비 경로 준비 전에는 v2 shared 저장을 활성화하지 않는다.
-2. 다음 작은 단위는 native 테이블·컬럼 생성/갱신과 FK 파생 컬럼 준비다. 이후 native ERD 편집과 clipboard 소비를 위 계약/helper에 연결한다. native 조회는 구조화된 테이블 화면이며 편집 기능은 없다.
+2. native 테이블/컬럼 factory·컬럼 추가·컬럼/테이블 property patch·FK 파생 및 strict patch 계약은 준비했다. 다음 작은 단위는 이를 실제 native 편집 소비와 versioned sync 저장 경로에 연결하는 것이다. 도메인 소유권 이동과 native ERD/clipboard 소비는 공통 canvas·위 계약/helper를 사용해 연결한다. native 조회 화면에는 아직 편집 기능이 없다.
 3. C4 프로젝트 DB별 타입/옵션/기능 편집 UI와 MCP를 연결한다.
 4. C5 세 DB native DDL/공유 메뉴/실제 파일·DB 실행 검증을 완성한다.
 5. C6/C7 고급 기본 타입·ERD 기능 및 C8 검증된 DB 변환/전체 QA를 이어서 수행한다.

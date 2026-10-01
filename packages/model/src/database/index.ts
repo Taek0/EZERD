@@ -10,3 +10,4 @@ export * from './capabilities.js';
 export * from './deletion.js';
 export * from './remap.js';
 export * from './display.js';
+export * from './editing.js';
