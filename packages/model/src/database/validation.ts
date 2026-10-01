@@ -7,6 +7,7 @@ import {
   type DatabaseFeatureFacts,
 } from './features.js';
 import { getDatabaseProfile } from './profiles.js';
+import { nativeReferenceProblems } from './reference-graph.js';
 import {
   nativeExpressionColumnIds,
   type NativeColumn,
@@ -168,6 +169,8 @@ function collect(
     return issues;
   }
   const tables = new Map((doc.tables ?? []).map((table) => [table.id, table]));
+  for (const problem of nativeReferenceProblems(doc))
+    add(problem.code, problem.objectId, problem.path, problem.cause);
   const columns = new Map((doc.columns ?? []).map((column) => [column.id, column]));
   const domains = new Set(doc.domains.map((domain) => domain.id));
   const enums = new Map((doc.enums ?? []).map((definition) => [definition.id, definition]));

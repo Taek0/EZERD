@@ -22,10 +22,11 @@
 | C2g native 참조 ID remap | 완료(순수 모델) | [결과](2026-10-01-Database-NativeIdentityRemap.md). 모든 엔티티/AST/FK/ENUM/배치 참조 remap, 리터럴/legacy 원문 보존, 충돌·외부 참조 보호. 전체 check 743개 통과/44개 건너뜀 |
 | C2h native clipboard 소비 준비 | 완료(계약/helper) | [결과](2026-10-01-Database-NativeClipboard.md). v2 envelope·DB/legacy 보호·ENUM 재사용·전체 후보 예산/모드 검증. 전체 check 753개 통과/44개 건너뜀. live paste는 아직 v1 |
 | Native write legacy 출처 보호 | 완료(공통 정책) | [결과](2026-10-01-Database-NativeWriteProvenance.md). logical-only 신규 legacy 복제/원문·소유자·문맥 변경 차단, 기존 유지/복구 허용. 전체 check 757개 통과/44개 건너뜀 |
+| C3 native sync 최종 후보 준비 | 완료(서버 helper/공통 graph) | [결과](2026-10-01-Database-NativeServerCandidate.md). raw claims/발급 baseline/DB 문맥/read-set/retired ID/current 후보 검증. 모든 scope 참조·원인별 복구. 전체 check 785개 통과/44개 건너뜀. live v2 endpoint는 미연결 |
 
 ## 다음 작업
 
-1. C3 나머지: 서버 lock 아래 native 최종 후보/legacy 원본 비교, v2 업그레이드/import와 native sync/이력 소비를 연결한다. 실제 소비 경로 준비 전에는 v2 저장을 활성화하지 않는다.
+1. C3 나머지: common native 화면 배치 정규화와 원본/preview reader를 준비한 뒤, 위 서버 후보 helper를 lock 아래 SyncService에서 사용하고 v2 업그레이드/import/history 소비를 연결한다. replay는 새 검증보다 먼저 기존 응답을 유지한다. restore는 trusted history/deletion provenance가 필요하다. 실제 소비 경로 준비 전에는 v2 저장을 활성화하지 않는다.
 2. 다음 작은 단위는 native 편집 생성/갱신과 공통 화면 어댑터다. clipboard 소비는 위 계약/helper를 사용한다. 화면 어댑터를 준비해 저장 활성화 시 기존 클라이언트의 v1 재저장을 방지한다.
 3. C4 프로젝트 DB별 타입/옵션/기능 편집 UI와 MCP를 연결한다.
 4. C5 세 DB native DDL/공유 메뉴/실제 파일·DB 실행 검증을 완성한다.
