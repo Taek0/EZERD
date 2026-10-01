@@ -26,6 +26,8 @@ import {
   workspaceMemberSchema,
   workspaceInvitationSchema,
   projectDatabaseCapabilitiesSchema,
+  projectDocumentStateSchema,
+  databaseIssueSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
@@ -70,6 +72,30 @@ const TIMEOUT_MS = 60_000;
 const projectStateSchema = projectDocumentSchema.extend({
   syncSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });
+// SDK JSON Schema metadata cannot express custom raw/AST validation; the handler parses the full contract.
+const documentBodySchema = z
+  .object({ schemaVersion: z.union([z.literal(1), z.literal(2)]) })
+  .passthrough();
+const versionedProjectOutputSchema = z.strictObject({
+  protocolVersion: z.literal(2),
+  project: projectDocumentStateSchema.shape.project,
+  sequence: projectDocumentStateSchema.shape.sequence,
+  sourceDocument: documentBodySchema,
+  native: z.discriminatedUnion('status', [
+    z.strictObject({
+      status: z.literal('available'),
+      document: z.object({ schemaVersion: z.literal(2) }).passthrough(),
+      migrationIssues: z.array(
+        z.strictObject({ code: z.string(), objectId: z.string(), path: z.string() }),
+      ),
+      issues: z.array(databaseIssueSchema),
+    }),
+    z.strictObject({
+      status: z.literal('unavailable'),
+      code: z.enum(['database.context-changed', 'document.native-preview-invalid']),
+    }),
+  ]),
+});
 const commandRequestSchema = z.strictObject({
   operationId: idSchema,
   groupId: idSchema,
@@ -110,9 +136,10 @@ export class McpServerFactory {
       {
         capabilities: { tools: {} },
         instructions:
+          'get_project_database_capabilities로 현재 DB/profile/revision과 실제 usable 기능을 확인하세요. native 형식 또는 원본/migration 진단이 필요하면 get_project_document_state를 사용하세요. 이 읽기 결과의 preview available은 쓰기 가능 판정이 아니며 기존 편집 도구는 아직 v1 전용입니다. ' +
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
           ' active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
-          '프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view의 모든 페이지로 대상 뷰의 최신 배치를 확인하세요. 화면의 관계는 list_view_relations로 조회하세요. 테이블 캔버스는 __tables__의 공유 배치를 사용하며, 도메인·기존 결합 화면 ID 조회는 같은 공유 좌표의 도메인 필터입니다. 필터 조회에서도 반환된 공유 노드 ID로 apply_project_changes를 사용하세요. 개인 카메라와 기존 개인 기록은 get_personal_state 및 apply_personal_changes로 다룹니다. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
+          'v1 프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view의 모든 페이지로 대상 뷰의 최신 배치를 확인하세요. 화면의 관계는 list_view_relations로 조회하세요. 테이블 캔버스는 __tables__의 공유 배치를 사용하며, 도메인·기존 결합 화면 ID 조회는 같은 공유 좌표의 도메인 필터입니다. 필터 조회에서도 반환된 공유 노드 ID로 apply_project_changes를 사용하세요. 개인 카메라와 기존 개인 기록은 get_personal_state 및 apply_personal_changes로 다룹니다. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. v1 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
           '같은 뷰의 카드 경계와 콘텐츠에 필요한 크기를 고려해 서로 겹치지 않게 배치하고 최소 40px 간격을 두세요. ' +
@@ -173,7 +200,8 @@ export class McpServerFactory {
     server.registerTool(
       'get_project',
       {
-        description: '프로젝트 메타데이터와 현재 설계 문서를 조회합니다.',
+        description:
+          'v1 프로젝트 메타데이터와 현재 설계 문서를 조회합니다. native 저장 또는 원본/native preview는 get_project_document_state로 조회하세요.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: projectStateSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -182,10 +210,26 @@ export class McpServerFactory {
         invoke('get_project', async () => projectStateSchema.parse(await projectState(projectId))),
     );
     server.registerTool(
+      'get_project_document_state',
+      {
+        description:
+          '같은 저장 snapshot의 프로젝트 DB/profile/revision·version·sequence, 원본 sourceDocument와 별도 native preview/진단을 읽습니다. preview available은 편집·DDL 기능이 usable이라는 뜻이 아닙니다. 공유 문서 조회이며 개인 상태를 합치거나 baseline을 발급하지 않습니다. 전체 문서가 필요한 경우 사용하세요.',
+        inputSchema: z.strictObject({ projectId: idSchema }),
+        outputSchema: versionedProjectOutputSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId }) =>
+        invoke('get_project_document_state', async () =>
+          projectDocumentStateSchema.parse(
+            await this.workspace.getVersionedProjectState(user.id, projectId),
+          ),
+        ),
+    );
+    server.registerTool(
       'get_project_database_capabilities',
       {
         description:
-          '프로젝트의 DB 종류·프로필·변경 번호와 native v2 타입/옵션·기능을 조회합니다. supportedByEngine은 엔진 규칙이며 usable만 실제 사용 가능한 기능입니다. 문서 버전이 1이면 기존 편집/쓰기 도구는 native v2 타입을 받지 않습니다. 기능 적용 시 객체별 조건을 다시 검증해야 합니다.',
+          '프로젝트의 DB 종류·프로필·변경 번호와 native v2 타입/옵션·기능을 조회합니다. supportedByEngine은 엔진 규칙이며 usable만 실제 사용 가능한 기능입니다. 현재 기존 편집/쓰기 도구는 v1 전용이며 native v2 쓰기는 비활성입니다. native 저장/preview는 get_project_document_state로 읽으세요. 기능 적용 시 객체별 조건을 다시 검증해야 합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: projectDatabaseCapabilitiesSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -201,7 +245,7 @@ export class McpServerFactory {
       'get_project_summary',
       {
         description:
-          '전체 설계 문서 없이 프로젝트 버전, 객체 개수와 화면·도메인 목록을 조회합니다.',
+          '전체 설계 문서 없이 v1 프로젝트 버전, 객체 개수와 화면·도메인 목록을 조회합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: projectSummarySchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },

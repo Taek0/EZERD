@@ -3,7 +3,12 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
 import { McpServerFactory } from '../src/mcp/mcp-server.js';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
-import { projectDatabaseCapabilities, resolveProjectDatabaseState } from '@ezerd/model';
+import {
+  createEmptyNativeDocument,
+  defaultDatabaseContext,
+  projectDatabaseCapabilities,
+  resolveProjectDatabaseState,
+} from '@ezerd/model';
 
 const now = new Date().toISOString();
 const project = {
@@ -31,6 +36,18 @@ describe('MCP server tools', () => {
       listProjectsPage: vi.fn(async () => ({ projects: [project], nextCursor: null })),
       getProject: vi.fn(async () => ({ project, document })),
       getProjectState: vi.fn(async () => ({ project, document, syncSequence: 0 })),
+      getVersionedProjectState: vi.fn(async () => ({
+        protocolVersion: 2,
+        project: { ...project, databaseProfileId: 'postgresql-18-v1', databaseRevision: 0 },
+        sequence: 0,
+        sourceDocument: document,
+        native: {
+          status: 'available',
+          document: createEmptyNativeDocument(defaultDatabaseContext('postgresql')),
+          migrationIssues: [],
+          issues: [],
+        },
+      })),
       getDatabaseCapabilities: vi.fn(async () => ({
         projectId: project.id,
         version: 0,
@@ -125,6 +142,7 @@ describe('MCP server tools', () => {
         'cancel_workspace_invitation',
         'list_projects',
         'get_project',
+        'get_project_document_state',
         'get_project_database_capabilities',
         'get_project_summary',
         'list_tables',
@@ -185,6 +203,22 @@ describe('MCP server tools', () => {
         documentSchemaVersion: 1,
       });
       expect(workspace.getDatabaseCapabilities).toHaveBeenCalledWith(actor.id, project.id);
+      const versioned = await client.callTool({
+        name: 'get_project_document_state',
+        arguments: { projectId: project.id },
+      });
+      expect(versioned.isError).not.toBe(true);
+      expect(versioned.structuredContent).toMatchObject({
+        protocolVersion: 2,
+        sourceDocument: document,
+        project: { databaseRevision: 0 },
+        native: { status: 'available', document: { schemaVersion: 2 } },
+      });
+      expect(workspace.getVersionedProjectState).toHaveBeenCalledWith(actor.id, project.id);
+      expect(tools.tools.find((tool) => tool.name === 'get_project_document_state')).toMatchObject({
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        outputSchema: { type: 'object' },
+      });
       const spoofed = await client.callTool({
         name: 'create_review_thread',
         arguments: {
@@ -398,6 +432,83 @@ describe('MCP workspace authorization', () => {
       });
       expect(spoof.isError).toBe(true);
       expect(harness.spaces.createWorkspace).toHaveBeenCalledTimes(1);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('validates complete native output despite opaque SDK document metadata, and rejects spoofed input', async () => {
+    const state = {
+      protocolVersion: 2,
+      project: { ...project, databaseProfileId: 'postgresql-18-v1', databaseRevision: 0 },
+      sequence: 0,
+      sourceDocument: document,
+      native: {
+        status: 'available',
+        document: createEmptyNativeDocument(defaultDatabaseContext('postgresql')),
+        migrationIssues: [],
+        issues: [],
+      },
+    };
+    const read = vi.fn(async () => state);
+    const harness = await connected({ workspace: { getVersionedProjectState: read } });
+    try {
+      const call = () =>
+        harness.client.callTool({
+          name: 'get_project_document_state',
+          arguments: { projectId: project.id },
+        });
+      expect((await call()).isError).not.toBe(true);
+      expect(read).toHaveBeenCalledWith(actor.id, project.id);
+      const count = read.mock.calls.length;
+      expect(
+        (
+          await harness.client.callTool({
+            name: 'get_project_document_state',
+            arguments: { projectId: project.id, actorId: member.userId },
+          })
+        ).isError,
+      ).toBe(true);
+      expect(read).toHaveBeenCalledTimes(count);
+      state.native.document.checks = [
+        {
+          id: 'check',
+          tableId: 't',
+          name: '',
+          scope: 'physical',
+          expression: 'RAW_SQL_SECRET' as never,
+        },
+      ];
+      const result = await call();
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toBeUndefined();
+      expect(JSON.stringify(result)).not.toContain('RAW_SQL_SECRET');
+      expect(harness.workspace.getProjectState).not.toHaveBeenCalled();
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('rechecks native snapshot membership and token revocation before exposing source data', async () => {
+    const read = vi.fn(async () => {
+      throw new ForbiddenException('공간 접근 권한이 없습니다.');
+    });
+    const harness = await connected({ workspace: { getVersionedProjectState: read } });
+    try {
+      const call = () =>
+        harness.client.callTool({
+          name: 'get_project_document_state',
+          arguments: { projectId: project.id },
+        });
+      const denied = await call();
+      expect(denied.isError).toBe(true);
+      expect(denied.structuredContent).toBeUndefined();
+      expect(read).toHaveBeenCalledWith(actor.id, project.id);
+      harness.auth.assertActiveToken.mockRejectedValue(new UnauthorizedException('폐기된 토큰'));
+      const revoked = await call();
+      expect(revoked.isError).toBe(true);
+      expect(revoked.structuredContent).toBeUndefined();
+      expect(read).toHaveBeenCalledTimes(1);
     } finally {
       await harness.close();
     }

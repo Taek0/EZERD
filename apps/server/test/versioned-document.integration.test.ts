@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
   addDomain,
   createEmptyDocument,
@@ -55,6 +57,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     let workspaceId: string;
     const projectIds: string[] = [];
     const userIds: string[] = [];
+    const previousPort = process.env.PORT;
+    const previousMcpUrl = process.env.MCP_PUBLIC_URL;
     const request = async (
       path: string,
       method = 'GET',
@@ -84,7 +88,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     const stored = async (id: string) =>
       (
         await pool.query(
-          'SELECT document, version, sync_sequence, database_kind, database_profile_id, database_revision FROM projects WHERE id=$1',
+          'SELECT document, version, sync_sequence, database_kind, database_profile_id, database_revision, updated_at FROM projects WHERE id=$1',
           [id],
         )
       ).rows[0];
@@ -103,6 +107,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       configureApplication(app);
       await app.listen(0, '127.0.0.1');
       base = await app.getUrl();
+      process.env.PORT = new URL(base).port;
+      process.env.MCP_PUBLIC_URL = `${base}/mcp`;
       const user = await request(
         '/users',
         'POST',
@@ -119,6 +125,10 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       workspaceId = workspace.data.id;
     });
     afterAll(async () => {
+      if (previousPort === undefined) delete process.env.PORT;
+      else process.env.PORT = previousPort;
+      if (previousMcpUrl === undefined) delete process.env.MCP_PUBLIC_URL;
+      else process.env.MCP_PUBLIC_URL = previousMcpUrl;
       if (app) await app.close();
       if (!pool) return;
       try {
@@ -312,6 +322,79 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       });
       expect(rename.status).toBe(200);
       expect((await stored(id)).document).toEqual(source);
+    });
+    it('serves the same native snapshot over authenticated HTTP MCP and denies nonmembers', async () => {
+      const id = await createProject();
+      const source = migrateDesignDocumentV1(
+        legacyDocument(),
+        defaultDatabaseContext('postgresql'),
+      ).document;
+      await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+        id,
+        JSON.stringify(source),
+      ]);
+      const before = await stored(id);
+      const issued = await request('/mcp-tokens', 'POST', { name: 'versioned read' });
+      expect(issued.status).toBe(201);
+      const client = new Client({ name: 'native-read-fixture', version: '1.0.0' });
+      const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${issued.data.token}` } },
+      });
+      try {
+        await client.connect(transport);
+        const tools = await client.listTools();
+        expect(
+          tools.tools.find((tool) => tool.name === 'get_project_document_state'),
+        ).toMatchObject({
+          annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+        });
+        const expected = (await request(`/projects/${id}/document-state`)).data;
+        const result = await client.callTool({
+          name: 'get_project_document_state',
+          arguments: { projectId: id },
+        });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toEqual(expected);
+        expect(projectDocumentStateSchema.safeParse(result.structuredContent).success).toBe(true);
+        expect(
+          (await client.callTool({ name: 'get_project', arguments: { projectId: id } })).isError,
+        ).toBe(true);
+        expect(await stored(id)).toEqual(before);
+        expect(
+          (await pool.query('SELECT COUNT(*) FROM sync_client_baselines WHERE project_id=$1', [id]))
+            .rows[0].count,
+        ).toBe('0');
+      } finally {
+        await client.close();
+      }
+      const stranger = await request(
+        '/users',
+        'POST',
+        { username: `mcp-stranger-${randomUUID().slice(0, 18)}`, pin: '0024' },
+        null,
+      );
+      userIds.push(stranger.data.id);
+      const session = (
+        await request('/sessions', 'POST', { userId: stranger.data.id, pin: '0024' }, null)
+      ).data.token;
+      const otherToken = await request('/mcp-tokens', 'POST', { name: 'no access' }, session);
+      const other = new Client({ name: 'native-denied-fixture', version: '1.0.0' });
+      try {
+        await other.connect(
+          new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+            requestInit: { headers: { Authorization: `Bearer ${otherToken.data.token}` } },
+          }),
+        );
+        const result = await other.callTool({
+          name: 'get_project_document_state',
+          arguments: { projectId: id },
+        });
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toBeUndefined();
+        expect(await stored(id)).toEqual(before);
+      } finally {
+        await other.close();
+      }
     });
     it('keeps a native DB mismatch explicit instead of interpreting it in the project dialect', async () => {
       const id = await createProject('mysql');
