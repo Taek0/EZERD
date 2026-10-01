@@ -261,8 +261,19 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(first.data.version).toBe(0);
     const exported = await request(`/projects/${first.data.id}/export`);
     expect(exported.status).toBe(200);
-    expect(exported.data.document).toEqual(document);
-    expect(exported.data.project).toEqual(file.project);
+    const canonical = {
+      ...document,
+      notes: document.notes.map((note) => ({ ...note, viewId: '__tables__' })),
+      layout: {
+        ...document.layout,
+        nodes: document.layout.nodes.map((node) =>
+          node.objectId === 'transfer-note' ? { ...node, viewId: '__tables__' } : node,
+        ),
+        relations: document.layout.relations!.map((route) => ({ ...route, viewId: '__tables__' })),
+      },
+    };
+    expect(exported.data.document).toEqual(canonical);
+    expect(exported.data.project).toEqual({ ...file.project, databaseKind: 'postgresql' });
     expect(Object.keys(exported.data).sort()).toEqual([
       'document',
       'exportedAt',
@@ -276,8 +287,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     };
     const saved = await syncDocument(first.data.id, changed);
     expect(saved.status).toBe(201);
-    expect(saved.data.document).toEqual(changed);
-    expect((await request(`/projects/${second.data.id}`)).data.document).toEqual(document);
+    expect(saved.data.document).toEqual({ ...canonical, domains: changed.domains });
+    expect((await request(`/projects/${second.data.id}`)).data.document).toEqual(canonical);
   });
   it('normalizes case across registration, login, rename and concurrent creation', async () => {
     const name = 'CaseUser-' + randomUUID().slice(0, 8);
@@ -531,13 +542,36 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       },
     };
     expect((await syncDocument(id, document)).status).toBe(201);
-    expect((await request('/projects/' + id)).data.document).toEqual(document);
+    const canonical = {
+      ...document,
+      layout: {
+        ...document.layout,
+        nodes: [
+          {
+            id: 'node:t:__tables__',
+            objectId: 't',
+            viewId: '__tables__',
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 260,
+          },
+        ],
+        relations: [
+          { relationId: 'r', viewId: '__tables__', offset: 0, bend: { x: -215.5, y: 345 } },
+        ],
+      },
+    };
+    expect((await request('/projects/' + id)).data.document).toEqual(canonical);
     document.enums[0]!.name = 'workflow_status';
     expect((await syncDocument(id, document)).status).toBe(201);
     expect((await request('/projects/' + id)).data.document.columns[0].physical.type.enumId).toBe(
       'enum',
     );
-    expect((await request('/projects/' + id)).data.document).toEqual(document);
+    expect((await request('/projects/' + id)).data.document).toEqual({
+      ...canonical,
+      enums: document.enums,
+    });
   });
 
   it('deletes only version-matched archived projects and cascades pins without deleting people', async () => {
@@ -892,7 +926,14 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(saved.data.project.version).toBe(1);
     expect(saved.data.document).toEqual({
       ...document,
-      layout: { ...document.layout, viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] },
+      notes: document.notes.map((note) => ({ ...note, viewId: '__tables__' })),
+      layout: {
+        ...document.layout,
+        nodes: document.layout.nodes.map((node) =>
+          node.objectId === 'order-note' ? { ...node, viewId: '__tables__' } : node,
+        ),
+        viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }],
+      },
     });
     const reopened = await request(`/projects/${id}`);
     expect(reopened.status).toBe(200);

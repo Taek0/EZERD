@@ -208,7 +208,10 @@ export class McpServerFactory {
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId }) =>
-        invoke('get_project', async () => projectStateSchema.parse(await projectState(projectId))),
+        invoke('get_project', async () => {
+          const { personalViewIds: _personalViewIds, ...snapshot } = await projectState(projectId);
+          return projectStateSchema.parse(snapshot);
+        }),
     );
     server.registerTool(
       'get_project_document_state',

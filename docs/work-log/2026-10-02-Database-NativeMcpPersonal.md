@@ -19,3 +19,5 @@
 native shared 저장/ACK·upgrade/import/history·물리 타입 편집 UI/MCP·DDL 및 실제 DB SQL 검증은 여전히 미완료다. 이번 개인 상태 저장을 shared v2 쓰기 완료로 계산하지 않으며 usable gate도 활성화하지 않았다. native 웹은 여전히 조회 전용이다.
 
 다음 작은 단위는 전체 통합 QA의 남은 기대값·import 읽기 오류를 해소하고 native 실제 편집 소비와 versioned sync 저장 연결로 이어간다.
+
+후속 [호환 QA 결과](2026-10-02-Database-IntegrationCompatibilityQA.md): 위 확대 실행 6건을 해소해 최종 빌드 뒤 40개 전부 통과했다. import 후 get_project 실패는 추가한 내부 personalViewIds가 strict 공개 응답에 섞인 오류였으며 공개 snapshot에서 제외했다.
