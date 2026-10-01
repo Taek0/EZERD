@@ -63,6 +63,68 @@ function fixture(): NativeDesignDocument {
   return document;
 }
 describe('native ID-based synchronization model', () => {
+  it.each([['a/~'], ['a/~', 'b'], ['b']].map((removedIds) => ({ removedIds })))(
+    'restores deletions with their exact original order: %j',
+    ({ removedIds }) => {
+      const base = fixture();
+      base.columns!.push({
+        ...structuredClone(base.columns![1]!),
+        id: 'last',
+        tableId: 'another-table',
+      });
+      base.keys = [
+        {
+          id: 'k1',
+          tableId: 't',
+          scope: 'physical',
+          kind: 'unique',
+          name: 'one',
+          columnIds: ['a/~'],
+        },
+        {
+          id: 'k2',
+          tableId: 't',
+          scope: 'physical',
+          kind: 'primary',
+          name: 'two',
+          columnIds: ['b'],
+        },
+      ];
+      const next = structuredClone(base);
+      next.columns = next.columns!.filter((column) => !removedIds.includes(column.id));
+      next.keys = next.keys!.filter((key) => !removedIds.some((id) => key.columnIds.includes(id)));
+      const changes = diffSharedDocument(base, next);
+      expect(applyChanges(sharedDocument(base), changes)).toEqual(sharedDocument(next));
+      expect(applyChanges(sharedDocument(next), inverseChanges(changes))).toEqual(
+        sharedDocument(base),
+      );
+    },
+  );
+  it('reverses a deletion combined with a survivor reorder and a new entity', () => {
+    const base = fixture();
+    base.columns!.push({ ...structuredClone(base.columns![1]!), id: 'last' });
+    const next = structuredClone(base);
+    next.columns = [
+      next.columns![2]!,
+      next.columns![1]!,
+      { ...structuredClone(next.columns![1]!), id: 'new' },
+    ];
+    const changes = diffSharedDocument(base, next);
+    expect(applyChanges(sharedDocument(base), changes)).toEqual(sharedDocument(next));
+    expect(applyChanges(sharedDocument(next), inverseChanges(changes))).toEqual(
+      sharedDocument(base),
+    );
+  });
+  it('keeps v1 deletion claims unchanged for older durable queues', () => {
+    const old = createEmptyDocument();
+    old.domains = [
+      { id: 'a', name: 'A', description: '' },
+      { id: 'b', name: 'B', description: '' },
+    ];
+    expect(diffSharedDocument(old, { ...old, domains: old.domains.slice(1) })).toEqual([
+      { path: '/domains/a', before: old.domains[0], after: null, afterExists: false },
+    ]);
+  });
   it('materializes indexes/checks individually, preserves all native values, and records deletion snapshots', () => {
     const base = fixture();
     const next = structuredClone(base);

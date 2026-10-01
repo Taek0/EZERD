@@ -129,7 +129,13 @@ function routeKey(item: unknown): string | null {
     : null;
 }
 
-function diffValue(before: unknown, after: unknown, path: string, output: DocumentChange[]): void {
+function diffValue(
+  before: unknown,
+  after: unknown,
+  path: string,
+  output: DocumentChange[],
+  native = false,
+): void {
   if (Object.is(before, after)) return;
   const routes =
     path === '/layout/relations' &&
@@ -153,12 +159,26 @@ function diffValue(before: unknown, after: unknown, path: string, output: Docume
       : (item: unknown) => (item as { id: string }).id;
     const oldItems = new Map(before.map((item) => [itemKey(item), item]));
     const newItems = new Map(after.map((item) => [itemKey(item), item]));
+    if (native && !routes) {
+      // All inverse creations must run before original-order moves, including deleted anchors.
+      // v1 claims stay byte-compatible; only native envelopes carry this ordering metadata.
+      for (let index = before.length - 1; index >= 0; index--) {
+        const id = itemKey(before[index]);
+        if (newItems.has(id)) continue;
+        pushChange(
+          output,
+          `${path}/@move/${escapeSegment(id)}`,
+          index > 0 ? itemKey(before[index - 1]) : null,
+          null,
+        );
+      }
+    }
     for (const id of [...new Set([...oldItems.keys(), ...newItems.keys()])].sort()) {
       const childPath = `${path}/${escapeSegment(id)}`;
       if (!oldItems.has(id)) pushChange(output, childPath, null, newItems.get(id), false, true);
       else if (!newItems.has(id))
         pushChange(output, childPath, oldItems.get(id), null, true, false);
-      else diffValue(oldItems.get(id), newItems.get(id), childPath, output);
+      else diffValue(oldItems.get(id), newItems.get(id), childPath, output, native);
     }
     const group = (item: unknown) =>
       path === '/columns' ? String((item as { tableId?: unknown }).tableId ?? '') : '';
@@ -214,7 +234,13 @@ function diffValue(before: unknown, after: unknown, path: string, output: Docume
         );
       for (const key of [...new Set([...Object.keys(oldObject), ...Object.keys(newObject)])].sort())
         if (!['x', 'y', 'width', 'height'].includes(key))
-          diffValue(oldObject[key], newObject[key], `${path}/${escapeSegment(key)}`, output);
+          diffValue(
+            oldObject[key],
+            newObject[key],
+            `${path}/${escapeSegment(key)}`,
+            output,
+            native,
+          );
       return;
     }
     if (atomicPath(path)) {
@@ -233,7 +259,8 @@ function diffValue(before: unknown, after: unknown, path: string, output: Docume
           oldHas,
           newHas,
         );
-      else diffValue(oldObject[key], newObject[key], `${path}/${escapeSegment(key)}`, output);
+      else
+        diffValue(oldObject[key], newObject[key], `${path}/${escapeSegment(key)}`, output, native);
     }
     return;
   }
@@ -244,7 +271,13 @@ export function diffSharedDocument<T extends SyncDocument>(before: T, after: T):
   assertSameSyncContext(before, after);
   const output: DocumentChange[] = [];
   const combinedIds = new Set([...combinedViewIds(before), ...combinedViewIds(after)]);
-  diffValue(sharedDocument(before, combinedIds), sharedDocument(after, combinedIds), '', output);
+  diffValue(
+    sharedDocument(before, combinedIds),
+    sharedDocument(after, combinedIds),
+    '',
+    output,
+    before.schemaVersion === 2,
+  );
   return output;
 }
 
