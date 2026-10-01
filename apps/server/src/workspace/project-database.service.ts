@@ -33,6 +33,7 @@ import {
 } from '../db/schema.js';
 import type { ProjectRow } from '../db/schema.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
+import { requireLegacyServerDocument } from '../shared/normalize-document.js';
 
 type PreviewInput = z.infer<typeof previewProjectDatabaseSchema>;
 type ChangeInput = z.infer<typeof changeProjectDatabaseSchema>;
@@ -80,9 +81,11 @@ export class ProjectDatabaseService {
         const reasonCode =
           row.status !== 'active'
             ? 'database.project-archived'
-            : different && hasPhysicalDatabaseDesign(row.document)
-              ? 'database.conversion-required'
-              : undefined;
+            : different && row.document.schemaVersion !== 1
+              ? 'database.native-change-not-ready'
+              : different && hasPhysicalDatabaseDesign(row.document)
+                ? 'database.conversion-required'
+                : undefined;
         return projectDatabasePreviewSchema.parse({
           projectId,
           version: row.version,
@@ -141,6 +144,7 @@ export class ProjectDatabaseService {
         const changed = current.kind !== target.kind || current.profileId !== target.profileId;
         let revision = current.revision;
         if (changed) {
+          requireLegacyServerDocument(row.document);
           if (hasPhysicalDatabaseDesign(row.document))
             throw new ConflictException({
               code: 'database.conversion-required',

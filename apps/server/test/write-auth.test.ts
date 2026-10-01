@@ -105,7 +105,13 @@ describe('authenticated write paths', () => {
     const project = {
       id: randomUUID(),
       status: 'active',
-      document: { domains: [], notes: [], layout: { nodes: [] } },
+      document: {
+        schemaVersion: 1,
+        domains: [],
+        domainRelations: [],
+        notes: [],
+        layout: { nodes: [], viewports: [] },
+      },
     };
     const thread = {
       id: randomUUID(),

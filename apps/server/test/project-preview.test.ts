@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createEmptyDocument, type Column, type Table, type TableRelation } from '@ezerd/model';
+import {
+  createEmptyDocument,
+  defaultDatabaseContext,
+  migrateDesignDocumentV1,
+  type Column,
+  type Table,
+  type TableRelation,
+} from '@ezerd/model';
 import { projectPreview } from '../src/workspace/project-preview.js';
 
 const table = (id: string, scope: Table['scope'] = 'physical'): Table => ({
@@ -46,6 +53,40 @@ const relation = (
 });
 
 describe('project gallery preview', () => {
+  it('reads native catalog/ENUM/arrays/legacy instead of treating a native type as v1 text', () => {
+    const source = createEmptyDocument();
+    source.tables = [table('users'), table('orders')];
+    source.columns = [column('a'), column('b'), column('c'), column('d', 'orders')];
+    source.enums = [{ id: 'enum', name: 'state', schema: 'public', values: ['ok'] }];
+    const native = migrateDesignDocumentV1(source, defaultDatabaseContext('postgresql')).document;
+    native.columns![0]!.physical.type = {
+      kind: 'builtin',
+      database: 'postgresql',
+      typeId: 'postgresql:integer',
+      parameters: {},
+      array: { dimensions: 2 },
+    };
+    native.columns![1]!.physical.type = {
+      kind: 'projectEnum',
+      database: 'postgresql',
+      enumId: 'enum',
+      array: { dimensions: 1 },
+    };
+    native.columns![2]!.physical.type = {
+      kind: 'legacy',
+      source: 'document-v1',
+      original: { name: ' RAW_TYPE ', isArray: false },
+    };
+    native.columns![3]!.physical.type = {
+      kind: 'valueList',
+      database: 'mysql',
+      typeId: 'mysql:set',
+      values: ['a', 'b'],
+    };
+    expect(
+      projectPreview(native).tables.map((item) => item.columns.map((column) => column.type)),
+    ).toEqual([['INTEGER[][]', 'state[]', ' RAW_TYPE '], ['SET']]);
+  });
   it('includes unassigned tables without relying on domain membership or card color', () => {
     const document = createEmptyDocument();
     document.tables = [{ ...table('users'), domainId: null, color: '#123456' }];

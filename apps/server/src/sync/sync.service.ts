@@ -37,7 +37,10 @@ import {
   resolveProjectDatabaseState,
 } from '@ezerd/model';
 import type { DesignDocument, DocumentChange } from '@ezerd/model';
-import { normalizeServerDocument } from '../shared/normalize-document.js';
+import {
+  normalizeServerDocument,
+  requireLegacyServerDocument,
+} from '../shared/normalize-document.js';
 import { DatabaseService } from '../db/database.service.js';
 import {
   projects,
@@ -202,6 +205,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
         return { result: storedResult(lockedReplay.result), event: undefined };
       }
+      requireLegacyServerDocument(project.document);
       if (project.status !== 'active')
         throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
       if (project.syncSequence >= MAX_SEQUENCE)
@@ -561,6 +565,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           .from(projects)
           .where(eq(projects.id, projectId));
         if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+        requireLegacyServerDocument(project.document);
         const rows = await tx
           .select()
           .from(syncOperations)

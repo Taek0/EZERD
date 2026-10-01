@@ -201,6 +201,15 @@ export class WorkspaceController {
     return this.workspace.getProject(actor.id, id);
   }
 
+  @Get('projects/:id/document-state')
+  async getProjectDocumentState(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
+    return this.workspace.getVersionedProjectState(actor.id, parse(idSchema, rawId));
+  }
+
   @Patch('projects/:id')
   async updateProject(
     @Headers('authorization') authorization: string | undefined,

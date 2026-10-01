@@ -1,7 +1,26 @@
-import { columnTypeDisplay, isVisibleInView, type DesignDocument } from '@ezerd/model';
+import {
+  columnTypeDisplay,
+  getDatabaseType,
+  isVisibleInView,
+  type DesignDocument,
+  type NativeDesignDocument,
+  type NativeColumnType,
+} from '@ezerd/model';
+
+function nativeTypeCaption(type: NativeColumnType, enums: NativeDesignDocument['enums']): string {
+  if (type.kind === 'legacy') return type.original.name + (type.original.isArray ? '[]' : '');
+  const suffix = 'array' in type && type.array ? '[]'.repeat(type.array.dimensions) : '';
+  if (type.kind === 'projectEnum')
+    return (enums?.find((item) => item.id === type.enumId)?.name || 'ENUM') + suffix;
+  if (type.kind === 'untyped') return '';
+  if (type.kind === 'declared') return type.name;
+  if (type.kind === 'builtin' && type.database === 'mysql' && type.declarationAlias === 'boolean')
+    return 'BOOLEAN';
+  return (getDatabaseType(type.typeId)?.sqlName.toUpperCase() ?? type.typeId) + suffix;
+}
 
 /** A bounded physical-model preview of the saved project, independent of its active view. */
-export function projectPreview(document: DesignDocument) {
+export function projectPreview(document: DesignDocument | NativeDesignDocument) {
   const tables = (document.tables ?? []).filter((table) =>
     isVisibleInView(table.scope, 'physical'),
   );
@@ -36,7 +55,10 @@ export function projectPreview(document: DesignDocument) {
           .slice(0, 3)
           .map((column) => ({
             name: column.physical.name,
-            type: columnTypeDisplay(column.physical.type, document.enums),
+            type:
+              'kind' in column.physical.type
+                ? nativeTypeCaption(column.physical.type, document.enums)
+                : columnTypeDisplay(column.physical.type, document.enums),
             primaryKey: primaryColumns.has(column.id),
           })),
       };

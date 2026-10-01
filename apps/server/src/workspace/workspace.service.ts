@@ -15,6 +15,7 @@ import {
   projectTransferSchema,
   type ProjectTransfer,
   projectDatabaseCapabilitiesSchema,
+  projectDocumentStateSchema,
 } from '@ezerd/contracts';
 import {
   diagnoseDocument,
@@ -31,7 +32,11 @@ import type {
   updateProjectSchema,
   Project,
 } from '@ezerd/contracts';
-import { normalizeServerDocument } from '../shared/normalize-document.js';
+import {
+  normalizeServerDocument,
+  requireLegacyServerDocument,
+} from '../shared/normalize-document.js';
+import { readNativeProjectDocument } from '../shared/native-document-reader.js';
 import { DatabaseService } from '../db/database.service.js';
 import {
   projects,
@@ -236,27 +241,49 @@ export class WorkspaceService {
   }
 
   getProject(actorId: string, id: string) {
+    return this.readProject(actorId, id, (row) => ({
+      project: project(row),
+      document: normalizeServerDocument(row.document),
+    }));
+  }
+
+  getProjectState(actorId: string, id: string) {
+    return this.readProject(actorId, id, (row) => ({
+      project: project(row),
+      document: normalizeServerDocument(row.document),
+      syncSequence: row.syncSequence,
+    }));
+  }
+
+  private readProject<T>(actorId: string, id: string, read: (row: ProjectRow) => T) {
     return operation(() =>
       this.access.runProject(actorId, id, 'read', async (tx) => {
         const [row] = await tx.select().from(projects).where(eq(projects.id, id));
         if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-        return { project: project(row), document: normalizeServerDocument(row.document) };
+        return read(row);
       }),
     );
   }
 
-  getProjectState(actorId: string, id: string) {
-    return operation(() =>
-      this.access.runProject(actorId, id, 'read', async (tx) => {
-        const [row] = await tx.select().from(projects).where(eq(projects.id, id));
-        if (!row) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-        return {
-          project: project(row),
-          document: normalizeServerDocument(row.document),
-          syncSequence: row.syncSequence,
-        };
-      }),
-    );
+  getVersionedProjectState(actorId: string, id: string) {
+    return this.readProject(actorId, id, (row) => {
+      const result = readNativeProjectDocument(row.document, resolveProjectDatabaseState(row));
+      return projectDocumentStateSchema.parse({
+        protocolVersion: 2,
+        project: project(row),
+        sequence: row.syncSequence,
+        sourceDocument: result.rawSource,
+        native:
+          result.status === 'available'
+            ? {
+                status: 'available',
+                document: result.preview,
+                migrationIssues: result.migrationIssues,
+                issues: result.issues,
+              }
+            : { status: 'unavailable', code: result.code },
+      });
+    });
   }
 
   private async missingOrConflict(id: string): Promise<never> {
@@ -270,18 +297,18 @@ export class WorkspaceService {
     );
   }
 
-  async getDatabaseCapabilities(actorId: string, id: string) {
-    const state = await this.getProjectState(actorId, id);
-    const database = resolveProjectDatabaseState({
-      ...state.project,
-      databaseKind: state.project.databaseKind ?? 'postgresql',
-    });
-    return projectDatabaseCapabilitiesSchema.parse({
-      projectId: id,
-      version: state.project.version,
-      sequence: state.syncSequence,
-      ...projectDatabaseCapabilities(database, state.document.schemaVersion),
-    });
+  getDatabaseCapabilities(actorId: string, id: string) {
+    return this.readProject(actorId, id, (row) =>
+      projectDatabaseCapabilitiesSchema.parse({
+        projectId: id,
+        version: row.version,
+        sequence: row.syncSequence,
+        ...projectDatabaseCapabilities(
+          resolveProjectDatabaseState(row),
+          row.document.schemaVersion,
+        ),
+      }),
+    );
   }
 
   updateProject(actorId: string, id: string, input: z.infer<typeof updateProjectSchema>) {
@@ -292,6 +319,7 @@ export class WorkspaceService {
         if (!current) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
         const databaseChanged =
           changes.databaseKind !== undefined && changes.databaseKind !== current.databaseKind;
+        if (databaseChanged) requireLegacyServerDocument(current.document);
         if (databaseChanged && hasPhysicalDatabaseDesign(current.document))
           throw new ConflictException({
             code: 'database.conversion-required',

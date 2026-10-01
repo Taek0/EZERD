@@ -32,3 +32,4 @@ export * from './database-state.js';
 export * from './database-capabilities.js';
 export * from './native-sync.js';
 export * from './native-clipboard.js';
+export * from './project-document-state.js';
