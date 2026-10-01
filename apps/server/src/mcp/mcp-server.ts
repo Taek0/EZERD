@@ -25,6 +25,7 @@ import {
   workspaceSchema,
   workspaceMemberSchema,
   workspaceInvitationSchema,
+  projectDatabaseCapabilitiesSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
@@ -179,6 +180,22 @@ export class McpServerFactory {
       },
       ({ projectId }) =>
         invoke('get_project', async () => projectStateSchema.parse(await projectState(projectId))),
+    );
+    server.registerTool(
+      'get_project_database_capabilities',
+      {
+        description:
+          '프로젝트의 DB 종류·프로필·변경 번호와 native v2 타입/옵션·기능을 조회합니다. supportedByEngine은 엔진 규칙이며 usable만 실제 사용 가능한 기능입니다. 문서 버전이 1이면 기존 편집/쓰기 도구는 native v2 타입을 받지 않습니다. 기능 적용 시 객체별 조건을 다시 검증해야 합니다.',
+        inputSchema: z.strictObject({ projectId: idSchema }),
+        outputSchema: projectDatabaseCapabilitiesSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId }) =>
+        invoke('get_project_database_capabilities', async () =>
+          projectDatabaseCapabilitiesSchema.parse(
+            await this.workspace.getDatabaseCapabilities(user.id, projectId),
+          ),
+        ),
     );
     server.registerTool(
       'get_project_summary',

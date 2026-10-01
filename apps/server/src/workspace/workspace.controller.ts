@@ -223,6 +223,15 @@ export class WorkspaceController {
     return this.workspace.deleteProject(actor.id, id, parse(deleteProjectSchema, body));
   }
 
+  @Get('projects/:id/database/capabilities')
+  async databaseCapabilities(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id') rawId: string,
+  ) {
+    const actor = await requireSession(this.sessions, authorization);
+    return this.workspace.getDatabaseCapabilities(actor.id, parse(idSchema, rawId));
+  }
+
   @Post('projects/:id/database/preview')
   async previewDatabase(
     @Headers('authorization') authorization: string | undefined,

@@ -14,6 +14,7 @@ import {
   importProjectSchema,
   projectTransferSchema,
   type ProjectTransfer,
+  projectDatabaseCapabilitiesSchema,
 } from '@ezerd/contracts';
 import {
   diagnoseDocument,
@@ -21,6 +22,7 @@ import {
   resolveProjectDatabaseState,
   hasPhysicalDatabaseDesign,
   nextDatabaseRevision,
+  projectDatabaseCapabilities,
 } from '@ezerd/model';
 import type {
   createProjectSchema,
@@ -266,6 +268,20 @@ export class WorkspaceService {
     throw new ConflictException(
       '프로젝트가 변경되었거나 보관되었습니다. 다시 열어 최신 내용을 확인해주세요.',
     );
+  }
+
+  async getDatabaseCapabilities(actorId: string, id: string) {
+    const state = await this.getProjectState(actorId, id);
+    const database = resolveProjectDatabaseState({
+      ...state.project,
+      databaseKind: state.project.databaseKind ?? 'postgresql',
+    });
+    return projectDatabaseCapabilitiesSchema.parse({
+      projectId: id,
+      version: state.project.version,
+      sequence: state.syncSequence,
+      ...projectDatabaseCapabilities(database, state.document.schemaVersion),
+    });
   }
 
   updateProject(actorId: string, id: string, input: z.infer<typeof updateProjectSchema>) {

@@ -49,6 +49,7 @@ import '../styles/responsive-shell.css';
 import { McpConnectionPanel } from '../features/mcp/McpConnectionPanel.js';
 import { exportProjectFile } from '../features/projects/ProjectTransfer.js';
 import { ProjectGallery, type GalleryHandle } from '../features/projects/ProjectGallery.js';
+import { previewDatabaseChange } from '../features/projects/database-preview.js';
 
 type User = {
   id: string;
@@ -587,6 +588,7 @@ export function App() {
     setBusy(true);
     setError('');
     try {
+      if (patch.databaseKind) await previewDatabaseChange(project, patch.databaseKind);
       await request(
         `/api/projects/${project.id}`,
         body('PATCH', { expectedVersion: project.version, ...patch }),

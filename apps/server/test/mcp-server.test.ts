@@ -3,6 +3,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
 import { McpServerFactory } from '../src/mcp/mcp-server.js';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { projectDatabaseCapabilities, resolveProjectDatabaseState } from '@ezerd/model';
 
 const now = new Date().toISOString();
 const project = {
@@ -30,6 +31,15 @@ describe('MCP server tools', () => {
       listProjectsPage: vi.fn(async () => ({ projects: [project], nextCursor: null })),
       getProject: vi.fn(async () => ({ project, document })),
       getProjectState: vi.fn(async () => ({ project, document, syncSequence: 0 })),
+      getDatabaseCapabilities: vi.fn(async () => ({
+        projectId: project.id,
+        version: 0,
+        sequence: 0,
+        ...projectDatabaseCapabilities(
+          resolveProjectDatabaseState({ databaseKind: project.databaseKind }),
+          1,
+        ),
+      })),
     };
     const reviewThread = {
       id: crypto.randomUUID(),
@@ -115,6 +125,7 @@ describe('MCP server tools', () => {
         'cancel_workspace_invitation',
         'list_projects',
         'get_project',
+        'get_project_database_capabilities',
         'get_project_summary',
         'list_tables',
         'get_project_view',
@@ -164,6 +175,16 @@ describe('MCP server tools', () => {
           status: 'success',
         }),
       );
+      const capabilities = await client.callTool({
+        name: 'get_project_database_capabilities',
+        arguments: { projectId: project.id },
+      });
+      expect(capabilities.isError).not.toBe(true);
+      expect(capabilities.structuredContent).toMatchObject({
+        database: { kind: 'postgresql', revision: 0 },
+        documentSchemaVersion: 1,
+      });
+      expect(workspace.getDatabaseCapabilities).toHaveBeenCalledWith(actor.id, project.id);
       const spoofed = await client.callTool({
         name: 'create_review_thread',
         arguments: {

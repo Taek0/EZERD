@@ -239,6 +239,22 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('autosync persistence', () => 
       ).toBe('rejected');
       const fresh = (await request(`${path}/sync-baseline`, 'POST', { clientId })).data;
       expect(fresh.databaseRevision).toBe(1);
+      const capabilities = await request(`${path}/database/capabilities`);
+      expect(capabilities.status).toBe(200);
+      expect(capabilities.data).toMatchObject({
+        database: changed.database,
+        documentSchemaVersion: 1,
+        capabilityScope: 'native-v2',
+      });
+      expect(
+        capabilities.data.types.every(
+          (type: { id: string; usable: boolean }) =>
+            type.id.startsWith(`${changed.database.kind}:`) && !type.usable,
+        ),
+      ).toBe(true);
+      expect((await request(`${path}/database/capabilities`, 'GET', undefined, false)).status).toBe(
+        401,
+      );
       const resumed = makeOperation(
         fresh,
         updateDomain(fresh.document, document.domains[0]!.id, { name: 'fresh context' }),
