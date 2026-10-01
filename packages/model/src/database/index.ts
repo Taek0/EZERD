@@ -8,3 +8,4 @@ export * from './validation.js';
 export * from './state.js';
 export * from './capabilities.js';
 export * from './deletion.js';
+export * from './remap.js';
