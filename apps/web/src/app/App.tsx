@@ -12,17 +12,10 @@ import { userColorStyle } from '../features/identity/user-color-style.js';
 import { UserColorEditor } from '../features/identity/UserColorEditor.js';
 import { clampCommentsPanelWidth } from '../features/comments/comments-panel-size.js';
 import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
-import {
-  applyChanges,
-  diffSharedDocument,
-  type DesignDocument,
-  mergeStoredPersonalState,
-} from '@ezerd/model';
+import { applyChanges, diffSharedDocument, type DesignDocument } from '@ezerd/model';
 import {
   userSchema,
   projectSchema,
-  projectDocumentSchema,
-  personalStateSnapshotSchema,
   threadSchema,
   type Thread,
   type Notification,
@@ -50,6 +43,8 @@ import { McpConnectionPanel } from '../features/mcp/McpConnectionPanel.js';
 import { exportProjectFile } from '../features/projects/ProjectTransfer.js';
 import { ProjectGallery, type GalleryHandle } from '../features/projects/ProjectGallery.js';
 import { previewDatabaseChange } from '../features/projects/database-preview.js';
+import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
+import { NativeProjectView } from '../features/projects/NativeProjectView.js';
 
 type User = {
   id: string;
@@ -90,20 +85,6 @@ type OpenProject = {
   project: Project;
   document: DesignDocument;
 };
-async function loadProjectWithPersonal(id: string): Promise<OpenProject> {
-  const [projectValue, personalValue] = await Promise.all([
-    request(`/api/projects/${id}`),
-    request(`/api/projects/${id}/personal-state`).catch(() => null),
-  ]);
-  const project = projectDocumentSchema.parse(projectValue);
-  const personal = personalValue ? personalStateSnapshotSchema.parse(personalValue) : null;
-  return {
-    project: project.project,
-    document: personal
-      ? mergeStoredPersonalState(project.document, personal.state)
-      : project.document,
-  };
-}
 const identityKey = 'ezerd.userId';
 export function cachedIdentitySession(
   raw: string | null,
@@ -203,8 +184,15 @@ export function App() {
     [loading, setLoading] = useState(false);
   const [opened, setOpened] = useState<OpenProject | null>(null),
     [refresh, setRefresh] = useState(0);
-  const projectWorkspace = workspaces.find((space) => space.id === opened?.project.workspaceId);
-  const permissions = workspacePermissions(opened ? projectWorkspace : selectedWorkspace);
+  const [nativeOpened, setNativeOpened] = useState<Extract<
+    ProjectEntry,
+    { kind: 'native' }
+  > | null>(null);
+  const nativeCurrent = useRef(nativeOpened);
+  nativeCurrent.current = nativeOpened;
+  const activeProject = opened?.project ?? nativeOpened?.snapshot.project;
+  const projectWorkspace = workspaces.find((space) => space.id === activeProject?.workspaceId);
+  const permissions = workspacePermissions(activeProject ? projectWorkspace : selectedWorkspace);
   const designPermissionReadOnly = !permissions.edit || opened?.project.status === 'archived';
   const personalReadOnly = !permissions.personal || opened?.project.status === 'archived';
   const [sync, setSync] = useState<SyncSnapshot | null>(null);
@@ -236,8 +224,12 @@ export function App() {
     y: number;
     nonce: number;
   }>();
+  const [nativeReview, setNativeReview] = useState<Thread | null>(null);
   const navigation = useRef(new LatestRequest());
   function replaceProject(value: OpenProject | null) {
+    nativeCurrent.current = null;
+    setNativeOpened(null);
+    setNativeReview(null);
     if (autosave.current.timer) clearTimeout(autosave.current.timer);
     autosave.current = { composing: false };
     runtime.current?.stop();
@@ -247,6 +239,16 @@ export function App() {
     current.current = value;
     if (value) setWorkspaceId(value.project.workspaceId);
     setOpened(value);
+  }
+  function replaceEntry(entry: ProjectEntry) {
+    if (entry.kind === 'legacy') {
+      replaceProject(entry.value);
+      return;
+    }
+    replaceProject(null);
+    nativeCurrent.current = entry;
+    setNativeOpened(entry);
+    setWorkspaceId(entry.snapshot.project.workspaceId);
   }
   function restoreHistory(direction: 'undo' | 'redo') {
     if (!current.current || designReadOnly || busy) return;
@@ -307,7 +309,7 @@ export function App() {
     try {
       const [threadValues, projectValue] = await Promise.all([
         request<unknown[]>(`/api/projects/${notification.projectId}/threads`),
-        sameProject ? Promise.resolve(null) : loadProjectWithPersonal(notification.projectId),
+        sameProject ? Promise.resolve(null) : loadProjectEntry(notification.projectId),
       ]);
       if (!navigation.current.isCurrent(ticket)) return false;
       const thread = threadValues
@@ -315,10 +317,14 @@ export function App() {
         .find((t) => t.id === notification.threadId);
       if (!thread) throw new Error(t('알림의 댓글을 찾을 수 없습니다.'));
       if (projectValue) {
-        replaceProject(projectValue);
+        await flushAutosave();
+        await runtime.current?.prepareToLeave();
+        if (!navigation.current.isCurrent(ticket)) return false;
+        replaceEntry(projectValue);
         resetReview();
       }
-      focusThread(thread);
+      if (nativeCurrent.current) setNativeReview(thread);
+      else focusThread(thread);
       return true;
     } catch (e) {
       if (navigation.current.isCurrent(ticket)) setError(message(e));
@@ -390,8 +396,13 @@ export function App() {
             spaces.some((space) => space.id === id) ? id : (spaces[0]?.id ?? ''),
           );
           if (
-            current.current &&
-            !spaces.some((space) => space.id === current.current?.project.workspaceId)
+            (current.current || nativeCurrent.current) &&
+            !spaces.some(
+              (space) =>
+                space.id ===
+                (current.current?.project.workspaceId ??
+                  nativeCurrent.current?.snapshot.project.workspaceId),
+            )
           ) {
             replaceProject(null);
             resetReview();
@@ -411,7 +422,7 @@ export function App() {
     };
   }, [user?.id, session?.token, refresh]);
   useEffect(() => {
-    if (!user || !session || opened || !workspaceId) {
+    if (!user || !session || opened || nativeOpened || !workspaceId) {
       setProjects([]);
       return;
     }
@@ -434,7 +445,7 @@ export function App() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [user, session, opened, workspaceId, status, search, refresh]);
+  }, [user, session, opened, nativeOpened, workspaceId, status, search, refresh]);
   useEffect(() => {
     if (!opened || !user || !session || !projectWorkspace || opened.project.status === 'archived')
       return;
@@ -555,10 +566,13 @@ export function App() {
     setBusy(true);
     setError('');
     try {
-      const value = await loadProjectWithPersonal(id);
+      const value = await loadProjectEntry(id);
       if (!navigation.current.isCurrent(ticket)) return;
       resetReview();
-      replaceProject(value);
+      await flushAutosave();
+      await runtime.current?.prepareToLeave();
+      if (!navigation.current.isCurrent(ticket)) return;
+      replaceEntry(value);
     } catch (e) {
       if (navigation.current.isCurrent(ticket)) setError(message(e));
     } finally {
@@ -734,7 +748,12 @@ export function App() {
   const workspaceSwitchPending = useRef(false);
   async function selectWorkspace(id: string) {
     if (gallery.current && !(await gallery.current.flush())) return;
-    if (workspaceSwitchPending.current || busy || (id === workspaceId && !current.current)) return;
+    if (
+      workspaceSwitchPending.current ||
+      busy ||
+      (id === workspaceId && !current.current && !nativeCurrent.current)
+    )
+      return;
     workspaceSwitchPending.current = true;
     setBusy(true);
     setError('');
@@ -760,7 +779,7 @@ export function App() {
   async function leave() {
     if (gallery.current && !(await gallery.current.flush())) return;
     if (
-      current.current &&
+      (current.current || nativeCurrent.current) &&
       !(await confirm({
         title: t('갤러리로 이동할까요?'),
         description: t('현재 프로젝트를 닫고 프로젝트 갤러리로 이동합니다.'),
@@ -886,7 +905,7 @@ export function App() {
     </form>
   );
   return (
-    <div className={opened ? 'app-shell editor-shell' : 'app-shell'}>
+    <div className={opened || nativeOpened ? 'app-shell editor-shell' : 'app-shell'}>
       <a className="skip-link" href="#main">
         {t('본문으로 이동')}
       </a>
@@ -1035,6 +1054,15 @@ export function App() {
           </p>
           {userForm}
         </main>
+      ) : nativeOpened ? (
+        <NativeProjectView
+          key={nativeOpened.snapshot.project.id}
+          entry={nativeOpened}
+          onLeave={() => void leave()}
+          onReload={() => void open(nativeOpened.snapshot.project.id)}
+          busy={busy}
+          {...(nativeReview ? { focusedReview: nativeReview } : {})}
+        />
       ) : opened ? (
         <main id="main" className="editor" inert={workspaceSwitchPending.current}>
           <div className="editor-heading">

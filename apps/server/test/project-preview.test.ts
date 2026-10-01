@@ -85,7 +85,7 @@ describe('project gallery preview', () => {
     };
     expect(
       projectPreview(native).tables.map((item) => item.columns.map((column) => column.type)),
-    ).toEqual([['INTEGER[][]', 'state[]', ' RAW_TYPE '], ['SET']]);
+    ).toEqual([['INTEGER[][]', 'state[]', ' RAW_TYPE '], ['SET("a", "b")']]);
   });
   it('includes unassigned tables without relying on domain membership or card color', () => {
     const document = createEmptyDocument();

@@ -1,6 +1,6 @@
 # DB별 타입·기능 구현 진행 상태
 
-- 최종 갱신: 2026-10-01
+- 최종 갱신: 2026-10-02 (자동 이어가기와 기존 문서 참조를 위한 진행 파일 경로 유지)
 - 구현 승인: Worker 1 최종 완료 후 계획 기반 구현을 진행하라는 사용자 지시.
 - 착수 조건 충족: `Worker 1 - Sol`의 대상 turn `01a0f314-cc8d-7a32-b308-145ee97c80c2` 최종 완료를 확인하고 `e07e178`의 깨끗한 작업 트리에서 시작했다. 이후 그 대상 turn을 반복 대기할 필요가 없다.
 - 기준: [구현 명세](../planning/2026-10-01-Database-CapabilitySpecification.md), [타입·기능 지원표](../planning/2026-10-01-Database-TypeFeatureMatrix.md).
@@ -27,14 +27,15 @@
 | C3 versioned snapshot 실제 조회·v1 보호 | 완료(REST 읽기) | [결과](2026-10-01-Database-VersionedReadApi.md). source/native preview·문맥 snapshot, native metadata/capabilities, 구버전 조회/쓰기 보호·old replay 보존. 전체 check 798개 통과/50개 건너뜀, 격리 HTTP+autosync 14개 통과 |
 | C4 versioned MCP snapshot 소비 | 완료(MCP 읽기) | [결과](2026-10-01-Database-VersionedMcpRead.md). 실제 get_project_document_state/annotations·전체 계약/권한·REST 일치. 전체 check 800개 통과/51개 건너뜀, 격리 HTTP/MCP 7개 통과 |
 | C3 native personal/review common canvas | 완료(개인 상태·리뷰 소비) | [결과](2026-10-01-Database-NativePersonalReview.md). 세 DB personal JSON 저장/읽기·리뷰·사용자 격리·전체 후보·원본 보호. 전체 check 803개 통과/54개 건너뜀, 최종 빌드 후 격리 HTTP/MCP/autosync 18개 통과 |
+| C4 웹 versioned snapshot/native 조회 | 완료(조회 소비) | [결과](2026-10-02-Database-NativeWebRead.md). source 분기·personal merge·DB별 표시·이동/권한 보호, 세 DB 브라우저 GET/원본 보호 및 v1 WS 확인. 전체 check 813개 통과/54개 건너뜀, 격리 HTTP/MCP/autosync 18개 통과. native 편집/공유 저장은 미연결 |
 
 ## 다음 작업
 
-1. C3 나머지: versioned REST/MCP snapshot 읽기와 review/personal JSON 소비는 연결했다. web snapshot/native 화면 어댑터를 준비하고 서버 후보 helper를 SyncService에서 사용하며 v2 업그레이드/import/history 경로를 완성한다. lock 아래 최종 후보를 검사하고 replay는 새 검증보다 먼저 기존 응답을 유지한다. restore는 trusted history/deletion provenance가 필요하다. MCP personal 명령은 아직 v1 전용이다. 실제 소비 경로 준비 전에는 v2 저장을 활성화하지 않는다.
-2. 다음 작은 단위는 native 편집 생성/갱신과 공통 화면 어댑터다. clipboard 소비는 위 계약/helper를 사용한다. 화면 어댑터를 준비해 저장 활성화 시 기존 클라이언트의 v1 재저장을 방지한다.
+1. C3 나머지: versioned REST/MCP/web snapshot 읽기와 review/personal JSON 소비는 연결했다. 서버 후보 helper를 SyncService에서 사용하며 v2 업그레이드/import/history 경로를 완성한다. lock 아래 최종 후보를 검사하고 replay는 새 검증보다 먼저 기존 응답을 유지한다. restore는 trusted history/deletion provenance가 필요하다. MCP personal 명령은 아직 v1 전용이다. 실제 편집 소비 경로 준비 전에는 v2 shared 저장을 활성화하지 않는다.
+2. 다음 작은 단위는 native 테이블·컬럼 생성/갱신과 FK 파생 컬럼 준비다. 이후 native ERD 편집과 clipboard 소비를 위 계약/helper에 연결한다. native 조회는 구조화된 테이블 화면이며 편집 기능은 없다.
 3. C4 프로젝트 DB별 타입/옵션/기능 편집 UI와 MCP를 연결한다.
 4. C5 세 DB native DDL/공유 메뉴/실제 파일·DB 실행 검증을 완성한다.
 5. C6/C7 고급 기본 타입·ERD 기능 및 C8 검증된 DB 변환/전체 QA를 이어서 수행한다.
 6. FK 대체 후보(non-deferrable key/non-partial unique index 등)는 C3 검증기·planner·sync·DDL에서 공통화하고 실제 DB로 확인한다. 기존 전체 API/MCP 통합 실패 5건도 전체 QA 전에 해소한다.
 
-전체 작업은 미완료다. 현재 모델/계약은 v1 API와 병존하며 실제 제품 화면과 서버 저장은 아직 v1이다. 신규 native 기능은 사용 가능으로 활성화하지 않았다. 다음 작업에서도 기존 데이터/공유 캔버스/사용자 관리 파일을 보존하고 독립 단위마다 planning/work-log/커밋을 완료한다.
+전체 작업은 미완료다. 현재 모델/계약은 v1 API와 병존하며 웹은 v1 편집과 native 조회를 구분한다. shared 설계 저장은 아직 v1이다. 신규 native 기능은 사용 가능으로 활성화하지 않았다. 다음 작업에서도 기존 데이터/공유 캔버스/사용자 관리 파일을 보존하고 독립 단위마다 planning/work-log/커밋을 완료한다.

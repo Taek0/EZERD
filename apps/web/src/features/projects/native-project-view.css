@@ -1,0 +1,124 @@
+.native-project-view {
+  min-height: 0;
+}
+.native-project-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.native-project-status > span {
+  color: var(--text-muted, #64748b);
+}
+.native-project-content {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border, #dfe4eb);
+}
+.native-table-nav {
+  padding: 20px;
+  overflow: auto;
+  border-right: 1px solid var(--border, #dfe4eb);
+}
+.native-table-nav label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.native-table-nav input,
+.native-table-nav select {
+  width: 100%;
+  padding: 9px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border, #dfe4eb);
+  border-radius: 6px;
+  background: var(--surface, white);
+  color: inherit;
+}
+.native-mode {
+  display: flex;
+  gap: 8px;
+}
+.native-table-nav ul {
+  list-style: none;
+  padding: 0;
+}
+.native-table-nav li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.native-table-nav li button[aria-current='true'] {
+  background: #eef2ff;
+  color: #4338ca;
+}
+.native-table-detail {
+  padding: 24px;
+  overflow: auto;
+  min-width: 0;
+}
+.native-table-detail table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.native-table-detail th,
+.native-table-detail td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px;
+  border-bottom: 1px solid var(--border, #dfe4eb);
+  overflow-wrap: anywhere;
+}
+.native-table-detail h3 {
+  font-size: 14px;
+  margin-top: 24px;
+}
+.native-table-detail li {
+  margin: 8px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.native-options {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+}
+.native-options dd {
+  margin: 0;
+}
+.native-issues {
+  margin-top: 28px;
+  border-top: 1px solid var(--border, #dfe4eb);
+}
+.native-issues button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .native-project-content {
+    grid-template-columns: 160px minmax(0, 1fr);
+  }
+  .native-table-nav,
+  .native-table-detail {
+    padding: 12px;
+  }
+  .native-project-status {
+    padding: 0 12px;
+    gap: 8px;
+  }
+}
