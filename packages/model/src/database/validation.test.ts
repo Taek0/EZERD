@@ -7,7 +7,11 @@ import {
   type NativeDesignDocument,
   type NativeTable,
 } from './native-document.js';
-import { inspectNativeDatabaseDocument, validateDatabaseDocument } from './validation.js';
+import {
+  inspectNativeDatabaseDocument,
+  inspectNativeLegacyChanges,
+  validateDatabaseDocument,
+} from './validation.js';
 import type { DatabaseKind } from './definitions.js';
 
 const metadata = { common: {}, logical: {}, physical: {} };
@@ -252,6 +256,80 @@ describe('legacy repair cannot introduce or disguise bad state', () => {
         (issue) => issue.code === 'enum.values-invalid',
       ),
     ).toBe(true);
+  });
+  it.each(['type', 'defaultValue', 'namespace'] as const)(
+    'protects logical-only legacy %s values even when engine diagnostics skip them',
+    (field) => {
+      const before = legacy();
+      before.tables![0]!.scope = 'logical';
+      before.columns![0]!.scope = 'logical';
+      before.keys = [];
+      before.tables![0]!.physical.namespace = {
+        kind: 'legacyNamespace',
+        source: 'document-v1',
+        original: 'old-schema',
+      };
+      const retained = structuredClone(before);
+      retained.tables![0]!.logical.definition = 'changed';
+      retained.columns![0]!.logical.definition = 'changed';
+      expect(validateDatabaseDocument(retained, pg, { mode: 'write', previous: before })).toEqual(
+        [],
+      );
+      const changed = structuredClone(retained);
+      if (field === 'namespace')
+        changed.tables![0]!.physical.namespace = {
+          kind: 'legacyNamespace',
+          source: 'document-v1',
+          original: 'forged-schema',
+        };
+      else if (field === 'type')
+        changed.columns![0]!.physical.type = {
+          kind: 'legacy',
+          source: 'document-v1',
+          original: { name: 'forged-type', isArray: false },
+        };
+      else
+        changed.columns![0]!.physical.defaultValue = {
+          kind: 'legacyExpression',
+          source: 'document-v1',
+          original: 'forged()',
+        };
+      expect(
+        validateDatabaseDocument(changed, pg, { mode: 'write', previous: before }),
+      ).toMatchObject([
+        { code: 'legacy.source-not-trusted', path: expect.stringContaining(field) },
+      ]);
+      expect(inspectNativeLegacyChanges(retained)).toHaveLength(3);
+      const copied = structuredClone(retained);
+      copied.tables!.push({ ...structuredClone(retained.tables![0]!), id: 'copy-table' });
+      copied.columns!.push({
+        ...structuredClone(retained.columns![0]!),
+        id: 'copy-column',
+        tableId: 'copy-table',
+      });
+      expect(
+        validateDatabaseDocument(copied, pg, { mode: 'write', previous: before }).filter(
+          (issue) => issue.code === 'legacy.source-not-trusted',
+        ),
+      ).toHaveLength(3);
+    },
+  );
+  it('requires the same column owner and DB context rather than only a matching ID and raw value', () => {
+    const before = legacy();
+    before.tables!.push(table('postgresql', 'other-table'));
+    const moved = structuredClone(before);
+    moved.columns![0]!.tableId = 'other-table';
+    expect(inspectNativeLegacyChanges(moved, before)).toHaveLength(2);
+    const otherContext = structuredClone(before);
+    otherContext.database = defaultDatabaseContext('mysql');
+    expect(inspectNativeLegacyChanges(before, otherContext)).toHaveLength(2);
+    // Deleting or correcting a legacy branch requires no retained source permission.
+    const corrected = structuredClone(before);
+    corrected.columns![0]!.physical.type = column('postgresql').physical.type;
+    corrected.columns![0]!.physical.defaultValue = { kind: 'none' };
+    expect(inspectNativeLegacyChanges(corrected, before)).toEqual([]);
+    corrected.columns = [];
+    expect(inspectNativeLegacyChanges(corrected, before)).toEqual([]);
   });
 });
 

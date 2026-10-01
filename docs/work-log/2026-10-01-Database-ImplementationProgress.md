@@ -21,6 +21,7 @@
 | C2f native 삭제·참조 정리 | 완료(순수 모델) | [결과](2026-10-01-Database-NativeDeletionReferences.md). review 가능한 영향/차단 목록, 명시 generated 연쇄 삭제, key/FK/index/check/layout 정리. 전체 check 737개 통과/44개 건너뜀 |
 | C2g native 참조 ID remap | 완료(순수 모델) | [결과](2026-10-01-Database-NativeIdentityRemap.md). 모든 엔티티/AST/FK/ENUM/배치 참조 remap, 리터럴/legacy 원문 보존, 충돌·외부 참조 보호. 전체 check 743개 통과/44개 건너뜀 |
 | C2h native clipboard 소비 준비 | 완료(계약/helper) | [결과](2026-10-01-Database-NativeClipboard.md). v2 envelope·DB/legacy 보호·ENUM 재사용·전체 후보 예산/모드 검증. 전체 check 753개 통과/44개 건너뜀. live paste는 아직 v1 |
+| Native write legacy 출처 보호 | 완료(공통 정책) | [결과](2026-10-01-Database-NativeWriteProvenance.md). logical-only 신규 legacy 복제/원문·소유자·문맥 변경 차단, 기존 유지/복구 허용. 전체 check 757개 통과/44개 건너뜀 |
 
 ## 다음 작업
 

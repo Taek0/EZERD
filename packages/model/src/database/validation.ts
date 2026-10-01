@@ -62,13 +62,71 @@ export function validateDatabaseDocument(
   if (options.mode !== 'write') return current.map(({ cause: _cause, ...issue }) => issue);
   const before = options.previous ? collect(options.previous, context, true) : [];
   const old = new Set(before.map(issueIdentity));
-  return current
+  const introduced = current
     .filter((issue) => {
       if (issue.category === 'incomplete') return false;
       if (issue.code.startsWith('database.')) return true;
       return !old.has(issueIdentity(issue));
     })
     .map(({ cause: _cause, ...issue }) => issue);
+  return [...introduced, ...inspectNativeLegacyChanges(document, options.previous)];
+}
+
+/** Trusted storage/history origins only; a client baseline is never an authority for legacy data. */
+export function inspectNativeLegacyChanges(
+  document: NativeDesignDocument,
+  previous?: NativeDesignDocument,
+): DatabaseIssue[] {
+  const sameContext =
+    previous &&
+    previous.database.kind === document.database.kind &&
+    previous.database.profileId === document.database.profileId;
+  const columns = new Map(
+    (sameContext ? (previous.columns ?? []) : []).map((item) => [item.id, item]),
+  );
+  const tables = new Map(
+    (sameContext ? (previous.tables ?? []) : []).map((item) => [item.id, item]),
+  );
+  const issues: DatabaseIssue[] = [];
+  const retain = (objectId: string, path: string, value: unknown, trusted: unknown) => {
+    if (trusted !== undefined && requestFingerprint(value) === requestFingerprint(trusted)) return;
+    issues.push({
+      code: 'legacy.source-not-trusted',
+      category: 'unsupported',
+      severity: 'error',
+      objectId,
+      path,
+      params: {},
+    });
+  };
+  for (const column of document.columns ?? []) {
+    const before = columns.get(column.id);
+    const sameOwner = before?.tableId === column.tableId;
+    const path = `/columns/${segment(column.id)}/physical`;
+    if (column.physical.type.kind === 'legacy')
+      retain(
+        column.id,
+        `${path}/type`,
+        column.physical.type,
+        sameOwner ? before?.physical.type : undefined,
+      );
+    if (column.physical.defaultValue.kind === 'legacyExpression')
+      retain(
+        column.id,
+        `${path}/defaultValue`,
+        column.physical.defaultValue,
+        sameOwner ? before?.physical.defaultValue : undefined,
+      );
+  }
+  for (const table of document.tables ?? [])
+    if (table.physical.namespace.kind === 'legacyNamespace')
+      retain(
+        table.id,
+        `/tables/${segment(table.id)}/physical/namespace`,
+        table.physical.namespace,
+        tables.get(table.id)?.physical.namespace,
+      );
+  return issues;
 }
 function issueIdentity(issue: CollectedIssue): string {
   return requestFingerprint([issue.code, issue.objectId, issue.path, issue.params, issue.cause]);
