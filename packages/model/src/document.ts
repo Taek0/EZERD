@@ -154,7 +154,14 @@ export function createEmptyDocument(): DesignDocument {
   };
 }
 /** Adds deterministic shared placements to legacy documents without changing existing layouts. */
-export function ensureTableCanvasLayout(doc: DesignDocument): DesignDocument {
+export interface TableCanvasDocument {
+  tables?: readonly { id: string; domainId: string | null }[] | undefined;
+  layout: DesignDocument['layout'];
+}
+export function ensureTableCanvasLayout<T extends TableCanvasDocument>(
+  doc: T,
+  options: { nodeId?: (tableId: string) => string } = {},
+): T {
   const placed = new Set(
     doc.layout.nodes.filter((node) => node.viewId === TABLES_VIEW_ID).map((node) => node.objectId),
   );
@@ -207,7 +214,7 @@ export function ensureTableCanvasLayout(doc: DesignDocument): DesignDocument {
       y = Math.floor(slot++ / columns) * cellHeight;
       position({ x, y });
     }
-    const base = `node:${table.id}:${TABLES_VIEW_ID}`;
+    const base = options.nodeId?.(table.id) ?? `node:${table.id}:${TABLES_VIEW_ID}`;
     let id = base,
       suffix = 1;
     while (ids.has(id)) id = `${base}:${suffix++}`;

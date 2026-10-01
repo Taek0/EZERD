@@ -2,13 +2,16 @@ import {
   ensureTableCanvasLayout,
   TABLES_VIEW_ID,
   type DesignDocument,
+  type TableCanvasDocument,
   type Position,
   type RelationLayout,
 } from './document.js';
 
 /** Consolidate shared domain annotations into the canonical canvas; personal views stay private. */
-export function normalizeSharedTableCanvas(document: DesignDocument): DesignDocument {
-  const doc = ensureTableCanvasLayout(document);
+export function normalizeSharedTableCanvas<
+  T extends TableCanvasDocument & Pick<DesignDocument, 'domains' | 'notes'>,
+>(document: T, options: { nodeId?: (tableId: string) => string } = {}): T {
+  const doc = ensureTableCanvasLayout(document, options);
   const domains = new Set(doc.domains.map((domain) => domain.id));
   const migratingNotes = new Map(
     doc.notes.filter((note) => domains.has(note.viewId)).map((note) => [note.id, note]),
