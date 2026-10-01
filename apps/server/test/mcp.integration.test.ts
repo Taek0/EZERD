@@ -420,7 +420,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(47);
+      expect(listedTools.tools).toHaveLength(48);
       for (const name of ['get_project_database_capabilities', 'get_project_document_state'])
         expect(listedTools.tools.find((tool) => tool.name === name)).toMatchObject({
           annotations: { readOnlyHint: true, destructiveHint: false },

@@ -29,6 +29,8 @@ import { ProjectDatabaseService } from './workspace/project-database.service.js'
 import { NativeSyncService } from './sync/native-sync.service.js';
 import { NativeSyncController } from './sync/native-sync.controller.js';
 import { McpNativeDocumentService } from './mcp/mcp-native-document.service.js';
+import { NativeUpgradeService } from './workspace/native-upgrade.service.js';
+import { NativeUpgradeController } from './workspace/native-upgrade.controller.js';
 
 @Module({
   controllers: [
@@ -38,6 +40,7 @@ import { McpNativeDocumentService } from './mcp/mcp-native-document.service.js';
     SessionController,
     SyncController,
     NativeSyncController,
+    NativeUpgradeController,
     McpTokenController,
     McpController,
     PersonalStateController,
@@ -49,6 +52,7 @@ import { McpNativeDocumentService } from './mcp/mcp-native-document.service.js';
     SyncGateway,
     SyncService,
     NativeSyncService,
+    NativeUpgradeService,
     McpNativeDocumentService,
     WorkspaceService,
     ProjectDatabaseService,

@@ -29,6 +29,7 @@ import {
   projectDocumentStateSchema,
   databaseIssueSchema,
   nativeSyncOperationResultSchema,
+  upgradeProjectDocumentSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
@@ -39,6 +40,7 @@ import { SpaceService } from '../workspace/space.service.js';
 import { SyncService } from '../sync/sync.service.js';
 import { McpLogger } from './logging.js';
 import { McpAuthService } from './mcp-auth.service.js';
+import { NativeUpgradeService } from '../workspace/native-upgrade.service.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
@@ -134,6 +136,7 @@ export class McpServerFactory {
     @Inject(McpNativeDocumentService) private readonly nativeDocuments: McpNativeDocumentService,
     @Inject(SpaceService) private readonly spaces: SpaceService,
     @Inject(McpAuthService) private readonly auth: McpAuthService,
+    @Inject(NativeUpgradeService) private readonly nativeUpgrade: NativeUpgradeService,
   ) {}
 
   create(user: AuthenticatedUser, tokenId: string, requestId: string): McpServer {
@@ -577,6 +580,28 @@ export class McpServerFactory {
           operationResult(
             syncOperationResultSchema.parse(await this.documents.apply(input, user)),
             includeDocument,
+          ),
+        ),
+    );
+    server.registerTool(
+      'upgrade_project_document',
+      {
+        description:
+          'v1 저장 문서를 프로젝트 DB의 native 형식으로 명시 업그레이드합니다. operationId/clientId와 최신 version/sequence/databaseRevision이 필수이며 원본과 migration 진단을 이력에 보존합니다. MySQL/SQLite v1의 PG 타입과 unknown 값은 legacy로 유지합니다. 응답 뒤 get_project_document_state로 진단을 확인하고 apply_native_project_changes로 안전한 편집을 진행하세요.',
+        inputSchema: upgradeProjectDocumentSchema.extend({ projectId: idSchema }),
+        outputSchema: z.strictObject({
+          ...nativeSyncOperationResultSchema.shape,
+          document: z
+            .object({ schemaVersion: z.literal(2) })
+            .passthrough()
+            .optional(),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      ({ projectId, ...input }) =>
+        invoke('upgrade_project_document', async () =>
+          nativeSyncOperationResultSchema.parse(
+            await this.nativeUpgrade.upgrade(projectId, input, user),
           ),
         ),
     );

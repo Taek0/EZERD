@@ -427,6 +427,260 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       }
     });
     it.each(['postgresql', 'mysql', 'sqlite'])(
+      'upgrades %s v1 through actual HTTP/MCP while preserving source history and old accepted replay',
+      async (kind) => {
+        const id = await createProject(kind);
+        const oldClientId = randomUUID();
+        const old = (
+          await request(`/projects/${id}/sync-baseline`, 'POST', { clientId: oldClientId })
+        ).data;
+        const legacy = legacyDocument();
+        const oldInput = {
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: oldClientId,
+          baselineId: old.baselineId,
+          baseSequence: old.sequence,
+          baselineIssuedAt: old.baselineIssuedAt,
+          databaseRevision: old.databaseRevision,
+          kind: 'online',
+          dependencyPaths: [],
+          baselineDocument: old.document,
+          document: legacy,
+          changes: deriveOperationChanges(old.document, legacy),
+        };
+        const oldAccepted = await request(`/projects/${id}/operations`, 'POST', oldInput);
+        expect(oldAccepted.data).toMatchObject({ status: 'accepted', sequence: 1 });
+        // Emulate an older raw v1 row without rewriting it on reads.
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(legacy),
+        ]);
+        const before = await stored(id);
+        const preUpgrade = (
+          await request(`/projects/${id}/sync-baseline`, 'POST', { clientId: randomUUID() })
+        ).data;
+        const issued = await request('/mcp-tokens', 'POST', { name: 'native upgrade fixture' });
+        const client = new Client({ name: 'native-upgrade-fixture', version: '1.0.0' });
+        try {
+          await client.connect(
+            new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+              requestInit: { headers: { Authorization: `Bearer ${issued.data.token}` } },
+            }),
+          );
+          const input = {
+            operationId: randomUUID(),
+            clientId: randomUUID(),
+            expectedVersion: before.version,
+            expectedSequence: before.sync_sequence,
+            expectedDatabaseRevision: before.database_revision,
+          };
+          const upgraded =
+            kind === 'postgresql'
+              ? (await request(`/projects/${id}/document/upgrade`, 'POST', input)).data
+              : (
+                  await client.callTool({
+                    name: 'upgrade_project_document',
+                    arguments: { projectId: id, ...input },
+                  })
+                ).structuredContent;
+          expect(upgraded).toMatchObject({
+            protocolVersion: 2,
+            status: 'accepted',
+            reasonCode: 'document.upgraded',
+            sequence: 2,
+            databaseRevision: 1,
+            document: { schemaVersion: 2, database: { kind } },
+          });
+          const after = await stored(id);
+          expect(after.version).toBe(before.version + 1);
+          expect(after.database_revision).toBe(before.database_revision + 1);
+          const converted = migrateDesignDocumentV1(
+            legacy,
+            defaultDatabaseContext(kind as 'postgresql' | 'mysql' | 'sqlite'),
+          ).document;
+          expect(after.document).toEqual(converted);
+          expect(after.document.columns[0].physical.type.kind).toBe(
+            kind === 'postgresql' ? 'builtin' : 'legacy',
+          );
+          const history = (
+            await pool.query(
+              'SELECT deletion_snapshot FROM sync_operations WHERE project_id=$1 AND operation_id=$2',
+              [id, input.operationId],
+            )
+          ).rows[0].deletion_snapshot;
+          expect(history).toMatchObject({
+            command: 'upgrade',
+            sourceDocument: legacy,
+            sourceDatabase: { kind, revision: 0 },
+          });
+          expect((await request(`/projects/${id}/document/upgrade`, 'POST', input)).data).toEqual(
+            upgraded,
+          );
+          expect(
+            (
+              await client.callTool({
+                name: 'upgrade_project_document',
+                arguments: { projectId: id, ...input },
+              })
+            ).structuredContent,
+          ).toEqual(upgraded);
+          expect(
+            (
+              await request(`/projects/${id}/document/upgrade`, 'POST', {
+                ...input,
+                operationId: randomUUID(),
+              })
+            ).status,
+          ).toBe(409);
+          expect((await request(`/projects/${id}/operations`, 'POST', oldInput)).data).toEqual(
+            oldAccepted.data,
+          );
+          const invalidOld = {
+            ...oldInput,
+            operationId: randomUUID(),
+            baselineId: preUpgrade.baselineId,
+            baseSequence: preUpgrade.sequence,
+            baselineIssuedAt: preUpgrade.baselineIssuedAt,
+          };
+          expect((await request(`/projects/${id}/operations`, 'POST', invalidOld)).status).toBe(
+            409,
+          );
+          expect((await request(`/projects/${id}/native-sync/events?since=1`)).data).toMatchObject({
+            resetRequired: true,
+            events: [],
+            document: { schemaVersion: 2 },
+          });
+          const baselineRows = (
+            await pool.query(
+              'SELECT baseline_id, database_revision FROM sync_client_baselines WHERE project_id=$1',
+              [id],
+            )
+          ).rows;
+          expect(baselineRows).toEqual([
+            { baseline_id: upgraded.nextBaseline.baselineId, database_revision: 1 },
+          ]);
+          const current = (await request(`/projects/${id}/document-state`)).data;
+          const edited = await client.callTool({
+            name: 'apply_native_project_changes',
+            arguments: {
+              projectId: id,
+              expectedVersion: current.project.version,
+              expectedSequence: current.sequence,
+              expectedDatabaseRevision: current.project.databaseRevision,
+              operationId: randomUUID(),
+              groupId: randomUUID(),
+              clientId: randomUUID(),
+              commands: [
+                {
+                  type: 'patch_column',
+                  id: 'c',
+                  patch: { physical: { comment: 'Safe edit after upgrade' } },
+                },
+              ],
+            },
+          });
+          expect(edited.isError, JSON.stringify(edited)).not.toBe(true);
+          expect(edited.structuredContent).toMatchObject({ status: 'accepted', sequence: 3 });
+          expect((await stored(id)).document.columns[0].physical.type).toEqual(
+            converted.columns![0]!.physical.type,
+          );
+          expect((await request(`/projects/${id}/document/upgrade`, 'POST', input)).data).toEqual(
+            upgraded,
+          );
+          expect((await stored(id)).sync_sequence).toBe(3);
+        } finally {
+          await client.close();
+        }
+      },
+    );
+    it('upgrades once under concurrent replay and rolls back stale/unauthorized requests', async () => {
+      const id = await createProject();
+      const input = {
+        operationId: randomUUID(),
+        clientId: randomUUID(),
+        expectedVersion: 0,
+        expectedSequence: 0,
+        expectedDatabaseRevision: 0,
+      };
+      const [first, second] = await Promise.all([
+        request(`/projects/${id}/document/upgrade`, 'POST', input),
+        request(`/projects/${id}/document/upgrade`, 'POST', input),
+      ]);
+      expect(first.status).toBe(201);
+      expect(second.data).toEqual(first.data);
+      expect(await stored(id)).toMatchObject({
+        version: 1,
+        sync_sequence: 1,
+        database_revision: 1,
+      });
+      expect(
+        (await pool.query('SELECT COUNT(*) FROM sync_operations WHERE project_id=$1', [id])).rows[0]
+          .count,
+      ).toBe('1');
+      expect(
+        (
+          await request(`/projects/${id}/document/upgrade`, 'POST', {
+            ...input,
+            clientId: randomUUID(),
+          })
+        ).status,
+      ).toBe(409);
+      expect(
+        (
+          await request(`/projects/${id}/document/upgrade`, 'POST', {
+            ...input,
+            operationId: randomUUID(),
+          })
+        ).status,
+      ).toBe(409);
+      const otherProject = await createProject();
+      const other = await request(
+        '/users',
+        'POST',
+        { username: `upgrade-viewer-${randomUUID().slice(0, 14)}`, pin: '0024' },
+        null,
+      );
+      userIds.push(other.data.id);
+      const session = (
+        await request('/sessions', 'POST', { userId: other.data.id, pin: '0024' }, null)
+      ).data.token;
+      const invitation = await request(`/workspaces/${workspaceId}/invitations`, 'POST', {
+        username: other.data.username,
+        role: 'viewer',
+      });
+      expect(
+        (await request(`/workspace-invitations/${invitation.data.id}/accept`, 'POST', {}, session))
+          .status,
+      ).toBe(201);
+      const before = await stored(otherProject);
+      expect(
+        (
+          await request(
+            `/projects/${otherProject}/document/upgrade`,
+            'POST',
+            { ...input, operationId: randomUUID() },
+            session,
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await request(`/projects/${otherProject}/document/upgrade`, 'POST', {
+            ...input,
+            operationId: randomUUID(),
+            expectedDatabaseRevision: 99,
+          })
+        ).status,
+      ).toBe(409);
+      expect(await stored(otherProject)).toEqual(before);
+      await pool.query('UPDATE projects SET status=$2 WHERE id=$1', [id, 'archived']);
+      expect((await request(`/projects/${id}/document/upgrade`, 'POST', input)).data).toEqual(
+        first.data,
+      );
+      expect((await stored(id)).sync_sequence).toBe(1);
+    });
+    it.each(['postgresql', 'mysql', 'sqlite'])(
       'persists %s native REST/MCP operations with truthful ACKs, replay and retired identity protection',
       async (kind) => {
         const id = await createProject(kind);

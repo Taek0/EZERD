@@ -104,6 +104,7 @@ describe('MCP server tools', () => {
       { apply: vi.fn() } as never,
       {} as never,
       { assertActiveToken: vi.fn(async () => undefined) } as never,
+      { upgrade: vi.fn() } as never,
     );
     const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
     const server = factory.create(actor, crypto.randomUUID(), crypto.randomUUID());
@@ -167,6 +168,7 @@ describe('MCP server tools', () => {
         'diagnose_project',
         'diagnose_layout',
         'apply_project_changes',
+        'upgrade_project_document',
         'apply_native_project_changes',
         'apply_personal_changes',
         'get_project_history',
@@ -344,6 +346,7 @@ describe('MCP workspace authorization', () => {
       { apply: vi.fn() } as never,
       spaces as never,
       auth as never,
+      { upgrade: vi.fn() } as never,
     );
     const server = factory.create(actor, tokenId, crypto.randomUUID());
     const client = new Client({ name: 'authorization-test', version: '1.0.0' });

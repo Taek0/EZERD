@@ -362,7 +362,10 @@ export class NativeSyncService {
           since > project.syncSequence ||
           (project.syncSequence > since && (!rows.length || rows[0]!.sequence !== since + 1)) ||
           parsed.some(
-            (event) => !event.success || event.data.databaseRevision !== database.revision,
+            (event) =>
+              !event.success ||
+              event.data.databaseRevision !== database.revision ||
+              event.data.reasonCode === 'document.upgraded',
           );
         return {
           protocolVersion: 2,
