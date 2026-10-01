@@ -64,6 +64,13 @@ function actor(user: AuthenticatedUser): SyncActor {
   return { id: user.id, username: user.username, color: user.color };
 }
 function storedResult(value: unknown): SyncOperationResult {
+  if (
+    value &&
+    typeof value === 'object' &&
+    'protocolVersion' in value &&
+    value.protocolVersion === 2
+  )
+    throw new ConflictException({ code: 'document.client-upgrade-required' });
   const result = syncOperationResultSchema.parse(value);
   return result.document
     ? { ...result, document: normalizeServerDocument(result.document) }

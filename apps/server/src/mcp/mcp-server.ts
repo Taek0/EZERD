@@ -28,6 +28,7 @@ import {
   projectDatabaseCapabilitiesSchema,
   projectDocumentStateSchema,
   databaseIssueSchema,
+  nativeSyncOperationResultSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
@@ -40,6 +41,10 @@ import { McpLogger } from './logging.js';
 import { McpAuthService } from './mcp-auth.service.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
+import {
+  applyNativeProjectChangesMetadataSchema,
+  McpNativeDocumentService,
+} from './mcp-native-document.service.js';
 import {
   diagnoseLayout,
   layoutDiagnosisInputSchema,
@@ -126,6 +131,7 @@ export class McpServerFactory {
     @Inject(SyncService) private readonly sync: SyncService,
     @Inject(McpDocumentService) private readonly documents: McpDocumentService,
     @Inject(McpPersonalService) private readonly personal: McpPersonalService,
+    @Inject(McpNativeDocumentService) private readonly nativeDocuments: McpNativeDocumentService,
     @Inject(SpaceService) private readonly spaces: SpaceService,
     @Inject(McpAuthService) private readonly auth: McpAuthService,
   ) {}
@@ -136,7 +142,7 @@ export class McpServerFactory {
       {
         capabilities: { tools: {} },
         instructions:
-          'get_project_database_capabilities로 현재 DB/profile/revision과 실제 usable 기능을 확인하세요. native 형식 또는 원본/migration 진단이 필요하면 get_project_document_state를 사용하세요. preview available은 공유 설계 쓰기 가능 판정이 아니며 공유 설계 편집 도구는 아직 v1 전용입니다. get_personal_state/apply_personal_changes는 v1/native 프로젝트에서 자신의 개인 캔버스만 조회·변경합니다. ' +
+          'get_project_database_capabilities로 현재 DB/profile/revision과 실제 usable 기능을 확인하세요. get_project_document_state의 원본 schemaVersion이 2이면 apply_native_project_changes로 현재 native 형식을 보존해 편집합니다. preview available은 upgrade/타입 usable 판정이 아니며 schemaVersion 1의 공유 편집은 apply_project_changes를 사용합니다. 아직 usable이 아닌 새 타입·기능은 native 입력에서도 거부됩니다. get_personal_state/apply_personal_changes는 자신의 개인 캔버스만 다룹니다. ' +
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
           ' active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
           'v1 프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view의 모든 페이지로 대상 뷰의 최신 배치를 확인하세요. 화면의 관계는 list_view_relations로 조회하세요. 테이블 캔버스 __tables__ 및 도메인 필터는 공유 좌표를 사용하므로 반환된 공유 노드 ID로 apply_project_changes를 사용하세요. 자신의 개인 결합 화면은 개인 배치·메모·관계 경로를 반환하며 apply_personal_changes로 변경하세요. 개인 상태와 카메라는 get_personal_state로 조회합니다. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. v1 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
@@ -572,6 +578,26 @@ export class McpServerFactory {
             syncOperationResultSchema.parse(await this.documents.apply(input, user)),
             includeDocument,
           ),
+        ),
+    );
+    server.registerTool(
+      'apply_native_project_changes',
+      {
+        description:
+          'schemaVersion 2로 저장된 프로젝트의 native 컬럼/테이블 부분 수정, 컬럼 추가, 삭제 계획 및 PK 기반 FK 생성을 수행합니다. get_project_document_state로 최신 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. expectedDatabaseRevision은 필수이며 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
+        inputSchema: applyNativeProjectChangesMetadataSchema,
+        outputSchema: z.strictObject({
+          ...nativeSyncOperationResultSchema.shape,
+          document: z
+            .object({ schemaVersion: z.literal(2) })
+            .passthrough()
+            .optional(),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      (input) =>
+        invoke('apply_native_project_changes', async () =>
+          nativeSyncOperationResultSchema.parse(await this.nativeDocuments.apply(input, user)),
         ),
     );
     server.registerTool(

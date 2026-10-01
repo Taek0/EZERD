@@ -10,6 +10,7 @@ import {
   nativeSyncOperationResultSchema,
   syncEventReadSchema,
   syncOperationInputReadSchema,
+  nativeSyncSnapshotSchema,
 } from './native-sync.js';
 import { syncOperationInputSchema } from './sync.js';
 const pg = defaultDatabaseContext('postgresql');
@@ -140,5 +141,41 @@ describe('native sync transport preparation', () => {
       protocolVersion: 2,
       databaseRevision: 1,
     });
+  });
+  it('binds baseline native context and bounds public rejection diagnostics', () => {
+    const snapshot = {
+      protocolVersion: 2,
+      projectVersion: 0,
+      sequence: 0,
+      baselineId: metadata.baselineId,
+      baselineIssuedAt: metadata.baselineIssuedAt,
+      database: pg,
+      databaseRevision: 0,
+      document,
+    };
+    expect(nativeSyncSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+    expect(
+      nativeSyncSnapshotSchema.safeParse({ ...snapshot, database: defaultDatabaseContext('mysql') })
+        .success,
+    ).toBe(false);
+    const issue = {
+      code: 'type.not-implemented',
+      category: 'unsupported',
+      severity: 'error',
+      objectId: 'c',
+      path: '/columns/c/physical/type',
+      params: {},
+    };
+    expect(
+      nativeSyncOperationResultSchema.safeParse({ ...result, status: 'rejected', issues: [issue] })
+        .success,
+    ).toBe(true);
+    expect(
+      nativeSyncOperationResultSchema.safeParse({
+        ...result,
+        status: 'rejected',
+        issues: Array(1001).fill(issue),
+      }).success,
+    ).toBe(false);
   });
 });

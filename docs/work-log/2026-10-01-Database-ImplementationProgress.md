@@ -31,14 +31,15 @@
 | C4 native 생성·갱신/FK 파생 모델 | 완료(순수 모델/patch 계약) | [결과](2026-10-02-Database-NativeEditModel.md). DB profile 기본값·부분 갱신·원문/ID·FK base type/생성 옵션 분리·MySQL 상속 charset/collation·strict patch. 전체 check 833개 통과/54개 건너뜀, 단위 테스트 20개 통과. UI/shared ACK·SQL 실행은 미연결 |
 | C3/C4 native MCP 개인 캔버스 명령 | 완료(실제 개인 상태 소비) | [결과](2026-10-02-Database-NativeMcpPersonal.md). generic canvas·긴 ID·global fallback·명시 개인 읽기·실제 MCP 명령/재생/사용자 격리/원본 보호. 전체 check 839개 통과/57개 건너뜀, 최종 격리 HTTP/MCP/autosync 21개 통과. 확대 API/MCP QA는 6건 미해소 |
 | 전체 API/MCP 호환 QA | 완료(현재 연결 범위) | [결과](2026-10-02-Database-IntegrationCompatibilityQA.md). 내부 개인 선택 문맥의 strict 공개 응답 혼입 수정·canonical 공유 fixture·DB export metadata·새 조회 도구 실호출. 전체 check 839개 통과/57개 건너뜀, 최종 격리 API/MCP/versioned/autosync 40개 전부 통과. 앞 단위의 6건 해소 |
+| C3/C4 native shared sync 저장·MCP 소비 | 완료(실제 REST/MCP 저장/ACK) | [결과](2026-10-02-Database-NativeSharedSync.md). native baseline/row lock/current 후보·ledger/field versions/deletion·ACK/WS/polling·MCP native patch/delete/FK 명령. 전체 check 840개 통과/62개 건너뜀, 최종 격리 API/MCP/versioned/autosync 45개 통과. 새 native 타입 gate는 아직 비활성 |
 
 ## 다음 작업
 
-1. C3 나머지: versioned REST/MCP/web snapshot 읽기와 review/personal JSON·실제 MCP 개인 명령 소비는 연결했다. 서버 후보 helper를 SyncService에서 사용하며 v2 업그레이드/import/history 경로를 완성한다. lock 아래 최종 후보를 검사하고 replay는 새 검증보다 먼저 기존 응답을 유지한다. restore는 trusted history/deletion provenance가 필요하다. 실제 편집 소비 경로 준비 전에는 v2 shared 저장을 활성화하지 않는다.
-2. native 테이블/컬럼 factory·컬럼 추가·컬럼/테이블 property patch·FK 파생 및 strict patch 계약은 준비했다. 이를 실제 native 편집 소비와 versioned sync 저장 경로에 연결한다. 도메인 소유권 이동과 native ERD/clipboard 소비는 공통 canvas·위 계약/helper를 사용해 연결한다. native 조회 화면에는 아직 편집 기능이 없다.
+1. native shared REST/MCP baseline/operation/ledger/ACK/WS/polling을 연결했다. 다음은 native 웹 편집 소비와 v2 업그레이드/import/history 경로다. replay는 새 검증보다 먼저 유지하며 locked current 원문을 previous로 검증한다. native undo/restore는 trusted history/deletion provenance를 증명하는 별도 경로로 진행하고 ordinary legacy/retired ID 정책을 완화하지 않는다.
+2. native 테이블/컬럼 factory·patch·FK·삭제를 MCP native 편집에 연결했다. native 웹은 아직 조회 전용이며 실제 편집 UI/durable queue·도메인 소유권 이동·native ERD/clipboard 소비를 공통 canvas/계약에 연결한다. 신뢰할 수 있는 소비/DDL/DB 실행 검증을 끝내기 전 신규 native 타입·기능은 usable로 활성화하지 않는다.
 3. C4 프로젝트 DB별 타입/옵션/기능 편집 UI와 MCP를 연결한다.
 4. C5 세 DB native DDL/공유 메뉴/실제 파일·DB 실행 검증을 완성한다.
 5. C6/C7 고급 기본 타입·ERD 기능 및 C8 검증된 DB 변환/전체 QA를 이어서 수행한다.
-6. FK 대체 후보(non-deferrable key/non-partial unique index 등)는 C3 검증기·planner·sync·DDL에서 공통화하고 실제 DB로 확인한다. 현재 전체 API/MCP/versioned/autosync 40개는 통과했으며 다음 기능 추가 후 관련 통합 QA를 유지한다.
+6. FK 대체 후보(non-deferrable key/non-partial unique index 등)는 C3 검증기·planner·sync·DDL에서 공통화하고 실제 DB로 확인한다. 현재 전체 API/MCP/versioned/autosync 45개는 통과했으며 다음 기능 추가 후 관련 통합 QA를 유지한다.
 
-전체 작업은 미완료다. 현재 모델/계약은 v1 API와 병존하며 웹은 v1 편집과 native 조회를 구분한다. shared 설계 저장은 아직 v1이다. 신규 native 기능은 사용 가능으로 활성화하지 않았다. 다음 작업에서도 기존 데이터/공유 캔버스/사용자 관리 파일을 보존하고 독립 단위마다 planning/work-log/커밋을 완료한다.
+전체 작업은 미완료다. 웹은 v1 편집/native 조회를 구분하고 shared 저장은 v1 및 native 전용 REST/MCP로 병존한다. 신규 native 기능은 사용 가능으로 활성화하지 않았다. 기존 데이터/공유 캔버스/사용자 관리 파일을 보존하고 단위별 planning/work-log/검증/커밋 뒤에도 전체 완료까지 같은 턴에서 이어간다. 사용자 수정 지시나 실제 턴 종료 사유가 있을 때만 예외를 둔다.

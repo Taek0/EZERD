@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { databaseContextSchema, databaseRevisionSchema } from './database-state.js';
 import { nativeStoredDesignDocumentSchema } from './native-document.js';
+import { databaseIssueSchema } from './project-document-state.js';
 import {
   syncBaselineSchema,
   syncChangeSchema,
@@ -41,6 +42,7 @@ export const nativeSyncOperationResultSchema = syncOperationResultSchema
     databaseRevision: databaseRevisionSchema,
     nextBaseline: nativeSyncBaselineSchema,
     document: nativeStoredDesignDocumentSchema.optional(),
+    issues: z.array(databaseIssueSchema).max(1000).optional(),
   })
   .superRefine((result, ctx) => {
     if (result.document && !sameContext(result.database, result.document.database))
@@ -77,3 +79,23 @@ export type NativeSyncEvent = z.infer<typeof nativeSyncEventSchema>;
 export type SyncOperationInputRead = z.infer<typeof syncOperationInputReadSchema>;
 export type SyncOperationResultRead = z.infer<typeof syncOperationResultReadSchema>;
 export type SyncEventRead = z.infer<typeof syncEventReadSchema>;
+export const nativeSyncSnapshotSchema = z
+  .strictObject({
+    protocolVersion: z.literal(2),
+    projectVersion: z.number().int().nonnegative(),
+    sequence: z.number().int().nonnegative(),
+    baselineId: z.uuid(),
+    baselineIssuedAt: z.iso.datetime(),
+    database: databaseContextSchema,
+    databaseRevision: databaseRevisionSchema,
+    document: nativeStoredDesignDocumentSchema,
+  })
+  .superRefine((value, ctx) => {
+    if (!sameContext(value.database, value.document.database))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['document', 'database'],
+        message: 'database.context-mismatch',
+      });
+  });
+export type NativeSyncSnapshot = z.infer<typeof nativeSyncSnapshotSchema>;

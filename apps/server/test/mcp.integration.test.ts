@@ -420,7 +420,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(46);
+      expect(listedTools.tools).toHaveLength(47);
       for (const name of ['get_project_database_capabilities', 'get_project_document_state'])
         expect(listedTools.tools.find((tool) => tool.name === name)).toMatchObject({
           annotations: { readOnlyHint: true, destructiveHint: false },
@@ -464,6 +464,26 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         sourceDocument: { schemaVersion: 1 },
         native: { status: 'available', document: { schemaVersion: 2 } },
       });
+      const prematureNative = await a.instance.callTool({
+        name: 'apply_native_project_changes',
+        arguments: {
+          projectId: project.id,
+          expectedVersion: 0,
+          expectedSequence: 0,
+          expectedDatabaseRevision: 0,
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: randomUUID(),
+          commands: [
+            {
+              type: 'patch_table',
+              id: 'missing',
+              patch: { physical: { comment: 'not an upgrade' } },
+            },
+          ],
+        },
+      });
+      expect(prematureNative.isError).toBe(true);
       const renamed = await a.instance.callTool({
         name: 'update_project',
         arguments: {

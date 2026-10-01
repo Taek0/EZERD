@@ -101,6 +101,7 @@ describe('MCP server tools', () => {
       sync as never,
       documents as never,
       personal as never,
+      { apply: vi.fn() } as never,
       {} as never,
       { assertActiveToken: vi.fn(async () => undefined) } as never,
     );
@@ -166,6 +167,7 @@ describe('MCP server tools', () => {
         'diagnose_project',
         'diagnose_layout',
         'apply_project_changes',
+        'apply_native_project_changes',
         'apply_personal_changes',
         'get_project_history',
         'undo_project_operation',
@@ -339,6 +341,7 @@ describe('MCP workspace authorization', () => {
       sync as never,
       {} as never,
       personal as never,
+      { apply: vi.fn() } as never,
       spaces as never,
       auth as never,
     );

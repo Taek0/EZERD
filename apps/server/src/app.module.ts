@@ -26,6 +26,9 @@ import { SpaceService } from './workspace/space.service.js';
 import { WorkspaceAccessService } from './workspace/workspace-access.service.js';
 import { WorkspaceEventsService } from './workspace/workspace-events.service.js';
 import { ProjectDatabaseService } from './workspace/project-database.service.js';
+import { NativeSyncService } from './sync/native-sync.service.js';
+import { NativeSyncController } from './sync/native-sync.controller.js';
+import { McpNativeDocumentService } from './mcp/mcp-native-document.service.js';
 
 @Module({
   controllers: [
@@ -34,6 +37,7 @@ import { ProjectDatabaseService } from './workspace/project-database.service.js'
     ReviewController,
     SessionController,
     SyncController,
+    NativeSyncController,
     McpTokenController,
     McpController,
     PersonalStateController,
@@ -44,6 +48,8 @@ import { ProjectDatabaseService } from './workspace/project-database.service.js'
     SessionService,
     SyncGateway,
     SyncService,
+    NativeSyncService,
+    McpNativeDocumentService,
     WorkspaceService,
     ProjectDatabaseService,
     ReviewService,

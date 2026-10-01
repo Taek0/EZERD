@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
+import { WebSocket } from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
@@ -14,7 +15,11 @@ import {
   migrateDesignDocumentV1,
   type DesignDocument,
 } from '@ezerd/model';
-import { projectDocumentStateSchema } from '@ezerd/contracts';
+import {
+  projectDocumentStateSchema,
+  nativeSyncOperationResultSchema,
+  nativeSyncSnapshotSchema,
+} from '@ezerd/contracts';
 
 function legacyDocument(): DesignDocument {
   const doc = createEmptyDocument();
@@ -105,6 +110,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       });
       const { configureApplication } = await import('../dist/application.js');
       configureApplication(app);
+      const { SyncGateway } = await import('../dist/sync/sync.gateway.js');
+      app.get(SyncGateway).attach(app.getHttpServer());
       await app.listen(0, '127.0.0.1');
       base = await app.getUrl();
       process.env.PORT = new URL(base).port;
@@ -418,6 +425,436 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       } finally {
         await other.close();
       }
+    });
+    it.each(['postgresql', 'mysql', 'sqlite'])(
+      'persists %s native REST/MCP operations with truthful ACKs, replay and retired identity protection',
+      async (kind) => {
+        const id = await createProject(kind);
+        const source = migrateDesignDocumentV1(
+          legacyDocument(),
+          defaultDatabaseContext(kind as 'postgresql' | 'mysql' | 'sqlite'),
+        ).document;
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(source),
+        ]);
+        const initialClientId = randomUUID();
+        const initial = (
+          await request(`/projects/${id}/native-sync/baseline`, 'POST', {
+            clientId: initialClientId,
+          })
+        ).data;
+        expect(nativeSyncSnapshotSchema.safeParse(initial).success).toBe(true);
+        const makeInput = (
+          baseline: typeof initial,
+          document: typeof source,
+          extra: Record<string, unknown> = {},
+        ) => ({
+          protocolVersion: 2,
+          database: baseline.database,
+          databaseRevision: baseline.databaseRevision,
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: baseline.clientId,
+          baselineId: baseline.baselineId,
+          baseSequence: baseline.sequence,
+          baselineIssuedAt: baseline.baselineIssuedAt,
+          kind: 'online',
+          dependencyPaths: [],
+          baselineDocument: baseline.document,
+          document,
+          changes: deriveOperationChanges(baseline.document, document),
+          ...extra,
+        });
+        // Use the actual client ID stored in the trusted server baseline.
+        initial.clientId = initialClientId;
+        const candidate = structuredClone(initial.document);
+        candidate.columns[0].physical.comment = 'Native shared edit';
+        const input = makeInput(initial, candidate);
+        const accepted = await request(`/projects/${id}/native-sync/operations`, 'POST', input);
+        expect(accepted.status, JSON.stringify(accepted.data)).toBe(201);
+        expect(nativeSyncOperationResultSchema.safeParse(accepted.data).success).toBe(true);
+        expect(accepted.data).toMatchObject({
+          protocolVersion: 2,
+          status: 'accepted',
+          sequence: 1,
+          actor: { id: actorId },
+          changedPaths: ['/columns/c/physical/comment'],
+        });
+        expect((await stored(id)).document.columns[0].physical.type).toEqual(
+          source.columns![0]!.physical.type,
+        );
+        expect((await stored(id)).document.columns[0].physical.defaultValue).toEqual(
+          source.columns![0]!.physical.defaultValue,
+        );
+        expect(
+          await request(`/projects/${id}/native-sync/operations/${input.operationId}`),
+        ).toMatchObject({ status: 200, data: accepted.data });
+        expect((await request(`/projects/${id}/operations/${input.operationId}`)).status).toBe(409);
+        expect(
+          (await request(`/projects/${id}/native-sync/operations`, 'POST', input)).data,
+        ).toEqual(accepted.data);
+        expect(
+          (
+            await request(`/projects/${id}/native-sync/operations`, 'POST', {
+              ...input,
+              groupId: randomUUID(),
+            })
+          ).status,
+        ).toBe(409);
+        const events = await request(`/projects/${id}/native-sync/events?since=0`);
+        expect(events.data).toMatchObject({
+          protocolVersion: 2,
+          sequence: 1,
+          resetRequired: false,
+          events: [{ status: 'accepted', changes: [{ path: '/columns/c/physical/comment' }] }],
+        });
+
+        const issued = await request('/mcp-tokens', 'POST', { name: 'native shared editing' });
+        const client = new Client({ name: 'native-shared-fixture', version: '1.0.0' });
+        try {
+          await client.connect(
+            new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+              requestInit: { headers: { Authorization: `Bearer ${issued.data.token}` } },
+            }),
+          );
+          const state = (await request(`/projects/${id}/document-state`)).data;
+          const command = {
+            projectId: id,
+            expectedVersion: state.project.version,
+            expectedSequence: state.sequence,
+            expectedDatabaseRevision: state.project.databaseRevision,
+            operationId: randomUUID(),
+            groupId: randomUUID(),
+            clientId: randomUUID(),
+            commands: [
+              {
+                type: 'patch_table',
+                id: 't',
+                patch: { physical: { comment: 'MCP native table edit' } },
+              },
+            ],
+          };
+          const result = await client.callTool({
+            name: 'apply_native_project_changes',
+            arguments: command,
+          });
+          expect(result.isError, JSON.stringify(result)).not.toBe(true);
+          expect(result.structuredContent).toMatchObject({
+            protocolVersion: 2,
+            status: 'accepted',
+            sequence: 2,
+          });
+          expect(result.structuredContent).not.toHaveProperty('document');
+          const withDocument = await client.callTool({
+            name: 'apply_native_project_changes',
+            arguments: { ...command, includeDocument: true },
+          });
+          expect(withDocument.isError, JSON.stringify(withDocument)).not.toBe(true);
+          expect(withDocument.structuredContent).toHaveProperty('document.schemaVersion', 2);
+          expect(withDocument.structuredContent).toHaveProperty(
+            'document.tables.0.physical.comment',
+            'MCP native table edit',
+          );
+          expect((await stored(id)).sync_sequence).toBe(2);
+          const nextClientId = randomUUID();
+          const next = (
+            await request(`/projects/${id}/native-sync/baseline`, 'POST', {
+              clientId: nextClientId,
+            })
+          ).data;
+          next.clientId = nextClientId;
+          const forbidden = structuredClone(next.document);
+          forbidden.columns[0].physical.type =
+            kind === 'postgresql'
+              ? { kind: 'builtin', database: kind, typeId: 'postgresql:text', parameters: {} }
+              : kind === 'mysql'
+                ? { kind: 'builtin', database: kind, typeId: 'mysql:int', parameters: {} }
+                : { kind: 'builtin', database: kind, typeId: 'sqlite:integer', parameters: {} };
+          forbidden.columns[0].physical.defaultValue = { kind: 'none' };
+          const invalidInput = makeInput(next, forbidden);
+          const rejected = await request(
+            `/projects/${id}/native-sync/operations`,
+            'POST',
+            invalidInput,
+          );
+          expect(rejected.status).toBe(201);
+          expect(rejected.data).toMatchObject({
+            status: 'rejected',
+            sequence: 3,
+            reasonCode: 'database.candidate-invalid',
+          });
+          expect(
+            rejected.data.issues.some(
+              (issue: { code: string }) => issue.code === 'type.not-implemented',
+            ),
+          ).toBe(true);
+          expect((await stored(id)).version).toBe(2);
+          expect((await stored(id)).document.columns[0].physical.type).toEqual(
+            source.columns![0]!.physical.type,
+          );
+          expect(
+            (await request(`/projects/${id}/native-sync/operations`, 'POST', invalidInput)).data,
+          ).toEqual(rejected.data);
+          expect(
+            (await request(`/projects/${id}/native-sync/operations`, 'POST', input)).data,
+          ).toEqual(accepted.data);
+          const beforeDeletion = (await request(`/projects/${id}/document-state`)).data;
+          const deletion = await client.callTool({
+            name: 'apply_native_project_changes',
+            arguments: {
+              ...command,
+              operationId: randomUUID(),
+              expectedVersion: beforeDeletion.project.version,
+              expectedSequence: beforeDeletion.sequence,
+              commands: [{ type: 'delete_objects', targets: [{ collection: 'columns', id: 'c' }] }],
+            },
+          });
+          expect(deletion.isError, JSON.stringify(deletion)).not.toBe(true);
+          expect(deletion.structuredContent).toMatchObject({ status: 'accepted', sequence: 4 });
+          expect((await stored(id)).document.columns).toEqual([]);
+          expect(
+            (await pool.query('SELECT object_id FROM sync_tombstones WHERE project_id=$1', [id]))
+              .rows,
+          ).toEqual([{ object_id: 'c' }]);
+          const afterDeletionClient = randomUUID();
+          const afterDeletion = (
+            await request(`/projects/${id}/native-sync/baseline`, 'POST', {
+              clientId: afterDeletionClient,
+            })
+          ).data;
+          afterDeletion.clientId = afterDeletionClient;
+          const resurrected = structuredClone(afterDeletion.document);
+          resurrected.columns.push(source.columns![0]!);
+          const retired = await request(
+            `/projects/${id}/native-sync/operations`,
+            'POST',
+            makeInput(afterDeletion, resurrected),
+          );
+          expect(retired.data).toMatchObject({
+            status: 'rejected',
+            reasonCode: 'sync.identity-retired',
+            sequence: 5,
+          });
+          expect((await stored(id)).document.columns).toEqual([]);
+          await pool.query(
+            'UPDATE projects SET database_revision=database_revision+1 WHERE id=$1',
+            [id],
+          );
+          expect(
+            (await client.callTool({ name: 'apply_native_project_changes', arguments: command }))
+              .structuredContent,
+          ).toEqual(result.structuredContent);
+          expect((await stored(id)).sync_sequence).toBe(5);
+          expect((await request(`/projects/${id}/native-sync/events?since=0`)).data).toMatchObject({
+            resetRequired: true,
+            events: [],
+            document: { schemaVersion: 2 },
+          });
+        } finally {
+          await client.close();
+        }
+      },
+    );
+    it('publishes the native ACK over authenticated WS after the database commit', async () => {
+      const id = await createProject();
+      const source = migrateDesignDocumentV1(
+        legacyDocument(),
+        defaultDatabaseContext('postgresql'),
+      ).document;
+      await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+        id,
+        JSON.stringify(source),
+      ]);
+      const url = new URL('/api/sync', base.replace('http:', 'ws:'));
+      url.searchParams.set('token', token);
+      const socket = new WebSocket(url);
+      const receive = (type: string) =>
+        new Promise<Record<string, any>>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            socket.off('message', listener);
+            reject(new Error('Native WS message timeout'));
+          }, 5000);
+          const listener = (raw: unknown) => {
+            const message = JSON.parse(String(raw));
+            if (message.type !== type) return;
+            clearTimeout(timer);
+            socket.off('message', listener);
+            resolve(message);
+          };
+          socket.on('message', listener);
+        });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          socket.once('open', resolve);
+          socket.once('error', () => reject(new Error('Native WS connection failed')));
+        });
+        const subscribed = receive('subscribed');
+        socket.send(JSON.stringify({ type: 'subscribe', projectId: id }));
+        expect(await subscribed).toMatchObject({ projectId: id, sequence: 0 });
+        const clientId = randomUUID();
+        const initial = (
+          await request(`/projects/${id}/native-sync/baseline`, 'POST', { clientId })
+        ).data;
+        const candidate = structuredClone(initial.document);
+        candidate.columns[0].physical.comment = 'WS committed native edit';
+        const pending = receive('operation');
+        const accepted = await request(`/projects/${id}/native-sync/operations`, 'POST', {
+          protocolVersion: 2,
+          database: initial.database,
+          databaseRevision: initial.databaseRevision,
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId,
+          baselineId: initial.baselineId,
+          baseSequence: initial.sequence,
+          baselineIssuedAt: initial.baselineIssuedAt,
+          kind: 'online',
+          dependencyPaths: [],
+          baselineDocument: initial.document,
+          document: candidate,
+          changes: deriveOperationChanges(initial.document, candidate),
+        });
+        const message = await pending;
+        expect(message.event).toMatchObject({
+          ...accepted.data,
+          changes: [{ path: '/columns/c/physical/comment' }],
+        });
+        expect((await stored(id)).document.columns[0].physical.comment).toBe(
+          'WS committed native edit',
+        );
+        expect((await stored(id)).sync_sequence).toBe(message.event.sequence);
+      } finally {
+        socket.terminate();
+      }
+    });
+    it('serializes concurrent native replay, guards raw claims/read sets and rejects foreign baselines', async () => {
+      const id = await createProject();
+      const source = migrateDesignDocumentV1(
+        legacyDocument(),
+        defaultDatabaseContext('postgresql'),
+      ).document;
+      await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+        id,
+        JSON.stringify(source),
+      ]);
+      const clientId = randomUUID();
+      const initial = (await request(`/projects/${id}/native-sync/baseline`, 'POST', { clientId }))
+        .data;
+      const candidate = structuredClone(initial.document);
+      candidate.columns[0].physical.comment = 'Concurrent accepted write';
+      const input = {
+        protocolVersion: 2,
+        database: initial.database,
+        databaseRevision: initial.databaseRevision,
+        operationId: randomUUID(),
+        groupId: randomUUID(),
+        clientId,
+        baselineId: initial.baselineId,
+        baseSequence: initial.sequence,
+        baselineIssuedAt: initial.baselineIssuedAt,
+        kind: 'online',
+        dependencyPaths: [],
+        baselineDocument: initial.document,
+        document: candidate,
+        changes: deriveOperationChanges(initial.document, candidate),
+      };
+      const [first, second] = await Promise.all([
+        request(`/projects/${id}/native-sync/operations`, 'POST', input),
+        request(`/projects/${id}/native-sync/operations`, 'POST', input),
+      ]);
+      expect(first.data).toMatchObject({ status: 'accepted', sequence: 1 });
+      expect(second.data).toEqual(first.data);
+      expect(
+        (await pool.query('SELECT COUNT(*) FROM sync_operations WHERE project_id=$1', [id])).rows[0]
+          .count,
+      ).toBe('1');
+      expect(
+        (
+          await request(`/projects/${id}/native-sync/operations`, 'POST', {
+            ...input,
+            operationId: randomUUID(),
+            changes: [{ ...input.changes[0], after: 'Forged claim' }],
+          })
+        ).status,
+      ).toBe(400);
+      const trimmed = structuredClone(input);
+      trimmed.operationId = randomUUID();
+      trimmed.baselineDocument.columns[0].id = ' c ';
+      expect(
+        (await request(`/projects/${id}/native-sync/operations`, 'POST', trimmed)).status,
+      ).toBe(400);
+      expect((await stored(id)).sync_sequence).toBe(1);
+      const conflicting = await request(`/projects/${id}/native-sync/operations`, 'POST', {
+        ...input,
+        operationId: randomUUID(),
+        dependencyPaths: ['/columns/c/physical/comment'],
+      });
+      expect(conflicting.data).toMatchObject({
+        status: 'rejected',
+        reasonCode: 'sync.field-conflict',
+        sequence: 2,
+      });
+      expect((await stored(id)).version).toBe(1);
+      const other = await request(
+        '/users',
+        'POST',
+        { username: `native-actor-${randomUUID().slice(0, 16)}`, pin: '0024' },
+        null,
+      );
+      userIds.push(other.data.id);
+      const session = (
+        await request('/sessions', 'POST', { userId: other.data.id, pin: '0024' }, null)
+      ).data.token;
+      const invitation = await request(`/workspaces/${workspaceId}/invitations`, 'POST', {
+        username: other.data.username,
+        role: 'editor',
+      });
+      expect(
+        (await request(`/workspace-invitations/${invitation.data.id}/accept`, 'POST', {}, session))
+          .status,
+      ).toBe(201);
+      const stolen = await request(
+        `/projects/${id}/native-sync/operations`,
+        'POST',
+        { ...input, operationId: randomUUID() },
+        session,
+      );
+      expect(stolen.data).toMatchObject({
+        status: 'rejected',
+        reasonCode: 'sync.baseline-invalid',
+        sequence: 3,
+        actor: { id: other.data.id },
+      });
+      expect(
+        (await request(`/projects/${id}/native-sync/operations`, 'POST', input, session)).status,
+      ).toBe(409);
+      expect(
+        (
+          await request(
+            `/projects/${id}/native-sync/operations`,
+            'POST',
+            { ...input, operationId: randomUUID(), actor: { id: actorId } },
+            session,
+          )
+        ).status,
+      ).toBe(400);
+      const before = await stored(id);
+      const all = (await request(`/projects/${id}/native-sync/events?since=0`)).data;
+      expect(all.events.map((event: { sequence: number }) => event.sequence)).toEqual([1, 2, 3]);
+      expect((await request(`/projects/${id}/native-sync/events?since=999`)).data).toMatchObject({
+        resetRequired: true,
+        document: { schemaVersion: 2 },
+      });
+      await pool.query('UPDATE projects SET status=$2 WHERE id=$1', [id, 'archived']);
+      expect((await request(`/projects/${id}/native-sync/operations`, 'POST', input)).data).toEqual(
+        first.data,
+      );
+      expect(
+        (await request(`/projects/${id}/native-sync/baseline`, 'POST', { clientId: randomUUID() }))
+          .status,
+      ).toBe(409);
+      expect((await stored(id)).document).toEqual(before.document);
     });
     it.each(['postgresql', 'mysql', 'sqlite'])(
       'applies real MCP personal commands to %s native sources with replay, atomicity and user isolation',
