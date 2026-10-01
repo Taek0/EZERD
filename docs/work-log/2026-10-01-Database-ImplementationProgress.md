@@ -16,11 +16,12 @@
 | C2c/C3b 설정 저장·구문맥 보호 | 완료(해당 부분) | [결과](2026-10-01-Database-ContextPersistence.md). profile/revision 마이그레이션, 빈 물리 설계 DB 변경 API, sync/MCP/undo/restore/브라우저 보호. 전체 check 704개 통과, 격리 autosync 8개 통과 |
 | C4a 카드 preview·capabilities 조회 | 완료(해당 부분) | [결과](2026-10-01-Database-CapabilityReadAndPreview.md). 공통 model/REST/MCP 조회, 카드 변경 전 preview, 실제 브라우저 빈 DB 변경/물리 설계 보호 확인. 전체 check 710개 통과, 격리 autosync 8개 통과 |
 | C2d/C3 native sync 순수 모델 | 완료(해당 부분) | [결과](2026-10-01-Database-NativeSyncModel.md). indexes/checks/AST 원자 변경·snapshot·참조 read-set, DB/profile/문서 버전 보호. 전체 check 716개 통과, 44개 건너뜀 |
+| C2e/C3 native sync 전송 계약 | 완료(해당 부분) | [결과](2026-10-01-Database-NativeSyncTransport.md). protocol v2/revision 필수·문맥 일치·v1 원본/재생 호환. 전체 check 720개 통과, 44개 건너뜀. live v2 쓰기는 비활성 |
 
 ## 다음 작업
 
 1. C3 나머지: 서버 lock 아래 native 최종 후보/legacy 원본 비교, v2 업그레이드/import와 native sync/이력 소비를 연결한다. 실제 소비 경로 준비 전에는 v2 저장을 활성화하지 않는다.
-2. 다음 작은 단위는 native 편집/삭제 cascade와 clipboard/remap, v2 transport sync 계약이다. sync 순수 코어는 위 단위를 사용한다. 화면 어댑터를 준비해 저장 활성화 시 기존 클라이언트의 v1 재저장을 방지한다.
+2. 다음 작은 단위는 native 편집/삭제 cascade와 clipboard/remap이다. sync 순수 코어와 v2 전송 계약은 위 단위를 사용한다. 화면 어댑터를 준비해 저장 활성화 시 기존 클라이언트의 v1 재저장을 방지한다.
 3. C4 프로젝트 DB별 타입/옵션/기능 편집 UI와 MCP를 연결한다.
 4. C5 세 DB native DDL/공유 메뉴/실제 파일·DB 실행 검증을 완성한다.
 5. C6/C7 고급 기본 타입·ERD 기능 및 C8 검증된 DB 변환/전체 QA를 이어서 수행한다.

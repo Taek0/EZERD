@@ -30,3 +30,4 @@ export * from './spaces.js';
 export * from './native-document.js';
 export * from './database-state.js';
 export * from './database-capabilities.js';
+export * from './native-sync.js';
