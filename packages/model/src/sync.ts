@@ -1,4 +1,7 @@
 import type { DesignDocument } from './document.js';
+import type { NativeDesignDocument } from './database/native-document.js';
+import { nativeExpressionColumnIds } from './database/native-document.js';
+type SyncDocument = DesignDocument | NativeDesignDocument;
 
 export interface DocumentChange {
   path: string;
@@ -8,13 +11,13 @@ export interface DocumentChange {
   afterExists?: boolean;
 }
 
-export interface DocumentOperation {
+export interface DocumentOperation<T extends SyncDocument = DesignDocument> {
   operationId: string;
   baseSequence: number;
   kind: 'online' | 'reconnect';
   changes: readonly DocumentChange[];
   dependencyPaths?: readonly string[];
-  document?: DesignDocument;
+  document?: T;
 }
 
 const entityCollections = new Set([
@@ -27,6 +30,8 @@ const entityCollections = new Set([
   'domains',
   'domainRelations',
   'notes',
+  'indexes',
+  'checks',
   'nodes',
   'relations',
 ]);
@@ -43,15 +48,15 @@ export function normalizeSyncPath(path: string): string {
   return `/${segments.map(escapeSegment).join('/')}`;
 }
 
-function combinedViewIds(document: DesignDocument): Set<string> {
+function combinedViewIds(document: SyncDocument): Set<string> {
   return new Set((document.views ?? []).map((view) => view.id));
 }
 
 /** Removes state that belongs to a browser or is regenerated from original shared layouts. */
-export function sharedDocument(
-  document: DesignDocument,
+export function sharedDocument<T extends SyncDocument>(
+  document: T,
   additionalCombinedViewIds: ReadonlySet<string> = new Set(),
-): DesignDocument {
+): T {
   const combinedIds = new Set([...combinedViewIds(document), ...additionalCombinedViewIds]);
   const { views: _personalViews, ...withoutPersonalViews } = document;
   return clone({
@@ -62,6 +67,10 @@ export function sharedDocument(
     columns: document.columns ?? [],
     keys: document.keys ?? [],
     tableRelations: document.tableRelations ?? [],
+    ...(document.schemaVersion === 2 && {
+      indexes: document.indexes ?? [],
+      checks: document.checks ?? [],
+    }),
     layout: {
       ...document.layout,
       nodes: document.layout.nodes.filter((node) => !combinedIds.has(node.viewId)),
@@ -71,7 +80,7 @@ export function sharedDocument(
       }),
       ...(!document.layout.relations && { relations: [] }),
     },
-  });
+  }) as unknown as T;
 }
 
 function keyedArray(value: unknown[]): value is Array<{ id: string }> {
@@ -82,6 +91,11 @@ function keyedArray(value: unknown[]): value is Array<{ id: string }> {
 }
 
 function atomicPath(path: string): 'position' | 'size' | 'value' | null {
+  if (/^\/columns\/[^/]+\/physical\/(generation|defaultValue|options)$/.test(path)) return 'value';
+  if (/^\/tables\/[^/]+\/physical\/(namespace|options)$/.test(path)) return 'value';
+  if (/^\/indexes\/[^/]+\/(parts|options)$/.test(path)) return 'value';
+  if (/^\/checks\/[^/]+\/expression$/.test(path)) return 'value';
+  if (/^\/(keys|tableRelations)\/[^/]+\/deferrable$/.test(path)) return 'value';
   if (/^\/layout\/nodes\/[^/]+$/.test(path)) return null;
   if (/^\/columns\/[^/]+\/physical\/type$/.test(path)) return 'value';
   if (/^\/tableRelations\/[^/]+\/physical$/.test(path)) return 'value';
@@ -226,10 +240,8 @@ function diffValue(before: unknown, after: unknown, path: string, output: Docume
   pushChange(output, path, before, after);
 }
 
-export function diffSharedDocument(
-  before: DesignDocument,
-  after: DesignDocument,
-): DocumentChange[] {
+export function diffSharedDocument<T extends SyncDocument>(before: T, after: T): DocumentChange[] {
+  assertSameSyncContext(before, after);
   const output: DocumentChange[] = [];
   const combinedIds = new Set([...combinedViewIds(before), ...combinedViewIds(after)]);
   diffValue(sharedDocument(before, combinedIds), sharedDocument(after, combinedIds), '', output);
@@ -242,7 +254,9 @@ export const deriveOperationChanges = diffSharedDocument;
 type StructuralEntity =
   | NonNullable<DesignDocument['tableRelations']>[number]
   | NonNullable<DesignDocument['keys']>[number]
-  | NonNullable<DesignDocument['columns']>[number];
+  | NonNullable<SyncDocument['columns']>[number]
+  | NonNullable<NativeDesignDocument['indexes']>[number]
+  | NonNullable<NativeDesignDocument['checks']>[number];
 
 function changedEntity<T extends StructuralEntity>(
   candidateItems: readonly T[] | undefined,
@@ -268,7 +282,7 @@ function changedEntity<T extends StructuralEntity>(
  * Returned entity paths cover object existence as well as every descendant field version.
  */
 export function deriveStructuralDependencyPaths(
-  candidate: DesignDocument,
+  candidate: SyncDocument,
   changes: readonly DocumentChange[],
 ): string[] {
   const dependencies = new Set<string>();
@@ -281,7 +295,12 @@ export function deriveStructuralDependencyPaths(
       .split('/')
       .slice(1)
       .map(unescapeSegment);
-    if (!collection || !id || !['tableRelations', 'keys', 'columns'].includes(collection)) continue;
+    if (
+      !collection ||
+      !id ||
+      !['tableRelations', 'keys', 'columns', 'indexes', 'checks'].includes(collection)
+    )
+      continue;
     const ids = changed.get(collection) ?? new Set<string>();
     ids.add(id);
     changed.set(collection, ids);
@@ -328,10 +347,82 @@ export function deriveStructuralDependencyPaths(
     }
   }
   for (const id of changed.get('columns') ?? []) {
-    const column = changedEntity(candidate.columns, 'columns', id, changes);
+    const column = changedEntity<NonNullable<SyncDocument['columns']>[number]>(
+      candidate.columns,
+      'columns',
+      id,
+      changes,
+    );
     if (!column || !('tableId' in column) || !('physical' in column)) continue;
     add('tables', column.tableId);
-    add('enums', column.physical.type.enumId);
+    const type = column.physical.type;
+    add('enums', 'enumId' in type ? type.enumId : undefined);
+  }
+  if (candidate.schemaVersion === 2) {
+    const columnDependency = (id: string) => {
+      for (const property of [
+        '@exists',
+        'tableId',
+        'scope',
+        'physical/type',
+        'physical/generation',
+        'physical/options',
+        'physical/nullable',
+      ])
+        add('columns', id, property);
+    };
+    const tableDependency = (id: string) => {
+      for (const property of ['@exists', 'scope', 'physical/options', 'physical/namespace'])
+        add('tables', id, property);
+    };
+    const expressionDependency = (expression: Parameters<typeof nativeExpressionColumnIds>[0]) => {
+      for (const id of nativeExpressionColumnIds(expression)) columnDependency(id);
+    };
+    for (const id of changed.get('columns') ?? []) {
+      const column = changedEntity(candidate.columns, 'columns', id, changes);
+      if (!column) continue;
+      tableDependency(column.tableId);
+      const physical = column.physical;
+      if (physical.generation.kind === 'computed')
+        expressionDependency(physical.generation.expression);
+      if (physical.defaultValue.kind === 'expression')
+        expressionDependency(physical.defaultValue.expression);
+      if (physical.options.database === 'mysql' && physical.options.onUpdate)
+        expressionDependency(physical.options.onUpdate);
+    }
+    for (const id of changed.get('keys') ?? []) {
+      const key = changedEntity(candidate.keys, 'keys', id, changes);
+      if (!key) continue;
+      tableDependency(key.tableId);
+      for (const columnId of key.columnIds) columnDependency(columnId);
+    }
+    for (const id of changed.get('tableRelations') ?? []) {
+      const relation = changedEntity(candidate.tableRelations, 'tableRelations', id, changes);
+      if (!relation) continue;
+      tableDependency(relation.sourceTableId);
+      tableDependency(relation.targetTableId);
+      for (const columnId of [
+        ...(relation.physical?.sourceColumnIds ?? []),
+        ...(relation.physical?.targetColumnIds ?? []),
+      ])
+        columnDependency(columnId);
+    }
+    for (const id of changed.get('indexes') ?? []) {
+      const index = changedEntity(candidate.indexes, 'indexes', id, changes);
+      if (!index) continue;
+      tableDependency(index.tableId);
+      for (const part of index.parts) expressionDependency(part.expression);
+      if ('predicate' in index.options && index.options.predicate)
+        expressionDependency(index.options.predicate);
+      if (index.options.database === 'postgresql')
+        for (const columnId of index.options.includeColumnIds ?? []) columnDependency(columnId);
+    }
+    for (const id of changed.get('checks') ?? []) {
+      const check = changedEntity(candidate.checks, 'checks', id, changes);
+      if (!check) continue;
+      tableDependency(check.tableId);
+      expressionDependency(check.expression);
+    }
   }
   return [...dependencies].sort();
 }
@@ -518,36 +609,55 @@ function applyChange(root: Record<string, unknown>, change: DocumentChange): voi
   }
 }
 
-export function applyChanges(
-  document: DesignDocument,
+function assertSameSyncContext(before: SyncDocument, after: SyncDocument): void {
+  if (before.schemaVersion !== after.schemaVersion) throw new Error('document.upgrade-required');
+  if (
+    before.schemaVersion === 2 &&
+    after.schemaVersion === 2 &&
+    requestFingerprint(before.database) !== requestFingerprint(after.database)
+  )
+    throw new Error('database.context-changed');
+}
+
+export function applyChanges<T extends SyncDocument>(
+  document: T,
   changes: readonly DocumentChange[],
-): DesignDocument {
+): T {
   const next = clone(document) as unknown as Record<string, unknown>;
-  for (const change of changes) applyChange(next, change);
-  return next as unknown as DesignDocument;
+  for (const change of changes) {
+    const root = normalizeSyncPath(change.path).split('/')[1];
+    if (root === 'schemaVersion' || root === 'database')
+      throw new Error(
+        root === 'database' ? 'database.context-changed' : 'document.upgrade-required',
+      );
+    applyChange(next, change);
+  }
+  return next as unknown as T;
 }
 
 /** Applies only the candidate's semantic paths to current server state, preserving disjoint edits. */
-export function mergeCandidateOntoDocument(
-  baseline: DesignDocument,
-  current: DesignDocument,
-  finalCandidate: DesignDocument,
-): { document: DesignDocument; changes: DocumentChange[] } {
+export function mergeCandidateOntoDocument<T extends SyncDocument>(
+  baseline: T,
+  current: T,
+  finalCandidate: T,
+): { document: T; changes: DocumentChange[] } {
+  assertSameSyncContext(baseline, current);
   const changes = deriveOperationChanges(baseline, finalCandidate);
   return { document: applyChanges(current, changes), changes };
 }
 
-export function applyOperationOverlay(
-  document: DesignDocument,
-  operation: Pick<DocumentOperation, 'changes'>,
-): DesignDocument {
+export function applyOperationOverlay<T extends SyncDocument>(
+  document: T,
+  operation: Pick<DocumentOperation<SyncDocument>, 'changes' | 'document'>,
+): T {
+  if (operation.document) assertSameSyncContext(document, operation.document);
   return applyChanges(document, operation.changes);
 }
 
-export function applyOperationsOverlay(
-  document: DesignDocument,
-  operations: readonly Pick<DocumentOperation, 'changes'>[],
-): DesignDocument {
+export function applyOperationsOverlay<T extends SyncDocument>(
+  document: T,
+  operations: readonly Pick<DocumentOperation<SyncDocument>, 'changes' | 'document'>[],
+): T {
   return operations.reduce(
     (current, operation) => applyOperationOverlay(current, operation),
     document,
