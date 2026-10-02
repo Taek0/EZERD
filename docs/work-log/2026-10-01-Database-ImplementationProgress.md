@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- native 미확인 요청의 MCP 도구/웹 취소 버튼을 전용 marker에 연결했다. [결과](2026-10-02-Database-NativeCancellationConsumers.md). 실제 versioned/MCP 48개와 helper 40개, web typecheck 통과. 단순 lookup 404/transport 오류로 row를 지우지 않으며 late 요청은 같은 rejected ACK로 확정한다. 브라우저/개인 상태는 후속이다.
+
 - JSON v1/v2 parsing·갤러리 import/export·명시 업그레이드 검토/보관/ACK UI를 연결했다. [결과](2026-10-02-Database-NativeTransferUI.md). 59개 helper/static 테스트/skip0, actor·문맥·immutable queue·응답 검증 통과. App의 accepted→native 전환을 연결했으며 실제 브라우저·legacy import 복구 및 새 프로젝트 native 생성은 후속이다.
 
 - 미기록 native/명령/upgrade/history 요청의 취소를 프로젝트 수명 동안 유지하는 전용 marker로 확정했다. [결과](2026-10-02-Database-NativeRequestCancellation.md). 실제 AppModule 취소 56개와 PG 식 회귀 1개 통과. 늦은 요청은 rejected ACK만 재생하며 doc/version/sequence/stream을 바꾸지 않는다. MCP/web 취소 버튼은 후속이며 DB readiness에 새 테이블을 포함했다.

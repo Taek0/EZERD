@@ -23,7 +23,7 @@ vi.mock('./native-save.js', async (original) => ({
   loadNativePending: io.load,
   stageNativeSave: io.stage,
   sendNativePending: io.send,
-  discardNativePending: io.discard,
+  cancelNativePending: io.discard,
   recoverNativePending: io.recover,
 }));
 vi.mock('../../shared/i18n/index.js', () => ({
@@ -259,26 +259,26 @@ describe('native project asynchronous pending calls', () => {
     io.load.mockResolvedValue(pending(snapshot()));
     (retry.props.onClick as () => void)();
     await flush();
-    const discard = ui.render().find((node) => node.props.children === '요청 초기화')!;
-    const wait = deferred<void>();
+    const discard = ui.render().find((node) => node.props.children === '요청 취소 확정')!;
+    const wait = deferred<{ status: 'rejected' }>();
     io.discard.mockReturnValue(wait.promise);
     (discard.props.onClick as () => void)();
     await flush();
     expect(ui.canvas().props.busy).toBe(true);
-    expect(ui.render().some((node) => node.props.children === '요청 초기화')).toBe(true);
+    expect(ui.render().some((node) => node.props.children === '요청 취소 확정')).toBe(true);
     io.load.mockResolvedValue(null);
-    wait.resolve();
+    wait.resolve({ status: 'rejected' });
     await flush();
     await flush();
     expect(ui.canvas().props.busy).toBe(false);
-    expect(ui.render().some((node) => node.props.children === '요청 초기화')).toBe(false);
+    expect(ui.render().some((node) => node.props.children === '요청 취소 확정')).toBe(false);
   });
   it('retains pending and storage error when asynchronous discard fails', async () => {
     io.load.mockResolvedValue(pending(snapshot()));
     const ui = mount();
     await flush();
     io.discard.mockRejectedValue(new Error('native.pending-inflight'));
-    const discard = ui.render().find((node) => node.props.children === '요청 초기화')!;
+    const discard = ui.render().find((node) => node.props.children === '요청 취소 확정')!;
     (discard.props.onClick as () => void)();
     await flush();
     expect(ui.canvas().props.busy).toBe(true);

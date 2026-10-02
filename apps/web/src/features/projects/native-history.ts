@@ -15,6 +15,7 @@ import {
   type NativeDurablePending,
 } from './native-durable-queue.js';
 import { captureNativeActorApi } from './native-actor-api.js';
+import { cancelNativeDurableEntry } from './native-cancellation.js';
 
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 const key = (actor: string, project: string) =>
@@ -40,6 +41,22 @@ export function nativeHistoryEntry(pending: NativeHistoryPending): NativeDurable
     kind: 'history',
     payload: pending,
   };
+}
+export async function cancelNativeHistory(
+  pending: NativeHistoryPending,
+  storage: Storage = localStorage,
+  api: typeof request = request,
+) {
+  return cancelNativeDurableEntry(nativeHistoryEntry(pending), {
+    api,
+    cleanup: () => {
+      if (
+        JSON.stringify(loadLegacyHistoryPending(pending.userId, pending.projectId, storage)) ===
+        JSON.stringify(pending)
+      )
+        storage.removeItem(key(pending.userId, pending.projectId));
+    },
+  });
 }
 export async function loadNativeHistoryPending(
   userId: string,

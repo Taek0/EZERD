@@ -23,7 +23,7 @@ import {
   stageNativeSave,
   sendNativePending,
   recoverNativePending,
-  discardNativePending,
+  cancelNativePending,
   type NativePendingSave,
   type NativeWebCommand,
   type NativeSaveExpected,
@@ -267,12 +267,13 @@ export function NativeProjectView({
     savingRef.current = true;
     setSaving(true);
     try {
-      await discardNativePending(userId, snapshot.project.id, pending.request.operationId);
+      const result = await cancelNativePending(pending);
       const remaining = await loadNativePending(userId, snapshot.project.id);
       if (currentEditor()) {
         setPending(remaining);
         setPendingBlocked(false);
         setSaveError('');
+        if (result.status === 'accepted') onReload();
       }
     } catch (error) {
       if (currentEditor()) {
@@ -393,7 +394,7 @@ export function NativeProjectView({
             {t(saving ? '저장 확인 중…' : '저장 결과 확인')}
           </Button>
           <Button disabled={saving} onClick={() => void discardPending()}>
-            {t('요청 초기화')}
+            {t('요청 취소 확정')}
           </Button>
         </div>
       )}

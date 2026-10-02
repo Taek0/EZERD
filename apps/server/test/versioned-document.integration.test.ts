@@ -1996,6 +1996,62 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         expect(saved.document.tables[0].physical).toEqual(native.tables![0]!.physical);
       },
     );
+    it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+      'fences a %s native command through the actual MCP cancellation tool',
+      async (kind) => {
+        const id = await createProject(kind),
+          native = migrateDesignDocumentV1(legacyDocument(), defaultDatabaseContext(kind)).document;
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(native),
+        ]);
+        const before = await stored(id),
+          input = {
+            operationId: randomUUID(),
+            groupId: randomUUID(),
+            clientId: randomUUID(),
+            expectedVersion: before.version,
+            expectedSequence: before.sync_sequence,
+            expectedDatabaseRevision: before.database_revision,
+            includeDocument: true,
+            commands: [{ type: 'patch_table', id: 't', patch: { logical: { name: 'Late' } } }],
+          };
+        const client = new Client({ name: 'native-cancel', version: '1.0.0' });
+        try {
+          await client.connect(
+            new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+              requestInit: { headers: { Authorization: `Bearer ${ownerMcpToken}` } },
+            }),
+          );
+          const cancelled = await client.callTool({
+            name: 'cancel_native_project_request',
+            arguments: { projectId: id, kind: 'native-command', request: input },
+          });
+          expect(cancelled.isError, JSON.stringify(cancelled.content)).not.toBe(true);
+          expect(cancelled.structuredContent).toMatchObject({
+            outcome: 'cancelled',
+            result: { status: 'rejected', reasonCode: 'operation.cancelled' },
+          });
+          const late = await client.callTool({
+            name: 'apply_native_project_changes',
+            arguments: { projectId: id, ...input },
+          });
+          expect(late.isError, JSON.stringify(late.content)).not.toBe(true);
+          expect(late.structuredContent).toEqual(cancelled.structuredContent!.result);
+          expect(await stored(id)).toEqual(before);
+          expect(
+            (
+              await pool.query(
+                'SELECT count(*)::int AS n FROM native_request_cancellations WHERE project_id=$1',
+                [id],
+              )
+            ).rows[0].n,
+          ).toBe(1);
+        } finally {
+          await client.close();
+        }
+      },
+    );
     it('keeps a native DB mismatch explicit instead of interpreting it in the project dialect', async () => {
       const id = await createProject('mysql');
       const source = migrateDesignDocumentV1(

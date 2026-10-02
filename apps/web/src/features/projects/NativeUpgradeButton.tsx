@@ -9,9 +9,11 @@ import {
   NativeUpgradeAttemptError,
   loadNativeUpgrade,
   reloadNativeUpgrade,
+  nativeUpgradeEntry,
   type NativeUpgradePlan,
 } from './native-upgrade.js';
 import { getNativeDurableQueue } from './native-durable-queue.js';
+import { cancelNativeDurableEntry } from './native-cancellation.js';
 registerTranslations({
   'native 설계로 업그레이드': 'Upgrade to a native design',
   '최신 저장 상태 확인': 'Review the latest saved state',
@@ -26,6 +28,7 @@ registerTranslations({
     'The saved operation was recovered. Check its result using the same operation.',
   '업그레이드 완료 · 설계 다시 읽기': 'Upgrade accepted · reload the design',
   진단: 'Diagnostics',
+  '요청 취소 확정': 'Confirm request cancellation',
 });
 export function NativeUpgradeReview({ plan }: { plan: NativeUpgradePlan }) {
   const { t } = useI18n();
@@ -244,6 +247,30 @@ export function NativeUpgradeButton({
     receipt.plan.snapshot.project.workspaceId === workspaceId
       ? receipt
       : null;
+  async function cancelAttempt() {
+    if (!visiblePlan || active.current || busy) return;
+    const cancelling = visiblePlan;
+    active.current = true;
+    setWorking(true);
+    setError('');
+    try {
+      const result = await cancelNativeDurableEntry(nativeUpgradeEntry(cancelling));
+      if (!stillHere()) return;
+      if (result.status === 'accepted') {
+        setReceipt({ plan: cancelling, result });
+        const snapshot = await reloadNativeUpgrade(cancelling, result, options());
+        if (stillHere()) await onUpgraded(snapshot);
+      } else {
+        setPlan(null);
+        setUnknown(false);
+      }
+    } catch (cause) {
+      if (stillHere()) setError(message(cause));
+    } finally {
+      active.current = false;
+      if (mounted.current) setWorking(false);
+    }
+  }
   return (
     <div className="native-upgrade-control">
       {visibleReceipt ? (
@@ -257,6 +284,11 @@ export function NativeUpgradeButton({
             <p role="status">
               {t('저장된 작업을 복구했습니다. 같은 작업으로 결과를 다시 확인하세요.')}
             </p>
+          )}
+          {unknown && (
+            <Button disabled={loading || working || busy} onClick={() => void cancelAttempt()}>
+              {t('요청 취소 확정')}
+            </Button>
           )}
           <Button
             disabled={loading || working || busy || (!unknown && !canUpgrade)}

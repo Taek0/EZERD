@@ -11,6 +11,7 @@ import { loadNativeEditorDraft, discardNativeEditorDraft } from './native-editor
 import { ApiError, body, request } from '../../shared/api/client.js';
 import { captureNativeActorApi } from './native-actor-api.js';
 import { requestFingerprint } from '@ezerd/model';
+import { cancelNativeDurableEntry } from './native-cancellation.js';
 import {
   getNativeDurableQueue,
   nativeDurableId,
@@ -298,6 +299,28 @@ export async function discardNativePending(
     const old = loadLegacyNativePending(userId, projectId, storage);
     if (old?.request.operationId === operationId) storage.removeItem(key(userId, projectId));
   }
+}
+/** Server cancellation fences late delivery; accepted ACKs still consume only matching input. */
+export async function cancelNativePending(
+  pending: NativePendingSave,
+  storage: Storage = localStorage,
+  api: typeof request = request,
+): Promise<NativeSyncOperationResult> {
+  return cancelNativeDurableEntry(durable(pending), {
+    api,
+    cleanup: (result) => {
+      checkNativeAck(pending, result);
+      if (result.status === 'accepted') {
+        acknowledgePropertyDrafts(pending, storage);
+        acknowledgeEditorDraft(pending, storage);
+      }
+      if (
+        requestFingerprint(loadLegacyNativePending(pending.userId, pending.projectId, storage)) ===
+        requestFingerprint(pending)
+      )
+        storage.removeItem(key(pending.userId, pending.projectId));
+    },
+  });
 }
 /** Clear only the property draft represented by this ACK; a newer tab's input stays intact. */
 function acknowledgePropertyDrafts(pending: NativePendingSave, storage: Storage): void {
