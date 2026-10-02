@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- native 이력 조회·trusted undo/삭제 restore를 실제 AppModule에 연결했다. [결과](2026-10-02-Database-NativeHistory.md). 계약 5개와 실제 AppModule 격리 REST/DB 35개, server typecheck를 통과했다. 원본 ledger/ACK/tombstone 출처와 fresh-ID 복구·권한 변경 뒤 동일 ACK 재생을 확인했다. MCP/web 소비는 다음 독립 단위다.
+
 - native ERD 읽기·공유 참조/메모·배치 명령과 UI를 연결했다. [결과](2026-10-02-Database-NativeCanvas.md). 세 DB 실제 HTTP 저장/ACK와 물리 필드 원본 보존을 확인했다. 개인 UI 저장은 DB revision 계약이 미연결이라 차단하며 도메인 lifecycle/소유권 이동·clipboard·고급 배치는 남았다.
 
 - C5 DDL REST/MCP·공유 메뉴와 실제 UTF-8 다운로드·DB rollback 실행·원격 변경/미해결 오류 차단을 연결했다. [결과](2026-10-02-Database-DDLExportEndpoints.md). 최신 전체 check 1443개 통과/139개 건너뜀. native v2 성공 SQL 활성화와 versioned JSON 실제 다운로드 재확인은 후속이다.
