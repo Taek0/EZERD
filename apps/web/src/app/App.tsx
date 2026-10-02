@@ -160,6 +160,7 @@ export function App() {
   const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
   const gallery = useRef<GalleryHandle>(null);
+  const nativeUpgradeEntryRef = useRef<HTMLDivElement>(null);
   const [draftTarget, setDraftTarget] = useState<CommentContext & { nonce: number }>();
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true);
@@ -1220,29 +1221,31 @@ export function App() {
             </div>
           </div>
           {user && (
-            <NativeUpgradeButton
-              key={`upgrade:${user.id}:${opened.project.id}`}
-              userId={user.id}
-              projectId={opened.project.id}
-              workspaceId={opened.project.workspaceId}
-              canUpgrade={!designReadOnly}
-              busy={busy}
-              prepare={async () => {
-                await prepareProjectExport(opened.project.id);
-                return (
-                  currentExportIdentity.current.userId === user.id &&
-                  currentExportIdentity.current.projectId === opened.project.id
-                );
-              }}
-              onUpgraded={async (snapshot) => {
-                if (
-                  currentExportIdentity.current.userId !== user.id ||
-                  currentExportIdentity.current.projectId !== snapshot.project.id
-                )
-                  return;
-                await open(snapshot.project.id);
-              }}
-            />
+            <div ref={nativeUpgradeEntryRef}>
+              <NativeUpgradeButton
+                key={`upgrade:${user.id}:${opened.project.id}`}
+                userId={user.id}
+                projectId={opened.project.id}
+                workspaceId={opened.project.workspaceId}
+                canUpgrade={!designReadOnly}
+                busy={busy}
+                prepare={async () => {
+                  await prepareProjectExport(opened.project.id);
+                  return (
+                    currentExportIdentity.current.userId === user.id &&
+                    currentExportIdentity.current.projectId === opened.project.id
+                  );
+                }}
+                onUpgraded={async (snapshot) => {
+                  if (
+                    currentExportIdentity.current.userId !== user.id ||
+                    currentExportIdentity.current.projectId !== snapshot.project.id
+                  )
+                    return;
+                  await open(snapshot.project.id);
+                }}
+              />
+            </div>
           )}
           {projectWorkspace?.status === 'archived' && (
             <div className="notice">
@@ -1283,6 +1286,13 @@ export function App() {
             <Canvas
               key={opened.project.id}
               document={opened.document}
+              databaseKind={opened.project.databaseKind ?? 'postgresql'}
+              onRequestNativeUpgrade={() => {
+                if (designReadOnly) return;
+                const entry = nativeUpgradeEntryRef.current;
+                entry?.scrollIntoView({ block: 'center' });
+                entry?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus();
+              }}
               onExportProject={async () => {
                 await flushAutosave();
                 await runtime.current?.prepareToLeave();

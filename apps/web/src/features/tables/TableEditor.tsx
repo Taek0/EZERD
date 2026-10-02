@@ -1,5 +1,12 @@
 import { canonicalPostgresTypeName, postgresTypeNames } from '@ezerd/model';
 import { columnTypeOptions, columnTypeValue } from './column-type-options.js';
+import { LegacyDatabaseEditorNotice } from './LegacyDatabaseEditorNotice.js';
+import {
+  isNonPostgresLegacy,
+  legacyArrayChangeAllowed,
+  legacyTypeSelectionAllowed,
+  type LegacyDatabaseEditorContext,
+} from './legacy-database-editor-policy.js';
 import {
   tableColor,
   tableHeaderStyle,
@@ -406,7 +413,9 @@ export function TableNodeContent({
   readOnly = false,
   onStartForeignKey,
   onCreatePin,
-}: {
+  databaseKind,
+  onRequestNativeUpgrade,
+}: LegacyDatabaseEditorContext & {
   document: DesignDocument;
   tableId: string;
   viewMode: ModelScope;
@@ -524,8 +533,9 @@ export function TableNodeContent({
                     display={columnTypeDisplay(c.physical.type, doc.enums)}
                     label={translate('{x0} 타입', { x0: columnName(c) })}
                     value={columnTypeValue(c.physical.type)}
-                    options={columnTypeOptions(c.physical.type, doc.enums)}
+                    options={columnTypeOptions(c.physical.type, doc.enums, databaseKind)}
                     onValueChange={(value) => {
+                      if (!legacyTypeSelectionAllowed(c.physical.type, value, databaseKind)) return;
                       if (value === columnTypeValue(c.physical.type)) return;
                       onChange?.(
                         patch({
@@ -591,6 +601,18 @@ export function TableNodeContent({
         onClose={() => setMenu(null)}
         label={translate('컬럼')}
         items={[
+          ...(isNonPostgresLegacy(databaseKind)
+            ? [
+                {
+                  id: 'native-upgrade',
+                  label: translate('native 설계로 업그레이드'),
+                  disabled: !editable || !onRequestNativeUpgrade,
+                  onAction: () => {
+                    if (editable) onRequestNativeUpgrade?.();
+                  },
+                },
+              ]
+            : []),
           {
             id: 'primary-key',
             label:
@@ -759,7 +781,9 @@ export function TableInspector({
   onChange,
   readOnly,
   onStartForeignKey,
-}: {
+  databaseKind,
+  onRequestNativeUpgrade,
+}: LegacyDatabaseEditorContext & {
   document: DesignDocument;
   tableId: string;
   viewId?: string;
@@ -816,6 +840,11 @@ export function TableInspector({
         )}
       </p>
       <fieldset disabled={readOnly}>
+        <LegacyDatabaseEditorNotice
+          databaseKind={databaseKind}
+          onRequestNativeUpgrade={onRequestNativeUpgrade}
+          readOnly={readOnly}
+        />
         <PanelSection title={translate('기본 정보')} defaultOpen>
           <label>
             {translate('도메인')}
@@ -912,6 +941,9 @@ export function TableInspector({
                     column={c}
                     index={at}
                     count={cols.length}
+                    databaseKind={databaseKind}
+                    onRequestNativeUpgrade={onRequestNativeUpgrade}
+                    readOnly={readOnly}
                     onChange={(p) => change(updateColumn(doc, c.id, p))}
                     onPrimaryKeyChange={(checked) =>
                       change(setColumnPrimaryKey(doc, c.id, checked))
@@ -928,7 +960,14 @@ export function TableInspector({
             ))}
           </PanelList>
           <PanelSection title={translate('컬럼 추가')} className="table-column-create-section">
-            <ColumnCreationForm document={doc} tableId={tableId} onChange={change} />
+            <ColumnCreationForm
+              document={doc}
+              tableId={tableId}
+              onChange={change}
+              databaseKind={databaseKind}
+              onRequestNativeUpgrade={onRequestNativeUpgrade}
+              readOnly={readOnly}
+            />
           </PanelSection>
         </PanelSection>
         <PanelSection title={translate('키 · PK / UNIQUE')} count={keys.length}>
@@ -1054,13 +1093,17 @@ export function ColumnDefaultControl({
   physical,
   enums,
   onChange,
-}: {
+  databaseKind,
+  onRequestNativeUpgrade,
+  readOnly = false,
+}: LegacyDatabaseEditorContext & {
   physical: Column['physical'];
   enums: DesignDocument['enums'];
   onChange: (physical: Column['physical']) => void;
+  readOnly?: boolean;
 }) {
   useI18n();
-  const options = columnDefaultOptions(physical, enums);
+  const options = columnDefaultOptions(physical, enums, databaseKind);
   const value = isAutoIncrement(physical.type)
     ? autoIncrementDefault
     : (physical.defaultExpression ?? '');
@@ -1071,7 +1114,10 @@ export function ColumnDefaultControl({
       <Select
         aria-label={translate('컬럼 기본값')}
         value={value}
-        onValueChange={(next) => onChange(applyColumnDefault(physical, next, enums))}
+        disabled={readOnly}
+        onValueChange={(next) => {
+          if (!readOnly) onChange(applyColumnDefault(physical, next, enums, databaseKind));
+        }}
       >
         {existing && (
           <option value={value} disabled>
@@ -1085,10 +1131,15 @@ export function ColumnDefaultControl({
         ))}
       </Select>
       <small>{translate('타입 변경 시 기본값이 초기화됩니다.')}</small>
+      <LegacyDatabaseEditorNotice
+        databaseKind={databaseKind}
+        onRequestNativeUpgrade={onRequestNativeUpgrade}
+        readOnly={readOnly}
+      />
     </label>
   );
 }
-function ColumnEditor({
+export function ColumnEditor({
   document: doc,
   column: c,
   index,
@@ -1098,7 +1149,10 @@ function ColumnEditor({
   onMove,
   onDelete,
   onClose,
-}: {
+  databaseKind,
+  onRequestNativeUpgrade,
+  readOnly = false,
+}: LegacyDatabaseEditorContext & {
   document: DesignDocument;
   column: Column;
   index: number;
@@ -1108,6 +1162,7 @@ function ColumnEditor({
   onMove: (d: number) => void;
   onDelete: () => void;
   onClose: () => void;
+  readOnly?: boolean;
 }) {
   useI18n();
   const physical = (p: Partial<Column['physical']>) =>
@@ -1147,6 +1202,8 @@ function ColumnEditor({
             label={translate('타입')}
             value={columnTypeValue(c.physical.type)}
             onValueChange={(value) => {
+              if (readOnly || !legacyTypeSelectionAllowed(c.physical.type, value, databaseKind))
+                return;
               if (value === columnTypeValue(c.physical.type)) return;
               const enumType = doc.enums?.find((item) => `enum:${item.id}` === value);
               physical({
@@ -1159,7 +1216,7 @@ function ColumnEditor({
                 },
               });
             }}
-            options={columnTypeOptions(c.physical.type, doc.enums)}
+            options={columnTypeOptions(c.physical.type, doc.enums, databaseKind)}
           />
         </label>
       </div>
@@ -1243,8 +1300,17 @@ function ColumnEditor({
         <Check
           label={translate('배열')}
           value={c.physical.type.isArray}
-          disabled={isAutoIncrement(c.physical.type)}
-          onChange={(isArray) => physical({ type: { ...c.physical.type, isArray } })}
+          disabled={
+            isAutoIncrement(c.physical.type) ||
+            (isNonPostgresLegacy(databaseKind) && !c.physical.type.isArray)
+          }
+          onChange={(isArray) => {
+            if (
+              !readOnly &&
+              legacyArrayChangeAllowed(c.physical.type.isArray, isArray, databaseKind)
+            )
+              physical({ type: { ...c.physical.type, isArray } });
+          }}
         />
         <Check
           label={translate('NULL 허용')}
@@ -1268,6 +1334,9 @@ function ColumnEditor({
       <ColumnDefaultControl
         physical={c.physical}
         enums={doc.enums}
+        databaseKind={databaseKind}
+        onRequestNativeUpgrade={onRequestNativeUpgrade}
+        readOnly={readOnly}
         onChange={(next) => onChange({ physical: next })}
       />
       {primaryKeyChangeReason(doc, c.id) && (
@@ -1619,14 +1688,18 @@ export { relationGeometry, TableRelationsSvg } from '../relations/TableRelations
 
 export { ForeignKeyDialog } from '../relations/ForeignKeyDialog.js';
 
-function ColumnCreationForm({
+export function ColumnCreationForm({
   document: doc,
   tableId,
   onChange,
-}: {
+  databaseKind,
+  onRequestNativeUpgrade,
+  readOnly = false,
+}: LegacyDatabaseEditorContext & {
   document: DesignDocument;
   tableId: string;
   onChange: (d: DesignDocument) => void;
+  readOnly?: boolean;
 }) {
   useI18n();
   const [name, setName] = useState(''),
@@ -1677,10 +1750,11 @@ function ColumnCreationForm({
             label={translate('타입')}
             value={type}
             onValueChange={(value) => {
+              if (readOnly || !legacyTypeSelectionAllowed(undefined, value, databaseKind)) return;
               setType(value);
               setDefaultExpression(null);
             }}
-            options={columnTypeOptions(undefined, doc.enums)}
+            options={columnTypeOptions(undefined, doc.enums, databaseKind)}
           />
         </label>
         <label>
@@ -1699,6 +1773,9 @@ function ColumnCreationForm({
       <ColumnDefaultControl
         physical={draftPhysical}
         enums={doc.enums}
+        databaseKind={databaseKind}
+        onRequestNativeUpgrade={onRequestNativeUpgrade}
+        readOnly={readOnly}
         onChange={(next) => {
           setDefaultExpression(next.defaultExpression);
           setType(next.type.enumId ? `enum:${next.type.enumId}` : next.type.name);
@@ -1706,7 +1783,9 @@ function ColumnCreationForm({
         }}
       />
       <Button
+        disabled={readOnly || !legacyTypeSelectionAllowed(undefined, type, databaseKind)}
         onClick={() => {
+          if (readOnly || !legacyTypeSelectionAllowed(undefined, type, databaseKind)) return;
           const column = freshColumn(tableId);
           column.physical = draftPhysical;
           let next = addColumn(doc, column);
@@ -1728,7 +1807,9 @@ export function EnumDialog({
   onChange,
   readOnly,
   onClose,
-}: {
+  databaseKind,
+  onRequestNativeUpgrade,
+}: LegacyDatabaseEditorContext & {
   document: DesignDocument;
   onChange: (d: DesignDocument) => void;
   readOnly: boolean;
@@ -1758,7 +1839,24 @@ export function EnumDialog({
           ×
         </IconButton>
       </div>
-      <EnumManager document={doc} onChange={onChange} readOnly={readOnly} />
+      <LegacyDatabaseEditorNotice
+        databaseKind={databaseKind}
+        readOnly={readOnly}
+        {...(onRequestNativeUpgrade
+          ? {
+              onRequestNativeUpgrade: () => {
+                onClose();
+                queueMicrotask(onRequestNativeUpgrade);
+              },
+            }
+          : {})}
+      />
+      <EnumManager
+        document={doc}
+        onChange={onChange}
+        readOnly={readOnly}
+        allowCreate={!isNonPostgresLegacy(databaseKind)}
+      />
       <div className="table-actions">
         <Button onClick={onClose}>{translate('닫기')}</Button>
       </div>
