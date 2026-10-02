@@ -451,11 +451,22 @@ describe('personal state membership boundaries', () => {
     ]);
     fixture.rows.set(projectPersonalStates, [[]]);
     await expect(
-      fixture.personal.mutate(project.id, actor, 0, (doc) => {
-        doc.domains[0]!.id = 'forged';
-        doc.views = [{ id: 'view', name: '', domainIds: ['forged'] }];
-        return doc;
-      }),
+      fixture.personal.mutate(
+        project.id,
+        actor,
+        0,
+        (doc) => {
+          doc.domains[0]!.id = 'forged';
+          doc.views = [{ id: 'view', name: '', domainIds: ['forged'] }];
+          return doc;
+        },
+        undefined,
+        {
+          expectedDatabaseRevision: 0,
+          expectedProjectVersion: project.version,
+          expectedSyncSequence: project.syncSequence,
+        },
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(native.domains[0]!.id).toBe('d');
     expect(fixture.writes).toEqual([]);
@@ -475,7 +486,10 @@ describe('personal state membership boundaries', () => {
   });
 
   it('rechecks MCP personal permission before loading an operation replay', async () => {
-    for (const fixture of [store(null), store('owner', 'archived')]) {
+    for (const [fixture, canRead] of [
+      [store(null), false],
+      [store('owner', 'archived'), true],
+    ] as const) {
       const mcp = new McpPersonalService(fixture.personal);
       await expect(
         mcp.apply(
@@ -491,7 +505,7 @@ describe('personal state membership boundaries', () => {
         ),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(fixture.queries.some((query) => query.table === projectPersonalOperations)).toBe(
-        false,
+        canRead,
       );
       expect(fixture.writes).toEqual([]);
     }
