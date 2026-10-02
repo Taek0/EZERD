@@ -52,6 +52,13 @@ import './NativeERDCanvas.css';
 import { useNativeExportBlocker } from './native-export-state.js';
 import { nativeDurableId } from './native-durable-queue.js';
 import { NativeClipboardMenu } from './native-clipboard.js';
+import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
+import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
+import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
+import { NativeDomainLines } from './native-domain-lines.js';
+import { NativeCanvasPngExport } from './NativeCanvasPngExport.js';
+import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
+import { nativeTableCanvasRows, nativeCardColor } from './native-canvas-style.js';
 import { captureNativeActorApi } from './native-actor-api.js';
 import { getNativeDurableQueue, type NativeDurableState } from './native-durable-queue.js';
 import {
@@ -67,6 +74,8 @@ type DraftRef = { key: string; revision: string };
 type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
 
 registerTranslations({
+  '복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.':
+    'Loading the recovery view. You can download its source from preserved input.',
   'Native ERD': 'Native ERD',
   '공유 캔버스': 'Shared canvas',
   '도메인 개요': 'Domain overview',
@@ -353,10 +362,6 @@ export function nativeCanvasScene(
     })
     .map((node) => {
       const table = document.tables?.find((table) => table.id === node.objectId);
-      const columns = (document.columns ?? []).filter(
-        (column) =>
-          column.tableId === table?.id && isVisibleInView(column.scope, mode, table!.scope),
-      );
       const kind = table
         ? 'table'
         : document.domains.some((domain) => domain.id === node.objectId)
@@ -369,7 +374,16 @@ export function nativeCanvasScene(
         width: size.width,
         height: Math.min(
           nodeLayoutSchema.shape.height.maxValue!,
-          Math.max(size.height, table ? 78 + columns.length * 34 : size.height),
+          Math.max(
+            size.height,
+            table
+              ? 78 +
+                  nativeTableCanvasRows(document, table, mode).reduce(
+                    (height, row) => height + row.height,
+                    0,
+                  )
+              : size.height,
+          ),
         ),
       };
     });
@@ -399,9 +413,22 @@ export function nativeCanvasScene(
           column.tableId === node.objectId && isVisibleInView(column.scope, mode, table.scope),
       );
       const index = columns.findIndex((column) => column.id === columnId);
+      const rows = nativeTableCanvasRows(document, table, mode);
       return index < 0
         ? undefined
-        : { side, ratio: Math.max(0, Math.min(1, (78 + index * 34 + 17) / node.height)) };
+        : {
+            side,
+            ratio: Math.max(
+              0,
+              Math.min(
+                1,
+                (78 +
+                  rows.slice(0, index).reduce((height, row) => height + row.height, 0) +
+                  rows[index]!.height / 2) /
+                  node.height,
+              ),
+            ),
+          };
     };
     const towardRight = target.x >= source.x;
     const sourceAnchor =
@@ -470,6 +497,7 @@ export function NativeERDCanvas({
   selectedDomainId,
   onSelect,
   onSelectDomain,
+  recoverySelection,
 }: {
   document: NativeDesignDocument;
   snapshot: ProjectDocumentState;
@@ -485,9 +513,12 @@ export function NativeERDCanvas({
   selectedDomainId?: string;
   onSelect: (tableId: string, columnId?: string) => void;
   onSelectDomain?: (domainId: string) => void;
+  recoverySelection?: NativeCanvasRecoverySelection;
 }) {
   const { t } = useI18n();
-  const [viewId, setViewId] = useState(selectedDomainId ? 'overview' : TABLES_VIEW_ID);
+  const [viewId, setViewId] = useState(
+    recoverySelection?.viewId ?? (selectedDomainId ? 'overview' : TABLES_VIEW_ID),
+  );
   const [personal, setPersonal] = useState<PersonalStateSnapshot | null>(null);
   const [personalPending, setPersonalPending] = useState<NativeCanvasPersonalPending | null>(null);
   const [personalBusy, setPersonalBusy] = useState(false);
@@ -510,6 +541,7 @@ export function NativeERDCanvas({
     if (selectedDomainId && !draftRef.current && !gesture.current) setViewId('overview');
   }, [selectedDomainId]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
   const gesture = useRef<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>(
     null,
@@ -628,10 +660,13 @@ export function NativeERDCanvas({
       ? viewId
       : TABLES_VIEW_ID;
   const isPrivate = privateView(base, effectiveView);
+  const recoveryWaiting =
+    !!recoverySelection?.viewId && viewId === recoverySelection.viewId && effectiveView !== viewId;
   const placementEditable = isPrivate ? personalEditable : editable;
   const personalReady = personalGuardAvailable() && !!personal && 'databaseRevision' in personal;
   const allBusy =
     busy ||
+    recoveryWaiting ||
     personalBusy ||
     !!personalPending ||
     privateQueueState === 'pending' ||
@@ -662,6 +697,7 @@ export function NativeERDCanvas({
       draftRef.current = null;
       return;
     }
+    if (recoveryWaiting) return;
     try {
       const loaded = loadNativeEditorDraft(userId, snapshot.project.id, inputKey);
       setDraft(loaded);
@@ -676,6 +712,7 @@ export function NativeERDCanvas({
     );
     setCamera(viewport ?? { viewId: effectiveView, x: 24, y: 24, zoom: 1 });
   }, [
+    recoveryWaiting,
     inputKey,
     userId,
     snapshot.project.id,
@@ -1120,15 +1157,21 @@ export function NativeERDCanvas({
             {drawn.relations.map(({ relation, geometry, label }) => (
               <g key={relation.id} data-relation-id={relation.id}>
                 <path d={geometry.path} markerEnd="url(#native-fk-arrow)" />
-                <text x={geometry.labelX} y={geometry.labelY}>
+                <text x={geometry.labelX} y={geometry.labelY} textAnchor="middle">
                   {label}
                 </text>
-                <title>
-                  {label}: {relation.sourceTableId} → {relation.targetTableId}
-                </title>
+                <title>{`${label}: ${relation.sourceTableId} → ${relation.targetTableId}`}</title>
               </g>
             ))}
           </svg>
+          {effectiveView === 'overview' && (
+            <NativeDomainLines
+              document={base}
+              nodes={drawn.nodes}
+              {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
+              onSelect={setSelectedDomainRelation}
+            />
+          )}
           {drawn.nodes.map((node) => {
             const table = base.tables?.find((table) => table.id === node.objectId);
             const note = base.notes.find((note) => note.id === node.objectId);
@@ -1159,9 +1202,7 @@ export function NativeERDCanvas({
                   top: node.y,
                   width: node.width,
                   height: node.height,
-                  ...(note?.color || domain?.color
-                    ? { borderColor: note?.color ?? domain?.color }
-                    : {}),
+                  borderColor: nativeCardColor(base, node.objectId),
                 }}
                 onFocus={() => setSelectedNode(node.id)}
                 onClick={(event) => {
@@ -1236,47 +1277,12 @@ export function NativeERDCanvas({
                       <small>{table.physical.namespace.name || 'public'}</small>
                     )}
                     <table>
-                      <tbody>
-                        {(base.columns ?? [])
-                          .filter(
-                            (column) =>
-                              column.tableId === table.id &&
-                              isVisibleInView(column.scope, mode, table.scope),
-                          )
-                          .map((column) => (
-                            <tr key={column.id} data-column-id={column.id}>
-                              <td>
-                                {(base.keys ?? [])
-                                  .filter(
-                                    (key) =>
-                                      key.tableId === table.id &&
-                                      key.columnIds.includes(column.id) &&
-                                      isVisibleInView(key.scope, mode, table.scope),
-                                  )
-                                  .map((key) => (key.kind === 'primary' ? 'PK' : 'UQ'))
-                                  .join(' ')}
-                              </td>
-                              <th>
-                                <button type="button" onClick={() => onSelect(table.id, column.id)}>
-                                  {mode === 'physical'
-                                    ? column.physical.name || column.logical.name
-                                    : column.logical.name || column.physical.name}
-                                </button>
-                              </th>
-                              <td
-                                title={
-                                  mode === 'physical'
-                                    ? `${nativeDefaultDisplay(column.physical.defaultValue, base)} · ${nativeGenerationDisplay(column.physical.generation, base)}`
-                                    : column.logical.definition
-                                }
-                              >
-                                {mode === 'physical'
-                                  ? nativeColumnTypeDisplay(column.physical.type, base.enums)
-                                  : column.logical.semanticType}
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
+                      <NativeCanvasTableRows
+                        document={base}
+                        table={table}
+                        mode={mode}
+                        onSelect={onSelect}
+                      />
                     </table>
                   </>
                 )}
@@ -1299,6 +1305,36 @@ export function NativeERDCanvas({
           <p className="native-erd-empty">{t('이 화면에 표시할 노드가 없습니다.')}</p>
         )}
       </div>
+      <NativeCanvasPngExport
+        snapshot={snapshot}
+        {...(userId ? { userId } : {})}
+        viewId={effectiveView}
+        mode={mode}
+        sceneFor={nativeCanvasScene}
+      />
+      <NativeDomainRelationEditor
+        document={sharedSource}
+        editable={editable}
+        {...(recoverySelection?.domainRelation
+          ? {
+              initialAction: recoverySelection.domainRelation.action,
+              ...(recoverySelection.domainRelation.id
+                ? { selectedId: recoverySelection.domainRelation.id }
+                : {}),
+            }
+          : selectedDomainRelation
+            ? { selectedId: selectedDomainRelation }
+            : {})}
+        {...(userId ? { context: { userId, snapshot, busy: allBusy || !!draft, onSave } } : {})}
+      />
+      <NativeCanvasStyleEditor
+        document={sharedSource}
+        editable={editable}
+        {...(selectedTableId ? { selectedTableId } : {})}
+        {...(selectedDomainId ? { selectedDomainId } : {})}
+        {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
+        {...(userId ? { context: { userId, snapshot, busy: allBusy || !!draft, onSave } } : {})}
+      />
       <NativeClipboardMenu
         key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
         snapshot={snapshot}
@@ -1311,7 +1347,12 @@ export function NativeERDCanvas({
           base.domains.some((domain) => domain.id === effectiveView) ? effectiveView : null
         }
       />
-      {userId && (editable || personalEditable) && (
+      {recoveryWaiting && (
+        <p role="status">
+          {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
+        </p>
+      )}
+      {userId && (editable || personalEditable) && !recoveryWaiting && (
         <NativeCanvasActions
           key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}
           document={base}
@@ -1323,6 +1364,7 @@ export function NativeERDCanvas({
           onSave={saveCanvasCommand}
           onSharedSave={onSave}
           sharedEditable={editable}
+          {...(recoverySelection?.action ? { initialSelection: recoverySelection.action } : {})}
         />
       )}
     </section>
@@ -1339,6 +1381,7 @@ function NativeCanvasActions({
   onSave,
   onSharedSave,
   sharedEditable,
+  initialSelection,
 }: {
   document: NativeDesignDocument;
   source: NativeDesignDocument;
@@ -1349,10 +1392,11 @@ function NativeCanvasActions({
   onSave: (command: NativePersonalCanvasCommand, editorDraft?: DraftRef) => Promise<boolean>;
   onSharedSave: NativeEditorSave;
   sharedEditable: boolean;
+  initialSelection?: { action: string; target: string };
 }) {
   const { t } = useI18n();
-  const [action, setAction] = useState('note');
-  const [target, setTarget] = useState('');
+  const [action, setAction] = useState(initialSelection?.action ?? 'note');
+  const [target, setTarget] = useState(initialSelection?.target ?? '');
   const [id] = useState(() => nativeDurableId());
   const isPrivate = privateView(document, viewId),
     placementView = viewFor(document, viewId);
@@ -1378,7 +1422,7 @@ function NativeCanvasActions({
     },
   };
   return (
-    <details className="native-erd-actions">
+    <details className="native-erd-actions" open={initialSelection ? true : undefined}>
       <summary>
         {t('공유 캔버스')} / {t('개인 화면')}
       </summary>

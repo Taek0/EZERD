@@ -376,10 +376,10 @@ export function removeDomain(doc: DesignDocument, id: string): DesignDocument {
     },
   };
 }
-export function upsertDomainRelation(
-  doc: DesignDocument,
+export function upsertDomainRelation<T extends CanvasDocument>(
+  doc: T,
   relation: DomainRelation,
-): DesignDocument {
+): T {
   requireObject(doc.domains.find((d) => d.id === relation.sourceDomainId));
   requireObject(doc.domains.find((d) => d.id === relation.targetDomainId));
   const exists = doc.domainRelations.some((r) => r.id === relation.id);
@@ -391,7 +391,7 @@ export function upsertDomainRelation(
       : [...doc.domainRelations, { ...relation }],
   };
 }
-export function removeDomainRelation(doc: DesignDocument, id: string): DesignDocument {
+export function removeDomainRelation<T extends CanvasDocument>(doc: T, id: string): T {
   return { ...doc, domainRelations: doc.domainRelations.filter((r) => r.id !== id) };
 }
 export function addNote<T extends CanvasDocument>(doc: T, note: Note, point: Position): T {

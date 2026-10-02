@@ -39,6 +39,11 @@ import {
   type NativeTableClipboard,
 } from './native-clipboard.js';
 import type { NativeDesignDocument } from '@ezerd/model';
+export * from './native-canvas-decoration.js';
+import {
+  nativeCanvasStyleCommandSchema,
+  nativeDomainRelationCommandSchema,
+} from './native-canvas-decoration.js';
 
 const id = z
   .string()
@@ -299,6 +304,8 @@ export function planNativeClipboardCommand(
   return plan;
 }
 export const nativeEditorCommandSchema = z.discriminatedUnion('type', [
+  nativeCanvasStyleCommandSchema,
+  ...nativeDomainRelationCommandSchema.options,
   nativeClipboardPasteCommandSchema,
   ...nativeDomainCommandSchema.options,
   ...nativeSharedCanvasCommandSchema.options,

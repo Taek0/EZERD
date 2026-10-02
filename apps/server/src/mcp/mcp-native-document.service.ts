@@ -35,6 +35,10 @@ import {
   applyNativeDomainEditorCommand,
   nativeDomainCandidateClaims,
 } from './native-editor-candidate.js';
+import {
+  applyNativeCanvasStyle,
+  applyNativeDomainRelation,
+} from './native-canvas-decoration-candidate.js';
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const applyNativeProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -56,6 +60,10 @@ export const applyNativeProjectChangesMetadataSchema = z.strictObject({
         .object({
           type: z.enum([
             ...nativeDomainCommandTypes,
+            'patch_canvas_style',
+            'add_domain_relation',
+            'patch_domain_relation',
+            'delete_domain_relation',
             'paste_native_clipboard',
             'patch_column',
             'patch_table',
@@ -135,6 +143,14 @@ export function nativeEditorCandidate(
       command.columnIds.forEach(claim);
     }
     switch (command.type) {
+      case 'patch_canvas_style':
+        candidate = applyNativeCanvasStyle(candidate, command);
+        break;
+      case 'add_domain_relation':
+      case 'patch_domain_relation':
+      case 'delete_domain_relation':
+        candidate = applyNativeDomainRelation(candidate, command);
+        break;
       case 'paste_native_clipboard': {
         const plan = planNativeClipboardCommand(candidate, command);
         if (!plan.canApply)
