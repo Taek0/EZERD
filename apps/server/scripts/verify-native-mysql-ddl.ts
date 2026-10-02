@@ -173,7 +173,19 @@ try {
       args: [{ kind: 'column', columnId: 'label' }],
     },
   };
-  advanced.columns.push(binary, json, stamp, computed);
+  const uuid = createNativeColumn(advanced.database, parent, 'uuid');
+  uuid.physical.name = 'uuid_value';
+  uuid.physical.type = {
+    kind: 'builtin',
+    database: 'mysql',
+    typeId: 'mysql:char',
+    parameters: { length: 36 },
+  };
+  uuid.physical.defaultValue = {
+    kind: 'expression',
+    expression: { kind: 'call', functionId: 'mysql:uuid', args: [] },
+  };
+  advanced.columns.push(binary, json, stamp, computed, uuid);
   const result = compileNativeDatabaseDDL(advanced);
   assert.equal(result.canExport, true, JSON.stringify(result.issues));
   execute(use(result.sql));
@@ -185,6 +197,16 @@ try {
       ),
     ).stdout.trim(),
     '00FF\t한글\t5',
+  );
+  assert.match(execute(use('SELECT uuid_value FROM advanced;')).stdout.trim(), /^[0-9a-f-]{36}$/);
+  execute(
+    use(
+      "UPDATE advanced SET stamp='2000-01-01 00:00:00.000000'; UPDATE advanced SET label='updated';",
+    ),
+  );
+  assert.equal(
+    execute(use("SELECT stamp>'2000-01-01 00:00:00',label_length FROM advanced;")).stdout.trim(),
+    '1\t7',
   );
   console.log(
     JSON.stringify({

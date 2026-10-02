@@ -9,6 +9,11 @@ import {
 import { getDatabaseProfile } from './profiles.js';
 import { literalDecision, inspectNativeLiteralToken } from './literals.js';
 import { keyEligibility } from './key-policy.js';
+import {
+  nativeBuiltinDefaultDecision,
+  nativeGenerationDecision,
+  nativeOnUpdateDecision,
+} from './option-policy.js';
 import { nativeReferenceProblems } from './reference-graph.js';
 import {
   nativeExpressionColumnIds,
@@ -482,17 +487,19 @@ function collect(
         );
       if (options.onUpdate) {
         expression(options.onUpdate, column.id, `${path}/options/onUpdate`, table.id, 'default');
-        if (
-          !['mysql:datetime', 'mysql:timestamp'].includes(definition?.id ?? '') ||
-          options.onUpdate.kind !== 'call' ||
-          options.onUpdate.functionId !== 'mysql:current_timestamp'
-        )
+        const decision = nativeOnUpdateDecision(
+          context,
+          type,
+          options.onUpdate,
+          column.physical.generation,
+        );
+        if (!decision.allowed)
           add(
-            'column.on-update-not-supported',
+            decision.code!,
             column.id,
             `${path}/options/onUpdate`,
             [type, options.onUpdate],
-            'unsupported',
+            decision.category,
           );
       }
     }
@@ -500,6 +507,20 @@ function collect(
       (key) => key.kind === 'primary' && key.columnIds.includes(column.id),
     );
     const generation = column.physical.generation;
+    if (generation.kind === 'identity' && generation.sequence) {
+      const decision = nativeGenerationDecision(context, type, generation, {
+        nullable: column.physical.nullable,
+        hasDefault: !none(column),
+      });
+      if (!decision.allowed)
+        add(
+          decision.code!,
+          column.id,
+          `${path}/generation/sequence`,
+          [type, generation, column.physical.nullable, !none(column)],
+          decision.category,
+        );
+    }
     if (generation.kind !== 'none') {
       if (generation.database !== context.kind)
         add(
@@ -646,6 +667,24 @@ function collect(
       }
       if (defaultValue.expression.kind === 'call') {
         const functionName = defaultValue.expression.functionId.split(':')[1];
+        if (
+          ['current_timestamp', 'current_date', 'current_time', 'gen_random_uuid', 'uuid'].includes(
+            functionName!,
+          )
+        ) {
+          const decision = nativeBuiltinDefaultDecision(context, type, defaultValue.expression, {
+            generation: column.physical.generation,
+            strict: table.physical.options.database === 'sqlite' && table.physical.options.strict,
+          });
+          if (!decision.allowed)
+            add(
+              decision.code!,
+              column.id,
+              `${path}/defaultValue`,
+              [type, defaultValue, column.physical.generation, table.physical.options],
+              decision.category,
+            );
+        }
         const typeName = definition?.sqlName;
         if (
           (functionName === 'gen_random_uuid' && typeName !== 'uuid') ||

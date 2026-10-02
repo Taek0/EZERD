@@ -14,3 +14,4 @@ export * from './editing.js';
 export * from './ddl.js';
 export * from './literals.js';
 export * from './key-policy.js';
+export * from './option-policy.js';
