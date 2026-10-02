@@ -5,6 +5,7 @@ import {
   nativeEditorCommandSchema,
   nativeStoredDesignDocumentSchema,
   type NativeEditorCommand,
+  nativeDomainCommandTypes,
 } from '@ezerd/contracts';
 import {
   addNativeColumn,
@@ -29,6 +30,10 @@ import {
 } from '@ezerd/model';
 import { NativeSyncService } from '../sync/native-sync.service.js';
 import type { AuthenticatedUser } from '../identity/session.js';
+import {
+  applyNativeDomainEditorCommand,
+  nativeDomainCandidateClaims,
+} from './native-editor-candidate.js';
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const applyNativeProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -49,6 +54,7 @@ export const applyNativeProjectChangesMetadataSchema = z.strictObject({
       z
         .object({
           type: z.enum([
+            ...nativeDomainCommandTypes,
             'patch_column',
             'patch_table',
             'add_column',
@@ -95,22 +101,8 @@ export function nativeEditorCandidate(
   commands: NativeEditorCommand[],
 ): NativeDesignDocument {
   let candidate = structuredClone(document);
-  const occupied = new Set(
-    [
-      ...document.domains,
-      ...document.domainRelations,
-      ...document.notes,
-      ...(document.views ?? []),
-      ...(document.tables ?? []),
-      ...(document.columns ?? []),
-      ...(document.keys ?? []),
-      ...(document.tableRelations ?? []),
-      ...(document.enums ?? []),
-      ...(document.indexes ?? []),
-      ...(document.checks ?? []),
-      ...document.layout.nodes,
-    ].map((item) => item.id),
-  );
+  const claims = nativeDomainCandidateClaims(document);
+  const occupied = claims.occupiedIds;
   const claim = (id: string) => {
     if (occupied.has(id)) throw new Error('document.duplicate-identities');
     occupied.add(id);
@@ -127,14 +119,26 @@ export function nativeEditorCandidate(
   };
   for (const raw of commands) {
     const command = nativeEditorCommandSchema.parse(raw);
+    const previousNodeIds = new Set(candidate.layout.nodes.map((node) => node.id));
     // Deleting earlier in this batch is not an ordinary-write identity resurrection license.
-    if ('value' in command && 'id' in command.value && command.type !== 'upsert_note')
+    if (
+      'value' in command &&
+      'id' in command.value &&
+      command.type !== 'upsert_note' &&
+      command.type !== 'add_domain'
+    )
       claim(command.value.id);
     if (command.type === 'create_foreign_key') {
       claim(command.relationId);
       command.columnIds.forEach(claim);
     }
     switch (command.type) {
+      case 'add_domain':
+      case 'patch_domain':
+      case 'delete_domain':
+      case 'move_table_domain':
+        candidate = applyNativeDomainEditorCommand(candidate, command, claims);
+        break;
       case 'add_table_reference': {
         sharedView(command.viewId);
         if (command.nodeId) claim(command.nodeId);
@@ -276,6 +280,15 @@ export function nativeEditorCandidate(
         candidate = deletion.document;
         break;
       }
+    }
+    for (const node of candidate.layout.nodes) {
+      if (
+        previousNodeIds.has(node.id) ||
+        command.type === 'add_domain' ||
+        (command.type === 'add_table_reference' && command.nodeId === node.id)
+      )
+        continue;
+      claim(node.id);
     }
   }
   const legacy = inspectNativeLegacyChanges(candidate, document)[0];

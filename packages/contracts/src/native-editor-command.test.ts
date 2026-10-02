@@ -4,9 +4,51 @@ import { nativeEditorCommandSchema, nativePendingSaveSchema } from './native-edi
 import {
   nativeSharedCanvasCommandSchema,
   nativePersonalCanvasCommandSchema,
+  nativeDomainCommandSchema,
 } from './native-editor-command.js';
 
 describe('native structured editor commands', () => {
+  it('requires explicit domain removal policies and strict metadata/grouping-only patches', () => {
+    for (const command of [
+      {
+        type: 'add_domain',
+        value: { id: 'd', name: 'Domain', description: '' },
+        placement: { x: 0, y: 20 },
+        nodeId: 'node-d',
+      },
+      { type: 'patch_domain', id: 'd', patch: { color: null } },
+      { type: 'move_table_domain', tableId: 't', targetDomainId: null },
+      { type: 'delete_domain', id: 'd', policy: { kind: 'moveTables', targetDomainId: 'other' } },
+      {
+        type: 'delete_domain',
+        id: 'd',
+        policy: { kind: 'deleteTables', cascadeGeneratedColumns: true },
+      },
+    ]) {
+      expect(nativeDomainCommandSchema.parse(command)).toEqual(command);
+      expect(nativeEditorCommandSchema.parse(command)).toEqual(command);
+      expect(nativePersonalCanvasCommandSchema.safeParse(command).success).toBe(false);
+    }
+    for (const command of [
+      { type: 'delete_domain', id: 'd' },
+      { type: 'delete_domain', id: 'd', policy: { kind: 'moveTables' } },
+      {
+        type: 'delete_domain',
+        id: 'd',
+        policy: { kind: 'rejectNonempty', cascadeGeneratedColumns: true },
+      },
+      { type: 'patch_domain', id: 'd', patch: { id: 'new' } },
+      { type: 'patch_domain', id: 'd', patch: { physical: { namespace: 'public' } } },
+      { type: 'patch_domain', id: 'd', patch: {} },
+      { type: 'move_table_domain', tableId: 't', targetDomainId: ' padded ' },
+      {
+        type: 'add_domain',
+        value: { id: 'd', name: 'D', description: '', columns: [] },
+        placement: { x: 0, y: 0 },
+      },
+    ])
+      expect(nativeDomainCommandSchema.safeParse(command).success).toBe(false);
+  });
   it('bounds native canvas IDs/layouts and separates personal camera/view commands', () => {
     const command = {
       type: 'update_node_layout',

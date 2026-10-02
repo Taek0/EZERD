@@ -1942,6 +1942,60 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         }
       },
     );
+    it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+      'persists %s native domain lifecycle without rewriting legacy physical data',
+      async (kind) => {
+        const id = await createProject(kind),
+          native = migrateDesignDocumentV1(legacyDocument(), defaultDatabaseContext(kind)).document;
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(native),
+        ]);
+        const apply = async (commands: unknown[]) => {
+          const head = await stored(id);
+          return request(`/projects/${id}/native-sync/commands`, 'POST', {
+            operationId: randomUUID(),
+            groupId: randomUUID(),
+            clientId: randomUUID(),
+            expectedVersion: head.version,
+            expectedSequence: head.sync_sequence,
+            expectedDatabaseRevision: head.database_revision,
+            includeDocument: true,
+            commands,
+          });
+        };
+        const added = await apply(
+          ['a', 'b'].map((domainId) => ({
+            type: 'add_domain',
+            value: { id: domainId, name: domainId, description: '' },
+            placement: { x: 10, y: 20 },
+          })),
+        );
+        expect(added.status, JSON.stringify(added.data)).toBe(201);
+        expect(added.data.status).toBe('accepted');
+        const moved = await apply([
+          { type: 'move_table_domain', tableId: 't', targetDomainId: 'a' },
+        ]);
+        expect(moved.data.status, JSON.stringify(moved.data)).toBe('accepted');
+        expect((await stored(id)).document.columns).toEqual(native.columns);
+        expect((await stored(id)).document.tables[0].physical).toEqual(native.tables![0]!.physical);
+        const before = await stored(id);
+        expect(
+          (await apply([{ type: 'delete_domain', id: 'a', policy: { kind: 'rejectNonempty' } }]))
+            .status,
+        ).toBe(400);
+        expect(await stored(id)).toEqual(before);
+        const deleted = await apply([
+          { type: 'delete_domain', id: 'a', policy: { kind: 'moveTables', targetDomainId: 'b' } },
+        ]);
+        expect(deleted.data.status, JSON.stringify(deleted.data)).toBe('accepted');
+        const saved = await stored(id);
+        expect(saved.document.domains.map((domain: { id: string }) => domain.id)).toEqual(['b']);
+        expect(saved.document.tables[0].domainId).toBe('b');
+        expect(saved.document.columns).toEqual(native.columns);
+        expect(saved.document.tables[0].physical).toEqual(native.tables![0]!.physical);
+      },
+    );
     it('keeps a native DB mismatch explicit instead of interpreting it in the project dialect', async () => {
       const id = await createProject('mysql');
       const source = migrateDesignDocumentV1(

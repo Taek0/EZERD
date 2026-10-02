@@ -14,6 +14,7 @@ import {
   type Note,
   type RelationLayout,
   type CombinedView,
+  type Domain,
 } from '@ezerd/model';
 import {
   nativeStoredColumnSchema,
@@ -27,6 +28,7 @@ import {
   viewportSchema,
   combinedViewSchema,
   personalStateSchema,
+  domainSchema,
 } from './workspace.js';
 
 const id = z
@@ -79,6 +81,53 @@ const canvasId = z
   .min(1)
   .max(160)
   .refine((value) => value === value.trim());
+export const nativeDomainCommandTypes = [
+  'add_domain',
+  'patch_domain',
+  'delete_domain',
+  'move_table_domain',
+] as const;
+const domainPatch = z
+  .strictObject({
+    name: domainSchema.shape.name.optional(),
+    description: domainSchema.shape.description.optional(),
+    color: domainSchema.shape.color.unwrap().nullable().optional(),
+  })
+  .refine((value) => Object.values(value).some((field) => field !== undefined))
+  .transform((value) => value as { name?: string; description?: string; color?: string | null });
+export const nativeDomainRemovalPolicySchema = z
+  .discriminatedUnion('kind', [
+    z.strictObject({ kind: z.literal('rejectNonempty') }),
+    z.strictObject({ kind: z.literal('moveTables'), targetDomainId: id.nullable() }),
+    z.strictObject({
+      kind: z.literal('deleteTables'),
+      cascadeGeneratedColumns: z.boolean().optional(),
+    }),
+  ])
+  .transform(
+    (value) =>
+      value as
+        | { kind: 'rejectNonempty' }
+        | { kind: 'moveTables'; targetDomainId: string | null }
+        | { kind: 'deleteTables'; cascadeGeneratedColumns?: boolean },
+  );
+/** Explicit domain lifecycle policies; personal state and physical payloads are not patchable. */
+export const nativeDomainCommandSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('add_domain'),
+    value: domainSchema.extend({ id }).transform((value) => value as Domain),
+    placement,
+    nodeId: id.optional(),
+  }),
+  z.strictObject({ type: z.literal('patch_domain'), id, patch: domainPatch }),
+  z.strictObject({ type: z.literal('delete_domain'), id, policy: nativeDomainRemovalPolicySchema }),
+  z.strictObject({
+    type: z.literal('move_table_domain'),
+    tableId: id,
+    targetDomainId: id.nullable(),
+  }),
+]);
+export type NativeDomainCommand = z.output<typeof nativeDomainCommandSchema>;
 /** Private combined views and all cameras belong to personal state, never shared sync. */
 export const nativeSharedCanvasCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({
@@ -174,6 +223,7 @@ export const nativeForeignKeyPatchSchema = z
 
 /** Shape only. Current-project policy, legacy provenance and retired IDs are checked at commit. */
 export const nativeEditorCommandSchema = z.discriminatedUnion('type', [
+  ...nativeDomainCommandSchema.options,
   ...nativeSharedCanvasCommandSchema.options,
   z.strictObject({ type: z.literal('patch_column'), id, patch: nativeColumnPatchSchema }),
   z.strictObject({ type: z.literal('patch_table'), id, patch: nativeTablePatchSchema }),
