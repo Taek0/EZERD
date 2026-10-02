@@ -15,6 +15,7 @@ import {
   nativeSyncEventSchema,
   type NativeSyncOperationInput,
   type NativeSyncOperationResult,
+  type NativeSyncSnapshot,
 } from '@ezerd/contracts';
 import {
   deletionSnapshots,
@@ -29,6 +30,7 @@ import {
   syncFieldVersions,
   syncOperations,
   syncTombstones,
+  type ProjectRow,
 } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
@@ -46,8 +48,14 @@ function nativeDocument(value: unknown) {
 const resultFrom = (value: unknown) => {
   const result = nativeSyncOperationResultSchema.safeParse(value);
   if (!result.success) throw new ConflictException({ code: 'sync.protocol-mismatch' });
-  return result.data;
+  // An ACK is historical evidence: validation must not trim or rewrite the stored payload.
+  return structuredClone(value) as NativeSyncOperationResult;
 };
+type NativeTransaction = Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0];
+type ExpectedNativeHead = { version: number; sequence: number; databaseRevision: number };
+type NativeCommandPreparation = (
+  issueBaseline: (clientId: string, expected?: ExpectedNativeHead) => Promise<NativeSyncSnapshot>,
+) => Promise<unknown>;
 
 @Injectable()
 export class NativeSyncService {
@@ -62,7 +70,7 @@ export class NativeSyncService {
     fingerprint: string,
     user: AuthenticatedUser,
   ) {
-    return this.access.runProject(user.id, projectId, 'design', async (tx) => {
+    return this.access.runProject(user.id, projectId, 'read', async (tx) => {
       const [row] = await tx
         .select()
         .from(syncOperations)
@@ -79,7 +87,7 @@ export class NativeSyncService {
     projectId: string,
     clientId: string,
     user: AuthenticatedUser,
-    expected?: { version: number; sequence: number; databaseRevision: number },
+    expected?: ExpectedNativeHead,
   ) {
     return this.database.db.transaction(async (tx) => {
       await this.access.requireProject(user.id, projectId, 'design', tx);
@@ -89,43 +97,52 @@ export class NativeSyncService {
         .where(eq(projects.id, projectId))
         .for('share');
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      const database = resolveProjectDatabaseState(project);
-      if (project.status !== 'active') throw new ConflictException({ code: 'project.archived' });
-      if (
-        expected &&
-        (expected.version !== project.version ||
-          expected.sequence !== project.syncSequence ||
-          expected.databaseRevision !== database.revision)
-      )
-        throw new ConflictException({ code: 'database.context-changed' });
-      const document = sharedDocument(nativeDocument(project.document));
-      if (
-        document.database.kind !== database.kind ||
-        document.database.profileId !== database.profileId
-      )
-        throw new ConflictException({ code: 'database.context-changed' });
-      const now = new Date(),
-        baselineId = randomUUID();
-      await tx.insert(syncClientBaselines).values({
-        projectId,
-        clientId,
-        userId: user.id,
-        baselineId,
-        lastSequence: project.syncSequence,
-        databaseRevision: database.revision,
-        lastSuccessfulSyncAt: now,
-        document: sql`${JSON.stringify(document)}::jsonb`,
-      });
-      return nativeSyncSnapshotSchema.parse({
-        protocolVersion: 2,
-        projectVersion: project.version,
-        sequence: project.syncSequence,
-        baselineId,
-        baselineIssuedAt: now.toISOString(),
-        database: { kind: database.kind, profileId: database.profileId },
-        databaseRevision: database.revision,
-        document,
-      });
+      return this.issueBaseline(tx, project, clientId, user, expected);
+    });
+  }
+  private async issueBaseline(
+    tx: NativeTransaction,
+    project: ProjectRow,
+    clientId: string,
+    user: AuthenticatedUser,
+    expected?: ExpectedNativeHead,
+  ): Promise<NativeSyncSnapshot> {
+    const database = resolveProjectDatabaseState(project);
+    if (project.status !== 'active') throw new ConflictException({ code: 'project.archived' });
+    if (
+      expected &&
+      (expected.version !== project.version ||
+        expected.sequence !== project.syncSequence ||
+        expected.databaseRevision !== database.revision)
+    )
+      throw new ConflictException({ code: 'database.context-changed' });
+    const document = sharedDocument(nativeDocument(project.document));
+    if (
+      document.database.kind !== database.kind ||
+      document.database.profileId !== database.profileId
+    )
+      throw new ConflictException({ code: 'database.context-changed' });
+    const now = new Date(),
+      baselineId = randomUUID();
+    await tx.insert(syncClientBaselines).values({
+      projectId: project.id,
+      clientId,
+      userId: user.id,
+      baselineId,
+      lastSequence: project.syncSequence,
+      databaseRevision: database.revision,
+      lastSuccessfulSyncAt: now,
+      document: sql`${JSON.stringify(document)}::jsonb`,
+    });
+    return nativeSyncSnapshotSchema.parse({
+      protocolVersion: 2,
+      projectVersion: project.version,
+      sequence: project.syncSequence,
+      baselineId,
+      baselineIssuedAt: now.toISOString(),
+      database: { kind: database.kind, profileId: database.profileId },
+      databaseRevision: database.revision,
+      document,
     });
   }
   async apply(
@@ -133,6 +150,7 @@ export class NativeSyncService {
     raw: unknown,
     user: AuthenticatedUser,
     requestHash?: string,
+    prepareCommand?: NativeCommandPreparation,
   ): Promise<NativeSyncOperationResult> {
     const identity = nativeSyncOperationInputSchema.shape.operationId.safeParse(
       raw && typeof raw === 'object' && !Array.isArray(raw)
@@ -143,7 +161,9 @@ export class NativeSyncService {
     const fingerprint =
       requestHash ?? createHash('sha256').update(requestFingerprint(raw)).digest('hex');
     const outcome = await this.database.db.transaction(async (tx) => {
-      await this.access.requireProject(user.id, projectId, 'design', tx);
+      // Retained read access permits an immutable replay even after downgrade/archive.
+      // Keep the transaction writable for row locking and permission checks on fresh writes.
+      await this.access.requireProject(user.id, projectId, 'read', tx);
       const replay = async () => {
         const [row] = await tx
           .select()
@@ -169,9 +189,19 @@ export class NativeSyncService {
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
       const lockedReplay = await replay();
       if (lockedReplay) return { result: lockedReplay };
-      const parsed = nativeSyncOperationInputSchema.safeParse(raw);
+      await this.access.requireProject(user.id, projectId, 'design', tx);
+      // MCP validation/candidate preparation and baseline issuance share this locked context.
+      // No command validation or new baseline occurs before both replay checks.
+      const operation = prepareCommand
+        ? await prepareCommand((clientId, expected) =>
+            this.issueBaseline(tx, project, clientId, user, expected),
+          )
+        : raw;
+      const parsed = nativeSyncOperationInputSchema.safeParse(operation);
       if (!parsed.success) throw new BadRequestException({ code: 'sync.input-invalid' });
       const input: NativeSyncOperationInput = parsed.data;
+      if (input.operationId !== identity.data)
+        throw new BadRequestException({ code: 'sync.input-invalid' });
       const database = resolveProjectDatabaseState(project);
       // The project/current raw payload remains the authority for previous errors and legacy origins.
       const [baseline] = await tx
@@ -190,7 +220,7 @@ export class NativeSyncService {
         .from(syncFieldVersions)
         .where(eq(syncFieldVersions.projectId, projectId));
       const prepared = prepareNativeSyncCandidate(
-        raw,
+        operation,
         {
           id: project.id,
           status: project.status,

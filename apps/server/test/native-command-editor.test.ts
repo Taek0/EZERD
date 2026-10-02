@@ -237,9 +237,8 @@ describe('native editor candidate and MCP ordering', () => {
     const id = '00000000-0000-4000-8000-000000000001';
     const result = { status: 'accepted', document: fixture() };
     const sync = {
-      findReplay: vi.fn().mockResolvedValue(result),
       baseline: vi.fn(),
-      apply: vi.fn(),
+      apply: vi.fn().mockResolvedValue(result),
     };
     const service = new McpNativeDocumentService(sync as unknown as NativeSyncService);
     expect(
@@ -254,7 +253,13 @@ describe('native editor candidate and MCP ordering', () => {
       ),
     ).toEqual(result);
     expect(sync.baseline).not.toHaveBeenCalled();
-    expect(sync.apply).not.toHaveBeenCalled();
+    expect(sync.apply).toHaveBeenCalledWith(
+      id,
+      { operationId: id },
+      { id },
+      expect.any(String),
+      expect.any(Function),
+    );
   });
   it('passes all optimistic expectations and the complete candidate to locked sync', async () => {
     const doc = fixture(),
@@ -267,10 +272,24 @@ describe('native editor candidate and MCP ordering', () => {
       sequence: 11,
       baselineIssuedAt: '2026-10-02T00:00:00Z',
     };
+    const issueBaseline = vi.fn().mockResolvedValue(baseline);
+    type Preparation = NonNullable<Parameters<NativeSyncService['apply']>[4]>;
+    let prepared: Awaited<ReturnType<Preparation>> | undefined;
     const sync = {
-      findReplay: vi.fn(),
-      baseline: vi.fn().mockResolvedValue(baseline),
-      apply: vi.fn().mockResolvedValue({ status: 'accepted' }),
+      apply: vi
+        .fn()
+        .mockImplementation(
+          async (
+            _project: string,
+            _raw: unknown,
+            _user: AuthenticatedUser,
+            _hash: string,
+            prepare: Preparation,
+          ) => {
+            prepared = await prepare(issueBaseline);
+            return { status: 'accepted' };
+          },
+        ),
     };
     const service = new McpNativeDocumentService(sync as unknown as NativeSyncService);
     const user = { id } as AuthenticatedUser;
@@ -287,13 +306,12 @@ describe('native editor candidate and MCP ordering', () => {
       },
       user,
     );
-    expect(sync.baseline).toHaveBeenCalledWith(id, id, user, {
+    expect(issueBaseline).toHaveBeenCalledWith(id, {
       version: 7,
       sequence: 11,
       databaseRevision: 4,
     });
-    expect(sync.apply).toHaveBeenCalledWith(
-      id,
+    expect(prepared).toEqual(
       expect.objectContaining({
         baselineDocument: doc,
         document: expect.objectContaining({
@@ -308,8 +326,13 @@ describe('native editor candidate and MCP ordering', () => {
         }),
         databaseRevision: 4,
       }),
+    );
+    expect(sync.apply).toHaveBeenCalledWith(
+      id,
+      { operationId: id },
       user,
       expect.any(String),
+      expect.any(Function),
     );
   });
 });

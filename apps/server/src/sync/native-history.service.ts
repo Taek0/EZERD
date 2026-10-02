@@ -274,7 +274,10 @@ export class NativeHistoryService {
           output.data.sourceOperationId !== sourceOperationId
         )
           throw new ConflictException({ code: 'sync.replay-mismatch' });
-        return output.data;
+        return structuredClone({
+          ...(metadata?.nativeHistory as object),
+          result: row.result,
+        }) as NativeHistoryCommandResult;
       };
       const old = await replay();
       if (old) return { output: old };

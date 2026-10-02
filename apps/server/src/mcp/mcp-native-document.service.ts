@@ -317,53 +317,50 @@ export class McpNativeDocumentService {
       const { document: _document, ...ack } = result;
       return ack;
     };
-    const replay = await this.sync.findReplay(
-      identity.data.projectId,
-      identity.data.operationId,
-      hash,
-      user,
-    );
-    if (replay) return finish(replay);
-    const parsed = applyNativeProjectChangesSchema.safeParse(raw);
-    if (!parsed.success) throw new BadRequestException({ code: 'native.command-invalid' });
-    const input = parsed.data;
-    const baseline = await this.sync.baseline(input.projectId, input.clientId, user, {
-      version: input.expectedVersion,
-      sequence: input.expectedSequence,
-      databaseRevision: input.expectedDatabaseRevision,
-    });
-    let candidate: NativeDesignDocument;
-    try {
-      candidate = nativeEditorCandidate(baseline.document, input.commands);
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      throw new BadRequestException({
-        code: error instanceof Error ? error.message : 'native.command-invalid',
-      });
-    }
-    const changes = deriveOperationChanges(baseline.document, candidate);
-    if (!changes.length) throw new BadRequestException({ code: 'sync.no-changes' });
     return finish(
       await this.sync.apply(
-        input.projectId,
-        {
-          protocolVersion: 2,
-          database: baseline.database,
-          databaseRevision: baseline.databaseRevision,
-          operationId: input.operationId,
-          groupId: input.groupId,
-          clientId: input.clientId,
-          baselineId: baseline.baselineId,
-          baseSequence: baseline.sequence,
-          baselineIssuedAt: baseline.baselineIssuedAt,
-          kind: 'online',
-          dependencyPaths: [],
-          baselineDocument: baseline.document,
-          document: candidate,
-          changes,
-        },
+        identity.data.projectId,
+        { operationId: identity.data.operationId },
         user,
         hash,
+        async (issueBaseline) => {
+          // Runs only after read/replay, the project row lock/replay and fresh design access.
+          const parsed = applyNativeProjectChangesSchema.safeParse(raw);
+          if (!parsed.success) throw new BadRequestException({ code: 'native.command-invalid' });
+          const input = parsed.data;
+          const baseline = await issueBaseline(input.clientId, {
+            version: input.expectedVersion,
+            sequence: input.expectedSequence,
+            databaseRevision: input.expectedDatabaseRevision,
+          });
+          let candidate: NativeDesignDocument;
+          try {
+            candidate = nativeEditorCandidate(baseline.document, input.commands);
+          } catch (error) {
+            if (error instanceof BadRequestException) throw error;
+            throw new BadRequestException({
+              code: error instanceof Error ? error.message : 'native.command-invalid',
+            });
+          }
+          const changes = deriveOperationChanges(baseline.document, candidate);
+          if (!changes.length) throw new BadRequestException({ code: 'sync.no-changes' });
+          return {
+            protocolVersion: 2,
+            database: baseline.database,
+            databaseRevision: baseline.databaseRevision,
+            operationId: input.operationId,
+            groupId: input.groupId,
+            clientId: input.clientId,
+            baselineId: baseline.baselineId,
+            baseSequence: baseline.sequence,
+            baselineIssuedAt: baseline.baselineIssuedAt,
+            kind: 'online',
+            dependencyPaths: [],
+            baselineDocument: baseline.document,
+            document: candidate,
+            changes,
+          };
+        },
       ),
     );
   }

@@ -415,6 +415,27 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       },
     );
 
+    it('preserves validated raw cached compensation ACK actor fields', async () => {
+      const id = await seed(),
+        source = await acceptedEdit(id, (doc) => {
+          doc.tables![0]!.logical.name = 'Edited';
+        });
+      const input = await commandInput(id),
+        accepted = await compensate(id, source.input.operationId, 'undo', input);
+      expect(accepted.status).toBe(201);
+      const raw = {
+        ...accepted.data.result,
+        actor: { ...accepted.data.result.actor, username: ' historical actor ' },
+      };
+      await pool.query(
+        'UPDATE sync_operations SET result=$3::jsonb WHERE project_id=$1 AND operation_id=$2',
+        [id, input.operationId, JSON.stringify(raw)],
+      );
+      const before = await state(id),
+        replay = await compensate(id, source.input.operationId, 'undo', input);
+      expect(replay.data).toEqual({ ...accepted.data, result: raw });
+      expect(await state(id)).toEqual(before);
+    });
     it('replays the exact accepted result before archived/context/baseline/source checks, including concurrent duplicates', async () => {
       const id = await seed(),
         source = await acceptedEdit(id, (doc) => {

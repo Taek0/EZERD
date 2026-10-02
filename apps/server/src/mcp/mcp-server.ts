@@ -85,6 +85,15 @@ import {
 
 const idSchema = z.uuid();
 const TIMEOUT_MS = 60_000;
+/** Historical ACKs are validated without rewriting their stored actor/document strings. */
+function nativeOperationResult(raw: unknown) {
+  nativeSyncOperationResultSchema.parse(raw);
+  return structuredClone(raw) as z.infer<typeof nativeSyncOperationResultSchema>;
+}
+function nativeHistoryResult(raw: unknown) {
+  nativeHistoryCommandResultSchema.parse(raw);
+  return structuredClone(raw) as z.infer<typeof nativeHistoryCommandResultSchema>;
+}
 const projectStateSchema = projectDocumentSchema.extend({
   syncSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });
@@ -626,9 +635,7 @@ export class McpServerFactory {
       },
       ({ projectId, ...input }) =>
         invoke('upgrade_project_document', async () =>
-          nativeSyncOperationResultSchema.parse(
-            await this.nativeUpgrade.upgrade(projectId, input, user),
-          ),
+          nativeOperationResult(await this.nativeUpgrade.upgrade(projectId, input, user)),
         ),
     );
     server.registerTool(
@@ -648,7 +655,7 @@ export class McpServerFactory {
       },
       (input) =>
         invoke('apply_native_project_changes', async () =>
-          nativeSyncOperationResultSchema.parse(await this.nativeDocuments.apply(input, user)),
+          nativeOperationResult(await this.nativeDocuments.apply(input, user)),
         ),
     );
     server.registerTool(
@@ -807,7 +814,7 @@ export class McpServerFactory {
         },
         ({ projectId, sourceOperationId, request }) =>
           invoke(name, async () =>
-            nativeHistoryCommandResultSchema.parse(
+            nativeHistoryResult(
               await this.nativeHistory.compensate(
                 projectId,
                 sourceOperationId,
