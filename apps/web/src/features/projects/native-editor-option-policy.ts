@@ -2,6 +2,7 @@ import {
   inspectNativeLiteralToken,
   keyEligibility,
   literalDecision,
+  effectiveMysqlCharacters,
   nativeBuiltinFunctionIds,
   nativeBuiltinDefaultDecision,
   nativeOnUpdateDecision,
@@ -68,6 +69,11 @@ export function nativeLiteralPolicy(
 ): NativeOptionDecision {
   const type = column.physical.type;
   const decision = literalDecision(document.database, type, value, {
+    ...(document.database.kind === 'mysql' && {
+      charset:
+        effectiveMysqlCharacters(table.physical.options, column.physical.options).charset ??
+        '__unverified__',
+    }),
     nullable,
     primary: (document.keys ?? []).some(
       (key) =>
@@ -225,7 +231,7 @@ export function nativeKeyColumnPolicies(
       const eligibility = keyEligibility(document.database, column.physical.type, {
         generation: column.physical.generation,
         ...(options.database === 'mysql' && tableOptions.database === 'mysql'
-          ? { charset: options.charset ?? tableOptions.charset ?? 'utf8mb4' }
+          ? { charset: effectiveMysqlCharacters(tableOptions, options).charset ?? '__unverified__' }
           : {}),
       });
       const visible = table.scope !== 'logical' && column.scope !== 'logical';

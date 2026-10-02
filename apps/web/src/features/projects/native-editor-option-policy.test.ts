@@ -85,6 +85,36 @@ function fixture(kind: 'postgresql' | 'mysql' | 'sqlite' = 'postgresql') {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe('native default and key UI policies without coverage promotion', () => {
+  it('resolves MySQL collation-only charset for exact defaults and key sizes', () => {
+    const { document, table, column } = fixture('mysql');
+    column.physical.type = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:varchar',
+      parameters: { length: 1 },
+    };
+    column.physical.options = { database: 'mysql', collation: 'ascii_bin' };
+    expect(
+      nativeLiteralPolicy(document, table, column, {
+        kind: 'literal',
+        literalType: 'string',
+        value: 'é',
+      }),
+    ).toMatchObject({ engineAllowed: false, code: 'default.charset-value-invalid' });
+    column.physical.options = { database: 'mysql', charset: 'binary' };
+    expect(
+      nativeLiteralPolicy(document, table, column, {
+        kind: 'literal',
+        literalType: 'string',
+        value: 'é',
+      }),
+    ).toMatchObject({ engineAllowed: false, code: 'default.length-exceeded' });
+    column.physical.type.parameters = { length: 1000 };
+    column.physical.options = { database: 'mysql', collation: 'latin1_bin' };
+    expect(nativeKeyColumnPolicies(document, table, 'unique')[0]!.engineAllowed).toBe(true);
+    column.physical.options = { database: 'mysql', charset: 'utf8mb4' };
+    expect(nativeKeyColumnPolicies(document, table, 'unique')[0]!.code).toBe('key.length-exceeded');
+  });
   it.each([
     [
       { kind: 'builtin', database: 'postgresql', typeId: 'postgresql:integer', parameters: {} },
