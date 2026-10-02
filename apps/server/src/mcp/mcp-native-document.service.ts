@@ -34,6 +34,8 @@ import type { AuthenticatedUser } from '../identity/session.js';
 import {
   applyNativeDomainEditorCommand,
   nativeDomainCandidateClaims,
+  patchNativeConstraintKey,
+  patchNativeConstraintForeignKey,
 } from './native-editor-candidate.js';
 import {
   applyNativeCanvasStyle,
@@ -255,7 +257,7 @@ export function nativeEditorCandidate(
         candidate.keys = [...(candidate.keys ?? []), command.value];
         break;
       case 'patch_key':
-        candidate.keys = patchObject(candidate.keys, command.id, command.patch);
+        candidate = patchNativeConstraintKey(candidate, command.id, command.patch);
         break;
       case 'add_index':
         candidate.indexes = [...(candidate.indexes ?? []), command.value];
@@ -279,17 +281,7 @@ export function nativeEditorCandidate(
         candidate.tableRelations = [...(candidate.tableRelations ?? []), command.value];
         break;
       case 'patch_foreign_key': {
-        const current = candidate.tableRelations?.find((item) => item.id === command.id);
-        if (!current) throw new Error('document.object-not-found');
-        if (command.patch.physical && !current.physical)
-          throw new Error('foreign-key.physical-key-required');
-        candidate.tableRelations = patchObject(candidate.tableRelations, command.id, {
-          ...command.patch,
-          logical: { ...current.logical, ...command.patch.logical },
-          physical: command.patch.physical
-            ? { ...current.physical!, ...command.patch.physical }
-            : current.physical,
-        });
+        candidate = patchNativeConstraintForeignKey(candidate, command.id, command.patch);
         break;
       }
       case 'create_foreign_key':

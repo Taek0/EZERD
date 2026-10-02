@@ -198,11 +198,25 @@ export const nativeCanvasPersonalPendingSchema = z.strictObject({
   editorDraft: z.strictObject({ key: z.string().min(1).max(320), revision: z.uuid() }).optional(),
 });
 export type NativeCanvasPersonalPending = z.output<typeof nativeCanvasPersonalPendingSchema>;
+export type NativeKeyPatch = Partial<Omit<NativeTableKey, 'id' | 'tableId' | 'deferrable'>> & {
+  deferrable?: NonNullable<NativeTableKey['deferrable']> | null;
+};
+function rejectExplicitDeferrableUndefined(value: { deferrable?: unknown }, ctx: z.RefinementCtx) {
+  if (Object.hasOwn(value, 'deferrable') && value.deferrable === undefined)
+    ctx.addIssue({
+      code: 'custom',
+      path: ['deferrable'],
+      message: 'deferrable.explicit-undefined',
+    });
+}
+/** Omission preserves the field; explicit null removes it. Undefined is not a removal token. */
 export const nativeKeyPatchSchema = key
   .omit({ id: true, tableId: true })
   .partial()
+  .extend({ deferrable: key.shape.deferrable.unwrap().nullable().optional() })
   .strict()
-  .transform((value) => value as Partial<Omit<NativeTableKey, 'id' | 'tableId'>>);
+  .superRefine(rejectExplicitDeferrableUndefined)
+  .transform((value) => value as NativeKeyPatch);
 export const nativeIndexPatchSchema = index
   .omit({ id: true, tableId: true })
   .partial()
@@ -218,22 +232,21 @@ export const nativeEnumPatchSchema = enumeration
   .partial()
   .strict()
   .transform((value) => value as Partial<Omit<ProjectEnum, 'id'>>);
+export interface NativeForeignKeyPatch {
+  scope?: NativeTableRelation['scope'];
+  logical?: Partial<NativeTableRelation['logical']>;
+  physical?: Partial<NonNullable<NativeTableRelation['physical']>>;
+  deferrable?: NonNullable<NativeTableRelation['deferrable']> | null;
+}
 export const nativeForeignKeyPatchSchema = z
   .strictObject({
     scope: relation.shape.scope.optional(),
     logical: relation.shape.logical.partial().strict().optional(),
     physical: relation.shape.physical.unwrap().partial().strict().optional(),
-    deferrable: relation.shape.deferrable,
+    deferrable: relation.shape.deferrable.unwrap().nullable().optional(),
   })
-  .transform(
-    (value) =>
-      value as {
-        scope?: NativeTableRelation['scope'];
-        logical?: Partial<NativeTableRelation['logical']>;
-        physical?: Partial<NonNullable<NativeTableRelation['physical']>>;
-        deferrable?: NonNullable<NativeTableRelation['deferrable']>;
-      },
-  );
+  .superRefine(rejectExplicitDeferrableUndefined)
+  .transform((value) => value as NativeForeignKeyPatch);
 
 /** Shape only. Current-project policy, legacy provenance and retired IDs are checked at commit. */
 export function nativeClipboardObjectIds(file: NativeTableClipboard): string[] {
