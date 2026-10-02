@@ -30,3 +30,7 @@ export * from './postgres-types.js';
 export * from './database/index.js';
 export { nativeReferenceProblems } from './database/reference-graph.js';
 export { planNativeDatabaseConversion } from './database/conversion.js';
+export type {
+  NativeDatabaseConversionMapping,
+  NativeDatabaseConversionPlan,
+} from './database/conversion.js';

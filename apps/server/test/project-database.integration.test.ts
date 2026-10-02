@@ -9,6 +9,7 @@ import {
   createNativeColumn,
   createNativeTable,
   defaultDatabaseContext,
+  planNativeDatabaseConversion,
   type DatabaseKind,
   type NativeDesignDocument,
 } from '@ezerd/model';
@@ -409,13 +410,20 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       };
       const id = await seed('postgresql', document);
       const before = await row(id);
+      const plan = planNativeDatabaseConversion(document, context, defaultDatabaseContext('mysql'));
+      expect(plan.engineVerified).toBe(true);
+      expect(plan.candidate?.columns?.[0]?.physical.type).toMatchObject({ typeId: 'mysql:int' });
+      expect(plan.canApply).toBe(false);
+      await sync.baseline(id, randomUUID(), { id: ownerId, username: 'owner', color: '#123456' });
+      const beforeCounts = await counts(id);
+      const notifications = publishDatabaseContext.mock.calls.length;
       const preview = await service.preview(viewerId, id, input());
       expect(preview).toMatchObject({
         canChange: false,
         reasonCode: 'database.conversion-required',
         issues: expect.arrayContaining([
           expect.objectContaining({
-            code: 'database.conversion-mapping-unverified',
+            code: 'database.conversion-target-not-ready',
             objectId: 'c',
           }),
         ]),
@@ -440,7 +448,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         ForbiddenException,
       );
       expect(await row(id)).toEqual(before);
-      expect(await counts(id)).toMatchObject({ operations: '0', audits: '0' });
+      expect(await counts(id)).toEqual(beforeCounts);
+      expect(publishDatabaseContext.mock.calls.length).toBe(notifications);
     });
     it('retains v1 empty physical change and native no-op compatibility', async () => {
       const legacy = createEmptyDocument();

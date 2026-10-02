@@ -8,6 +8,7 @@ import {
   createNativeColumn,
   createNativeTable,
   defaultDatabaseContext,
+  planNativeDatabaseConversion,
   type NativeDesignDocument,
 } from '@ezerd/model';
 import {
@@ -275,6 +276,53 @@ describe('ProjectDatabaseService native conversion policy and transaction orderi
     await expect(f.service.change(actorId, projectId, input)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
+  });
+  it('prepares the verified integer candidate but preserves every row/audit/baseline when real coverage is false', async () => {
+    const table = createNativeTable(pg, 't');
+    table.physical.name = 'records';
+    const column = createNativeColumn(pg, table, 'c');
+    column.physical.name = 'value';
+    column.physical.type = {
+      kind: 'builtin',
+      database: 'postgresql',
+      typeId: 'postgresql:integer',
+      parameters: {},
+    };
+    const document = { ...createEmptyNativeDocument(pg), tables: [table], columns: [column] };
+    const plan = planNativeDatabaseConversion(document, pg, defaultDatabaseContext('mysql'));
+    expect(plan.engineVerified).toBe(true);
+    expect(plan.candidate?.columns?.[0]?.physical.type).toMatchObject({ typeId: 'mysql:int' });
+    expect(plan.canApply).toBe(false);
+    const f = fixture(document),
+      before = structuredClone(f.row),
+      input = request();
+    expect(await f.service.preview(actorId, projectId, input)).toMatchObject({
+      canChange: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: 'type.not-implemented', objectId: 'c' }),
+      ]),
+    });
+    await expect(f.service.change(actorId, projectId, input)).rejects.toMatchObject({
+      response: {
+        code: 'database.conversion-required',
+        issues: expect.arrayContaining([
+          expect.objectContaining({ code: 'database.conversion-target-not-ready' }),
+        ]),
+      },
+    });
+    expect(f.row).toEqual(before);
+    expect(f.updates).toEqual([]);
+    expect(f.inserts).toEqual([]);
+    expect(f.log).not.toContain('baseline-reset');
+    expect(f.publishDatabaseContext).not.toHaveBeenCalled();
+    expect(f.log.slice(f.log.indexOf('transaction'), f.log.indexOf('transaction') + 6)).toEqual([
+      'transaction',
+      'read',
+      'lock:update',
+      'replay',
+      'manageProject',
+      'design',
+    ]);
   });
   it('requires read for replay but checks manageProject only for a new operation', async () => {
     const first = fixture();
