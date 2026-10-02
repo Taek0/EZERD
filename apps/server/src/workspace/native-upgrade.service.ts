@@ -43,7 +43,7 @@ export class NativeUpgradeService {
       .update(requestFingerprint({ command: 'upgrade_project_document', projectId, input: raw }))
       .digest('hex');
     const outcome = await this.database.db.transaction(async (tx) => {
-      await this.access.requireProject(user.id, projectId, 'design', tx);
+      await this.access.requireProject(user.id, projectId, 'read', tx);
       const replay = async () => {
         const [row] = await tx
           .select()
@@ -57,7 +57,10 @@ export class NativeUpgradeService {
         if (!row) return undefined;
         if (row.actorId !== user.id || row.fingerprint !== fingerprint)
           throw new ConflictException({ code: 'sync.replay-mismatch' });
-        return nativeSyncOperationResultSchema.parse(row.result);
+        const checked = nativeSyncOperationResultSchema.safeParse(row.result);
+        if (!checked.success) throw new ConflictException({ code: 'sync.protocol-mismatch' });
+        // Validate the historical ACK without applying current trim/default transformations.
+        return structuredClone(row.result) as typeof checked.data;
       };
       const old = await replay();
       if (old) return { result: old, changed: false };
@@ -69,6 +72,7 @@ export class NativeUpgradeService {
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
       const lockedReplay = await replay();
       if (lockedReplay) return { result: lockedReplay, changed: false };
+      await this.access.requireProject(user.id, projectId, 'design', tx);
       const parsed = upgradeProjectDocumentSchema.safeParse(raw);
       if (!parsed.success)
         throw new BadRequestException({ code: 'document.upgrade-input-invalid' });

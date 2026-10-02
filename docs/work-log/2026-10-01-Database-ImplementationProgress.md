@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- 명시 native upgrade도 기존 ACK를 read 권한으로 원문 재생하도록 보강했다. [결과](2026-10-02-Database-NativeUpgradeReplay.md). 실제 AppModule REST 9개에서 viewer/보관/read 상실·오래된 요청·손상된 ACK·동시 업그레이드를 확인했다. 신규 migration 검증과 baseline/audit 원칙은 유지한다.
+
 - native REST/명령/MCP의 read→old ACK→잠긴 current→fresh design 권한 순서를 통합했다. [결과](2026-10-02-Database-NativeReplayAccess.md). 실제 21개와 history 36개, mocked-handler/MCP 12개 통과. 역할/보관 변경 뒤 동일 응답 재생과 raw actor 보존을 확인했으며 새 쓰기는 계속 차단한다. upgrade replay도 별도 보강 중이다.
 
 - DB별 literal/키/default 함수/ON UPDATE/identity 구조화 UI가 공통 모델 정책을 소비한다. [결과](2026-10-02-Database-NativeOptionPolicyUI.md). 옵션 정책·UI 50개 targeted 통과. 병렬 durable queue의 async 소비 연결과 전체 타입/브라우저 QA는 후속이며 미검증 항목의 사용 가능 플래그는 유지한다.
