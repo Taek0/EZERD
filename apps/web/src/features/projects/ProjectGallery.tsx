@@ -1,4 +1,11 @@
-import { forwardRef, useImperativeHandle, useRef, useState, useLayoutEffect } from 'react';
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useLayoutEffect,
+  useEffect,
+} from 'react';
 import type { Project } from '../../app/App.js';
 import { Button, Dropdown } from '../../components/ui/index.js';
 import { useI18n, registerTranslations } from '../../shared/i18n/index.js';
@@ -8,6 +15,7 @@ import { WorkspaceNotice } from '../workspaces/WorkspacePanel.js';
 import type { Workspace } from '../workspaces/workspace-policy.js';
 import './project-gallery.css';
 import { sortProjects, type ProjectSort } from './project-gallery-order.js';
+import { currentTransferUserId, type ProjectTransferControl } from './project-transfer.js';
 
 registerTranslations({
   '전체 프로젝트': 'All projects',
@@ -43,6 +51,7 @@ export type GalleryHandle = { flush: () => Promise<boolean>; hasDraft: () => boo
 type Props = {
   workspace?: Workspace | undefined;
   workspaceId: string;
+  userId?: string | undefined;
   needsWorkspace?: boolean;
   onCreateWorkspace?: () => void;
   projects: Project[];
@@ -60,13 +69,37 @@ type Props = {
     patch: { name: string; databaseKind: DatabaseKind },
   ) => Promise<boolean>;
   onOpen: (id: string) => void;
-  onExport: (project: Project) => void;
+  onExport: (project: Project, control?: ProjectTransferControl) => void;
   onArchive: (project: Project) => void;
   onDelete: (project: Project) => void;
   onImported: () => void;
 };
 export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectGallery(p, ref) {
   const { t, locale } = useI18n();
+  const live = useRef(p);
+  live.current = p;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const exportControl = (project: Project): ProjectTransferControl => ({
+    scope: {
+      userId: p.userId ?? currentTransferUserId() ?? '',
+      workspaceId: p.workspaceId,
+      projectId: project.id,
+    },
+    currentScope: () =>
+      mounted.current
+        ? {
+            userId: live.current.userId ?? currentTransferUserId() ?? '',
+            workspaceId: live.current.workspaceId,
+            projectId: project.id,
+          }
+        : null,
+  });
   const [edit, setEdit] = useState<Edit | null>(null);
   const current = useRef<Edit | null>(null);
   const pending = useRef<Promise<boolean> | null>(null);
@@ -355,6 +388,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
             <ProjectImportButton
               key={p.workspaceId}
               workspaceId={p.workspaceId}
+              userId={p.userId}
               disabled={disabled}
               onImported={p.onImported}
               renderTrigger={(openImport, importDisabled) => (
@@ -440,7 +474,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
                     {
                       id: 'export',
                       label: t('내보내기'),
-                      onAction: () => void act(() => p.onExport(project)),
+                      onAction: () => void act(() => p.onExport(project, exportControl(project))),
                     },
                     {
                       id: 'archive',

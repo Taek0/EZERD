@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- JSON v1/v2 parsing·갤러리 import/export·명시 업그레이드 검토/보관/ACK UI를 연결했다. [결과](2026-10-02-Database-NativeTransferUI.md). 59개 helper/static 테스트/skip0, actor·문맥·immutable queue·응답 검증 통과. App의 accepted→native 전환을 연결했으며 실제 브라우저·legacy import 복구 및 새 프로젝트 native 생성은 후속이다.
+
 - 미기록 native/명령/upgrade/history 요청의 취소를 프로젝트 수명 동안 유지하는 전용 marker로 확정했다. [결과](2026-10-02-Database-NativeRequestCancellation.md). 실제 AppModule 취소 56개와 PG 식 회귀 1개 통과. 늦은 요청은 rejected ACK만 재생하며 doc/version/sequence/stream을 바꾸지 않는다. MCP/web 취소 버튼은 후속이며 DB readiness에 새 테이블을 포함했다.
 
 - native 도메인 UI와 overview 카드 선택/초점·명시 이동/삭제 영향·LAN UUID를 연결했다. [결과](2026-10-02-Database-NativeDomainUI.md). 정책·비동기 pending·canvas/view targeted 56개, 기존 async 저장 변경은 선행 `9657dd8`에 분리했다. 실제 브라우저·clipboard·domain 관계 및 개인 DB revision gate는 후속이다.
