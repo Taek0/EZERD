@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- C8 native 빈 물리 설계의 원자 DB 변경과 안전한 preview/재생 보호를 `3358b4c`에 완료했다. [결과](2026-10-02-Database-NativeConversion.md). 물리 설계의 검증된 무손실 매핑은 아직 0건이다. 같은 actor/read 권한 유지 시 viewer·workspace 보관 뒤 기존 ACK는 재생하고 신규 쓰기는 차단한다. public model export를 메인에서 연결하며 실제 관련 QA 43개/격리 DB15개를 확인했다.
+
 - native versioned JSON REST export/import를 실제 AppModule에 연결했다. [결과](2026-10-02-Database-NativeTransfer.md). 원본·preview/context 일관성과 v1 서버 migration/ID remap, actor/workspace/budget 보호를 확인했다. v2 legacy import provenance 및 MySQL/SQLite legacy ENUM remap은 미완료다.
 
 - C4 native 구조/형식 편집의 공통 명령·후보 및 UI/draft/ACK 보호를 확장했다. [결과](2026-10-02-Database-NativeEditorExpansion.md). gate false 유지, 세 DB 실제 논리 생성/삭제·ID 재사용 거부를 확인했다. ERD/clipboard·고급 option/default 모델 정책과 최종 브라우저 QA는 남았다.

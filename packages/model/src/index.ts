@@ -29,3 +29,4 @@ export * from './table-canvas.js';
 export * from './postgres-types.js';
 export * from './database/index.js';
 export { nativeReferenceProblems } from './database/reference-graph.js';
+export { planNativeDatabaseConversion } from './database/conversion.js';
