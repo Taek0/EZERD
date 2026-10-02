@@ -79,6 +79,31 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe('native private REST is guarded version-CAS, not a cached operation ledger', () => {
+  it('normalizes the full draft object supplied by Canvas forms into a strict reference', async () => {
+    const f = fixture(),
+      { queue } = factory(),
+      storage = store(),
+      draft = {
+        userId,
+        projectId,
+        key: 'canvas:action:view',
+        revision: crypto.randomUUID(),
+        expected: { version: 7, sequence: 10, databaseRevision: 3 },
+        before: { name: '' },
+        values: { name: 'Private' },
+      };
+    storeNativeEditorDraft(draft, storage);
+    const pending = await stageNativePrivateCanvas(
+      userId,
+      f.snapshot,
+      f.personal,
+      f.candidate,
+      { queue, storage },
+      draft,
+    );
+    expect(pending.editorDraft).toEqual({ key: draft.key, revision: draft.revision });
+    expect(pending.editorDraft).not.toHaveProperty('values');
+  });
   it('uses the default actor-bound GET/PUT transport with the updated contracts barrel', async () => {
     expect(nativePrivateCanvasGuardAvailable()).toBe(true);
     const f = fixture(),

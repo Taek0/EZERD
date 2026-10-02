@@ -160,7 +160,9 @@ export async function stageNativePrivateCanvas(
     expectedVersion: personal.version,
     before: personal.state,
     state,
-    ...(editorDraft ? { editorDraft } : {}),
+    ...(editorDraft
+      ? { editorDraft: { key: editorDraft.key, revision: editorDraft.revision } }
+      : {}),
   });
   context(pending, snapshot, nativePrivateSnapshotSchema.parse(personal));
   if (requestFingerprint(state) === requestFingerprint(personal.state))

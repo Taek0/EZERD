@@ -57,3 +57,13 @@ server WorkspaceAccessService의 `personal`은 active workspace의 viewer도 허
 - 지정 파일 root Prettier 적용. docs는 루트 .prettierignore 대상이다. full build/check/실제 browser 저장 QA와 commit은 main 담당이다.
 
 별도 새 작업을 시작하거나 server/NativeProjectView/queue/cancellation을 편집하지 않았다.
+
+## 실제 브라우저 후속 검증 (core commit 이후)
+
+2026-10-02 전용 loopback3141 API와 자체 UUID DB `ezerd_private_browser_f859b9ae07124c3285e7987526a722ab`에서 QA owner/PIN으로 정상 UI 로그인했다. 개인 카메라 120% 저장 후 재조회·프로젝트 reopen에서 복구를 확인했고, 공유 도메인 생성 뒤 개인 뷰 `Private Flow View`를 실제 guarded PUT으로 저장했다. 최종 실제 SQL 및 actor-bound REST GET은 personal version2, project version1, sequence1, databaseRevision0, 뷰1개 및 zoom1.2를 반환했다. 개인 저장 두 번이 공유 version/sequence/DB revision을 변경하지 않았다. sanitized 실제 GET/SQL 결과는 `.data/native-private-live-evidence.json`에 남겼다.
+
+실제 폼에서 full NativeEditorDraft가 구조적으로 DraftRef에 전달되어 strict pending parse가 extra fields를 거부하는 문제를 발견했다. helper의 pending.editorDraft를 정확히 key/revision 두 필드로 정규화하고 회귀 테스트를 추가했다. actor bound default GET/PUT 테스트 및 private/Canvas/queue/actor targeted는 기존59에서60개로 증가했다. 수정한 Vite bundle을 실제 API에서 소비하여 뷰 생성 성공을 확인했다. gate/계약/원본은 변경하지 않았다. core commit 이후 corrective diff는 이 helper/test 두 파일뿐이며 Canvas 후속 직접 수정은 하지 않았다.
+
+초기 PNG가 HMR/scroll 때문에 저장 상태를 제대로 보여주지 않아 성공 증거로 사용하지 않았다. 새 owned UUID DB `ezerd_private_browser_80c25e563df44af79a2b2979f4d9b429`와 static3141에서 QA Private Visual Evidence를 생성하고 카메라120% 저장→reload→reopen을 다시 수행했다. 이때 실제 복구된120%를 보이는 `.data/native-private-camera-live.png`를 캡처했다. 잘못 캡처한 view PNG는 제거했다.
+
+두 backend QA listener와 owned UUID DB는 확인 후 harness의 stop/finally로 제거했다. own Vite3142 child도 workspace path/정확한 startup args/PID를 검증한 뒤 종료했다. 사용자 DB/부모 QA DB는 수정하지 않았고 auth credential은 증거 파일·로그에 남기지 않았다. own 임시 script/config를 제거했다. CAS-precondition 소멸 후 보관/명시 해제는 별도 [계획](../planning/2026-10-02-Database-NativePrivateCASProof.md)이다.
