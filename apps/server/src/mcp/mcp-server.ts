@@ -30,6 +30,7 @@ import {
   databaseIssueSchema,
   nativeSyncOperationResultSchema,
   upgradeProjectDocumentSchema,
+  projectDDLExportSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
@@ -41,6 +42,7 @@ import { SyncService } from '../sync/sync.service.js';
 import { McpLogger } from './logging.js';
 import { McpAuthService } from './mcp-auth.service.js';
 import { NativeUpgradeService } from '../workspace/native-upgrade.service.js';
+import { NativeDDLService } from '../workspace/native-ddl.service.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
@@ -137,6 +139,7 @@ export class McpServerFactory {
     @Inject(SpaceService) private readonly spaces: SpaceService,
     @Inject(McpAuthService) private readonly auth: McpAuthService,
     @Inject(NativeUpgradeService) private readonly nativeUpgrade: NativeUpgradeService,
+    @Inject(NativeDDLService) private readonly nativeDDL: NativeDDLService,
   ) {}
 
   create(user: AuthenticatedUser, tokenId: string, requestId: string): McpServer {
@@ -239,10 +242,24 @@ export class McpServerFactory {
         ),
     );
     server.registerTool(
+      'export_project_ddl',
+      {
+        description:
+          '같은 서버 snapshot의 DB/profile/revision과 version/sequence를 기준으로 프로젝트 전체 물리 설계를 SQL로 내보냅니다. 화면·도메인·선택 상태를 필터로 사용하지 않습니다. canExport=false이면 SQL은 비어 있고 objectId/path 진단을 확인해야 합니다. native 타입/기능은 readiness 검사까지 통과해야 하며 v1 MySQL/SQLite의 PG 타입은 재해석하지 않습니다.',
+        inputSchema: z.strictObject({ projectId: idSchema }),
+        outputSchema: projectDDLExportSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId }) =>
+        invoke('export_project_ddl', async () =>
+          projectDDLExportSchema.parse(await this.nativeDDL.exportProject(user.id, projectId)),
+        ),
+    );
+    server.registerTool(
       'get_project_database_capabilities',
       {
         description:
-          '프로젝트의 DB 종류·프로필·변경 번호와 native v2 타입/옵션·기능을 조회합니다. supportedByEngine은 엔진 규칙이며 usable만 실제 사용 가능한 기능입니다. 현재 기존 편집/쓰기 도구는 v1 전용이며 native v2 쓰기는 비활성입니다. native 저장/preview는 get_project_document_state로 읽으세요. 기능 적용 시 객체별 조건을 다시 검증해야 합니다.',
+          '프로젝트의 DB 종류·프로필·변경 번호와 native v2 타입/옵션·기능을 조회합니다. supportedByEngine은 엔진 규칙이며 usable만 실제 사용 가능한 기능입니다. native 저장/preview는 get_project_document_state로 읽고 native 편집은 apply_native_project_changes를 사용합니다. 기능 적용 시 객체별 조건을 다시 검증해야 합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: projectDatabaseCapabilitiesSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },

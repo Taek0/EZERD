@@ -36,3 +36,4 @@ export * from './project-document-state.js';
 export * from './native-edit.js';
 export * from './native-upgrade.js';
 export * from './native-transfer.js';
+export * from './native-ddl.js';

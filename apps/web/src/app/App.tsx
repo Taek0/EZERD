@@ -19,6 +19,7 @@ import {
   threadSchema,
   type Thread,
   type Notification,
+  type ProjectDDLExport,
 } from '@ezerd/contracts';
 import { ApiError, body, message, newId, request } from '../shared/api/client.js';
 import { Canvas, type CanvasContext } from '../features/canvas/Canvas.js';
@@ -45,6 +46,16 @@ import { ProjectGallery, type GalleryHandle } from '../features/projects/Project
 import { previewDatabaseChange } from '../features/projects/database-preview.js';
 import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
 import { NativeProjectView } from '../features/projects/NativeProjectView.js';
+import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
+import { ProjectDDLDialog } from '../features/projects/ProjectDDLDialog.js';
+import {
+  assertNativeExportReady,
+  fetchProjectDDL,
+  confirmProjectDDLSnapshot,
+  downloadProjectDDL,
+} from '../features/projects/project-ddl-export.js';
+import { exportVersionedProjectFile } from '../features/projects/project-versioned-export.js';
+import { nativeEditorExportBlocked } from '../features/projects/native-export-state.js';
 
 type User = {
   id: string;
@@ -191,6 +202,15 @@ export function App() {
   const nativeCurrent = useRef(nativeOpened);
   nativeCurrent.current = nativeOpened;
   const activeProject = opened?.project ?? nativeOpened?.snapshot.project;
+  const [ddlExport, setDDLExport] = useState<{
+    actorId: string;
+    result: ProjectDDLExport;
+    onFocusIssue?: (id: string) => void;
+  } | null>(null);
+  const ddlCurrent = useRef(ddlExport);
+  ddlCurrent.current = ddlExport;
+  const currentExportIdentity = useRef({ userId: user?.id, projectId: activeProject?.id });
+  currentExportIdentity.current = { userId: user?.id, projectId: activeProject?.id };
   const projectWorkspace = workspaces.find((space) => space.id === activeProject?.workspaceId);
   const permissions = workspacePermissions(activeProject ? projectWorkspace : selectedWorkspace);
   const designPermissionReadOnly = !permissions.edit || opened?.project.status === 'archived';
@@ -198,6 +218,52 @@ export function App() {
   const [sync, setSync] = useState<SyncSnapshot | null>(null);
   const designReadOnly = designPermissionReadOnly || sync?.databaseContextChanged === true;
   const latestSync = useRef<SyncSnapshot | null>(null);
+  async function prepareProjectExport(projectId: string) {
+    if (
+      !user ||
+      currentExportIdentity.current.userId !== user.id ||
+      currentExportIdentity.current.projectId !== projectId
+    )
+      throw Error(t('프로젝트가 변경되었습니다. 최신 프로젝트에서 다시 내보내 주세요.'));
+    const exportingRuntime = opened ? runtime.current : null;
+    if (opened) await flushAutosave();
+    if (
+      currentExportIdentity.current.userId !== user.id ||
+      currentExportIdentity.current.projectId !== projectId
+    )
+      throw Error(t('프로젝트가 변경되었습니다. 최신 프로젝트에서 다시 내보내 주세요.'));
+    await exportingRuntime?.prepareToLeave();
+    if (
+      opened &&
+      (latestSync.current?.pending.length ||
+        latestSync.current?.storageFailure ||
+        latestSync.current?.databaseContextChanged ||
+        latestSync.current?.status === 'action-needed')
+    )
+      throw Error(t('변경 내용이 저장된 뒤 다시 내보내 주세요.'));
+    try {
+      if (nativeEditorExportBlocked(user.id, projectId))
+        throw Error('project-export.unsaved-draft');
+      assertNativeExportReady(user.id, projectId);
+    } catch {
+      throw Error(t('보관된 미저장 입력 또는 미확인 저장 요청을 확인한 뒤 다시 내보내 주세요.'));
+    }
+  }
+  async function openProjectDDL(
+    projectId: string,
+    revision: number,
+    onFocusIssue?: (id: string) => void,
+  ) {
+    if (!user) return;
+    await prepareProjectExport(projectId);
+    const result = await fetchProjectDDL(projectId, revision);
+    if (
+      currentExportIdentity.current.userId !== user.id ||
+      currentExportIdentity.current.projectId !== projectId
+    )
+      return;
+    setDDLExport({ actorId: user.id, result, ...(onFocusIssue ? { onFocusIssue } : {}) });
+  }
   const [historyAction, setHistoryAction] = useState<string | null>(null);
   const [historyNotice, setHistoryNotice] = useState('');
   const current = useRef(opened),
@@ -1063,6 +1129,26 @@ export function App() {
           busy={busy}
           userId={user.id}
           canEdit={permissions.edit}
+          projectActions={(focus) => (
+            <NativeProjectActions
+              userId={user.id}
+              projectId={nativeOpened.snapshot.project.id}
+              onExportProject={async () => {
+                await prepareProjectExport(nativeOpened.snapshot.project.id);
+                await exportVersionedProjectFile(
+                  nativeOpened.snapshot.project.id,
+                  nativeOpened.snapshot.project.databaseRevision,
+                );
+              }}
+              onExportDDL={() =>
+                openProjectDDL(
+                  nativeOpened.snapshot.project.id,
+                  nativeOpened.snapshot.project.databaseRevision,
+                  focus,
+                )
+              }
+            />
+          )}
           {...(nativeReview ? { focusedReview: nativeReview } : {})}
         />
       ) : opened ? (
@@ -1169,6 +1255,25 @@ export function App() {
                   throw new Error(t('변경 내용이 저장된 뒤 다시 내보내 주세요.'));
                 await exportProjectFile(opened.project.id);
               }}
+              onExportDDL={() =>
+                openProjectDDL(opened.project.id, opened.project.databaseRevision ?? 0, (id) => {
+                  const tableId =
+                    opened.document.tables?.find((item) => item.id === id)?.id ??
+                    opened.document.columns?.find((item) => item.id === id)?.tableId ??
+                    opened.document.keys?.find((item) => item.id === id)?.tableId ??
+                    opened.document.tableRelations?.find((item) => item.id === id)?.sourceTableId;
+                  const node = opened.document.layout.nodes.find(
+                    (item) => item.objectId === (tableId ?? id),
+                  );
+                  setFocusTarget({
+                    viewId: node?.viewId ?? '__tables__',
+                    objectId: tableId ?? id,
+                    x: node?.x ?? 0,
+                    y: node?.y ?? 0,
+                    nonce: Date.now(),
+                  });
+                })
+              }
               toolbarHost={toolbarHost}
               pathHost={pathHost}
               panelToggle={
@@ -1313,6 +1418,58 @@ export function App() {
           }}
         />
       )}
+      {user &&
+        ddlExport?.actorId === user.id &&
+        ddlExport.result.projectId === activeProject?.id && (
+          <ProjectDDLDialog
+            key={`ddl:${ddlExport.actorId}:${ddlExport.result.projectId}`}
+            result={ddlExport.result}
+            onClose={() => {
+              ddlCurrent.current = null;
+              setDDLExport(null);
+            }}
+            objectName={(id) => {
+              const doc = opened?.document ?? nativeOpened?.document;
+              const item =
+                doc?.tables?.find((item) => item.id === id) ??
+                doc?.columns?.find((item) => item.id === id);
+              if (item) return item.physical.name || item.logical.name || id;
+              const key = doc?.keys?.find((item) => item.id === id),
+                relation = doc?.tableRelations?.find((item) => item.id === id),
+                enumeration = doc?.enums?.find((item) => item.id === id);
+              if (key) return key.name || t('키');
+              if (relation) return relation.physical?.name || relation.logical.name || t('외래 키');
+              if (enumeration) return enumeration.name || 'ENUM';
+              if (doc?.schemaVersion === 2)
+                return (
+                  doc.indexes?.find((item) => item.id === id)?.name ||
+                  doc.checks?.find((item) => item.id === id)?.name ||
+                  id
+                );
+              return id;
+            }}
+            {...(ddlExport.onFocusIssue ? { onFocusIssue: ddlExport.onFocusIssue } : {})}
+            onRegenerate={() =>
+              openProjectDDL(
+                ddlExport.result.projectId,
+                ddlExport.result.database.revision,
+                ddlExport.onFocusIssue,
+              )
+            }
+            onDownload={async () => {
+              const expected = ddlExport;
+              await prepareProjectExport(expected.result.projectId);
+              await confirmProjectDDLSnapshot(expected.result);
+              if (
+                ddlCurrent.current !== expected ||
+                currentExportIdentity.current.userId !== expected.actorId ||
+                currentExportIdentity.current.projectId !== expected.result.projectId
+              )
+                return;
+              downloadProjectDDL(expected.result);
+            }}
+          />
+        )}
     </div>
   );
 }

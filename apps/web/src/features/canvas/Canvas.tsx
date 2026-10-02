@@ -120,6 +120,7 @@ type Props = {
   pathHost?: HTMLElement | null;
   panelToggle?: ReactNode;
   onExportProject?: () => Promise<void>;
+  onExportDDL?: () => Promise<void>;
   onCreatePin?: (context: CanvasContext) => void;
   onContextChange?: (context: CanvasContext) => void;
   focusTarget?: {
@@ -150,6 +151,7 @@ export function Canvas({
   pathHost,
   panelToggle,
   onExportProject,
+  onExportDDL,
 }: Props) {
   useI18n();
   const confirm = useConfirm();
@@ -1274,6 +1276,22 @@ export function Canvas({
                   setExportError('');
                   try {
                     await onExportProject?.();
+                  } catch (cause) {
+                    setExportError(message(cause));
+                  } finally {
+                    setExporting(false);
+                  }
+                },
+              },
+              {
+                id: 'ddl-export',
+                label: tr('DDL 내보내기'),
+                disabled: exporting || !onExportDDL,
+                onAction: async () => {
+                  setExporting(true);
+                  setExportError('');
+                  try {
+                    await onExportDDL?.();
                   } catch (cause) {
                     setExportError(message(cause));
                   } finally {

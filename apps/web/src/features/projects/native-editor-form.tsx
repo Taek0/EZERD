@@ -12,6 +12,7 @@ import {
   type NativeEditorDraftRef,
 } from './native-editor-draft.js';
 import type { NativeSaveExpected, NativeWebCommand } from './native-save.js';
+import { useNativeExportBlocker } from './native-export-state.js';
 
 export type NativeEditorSave = (
   commands: NativeWebCommand[],
@@ -89,6 +90,10 @@ export function NativeEditorForm({
   const currentDraft = useRef(loaded.draft);
   const [storageError, setStorageError] = useState(loaded.error);
   const [error, setError] = useState('');
+  const dirty = [...new Set([...Object.keys(draft.values), ...Object.keys(draft.before)])].some(
+    (key) => draft.values[key] !== draft.before[key],
+  );
+  useNativeExportBlocker(userId, snapshot.project.id, dirty, !!storageError);
   const stale =
     draft.expected.version !== expected.version ||
     draft.expected.sequence !== expected.sequence ||
@@ -106,12 +111,17 @@ export function NativeEditorForm({
     }
   }
   async function submit() {
-    if (context.busy || stale || blocked || storageError) return;
+    if (!dirty || context.busy || stale || blocked || storageError) return;
     setError('');
     try {
       const commands = build(draft.values, draft.before);
       if (!commands.length) return;
-      storeNativeEditorDraft(draft);
+      try {
+        storeNativeEditorDraft(draft);
+      } catch (error) {
+        setStorageError(message(error));
+        return;
+      }
       if (
         await context.onSave(commands, draft.expected, { key: draft.key, revision: draft.revision })
       ) {
@@ -147,12 +157,14 @@ export function NativeEditorForm({
             <details>
               <summary>{t('최신 내용')}</summary>
               <dl>
-                {Object.entries(initial).map(([key, value]) => (
-                  <div key={key}>
-                    <dt>{key}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
+                {Object.entries(initial)
+                  .filter(([key]) => !key.endsWith('JSON'))
+                  .map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{key}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ))}
               </dl>
             </details>
             <Button
@@ -178,7 +190,10 @@ export function NativeEditorForm({
           });
         })}
         {blocked && <p>{t('미검증 기능은 새로 사용할 수 없습니다. 현재 값은 보존됩니다.')}</p>}
-        <Button type="submit" disabled={context.busy || stale || blocked || !!storageError}>
+        <Button
+          type="submit"
+          disabled={!dirty || context.busy || stale || blocked || !!storageError}
+        >
           {t('저장 요청')}
         </Button>
         <Button

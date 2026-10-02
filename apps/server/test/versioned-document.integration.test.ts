@@ -21,6 +21,7 @@ import {
   projectDocumentStateSchema,
   nativeSyncOperationResultSchema,
   nativeSyncSnapshotSchema,
+  projectDDLExportSchema,
 } from '@ezerd/contracts';
 
 function legacyDocument(): DesignDocument {
@@ -62,6 +63,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     let token: string;
     let actorId: string;
     let workspaceId: string;
+    let ownerMcpToken: string;
     const projectIds: string[] = [];
     const userIds: string[] = [];
     const previousPort = process.env.PORT;
@@ -132,6 +134,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       const workspace = await request('/workspaces', 'POST', { name: `versioned-${randomUUID()}` });
       expect(workspace.status).toBe(201);
       workspaceId = workspace.data.id;
+      const issued = await request('/mcp-tokens', 'POST', { name: 'versioned fixture' });
+      expect(issued.status).toBe(201);
+      ownerMcpToken = issued.data.token;
     });
     afterAll(async () => {
       if (previousPort === undefined) delete process.env.PORT;
@@ -159,6 +164,62 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         await pool.end();
       }
     });
+    it.each(['postgresql', 'mysql', 'sqlite'])(
+      'exports %s DDL from an unchanged whole-project snapshot and gates incompatible formats',
+      async (kind) => {
+        const id = await createProject(kind),
+          source = legacyDocument();
+        source.columns![0]!.physical.defaultExpression = null;
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(source),
+        ]);
+        const before = await stored(id);
+        expect((await request(`/projects/${id}/ddl`, 'GET', undefined, null)).status).toBe(401);
+        const exported = await request(`/projects/${id}/ddl`);
+        expect(exported.status).toBe(200);
+        expect(projectDDLExportSchema.safeParse(exported.data).success).toBe(true);
+        expect(exported.data).toMatchObject({
+          projectId: id,
+          documentSchemaVersion: 1,
+          database: { kind },
+          encoding: 'UTF-8',
+          canExport: kind === 'postgresql',
+        });
+        if (kind === 'postgresql')
+          expect(exported.data.sql).toContain('CREATE TABLE "public"."table"');
+        else expect(exported.data.sql).toBe('');
+        const issued = { status: 201, data: { token: ownerMcpToken } };
+        const client = new Client({ name: 'ddl-read', version: '1.0.0' });
+        try {
+          await client.connect(
+            new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+              requestInit: { headers: { Authorization: `Bearer ${issued.data.token}` } },
+            }),
+          );
+          const result = await client.callTool({
+            name: 'export_project_ddl',
+            arguments: { projectId: id },
+          });
+          expect(result.isError).not.toBe(true);
+          expect(result.structuredContent).toEqual(exported.data);
+        } finally {
+          await client.close();
+        }
+        expect(await stored(id)).toEqual(before);
+        const native = migrateDesignDocumentV1(
+          source,
+          defaultDatabaseContext(kind as 'postgresql' | 'mysql' | 'sqlite'),
+        ).document;
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(native),
+        ]);
+        const gated = await request(`/projects/${id}/ddl`);
+        expect(gated.data).toMatchObject({ documentSchemaVersion: 2, canExport: false, sql: '' });
+        expect(gated.data.issues.length).toBeGreaterThan(0);
+      },
+    );
     it.each(['postgresql', 'mysql', 'sqlite'])(
       'reads %s v1 source/preview under one unchanged saved context',
       async (kind) => {
@@ -311,7 +372,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       });
       expect(preview.data).toMatchObject({
         canChange: false,
-        reasonCode: 'database.native-change-not-ready',
+        reasonCode: 'database.conversion-required',
       });
       const change = await request(`${path}/database/change`, 'POST', {
         operationId: randomUUID(),
@@ -322,7 +383,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       });
       expect(change).toMatchObject({
         status: 409,
-        data: { code: 'document.client-upgrade-required' },
+        data: { code: 'database.conversion-required' },
       });
       expect(await stored(id)).toEqual(before);
       const rename = await request(path, 'PATCH', {
@@ -343,7 +404,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         JSON.stringify(source),
       ]);
       const before = await stored(id);
-      const issued = await request('/mcp-tokens', 'POST', { name: 'versioned read' });
+      const issued = { status: 201, data: { token: ownerMcpToken } };
       expect(issued.status).toBe(201);
       const client = new Client({ name: 'native-read-fixture', version: '1.0.0' });
       const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
@@ -462,7 +523,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         const preUpgrade = (
           await request(`/projects/${id}/sync-baseline`, 'POST', { clientId: randomUUID() })
         ).data;
-        const issued = await request('/mcp-tokens', 'POST', { name: 'native upgrade fixture' });
+        const issued = { status: 201, data: { token: ownerMcpToken } };
         const client = new Client({ name: 'native-upgrade-fixture', version: '1.0.0' });
         try {
           await client.connect(
@@ -892,7 +953,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           events: [{ status: 'accepted', changes: [{ path: '/columns/c/physical/comment' }] }],
         });
 
-        const issued = await request('/mcp-tokens', 'POST', { name: 'native shared editing' });
+        const issued = { status: 201, data: { token: ownerMcpToken } };
         const client = new Client({ name: 'native-shared-fixture', version: '1.0.0' });
         try {
           await client.connect(
@@ -1297,7 +1358,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           [id, JSON.stringify(source)],
         );
         const before = await stored(id);
-        const issued = await request('/mcp-tokens', 'POST', { name: 'native personal commands' });
+        const issued = { status: 201, data: { token: ownerMcpToken } };
         const client = new Client({ name: 'native-personal-fixture', version: '1.0.0' });
         const call = (arguments_: Record<string, unknown>) =>
           client.callTool({ name: 'apply_personal_changes', arguments: arguments_ });

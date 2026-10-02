@@ -34,6 +34,8 @@ import { NativeUpgradeController } from './workspace/native-upgrade.controller.j
 import { NativeCommandController } from './sync/native-command.controller.js';
 import { NativeTransferController } from './workspace/native-transfer.controller.js';
 import { NativeTransferService } from './workspace/native-transfer.service.js';
+import { NativeDDLService } from './workspace/native-ddl.service.js';
+import { NativeDDLController } from './workspace/native-ddl.controller.js';
 
 @Module({
   controllers: [
@@ -46,6 +48,7 @@ import { NativeTransferService } from './workspace/native-transfer.service.js';
     NativeUpgradeController,
     NativeCommandController,
     NativeTransferController,
+    NativeDDLController,
     McpTokenController,
     McpController,
     PersonalStateController,
@@ -59,6 +62,7 @@ import { NativeTransferService } from './workspace/native-transfer.service.js';
     NativeSyncService,
     NativeUpgradeService,
     NativeTransferService,
+    NativeDDLService,
     McpNativeDocumentService,
     WorkspaceService,
     ProjectDatabaseService,

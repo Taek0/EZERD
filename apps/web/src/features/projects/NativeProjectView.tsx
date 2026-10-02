@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProjectEntry } from './project-entry.js';
 import type { Thread } from '@ezerd/contracts';
 import {
@@ -85,6 +85,7 @@ export function NativeProjectView({
   focusedReview,
   userId,
   canEdit = false,
+  projectActions,
 }: {
   entry: Extract<ProjectEntry, { kind: 'native' }>;
   onLeave: () => void;
@@ -93,6 +94,7 @@ export function NativeProjectView({
   focusedReview?: Thread;
   userId?: string;
   canEdit?: boolean;
+  projectActions?: (focus: (id: string) => void) => ReactNode;
 }) {
   const { t } = useI18n();
   const { snapshot, document: doc } = entry;
@@ -239,6 +241,7 @@ export function NativeProjectView({
             {t('목표 DB 버전')}: {profile.targetVersion}
           </span>
           <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
+          {projectActions?.(focusIssue)}
           <Button onClick={onReload} disabled={busy}>
             {t('다시 불러오기')}
           </Button>

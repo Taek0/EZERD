@@ -13,6 +13,7 @@ import {
 } from './native-save.js';
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { NativeFormatEditor } from './native-editor-format.js';
+import { useNativeExportBlocker } from './native-export-state.js';
 registerTranslations({
   '속성 편집': 'Edit properties',
   '물리 이름': 'Physical name',
@@ -44,7 +45,6 @@ export function NativePropertyEditor({
   const { t } = useI18n();
   const original = column ?? table;
   const kind = column ? 'column' : 'table';
-  const [storageError, setStorageError] = useState('');
   const fresh = (): NativePropertyDraft => ({
     userId,
     projectId: snapshot.project.id,
@@ -68,15 +68,24 @@ export function NativePropertyEditor({
       definition: original.logical.definition,
     },
   });
-  const [draft, setDraft] = useState(() => {
+  const [loaded] = useState(() => {
     try {
-      return typeof localStorage !== 'undefined'
-        ? (loadNativeDraft(userId, snapshot.project.id, kind, original.id) ?? fresh())
-        : fresh();
+      return {
+        draft:
+          typeof localStorage !== 'undefined'
+            ? (loadNativeDraft(userId, snapshot.project.id, kind, original.id) ?? fresh())
+            : fresh(),
+        error: '',
+      };
     } catch {
-      return fresh();
+      return {
+        draft: fresh(),
+        error: '변경 입력을 보관하지 못했습니다. 저장 공간을 확인해 주세요.',
+      };
     }
   });
+  const [draft, setDraft] = useState(loaded.draft);
+  const [storageError, setStorageError] = useState(loaded.error);
   const { physicalName, comment, logicalName, definition } = draft.values;
   function change(field: keyof NativePropertyDraft['values'], value: string) {
     const next = { ...draft, values: { ...draft.values, [field]: value } };
@@ -93,6 +102,7 @@ export function NativePropertyEditor({
     comment !== draft.before.comment ||
     logicalName !== draft.before.logicalName ||
     definition !== draft.before.definition;
+  useNativeExportBlocker(userId, snapshot.project.id, dirty, !!storageError);
   const stale =
     draft.expected.version !== snapshot.project.version ||
     draft.expected.sequence !== snapshot.sequence ||
