@@ -32,6 +32,64 @@ function pair() {
   return { a, b, factory, name };
 }
 describe('native IndexedDB transaction claims across two connections', () => {
+  it('fences private CAS resolution by the exact live transmission and preserves uncertain input on failure', async () => {
+    const { a, b } = pair(),
+      pending = entry('privateCanvas');
+    await a.claim(pending);
+    const token = await a.beginTransmission(pending),
+      archive = vi.fn();
+    expect(await b.confirmPrivateCASPreconditionConsumed(pending, token, archive)).toBe(false);
+    expect(
+      await a.confirmPrivateCASPreconditionConsumed(
+        { ...pending, payload: { changed: true } },
+        token,
+        archive,
+      ),
+    ).toBe(false);
+    expect(archive).not.toHaveBeenCalled();
+    await expect(
+      a.confirmPrivateCASPreconditionConsumed(pending, token, () => {
+        throw Error('archive denied');
+      }),
+    ).rejects.toThrow('archive denied');
+    await a.endTransmission(pending, token);
+    await expect(a.discard(pending)).rejects.toThrow('native.transmission-unknown');
+    const second = await b.beginTransmission(pending);
+    expect(await a.confirmPrivateCASPreconditionConsumed(pending, token, archive)).toBe(false);
+    expect(await b.confirmPrivateCASPreconditionConsumed(pending, second, archive)).toBe(true);
+    expect(archive).toHaveBeenCalledOnce();
+    await b.endTransmission(pending, second);
+    expect(await b.discard(pending)).toBe(true);
+    expect(await a.read(pending.userId, pending.projectId)).toBeNull();
+  });
+  it('does not apply a private CAS observation to command or upgrade requests', async () => {
+    for (const kind of ['commands', 'history', 'upgrade'] as const) {
+      const { a } = pair(),
+        pending = entry(kind);
+      await a.claim(pending);
+      const token = await a.beginTransmission(pending);
+      expect(await a.confirmPrivateCASPreconditionConsumed(pending, token)).toBe(false);
+      await a.endTransmission(pending, token);
+      await expect(a.discard(pending)).rejects.toThrow('native.transmission-unknown');
+    }
+  });
+  it('requires a nonexpired private proof lease even if its token remains stored', async () => {
+    let time = 0;
+    const a = new NativeDurableQueue(createNativeTestIndexedDB(), nativeDurableId(), {
+      now: () => time,
+      leaseMs: 10,
+    });
+    queues.push(a);
+    const pending = entry('privateCanvas');
+    await a.claim(pending);
+    const token = await a.beginTransmission(pending),
+      archive = vi.fn();
+    time = 11;
+    expect(await a.confirmPrivateCASPreconditionConsumed(pending, token, archive)).toBe(false);
+    expect(archive).not.toHaveBeenCalled();
+    await a.endTransmission(pending, token);
+    await expect(a.discard(pending)).rejects.toThrow('native.transmission-unknown');
+  });
   it('allows exactly one actor/project pending across command/history/private canvas racers', async () => {
     const { a, b } = pair();
     const first = entry('commands'),

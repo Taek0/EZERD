@@ -327,6 +327,27 @@ export class NativeDurableQueue {
       };
     });
   }
+  /** Personal PUT has no ledger. The caller proves its monotonic CAS precondition is consumed. */
+  confirmPrivateCASPreconditionConsumed(
+    pending: NativeDurablePending,
+    token: string,
+    guard?: () => void,
+  ): Promise<boolean> {
+    return this.transaction(pending.userId, pending.projectId, true, (row) => {
+      if (
+        pending.kind !== 'privateCanvas' ||
+        !this.matches(row, pending) ||
+        !this.leaseActive(row) ||
+        !this.tokenMatches(row, token) ||
+        !row.transmission ||
+        typeof row.transmission === 'string' ||
+        row.transmission.owner !== this.ownerId
+      )
+        return { row, result: false };
+      guard?.();
+      return { row: { ...row, uncertain: false }, result: true };
+    });
+  }
   /** Only a validated terminal ledger rejection establishes that no mutation was applied. */
   confirmRejected(pending: NativeDurablePending): Promise<boolean> {
     return this.transaction(pending.userId, pending.projectId, true, (row) => {

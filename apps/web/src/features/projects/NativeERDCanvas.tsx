@@ -52,6 +52,7 @@ import './NativeERDCanvas.css';
 import { useNativeExportBlocker } from './native-export-state.js';
 import { nativeDurableId } from './native-durable-queue.js';
 import { NativeClipboardMenu } from './native-clipboard.js';
+import { NativePrivateCASRecovery } from './NativePrivateCASRecovery.js';
 import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
 import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
 import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
@@ -1117,6 +1118,41 @@ export function NativeERDCanvas({
           >
             {t('개인 요청 초기화')}
           </Button>
+          {!!userId && (
+            <NativePrivateCASRecovery
+              userId={userId}
+              snapshot={snapshot}
+              pending={personalPending}
+              disabled={busy || personalBusy}
+              options={{
+                assertCurrent: () => {
+                  if (!alive.current || activeIdentity.current !== privateIdentity)
+                    throw Error('native.private-proof-scope-mismatch');
+                },
+              }}
+              onDiscard={(archive) => {
+                if (
+                  !alive.current ||
+                  activeIdentity.current !== privateIdentity ||
+                  archive.pending.revision !== personalPending.revision
+                )
+                  return;
+                setPersonalPending((value) =>
+                  value?.revision === archive.pending.revision ? null : value,
+                );
+                setError('');
+                void getNativeDurableQueue()
+                  .read(userId, snapshot.project.id)
+                  .then(() => {
+                    if (alive.current && activeIdentity.current === privateIdentity) onReload();
+                  })
+                  .catch((error) => {
+                    if (alive.current && activeIdentity.current === privateIdentity)
+                      setError(message(error));
+                  });
+              }}
+            />
+          )}
         </div>
       )}
       <div
