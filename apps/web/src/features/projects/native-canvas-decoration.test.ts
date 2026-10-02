@@ -167,7 +167,7 @@ describe('native common style/domain relation UI and geometry', () => {
         sceneFor: nativeCanvasScene,
       }),
     );
-    expect(privateHtml).toContain('공유 화면을 선택해 내보내 주세요.');
+    expect(privateHtml).toContain('개인 화면을 불러온 뒤 PNG를 내보내 주세요.');
     expect(privateHtml).toContain('disabled=""');
   });
 });

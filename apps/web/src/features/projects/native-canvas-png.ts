@@ -122,6 +122,7 @@ export async function exportNativeCanvasPng(
   mode: 'physical' | 'logical',
   name: string,
   current: () => boolean = () => true,
+  beforeDownload?: () => Promise<void>,
 ) {
   const prepared = nativeCanvasSvg(document, scene, mode);
   if (!current()) throw Error('canvas.export-context-changed');
@@ -142,6 +143,8 @@ export async function exportNativeCanvasPng(
       'image/png',
     ),
   );
+  if (!current()) throw Error('canvas.export-context-changed');
+  await beforeDownload?.();
   if (!current()) throw Error('canvas.export-context-changed');
   const url = URL.createObjectURL(blob),
     link = globalThis.document.createElement('a');

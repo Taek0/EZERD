@@ -1311,6 +1311,9 @@ export function NativeERDCanvas({
         viewId={effectiveView}
         mode={mode}
         sceneFor={nativeCanvasScene}
+        {...(personal ? { personal } : {})}
+        personalBusy={personalBusy}
+        writerState={privateQueueState}
       />
       <NativeDomainRelationEditor
         document={sharedSource}
