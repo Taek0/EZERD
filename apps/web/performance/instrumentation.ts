@@ -54,6 +54,8 @@ export function measurementPlugin(
     'relationGeometry',
     'layoutDomainRelations',
     'Canvas',
+    'NativeERDCanvas',
+    'nativeCanvasScene',
   ]);
   const seen = new Set<string>();
   return {
@@ -74,6 +76,10 @@ export function measurementPlugin(
       if (path.endsWith('/features/domains/domain-relations.ts')) names = ['layoutDomainRelations'];
       if (path.endsWith('/features/canvas/Canvas.tsx'))
         names = ['Canvas', 'moveViewport', 'applyCameraFrame', 'preview', 'move', 'finish'];
+      if (path.endsWith('/features/projects/NativeERDCanvas.tsx'))
+        names = ['NativeERDCanvas', 'nativeCanvasScene', 'nativeCanvasWheel'];
+      if (/\/packages\/model\/(dist|src)\/database\/display\.(js|ts)$/.test(path))
+        names = ['nativeColumnTypeDisplay'];
       if (!names.length) return;
       const result = instrumentFunctions(source, names, path.split('/').at(-1)!, collectorPath);
       result?.found.forEach((name) => seen.add(name));

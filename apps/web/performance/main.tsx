@@ -1,3 +1,4 @@
+import { TABLES_VIEW_ID } from '@ezerd/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Canvas } from '../src/features/canvas/Canvas.js';
@@ -50,7 +51,7 @@ function PerformanceFixture() {
     id: '',
   });
   const focus = useMemo(
-    () => ({ viewId: 'perf', objectId: null, x: 450, y: 300, nonce: epoch + 1 }),
+    () => ({ viewId: TABLES_VIEW_ID, objectId: null, x: 450, y: 300, nonce: epoch + 1 }),
     [epoch],
   );
   const state = () => ({
@@ -141,7 +142,10 @@ function PerformanceFixture() {
           dirty: __PERF_DIRTY__,
           frameMode: __PERF_FRAME_MODE__,
           collectSpans,
-          fixtureVersion: 1,
+          fixtureVersion: 2,
+          editorKind: 'legacy-shared',
+          documentSchemaVersion: 1,
+          canvasViewId: TABLES_VIEW_ID,
           count,
           columns,
           fixtureFingerprint: fixtureFingerprint(createPerformanceFixture(count, columns)),
@@ -257,7 +261,8 @@ function PerformanceFixture() {
   return (
     <>
       <header className="perf-controls">
-        <strong>ERD performance fixture</strong>
+        <strong>Legacy shared canvas · v1</strong>
+        <a href="./native.html">Native v2 read-only fixture</a>
         <label>
           <input
             type="checkbox"

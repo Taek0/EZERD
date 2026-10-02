@@ -8,7 +8,7 @@ import {
   fixtureFingerprint,
 } from '../../apps/web/src/shared/performance/fixture.ts';
 import { prepareTableRelations } from '../../apps/web/src/features/relations/prepare-table-relations.ts';
-import { diagnoseDocument } from '../../packages/model/dist/index.js';
+import { diagnoseDocument, TABLES_VIEW_ID } from '../../packages/model/dist/index.js';
 
 const args = process.argv.slice(2);
 if (args[0] === '--child') {
@@ -18,7 +18,7 @@ if (args[0] === '--child') {
   let checksum = 0;
   const measure = () => {
     const start = performance.now();
-    const prepared = prepareTableRelations(doc, 'perf', 'physical');
+    const prepared = prepareTableRelations(doc, TABLES_VIEW_ID, 'physical');
     const duration = performance.now() - start;
     checksum += prepared.reduce((sum, item) => sum + (item?.geometry.path.length ?? 0), 0);
     return duration;
@@ -66,6 +66,10 @@ if (args[0] === '--child') {
     os: platform(),
     cpu: cpus()[0]?.model,
     mode: 'node-full-relation-preparation',
+    fixtureVersion: 2,
+    editorKind: 'legacy-shared',
+    documentSchemaVersion: 1,
+    canvasViewId: TABLES_VIEW_ID,
     timeoutMs: 30000,
     firstSampleBudgetMs: 1000,
   };

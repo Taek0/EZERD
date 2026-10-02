@@ -29,7 +29,12 @@ export default defineConfig(() => {
     },
     build: {
       outDir: frameMode === 'raf' ? 'dist-performance' : 'dist-performance-immediate',
-      rollupOptions: { input: fileURLToPath(new URL('./performance/index.html', import.meta.url)) },
+      rollupOptions: {
+        input: {
+          legacy: fileURLToPath(new URL('./performance/index.html', import.meta.url)),
+          native: fileURLToPath(new URL('./performance/native.html', import.meta.url)),
+        },
+      },
     },
     preview: { host: '127.0.0.1', port: 4175, strictPort: true },
   };

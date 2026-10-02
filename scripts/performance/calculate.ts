@@ -37,6 +37,9 @@ for (const count of counts) {
 const result = {
   schemaVersion: 1,
   mode: 'node-calculation-only',
+  fixtureVersion: 2,
+  editorKind: 'legacy-shared',
+  documentSchemaVersion: 1,
   target: 'all tableCardMetrics, excludes React/routing/rendering',
   commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
   dirty: Boolean(execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()),

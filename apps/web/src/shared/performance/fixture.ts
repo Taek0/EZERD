@@ -1,4 +1,9 @@
-import { createEmptyDocument, tableCardSize, type DesignDocument } from '@ezerd/model';
+import {
+  createEmptyDocument,
+  tableCardSize,
+  TABLES_VIEW_ID,
+  type DesignDocument,
+} from '@ezerd/model';
 
 export function fixtureFingerprint(value: unknown) {
   const text = JSON.stringify(value);
@@ -8,7 +13,7 @@ export function fixtureFingerprint(value: unknown) {
 }
 
 /** Deterministic valid physical schema; no clock, network, storage or random IDs. */
-export function createPerformanceFixture(count = 10, columns = 5): DesignDocument {
+export function createHistoricalPerformanceFixture(count = 10, columns = 5): DesignDocument {
   if (![10, 50, 100, 300].includes(count) || ![5, 10, 30].includes(columns))
     throw new Error('Unsupported fixture size');
   const doc = createEmptyDocument();
@@ -83,4 +88,24 @@ export function createPerformanceFixture(count = 10, columns = 5): DesignDocumen
     height: 210,
   });
   return doc;
+}
+
+/** Current shared canvas fixture. Historical source data remains available for old records. */
+export function createPerformanceFixture(count = 10, columns = 5): DesignDocument {
+  const doc = createHistoricalPerformanceFixture(count, columns);
+  return {
+    ...doc,
+    layout: {
+      ...doc.layout,
+      nodes: [
+        ...doc.layout.nodes.map((n) =>
+          n.viewId === 'perf' ? { ...n, viewId: TABLES_VIEW_ID } : n,
+        ),
+        ...doc.layout.nodes
+          .filter((n) => n.viewId === 'perf')
+          .map((n) => ({ ...n, id: 'owned-' + n.id })),
+      ],
+      viewports: [{ viewId: TABLES_VIEW_ID, x: 20, y: 20, zoom: 1 }],
+    },
+  };
 }

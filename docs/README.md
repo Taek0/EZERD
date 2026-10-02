@@ -32,6 +32,7 @@
 
 | 문서 | 내용 |
 | --- | --- |
+| [최신 편집기 측정 호환](./work-log/2026-10-02-Performance-CurrentEditors.md) | 현재 공유 v1·Native v2 읽기 측정 범위와 검증 |
 | [최소 성능 측정 도구](./work-log/2026-09-28-Canvas-MeasurementImplementation.md) | 측정 빌드·계산 runner 사용법 · 당시 구현 기준 |
 | [100·300개 규모 측정](./work-log/2026-09-28-Canvas-ScaleMeasurement.md) | 기존 schemaVersion1 캔버스의 측정 기록 |
 | [IMPLEMENTATION_PROGRESS.md](./work-log/IMPLEMENTATION_PROGRESS.md) | 구현 이력, 검증 결과와 남은 작업 |
