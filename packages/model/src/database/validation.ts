@@ -431,6 +431,17 @@ function collect(
         (type.values.length > 64 || type.values.some((v) => v.includes(',')))
       )
         add('type.set-values-invalid', column.id, `${path}/type/values`, type.values);
+    } else if (type.kind === 'declared') {
+      if (
+        !type.name.trim() ||
+        type.name.length > 120 ||
+        /[\0;]|--|\/\*/.test(type.name) ||
+        type.numericArguments.length > 2 ||
+        type.numericArguments.some((arg) => !/^[+-]?\d+(?:\.\d+)?$/.test(arg))
+      )
+        add('type.declaration-invalid', column.id, `${path}/type`, type);
+      if (tableMode?.strict)
+        add('type.strict-not-supported', column.id, `${path}/type`, type, 'unsupported');
     } else if (tableMode?.strict)
       add('type.strict-not-supported', column.id, `${path}/type`, type, 'unsupported');
     if (column.physical.options.database !== context.kind)
@@ -770,6 +781,11 @@ function collect(
         true,
         'unsupported',
       );
+    if (key.nullsNotDistinct && key.kind === 'primary')
+      add('key.nulls-policy-requires-unique', key.id, `${path}/nullsNotDistinct`, [
+        key.kind,
+        key.nullsNotDistinct,
+      ]);
     for (const id of key.columnIds) {
       const column = visibleColumn(id, key.tableId);
       if (!column) continue;
@@ -922,7 +938,30 @@ function collect(
       const path = `/checks/${segment(check.id)}`;
       if (check.name) identifier(check.name, check.id, `${path}/name`);
       feature('check', check.id, path, {}, true);
-      expression(check.expression, check.id, `${path}/expression`, check.tableId, 'check');
+      const referenced =
+        expression(check.expression, check.id, `${path}/expression`, check.tableId, 'check') ?? [];
+      if (context.kind === 'mysql') {
+        if (referenced.some((id) => columns.get(id)?.physical.generation.kind === 'autoIncrement'))
+          add('check.auto-increment-reference-not-supported', check.id, `${path}/expression`, [
+            check.expression,
+            referenced,
+          ]);
+        const conflicting = (doc.tableRelations ?? []).filter(
+          (relation) =>
+            physical(relation.scope) &&
+            relation.sourceTableId === check.tableId &&
+            relation.physical &&
+            [relation.physical.onDelete, relation.physical.onUpdate].some(
+              (action) => action === 'CASCADE' || action === 'SET NULL',
+            ) &&
+            relation.physical.sourceColumnIds.some((id) => referenced.includes(id)),
+        );
+        if (conflicting.length)
+          add('check.foreign-key-action-not-supported', check.id, `${path}/expression`, [
+            check.expression,
+            conflicting,
+          ]);
+      }
     }
   }
   for (const index of doc.indexes ?? []) {
@@ -937,6 +976,82 @@ function collect(
     feature('index', index.id, path, {}, true);
     if (index.options.database !== context.kind)
       add('index.context-mismatch', index.id, `${path}/options`, index.options, 'unsupported');
+    if (!index.parts.length)
+      add('index.parts-required', index.id, `${path}/parts`, index.parts, 'incomplete');
+    if (index.options.database === 'postgresql') {
+      const options = index.options;
+      if (index.unique && options.method !== 'btree')
+        add(
+          'index.unique-method-not-supported',
+          index.id,
+          `${path}/unique`,
+          [index.unique, options.method],
+          'unsupported',
+        );
+      if (options.nullsNotDistinct && !index.unique)
+        add(
+          'index.nulls-policy-requires-unique',
+          index.id,
+          `${path}/options/nullsNotDistinct`,
+          options,
+        );
+      if (options.includeColumnIds?.length && !['btree', 'gist', 'spgist'].includes(options.method))
+        add(
+          'index.include-method-not-supported',
+          index.id,
+          `${path}/options/includeColumnIds`,
+          options,
+          'unsupported',
+        );
+      if (['hash', 'spgist'].includes(options.method) && index.parts.length !== 1)
+        add('index.method-single-part-required', index.id, `${path}/parts`, [
+          index.parts,
+          options.method,
+        ]);
+      if (options.method !== 'btree' && index.parts.some((part) => part.direction === 'desc'))
+        add(
+          'index.direction-not-supported',
+          index.id,
+          `${path}/parts`,
+          [index.parts, options.method],
+          'unsupported',
+        );
+    }
+    if (index.options.database === 'mysql' && index.options.kind !== 'btree') {
+      if (
+        index.unique ||
+        index.parts.some(
+          (part) =>
+            part.expression.kind !== 'column' ||
+            part.prefixLength !== undefined ||
+            part.direction === 'desc',
+        )
+      )
+        add(
+          'index.special-parts-not-supported',
+          index.id,
+          `${path}/parts`,
+          [index.parts, index.unique, index.options],
+          'unsupported',
+        );
+      for (const part of index.parts)
+        if (part.expression.kind === 'column') {
+          const column = visibleColumn(part.expression.columnId, index.tableId),
+            type = column && scalarType(column.physical.type);
+          if (
+            index.options.kind === 'spatial'
+              ? !column || column.physical.nullable || type?.category !== 'geometry'
+              : type?.category !== 'string'
+          )
+            add(
+              'index.special-type-not-supported',
+              index.id,
+              `${path}/parts`,
+              [part, column, index.options],
+              'unsupported',
+            );
+        }
+    }
     for (let i = 0; i < index.parts.length; i++) {
       const part = index.parts[i]!;
       expression(part.expression, index.id, `${path}/parts/${i}`, index.tableId, 'index');
@@ -950,6 +1065,51 @@ function collect(
           part.prefixLength,
           'unsupported',
         );
+      if (
+        context.kind === 'mysql' &&
+        index.options.database === 'mysql' &&
+        index.options.kind === 'btree' &&
+        part.expression.kind === 'column'
+      ) {
+        const column = visibleColumn(part.expression.columnId, index.tableId),
+          type = column && scalarType(column.physical.type);
+        if (type?.category === 'json' || type?.category === 'geometry')
+          add(
+            'index.type-not-supported',
+            index.id,
+            `${path}/parts/${i}`,
+            [part, column],
+            'unsupported',
+          );
+        if (
+          type &&
+          /^(tiny|medium|long)?(text|blob)$/.test(type.sqlName) &&
+          part.prefixLength === undefined
+        )
+          add('index.prefix-required', index.id, `${path}/parts/${i}/prefixLength`, [part, column]);
+        if (
+          part.prefixLength !== undefined &&
+          (!type || !['string', 'binary'].includes(type.category))
+        )
+          add(
+            'index.prefix-type-not-supported',
+            index.id,
+            `${path}/parts/${i}/prefixLength`,
+            [part, column],
+            'unsupported',
+          );
+        if (
+          column?.physical.type.kind === 'builtin' &&
+          'length' in column.physical.type.parameters &&
+          column.physical.type.parameters.length !== undefined &&
+          part.prefixLength !== undefined &&
+          part.prefixLength > column.physical.type.parameters.length
+        )
+          add('index.prefix-length-exceeded', index.id, `${path}/parts/${i}/prefixLength`, [
+            part,
+            column,
+          ]);
+      }
     }
     if ('predicate' in index.options && index.options.predicate) {
       feature('partialIndex', index.id, `${path}/options/predicate`, {}, true);

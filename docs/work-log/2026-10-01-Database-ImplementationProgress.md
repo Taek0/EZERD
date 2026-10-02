@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- C5 native DDL 컴파일러/실제 실행 단위를 완료했다. [결과](2026-10-02-Database-NativeDDLCompiler.md). PG65/MySQL37/SQLite23 기본 선언과 주요 조합을 실제 실행했다. 공유 메뉴/API/MCP 다운로드 및 readiness 활성화는 미완료이며 마지막 전체 check는 1041개 통과/89개 건너뜀이다.
+
 - 2026-10-02 native 웹 기본 속성 저장 및 pending/draft/ACK 복구를 연결했다. [결과](2026-10-02-Database-NativeWebEditing.md). 최종 check 849개 통과/69개 건너뜀, 격리 통합 52개 통과. 세 DB 브라우저 실제 저장·원본 보존 및 ACK 유실 재조회 확인. native 타입/옵션 편집·전체 ERD 및 DDL은 미완료다.
 
 1. native shared REST/MCP 저장/ACK 및 명시 업그레이드를 연결했다. 다음은 native 웹 편집 소비와 v2 import/export/history 경로다. replay는 새 검증보다 먼저 유지하며 locked current 원문을 previous로 검증한다. native undo/restore는 trusted history/deletion provenance를 증명하는 별도 경로로 진행하고 ordinary legacy/retired ID 정책을 완화하지 않는다.
