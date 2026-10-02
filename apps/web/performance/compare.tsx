@@ -51,6 +51,7 @@ function Compare() {
   const area = useRef<HTMLDivElement>(null);
   const status = useRef<HTMLOutputElement>(null);
   const active = useRef(false);
+  const real = useRef({ armed: false, wheels: 0, before: {} as ReturnType<typeof state> });
   const commits = useRef<
     { phase: string; actual: number; base: number; start: number; commit: number }[]
   >([]);
@@ -208,6 +209,57 @@ function Compare() {
     if (status.current) status.current.textContent = 'complete';
     setOutput(JSON.stringify(result, null, 2));
   }
+  function armReal() {
+    if (active.current) return;
+    real.current = { armed: true, wheels: 0, before: state() };
+    setOutput('');
+    if (status.current) status.current.textContent = 'armed-real';
+  }
+  function captureRealWheel() {
+    if (!real.current.armed) return;
+    if (!active.current) {
+      commits.current = [];
+      real.current.before = state();
+      collector.start({
+        scenario: 'real-pan-smoke',
+        editor,
+        variant,
+        count,
+        commit: __PERF_COMMIT__,
+        dirty: __PERF_DIRTY__,
+        input: 'browser-wheel',
+        build: 'production-react-profiling',
+      });
+      active.current = true;
+      if (status.current) status.current.textContent = 'running-real';
+    }
+    real.current.wheels++;
+  }
+  async function finishReal() {
+    if (!real.current.armed || !active.current) return;
+    await frame();
+    await frame();
+    active.current = false;
+    real.current.armed = false;
+    const { samples: _samples, ...measurement } = collector.stop();
+    const after = state();
+    setOutput(
+      JSON.stringify(
+        {
+          measurement,
+          before: real.current.before,
+          after,
+          documentUnchanged: real.current.before.fingerprint === after.fingerprint,
+          wheels: real.current.wheels,
+          react: stats(commits.current.map((c) => c.actual)),
+          commits: commits.current,
+        },
+        null,
+        2,
+      ),
+    );
+    if (status.current) status.current.textContent = 'complete-real';
+  }
   return (
     <>
       <header className="comparison-controls">
@@ -254,6 +306,10 @@ function Compare() {
         <button disabled={!ready} onClick={() => void run()}>
           Run paced pan
         </button>
+        <button disabled={!ready} onClick={armReal}>
+          Arm real pan
+        </button>
+        <button onClick={() => void finishReal()}>Finish real pan</button>
         <output ref={status} aria-label="Comparison status">
           {ready ? 'ready' : 'loading'}
         </output>
@@ -262,7 +318,7 @@ function Compare() {
         Diagnostic production profiling build. Synthetic paced wheel; no API, persistence or
         collaboration. Leaf memo ignores callbacks only for this immutable read-only experiment.
       </p>
-      <div ref={area} className={`comparison-editor ${variant}`}>
+      <div ref={area} onWheelCapture={captureRealWheel} className={`comparison-editor ${variant}`}>
         <Profiler id="canvas" onRender={profile}>
           {editor === 'legacy' ? (
             <Canvas
