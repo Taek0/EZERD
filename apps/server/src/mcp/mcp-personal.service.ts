@@ -87,6 +87,9 @@ export const personalCommandSchema = z.discriminatedUnion('type', [
   }),
 ]);
 export const applyPersonalChangesSchema = z.strictObject({
+  expectedDatabaseRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  expectedProjectVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  expectedSyncSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   projectId: z.uuid(),
   expectedVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   operationId: z.uuid(),
@@ -122,6 +125,11 @@ export class McpPersonalService {
           return candidate;
         },
         { id: input.operationId, fingerprint },
+        {
+          expectedDatabaseRevision: input.expectedDatabaseRevision,
+          expectedProjectVersion: input.expectedProjectVersion,
+          expectedSyncSequence: input.expectedSyncSequence,
+        },
       )
       .then((value) => personalStateSnapshotSchema.parse(value));
   }

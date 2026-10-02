@@ -52,6 +52,11 @@ export class PersonalStateController {
         user,
         input.expectedVersion,
         input.state,
+        {
+          expectedDatabaseRevision: input.expectedDatabaseRevision,
+          expectedProjectVersion: input.expectedProjectVersion,
+          expectedSyncSequence: input.expectedSyncSequence,
+        },
       ),
     );
   }

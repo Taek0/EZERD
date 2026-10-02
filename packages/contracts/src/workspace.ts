@@ -171,12 +171,16 @@ export const personalStateSchema = z.strictObject({
   relations: z.array(relationLayoutSchema).max(20000),
 });
 export const personalStateSnapshotSchema = z.strictObject({
+  databaseRevision: databaseRevisionSchema.optional(),
   version: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   projectVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   syncSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   state: personalStateSchema,
 });
 export const savePersonalStateSchema = z.strictObject({
+  expectedDatabaseRevision: databaseRevisionSchema.optional(),
+  expectedProjectVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  expectedSyncSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   expectedVersion: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   state: personalStateSchema,
 });

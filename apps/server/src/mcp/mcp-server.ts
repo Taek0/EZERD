@@ -667,7 +667,7 @@ export class McpServerFactory {
       'apply_personal_changes',
       {
         description:
-          'v1/native 프로젝트에서 인증된 사용자 자신의 결합 화면·참조 테이블·개인 배치·뷰포트·관계 경로·메모를 개인 버전 기준으로 변경합니다. 공유 설계·DB 문맥·물리 타입은 변경하지 않습니다.',
+          'v1/native 프로젝트에서 인증된 사용자 자신의 결합 화면·참조 테이블·개인 배치·뷰포트·관계 경로·메모를 개인 버전 기준으로 변경합니다. native 신규 쓰기는 get_personal_state의 databaseRevision/projectVersion/syncSequence를 expectedDatabaseRevision/expectedProjectVersion/expectedSyncSequence로 함께 전달합니다. 기존 operation 재생은 같은 원문을 유지합니다. 공유 설계·DB 문맥·물리 타입은 변경하지 않습니다.',
         inputSchema: applyPersonalChangesSchema,
         outputSchema: personalStateSnapshotSchema,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },

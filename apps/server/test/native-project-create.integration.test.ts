@@ -219,6 +219,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         viewports: [{ viewId: '__tables__', x: 0, y: 0, zoom: 1 }],
       });
       const saved = await request(`/projects/${id}/personal-state`, 'PUT', {
+        expectedDatabaseRevision: own.databaseRevision,
+        expectedProjectVersion: own.projectVersion,
+        expectedSyncSequence: own.syncSequence,
         expectedVersion: 0,
         state: { ...own.state, viewports: [{ viewId: '__tables__', x: 111, y: 222, zoom: 2 }] },
       });
