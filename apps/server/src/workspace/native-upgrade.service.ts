@@ -27,6 +27,7 @@ import { WorkspaceAccessService } from './workspace-access.service.js';
 import { SyncGateway } from '../sync/sync.gateway.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { z } from 'zod';
+import { readNativeCancellation } from '../sync/native-cancellation-record.js';
 
 @Injectable()
 export class NativeUpgradeService {
@@ -54,7 +55,16 @@ export class NativeUpgradeService {
               eq(syncOperations.operationId, identity.data.operationId),
             ),
           );
-        if (!row) return undefined;
+        if (!row)
+          return (
+            await readNativeCancellation(
+              tx,
+              projectId,
+              identity.data.operationId,
+              { actorId: user.id, fingerprint },
+              ['native-upgrade'],
+            )
+          )?.result;
         if (row.actorId !== user.id || row.fingerprint !== fingerprint)
           throw new ConflictException({ code: 'sync.replay-mismatch' });
         const checked = nativeSyncOperationResultSchema.safeParse(row.result);

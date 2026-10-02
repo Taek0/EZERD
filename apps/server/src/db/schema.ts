@@ -348,6 +348,29 @@ export const syncOperations = pgTable(
   ],
 );
 
+// Cancellation fences outlive the seven-day sync ledger and never enter its sequence stream.
+export const nativeRequestCancellations = pgTable(
+  'native_request_cancellations',
+  {
+    operationId: uuid('operation_id').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id')
+      .notNull()
+      .references(() => users.id),
+    fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+    kind: varchar('kind', { length: 32 }).notNull(),
+    clientId: uuid('client_id').notNull(),
+    groupId: uuid('group_id').notNull(),
+    sourceOperationId: uuid('source_operation_id'),
+    result: jsonb('result').$type<Record<string, unknown>>().notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('native_request_cancellations_project_idx').on(table.projectId)],
+);
+
 export const syncFieldVersions = pgTable(
   'sync_field_versions',
   {
