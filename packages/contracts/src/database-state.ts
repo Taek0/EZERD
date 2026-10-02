@@ -4,6 +4,7 @@ import {
   databaseProfiles,
   getDatabaseProfile,
   MAX_DATABASE_REVISION,
+  type DatabaseIssue,
 } from '@ezerd/model';
 
 export const databaseProfileIdSchema = z.enum(databaseProfiles.map((profile) => profile.id));
@@ -48,6 +49,16 @@ export const changeProjectDatabaseSchema = previewProjectDatabaseSchema.safeExte
   operationId: z.uuid(),
   expectedDatabaseRevision: databaseRevisionSchema,
 });
+// Keep this leaf schema independent: project-document-state imports database-state itself.
+// This is the same issue shape used there, without introducing an eager initialization cycle.
+const conversionIssueSchema: z.ZodType<DatabaseIssue> = z.strictObject({
+  code: z.string().max(160),
+  category: z.enum(['unsupported', 'invalid', 'incomplete', 'environment']),
+  severity: z.enum(['error', 'warning']),
+  objectId: z.string().max(160).nullable(),
+  path: z.string().max(1000),
+  params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
+});
 export const projectDatabasePreviewSchema = z.strictObject({
   projectId: z.uuid(),
   version: sequence,
@@ -56,6 +67,7 @@ export const projectDatabasePreviewSchema = z.strictObject({
   target: databaseContextSchema,
   canChange: z.boolean(),
   reasonCode: z.string().optional(),
+  issues: z.array(conversionIssueSchema).optional(),
 });
 export const projectDatabaseChangeResultSchema = z.strictObject({
   projectId: z.uuid(),
