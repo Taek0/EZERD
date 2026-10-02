@@ -3,6 +3,11 @@ import { createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model'
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { ApiError, request } from '../../shared/api/client.js';
 import {
+  storeNativeEditorDraft,
+  loadNativeEditorDraft,
+  type NativeEditorDraft,
+} from './native-editor-draft.js';
+import {
   discardNativeDraft,
   discardNativePending,
   loadNativeDraft,
@@ -261,4 +266,116 @@ describe('native pending save and property draft durability', () => {
     await recoverNativePending(pending, snapshot(), store, accepted as typeof request, false);
     expect(loadNativePending(userId, projectId, store)).toBeNull();
   });
+  it('persists expanded commands and consumes an editor draft only on its accepted ACK', async () => {
+    const store = storage();
+    const draft: NativeEditorDraft = {
+      userId,
+      projectId,
+      key: 'constraint:checks:q',
+      revision: other,
+      expected: { version: 7, sequence: 10, databaseRevision: 3 },
+      before: { name: 'old' },
+      values: { name: 'new' },
+    };
+    storeNativeEditorDraft(draft, store);
+    const commands = [{ type: 'patch_check' as const, id: 'q', patch: { name: 'new' } }];
+    const pending = stageNativeSave(userId, snapshot(), commands, store, draft.expected, draft);
+    expect(loadNativePending(userId, projectId, store)?.request.commands).toEqual(commands);
+    await sendNativePending(
+      pending,
+      store,
+      vi.fn().mockResolvedValue(ack(pending.request.operationId, 'rejected')) as typeof request,
+    );
+    expect(loadNativeEditorDraft(userId, projectId, draft.key, store)).toEqual(draft);
+    await recoverNativePending(
+      pending,
+      snapshot(),
+      store,
+      vi.fn().mockResolvedValue(ack(pending.request.operationId)) as typeof request,
+    );
+    expect(loadNativeEditorDraft(userId, projectId, draft.key, store)).toBeNull();
+    expect(loadNativePending(userId, projectId, store)).toBeNull();
+  });
+  it('keeps newer format input and an independent basic property draft after an older ACK', async () => {
+    const store = storage();
+    const draft: NativeEditorDraft = {
+      userId,
+      projectId,
+      key: 'format:column:c',
+      revision: other,
+      expected: { version: 7, sequence: 10, databaseRevision: 3 },
+      before: { nullable: 'false' },
+      values: { nullable: 'true' },
+    };
+    storeNativeEditorDraft(draft, store);
+    const before = { physicalName: 'old', comment: '', logicalName: 'Old', definition: '' };
+    const property: NativePropertyDraft = {
+      userId,
+      projectId,
+      kind: 'column',
+      objectId: 'c',
+      expected: draft.expected,
+      before,
+      values: { ...before, comment: 'unsaved property' },
+    };
+    storeNativeDraft(property, store);
+    const pending = stageNativeSave(
+      userId,
+      snapshot(),
+      [{ type: 'patch_column', id: 'c', patch: { physical: { nullable: true } } }],
+      store,
+      draft.expected,
+      draft,
+    );
+    const newer = { ...draft, revision: crypto.randomUUID(), values: { nullable: 'newer input' } };
+    storeNativeEditorDraft(newer, store);
+    await sendNativePending(
+      pending,
+      store,
+      vi.fn().mockResolvedValue(ack(pending.request.operationId)) as typeof request,
+    );
+    expect(loadNativeEditorDraft(userId, projectId, draft.key, store)).toEqual(newer);
+    expect(loadNativeDraft(userId, projectId, 'column', 'c', store)).toEqual(property);
+  });
+  it('refuses changed draft references and readonly staging before a request can be sent', () => {
+    const store = storage();
+    const draft: NativeEditorDraft = {
+      userId,
+      projectId,
+      key: 'create:table:project',
+      revision: other,
+      expected: { version: 7, sequence: 10, databaseRevision: 3 },
+      before: {},
+      values: {},
+    };
+    storeNativeEditorDraft(draft, store);
+    expect(() =>
+      stageNativeSave(userId, snapshot(), [command], store, draft.expected, {
+        key: draft.key,
+        revision: userId,
+      }),
+    ).toThrow('native.draft-changed');
+    const readonly = snapshot();
+    readonly.project.status = 'archived';
+    expect(() => stageNativeSave(userId, readonly, [command], store)).toThrow('project.read-only');
+    expect(loadNativePending(userId, projectId, store)).toBeNull();
+  });
+  it.each(['group', 'revision', 'sequence'])(
+    'retains pending and input when an accepted ACK has the wrong %s',
+    async (field) => {
+      const store = storage(),
+        pending = stageNativeSave(userId, snapshot(), [command], store);
+      const invalid = ack(pending.request.operationId);
+      if (field === 'group') invalid.groupId = other;
+      if (field === 'revision') {
+        invalid.databaseRevision = 4;
+        invalid.nextBaseline.databaseRevision = 4;
+      }
+      if (field === 'sequence') invalid.sequence = 10;
+      await expect(
+        sendNativePending(pending, store, vi.fn().mockResolvedValue(invalid) as typeof request),
+      ).rejects.toThrow('native.ack-mismatch');
+      expect(loadNativePending(userId, projectId, store)).toEqual(pending);
+    },
+  );
 });

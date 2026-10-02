@@ -13,6 +13,8 @@ import {
   defaultDatabaseContext,
   deriveOperationChanges,
   migrateDesignDocumentV1,
+  createNativeTable,
+  createNativeColumn,
   type DesignDocument,
 } from '@ezerd/model';
 import {
@@ -680,6 +682,65 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       );
       expect((await stored(id)).sync_sequence).toBe(1);
     });
+    it.each(['postgresql', 'mysql', 'sqlite'])(
+      'stores %s native logical creation through structured command contracts and protects reused IDs',
+      async (kind) => {
+        const id = await createProject(kind);
+        const context = defaultDatabaseContext(kind as 'postgresql' | 'mysql' | 'sqlite');
+        const source = migrateDesignDocumentV1(legacyDocument(), context).document;
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(source),
+        ]);
+        const table = createNativeTable(context, 'logical-table', null, 'logical');
+        table.logical.name = 'Logical draft';
+        const column = createNativeColumn(context, table, 'logical-column');
+        column.logical.name = 'Draft attribute';
+        const input = {
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: randomUUID(),
+          expectedVersion: 0,
+          expectedSequence: 0,
+          expectedDatabaseRevision: 0,
+          includeDocument: true,
+          commands: [
+            { type: 'add_table', value: table },
+            { type: 'add_column', value: column },
+          ],
+        };
+        const path = `/projects/${id}/native-sync/commands`;
+        const saved = await request(path, 'POST', input);
+        expect(saved.status, JSON.stringify(saved.data)).toBe(201);
+        expect(saved.data.status).toBe('accepted');
+        const current = (await stored(id)).document;
+        expect(current.tables).toContainEqual(table);
+        expect(current.columns).toContainEqual(column);
+        expect(current.columns[0]).toEqual(source.columns![0]);
+        const reused = await request(path, 'POST', {
+          ...input,
+          operationId: randomUUID(),
+          expectedVersion: 1,
+          expectedSequence: 1,
+          commands: [
+            { type: 'delete_objects', targets: [{ collection: 'tables', id: table.id }] },
+            { type: 'add_table', value: table },
+          ],
+        });
+        expect(reused.status).toBe(400);
+        expect(reused.data.code).toBe('document.duplicate-identities');
+        expect((await stored(id)).document).toEqual(current);
+        const removed = await request(path, 'POST', {
+          ...input,
+          operationId: randomUUID(),
+          expectedVersion: 1,
+          expectedSequence: 1,
+          commands: [{ type: 'delete_objects', targets: [{ collection: 'tables', id: table.id }] }],
+        });
+        expect(removed.data.status, JSON.stringify(removed.data)).toBe('accepted');
+        expect((await stored(id)).document).toEqual(source);
+      },
+    );
     it.each(['postgresql', 'mysql', 'sqlite'])(
       'saves %s native web property commands without losing source attributes',
       async (kind) => {

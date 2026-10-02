@@ -4,13 +4,13 @@ import {
   nativeSyncOperationResultSchema,
   type NativeSyncOperationResult,
   type ProjectDocumentState,
+  type NativeEditorCommand,
+  type NativeEditorDraftRef,
 } from '@ezerd/contracts';
-import type { NativeColumnPatch, NativeTablePatch } from '@ezerd/model';
+import { loadNativeEditorDraft, discardNativeEditorDraft } from './native-editor-draft.js';
 import { ApiError, body, request } from '../../shared/api/client.js';
 
-export type NativeWebCommand =
-  | { type: 'patch_column'; id: string; patch: NativeColumnPatch }
-  | { type: 'patch_table'; id: string; patch: NativeTablePatch };
+export type NativeWebCommand = NativeEditorCommand;
 export type NativePendingSave = ReturnType<typeof pendingSchema.parse>;
 export interface NativeSaveExpected {
   version: number;
@@ -46,17 +46,34 @@ export function stageNativeSave(
   input: NativeWebCommand[],
   storage: Storage = localStorage,
   expected?: NativeSaveExpected,
+  editorDraft?: NativeEditorDraftRef,
 ): NativePendingSave {
   if (snapshot.sourceDocument.schemaVersion !== 2)
     throw new Error('document.native-upgrade-required');
+  if (snapshot.project.status !== 'active') throw new Error('project.read-only');
   if (expected && expected.databaseRevision !== snapshot.project.databaseRevision)
     throw new Error('database.context-changed');
   if (loadNativePending(userId, snapshot.project.id, storage))
     throw new Error('native.pending-exists');
+  if (editorDraft) {
+    const draft = loadNativeEditorDraft(userId, snapshot.project.id, editorDraft.key, storage);
+    if (
+      !draft ||
+      draft.revision !== editorDraft.revision ||
+      !expected ||
+      draft.expected.version !== expected.version ||
+      draft.expected.sequence !== expected.sequence ||
+      draft.expected.databaseRevision !== expected.databaseRevision
+    )
+      throw new Error('native.draft-changed');
+  }
   const operationId = crypto.randomUUID();
   const pending = pendingSchema.parse({
     userId,
     projectId: snapshot.project.id,
+    ...(editorDraft
+      ? { editorDraft: { key: editorDraft.key, revision: editorDraft.revision } }
+      : {}),
     request: {
       operationId,
       groupId: operationId,
@@ -161,6 +178,7 @@ export function discardNativePending(
 /** Clear only the property draft represented by this ACK; a newer tab's input stays intact. */
 function acknowledgePropertyDrafts(pending: NativePendingSave, storage: Storage): void {
   for (const command of pending.request.commands) {
+    if (command.type !== 'patch_table' && command.type !== 'patch_column') continue;
     const kind = command.type === 'patch_table' ? 'table' : 'column';
     const draft = loadNativeDraft(pending.userId, pending.projectId, kind, command.id, storage);
     if (
@@ -184,6 +202,21 @@ function acknowledgePropertyDrafts(pending: NativePendingSave, storage: Storage)
       discardNativeDraft(pending.userId, pending.projectId, kind, command.id, storage, draft);
   }
 }
+function acknowledgeEditorDraft(pending: NativePendingSave, storage: Storage): void {
+  if (pending.editorDraft)
+    discardNativeEditorDraft(pending.userId, pending.projectId, pending.editorDraft, storage);
+}
+function checkNativeAck(pending: NativePendingSave, result: NativeSyncOperationResult): void {
+  if (
+    result.operationId !== pending.request.operationId ||
+    result.actor.id !== pending.userId ||
+    result.groupId !== pending.request.groupId ||
+    (result.status === 'accepted' &&
+      (result.databaseRevision !== pending.request.expectedDatabaseRevision ||
+        result.sequence <= pending.request.expectedSequence))
+  )
+    throw new Error('native.ack-mismatch');
+}
 export async function sendNativePending(
   pending: NativePendingSave,
   storage: Storage = localStorage,
@@ -195,10 +228,10 @@ export async function sendNativePending(
       body('POST', pending.request),
     ),
   );
-  if (result.operationId !== pending.request.operationId || result.actor.id !== pending.userId)
-    throw new Error('native.ack-mismatch');
+  checkNativeAck(pending, result);
   if (result.status === 'accepted') {
     acknowledgePropertyDrafts(pending, storage);
+    acknowledgeEditorDraft(pending, storage);
     discardNativePending(pending.userId, pending.projectId, pending.request.operationId, storage);
   }
   return result;
@@ -217,10 +250,10 @@ export async function recoverNativePending(
         `/api/projects/${encodeURIComponent(pending.projectId)}/native-sync/operations/${pending.request.operationId}`,
       ),
     );
-    if (result.operationId !== pending.request.operationId || result.actor.id !== pending.userId)
-      throw new Error('native.ack-mismatch');
+    checkNativeAck(pending, result);
     if (result.status === 'accepted') {
       acknowledgePropertyDrafts(pending, storage);
+      acknowledgeEditorDraft(pending, storage);
       discardNativePending(pending.userId, pending.projectId, pending.request.operationId, storage);
     }
     return result;

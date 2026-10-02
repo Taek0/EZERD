@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ProjectEntry } from './project-entry.js';
 import type { Thread } from '@ezerd/contracts';
 import {
@@ -12,6 +12,8 @@ import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import './native-project-view.css';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
+import { NativeStructureEditor } from './native-editor-structure.js';
+import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
   stageNativeSave,
@@ -106,8 +108,15 @@ export function NativeProjectView({
   const [pending, setPending] = useState<NativePendingSave | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const activeEditor = useRef('');
+  const editorIdentity = JSON.stringify([userId, snapshot.project.id]);
+  activeEditor.current = editorIdentity;
   const editable = !!userId && canEdit && snapshot.project.status === 'active' && !!doc;
   useEffect(() => {
+    setPending(null);
+    setSaveError('');
+    setEditingColumn(null);
+    setSaving(false);
     if (!userId) return;
     try {
       setPending(loadNativePending(userId, snapshot.project.id));
@@ -118,14 +127,23 @@ export function NativeProjectView({
   async function save(
     commands: NativeWebCommand[],
     expected?: NativeSaveExpected,
+    editorDraft?: NativeEditorDraftRef,
   ): Promise<boolean> {
     if (!editable || !userId) return false;
     setSaving(true);
     setSaveError('');
     try {
-      const staged = stageNativeSave(userId, snapshot, commands, localStorage, expected);
+      const staged = stageNativeSave(
+        userId,
+        snapshot,
+        commands,
+        localStorage,
+        expected,
+        editorDraft,
+      );
       setPending(staged);
       const result = await sendNativePending(staged);
+      if (activeEditor.current !== editorIdentity) return result.status === 'accepted';
       if (result.status === 'rejected') {
         setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
         return false;
@@ -134,10 +152,10 @@ export function NativeProjectView({
       onReload();
       return true;
     } catch (error) {
-      setSaveError(message(error));
+      if (activeEditor.current === editorIdentity) setSaveError(message(error));
       return false;
     } finally {
-      setSaving(false);
+      if (activeEditor.current === editorIdentity) setSaving(false);
     }
   }
   async function recover() {
@@ -146,14 +164,15 @@ export function NativeProjectView({
     setSaveError('');
     try {
       const result = await recoverNativePending(pending, snapshot, localStorage, request, editable);
+      if (activeEditor.current !== editorIdentity) return;
       if (result.status === 'accepted') {
         setPending(null);
         onReload();
       } else setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
     } catch (error) {
-      setSaveError(message(error));
+      if (activeEditor.current === editorIdentity) setSaveError(message(error));
     } finally {
-      setSaving(false);
+      if (activeEditor.current === editorIdentity) setSaving(false);
     }
   }
   const visible = (scope: string) => scope === 'both' || scope === mode;
@@ -308,6 +327,19 @@ export function NativeProjectView({
               {!tables.length && <p>{t('선택한 범위에 테이블이 없습니다.')}</p>}
             </aside>
             <section className="native-table-detail" aria-live="polite">
+              {editable && (
+                <NativeStructureEditor
+                  key={`${userId}:${snapshot.project.id}`}
+                  context={{
+                    userId: userId!,
+                    snapshot,
+                    busy: saving || busy || !!pending,
+                    onSave: save,
+                  }}
+                  document={doc}
+                  {...(selectedTable ? { table: selectedTable } : {})}
+                />
+              )}
               {focusedReview && (
                 <section aria-label={t('리뷰')}>
                   <h3>{t('리뷰')}</h3>
@@ -338,7 +370,7 @@ export function NativeProjectView({
                         </select>
                       </label>
                       <NativePropertyEditor
-                        key={`${selectedTable.id}:${editingColumn ?? ''}:${snapshot.project.version}`}
+                        key={`${userId}:${snapshot.project.id}:${selectedTable.id}:${editingColumn ?? ''}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}`}
                         table={selectedTable}
                         userId={userId!}
                         snapshot={snapshot}

@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- C4 native 구조/형식 편집의 공통 명령·후보 및 UI/draft/ACK 보호를 확장했다. [결과](2026-10-02-Database-NativeEditorExpansion.md). gate false 유지, 세 DB 실제 논리 생성/삭제·ID 재사용 거부를 확인했다. ERD/clipboard·고급 option/default 모델 정책과 최종 브라우저 QA는 남았다.
+
 - C5 native DDL 컴파일러/실제 실행 단위를 완료했다. [결과](2026-10-02-Database-NativeDDLCompiler.md). PG65/MySQL37/SQLite23 기본 선언과 주요 조합을 실제 실행했다. 공유 메뉴/API/MCP 다운로드 및 readiness 활성화는 미완료이며 마지막 전체 check는 1041개 통과/89개 건너뜀이다.
 
 - 2026-10-02 native 웹 기본 속성 저장 및 pending/draft/ACK 복구를 연결했다. [결과](2026-10-02-Database-NativeWebEditing.md). 최종 check 849개 통과/69개 건너뜀, 격리 통합 52개 통과. 세 DB 브라우저 실제 저장·원본 보존 및 ACK 유실 재조회 확인. native 타입/옵션 편집·전체 ERD 및 DDL은 미완료다.
