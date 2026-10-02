@@ -10,3 +10,5 @@
 - 이전 빌드와 결과는 유지하며 dist-performance-comparison은 Git/포맷 제외 대상이다.
 - 최신 lockfile의 추가 의존성으로 초기 타입 검증에서 fake-indexeddb가 누락되어 frozen-lockfile 설치 후 타입 검증 및 비교 빌드를 통과했다. lockfile은 변경하지 않았다.
 - 예비 브라우저 실행에서 실제 transform 변화, 문서 불변 및 production Profiler 표본 수집을 확인했다. 최종 반복 결과는 별도 측정 결과 문서에 기록한다.
+
+후속 검증: 실제 브라우저 휠 검증 버튼을 af0c7cd에 추가했다. 반복 결과를 점검하면서 surface 크기를 mount 애니메이션 도중 읽은 표본이 발견되어 유한 진입 애니메이션 종료 후 측정을 시작하도록 수정했다. 이전 결과는 예비 표본으로 보존하고 최종 비교는 수정된 clean 빌드에서 다시 수행한다.

@@ -101,6 +101,13 @@ function Compare() {
     if (!surface) throw Error('No canvas surface');
     active.current = true;
     if (status.current) status.current.textContent = 'warming';
+    // Finish finite mount transitions before sampling the surface or scheduling input.
+    await Promise.all(
+      (area.current?.getAnimations({ subtree: true }) ?? [])
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => {})),
+    );
+    await frame();
     // Warm both camera update paths before measuring; same total displacement for each variant.
     const rect = surface.getBoundingClientRect();
     const wheel = (delta: number) =>
