@@ -17,6 +17,8 @@ export function assertNativeExportReady(
 ): void {
   if (loadNativePending(userId, projectId, storage as globalThis.Storage))
     throw Error('project-export.pending');
+  if (storage.getItem(`ezerd.native.history:${JSON.stringify([userId, projectId])}`) !== null)
+    throw Error('project-export.pending');
   if (
     storage.getItem(`ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`) !== null
   )

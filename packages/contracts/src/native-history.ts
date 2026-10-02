@@ -25,6 +25,15 @@ export const nativeHistoryCommandSchema = z.strictObject({
   databaseRevision: databaseRevisionSchema,
 });
 export type NativeHistoryCommand = z.infer<typeof nativeHistoryCommandSchema>;
+/** Local durable request envelope; never used as server authority. */
+export const nativeHistoryPendingSchema = z.strictObject({
+  userId: z.uuid(),
+  projectId: z.uuid(),
+  sourceOperationId: z.uuid(),
+  command: z.enum(['undo', 'restore']),
+  request: nativeHistoryCommandSchema,
+});
+export type NativeHistoryPending = z.infer<typeof nativeHistoryPendingSchema>;
 
 export const nativeHistoryEntrySchema = z.strictObject({
   operationId: z.uuid(),

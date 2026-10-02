@@ -31,6 +31,11 @@ import {
   nativeSyncOperationResultSchema,
   upgradeProjectDocumentSchema,
   projectDDLExportSchema,
+  nativeHistoryCommandSchema,
+  nativeHistoryCommandResultSchema,
+  nativeHistoryQuerySchema,
+  nativeHistoryPageSchema,
+  nativeSyncSnapshotSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
@@ -43,6 +48,8 @@ import { McpLogger } from './logging.js';
 import { McpAuthService } from './mcp-auth.service.js';
 import { NativeUpgradeService } from '../workspace/native-upgrade.service.js';
 import { NativeDDLService } from '../workspace/native-ddl.service.js';
+import { NativeHistoryService } from '../sync/native-history.service.js';
+import { NativeSyncService } from '../sync/native-sync.service.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
@@ -140,6 +147,8 @@ export class McpServerFactory {
     @Inject(McpAuthService) private readonly auth: McpAuthService,
     @Inject(NativeUpgradeService) private readonly nativeUpgrade: NativeUpgradeService,
     @Inject(NativeDDLService) private readonly nativeDDL: NativeDDLService,
+    @Inject(NativeHistoryService) private readonly nativeHistory: NativeHistoryService,
+    @Inject(NativeSyncService) private readonly nativeSync: NativeSyncService,
   ) {}
 
   create(user: AuthenticatedUser, tokenId: string, requestId: string): McpServer {
@@ -723,6 +732,93 @@ export class McpServerFactory {
           };
         }),
     );
+    server.registerTool(
+      'get_native_project_baseline',
+      {
+        description:
+          'native 이력 보상에 사용할 현재 서버 baseline을 발급합니다. 설계 권한과 최신 version/sequence/databaseRevision이 필요합니다. clientId를 보관하고 응답의 baseline 좌표를 undo/restore 요청에 그대로 사용하세요.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          clientId: idSchema,
+          expected: z.strictObject({
+            version: z.number().int().nonnegative().max(2147483647),
+            sequence: z.number().int().nonnegative().max(2147483647),
+            databaseRevision: z.number().int().nonnegative().max(2147483647),
+          }),
+        }),
+        outputSchema: z.strictObject({
+          ...nativeSyncSnapshotSchema.shape,
+          document: z.object({ schemaVersion: z.literal(2) }).passthrough(),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, clientId, expected }) =>
+        invoke('get_native_project_baseline', async () =>
+          nativeSyncSnapshotSchema.parse(
+            await this.nativeSync.baseline(projectId, clientId, user, expected),
+          ),
+        ),
+    );
+    server.registerTool(
+      'get_native_project_history',
+      {
+        description:
+          'native 이력과 legacy/upgrade 경계를 sequence 순서로 조회합니다. 원본 변경·삭제 증거를 반환하며 native 보상은 자신의 accepted native 작업에 한정됩니다.',
+        inputSchema: nativeHistoryQuerySchema.extend({ projectId: idSchema }),
+        outputSchema: z.strictObject({
+          ...nativeHistoryPageSchema.shape,
+          history: z.array(z.object({ operationId: idSchema }).passthrough()).max(100),
+        }),
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      ({ projectId, since, limit }) =>
+        invoke('get_native_project_history', async () =>
+          nativeHistoryPageSchema.parse(
+            await this.nativeHistory.history(projectId, since, limit, user),
+          ),
+        ),
+    );
+    for (const command of ['undo', 'restore'] as const) {
+      const name =
+        command === 'undo' ? 'undo_native_project_operation' : 'restore_native_project_deletion';
+      server.registerTool(
+        name,
+        {
+          description:
+            command === 'undo'
+              ? '같은 actor의 accepted native 작업을 서버 이력 출처와 현재 충돌 규칙에 따라 실행 취소합니다. get_native_project_baseline의 현재 좌표가 필요하며 전송한 request를 보관해 응답 유실 시 동일 요청을 재생하세요.'
+              : '같은 actor의 native 삭제 이력에서 입증된 객체를 새 ID로 복원합니다. 이전 native baseline 좌표나 클라이언트 snapshot을 신뢰하지 않습니다. 현재 baseline 좌표를 사용하고 요청 재생에는 동일 request를 사용하세요.',
+          inputSchema: z.strictObject({
+            projectId: idSchema,
+            sourceOperationId: idSchema,
+            request: nativeHistoryCommandSchema,
+          }),
+          outputSchema: z.strictObject({
+            ...nativeHistoryCommandResultSchema.shape,
+            result: z.strictObject({
+              ...nativeSyncOperationResultSchema.shape,
+              document: z
+                .object({ schemaVersion: z.literal(2) })
+                .passthrough()
+                .optional(),
+            }),
+          }),
+          annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+        },
+        ({ projectId, sourceOperationId, request }) =>
+          invoke(name, async () =>
+            nativeHistoryCommandResultSchema.parse(
+              await this.nativeHistory.compensate(
+                projectId,
+                sourceOperationId,
+                command,
+                request,
+                user,
+              ),
+            ),
+          ),
+      );
+    }
     return server;
   }
 

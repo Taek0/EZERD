@@ -14,6 +14,7 @@ import './native-project-view.css';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
+import { NativeHistoryDialog } from './NativeHistoryDialog.js';
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
@@ -111,6 +112,7 @@ export function NativeProjectView({
   const [pending, setPending] = useState<NativePendingSave | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
   const activeEditor = useRef('');
   const editorIdentity = JSON.stringify([userId, snapshot.project.id]);
   activeEditor.current = editorIdentity;
@@ -243,11 +245,26 @@ export function NativeProjectView({
           </span>
           <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
           {projectActions?.(focusIssue)}
+          {userId && (
+            <Button onClick={() => setHistoryOpen(true)} disabled={saving || busy}>
+              {t('설계 이력')}
+            </Button>
+          )}
           <Button onClick={onReload} disabled={busy}>
             {t('다시 불러오기')}
           </Button>
         </div>
       </div>
+      {historyOpen && userId && (
+        <NativeHistoryDialog
+          key={`history:${userId}:${snapshot.project.id}`}
+          userId={userId}
+          snapshot={snapshot}
+          canEdit={editable}
+          onClose={() => setHistoryOpen(false)}
+          onReload={onReload}
+        />
+      )}
       {saveError && (
         <p className="notice error" role="alert">
           {saveError}

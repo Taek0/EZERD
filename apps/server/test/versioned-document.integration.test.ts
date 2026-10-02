@@ -22,6 +22,8 @@ import {
   nativeSyncOperationResultSchema,
   nativeSyncSnapshotSchema,
   projectDDLExportSchema,
+  nativeHistoryPageSchema,
+  nativeHistoryCommandResultSchema,
 } from '@ezerd/contracts';
 
 function legacyDocument(): DesignDocument {
@@ -1832,6 +1834,112 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         ).toBe(200);
         expect((await request(`/projects/${id}/personal-state`)).data.state).toEqual(state);
         expect(await stored(id)).toEqual(before);
+      },
+    );
+    it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+      'consumes %s native history baseline, undo and fresh-ID restore through MCP',
+      async (kind) => {
+        const id = await createProject(kind);
+        const native = migrateDesignDocumentV1(
+          createEmptyDocument(),
+          defaultDatabaseContext(kind),
+        ).document;
+        native.tables = [createNativeTable(native.database, 'logical-table', null, 'logical')];
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(native),
+        ]);
+        const client = new Client({ name: 'native-history', version: '1.0.0' });
+        try {
+          await client.connect(
+            new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+              requestInit: { headers: { Authorization: `Bearer ${ownerMcpToken}` } },
+            }),
+          );
+          const call = async (name: string, input: Record<string, unknown>) => {
+            const result = await client.callTool({ name, arguments: input });
+            expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+            return result.structuredContent as Record<string, any>;
+          };
+          const apply = async (commands: unknown[]) => {
+            const head = await stored(id);
+            return call('apply_native_project_changes', {
+              projectId: id,
+              operationId: randomUUID(),
+              groupId: randomUUID(),
+              clientId: randomUUID(),
+              expectedVersion: head.version,
+              expectedSequence: head.sync_sequence,
+              expectedDatabaseRevision: head.database_revision,
+              commands,
+              includeDocument: true,
+            });
+          };
+          const compensate = async (sourceOperationId: string, command: 'undo' | 'restore') => {
+            const head = await stored(id),
+              clientId = randomUUID();
+            const baseline = await call('get_native_project_baseline', {
+              projectId: id,
+              clientId,
+              expected: {
+                version: head.version,
+                sequence: head.sync_sequence,
+                databaseRevision: head.database_revision,
+              },
+            });
+            const input = {
+              projectId: id,
+              sourceOperationId,
+              request: {
+                operationId: randomUUID(),
+                groupId: randomUUID(),
+                clientId,
+                baselineId: baseline.baselineId,
+                baselineIssuedAt: baseline.baselineIssuedAt,
+                expectedVersion: baseline.projectVersion,
+                expectedSequence: baseline.sequence,
+                database: baseline.database,
+                databaseRevision: baseline.databaseRevision,
+              },
+            };
+            const name =
+              command === 'undo'
+                ? 'undo_native_project_operation'
+                : 'restore_native_project_deletion';
+            const output = nativeHistoryCommandResultSchema.parse(await call(name, input));
+            expect(await call(name, input)).toEqual(output);
+            return output;
+          };
+          const edited = await apply([
+            {
+              type: 'patch_table',
+              id: 'logical-table',
+              patch: { logical: { definition: 'Changed' } },
+            },
+          ]);
+          const page = nativeHistoryPageSchema.parse(
+            await call('get_native_project_history', { projectId: id }),
+          );
+          expect(
+            page.history.find((entry) => entry.operationId === edited.operationId)?.format,
+          ).toBe('native');
+          const undone = await compensate(edited.operationId, 'undo');
+          expect(undone.result.status).toBe('accepted');
+          expect((await stored(id)).document.tables[0].logical.definition).toBe('');
+          const deleted = await apply([
+            { type: 'delete_objects', targets: [{ collection: 'tables', id: 'logical-table' }] },
+          ]);
+          const restored = await compensate(deleted.operationId, 'restore');
+          expect(restored.result.status).toBe('accepted');
+          expect((await stored(id)).document.tables[0].id).not.toBe('logical-table');
+          expect(restored.identityMap).toContainEqual({
+            kind: 'entity',
+            from: 'logical-table',
+            to: (await stored(id)).document.tables[0].id,
+          });
+        } finally {
+          await client.close();
+        }
       },
     );
     it('keeps a native DB mismatch explicit instead of interpreting it in the project dialect', async () => {

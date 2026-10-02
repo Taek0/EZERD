@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- native 이력 MCP·웹 소비를 연결했다. [결과](2026-10-02-Database-NativeHistoryConsumers.md). 실제 AppModule versioned/MCP 37+5개, targeted 28개 및 web typecheck 통과. 웹 이력 실제 브라우저 QA와 durable queue 원자성 보완은 후속이며 옛 ACK를 최신 문서로 덮어쓰지 않는다.
+
 - C6 제한 literal parser와 PK/UNIQUE 공통 정책을 연결했다. [결과](2026-10-02-Database-NativeLiteralKeyPolicy.md). PG65/MySQL37의 기본 선언 및 키 허용/거부를 실제 실행하고 SQLite23/STRICT 및 대표 리터럴 roundtrip을 확인했다. main literal/key/validation 350개 테스트 통과. 특수 parser·전체 AST 결과 타입 추론·advanced 환경 조건은 명시 미완료이며 usable/coverage false를 유지한다.
 
 - native 이력 조회·trusted undo/삭제 restore를 실제 AppModule에 연결했다. [결과](2026-10-02-Database-NativeHistory.md). 계약 5개와 실제 AppModule 격리 REST/DB 35개, server typecheck를 통과했다. 원본 ledger/ACK/tombstone 출처와 fresh-ID 복구·권한 변경 뒤 동일 ACK 재생을 확인했다. MCP/web 소비는 다음 독립 단위다.

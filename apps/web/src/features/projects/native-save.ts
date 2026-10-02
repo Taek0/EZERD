@@ -51,6 +51,11 @@ export function stageNativeSave(
   if (snapshot.sourceDocument.schemaVersion !== 2)
     throw new Error('document.native-upgrade-required');
   if (snapshot.project.status !== 'active') throw new Error('project.read-only');
+  if (
+    storage.getItem(`ezerd.native.history:${JSON.stringify([userId, snapshot.project.id])}`) !==
+    null
+  )
+    throw new Error('native.pending-exists');
   if (expected && expected.databaseRevision !== snapshot.project.databaseRevision)
     throw new Error('database.context-changed');
   if (loadNativePending(userId, snapshot.project.id, storage))
