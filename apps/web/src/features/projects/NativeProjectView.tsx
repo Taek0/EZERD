@@ -11,6 +11,18 @@ import {
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import './native-project-view.css';
+import { NativePropertyEditor } from './NativePropertyEditor.js';
+import {
+  loadNativePending,
+  stageNativeSave,
+  sendNativePending,
+  recoverNativePending,
+  discardNativePending,
+  type NativePendingSave,
+  type NativeWebCommand,
+  type NativeSaveExpected,
+} from './native-save.js';
+import { message, request } from '../../shared/api/client.js';
 
 registerTranslations({
   '설계 조회': 'Design overview',
@@ -52,21 +64,33 @@ registerTranslations({
   공통: 'Common',
   리뷰: 'Review',
   '목표 DB 버전': 'Target DB version',
+  '편집 가능': 'Editable',
+  '저장 확인 중…': 'Confirming save…',
+  '미확인 또는 미적용 저장 요청이 있습니다.': 'A save request is unconfirmed or unapplied.',
+  '저장 결과 확인': 'Check save result',
+  '요청 초기화': 'Reset request',
+  수정: 'Edit',
+  '저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.':
+    'Save was rejected. Keep your input and check the latest design.',
 });
 
-/** Native data is rendered directly. No v1 projection, edit callback, baseline or autosave exists here. */
+/** Native data and commands stay outside the v1 editor/runtime. */
 export function NativeProjectView({
   entry,
   onLeave,
   onReload,
   busy = false,
   focusedReview,
+  userId,
+  canEdit = false,
 }: {
   entry: Extract<ProjectEntry, { kind: 'native' }>;
   onLeave: () => void;
   onReload: () => void;
   busy?: boolean;
   focusedReview?: Thread;
+  userId?: string;
+  canEdit?: boolean;
 }) {
   const { t } = useI18n();
   const { snapshot, document: doc } = entry;
@@ -78,6 +102,60 @@ export function NativeProjectView({
   const [mode, setMode] = useState<'physical' | 'logical'>('physical');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  const [editingColumn, setEditingColumn] = useState<string | null>(null);
+  const [pending, setPending] = useState<NativePendingSave | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const editable = !!userId && canEdit && snapshot.project.status === 'active' && !!doc;
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      setPending(loadNativePending(userId, snapshot.project.id));
+    } catch (error) {
+      setSaveError(message(error));
+    }
+  }, [userId, snapshot.project.id]);
+  async function save(
+    commands: NativeWebCommand[],
+    expected?: NativeSaveExpected,
+  ): Promise<boolean> {
+    if (!editable || !userId) return false;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const staged = stageNativeSave(userId, snapshot, commands, localStorage, expected);
+      setPending(staged);
+      const result = await sendNativePending(staged);
+      if (result.status === 'rejected') {
+        setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
+        return false;
+      }
+      setPending(null);
+      onReload();
+      return true;
+    } catch (error) {
+      setSaveError(message(error));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function recover() {
+    if (!pending || pending.userId !== userId) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const result = await recoverNativePending(pending, snapshot, localStorage, request, editable);
+      if (result.status === 'accepted') {
+        setPending(null);
+        onReload();
+      } else setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
+    } catch (error) {
+      setSaveError(message(error));
+    } finally {
+      setSaving(false);
+    }
+  }
   const visible = (scope: string) => scope === 'both' || scope === mode;
   const tables = (doc?.tables ?? []).filter(
     (table) =>
@@ -141,12 +219,35 @@ export function NativeProjectView({
           <span>
             {t('목표 DB 버전')}: {profile.targetVersion}
           </span>
-          <span>{t('조회 전용')}</span>
+          <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
           <Button onClick={onReload} disabled={busy}>
             {t('다시 불러오기')}
           </Button>
         </div>
       </div>
+      {saveError && (
+        <p className="notice error" role="alert">
+          {saveError}
+        </p>
+      )}
+      {pending && (
+        <div className="notice native-pending" role="status">
+          <p>{t('미확인 또는 미적용 저장 요청이 있습니다.')}</p>
+          <Button onClick={() => void recover()} disabled={saving}>
+            {t(saving ? '저장 확인 중…' : '저장 결과 확인')}
+          </Button>
+          <Button
+            disabled={saving}
+            onClick={() => {
+              if (!userId) return;
+              discardNativePending(userId, snapshot.project.id, pending.request.operationId);
+              setPending(null);
+            }}
+          >
+            {t('요청 초기화')}
+          </Button>
+        </div>
+      )}
       {!doc ? (
         <p className="notice error" role="alert">
           {t(
@@ -218,6 +319,47 @@ export function NativeProjectView({
               {selectedTable && (
                 <>
                   <h2>{tableName(selectedTable.id)}</h2>
+                  {editable && (
+                    <>
+                      <label>
+                        {t('속성 편집')}
+                        <select
+                          value={editingColumn ?? ''}
+                          onChange={(event) => setEditingColumn(event.target.value || null)}
+                        >
+                          <option value="">{t('테이블')}</option>
+                          {(doc.columns ?? [])
+                            .filter((column) => column.tableId === selectedTable.id)
+                            .map((column) => (
+                              <option key={column.id} value={column.id}>
+                                {column.physical.name || column.logical.name || column.id}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <NativePropertyEditor
+                        key={`${selectedTable.id}:${editingColumn ?? ''}:${snapshot.project.version}`}
+                        table={selectedTable}
+                        userId={userId!}
+                        snapshot={snapshot}
+                        {...(editingColumn &&
+                        doc.columns?.find(
+                          (column) =>
+                            column.id === editingColumn && column.tableId === selectedTable.id,
+                        )
+                          ? {
+                              column: doc.columns.find(
+                                (column) =>
+                                  column.id === editingColumn &&
+                                  column.tableId === selectedTable.id,
+                              )!,
+                            }
+                          : {})}
+                        busy={saving || busy || !!pending}
+                        onSave={save}
+                      />
+                    </>
+                  )}
                   <p>
                     {mode === 'physical'
                       ? selectedTable.physical.comment

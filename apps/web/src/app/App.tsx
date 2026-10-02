@@ -1061,6 +1061,8 @@ export function App() {
           onLeave={() => void leave()}
           onReload={() => void open(nativeOpened.snapshot.project.id)}
           busy={busy}
+          userId={user.id}
+          canEdit={permissions.edit}
           {...(nativeReview ? { focusedReview: nativeReview } : {})}
         />
       ) : opened ? (

@@ -681,6 +681,73 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await stored(id)).sync_sequence).toBe(1);
     });
     it.each(['postgresql', 'mysql', 'sqlite'])(
+      'saves %s native web property commands without losing source attributes',
+      async (kind) => {
+        const id = await createProject(kind);
+        const source = migrateDesignDocumentV1(
+          legacyDocument(),
+          defaultDatabaseContext(kind as 'postgresql' | 'mysql' | 'sqlite'),
+        ).document;
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(source),
+        ]);
+        const input = {
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: randomUUID(),
+          expectedVersion: 0,
+          expectedSequence: 0,
+          expectedDatabaseRevision: 0,
+          includeDocument: true,
+          commands: [
+            {
+              type: 'patch_column',
+              id: 'c',
+              patch: {
+                physical: { comment: 'Web draft saved' },
+                logical: { definition: 'Reviewed definition' },
+              },
+            },
+          ],
+        };
+        const path = `/projects/${id}/native-sync/commands`;
+        const before = await stored(id);
+        expect((await request(path, 'POST', input, null)).status).toBe(401);
+        expect((await request(path, 'POST', { ...input, projectId: id })).status).toBe(400);
+        expect(await stored(id)).toEqual(before);
+        const saved = await request(path, 'POST', input);
+        expect(saved.status, JSON.stringify(saved.data)).toBe(201);
+        expect(nativeSyncOperationResultSchema.safeParse(saved.data).success).toBe(true);
+        expect(saved.data).toMatchObject({
+          status: 'accepted',
+          sequence: 1,
+          actor: { id: actorId },
+        });
+        const expected = structuredClone(source);
+        expected.columns[0].physical.comment = 'Web draft saved';
+        expected.columns[0].logical.definition = 'Reviewed definition';
+        expect((await stored(id)).document).toEqual(expected);
+        expect((await request(path, 'POST', input)).data).toEqual(saved.data);
+        expect(
+          (await request(`/projects/${id}/native-sync/operations/${input.operationId}`)).data,
+        ).toEqual(saved.data);
+        expect((await stored(id)).sync_sequence).toBe(1);
+        await pool.query('UPDATE projects SET status=$2 WHERE id=$1', [id, 'archived']);
+        expect(
+          (
+            await request(path, 'POST', {
+              ...input,
+              operationId: randomUUID(),
+              expectedVersion: 1,
+              expectedSequence: 1,
+            })
+          ).status,
+        ).toBe(409);
+        expect((await stored(id)).document).toEqual(expected);
+      },
+    );
+    it.each(['postgresql', 'mysql', 'sqlite'])(
       'persists %s native REST/MCP operations with truthful ACKs, replay and retired identity protection',
       async (kind) => {
         const id = await createProject(kind);

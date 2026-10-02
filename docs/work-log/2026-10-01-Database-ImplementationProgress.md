@@ -36,8 +36,10 @@
 
 ## 다음 작업
 
+- 2026-10-02 native 웹 기본 속성 저장 및 pending/draft/ACK 복구를 연결했다. [결과](2026-10-02-Database-NativeWebEditing.md). 최종 check 849개 통과/69개 건너뜀, 격리 통합 52개 통과. 세 DB 브라우저 실제 저장·원본 보존 및 ACK 유실 재조회 확인. native 타입/옵션 편집·전체 ERD 및 DDL은 미완료다.
+
 1. native shared REST/MCP 저장/ACK 및 명시 업그레이드를 연결했다. 다음은 native 웹 편집 소비와 v2 import/export/history 경로다. replay는 새 검증보다 먼저 유지하며 locked current 원문을 previous로 검증한다. native undo/restore는 trusted history/deletion provenance를 증명하는 별도 경로로 진행하고 ordinary legacy/retired ID 정책을 완화하지 않는다.
-2. native 테이블/컬럼 factory·patch·FK·삭제를 MCP native 편집에 연결했다. native 웹은 아직 조회 전용이며 실제 편집 UI/durable queue·도메인 소유권 이동·native ERD/clipboard 소비를 공통 canvas/계약에 연결한다. 신뢰할 수 있는 소비/DDL/DB 실행 검증을 끝내기 전 신규 native 타입·기능은 usable로 활성화하지 않는다.
+2. native 테이블/컬럼 factory·patch·FK·삭제를 MCP native 편집에 연결했고 웹 기본 속성 편집/pending 복구도 연결했다. DB별 전체 편집 UI/durable queue·도메인 소유권 이동·native ERD/clipboard 소비를 이어서 연결한다. 신뢰할 수 있는 소비/DDL/DB 실행 검증을 끝내기 전 신규 native 타입·기능은 usable로 활성화하지 않는다.
 3. C4 프로젝트 DB별 타입/옵션/기능 편집 UI와 MCP를 연결한다.
 4. C5 세 DB native DDL/공유 메뉴/실제 파일·DB 실행 검증을 완성한다.
 5. C6/C7 고급 기본 타입·ERD 기능 및 C8 검증된 DB 변환/전체 QA를 이어서 수행한다.

@@ -31,6 +31,7 @@ import { NativeSyncController } from './sync/native-sync.controller.js';
 import { McpNativeDocumentService } from './mcp/mcp-native-document.service.js';
 import { NativeUpgradeService } from './workspace/native-upgrade.service.js';
 import { NativeUpgradeController } from './workspace/native-upgrade.controller.js';
+import { NativeCommandController } from './sync/native-command.controller.js';
 
 @Module({
   controllers: [
@@ -41,6 +42,7 @@ import { NativeUpgradeController } from './workspace/native-upgrade.controller.j
     SyncController,
     NativeSyncController,
     NativeUpgradeController,
+    NativeCommandController,
     McpTokenController,
     McpController,
     PersonalStateController,
