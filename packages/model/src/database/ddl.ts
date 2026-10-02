@@ -333,7 +333,10 @@ export function compileNativeDatabaseDDL(document: NativeDesignDocument): Native
         );
         if (!chars.engineSupported) throw Error(chars.code);
         sql += ' CHARACTER SET ' + quote(chars.charset!) + ' COLLATE ' + quote(chars.collation!);
-      } else if (options.database === 'postgresql' && options.collation)
+      } else if (
+        (options.database === 'postgresql' || options.database === 'sqlite') &&
+        options.collation
+      )
         sql += ' COLLATE ' + quote(options.collation);
       if (
         options.database === 'mysql' &&
