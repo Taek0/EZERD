@@ -533,6 +533,41 @@ describe('MCP workspace authorization', () => {
       await harness.close();
     }
   });
+  it('documents and forwards explicit native creation while preserving omitted legacy input', async () => {
+    const harness = await connected();
+    try {
+      const tool = (await harness.client.listTools()).tools.find(
+        (tool) => tool.name === 'create_project',
+      )!;
+      expect(tool.description).toContain('formatVersion: 2');
+      expect(tool.inputSchema.properties).toHaveProperty('formatVersion');
+      const native = await harness.client.callTool({
+        name: 'create_project',
+        arguments: { workspaceId: project.workspaceId, databaseKind: 'mysql', formatVersion: 2 },
+      });
+      expect(native.isError).not.toBe(true);
+      expect(harness.workspace.createProject).toHaveBeenCalledWith(actor.id, {
+        workspaceId: project.workspaceId,
+        databaseKind: 'mysql',
+        formatVersion: 2,
+      });
+      await harness.client.callTool({
+        name: 'create_project',
+        arguments: { workspaceId: project.workspaceId },
+      });
+      expect(harness.workspace.createProject).toHaveBeenLastCalledWith(actor.id, {
+        workspaceId: project.workspaceId,
+      });
+      const invalid = await harness.client.callTool({
+        name: 'create_project',
+        arguments: { workspaceId: project.workspaceId, formatVersion: 3 },
+      });
+      expect(invalid.isError).toBe(true);
+      expect(harness.workspace.createProject).toHaveBeenCalledTimes(2);
+    } finally {
+      await harness.close();
+    }
+  });
 
   it('uses the authenticated identity for whoami and rejects a token revoked after connection', async () => {
     const harness = await connected();

@@ -24,6 +24,8 @@ import {
   hasPhysicalDatabaseDesign,
   nextDatabaseRevision,
   projectDatabaseCapabilities,
+  createEmptyNativeDocument,
+  sharedDocument,
 } from '@ezerd/model';
 import type {
   createProjectSchema,
@@ -91,6 +93,7 @@ export class WorkspaceService {
   createProject(actorId: string, input: z.infer<typeof createProjectSchema>) {
     return operation(async () => {
       return this.access.runWorkspace(actorId, input.workspaceId, 'createProject', async (tx) => {
+        const context = defaultDatabaseContext(input.databaseKind ?? 'postgresql');
         const name =
           input.name?.trim() ||
           nextAutomaticProjectName(
@@ -104,9 +107,19 @@ export class WorkspaceService {
         const [row] = await tx
           .insert(projects)
           .values({
-            ...input,
+            workspaceId: input.workspaceId,
+            databaseKind: context.kind,
             name,
-            databaseProfileId: defaultDatabaseContext(input.databaseKind ?? 'postgresql').profileId,
+            databaseProfileId: context.profileId,
+            ...(input.formatVersion === 2
+              ? {
+                  // The JSONB row annotation remains v1 for older clients; the factory supplies v2.
+                  document: sharedDocument(
+                    createEmptyNativeDocument(context),
+                  ) as unknown as ProjectRow['document'],
+                  databaseRevision: 0,
+                }
+              : {}),
           })
           .returning();
         await tx.insert(workspaceAuditEvents).values({

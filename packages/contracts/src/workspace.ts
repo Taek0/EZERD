@@ -215,6 +215,7 @@ export const createProjectSchema = z.strictObject({
   name: z.string().trim().max(120).optional(),
   workspaceId: z.uuid(),
   databaseKind: databaseKindSchema.optional(),
+  formatVersion: z.union([z.literal(1), z.literal(2)]).optional(),
 });
 export const updateProjectSchema = z
   .strictObject({

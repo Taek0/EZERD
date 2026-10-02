@@ -43,6 +43,10 @@ import '../styles/responsive-shell.css';
 import { McpConnectionPanel } from '../features/mcp/McpConnectionPanel.js';
 import { exportProjectFile } from '../features/projects/ProjectTransfer.js';
 import { ProjectGallery, type GalleryHandle } from '../features/projects/ProjectGallery.js';
+import {
+  galleryProjectCreationInput,
+  type GalleryProjectCreationOptions,
+} from '../features/projects/project-create.js';
 import { previewDatabaseChange } from '../features/projects/database-preview.js';
 import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
 import { NativeProjectView } from '../features/projects/NativeProjectView.js';
@@ -649,10 +653,14 @@ export function App() {
   async function createGalleryProject(
     name: string,
     databaseKind: 'postgresql' | 'mysql' | 'sqlite',
+    options: GalleryProjectCreationOptions = { formatVersion: 2 },
   ) {
     if (!permissions.edit || !workspaceId) throw new Error(t('프로젝트를 만들 수 없습니다.'));
     const project = projectSchema.parse(
-      await request('/api/projects', body('POST', { name, databaseKind, workspaceId })),
+      await request(
+        '/api/projects',
+        body('POST', galleryProjectCreationInput(workspaceId, name, databaseKind, options)),
+      ),
     );
     setProjects((items) => [project, ...items]);
     setRefresh((value) => value + 1);
