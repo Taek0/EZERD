@@ -34,6 +34,12 @@ import {
 import type { NativeWebCommand } from './native-save.js';
 import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
+  nativeSelectedArrayPolicy,
+  nativeEnumTextareaEditable,
+  nativeSridParameterDecision,
+} from './native-constraint-options.js';
+import { NativeSridParameterField } from './native-constraint-option-fields.js';
+import {
   nativeBoundedInteger,
   nativeExactBoolean,
   nativeDefaultInput,
@@ -80,6 +86,10 @@ registerTranslations({
   'ON UPDATE 함수': 'ON UPDATE function',
   '입력·타입 조건에 맞지 않음': 'Input does not match the type constraints',
   '환경 검증 필요': 'Environment verification is required',
+  '배열 차원은 1부터 6까지 입력하세요. 배열을 제거하려면 비워 두세요.':
+    'Enter array dimensions from 1 to 6. Leave blank to remove the array.',
+  '빈 값이나 개행을 포함한 기존 label은 원문으로 유지됩니다. 값 목록 편집에는 개별 label 편집기가 필요합니다.':
+    'Existing empty or multiline labels are preserved. Editing the value list requires individual label controls.',
 });
 const json = (value: unknown) => JSON.stringify(value);
 const yes = (value: boolean | undefined) => (value ? 'true' : 'false');
@@ -238,6 +248,12 @@ export function nativeFormatCommands(
     ...parameterKeys,
   ]);
   if (typeChanged) {
+    if (
+      column.physical.type.kind === 'valueList' &&
+      values.values !== before.values &&
+      !nativeEnumTextareaEditable(column.physical.type.values)
+    )
+      throw Error('native.enum-structured-label-editor-required');
     const selected = values.typeChoice ?? '';
     const parameters = Object.fromEntries(
       Object.entries(nativeTypeParameterRules(selected)).flatMap(([key, rule]) => {
@@ -280,7 +296,10 @@ export function nativeFormatCommands(
                   kind: 'valueList',
                   database: 'mysql',
                   typeId: selected,
-                  values: split(values.values ?? ''),
+                  values:
+                    column.physical.type.kind === 'valueList' && values.values === before.values
+                      ? [...column.physical.type.values]
+                      : split(values.values ?? ''),
                 }
               : {
                   kind: 'builtin',
@@ -293,12 +312,20 @@ export function nativeFormatCommands(
                 },
     ) as NativeColumn['physical']['type'];
     if (!nativeTypeReady(document, table, type)) throw new Error('type.not-implemented');
+    if (type.kind === 'builtin' && Object.hasOwn(type.parameters, 'srid')) {
+      const decision = nativeSridParameterDecision(
+        document,
+        column,
+        type.typeId,
+        values['parameter:srid'] ?? '',
+      );
+      if (!decision.allowed || !decision.usable)
+        throw Error(decision.code ?? 'feature.not-implemented');
+    }
     if (
       'array' in type &&
       type.array &&
-      !policy.feature('array', {
-        ...(type.kind === 'builtin' ? { typeId: type.typeId } : { projectEnum: true }),
-      }).usable
+      !nativeSelectedArrayPolicy(document, table, column, nativeTypeChoice(type), true).usable
     )
       throw new Error('feature.not-implemented');
     if (values.confirmTypeReset !== 'true') throw new Error('native.type-reset-review-required');
@@ -562,7 +589,7 @@ export function NativeFormatEditor({
           ...(document.database.kind === 'postgresql' ? (document.enums ?? []) : []).map(
             (item) => ({
               value: `enum:${item.id}`,
-              label: `ENUM ${item.schema}.${item.name} · ${reason(policy.feature('enumType').code)}`,
+              label: `ENUM ${item.schema || 'public'}.${item.name}${blocked('enumType') ? ` · ${reason(policy.feature('enumType').code)}` : ''}`,
               disabled: blocked('enumType'),
             }),
           ),
@@ -590,6 +617,16 @@ export function NativeFormatEditor({
           ) ||
           values.array !== nativeFormatInitial(table, column).array ||
           values.values !== nativeFormatInitial(table, column).values;
+        const arrayPolicy = nativeSelectedArrayPolicy(
+          document,
+          table,
+          column,
+          values.typeChoice ?? '',
+          typeChanged,
+        );
+        const preservedLabels =
+          column.physical.type.kind === 'valueList' &&
+          !nativeEnumTextareaEditable(column.physical.type.values);
         const generationChoices = [
           { value: 'none', label: 'none' },
           ...(
@@ -664,8 +701,18 @@ export function NativeFormatEditor({
               {nativeGenerationDisplay(column.physical.generation, document)}
             </p>
             {field('typeChoice', '타입', false, choices)}
-            {Object.entries(nativeTypeParameterRules(values.typeChoice ?? '')).map(
-              ([key, rule]) => (
+            {Object.entries(nativeTypeParameterRules(values.typeChoice ?? '')).map(([key, rule]) =>
+              key === 'srid' ? (
+                <NativeSridParameterField
+                  key={key}
+                  document={document}
+                  column={column}
+                  typeId={values.typeChoice ?? ''}
+                  value={values['parameter:srid'] ?? ''}
+                  onChange={(value) => change('parameter:srid', value)}
+                  disabled={!ready}
+                />
+              ) : (
                 <div key={key}>
                   {field(
                     `parameter:${key}`,
@@ -683,10 +730,25 @@ export function NativeFormatEditor({
                 </div>
               ),
             )}
-            {field('array', '배열 차원', blocked('array'))}
+            {(document.database.kind === 'postgresql' || values.array) && (
+              <>
+                {field('array', '배열 차원', !arrayPolicy.usable)}
+                <p>
+                  {t('배열 차원은 1부터 6까지 입력하세요. 배열을 제거하려면 비워 두세요.')}
+                  {arrayPolicy.code ? condition(arrayPolicy.code) : ''}
+                </p>
+              </>
+            )}
             {values.typeChoice?.startsWith('mysql:') &&
               ['mysql:enum', 'mysql:set'].includes(values.typeChoice) &&
-              field('values', '값 목록 (한 줄에 하나)', !ready, undefined, true)}
+              field('values', '값 목록 (한 줄에 하나)', !ready || preservedLabels, undefined, true)}
+            {preservedLabels && (
+              <p role="status">
+                {t(
+                  '빈 값이나 개행을 포함한 기존 label은 원문으로 유지됩니다. 값 목록 편집에는 개별 label 편집기가 필요합니다.',
+                )}
+              </p>
+            )}
             {column.physical.type.kind === 'declared' && (
               <p>
                 {column.physical.type.name} ({column.physical.type.numericArguments.join(', ')})
