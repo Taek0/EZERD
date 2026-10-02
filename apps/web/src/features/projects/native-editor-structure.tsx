@@ -24,6 +24,7 @@ import {
 import { nativeEditorPolicy } from './native-editor-policy.js';
 import type { NativeWebCommand } from './native-save.js';
 import { nativeKeyColumnPolicies, nativeKeyInput } from './native-editor-option-policy.js';
+import { NativeAdvancedEditor } from './NativeAdvancedEditor.js';
 
 registerTranslations({
   '구조 편집': 'Edit structure',
@@ -1126,6 +1127,14 @@ export function NativeStructureEditor({
               />
             ))}
         </>
+      )}
+      {table && (
+        <NativeAdvancedEditor
+          key={`${context.userId}:${context.snapshot.project.id}:${table.id}`}
+          context={context}
+          document={document}
+          table={table}
+        />
       )}
     </details>
   );

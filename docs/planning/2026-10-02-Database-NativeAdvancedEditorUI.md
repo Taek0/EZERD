@@ -1,0 +1,12 @@
+# C7 고급 인덱스·제한 AST 편집 UI
+
+- 기준: 루트 AGENTS, [구현 명세](2026-10-01-Database-CapabilitySpecification.md), [타입·기능 표](2026-10-01-Database-TypeFeatureMatrix.md), [진행 상태](../work-log/2026-10-01-Database-ImplementationProgress.md), [식 정책](2026-10-02-Database-NativeExpressionPolicy.md), [인덱스 정책](2026-10-02-Database-NativeIndexPolicy.md). 현재 구조/형식 form, durable draft 및 export blocker를 먼저 읽었다.
+- 새 NativeAdvancedEditor/helper/tree/index-options/tests를 중심으로 구현하고 NativeStructureEditor에서 선택 테이블에 한 번 연결한다. 기존 single comparison/type/generation/structure UI와 원문은 보존한다. NativeProjectView/App/server/model validation/compiler/index.ts는 수정하지 않는다. git add/commit/full check/build는 부모 담당이다.
+- 제한 AST의 literal/null/column/call/unary/binary/isNull/in을 재귀 tree로 생성·편집한다. default/generated/check/predicate/index expression parts가 같은 tree를 소비한다. function union은 현재 DB만, column은 현재 테이블의 물리 후보만 보여준다. 생성 식 자기 참조·volatile 함수·미지원 타입/인자/결과는 실제 정책·전체 후보 검사로 차단한다.
+- exact token draft를 별도로 유지한다. 미완성 숫자/boolean/binary/json 입력을 Number0/NaN 또는 false로 자동 변환하지 않는다. 원래 AST(default/generation 전체), before/originalType 및 context 좌표는 durable NativeEditorForm에 남기고 명시 교체 전에는 원문을 재작성하지 않는다. 기존 unsupported 값은 현재 원문으로 표시한다.
+- tree는 depth32/nodes1024, args/IN 및 index parts의 bounded controls를 제공한다. JSON/SQL 직접 입력을 요구하지 않으며 구조 변경·wrap·순서 변경·명시 제거는 같은 draft에 원자 보관한다. corrupted/과도한 draft는 보존하고 저장을 막아 reset/retry 안내를 제공한다.
+- index는 PG6methods/include/nulls-not-distinct/predicate, MySQL btree/fulltext/spatial/invisible/prefix, SQLite predicate만 보여준다. full options/context/unique/order/parts/type/환경 조건은 공개 PG method policy와 공통 engine validator를 소비한다. UI에서 opclass·coercion/새 함수를 추정하지 않는다.
+- allowed는 draft 후보/선택·이유를 결정하고 usable은 저장을 결정한다. 현재 false coverage를 승격하지 않는다. 완성된 후보는 전체 graph/native contract1.5MB/engine/write 정책 및 공개 expression/generation/feature readiness를 모두 검사한다. activation 뒤에는 실제 정책 결과를 그대로 소비하도록 설계하며 candidate-as-previous 또는 flag 주입을 하지 않는다.
+- 신규 index/check 및 기존 index/check/default/generated patch를 실제 NativeWebCommand로 준비한다. column patch는 식 관련 필드만 바꾸고 type/generation의 다른 의미를 자동 삭제하지 않는다. DB context/원래 type/value가 바뀌면 재검토를 요구한다. readonly/busy/stale/durable storage failure는 기존 draft/error/pending/export blocker를 통해 차단한다.
+- helper/static UI 의미 테스트는 실제 공개 정책/source를 사용한다. 복합 tree editing roundtrip, 함수 인자/DB/type, incomplete token, 옵션 union 및 full candidate 오류, 현재 usable=false 저장 차단과 readonly를 확인한다. 모델/DDL/API positive activation QA는 부모가 수행한다.
+- 결과: [작업 기록](../work-log/2026-10-02-Database-NativeAdvancedEditorUI.md).
