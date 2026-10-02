@@ -22,6 +22,7 @@ import {
   type DatabaseIssue,
 } from '@ezerd/model';
 import type { NativeWebCommand } from './native-save.js';
+import { nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
   nativeGenerationPolicy,
   nativeBuiltinDefaultPolicy,
@@ -69,8 +70,7 @@ export type NativeExpressionTarget =
   | { kind: 'check'; id: string; create: boolean };
 const json = (value: unknown) => JSON.stringify(value);
 const same = (a: unknown, b: unknown) => requestFingerprint(a) === requestFingerprint(b);
-const errorCode = (cause: unknown) =>
-  cause instanceof Error ? cause.message : 'native.advanced-input-invalid';
+const errorCode = (cause: unknown) => nativeEditorErrorCode(cause, 'native.advanced-input-invalid');
 const clone = <T>(value: T): T => structuredClone(value);
 function boolean(value: string) {
   if (value !== 'true' && value !== 'false') throw Error('native.boolean-invalid');
@@ -277,6 +277,12 @@ export function nativeIndexCandidate(
       return { allowed: true, usable: false, preserved: true, issues: [] };
     if (before?.scope === 'logical') throw Error('native.advanced-physical-object-required');
     const originalDraft = before ? nativeIndexDraft(document, table, before) : undefined;
+    if (!draft.parts.length)
+      throw Error(
+        (document.columns ?? []).some((c) => c.tableId === table.id && c.scope !== 'logical')
+          ? 'index.key-parts-required'
+          : 'index.key-columns-required',
+      );
     const parts =
       before && originalDraft && same(originalDraft.parts, draft.parts)
         ? clone(before.parts)
@@ -289,11 +295,6 @@ export function nativeIndexCandidate(
             };
           });
     const o = draft.options;
-    if (
-      o.database === 'mysql' &&
-      parts.some((part) => part.expression.kind !== 'column' && part.prefixLength !== undefined)
-    )
-      throw Error('index.expression-prefix-policy-required');
     const options: NativeIndex['options'] =
       before && originalDraft && same(originalDraft.options, draft.options)
         ? clone(before.options)

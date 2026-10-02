@@ -24,7 +24,7 @@
 
 1. 부모의 `native-editor-option-policy.ts` effective MySQL charset literal/key facts 연결을 직접 수정하지 않고 공개 helper를 import했다. expression/default/generated 정책 usable bool과 index/advanced feature 활성화 및 최종 전체 세로 경로 QA는 부모 후속이다.
 2. 현재 public index-policy의 명시 method API는 PG 전용이다. MySQL/SQLite 전체 옵션은 공통 `inspectNativeDatabaseDocument`로 소비한다. 부모가 공통 full nativeIndex decision API를 추가하면 이 helper에서 같은 정책으로 일원화할 수 있다.
-3. 의미 테스트에서 MySQL functional expression part+prefix가 현재 공통 validator에서 allowed로 남는 것을 확인했다. 새 helper는 이 미검증 조합을 `index.expression-prefix-policy-required`로 차단한다. UI에서 SQL cast/길이 추정을 하거나 임의 조합을 허용하지 않는다. 부모 공통 model validator/compiler의 동일 조합 차단 및 정책 API 소비를 보완해야 한다. 제품 지원 범위를 새로 승격하는 근거는 아니다.
+3. 최초 구현에서 MySQL functional expression part+prefix를 helper에서 차단했고, 이후 부모가 공통 validator에 `index.expression-prefix-policy-required`를 연결했다. 후속 UI helper는 중복 차단을 제거하고 전체 candidate의 공통 진단을 소비한다. 테스트는 affected index ID 및 `/indexes/i/parts/0/prefixLength` 진단과 source 불변을 확인한다. UI에서 SQL cast/길이 추정을 하거나 제품 지원 범위를 승격하지 않는다.
 4. 생성 식 virtual/stored의 engine 조건은 공개 generation/expression 정책과 전체 candidate에 따라 판단한다. 자기 참조는 전체 engine dependency 검사에서 차단한다. 현재 scope UI는 해당 테이블의 물리 후보만 제공하지만 DAG 편집/general casts/subquery/opclass/custom functions/raw SQL은 지원하지 않는다.
 5. 실제 enabled advanced command 저장/DB DDL 실행·브라우저 interaction은 이 단위에서 실행하지 않았다. candidate/typed command 준비와 현재 차단 경로, helper tree mutations 및 static UI semantics를 검사했다. 부모 activation 뒤 index6methods/DB options 및 default/generated/check/predicate/expression key의 실제 저장·replay·브라우저 재열기·DB execution을 검증해야 한다.
 
@@ -35,6 +35,15 @@
 - 실제 model/contracts source를 사용하는 targeted Vitest config를 ignored `.data/native-advanced-editor.vitest.ts`에 두었다. 정책 함수를 mock하거나 source flags를 위조하지 않았다.
 - 새 tree policy/advanced policy/static UI3개 files **43개 통과**. 기존 `native-editor-ui.test.ts` **11개 통과**(수정 없이 확인), 최종 합계4files **54개 통과/skip0**. 최신 source paths/Vite ambient 및 web tsconfig로 담당10개 구현/tests와 실제 dependencies를 검사한 TypeScript program **diagnostics0**. columnId callback narrowing/generation storage literal typing 및 form before record 타입 오류를 해소했다. 최종 담당10개 파일 targeted Prettier 및 tracked diff whitespace 검사가 통과했다. 전체 check/build/browser 및 git add/commit은 수행하지 않았다.
 - 복합 AND/call/arithmetic/IN, wrap/주소 변경/원문 roundtrip, bigint strings, incomplete tokens/boolean, functions/purpose/foreign/logical refs, budget/cyclic/손상 draft, 세 DB options union, opclass와 PG method repair, MySQL fulltext/spatial/prefix/functional, predicates/include, minimal rename/raw 옵션 보존, legacy/identity before/type 보존, generated cycle, durable new CHECK identity, 현재 advanced save 차단, readonly/static integration을 검사했다.
+
+## 부모 커밋 이후 recovery·activation 준비 확인
+
+- 부모가 독립 UI 커밋을 완료했다. normal false-baseline54 통과 기록은 위에 보존한다. optional recovery 검증2개가 포함된 현재 테스트는 tree/advanced/static45 + 기존 editor11, 총56개다.
+- 공통 prefix 진단 소비 정리 후 targeted4files56/skip0 재실행 통과, 담당10개와 source dependencies TypeScript diagnostics0, 변경2개 코드 targeted Prettier 및 담당 diff whitespace 검사가 통과했다. 이 후속 변경은 helper/test 및 계획/결과 문서4개뿐이며 git add/commit은 수행하지 않았다.
+- `initialSelection`은 기존 Singer 인터페이스를 보존한다. `recoveryRevision`은 같은 대상의 다른 archive 복구 시 form remount에 사용할 수 있다. 손상된 hint·삭제되거나 다른 테이블의 target은 신규 객체 form으로 전환하지 않고 보관된 초안 유지 안내를 표시한다. root/structure recovery의 unstaged 연결은 Singer/부모 소유로 수정하지 않는다.
+- 현재 source expression/index policy의 usable 및 advanced feature gates는 false다. advanced enabled 저장·브라우저·실제 DB 실행을 완료했다고 계산하지 않는다. 기본124 fixture의 부모 API/SQL3DB 통과와 이 UI의 advanced 검증 범위를 구분한다.
+- activation 후 필수 확인: PG method6종과 INCLUDE/NULLS/predicate, MySQL btree/FULLTEXT/SPATIAL/invisible/prefix 및 금지 functional prefix, SQLite predicate; 세 DB별 default/generated/CHECK/expression key의 허용/거부 후보; 저장 ACK 후 exact AST/token/옵션 재열기 및 전체 DDL/DB 실행. 각 method/type 조합은 공통 allowed 판정 범위 내에서 검사한다.
+- async/복구 확인: dirty exact 입력→대상 전환→같은 archive 재복구, 신규 index/CHECK ID 유지, stale version/sequence/revision 및 actor/context 전환 차단, readonly/archive 신규 저장 차단, pending/export blocker 유지. 실제 browser 확인은 부모 activation 뒤 수행할 후속이다.
 
 ## 변경 파일
 

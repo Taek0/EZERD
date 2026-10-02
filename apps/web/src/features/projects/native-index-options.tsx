@@ -11,6 +11,7 @@ import {
   type NativeIndexDraft,
 } from './native-advanced-policy.js';
 import { nativeAstSeed, type NativeAstDraft } from './native-expression-tree-policy.js';
+import { nativeEditorConditionText } from './native-editor-diagnostic.js';
 
 registerTranslations({
   '인덱스 방식': 'Index method',
@@ -99,7 +100,7 @@ export function NativeIndexOptionsEditor({
             (method) => change({ ...options, method: method as typeof options.method }),
             methodChoices.map((p) => ({
               value: p.method,
-              label: `${p.method}${p.allowed ? '' : ` · ${p.code}`}`,
+              label: `${p.method}${p.allowed ? '' : ` · ${nativeEditorConditionText(p.code)}`}`,
               disabled: p.method !== options.method && !p.allowed,
             })),
           )}
@@ -203,7 +204,7 @@ export function NativeIndexOptionsEditor({
             (kind) => change({ ...options, kind: kind as typeof options.kind }),
             methodChoices.map((p) => ({
               value: p.method,
-              label: `${p.method}${p.allowed ? '' : ` · ${p.code}`}`,
+              label: `${p.method}${p.allowed ? '' : ` · ${nativeEditorConditionText(p.code)}`}`,
               disabled: p.method !== options.kind && !p.allowed,
             })),
           )}

@@ -3,6 +3,7 @@ import type { DatabaseContext, NativeExpressionPolicyFacts } from '@ezerd/model'
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { NativeEditorField } from './native-editor-form.js';
+import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
   nativeAstKinds,
   nativeAstSeed,
@@ -87,7 +88,7 @@ export function NativeExpressionTreeEditor({
     return (
       <p role="alert">
         {t('손상된 식 초안을 보존했습니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.')} (
-        {error instanceof Error ? error.message : 'expression.draft-invalid'})
+        {nativeEditorConditionText(nativeEditorErrorCode(error, 'expression.draft-invalid'))})
       </p>
     );
   }
@@ -107,7 +108,7 @@ export function NativeExpressionTreeEditor({
       onChange(JSON.stringify(tree));
       setEditError('');
     } catch (error) {
-      setEditError(error instanceof Error ? error.message : 'expression.draft-invalid');
+      setEditError(nativeEditorErrorCode(error, 'expression.draft-invalid'));
     }
   }
   function nodeFields(
@@ -273,7 +274,7 @@ export function NativeExpressionTreeEditor({
             {field('함수', node.functionId, (functionId) => ({ ...node, functionId }), [
               ...nativeAstFunctionChoices(database, node, childFacts).map((c) => ({
                 value: c.id,
-                label: `${c.id.split(':')[1]}${c.allowed ? '' : ` · ${c.code}`}`,
+                label: `${c.id.split(':')[1]}${c.allowed ? '' : ` · ${nativeEditorConditionText(c.code)}`}`,
                 disabled: c.id !== node.functionId && !c.allowed,
               })),
               ...(!nativeAstFunctionChoices(database, node, childFacts).some(
@@ -367,11 +368,7 @@ export function NativeExpressionTreeEditor({
             {t('기존 식을 비교로 묶기')}
           </Button>
         </div>
-        {!local.allowed && (
-          <p role="status">
-            {t('입력 또는 조합을 지원하지 않음')} ({local.code})
-          </p>
-        )}
+        {!local.allowed && <p role="status">{nativeEditorConditionText(local.code)}</p>}
       </fieldset>
     );
   }
@@ -380,10 +377,11 @@ export function NativeExpressionTreeEditor({
       {nodeFields(root, [], label)}
       <p role="status">
         {t(decision.allowed ? '엔진에서 허용' : '입력 또는 조합을 지원하지 않음')}
-        {!decision.usable && ` · ${t('저장 검증 미완료')}`} {decision.code && `(${decision.code})`}
+        {!decision.usable && ` · ${t('저장 검증 미완료')}`}{' '}
+        {decision.code && nativeEditorConditionText(decision.code)}
       </p>
       <p>{t('완성되지 않은 토큰은 원문 초안으로 남으며 저장되지 않습니다.')}</p>
-      {editError && <p role="alert">{editError}</p>}
+      {editError && <p role="alert">{nativeEditorConditionText(editError)}</p>}
     </section>
   );
 }

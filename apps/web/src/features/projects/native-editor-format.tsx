@@ -32,6 +32,7 @@ import {
   nativeTypeParameterRules,
 } from './native-editor-policy.js';
 import type { NativeWebCommand } from './native-save.js';
+import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
   nativeBoundedInteger,
   nativeExactBoolean,
@@ -450,7 +451,7 @@ export function nativeFormatDraftIssue(
   try {
     nativeFormatCommands(document, table, column, values, nativeFormatInitial(table, column));
   } catch (error) {
-    return error instanceof Error ? error.message : 'native.input-invalid';
+    return nativeEditorErrorCode(error);
   }
   return undefined;
 }
@@ -471,6 +472,8 @@ export function NativeFormatEditor({
   const blocked = (id: Parameters<typeof policy.feature>[0]) => !policy.feature(id).usable;
   const reason = (code: string | undefined) =>
     t(code?.endsWith('not-supported') ? '이 DB에서 지원하지 않음' : '미구현 또는 실행 검증 미완료');
+  const condition = (code: string | undefined) =>
+    code ? ` · ${nativeEditorConditionText(code)}` : '';
   const bool = [
     { value: 'false', label: 'false' },
     { value: 'true', label: 'true' },
@@ -619,12 +622,12 @@ export function NativeFormatEditor({
                 decision = {
                   engineAllowed: false,
                   productUsable: false,
-                  code: error instanceof Error ? error.message : 'native.input-invalid',
+                  code: nativeEditorErrorCode(error),
                 };
               }
               return {
                 value,
-                label: `${value} · ${t(decision.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')} · ${t('제품 검증 미완료')} (${decision.code})`,
+                label: `${value} · ${t(decision.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')}${!decision.productUsable ? ` · ${t('제품 검증 미완료')}` : ''}${condition(decision.code)}`,
                 disabled:
                   !decision.productUsable &&
                   value !== nativeFormatInitial(table, column).generationChoice,
@@ -633,7 +636,7 @@ export function NativeFormatEditor({
         ];
         const defaults = policy.defaults.map((item) => ({
           value: item.choice,
-          label: `${item.choice} · ${item.preserved ? t('현재 원문 유지') : item.engineAllowed ? t('엔진에서 허용') : t(item.category === 'invalid' ? '입력·타입 조건에 맞지 않음' : item.category === 'environment' ? '환경 검증 필요' : '이 DB에서 지원하지 않음')}${item.choice !== 'none' && !item.productUsable ? ` · ${t('제품 검증 미완료')}` : ''}`,
+          label: `${item.choice} · ${item.preserved ? t('현재 원문 유지') : item.engineAllowed ? t('엔진에서 허용') : t(item.category === 'invalid' ? '입력·타입 조건에 맞지 않음' : item.category === 'environment' ? '환경 검증 필요' : '이 DB에서 지원하지 않음')}${item.choice !== 'none' && !item.productUsable ? ` · ${t('제품 검증 미완료')}` : ''}${condition(item.code)}`,
           disabled: !item.selectable,
         }));
         const originalDefault = column.physical.defaultValue;
@@ -693,13 +696,14 @@ export function NativeFormatEditor({
             {field('defaultChoice', '기본값', typeChanged, defaults)}
             {currentDefaultDecision.category === 'environment' && (
               <p role="status">
-                {t('환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.')} (
-                {currentDefaultDecision.code})
+                {t('환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.')}
+                {condition(currentDefaultDecision.code)}
               </p>
             )}
             {originalDefault.kind === 'expression' && !currentDefaultDecision.engineAllowed && (
               <p role="status">
-                {t('현재 원문 유지')} ({currentDefaultDecision.code})
+                {t('현재 원문 유지')}
+                {condition(currentDefaultDecision.code)}
               </p>
             )}
             {values.defaultChoice?.startsWith('literal:') &&
@@ -711,7 +715,8 @@ export function NativeFormatEditor({
               )}
             {issue && (
               <p role="alert">
-                {t('완성된 입력과 제품 검증이 필요합니다. 초안은 원문으로 보관됩니다.')} ({issue})
+                {t('완성된 입력과 제품 검증이 필요합니다. 초안은 원문으로 보관됩니다.')}
+                {condition(issue)}
               </p>
             )}
             {values.defaultChoice === 'expression' && (
@@ -732,7 +737,7 @@ export function NativeFormatEditor({
                     { value: '', label: '—' },
                     ...defaultFunctions.map((item) => ({
                       value: item.id,
-                      label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')} (${item.code})`,
+                      label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')}${condition(item.code)}`,
                       disabled: item.requiresArguments || !item.productUsable,
                     })),
                   ],
@@ -841,7 +846,7 @@ export function NativeFormatEditor({
                     { value: '', label: '—' },
                     ...onUpdateFunctions.map((item) => ({
                       value: item.id,
-                      label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')} (${item.code})`,
+                      label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')}${condition(item.code)}`,
                       disabled: item.requiresArguments || !item.productUsable,
                     })),
                   ])}

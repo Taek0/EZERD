@@ -252,7 +252,7 @@ describe('native default and key UI policies without coverage promotion', () => 
     const original = structuredClone(f.document);
     const html = renderToStaticMarkup(createElement(NativeFormatEditor, f));
     expect(html).toContain('환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.');
-    expect(html).toContain('default.environment-value-unverified');
+    expect(html).not.toContain('default.environment-value-unverified');
     expect(
       nativeFormatCommands(f.document, f.table, f.column, { ...before, nullable: 'true' }, before),
     ).toMatchObject([{ patch: { physical: { nullable: true } } }]);
@@ -300,7 +300,8 @@ describe('native default and key UI policies without coverage promotion', () => 
     storeNativeEditorDraft(draft);
     const html = renderToStaticMarkup(createElement(NativeFormatEditor, f));
     expect(html).toContain('value="20e-"');
-    expect(html).toContain('literal.number-invalid');
+    expect(html).toContain('입력값을 끝까지 작성하세요. 원문 초안은 유지됩니다.');
+    expect(html).not.toContain('literal.number-invalid');
     expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
     expect(loadNativeEditorDraft(draft.userId, draft.projectId, draft.key)).toEqual(draft);
     expect(f.context.onSave).not.toHaveBeenCalled();

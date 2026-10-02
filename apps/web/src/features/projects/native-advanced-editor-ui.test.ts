@@ -11,6 +11,58 @@ import { advancedFixture } from './native-advanced-test-fixtures.js';
 
 afterEach(() => setLocale('ko'));
 describe('advanced editor static meaning and readonly controls', () => {
+  it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+    'shows bilingual empty-table guidance instead of raw validator JSON for %s',
+    (kind) => {
+      const f = advancedFixture(kind);
+      f.document.columns = [];
+      const value = nativeIndexDraft(f.document, f.table),
+        changed = vi.fn();
+      for (const locale of ['ko', 'en'] as const) {
+        setLocale(locale);
+        const options = renderToStaticMarkup(
+          createElement(NativeIndexOptionsEditor, {
+            document: f.document,
+            table: f.table,
+            value,
+            onChange: changed,
+          }),
+        );
+        const html = renderToStaticMarkup(
+          createElement(NativeAdvancedEditor, {
+            context: f.context,
+            document: f.document,
+            table: f.table,
+          }),
+        );
+        const guidance =
+          locale === 'ko'
+            ? '인덱스 키 컬럼을 먼저 추가하세요.'
+            : 'Add a column for the index key first.';
+        expect(html).toContain(guidance);
+        if (kind !== 'sqlite') {
+          expect(options).toContain(guidance);
+          expect(options).toMatch(/<option value="btree"/);
+          expect(options).toMatch(/<option value="(?:hash|fulltext)" disabled=""/);
+        }
+        for (const output of [options, html]) {
+          for (const forbidden of [
+            'origin',
+            'too_small',
+            'minimum',
+            '&quot;path&quot;',
+            'ZodError',
+            'index.key-columns-required',
+          ])
+            expect(output).not.toContain(forbidden);
+        }
+        expect(html).toMatch(/type="submit"[^>]*disabled=""/);
+      }
+      expect(changed).not.toHaveBeenCalled();
+      expect(f.context.onSave).not.toHaveBeenCalled();
+      expect(value.parts).toEqual([]);
+    },
+  );
   it('opens the archived target via the existing initialSelection contract and accepts recovery revision remounts', () => {
     const f = advancedFixture();
     f.columns[0]!.physical.defaultValue = {
@@ -126,7 +178,8 @@ describe('advanced editor static meaning and readonly controls', () => {
     );
     expect(html).toContain('mysql:uuid');
     expect(html).toContain('현재 원문 유지');
-    expect(html).toContain('expression.function-not-supported');
+    expect(html).toContain('이 DB에서 지원하는 함수를 선택하세요. 현재 원문은 유지됩니다.');
+    expect(html).not.toContain('expression.function-not-supported');
     expect(changed).not.toHaveBeenCalled();
   });
   it('renders an incomplete token verbatim and a damaged draft recovery notice', () => {
@@ -149,6 +202,38 @@ describe('advanced editor static meaning and readonly controls', () => {
       renderToStaticMarkup(createElement(NativeExpressionTreeEditor, { ...props, value: '{bad' })),
     ).toContain('입력 초기화');
     expect(changed).not.toHaveBeenCalled();
+  });
+  it('shows missing-column guidance for incomplete tree probes without rewriting them', () => {
+    const f = advancedFixture(),
+      changed = vi.fn(),
+      value = JSON.stringify({ kind: 'column', columnId: '' });
+    f.document.columns = [];
+    for (const locale of ['ko', 'en'] as const) {
+      setLocale(locale);
+      const html = renderToStaticMarkup(
+        createElement(NativeExpressionTreeEditor, {
+          database: f.document.database,
+          facts: nativeAdvancedExpressionFacts(f.document, f.table, 'index'),
+          value,
+          onChange: changed,
+        }),
+      );
+      expect(html).toContain(
+        locale === 'ko'
+          ? '식에서 사용할 컬럼을 선택하세요.'
+          : 'Select a column for the expression.',
+      );
+      for (const forbidden of [
+        '&quot;origin&quot;',
+        'too_small',
+        'minimum',
+        'ZodError',
+        'expression.column-required',
+      ])
+        expect(html).not.toContain(forbidden);
+    }
+    expect(changed).not.toHaveBeenCalled();
+    expect(value).toBe('{"kind":"column","columnId":""}');
   });
   it('displays legacy default preservation and disables the full form for readonly users', () => {
     const f = advancedFixture();

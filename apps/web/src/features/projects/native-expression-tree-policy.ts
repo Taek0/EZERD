@@ -1,4 +1,5 @@
 import { nativeExpressionSchema, MAX_DOCUMENT_BYTES } from '@ezerd/contracts';
+import { nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
   nativeBuiltinFunctionIds,
   nativeExpressionDecision,
@@ -272,7 +273,7 @@ export function nativeAstDecision(
     return {
       allowed: false,
       usable: false,
-      code: error instanceof Error ? error.message : 'expression.draft-invalid',
+      code: nativeEditorErrorCode(error, 'expression.draft-invalid'),
     };
   }
 }

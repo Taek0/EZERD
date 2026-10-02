@@ -25,6 +25,7 @@ import {
   type NativeAdvancedCandidate,
 } from './native-advanced-policy.js';
 import { nativeAstSeed, type NativeAstDraft } from './native-expression-tree-policy.js';
+import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 
 registerTranslations({
   '고급 인덱스·식 편집': 'Advanced index and expression editing',
@@ -72,7 +73,7 @@ function NativeAdvancedStatus({ status }: { status: NativeAdvancedCandidate }) {
               : '입력 또는 조합을 지원하지 않음',
         )}
         {!status.preserved && !status.usable && ` · ${t('현재 저장 경로 검증 미완료')}`}{' '}
-        {status.code && `(${status.code})`}
+        {status.code && nativeEditorConditionText(status.code)}
       </p>
       {status.issues.some((i) => i.severity === 'error') && (
         <details>
@@ -81,9 +82,7 @@ function NativeAdvancedStatus({ status }: { status: NativeAdvancedCandidate }) {
             {status.issues
               .filter((i) => i.severity === 'error')
               .map((issue, i) => (
-                <li key={i}>
-                  {issue.objectId ?? '—'} · {issue.path} · {issue.code}
-                </li>
+                <li key={i}>{nativeEditorConditionText(issue.code)}</li>
               ))}
           </ul>
         </details>
@@ -139,7 +138,7 @@ export function NativeAdvancedIndexForm({
         usable: false,
         preserved: false,
         issues: [],
-        code: error instanceof Error ? error.message : 'index.draft-invalid',
+        code: nativeEditorErrorCode(error, 'index.draft-invalid'),
       };
     }
   }
@@ -161,7 +160,7 @@ export function NativeAdvancedIndexForm({
             return (
               <p role="alert">
                 {t('고급 초안을 보존했습니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.')} (
-                {error instanceof Error ? error.message : 'index.draft-invalid'})
+                {nativeEditorConditionText(nativeEditorErrorCode(error, 'index.draft-invalid'))})
               </p>
             );
           }

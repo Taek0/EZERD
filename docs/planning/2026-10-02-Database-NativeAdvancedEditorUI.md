@@ -10,3 +10,9 @@
 - 신규 index/check 및 기존 index/check/default/generated patch를 실제 NativeWebCommand로 준비한다. column patch는 식 관련 필드만 바꾸고 type/generation의 다른 의미를 자동 삭제하지 않는다. DB context/원래 type/value가 바뀌면 재검토를 요구한다. readonly/busy/stale/durable storage failure는 기존 draft/error/pending/export blocker를 통해 차단한다.
 - helper/static UI 의미 테스트는 실제 공개 정책/source를 사용한다. 복합 tree editing roundtrip, 함수 인자/DB/type, incomplete token, 옵션 union 및 full candidate 오류, 현재 usable=false 저장 차단과 readonly를 확인한다. 모델/DDL/API positive activation QA는 부모가 수행한다.
 - 결과: [작업 기록](../work-log/2026-10-02-Database-NativeAdvancedEditorUI.md).
+
+## 부모 커밋 이후 후속 검증
+
+- root recovery의 unstaged 초기 selection 연결은 Singer/부모 소유로 보존한다. 이 UI의 optional initialSelection/recoveryRevision과 손상·타 테이블·삭제된 target 차단을 검증한다.
+- 부모가 공통 validator에 연결한 MySQL functional expression+prefix 차단을 전체 candidate 진단으로 소비한다. UI의 중복 판정을 제거하고 affected index ID/path 및 source 보존을 테스트한다.
+- 현재 advanced usable/gates false에서 실제 차단 검증을 유지한다. 부모 activation 후 세 DB별 index method/options와 default/generated/check/predicate/expression key 저장·ACK·재열기·전체 DDL/실제 DB 결과를 확인해야 한다. gate를 위조한 positive 테스트로 대체하지 않는다.

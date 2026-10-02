@@ -31,6 +31,48 @@ const math: NativeExpression = {
   },
 };
 describe('advanced index and expression command consumers', () => {
+  it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+    'diagnoses missing physical %s index keys before schema parsing without changing the draft',
+    (kind) => {
+      const f = advancedFixture(kind);
+      f.document.columns = [];
+      const draft = nativeIndexDraft(f.document, f.table),
+        original = structuredClone(f.document),
+        originalDraft = structuredClone(draft),
+        choices = nativeIndexMethodChoices(f.document, f.table, draft);
+      expect(nativeIndexCandidate(f.document, f.table, 'idx', draft)).toMatchObject({
+        allowed: false,
+        usable: false,
+        code: 'index.key-columns-required',
+      });
+      expect(choices.every((c) => !c.allowed && c.code === 'index.key-columns-required')).toBe(
+        true,
+      );
+      expect(f.document).toEqual(original);
+      expect(draft).toEqual(originalDraft);
+      f.columns[0]!.scope = 'logical';
+      f.document.columns = [f.columns[0]!];
+      expect(nativeIndexCandidate(f.document, f.table, 'idx', draft).code).toBe(
+        'index.key-columns-required',
+      );
+      f.columns[0]!.scope = 'physical';
+      expect(nativeIndexCandidate(f.document, f.table, 'idx', draft).code).toBe(
+        'index.key-parts-required',
+      );
+    },
+  );
+  it('returns a stable shape diagnostic for a malformed index command identity', () => {
+    const f = advancedFixture(),
+      draft = nativeIndexDraft(f.document, f.table);
+    draft.name = 'idx';
+    const status = nativeIndexCandidate(f.document, f.table, '', draft);
+    expect(status).toMatchObject({
+      allowed: false,
+      usable: false,
+      code: 'native.input-shape-invalid',
+    });
+    expect(status.code).not.toContain('origin');
+  });
   it('maps recovery hints only to the selected table and rejects damaged/missing targets', () => {
     const f = advancedFixture();
     expect(
@@ -213,7 +255,21 @@ describe('advanced index and expression command consumers', () => {
       functionId: 'mysql:lower',
       args: [{ kind: 'column', columnId: 's' }],
     };
-    expect(nativeIndexCandidate(f.document, f.table, 'i', draft).allowed).toBe(false);
+    const original = structuredClone(f.document);
+    const unsupported = nativeIndexCandidate(f.document, f.table, 'i', draft);
+    expect(unsupported.allowed).toBe(false);
+    expect(unsupported.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'index.expression-prefix-policy-required',
+          objectId: 'i',
+          path: '/indexes/i/parts/0/prefixLength',
+          severity: 'error',
+          category: 'unsupported',
+        }),
+      ]),
+    );
+    expect(f.document).toEqual(original);
     draft.parts[0]!.prefix = '';
     expect(nativeIndexCandidate(f.document, f.table, 'i', draft).allowed).toBe(true);
   });
