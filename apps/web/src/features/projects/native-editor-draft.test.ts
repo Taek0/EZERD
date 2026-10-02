@@ -4,8 +4,10 @@ import {
   storeNativeEditorDraft,
   discardNativeEditorDraft,
   rebaseNativeEditorDraft,
+  resetNativeEditorDraft,
   type NativeEditorDraft,
 } from './native-editor-draft.js';
+import { nativeDraftMemoryState } from './native-durable-drafts.js';
 const uuid = '00000000-0000-4000-8000-000000000001',
   other = '00000000-0000-4000-8000-000000000002';
 const memory = () => {
@@ -89,5 +91,45 @@ describe('native editor durable incomplete input', () => {
     store.setItem(key, '{broken');
     expect(() => storeNativeEditorDraft(input, store)).toThrow();
     expect(store.getItem(key)).toBe('{broken');
+  });
+  it('recovers the exact failed typed input after unmount/reopen instead of the older persisted input', () => {
+    const target = memory(),
+      input = draft();
+    storeNativeEditorDraft(input, target);
+    let failing = true;
+    const broken = {
+      ...target,
+      setItem: (key: string, value: string) => {
+        if (failing) throw Error('Quota');
+        target.setItem(key, value);
+      },
+    };
+    const next = {
+      ...input,
+      revision: other,
+      values: { ...input.values, parameter: '-still-typing' },
+    };
+    expect(() => storeNativeEditorDraft(next, broken)).toThrow('Quota');
+    expect(loadNativeEditorDraft(uuid, uuid, input.key, broken)).toEqual(next);
+    expect(nativeDraftMemoryState(uuid, uuid, broken).storageFailure).toBe(true);
+    discardNativeEditorDraft(uuid, uuid, input, broken);
+    expect(loadNativeEditorDraft(uuid, uuid, input.key, broken)).toEqual(next);
+    failing = false;
+    storeNativeEditorDraft(next, broken);
+    expect(nativeDraftMemoryState(uuid, uuid, broken).storageFailure).toBe(false);
+    resetNativeEditorDraft(uuid, uuid, input.key, broken);
+    expect(loadNativeEditorDraft(uuid, uuid, input.key, broken)).toBeNull();
+  });
+  it('explicit reset never destroys memory if storage removal cannot be confirmed', () => {
+    const target = {
+        ...memory(),
+        removeItem() {
+          throw Error('Denied');
+        },
+      },
+      input = draft();
+    storeNativeEditorDraft(input, target);
+    expect(() => resetNativeEditorDraft(uuid, uuid, input.key, target)).toThrow('Denied');
+    expect(loadNativeEditorDraft(uuid, uuid, input.key, target)).toEqual(input);
   });
 });

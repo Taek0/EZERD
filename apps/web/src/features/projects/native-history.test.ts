@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IDBFactory } from 'fake-indexeddb';
+import { getNativeDurableQueue } from './native-durable-queue.js';
 import { createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model';
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { ApiError, request } from '../../shared/api/client.js';
@@ -12,6 +14,13 @@ import { assertNativeExportReady } from './project-ddl-export.js';
 const userId = '00000000-0000-4000-8000-000000000001',
   projectId = '00000000-0000-4000-8000-000000000002',
   source = '00000000-0000-4000-8000-000000000003';
+beforeEach(() => {
+  vi.stubGlobal('indexedDB', new IDBFactory());
+});
+afterEach(async () => {
+  await getNativeDurableQueue().close();
+  vi.unstubAllGlobals();
+});
 function storage() {
   const data = new Map<string, string>();
   return {
@@ -92,7 +101,7 @@ function result(input: Awaited<ReturnType<typeof stageNativeHistory>>) {
   };
 }
 describe('native history request durability and authority', () => {
-  it('clears terminal rejection only after an authorized missing-ledger confirmation', async () => {
+  it('preserves terminal HTTP errors without a recorded server outcome', async () => {
     const store = storage(),
       pending = await stageNativeHistory(
         userId,
@@ -108,7 +117,7 @@ describe('native history request durability and authority', () => {
     await expect(sendNativeHistory(pending, store, rejected as typeof request)).rejects.toThrow(
       'rejected',
     );
-    expect(loadNativeHistoryPending(userId, projectId, store)).toBeNull();
+    expect(await loadNativeHistoryPending(userId, projectId, store)).toEqual(pending);
   });
   it('preserves rejected requests when read access cannot confirm the ledger', async () => {
     const store = storage(),
@@ -129,21 +138,28 @@ describe('native history request durability and authority', () => {
         }) as typeof request,
       ),
     ).rejects.toThrow('forbidden');
-    expect(loadNativeHistoryPending(userId, projectId, store)).toEqual(pending);
+    expect(await loadNativeHistoryPending(userId, projectId, store)).toEqual(pending);
   });
   it('stages before sending, blocks other saves/exports and clears only matching accepted ACK', async () => {
     const store = storage(),
       api = vi.fn(async () => baseline()) as unknown as typeof request;
     const pending = await stageNativeHistory(userId, fixture(), source, 'undo', store, api);
-    expect(loadNativeHistoryPending(userId, projectId, store)).toEqual(pending);
-    expect(() => assertNativeExportReady(userId, projectId, store)).toThrow('pending');
-    expect(() => stageNativeSave(userId, fixture(), [], store)).toThrow('pending-exists');
+    expect(await loadNativeHistoryPending(userId, projectId, store)).toEqual(pending);
+    await expect(assertNativeExportReady(userId, projectId, store)).rejects.toThrow('pending');
+    await expect(
+      stageNativeSave(
+        userId,
+        fixture(),
+        [{ type: 'patch_table', id: 't', patch: { logical: { name: 'Input' } } }],
+        store,
+      ),
+    ).rejects.toThrow('pending-exists');
     await sendNativeHistory(
       pending,
       store,
       vi.fn(async () => result(pending)) as unknown as typeof request,
     );
-    expect(loadNativeHistoryPending(userId, projectId, store)).toBeNull();
+    expect(await loadNativeHistoryPending(userId, projectId, store)).toBeNull();
   });
   it('keeps the exact request after response loss and replays it without a new baseline', async () => {
     const store = storage(),
@@ -166,7 +182,7 @@ describe('native history request durability and authority', () => {
     ).rejects.toThrow('lost');
     const replay = vi.fn(async (_url: string, _init?: RequestInit) => result(pending));
     await sendNativeHistory(
-      loadNativeHistoryPending(userId, projectId, store)!,
+      (await loadNativeHistoryPending(userId, projectId, store))!,
       store,
       replay as unknown as typeof request,
     );
@@ -187,11 +203,11 @@ describe('native history request durability and authority', () => {
     await expect(
       sendNativeHistory(pending, store, vi.fn(async () => wrong) as unknown as typeof request),
     ).rejects.toThrow('ack-invalid');
-    expect(loadNativeHistoryPending(userId, projectId, store)).toEqual(pending);
+    expect(await loadNativeHistoryPending(userId, projectId, store)).toEqual(pending);
   });
   it('does not send a command after local storage or concurrent draft failure', async () => {
     const store = storage();
-    store.setItem = () => {
+    store.getItem = () => {
       throw Error('quota');
     };
     await expect(
@@ -227,7 +243,7 @@ describe('native history request durability and authority', () => {
         'undo',
         store,
         vi.fn(async () => {
-          stageNativeSave(
+          await stageNativeSave(
             userId,
             fixture(),
             [{ type: 'delete_objects', targets: [{ collection: 'tables', id: 'n' }] }],
@@ -237,6 +253,6 @@ describe('native history request durability and authority', () => {
         }) as unknown as typeof request,
       ),
     ).rejects.toThrow('pending');
-    expect(loadNativeHistoryPending(userId, projectId, store)).toBeNull();
+    expect(await loadNativeHistoryPending(userId, projectId, store)).toBeNull();
   });
 });

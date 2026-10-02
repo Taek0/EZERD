@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { IDBFactory } from 'fake-indexeddb';
+import { getNativeDurableQueue } from './native-durable-queue.js';
 import { createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model';
 import type { ProjectDDLExport, ProjectDocumentState } from '@ezerd/contracts';
 import {
@@ -10,6 +12,13 @@ import { storeNativeDraft } from './native-save.js';
 import { request } from '../../shared/api/client.js';
 const userId = '00000000-0000-4000-8000-000000000001',
   projectId = '00000000-0000-4000-8000-000000000002';
+beforeEach(() => {
+  vi.stubGlobal('indexedDB', new IDBFactory());
+});
+afterEach(async () => {
+  await getNativeDurableQueue().close();
+  vi.unstubAllGlobals();
+});
 function store() {
   const data = new Map<string, string>();
   return {
@@ -64,7 +73,7 @@ function state(): ProjectDocumentState {
   };
 }
 describe('DDL export uses a saved consistent project state', () => {
-  it('blocks own unsaved inputs but ignores another user and project', () => {
+  it('blocks own unsaved inputs but ignores another user and project', async () => {
     const storage = store(),
       values = { physicalName: 'id', comment: '', logicalName: 'ID', definition: '' };
     const draft = {
@@ -77,19 +86,19 @@ describe('DDL export uses a saved consistent project state', () => {
       values: { ...values, comment: 'Unsaved' },
     };
     storeNativeDraft({ ...draft, userId: '00000000-0000-4000-8000-000000000003' }, storage);
-    expect(() => assertNativeExportReady(userId, projectId, storage)).not.toThrow();
+    await expect(assertNativeExportReady(userId, projectId, storage)).resolves.toBeUndefined();
     storeNativeDraft(draft, storage);
-    expect(() => assertNativeExportReady(userId, projectId, storage)).toThrow(
+    await expect(assertNativeExportReady(userId, projectId, storage)).rejects.toThrow(
       'project-export.unsaved-draft',
     );
     storeNativeDraft({ ...draft, values }, storage);
-    expect(() => assertNativeExportReady(userId, projectId, storage)).not.toThrow();
+    await expect(assertNativeExportReady(userId, projectId, storage)).resolves.toBeUndefined();
   });
-  it('keeps a damaged own draft rather than exporting old content', () => {
+  it('keeps a damaged own draft rather than exporting old content', async () => {
     const storage = store(),
       key = `ezerd.native.editor:${JSON.stringify([userId, projectId, 'column:c'])}`;
     storage.setItem(key, 'damaged');
-    expect(() => assertNativeExportReady(userId, projectId, storage)).toThrow();
+    await expect(assertNativeExportReady(userId, projectId, storage)).rejects.toThrow();
     expect(storage.getItem(key)).toBe('damaged');
   });
   it('refuses a different project or DB revision before showing the generated file', async () => {

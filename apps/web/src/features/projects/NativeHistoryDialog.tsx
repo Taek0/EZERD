@@ -24,6 +24,8 @@ registerTranslations({
   '형식 변경 이전 이력': 'History from an earlier format',
   처리됨: 'Accepted',
   거부됨: 'Rejected',
+  '변경 요청이 적용되지 않았습니다. 최신 이력을 확인해 주세요.':
+    'The change was not applied. Review the latest history.',
   닫기: 'Close',
 });
 export function NativeHistoryDialog({
@@ -45,6 +47,7 @@ export function NativeHistoryDialog({
     [pending, setPending] = useState<NativeHistoryPending | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const active = useRef(true);
   async function load(since = 0) {
     const next = await fetchNativeHistory(snapshot.project.id, since);
     setPage((old) =>
@@ -57,38 +60,44 @@ export function NativeHistoryDialog({
     try {
       const input = pending ?? (await stageNativeHistory(userId, snapshot, source!, command!));
       setPending(input);
-      await sendNativeHistory(input);
+      const output = await sendNativeHistory(input);
+      if (!active.current) return;
       setPending(null);
       onReload();
-      onClose();
+      if (output.result.status === 'accepted') onClose();
+      else setError(t('변경 요청이 적용되지 않았습니다. 최신 이력을 확인해 주세요.'));
     } catch (cause) {
+      if (!active.current) return;
       setError(message(cause));
       try {
-        setPending(loadNativeHistoryPending(userId, snapshot.project.id));
+        const stored = await loadNativeHistoryPending(userId, snapshot.project.id);
+        if (active.current) setPending(stored);
       } catch (storageCause) {
         setError(message(storageCause));
       }
     } finally {
-      setBusy(false);
+      if (active.current) setBusy(false);
     }
   }
   useEffect(() => {
     dialog.current?.showModal();
-    let active = true;
-    try {
-      setPending(loadNativeHistoryPending(userId, snapshot.project.id));
-    } catch (cause) {
-      setError(message(cause));
-    }
-    void fetchNativeHistory(snapshot.project.id)
-      .then((result) => {
-        if (active) setPage(result);
+    active.current = true;
+    void loadNativeHistoryPending(userId, snapshot.project.id)
+      .then((stored) => {
+        if (active.current) setPending(stored);
       })
       .catch((cause) => {
-        if (active) setError(message(cause));
+        if (active.current) setError(message(cause));
+      });
+    void fetchNativeHistory(snapshot.project.id)
+      .then((result) => {
+        if (active.current) setPage(result);
+      })
+      .catch((cause) => {
+        if (active.current) setError(message(cause));
       });
     return () => {
-      active = false;
+      active.current = false;
       dialog.current?.close();
     };
   }, [userId, snapshot.project.id]);

@@ -7,15 +7,28 @@ import {
 } from '@ezerd/contracts';
 import { request } from '../../shared/api/client.js';
 import { loadNativePending } from './native-save.js';
+import { assertNativeDurableReady, nativeEditorExportBlocked } from './native-export-state.js';
 type Storage = Pick<globalThis.Storage, 'getItem' | 'key' | 'length'>;
 
 /** Own project inputs only. A damaged own draft is preserved and blocks an outdated export. */
-export function assertNativeExportReady(
+export async function assertNativeExportReady(
+  userId: string,
+  projectId: string,
+  storage: Storage = localStorage,
+): Promise<void> {
+  if (await loadNativePending(userId, projectId, storage as globalThis.Storage))
+    throw Error('project-export.pending');
+  await assertNativeDurableReady(userId, projectId);
+  assertNativeLocalInputsReady(userId, projectId, storage);
+}
+/** Synchronous draft/legacy guard, also rechecked inside an IndexedDB claim. */
+export function assertNativeLocalInputsReady(
   userId: string,
   projectId: string,
   storage: Storage = localStorage,
 ): void {
-  if (loadNativePending(userId, projectId, storage as globalThis.Storage))
+  if (nativeEditorExportBlocked(userId, projectId)) throw Error('project-export.unsaved-draft');
+  if (storage.getItem(`ezerd.native.pending:${userId}:${projectId}`) !== null)
     throw Error('project-export.pending');
   if (storage.getItem(`ezerd.native.history:${JSON.stringify([userId, projectId])}`) !== null)
     throw Error('project-export.pending');

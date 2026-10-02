@@ -244,7 +244,7 @@ export function App() {
     try {
       if (nativeEditorExportBlocked(user.id, projectId))
         throw Error('project-export.unsaved-draft');
-      assertNativeExportReady(user.id, projectId);
+      await assertNativeExportReady(user.id, projectId);
     } catch {
       throw Error(t('보관된 미저장 입력 또는 미확인 저장 요청을 확인한 뒤 다시 내보내 주세요.'));
     }

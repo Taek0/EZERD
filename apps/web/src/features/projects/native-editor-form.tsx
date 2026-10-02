@@ -7,12 +7,15 @@ import {
   loadNativeEditorDraft,
   storeNativeEditorDraft,
   discardNativeEditorDraft,
+  resetNativeEditorDraft,
   rebaseNativeEditorDraft,
   type NativeEditorDraft,
   type NativeEditorDraftRef,
 } from './native-editor-draft.js';
 import type { NativeSaveExpected, NativeWebCommand } from './native-save.js';
 import { useNativeExportBlocker } from './native-export-state.js';
+import { nativeDraftMemoryState } from './native-durable-drafts.js';
+import { nativeDurableId } from './native-durable-queue.js';
 
 export type NativeEditorSave = (
   commands: NativeWebCommand[],
@@ -26,6 +29,9 @@ export interface NativeEditorContext {
   onSave: NativeEditorSave;
 }
 registerTranslations({
+  '입력 보관 다시 시도': 'Retry preserving input',
+  '입력은 이 탭의 메모리에 보관되었습니다. 탭을 닫기 전에 보관을 다시 시도해 주세요.':
+    'Input is preserved in this tab’s memory. Retry preserving it before closing the tab.',
   '최신 내용': 'Latest values',
   '입력 초기화': 'Reset input',
   'DB 설정이 변경되었습니다. 입력을 확인하고 초기화해 주세요.':
@@ -68,7 +74,7 @@ export function NativeEditorForm({
     userId,
     projectId: snapshot.project.id,
     key: draftKey,
-    revision: crypto.randomUUID(),
+    revision: nativeDurableId(),
     expected,
     before: { ...initial },
     values: { ...initial },
@@ -76,11 +82,10 @@ export function NativeEditorForm({
   const [loaded] = useState(() => {
     try {
       return {
-        draft:
-          typeof localStorage === 'undefined'
-            ? fresh()
-            : (loadNativeEditorDraft(userId, snapshot.project.id, draftKey) ?? fresh()),
-        error: '',
+        draft: loadNativeEditorDraft(userId, snapshot.project.id, draftKey) ?? fresh(),
+        error: nativeDraftMemoryState(userId, snapshot.project.id).storageFailure
+          ? 'native.draft-storage-failed'
+          : '',
       };
     } catch (error) {
       return { draft: fresh(), error: message(error) };
@@ -93,7 +98,7 @@ export function NativeEditorForm({
   const dirty = [...new Set([...Object.keys(draft.values), ...Object.keys(draft.before)])].some(
     (key) => draft.values[key] !== draft.before[key],
   );
-  useNativeExportBlocker(userId, snapshot.project.id, dirty, !!storageError);
+  useNativeExportBlocker(userId, snapshot.project.id, dirty, !!storageError, `editor:${draftKey}`);
   const stale =
     draft.expected.version !== expected.version ||
     draft.expected.sequence !== expected.sequence ||
@@ -123,7 +128,11 @@ export function NativeEditorForm({
         return;
       }
       if (
-        await context.onSave(commands, draft.expected, { key: draft.key, revision: draft.revision })
+        (await context.onSave(commands, draft.expected, {
+          key: draft.key,
+          revision: draft.revision,
+        })) &&
+        currentDraft.current.revision === draft.revision
       ) {
         discardNativeEditorDraft(userId, snapshot.project.id, draft);
         const next = fresh();
@@ -145,6 +154,18 @@ export function NativeEditorForm({
       <fieldset disabled={context.busy}>
         <legend>{title}</legend>
         {(error || storageError) && <p role="alert">{error || storageError}</p>}
+        {storageError && (
+          <>
+            <p role="status">
+              {t(
+                '입력은 이 탭의 메모리에 보관되었습니다. 탭을 닫기 전에 보관을 다시 시도해 주세요.',
+              )}
+            </p>
+            <Button onClick={() => persist(currentDraft.current)}>
+              {t('입력 보관 다시 시도')}
+            </Button>
+          </>
+        )}
         {stale && (
           <div role="status">
             <p>
@@ -185,7 +206,7 @@ export function NativeEditorForm({
           const current = currentDraft.current;
           persist({
             ...current,
-            revision: crypto.randomUUID(),
+            revision: nativeDurableId(),
             values: { ...current.values, [field]: value },
           });
         })}
@@ -197,13 +218,17 @@ export function NativeEditorForm({
           {t('저장 요청')}
         </Button>
         <Button
-          disabled={!!storageError}
           onClick={() => {
-            discardNativeEditorDraft(userId, snapshot.project.id, draft);
-            const next = fresh();
-            currentDraft.current = next;
-            setDraft(next);
-            setError('');
+            try {
+              resetNativeEditorDraft(userId, snapshot.project.id, draft.key);
+              const next = fresh();
+              currentDraft.current = next;
+              setDraft(next);
+              setStorageError('');
+              setError('');
+            } catch (error) {
+              setStorageError(message(error));
+            }
           }}
         >
           {t('입력 초기화')}

@@ -14,6 +14,7 @@ import './native-project-view.css';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
+import { useNativeDurableState } from './native-export-state.js';
 import { NativeHistoryDialog } from './NativeHistoryDialog.js';
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
@@ -111,34 +112,95 @@ export function NativeProjectView({
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [pending, setPending] = useState<NativePendingSave | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pendingBlocked, setPendingBlocked] = useState(!!userId);
   const [saveError, setSaveError] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
+  const queueBlocked = !!userId && durableState !== 'empty';
+  const editorBusy = saving || busy || !!pending || pendingBlocked || queueBlocked;
   const activeEditor = useRef('');
+  const activeGeneration = useRef(0);
+  const mounted = useRef(true);
+  const savingRef = useRef(false);
   const editorIdentity = JSON.stringify([userId, snapshot.project.id]);
+  if (activeEditor.current !== editorIdentity) activeGeneration.current++;
   activeEditor.current = editorIdentity;
+  const generation = activeGeneration.current;
+  const currentEditor = () =>
+    mounted.current &&
+    activeEditor.current === editorIdentity &&
+    activeGeneration.current === generation;
   const editable = !!userId && canEdit && snapshot.project.status === 'active' && !!doc;
+  const activePermission = useRef(editable);
+  activePermission.current = editable;
+  const saveContext = JSON.stringify([
+    snapshot.project.version,
+    snapshot.sequence,
+    snapshot.project.databaseRevision,
+  ]);
+  const activeSaveContext = useRef(saveContext);
+  activeSaveContext.current = saveContext;
   useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  async function loadPending() {
+    if (!userId) return;
+    setPendingBlocked(true);
+    try {
+      const loaded = await loadNativePending(userId, snapshot.project.id);
+      if (!currentEditor()) return;
+      setPending(loaded);
+      setPendingBlocked(false);
+      setSaveError('');
+    } catch (error) {
+      if (currentEditor()) setSaveError(message(error));
+    }
+  }
+  useEffect(() => {
+    let active = true;
     setPending(null);
+    setPendingBlocked(!!userId);
     setSaveError('');
     setEditingColumn(null);
     setSaving(false);
+    savingRef.current = false;
     if (!userId) return;
-    try {
-      setPending(loadNativePending(userId, snapshot.project.id));
-    } catch (error) {
-      setSaveError(message(error));
-    }
+    void loadNativePending(userId, snapshot.project.id)
+      .then((loaded) => {
+        if (!active || !currentEditor()) return;
+        setPending(loaded);
+        setPendingBlocked(false);
+      })
+      .catch((error) => {
+        if (active && currentEditor()) setSaveError(message(error));
+      });
+    return () => {
+      active = false;
+    };
   }, [userId, snapshot.project.id]);
   async function save(
     commands: NativeWebCommand[],
     expected?: NativeSaveExpected,
     editorDraft?: NativeEditorDraftRef,
   ): Promise<boolean> {
-    if (!editable || !userId) return false;
+    if (
+      !editable ||
+      !userId ||
+      busy ||
+      pendingBlocked ||
+      queueBlocked ||
+      pending ||
+      savingRef.current
+    )
+      return false;
+    savingRef.current = true;
     setSaving(true);
     setSaveError('');
     try {
-      const staged = stageNativeSave(
+      const staged = await stageNativeSave(
         userId,
         snapshot,
         commands,
@@ -146,9 +208,11 @@ export function NativeProjectView({
         expected,
         editorDraft,
       );
+      if (!currentEditor()) return false;
       setPending(staged);
+      if (!activePermission.current || activeSaveContext.current !== saveContext) return false;
       const result = await sendNativePending(staged);
-      if (activeEditor.current !== editorIdentity) return result.status === 'accepted';
+      if (!currentEditor()) return result.status === 'accepted';
       if (result.status === 'rejected') {
         setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
         return false;
@@ -157,27 +221,66 @@ export function NativeProjectView({
       onReload();
       return true;
     } catch (error) {
-      if (activeEditor.current === editorIdentity) setSaveError(message(error));
+      if (currentEditor()) {
+        setSaveError(message(error));
+        try {
+          const stored = await loadNativePending(userId, snapshot.project.id);
+          if (currentEditor()) setPending(stored);
+        } catch {
+          if (currentEditor()) setPendingBlocked(true);
+        }
+      }
       return false;
     } finally {
-      if (activeEditor.current === editorIdentity) setSaving(false);
+      if (currentEditor()) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   }
   async function recover() {
-    if (!pending || pending.userId !== userId) return;
+    if (!pending || pending.userId !== userId || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setSaveError('');
     try {
       const result = await recoverNativePending(pending, snapshot, localStorage, request, editable);
-      if (activeEditor.current !== editorIdentity) return;
+      if (!currentEditor()) return;
       if (result.status === 'accepted') {
         setPending(null);
         onReload();
       } else setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
     } catch (error) {
-      if (activeEditor.current === editorIdentity) setSaveError(message(error));
+      if (currentEditor()) setSaveError(message(error));
     } finally {
-      if (activeEditor.current === editorIdentity) setSaving(false);
+      if (currentEditor()) {
+        savingRef.current = false;
+        setSaving(false);
+      }
+    }
+  }
+  async function discardPending() {
+    if (!userId || !pending || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await discardNativePending(userId, snapshot.project.id, pending.request.operationId);
+      const remaining = await loadNativePending(userId, snapshot.project.id);
+      if (currentEditor()) {
+        setPending(remaining);
+        setPendingBlocked(false);
+        setSaveError('');
+      }
+    } catch (error) {
+      if (currentEditor()) {
+        setSaveError(message(error));
+        setPendingBlocked(true);
+      }
+    } finally {
+      if (currentEditor()) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   }
   const visible = (scope: string) => scope === 'both' || scope === mode;
@@ -270,20 +373,18 @@ export function NativeProjectView({
           {saveError}
         </p>
       )}
+      {userId && (pendingBlocked || durableState === 'unknown') && (
+        <Button disabled={saving} onClick={() => void loadPending()}>
+          {t('저장 결과 확인')}
+        </Button>
+      )}
       {pending && (
         <div className="notice native-pending" role="status">
           <p>{t('미확인 또는 미적용 저장 요청이 있습니다.')}</p>
           <Button onClick={() => void recover()} disabled={saving}>
             {t(saving ? '저장 확인 중…' : '저장 결과 확인')}
           </Button>
-          <Button
-            disabled={saving}
-            onClick={() => {
-              if (!userId) return;
-              discardNativePending(userId, snapshot.project.id, pending.request.operationId);
-              setPending(null);
-            }}
-          >
+          <Button disabled={saving} onClick={() => void discardPending()}>
             {t('요청 초기화')}
           </Button>
         </div>
@@ -310,7 +411,7 @@ export function NativeProjectView({
             snapshot={snapshot}
             {...(userId ? { userId } : {})}
             editable={editable}
-            busy={saving || busy || !!pending}
+            busy={editorBusy}
             onSave={save}
             onReload={onReload}
             mode={mode}
@@ -356,7 +457,9 @@ export function NativeProjectView({
                       type="button"
                       data-object-id={table.id}
                       aria-current={selectedTable?.id === table.id ? 'true' : undefined}
-                      onClick={() => setSelected(table.id)}
+                      onClick={() => {
+                        setSelected(table.id);
+                      }}
                     >
                       {tableName(table.id)}
                     </button>
@@ -372,7 +475,7 @@ export function NativeProjectView({
                   context={{
                     userId: userId!,
                     snapshot,
-                    busy: saving || busy || !!pending,
+                    busy: editorBusy,
                     onSave: save,
                   }}
                   document={doc}
@@ -426,7 +529,7 @@ export function NativeProjectView({
                               )!,
                             }
                           : {})}
-                        busy={saving || busy || !!pending}
+                        busy={editorBusy}
                         onSave={save}
                       />
                     </>

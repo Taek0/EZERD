@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- IndexedDB의 actor/project 단일 pending·송신 lease·crash 재생과 실패 입력 메모리/계정 고정을 연결했다. [결과](2026-10-02-Database-NativeDurableQueue.md). 필수 fake-indexeddb6.2.5, targeted 64개/skip0 및 현재 web typecheck 통과. history/export/root도 async 보호를 소비한다. private/cancel/orphan draft 복구 및 실제 two-tab 브라우저 QA는 후속이다.
+
 - C7 제한 AST 결과/인자/연산자 타입 검증을 공통 validator·default/generation UI API에 연결했다. [결과](2026-10-02-Database-NativeExpressionPolicy.md). 260개 targeted와 PG stored/virtual/일반 식·SQLite/MySQL 고급 실행 fixture 통과. 전체 인덱스 방식·식 tree UI/clipboard 및 readiness QA는 후속이다.
 
 - 명시 native upgrade도 기존 ACK를 read 권한으로 원문 재생하도록 보강했다. [결과](2026-10-02-Database-NativeUpgradeReplay.md). 실제 AppModule REST 9개에서 viewer/보관/read 상실·오래된 요청·손상된 ACK·동시 업그레이드를 확인했다. 신규 migration 검증과 baseline/audit 원칙은 유지한다.
