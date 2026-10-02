@@ -10,6 +10,7 @@ import {
   type NativeDesignDocument,
   type NativeTable,
 } from '@ezerd/model';
+import { nativeDefaultChoices, nativeKeyColumnPolicies } from './native-editor-option-policy.js';
 
 export function nativeEditorPolicy(
   document: NativeDesignDocument,
@@ -65,17 +66,31 @@ export function nativeEditorPolicy(
   };
   const feature = (id: DatabaseFeatureId, extra: DatabaseFeatureFacts = {}) =>
     checkDatabaseFeature(document.database, id, { ...facts, ...extra });
-  const types = databaseTypeCatalog.map((definition) => {
-    const entry = capabilities.types.find((type) => type.id === definition.id);
-    const supported =
-      definition.databaseKind === document.database.kind && (!strict || definition.sqliteStrict);
-    return {
-      definition,
-      usable: supported && !!entry?.usable,
-      code: !supported ? 'type.not-supported' : !entry?.usable ? 'type.not-implemented' : undefined,
-    };
-  });
-  return { capabilities, types, feature, facts };
+  const types = databaseTypeCatalog
+    .filter((definition) => definition.databaseKind === document.database.kind)
+    .map((definition) => {
+      const entry = capabilities.types.find((type) => type.id === definition.id);
+      const supported =
+        definition.databaseKind === document.database.kind && (!strict || definition.sqliteStrict);
+      return {
+        definition,
+        usable: supported && !!entry?.usable,
+        code: !supported
+          ? 'type.not-supported'
+          : !entry?.usable
+            ? 'type.not-implemented'
+            : undefined,
+      };
+    });
+  return {
+    capabilities,
+    types,
+    feature,
+    facts,
+    defaults: table && column ? nativeDefaultChoices(document, table, column) : [],
+    keyColumns: (kind: 'primary' | 'unique', preservedIds: readonly string[] = []) =>
+      table ? nativeKeyColumnPolicies(document, table, kind, preservedIds) : [],
+  };
 }
 export function nativeTypeChoice(type: NativeColumn['physical']['type']): string {
   return type.kind === 'builtin' || type.kind === 'valueList'

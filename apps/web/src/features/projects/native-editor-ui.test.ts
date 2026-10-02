@@ -39,7 +39,7 @@ function fixture(kind: 'postgresql' | 'mysql' | 'sqlite') {
   const snapshot: ProjectDocumentState = {
     protocolVersion: 2,
     project: {
-      id: uuid,
+      id: crypto.randomUUID(),
       workspaceId: uuid,
       name: 'Native',
       status: 'active',
@@ -58,7 +58,7 @@ function fixture(kind: 'postgresql' | 'mysql' | 'sqlite') {
     document,
     table,
     column,
-    context: { userId: uuid, snapshot, busy: false, onSave: async () => true },
+    context: { userId: crypto.randomUUID(), snapshot, busy: false, onSave: async () => true },
   };
 }
 describe('native structured forms and availability', () => {
@@ -109,7 +109,7 @@ describe('native structured forms and availability', () => {
     expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
   });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
-    'renders the type union, current values and unavailable reasons for %s',
+    'renders only the current DB types, preserved values and unavailable reasons for %s',
     (kind) => {
       setLocale('ko');
       const f = fixture(kind),
@@ -120,15 +120,17 @@ describe('native structured forms and availability', () => {
         createElement(NativeFormatEditor, { ...f, context: f.context }),
       );
       for (const label of [
-        'postgresql:integer',
-        'mysql:int',
-        'sqlite:integer',
+        kind === 'mysql' ? 'mysql:int' : `${kind}:integer`,
         '미구현 또는 실행 검증 미완료',
-        '이 DB에서 지원하지 않음',
         '현재 값',
       ])
         expect(html).toContain(label);
-      expect(html).toMatch(/disabled=""[^>]*>postgresql:integer/);
+      for (const foreign of ['postgresql', 'mysql', 'sqlite'].filter((item) => item !== kind))
+        expect(html).not.toContain(`<option value="${foreign}:`);
+      expect(policy.types.every((item) => item.definition.databaseKind === kind)).toBe(true);
+      expect(html).toMatch(
+        new RegExp(`disabled=""[^>]*>${kind === 'mysql' ? 'mysql:int' : `${kind}:integer`}`),
+      );
       expect(f.document).toEqual(before);
       const initial = nativeFormatInitial(f.table, f.column);
       expect(nativeFormatCommands(f.document, f.table, f.column, initial, initial)).toEqual([]);

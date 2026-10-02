@@ -32,6 +32,21 @@ import {
   nativeTypeParameterRules,
 } from './native-editor-policy.js';
 import type { NativeWebCommand } from './native-save.js';
+import {
+  nativeBoundedInteger,
+  nativeExactBoolean,
+  nativeDefaultInput,
+  nativeBuiltinDefaultInput,
+  nativeIdentityFields,
+  nativeIdentityInitial,
+  nativeIdentityInput,
+  nativeOnUpdateInput,
+  nativeLiteralPolicy,
+  nativeBuiltinDefaultPolicy,
+  nativeOnUpdatePolicy,
+  nativeGenerationPolicy,
+  nativeFunctionOptionPolicies,
+} from './native-editor-option-policy.js';
 
 registerTranslations({
   '형식·DB 옵션 편집': 'Edit type and database options',
@@ -50,6 +65,20 @@ registerTranslations({
   '리터럴 종류': 'Literal type',
   값: 'Value',
   연산자: 'Operator',
+  '엔진에서 허용': 'Allowed by the engine',
+  '제품 검증 미완료': 'Product verification is incomplete',
+  '현재 원문 유지': 'Preserve the current original value',
+  '환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.':
+    'Verify the environment, then remove this default or recover with a verified value.',
+  '완성된 입력과 제품 검증이 필요합니다. 초안은 원문으로 보관됩니다.':
+    'Complete input and product verification are required. The draft retains its original text.',
+  '기본값 함수': 'Default function',
+  '기본값 식 변경': 'Change default expression',
+  '인자 입력 필요': 'Arguments are required',
+  'ON UPDATE 설정': 'ON UPDATE setting',
+  'ON UPDATE 함수': 'ON UPDATE function',
+  '입력·타입 조건에 맞지 않음': 'Input does not match the type constraints',
+  '환경 검증 필요': 'Environment verification is required',
 });
 const json = (value: unknown) => JSON.stringify(value);
 const yes = (value: boolean | undefined) => (value ? 'true' : 'false');
@@ -94,21 +123,58 @@ export function nativeFormatInitial(
       defaultValue.kind === 'literal' ? `literal:${defaultValue.literalType}` : defaultValue.kind,
     defaultValue: defaultValue.kind === 'literal' ? String(defaultValue.value) : '',
     defaultJSON: json(defaultValue),
+    defaultExpressionMode: 'preserve',
+    defaultFunction:
+      defaultValue.kind === 'expression' && defaultValue.expression.kind === 'call'
+        ? defaultValue.expression.functionId
+        : '',
     generationChoice:
       generation.kind === 'computed' ? `computed:${generation.storage}` : generation.kind,
     identityMode: generation.kind === 'identity' ? generation.mode : 'byDefault',
     generationJSON: json(generation),
+    ...nativeIdentityInitial(generation),
     generationExpressionMode: 'preserve',
     ...nativeExpressionInputs(generation.kind === 'computed' ? generation.expression : undefined),
     optionsJSON: json(options),
     charset: options.database === 'mysql' ? (options.charset ?? '') : '',
     collation: options.collation ?? '',
     removeOnUpdate: 'false',
+    onUpdateMode: 'preserve',
+    onUpdateFunction:
+      options.database === 'mysql' && options.onUpdate?.kind === 'call'
+        ? options.onUpdate.functionId
+        : '',
     confirmTypeReset: 'false',
   };
 }
 function changed(values: Record<string, string>, before: Record<string, string>, fields: string[]) {
   return fields.some((key) => (values[key] ?? '') !== (before[key] ?? ''));
+}
+export function nativeFormatGenerationInput(
+  document: NativeDesignDocument,
+  values: Record<string, string>,
+  before: Record<string, string>,
+): NativeGeneration {
+  const choice = values.generationChoice;
+  const original = JSON.parse(before.generationJSON ?? '{"kind":"none"}') as NativeGeneration;
+  if (choice === 'none') return { kind: 'none' };
+  if (choice === 'serial') return { kind: 'serial', database: 'postgresql' };
+  if (choice === 'identity') return nativeIdentityInput(values, before, original);
+  if (choice === 'autoIncrement') {
+    if (document.database.kind === 'postgresql') throw new Error('generation.context-mismatch');
+    return { kind: 'autoIncrement', database: document.database.kind };
+  }
+  if (choice !== 'computed:stored' && choice !== 'computed:virtual')
+    throw new Error('native.generation-kind-invalid');
+  return {
+    kind: 'computed',
+    database: document.database.kind,
+    storage: choice === 'computed:stored' ? 'stored' : 'virtual',
+    expression:
+      values.generationExpressionMode === 'preserve' && original.kind === 'computed'
+        ? original.expression
+        : nativeExpressionFromInputs(values),
+  };
 }
 /** Build only edited native fields; untouched stored variants/options are never normalized away. */
 export function nativeFormatCommands(
@@ -181,9 +247,9 @@ export function nativeFormatCommands(
               [
                 key,
                 rule.kind === 'boolean'
-                  ? token === 'true'
+                  ? nativeExactBoolean(token)
                   : rule.kind === 'integer'
-                    ? Number(token)
+                    ? nativeBoundedInteger(token, rule.min, rule.max)
                     : token,
               ],
             ];
@@ -195,7 +261,9 @@ export function nativeFormatCommands(
             kind: 'projectEnum',
             database: 'postgresql',
             enumId: selected.slice(5),
-            ...(values.array ? { array: { dimensions: Number(values.array) } } : {}),
+            ...(values.array
+              ? { array: { dimensions: nativeBoundedInteger(values.array, 1, 6) } }
+              : {}),
           }
         : selected === 'declared'
           ? {
@@ -219,7 +287,7 @@ export function nativeFormatCommands(
                   typeId: selected,
                   parameters,
                   ...(document.database.kind === 'postgresql' && values.array
-                    ? { array: { dimensions: Number(values.array) } }
+                    ? { array: { dimensions: nativeBoundedInteger(values.array, 1, 6) } }
                     : {}),
                 },
     ) as NativeColumn['physical']['type'];
@@ -240,24 +308,38 @@ export function nativeFormatCommands(
     if (options.database === 'mysql') delete options.onUpdate;
     physical.options = options;
   } else {
-    if (changed(values, before, ['defaultChoice', 'defaultValue'])) {
+    if (
+      changed(values, before, [
+        'defaultChoice',
+        'defaultValue',
+        'defaultFunction',
+        'defaultExpressionMode',
+      ])
+    ) {
       const choice = values.defaultChoice!;
       let value: NativeDefaultValue;
       if (choice === 'none') value = { kind: 'none' };
-      else {
-        if (!nativeTypeReady(document, table, column.physical.type))
-          throw new Error('type.not-implemented');
-        value =
-          choice === 'null'
-            ? { kind: 'null' }
-            : ({
-                kind: 'literal',
-                literalType: choice.slice(8),
-                value:
-                  choice === 'literal:boolean'
-                    ? values.defaultValue === 'true'
-                    : values.defaultValue,
-              } as NativeDefaultValue);
+      else if (choice === 'expression') {
+        value = nativeBuiltinDefaultInput(document, values.defaultFunction ?? '');
+        if (value.kind !== 'expression') throw new Error('default.expression-validation-required');
+        const decision = nativeBuiltinDefaultPolicy(document, table, column, value.expression, {
+          nullable: nativeExactBoolean(values.nullable ?? String(column.physical.nullable)),
+          generation:
+            values.generationChoice === 'none' ? { kind: 'none' } : column.physical.generation,
+        });
+        if (!decision.productUsable) throw new Error(decision.code);
+      } else {
+        const input = nativeDefaultInput(
+          document,
+          table,
+          column,
+          choice,
+          values.defaultValue ?? '',
+          nativeExactBoolean(values.nullable ?? String(column.physical.nullable)),
+        );
+        if (!input.decision.productUsable)
+          throw new Error(input.decision.code ?? 'default.not-ready');
+        value = input.value;
       }
       physical.defaultValue = value;
     }
@@ -270,47 +352,62 @@ export function nativeFormatCommands(
         'expressionOperator',
         'expressionLiteralType',
         'expressionValue',
+        ...nativeIdentityFields.map((field) => `identity:${field}`),
       ])
     ) {
-      const choice = values.generationChoice!;
-      let generation: NativeGeneration;
-      if (choice === 'none') generation = { kind: 'none' };
-      else if (choice === 'serial') {
-        requireFeature('serial');
-        generation = { kind: 'serial', database: 'postgresql' };
-      } else if (choice === 'identity') {
-        requireFeature('identity');
-        const original = JSON.parse(before.generationJSON!) as NativeGeneration;
-        generation = {
-          ...(original.kind === 'identity' ? original : {}),
-          kind: 'identity',
-          database: 'postgresql',
-          mode: values.identityMode as 'always' | 'byDefault',
-        };
-      } else if (choice === 'autoIncrement') {
-        requireFeature('autoIncrement');
-        generation = {
-          kind: 'autoIncrement',
-          database: document.database.kind as 'mysql' | 'sqlite',
-        };
-      } else {
-        requireFeature(choice === 'computed:stored' ? 'generatedStored' : 'generatedVirtual');
-        const original = JSON.parse(before.generationJSON!) as NativeGeneration;
-        generation = {
-          kind: 'computed',
-          database: document.database.kind,
-          storage: choice === 'computed:stored' ? 'stored' : 'virtual',
-          expression:
-            values.generationExpressionMode === 'preserve' && original.kind === 'computed'
-              ? original.expression
-              : nativeExpressionFromInputs(values),
-        };
+      const generation = nativeFormatGenerationInput(document, values, before);
+      if (generation.kind !== 'none') {
+        const decision = nativeGenerationPolicy(document, table, column, generation, {
+          nullable: nativeExactBoolean(values.nullable ?? String(column.physical.nullable)),
+          hasDefault:
+            ((physical.defaultValue ?? column.physical.defaultValue) as NativeDefaultValue).kind !==
+            'none',
+        });
+        if (!decision.productUsable) throw new Error(decision.code);
       }
       physical.generation = generation;
     }
   }
-  if (values.nullable !== before.nullable) physical.nullable = values.nullable === 'true';
-  if (changed(values, before, ['charset', 'collation', 'removeOnUpdate'])) {
+  if (
+    values.nullable !== before.nullable &&
+    column.physical.defaultValue.kind === 'null' &&
+    physical.defaultValue === undefined
+  ) {
+    const decision = nativeLiteralPolicy(
+      document,
+      table,
+      column,
+      { kind: 'null' },
+      nativeExactBoolean(values.nullable ?? ''),
+    );
+    if (!decision.engineAllowed) throw new Error(decision.code ?? 'default.null-not-supported');
+  }
+  if (
+    physical.generation === undefined &&
+    column.physical.generation.kind !== 'none' &&
+    (values.nullable !== before.nullable || physical.defaultValue !== undefined)
+  ) {
+    const previous = nativeGenerationPolicy(document, table, column, column.physical.generation);
+    const candidate = nativeGenerationPolicy(document, table, column, column.physical.generation, {
+      nullable: nativeExactBoolean(values.nullable ?? String(column.physical.nullable)),
+      hasDefault:
+        ((physical.defaultValue ?? column.physical.defaultValue) as NativeDefaultValue).kind !==
+        'none',
+    });
+    if (!candidate.engineAllowed && (previous.engineAllowed || candidate.code !== previous.code))
+      throw new Error(candidate.code ?? 'generation.type-not-supported');
+  }
+  if (values.nullable !== before.nullable)
+    physical.nullable = nativeExactBoolean(values.nullable ?? '');
+  if (
+    changed(values, before, [
+      'charset',
+      'collation',
+      'removeOnUpdate',
+      'onUpdateMode',
+      'onUpdateFunction',
+    ])
+  ) {
     const options = (physical.options ??
       JSON.parse(before.optionsJSON!)) as NativeColumn['physical']['options'];
     if (values.collation !== before.collation) {
@@ -325,12 +422,37 @@ export function nativeFormatCommands(
         else delete options.charset;
       }
       if (values.removeOnUpdate === 'true') delete options.onUpdate;
+      else if (values.onUpdateMode === 'none') delete options.onUpdate;
+      else if (values.onUpdateMode === 'function') {
+        const candidate = nativeOnUpdateInput(document, values.onUpdateFunction ?? '');
+        const decision = nativeOnUpdatePolicy(
+          document,
+          column,
+          candidate,
+          (physical.generation as NativeGeneration | undefined) ?? column.physical.generation,
+        );
+        if (!decision.productUsable) throw new Error(decision.code);
+        options.onUpdate = candidate;
+      }
     }
     physical.options = options;
   }
   return Object.keys(physical).length
     ? [{ type: 'patch_column', id: column.id, patch: nativeColumnPatchSchema.parse({ physical }) }]
     : [];
+}
+export function nativeFormatDraftIssue(
+  document: NativeDesignDocument,
+  table: NativeTable,
+  column: NativeColumn | undefined,
+  values: Record<string, string>,
+): string | undefined {
+  try {
+    nativeFormatCommands(document, table, column, values, nativeFormatInitial(table, column));
+  } catch (error) {
+    return error instanceof Error ? error.message : 'native.input-invalid';
+  }
+  return undefined;
 }
 
 export function NativeFormatEditor({
@@ -359,6 +481,7 @@ export function NativeFormatEditor({
       title={t('형식·DB 옵션 편집')}
       draftKey={`format:${column ? 'column' : 'table'}:${column?.id ?? table.id}`}
       initial={nativeFormatInitial(table, column)}
+      disabled={(values) => !!nativeFormatDraftIssue(document, table, column, values)}
       build={(values, before) => nativeFormatCommands(document, table, column, values, before)}
     >
       {(values, change) => {
@@ -433,13 +556,15 @@ export function NativeFormatEditor({
           }),
         );
         choices.push(
-          ...(document.enums ?? []).map((item) => ({
-            value: `enum:${item.id}`,
-            label: `ENUM ${item.schema}.${item.name} · ${reason(policy.feature('enumType').code)}`,
-            disabled: blocked('enumType'),
-          })),
+          ...(document.database.kind === 'postgresql' ? (document.enums ?? []) : []).map(
+            (item) => ({
+              value: `enum:${item.id}`,
+              label: `ENUM ${item.schema}.${item.name} · ${reason(policy.feature('enumType').code)}`,
+              disabled: blocked('enumType'),
+            }),
+          ),
         );
-        for (const value of ['declared', 'untyped'])
+        for (const value of document.database.kind === 'sqlite' ? ['declared', 'untyped'] : [])
           choices.push({
             value,
             label: `SQLite ${value} · ${reason('type.not-implemented')}`,
@@ -466,40 +591,68 @@ export function NativeFormatEditor({
           { value: 'none', label: 'none' },
           ...(
             ['serial', 'identity', 'autoIncrement', 'computed:stored', 'computed:virtual'] as const
-          ).map((value) => {
-            const id =
-              value === 'computed:stored'
-                ? 'generatedStored'
-                : value === 'computed:virtual'
-                  ? 'generatedVirtual'
-                  : value;
-            return {
-              value,
-              label: `${value} · ${reason(policy.feature(id).code)}`,
-              disabled: blocked(id),
-            };
-          }),
+          )
+            .filter(
+              (value) =>
+                policy.feature(
+                  value === 'computed:stored'
+                    ? 'generatedStored'
+                    : value === 'computed:virtual'
+                      ? 'generatedVirtual'
+                      : value,
+                ).supported || value === nativeFormatInitial(table, column).generationChoice,
+            )
+            .map((value) => {
+              let decision;
+              try {
+                decision = nativeGenerationPolicy(
+                  document,
+                  table,
+                  column,
+                  nativeFormatGenerationInput(
+                    document,
+                    { ...values, generationChoice: value },
+                    nativeFormatInitial(table, column),
+                  ),
+                );
+              } catch (error) {
+                decision = {
+                  engineAllowed: false,
+                  productUsable: false,
+                  code: error instanceof Error ? error.message : 'native.input-invalid',
+                };
+              }
+              return {
+                value,
+                label: `${value} · ${t(decision.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')} · ${t('제품 검증 미완료')} (${decision.code})`,
+                disabled:
+                  !decision.productUsable &&
+                  value !== nativeFormatInitial(table, column).generationChoice,
+              };
+            }),
         ];
-        const defaults = [
-          'none',
-          'null',
-          'literal:string',
-          'literal:number',
-          'literal:boolean',
-          'literal:binary',
-          'literal:json',
-          'literal:typedText',
-          'expression',
-          'legacyExpression',
-        ].map((value) => ({
-          value,
-          label: value,
-          disabled:
-            value !== 'none' &&
-            (!nativeTypeReady(document, table, column.physical.type) ||
-              value === 'expression' ||
-              value === 'legacyExpression'),
+        const defaults = policy.defaults.map((item) => ({
+          value: item.choice,
+          label: `${item.choice} · ${item.preserved ? t('현재 원문 유지') : item.engineAllowed ? t('엔진에서 허용') : t(item.category === 'invalid' ? '입력·타입 조건에 맞지 않음' : item.category === 'environment' ? '환경 검증 필요' : '이 DB에서 지원하지 않음')}${item.choice !== 'none' && !item.productUsable ? ` · ${t('제품 검증 미완료')}` : ''}`,
+          disabled: !item.selectable,
         }));
+        const originalDefault = column.physical.defaultValue;
+        const defaultFunctions = nativeFunctionOptionPolicies(document, table, column, 'default');
+        const onUpdateFunctions = nativeFunctionOptionPolicies(document, table, column, 'onUpdate');
+        defaults.push({
+          value: 'expression',
+          label: `${t('기본값 함수')} · ${t(defaultFunctions.some((item) => item.engineAllowed) ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')} · ${t('제품 검증 미완료')}`,
+          disabled:
+            originalDefault.kind !== 'expression' &&
+            !defaultFunctions.some((item) => item.productUsable),
+        });
+        if (originalDefault.kind === 'legacyExpression')
+          defaults.push({ value: 'legacyExpression', label: t('현재 원문 유지'), disabled: false });
+        const currentDefaultDecision =
+          originalDefault.kind === 'expression'
+            ? nativeBuiltinDefaultPolicy(document, table, column, originalDefault.expression)
+            : nativeLiteralPolicy(document, table, column, originalDefault);
+        const issue = nativeFormatDraftIssue(document, table, column, values);
         return (
           <>
             <p>
@@ -538,21 +691,78 @@ export function NativeFormatEditor({
             )}
             {field('nullable', 'NULL', false, bool)}
             {field('defaultChoice', '기본값', typeChanged, defaults)}
+            {currentDefaultDecision.category === 'environment' && (
+              <p role="status">
+                {t('환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.')} (
+                {currentDefaultDecision.code})
+              </p>
+            )}
+            {originalDefault.kind === 'expression' && !currentDefaultDecision.engineAllowed && (
+              <p role="status">
+                {t('현재 원문 유지')} ({currentDefaultDecision.code})
+              </p>
+            )}
             {values.defaultChoice?.startsWith('literal:') &&
               field(
                 'defaultValue',
                 '값',
-                typeChanged || !nativeTypeReady(document, table, column.physical.type),
+                typeChanged,
                 values.defaultChoice === 'literal:boolean' ? bool : undefined,
               )}
+            {issue && (
+              <p role="alert">
+                {t('완성된 입력과 제품 검증이 필요합니다. 초안은 원문으로 보관됩니다.')} ({issue})
+              </p>
+            )}
+            {values.defaultChoice === 'expression' && (
+              <>
+                {field('defaultExpressionMode', '기본값 식 변경', typeChanged, [
+                  { value: 'preserve', label: t('현재 원문 유지') },
+                  {
+                    value: 'replace',
+                    label: t('수정'),
+                    disabled: !defaultFunctions.some((item) => item.productUsable),
+                  },
+                ])}
+                {field(
+                  'defaultFunction',
+                  '기본값 함수',
+                  typeChanged || values.defaultExpressionMode === 'preserve',
+                  [
+                    { value: '', label: '—' },
+                    ...defaultFunctions.map((item) => ({
+                      value: item.id,
+                      label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')} (${item.code})`,
+                      disabled: item.requiresArguments || !item.productUsable,
+                    })),
+                  ],
+                )}
+              </>
+            )}
             {field('generationChoice', '생성', typeChanged, generationChoices)}
-            {values.generationChoice === 'identity' &&
-              field(
-                'identityMode',
-                'Identity',
-                typeChanged || blocked('identity'),
-                ['always', 'byDefault'].map((value) => ({ value, label: value })),
-              )}
+            {values.generationChoice === 'identity' && (
+              <>
+                {field(
+                  'identityMode',
+                  'Identity',
+                  typeChanged,
+                  ['always', 'byDefault'].map((value) => ({ value, label: value })),
+                )}
+                {nativeIdentityFields.map((name) => (
+                  <div key={name}>
+                    {field(
+                      `identity:${name}`,
+                      name === 'cache'
+                        ? 'Identity cache (1…2147483647)'
+                        : `Identity ${name}${name === 'cycle' ? '' : ' (integer token ≤100)'}`,
+                      typeChanged,
+                      name === 'cycle' ? [{ value: '', label: '—' }, ...bool] : undefined,
+                    )}
+                  </div>
+                ))}
+                <p>{t('제품 검증 미완료')}</p>
+              </>
+            )}
             {values.generationChoice?.startsWith('computed:') && (
               <>
                 {field(
@@ -613,6 +823,28 @@ export function NativeFormatEditor({
                   ON UPDATE {nativeExpressionDisplay(column.physical.options.onUpdate, document)}
                 </p>
                 {field('removeOnUpdate', 'ON UPDATE 제거', false, bool)}
+              </>
+            )}
+            {document.database.kind === 'mysql' && (
+              <>
+                {field('onUpdateMode', 'ON UPDATE 설정', typeChanged, [
+                  { value: 'preserve', label: t('현재 원문 유지') },
+                  { value: 'none', label: 'none' },
+                  {
+                    value: 'function',
+                    label: t('ON UPDATE 함수'),
+                    disabled: !onUpdateFunctions.some((item) => item.productUsable),
+                  },
+                ])}
+                {values.onUpdateMode === 'function' &&
+                  field('onUpdateFunction', 'ON UPDATE 함수', typeChanged, [
+                    { value: '', label: '—' },
+                    ...onUpdateFunctions.map((item) => ({
+                      value: item.id,
+                      label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')} (${item.code})`,
+                      disabled: item.requiresArguments || !item.productUsable,
+                    })),
+                  ])}
               </>
             )}
             <p>{t('미검증 기능은 새로 사용할 수 없습니다. 현재 값은 보존됩니다.')}</p>

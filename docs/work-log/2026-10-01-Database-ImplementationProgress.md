@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- DB별 literal/키/default 함수/ON UPDATE/identity 구조화 UI가 공통 모델 정책을 소비한다. [결과](2026-10-02-Database-NativeOptionPolicyUI.md). 옵션 정책·UI 50개 targeted 통과. 병렬 durable queue의 async 소비 연결과 전체 타입/브라우저 QA는 후속이며 미검증 항목의 사용 가능 플래그는 유지한다.
+
 - native domain lifecycle/테이블 분류 이동을 모델·계약·REST/MCP 후보에 연결했다. [결과](2026-10-02-Database-NativeDomainLifecycle.md). 대상 30개 및 실제 AppModule versioned 40개 통과, legacy 물리 필드 원본을 보존한 이동/명시 삭제 정책 확인. domain UI는 다음 단위이며 replay 보강 변경은 독립 커밋으로 분리한다.
 
 - builtin default/ON UPDATE/identity sequence의 공통 판정을 추가했다. [결과](2026-10-02-Database-NativeColumnOptionPolicy.md). 모델·DDL 200개와 PostgreSQL identity/clock/UUID, MySQL UUID·ON UPDATE, SQLite clock 실제 값 동작을 확인했다. UI 연결과 complex AST 추론은 후속이다.

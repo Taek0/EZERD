@@ -23,6 +23,7 @@ import {
 } from './native-editor-expression.js';
 import { nativeEditorPolicy } from './native-editor-policy.js';
 import type { NativeWebCommand } from './native-save.js';
+import { nativeKeyColumnPolicies, nativeKeyInput } from './native-editor-option-policy.js';
 
 registerTranslations({
   '구조 편집': 'Edit structure',
@@ -56,6 +57,10 @@ registerTranslations({
   '참조 테이블': 'Referenced table',
   '참조 키': 'Referenced key',
   '삭제 차단 항목': 'Deletion blockers',
+  '키 후보': 'Key candidates',
+  '엔진에서 허용': 'Allowed by the engine',
+  '제품 검증 미완료': 'Product verification is incomplete',
+  '현재 원문 유지': 'Preserve the current original value',
 });
 
 const list = (value: string | undefined) => (value ? value.split('\n') : []);
@@ -70,6 +75,7 @@ export function NativeOrderedColumns({
   tableId,
   disabled = false,
   label = '컬럼 순서',
+  keyKind,
 }: {
   value: string;
   change: (value: string) => void;
@@ -77,12 +83,19 @@ export function NativeOrderedColumns({
   tableId: string;
   disabled?: boolean;
   label?: string;
+  keyKind?: 'primary' | 'unique' | undefined;
 }) {
   const { t } = useI18n();
   const ids = list(value);
   const columns = (document.columns ?? []).filter(
     (item) => item.tableId === tableId && item.scope !== 'logical',
   );
+  const table = document.tables?.find((item) => item.id === tableId);
+  const eligibility =
+    keyKind && table ? nativeKeyColumnPolicies(document, table, keyKind, ids) : undefined;
+  const canAdd = (id: string) =>
+    !ids.includes(id) &&
+    (!eligibility || !!eligibility.find((item) => item.column.id === id)?.productUsable);
   return (
     <fieldset disabled={disabled}>
       <legend>{t(label)}</legend>
@@ -96,11 +109,18 @@ export function NativeOrderedColumns({
             }
             choices={[
               { value: '', label: '—' },
-              ...columns.map((column) => ({
+              ...(eligibility ? eligibility.map((item) => item.column) : columns).map((column) => ({
                 value: column.id,
-                label: column.physical.name || column.logical.name || column.id,
-                disabled: column.id !== id && ids.includes(column.id),
+                label: `${column.physical.name || column.logical.name || column.id}${eligibility ? ` · ${t(eligibility.find((item) => item.column.id === column.id)?.engineAllowed ? '엔진에서 허용' : '이 DB에서 지원하지 않음')}` : ''}`,
+                disabled:
+                  column.id !== id &&
+                  (ids.includes(column.id) ||
+                    (eligibility &&
+                      !eligibility.find((item) => item.column.id === column.id)?.productUsable)),
               })),
+              ...(!columns.some((column) => column.id === id)
+                ? [{ value: id, label: `${id} · ${t('현재 원문 유지')}`, disabled: true }]
+                : []),
             ]}
           />
           <Button
@@ -129,13 +149,31 @@ export function NativeOrderedColumns({
         </div>
       ))}
       <Button
-        disabled={ids.length >= 32 || columns.every((column) => ids.includes(column.id))}
+        disabled={ids.length >= 32 || !columns.some((column) => canAdd(column.id))}
         onClick={() =>
-          change([...ids, columns.find((column) => !ids.includes(column.id))?.id ?? ''].join('\n'))
+          change([...ids, columns.find((column) => canAdd(column.id))?.id ?? ''].join('\n'))
         }
       >
         {t('컬럼 추가')}
       </Button>
+      {eligibility && (
+        <div role="status">
+          <p>{t('키 후보')}</p>
+          <ul>
+            {eligibility.map((item) => (
+              <li key={item.column.id}>
+                {item.column.physical.name || item.column.id} ·{' '}
+                {t(item.engineAllowed ? '엔진에서 허용' : '이 DB에서 지원하지 않음')}
+                {!item.productUsable && ` · ${t('제품 검증 미완료')}`} ({item.code})
+                {item.eligibility.estimatedBytes !== undefined &&
+                  ` · ${item.eligibility.estimatedBytes} bytes`}
+                {item.eligibility.conditions.length > 0 &&
+                  ` · ${item.eligibility.conditions.join(', ')}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </fieldset>
   );
 }
@@ -151,6 +189,15 @@ export function nativeStructureCommands(
   const policy = nativeEditorPolicy(document, table);
   if (action !== 'table' && action !== 'enum' && !table)
     throw new Error('document.owner-table-not-found');
+  if (action === 'key' && table)
+    nativeKeyInput(
+      document,
+      table,
+      values.keyKind === 'primary' ? 'primary' : 'unique',
+      list(values.columnIds),
+    );
+  if (action === 'index' && table && values.unique === 'true')
+    nativeKeyInput(document, table, 'unique', list(values.columnIds));
   if (!['table', 'column'].includes(action) || values.scope !== 'logical') {
     const feature =
       action === 'key'
@@ -163,6 +210,17 @@ export function nativeStructureCommands(
     const decision = policy.feature(feature as Parameters<typeof policy.feature>[0]);
     if (!decision.usable) throw new Error(decision.code ?? 'feature.not-implemented');
   }
+  if (
+    (action === 'key' || (action === 'index' && values.unique === 'true')) &&
+    table &&
+    nativeKeyInput(
+      document,
+      table,
+      action === 'key' && values.keyKind === 'primary' ? 'primary' : 'unique',
+      list(values.columnIds),
+    ).some((item) => !item.productUsable)
+  )
+    throw new Error('key.not-ready');
   const scope = values.scope ?? 'physical';
   let command: unknown;
   const id = values.id;
@@ -429,6 +487,15 @@ function NativeCreateForm({
                   change={(value) => change('columnIds', value)}
                   document={document}
                   tableId={table.id}
+                  keyKind={
+                    action === 'key'
+                      ? values.keyKind === 'primary'
+                        ? 'primary'
+                        : 'unique'
+                      : values.unique === 'true'
+                        ? 'unique'
+                        : undefined
+                  }
                 />
               )}
               {action === 'index' && (
@@ -632,8 +699,26 @@ export function nativeConstraintCommands(
   } else {
     if (changed('name')) patch.name = values.name;
     if (collection === 'keys') {
+      if (changed('columnIds') || changed('keyKind')) {
+        const key = document.keys!.find((item) => item.id === id)!;
+        const table = document.tables?.find((item) => item.id === key.tableId);
+        if (!table) throw new Error('key.table-not-found');
+        nativeKeyInput(
+          document,
+          table,
+          values.keyKind === 'primary' ? 'primary' : 'unique',
+          list(values.columnIds),
+        );
+      }
       if (changed('columnIds') || changed('keyKind'))
         requireFeature(values.keyKind === 'primary' ? 'primaryKey' : 'unique');
+      if (
+        (changed('columnIds') || changed('keyKind')) &&
+        policy
+          .keyColumns(values.keyKind === 'primary' ? 'primary' : 'unique')
+          .some((item) => list(values.columnIds).includes(item.column.id) && !item.productUsable)
+      )
+        throw new Error('key.not-ready');
       if (changed('columnIds')) patch.columnIds = list(values.columnIds);
       if (changed('keyKind')) patch.kind = values.keyKind;
     } else if (collection === 'indexes') {
@@ -762,6 +847,15 @@ function NativeConstraintForm({
                 change={(value) => change('columnIds', value)}
                 document={document}
                 tableId={tableId}
+                keyKind={
+                  collection === 'keys'
+                    ? values.keyKind === 'primary'
+                      ? 'primary'
+                      : 'unique'
+                    : collection === 'indexes' && values.unique === 'true'
+                      ? 'unique'
+                      : undefined
+                }
                 disabled={
                   disabled ||
                   (collection === 'indexes' &&
