@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { defaultDatabaseContext } from './profiles.js';
+import { hasDatabaseCoverage } from './definitions.js';
+import { nativeDefaultCoverage, nativeFeatureCoverage } from './readiness.js';
+import { getDatabaseType } from './catalog.js';
 import {
   nativeBuiltinDefaultDecision,
   nativeGenerationDecision,
@@ -20,6 +23,107 @@ const call = (
   functionId: Extract<NativeExpression, { kind: 'call' }>['functionId'],
 ): NativeExpression => ({ kind: 'call', functionId, args: [] });
 describe('native column option decisions', () => {
+  it('consumes actual default coverage and refuses to promote clear recovery or caller evidence', () => {
+    const uuid: NativeColumnType = {
+      kind: 'builtin',
+      database: 'postgresql',
+      typeId: 'postgresql:uuid',
+      parameters: {},
+    };
+    expect(nativeBuiltinDefaultDecision(pg, uuid, call('postgresql:gen_random_uuid')).usable).toBe(
+      hasDatabaseCoverage(nativeDefaultCoverage),
+    );
+    expect(
+      nativeBuiltinDefaultDecision(pg, integer, call('postgresql:gen_random_uuid')),
+    ).toMatchObject({ allowed: false, usable: false });
+    expect(nativeGenerationDecision(pg, integer, { kind: 'none' })).toEqual({
+      allowed: true,
+      usable: false,
+    });
+    const legacy: NativeColumnType = {
+      kind: 'legacy',
+      source: 'document-v1',
+      original: { name: 'custom', isArray: false },
+    };
+    expect(nativeGenerationDecision(pg, legacy, { kind: 'none' })).toEqual({
+      allowed: true,
+      usable: false,
+    });
+    const injected = {
+      nullable: false,
+      usable: true,
+      coverage: true,
+      evidence: { editor: ['caller'] },
+    };
+    expect(
+      nativeGenerationDecision(
+        pg,
+        legacy,
+        { kind: 'identity', database: 'postgresql', mode: 'always' },
+        injected,
+      ),
+    ).toMatchObject({ allowed: false, usable: false });
+    const enumeration: NativeColumnType = {
+      kind: 'projectEnum',
+      database: 'postgresql',
+      enumId: 'e',
+    };
+    // Legacy engine facts are preserved, but a caller typeId cannot supply product type coverage.
+    expect(
+      nativeGenerationDecision(
+        pg,
+        enumeration,
+        { kind: 'identity', database: 'postgresql', mode: 'always' },
+        { typeId: 'postgresql:integer' },
+      ),
+    ).toMatchObject({ allowed: true, usable: false });
+  });
+  it('requires actual storage/type/expression readiness for computed generation and supports proper autoIncrement facts', () => {
+    const expression: NativeExpression = { kind: 'literal', literalType: 'number', value: '1' };
+    for (const storage of ['stored', 'virtual'] as const)
+      expect(
+        nativeGenerationDecision(pg, integer, {
+          kind: 'computed',
+          database: 'postgresql',
+          storage,
+          expression,
+        }).usable,
+      ).toBe(
+        hasDatabaseCoverage(
+          nativeFeatureCoverage(storage === 'stored' ? 'generatedStored' : 'generatedVirtual'),
+        ),
+      );
+    const type: NativeColumnType = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:int',
+      parameters: {},
+    };
+    expect(
+      nativeGenerationDecision(
+        mysql,
+        type,
+        { kind: 'autoIncrement', database: 'mysql' },
+        { indexed: true, firstIndexColumn: true },
+      ).usable,
+    ).toBe(hasDatabaseCoverage(nativeFeatureCoverage('autoIncrement')));
+    expect(
+      nativeGenerationDecision(mysql, type, { kind: 'autoIncrement', database: 'mysql' }),
+    ).toMatchObject({ allowed: false, usable: false, code: 'generation.key-required' });
+    const timestamp: NativeColumnType = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:timestamp',
+      parameters: {},
+    };
+    expect(nativeOnUpdateDecision(mysql, timestamp, call('mysql:current_timestamp')).usable).toBe(
+      hasDatabaseCoverage(nativeDefaultCoverage),
+    );
+    expect(nativeOnUpdateDecision(mysql, timestamp, call('mysql:current_date'))).toMatchObject({
+      allowed: false,
+      usable: false,
+    });
+  });
   it('uses structured expression results for generated/default candidates and PG virtual type rules', () => {
     const expression: NativeExpression = {
       kind: 'binary',
@@ -56,7 +160,9 @@ describe('native column option decisions', () => {
       };
       expect(nativeGenerationDecision(pg, type, generation, { nullable: false })).toEqual({
         allowed: true,
-        usable: false,
+        usable:
+          hasDatabaseCoverage(nativeFeatureCoverage('identity')) &&
+          hasDatabaseCoverage(getDatabaseType(type.typeId)!.coverage),
       });
       const copy = JSON.stringify(generation);
       nativeGenerationDecision(pg, type, generation);

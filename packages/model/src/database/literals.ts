@@ -1,13 +1,19 @@
 import { getDatabaseType, validateDatabaseTypeParameters } from './catalog.js';
-import type { DatabaseContext } from './definitions.js';
+import { hasDatabaseCoverage, type DatabaseContext } from './definitions.js';
+import { checkDatabaseFeature } from './features.js';
+import { nativeDefaultCoverage } from './readiness.js';
 import type { NativeColumnType, NativeDefaultValue, NativeLiteral } from './native-document.js';
 import { getDatabaseProfile } from './profiles.js';
 import { mysqlStringMetrics } from './mysql-physical-policy.js';
 
 export interface NativeLiteralDecision {
+  /** Engine/value subset decision, independent of registry release evidence. */
   allowed: boolean;
-  usable: false;
-  coverage: false;
+  usable: boolean;
+  /** Product path/type coverage; it does not assert every grammar/value is supported. */
+  coverage: boolean;
+  /** Engine-valid compatibility syntax can still lack evidence for new product writes. */
+  readinessCode?: 'type.declaration-not-ready';
   code?: string;
   category?: 'invalid' | 'unsupported' | 'environment';
   /** Explicit supported input subset; never a claim of a complete engine parser. */
@@ -77,12 +83,76 @@ export function inspectNativeLiteralToken(literal: NativeLiteral): NativeLiteral
   return ok(literal.literalType);
 }
 
-/** DB semantics only. Structure/reference validation and product readiness stay separate. */
+/** Registry readiness of the native type family; document references remain a separate check. */
+export function nativeTypeHasCoverage(
+  context: DatabaseContext,
+  type: NativeColumnType,
+  strict = false,
+): boolean {
+  try {
+    getDatabaseProfile(context);
+  } catch {
+    return false;
+  }
+  if (type.kind === 'legacy' || type.database !== context.kind) return false;
+  // General SQLite compatibility syntax is readable, but has no verified new-write family gate.
+  if (type.kind === 'declared' || type.kind === 'untyped') return false;
+  if (type.kind === 'projectEnum')
+    return (
+      checkDatabaseFeature(context, 'enumType').usable &&
+      (!type.array || checkDatabaseFeature(context, 'array', { projectEnum: true }).usable)
+    );
+  const definition = getDatabaseType(type.typeId);
+  if (
+    !definition ||
+    definition.databaseKind !== context.kind ||
+    !hasDatabaseCoverage(definition.coverage)
+  )
+    return false;
+  if (strict && (context.kind !== 'sqlite' || !definition.sqliteStrict)) return false;
+  if (type.kind === 'valueList')
+    return checkDatabaseFeature(context, type.typeId === 'mysql:enum' ? 'enumColumn' : 'setColumn')
+      .usable;
+  if (
+    definition.category === 'value-list' ||
+    validateDatabaseTypeParameters(definition, type.parameters).length
+  )
+    return false;
+  return (
+    !('array' in type && type.array) ||
+    checkDatabaseFeature(context, 'array', { typeId: type.typeId }).usable
+  );
+}
+
+/** Engine legality is unchanged; product usability also requires real default and type coverage. */
 export function literalDecision(
   context: DatabaseContext,
   type: NativeColumnType,
   value: NativeDefaultValue,
   facts: NativeLiteralFacts = {},
+): NativeLiteralDecision {
+  const decision = engineLiteralDecision(context, type, value, facts);
+  // Removing a default is recovery, not permission to introduce a new default feature.
+  const coverage =
+    value.kind !== 'none' &&
+    hasDatabaseCoverage(nativeDefaultCoverage) &&
+    nativeTypeHasCoverage(context, type, facts.strict);
+  return {
+    ...decision,
+    coverage,
+    usable: decision.allowed && coverage,
+    ...(value.kind !== 'none' &&
+      decision.allowed &&
+      (type.kind === 'declared' || type.kind === 'untyped') && {
+        readinessCode: 'type.declaration-not-ready' as const,
+      }),
+  };
+}
+function engineLiteralDecision(
+  context: DatabaseContext,
+  type: NativeColumnType,
+  value: NativeDefaultValue,
+  facts: NativeLiteralFacts,
 ): NativeLiteralDecision {
   try {
     getDatabaseProfile(context);

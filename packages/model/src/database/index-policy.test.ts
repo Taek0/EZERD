@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { databaseTypeCatalog } from './catalog.js';
+import { databaseTypeCatalog, getDatabaseType } from './catalog.js';
+import { hasDatabaseCoverage } from './definitions.js';
+import { nativeFeatureCoverage } from './readiness.js';
 import { defaultDatabaseContext } from './profiles.js';
 import { nativePostgresIndexMethodDecision } from './index-policy.js';
 import type { NativeColumnType } from './native-document.js';
@@ -12,6 +14,53 @@ const type = (name: string): NativeColumnType =>
     parameters: {},
   }) as NativeColumnType;
 describe('PostgreSQL default index method type policy', () => {
+  it('requires covered expression result metadata and cannot trust a caller readiness flag', () => {
+    const unknown = {
+      family: 'number' as const,
+      nullable: false,
+      usable: true,
+      coverage: true,
+      evidence: { ddl: ['caller'] },
+    };
+    expect(nativePostgresIndexMethodDecision(context, 'btree', undefined, unknown)).toMatchObject({
+      allowed: true,
+      usable: false,
+    });
+    expect(
+      nativePostgresIndexMethodDecision(context, 'btree', undefined, {
+        family: 'enum',
+        nullable: false,
+      }),
+    ).toMatchObject({ allowed: true, usable: false });
+    const ready =
+      hasDatabaseCoverage(nativeFeatureCoverage('index')) &&
+      hasDatabaseCoverage(nativeFeatureCoverage('indexMethod')) &&
+      hasDatabaseCoverage(nativeFeatureCoverage('expressionIndex'));
+    expect(
+      nativePostgresIndexMethodDecision(context, 'btree', undefined, {
+        family: 'number',
+        numeric: 'integer',
+        nullable: false,
+      }).usable,
+    ).toBe(ready);
+    expect(
+      nativePostgresIndexMethodDecision(context, 'gin', undefined, {
+        family: 'json',
+        jsonKind: 'json',
+        nullable: false,
+      }),
+    ).toMatchObject({ allowed: false, usable: false });
+    expect(
+      nativePostgresIndexMethodDecision(context, 'gin', undefined, {
+        family: 'json',
+        jsonKind: 'jsonb',
+        nullable: false,
+      }).usable,
+    ).toBe(ready);
+    expect(nativePostgresIndexMethodDecision(context, 'btree', type('txid_snapshot')).usable).toBe(
+      false,
+    );
+  });
   it.each([
     ['integer', 'gin', false],
     ['integer', 'brin', true],
@@ -32,7 +81,11 @@ describe('PostgreSQL default index method type policy', () => {
   ] as const)('checks %s/%s default operator classes', (name, method, allowed) => {
     expect(nativePostgresIndexMethodDecision(context, method, type(name))).toMatchObject({
       allowed,
-      usable: false,
+      usable:
+        allowed &&
+        hasDatabaseCoverage(nativeFeatureCoverage('index')) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('indexMethod')) &&
+        hasDatabaseCoverage(getDatabaseType(`postgresql:${name}`)!.coverage),
     });
   });
   it('requires element operator support for arrays and handles enum scalar separately', () => {
@@ -88,9 +141,18 @@ describe('PostgreSQL default index method type policy', () => {
     );
     for (const definition of databaseTypeCatalog.filter(
       (value) => value.databaseKind === 'postgresql',
-    ))
-      expect(
-        nativePostgresIndexMethodDecision(context, 'btree', type(definition.sqlName)).usable,
-      ).toBe(false);
+    )) {
+      const decision = nativePostgresIndexMethodDecision(
+        context,
+        'btree',
+        type(definition.sqlName),
+      );
+      expect(decision.usable).toBe(
+        decision.allowed &&
+          hasDatabaseCoverage(definition.coverage) &&
+          hasDatabaseCoverage(nativeFeatureCoverage('index')) &&
+          hasDatabaseCoverage(nativeFeatureCoverage('indexMethod')),
+      );
+    }
   });
 });

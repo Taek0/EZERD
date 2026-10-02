@@ -2,13 +2,18 @@ import { getDatabaseType, validateDatabaseTypeParameters } from './catalog.js';
 import type { DatabaseContext } from './definitions.js';
 import type { NativeColumnType, NativeGeneration } from './native-document.js';
 import { getDatabaseProfile } from './profiles.js';
+import { nativeTypeHasCoverage } from './literals.js';
+import { checkDatabaseFeature } from './features.js';
+import { hasDatabaseCoverage } from './definitions.js';
+import { nativeFeatureCoverage } from './readiness.js';
 
 export interface NativeKeyEligibility {
   /** Direct constraints with the profile's default operator class, without a prefix. */
   primaryAllowed: boolean;
   uniqueAllowed: boolean;
-  usable: false;
-  coverage: false;
+  usable: boolean;
+  coverage: boolean;
+  readinessCode?: 'type.declaration-not-ready';
   code?: string;
   category?: 'unsupported' | 'invalid';
   conditions: readonly string[];
@@ -18,6 +23,9 @@ export interface NativeKeyEligibility {
 export interface NativeKeyFacts {
   charset?: string;
   generation?: NativeGeneration;
+  /** Without a requested kind, readiness conservatively requires both key paths. */
+  kind?: 'primary' | 'unique';
+  strict?: boolean;
 }
 
 // Verified against CREATE TABLE + each direct constraint; no extension opclasses.
@@ -40,6 +48,53 @@ export function keyEligibility(
   context: DatabaseContext,
   type: NativeColumnType,
   facts: NativeKeyFacts = {},
+): NativeKeyEligibility {
+  const decision = engineKeyEligibility(context, type, facts);
+  const generation = facts.generation;
+  const generationCovered =
+    !generation ||
+    generation.kind === 'none' ||
+    (generation.database === context.kind &&
+      hasDatabaseCoverage(
+        nativeFeatureCoverage(
+          generation.kind === 'computed'
+            ? generation.storage === 'stored'
+              ? 'generatedStored'
+              : 'generatedVirtual'
+            : generation.kind,
+        ),
+      ) &&
+      !(
+        context.kind === 'postgresql' &&
+        generation.kind === 'computed' &&
+        generation.storage === 'virtual' &&
+        type.kind === 'projectEnum'
+      ));
+  const coverage =
+    generationCovered &&
+    nativeTypeHasCoverage(context, type, facts.strict) &&
+    (facts.kind === 'unique' || checkDatabaseFeature(context, 'primaryKey').usable) &&
+    (facts.kind === 'primary' || checkDatabaseFeature(context, 'unique').usable);
+  const allowed =
+    facts.kind === 'primary'
+      ? decision.primaryAllowed
+      : facts.kind === 'unique'
+        ? decision.uniqueAllowed
+        : decision.primaryAllowed || decision.uniqueAllowed;
+  return {
+    ...decision,
+    coverage,
+    usable: coverage && allowed,
+    ...(allowed &&
+      (type.kind === 'declared' || type.kind === 'untyped') && {
+        readinessCode: 'type.declaration-not-ready' as const,
+      }),
+  };
+}
+function engineKeyEligibility(
+  context: DatabaseContext,
+  type: NativeColumnType,
+  facts: NativeKeyFacts,
 ): NativeKeyEligibility {
   const denied = (
     code: string,

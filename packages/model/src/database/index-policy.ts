@@ -3,10 +3,13 @@ import { getDatabaseProfile } from './profiles.js';
 import { keyEligibility } from './key-policy.js';
 import type { NativeColumnType } from './native-document.js';
 import type { NativeExpressionType } from './expression-policy.js';
+import { nativeExpressionTypeHasCoverage } from './expression-policy.js';
+import { nativeTypeHasCoverage } from './literals.js';
+import { checkDatabaseFeature } from './features.js';
 export type NativePostgresIndexMethod = 'btree' | 'hash' | 'gist' | 'spgist' | 'gin' | 'brin';
 export interface NativeIndexMethodDecision {
   allowed: boolean;
-  usable: false;
+  usable: boolean;
   code?: string;
 }
 const methods = new Set<NativePostgresIndexMethod>([
@@ -44,6 +47,24 @@ const defaults: Readonly<Record<string, readonly NativePostgresIndexMethod[]>> =
 };
 /** The PG18 built-in default opclasses, verified by actual declarations/index creation. */
 export function nativePostgresIndexMethodDecision(
+  context: DatabaseContext,
+  method: NativePostgresIndexMethod,
+  type?: NativeColumnType,
+  result?: NativeExpressionType,
+): NativeIndexMethodDecision {
+  const decision = enginePostgresIndexMethodDecision(context, method, type, result);
+  const coverage =
+    context.kind === 'postgresql' &&
+    checkDatabaseFeature(context, 'index').usable &&
+    checkDatabaseFeature(context, 'indexMethod').usable &&
+    (type
+      ? nativeTypeHasCoverage(context, type)
+      : !!result &&
+        checkDatabaseFeature(context, 'expressionIndex').usable &&
+        nativeExpressionTypeHasCoverage(context, result));
+  return { ...decision, usable: decision.allowed && coverage };
+}
+function enginePostgresIndexMethodDecision(
   context: DatabaseContext,
   method: NativePostgresIndexMethod,
   type?: NativeColumnType,

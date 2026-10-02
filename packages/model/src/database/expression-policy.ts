@@ -1,7 +1,9 @@
-import type { DatabaseContext } from './definitions.js';
+import { hasDatabaseCoverage, type DatabaseContext, type DatabaseKind } from './definitions.js';
 import { getDatabaseType, sqliteTypeAffinity } from './catalog.js';
 import { getDatabaseProfile } from './profiles.js';
-import { inspectNativeLiteralToken } from './literals.js';
+import { inspectNativeLiteralToken, nativeTypeHasCoverage, literalDecision } from './literals.js';
+import { checkDatabaseFeature } from './features.js';
+import { nativeDefaultCoverage } from './readiness.js';
 import type { NativeColumn, NativeColumnType, NativeExpression } from './native-document.js';
 
 export type NativeExpressionFamily =
@@ -26,7 +28,8 @@ export interface NativeExpressionType {
 }
 export interface NativeExpressionDecision {
   allowed: boolean;
-  usable: false;
+  usable: boolean;
+  readinessCode?: 'type.declaration-not-ready';
   result?: NativeExpressionType;
   code?: string;
 }
@@ -38,6 +41,86 @@ export interface NativeExpressionPolicyFacts {
   strict?: boolean;
   nullable?: boolean;
   primary?: boolean;
+  /** Product readiness for computed expressions needs the actual storage feature. */
+  generationStorage?: 'stored' | 'virtual';
+}
+/** Family evidence alone never verifies an AST; callers still consume its semantic decision. */
+export function nativeExpressionTypeHasCoverage(
+  context: DatabaseContext,
+  result: NativeExpressionType,
+): boolean {
+  if (result.family === 'unsupported') return false;
+  if (result.family === 'null') return true;
+  if (result.family === 'enum')
+    return (
+      context.kind === 'postgresql' &&
+      !!result.enumId &&
+      checkDatabaseFeature(context, 'enumType').usable
+    );
+  let names: readonly string[] | undefined;
+  if (result.family === 'number') {
+    const numericFamilies: Readonly<
+      Record<DatabaseKind, Readonly<Record<'integer' | 'decimal' | 'floating', readonly string[]>>>
+    > = {
+      postgresql: {
+        integer: ['smallint', 'integer', 'bigint'],
+        decimal: ['numeric'],
+        floating: ['real', 'double precision'],
+      },
+      mysql: {
+        integer: ['tinyint', 'smallint', 'mediumint', 'int', 'bigint'],
+        decimal: ['decimal'],
+        floating: ['float', 'double'],
+      },
+      sqlite: { integer: ['integer', 'int'], decimal: ['numeric'], floating: ['real'] },
+    };
+    if (result.numeric && Object.hasOwn(numericFamilies[context.kind], result.numeric))
+      names = numericFamilies[context.kind][result.numeric];
+  } else if (result.family === 'json') {
+    if (
+      context.kind === 'postgresql' &&
+      (result.jsonKind === 'json' || result.jsonKind === 'jsonb')
+    )
+      names = [result.jsonKind];
+    else if (context.kind === 'mysql' && result.jsonKind === 'json') names = ['json'];
+    // SQLite inference turns JSON tokens into string storage, never a native JSON result.
+  } else {
+    const families: Readonly<
+      Record<DatabaseKind, Partial<Record<NativeExpressionFamily, readonly string[]>>>
+    > = {
+      postgresql: {
+        boolean: ['boolean'],
+        string: ['char', 'varchar', 'text'],
+        binary: ['bytea'],
+        uuid: ['uuid'],
+        date: ['date'],
+        time: ['time', 'timetz'],
+        timestamp: ['timestamp', 'timestamptz'],
+      },
+      mysql: {
+        boolean: ['tinyint'],
+        string: ['char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext'],
+        binary: ['binary', 'varbinary', 'tinyblob', 'blob', 'mediumblob', 'longblob'],
+        date: ['date'],
+        time: ['time'],
+        timestamp: ['timestamp', 'datetime'],
+      },
+      sqlite: { boolean: ['integer'], string: ['text'], binary: ['blob'] },
+    };
+    if (Object.hasOwn(families[context.kind], result.family))
+      names = families[context.kind][result.family];
+  }
+  return (
+    !!names?.length &&
+    names.every((name) => {
+      const definition = getDatabaseType(`${context.kind}:${name}`);
+      return (
+        !!definition &&
+        definition.databaseKind === context.kind &&
+        hasDatabaseCoverage(definition.coverage)
+      );
+    })
+  );
 }
 function family(type: NativeColumnType): NativeExpressionType {
   const result = (
@@ -111,6 +194,9 @@ export function nativeExpressionDecision(
     throw new Error(code);
   };
   let budget = 1024;
+  let referencedTypesCovered = true;
+  let referencesProjectEnum = false;
+  let referencesCompatibilityDeclaration = false;
   const infer = (node: NativeExpression, depth = 0): NativeExpressionType => {
     if (--budget < 0 || depth > 64) return fail('expression.too-complex');
     const descend = (child: NativeExpression) => infer(child, depth + 1);
@@ -162,6 +248,9 @@ export function nativeExpressionDecision(
       if (type.kind === 'legacy' || type.database !== context.kind)
         return fail('expression.column-type-not-supported');
       const inferred = family(type);
+      referencedTypesCovered &&= nativeTypeHasCoverage(context, type, facts.strict);
+      referencesProjectEnum ||= type.kind === 'projectEnum';
+      referencesCompatibilityDeclaration ||= type.kind === 'declared' || type.kind === 'untyped';
       return { ...inferred, nullable: column.physical.nullable };
     }
     if (node.kind === 'isNull') {
@@ -361,7 +450,51 @@ export function nativeExpressionDecision(
       )
         return { allowed: false, usable: false, code: 'expression.target-type-mismatch' };
     }
-    return { allowed: true, usable: false, result };
+    const purposeCovered =
+      facts.purpose === 'default'
+        ? !!facts.targetType && hasDatabaseCoverage(nativeDefaultCoverage)
+        : facts.purpose === 'computed'
+          ? !!facts.targetType &&
+            !!facts.generationStorage &&
+            checkDatabaseFeature(
+              context,
+              facts.generationStorage === 'stored' ? 'generatedStored' : 'generatedVirtual',
+            ).usable
+          : facts.purpose === 'check'
+            ? checkDatabaseFeature(context, 'check').usable
+            : checkDatabaseFeature(context, 'index').usable &&
+              checkDatabaseFeature(
+                context,
+                facts.purpose === 'predicate' ? 'partialIndex' : 'expressionIndex',
+              ).usable;
+    const usable =
+      purposeCovered &&
+      referencedTypesCovered &&
+      !(
+        facts.purpose === 'computed' &&
+        context.kind === 'postgresql' &&
+        facts.generationStorage === 'virtual' &&
+        (facts.targetType?.kind === 'projectEnum' || referencesProjectEnum)
+      ) &&
+      (!facts.targetType || nativeTypeHasCoverage(context, facts.targetType, facts.strict)) &&
+      (expression.kind !== 'literal' ||
+        !facts.targetType ||
+        literalDecision(context, facts.targetType, expression, {
+          ...(facts.strict !== undefined && { strict: facts.strict }),
+          ...(facts.nullable !== undefined && { nullable: facts.nullable }),
+          ...(facts.primary !== undefined && { primary: facts.primary }),
+        }).allowed) &&
+      nativeExpressionTypeHasCoverage(context, result);
+    return {
+      allowed: true,
+      usable,
+      result,
+      ...((facts.targetType?.kind === 'declared' ||
+        facts.targetType?.kind === 'untyped' ||
+        referencesCompatibilityDeclaration) && {
+        readinessCode: 'type.declaration-not-ready' as const,
+      }),
+    };
   } catch (cause) {
     return {
       allowed: false,

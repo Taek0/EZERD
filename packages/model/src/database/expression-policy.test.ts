@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createNativeColumn, createNativeTable } from './editing.js';
 import { defaultDatabaseContext } from './profiles.js';
-import { nativeExpressionDecision } from './expression-policy.js';
+import { nativeExpressionDecision, nativeExpressionTypeHasCoverage } from './expression-policy.js';
 import type { NativeExpression } from './native-document.js';
+import { hasDatabaseCoverage } from './definitions.js';
+import { nativeDefaultCoverage, nativeFeatureCoverage } from './readiness.js';
 const literal = (value: string): NativeExpression => ({
   kind: 'literal',
   literalType: 'number',
@@ -30,6 +32,188 @@ function fixture(kind: 'postgresql' | 'mysql' | 'sqlite') {
     ) => nativeExpressionDecision(context, expression, { columns, tableId: 't', purpose }),
   };
 }
+describe('expression product readiness is separate from engine inference', () => {
+  it('uses real result families without silently borrowing another database storage type', () => {
+    expect(
+      nativeExpressionTypeHasCoverage(defaultDatabaseContext('postgresql'), {
+        family: 'number',
+        numeric: 'integer',
+        nullable: false,
+      }),
+    ).toBe(true);
+    expect(
+      nativeExpressionTypeHasCoverage(defaultDatabaseContext('postgresql'), {
+        family: 'number',
+        nullable: false,
+      }),
+    ).toBe(false);
+    expect(
+      nativeExpressionTypeHasCoverage(defaultDatabaseContext('sqlite'), {
+        family: 'uuid',
+        nullable: false,
+      }),
+    ).toBe(false);
+    expect(
+      nativeExpressionTypeHasCoverage(defaultDatabaseContext('sqlite'), {
+        family: 'json',
+        jsonKind: 'jsonb',
+        nullable: false,
+      }),
+    ).toBe(false);
+    expect(
+      nativeExpressionTypeHasCoverage(defaultDatabaseContext('mysql'), {
+        family: 'uuid',
+        nullable: false,
+      }),
+    ).toBe(false);
+    expect(
+      nativeExpressionTypeHasCoverage(defaultDatabaseContext('mysql'), {
+        family: 'json',
+        jsonKind: 'jsonb',
+        nullable: false,
+      }),
+    ).toBe(false);
+  });
+  it('reports compatibility declarations separately from engine inference and avoids granting their new writes', () => {
+    const f = fixture('sqlite');
+    f.columns[0]!.physical.type = {
+      kind: 'declared',
+      database: 'sqlite',
+      name: 'Application integer',
+      numericArguments: [],
+    };
+    expect(
+      nativeExpressionDecision(
+        f.context,
+        { kind: 'isNull', operand: column, negate: false },
+        { columns: f.columns, tableId: 't', purpose: 'check' },
+      ),
+    ).toMatchObject({ allowed: true, usable: false, readinessCode: 'type.declaration-not-ready' });
+    expect(
+      nativeExpressionDecision(f.context, literal('1'), {
+        columns: f.columns,
+        tableId: 't',
+        purpose: 'default',
+        targetType: { kind: 'untyped', database: 'sqlite' },
+      }),
+    ).toMatchObject({ allowed: true, usable: false, readinessCode: 'type.declaration-not-ready' });
+  });
+  it('requires a destination for DEFAULT and actual storage for computed product permission', () => {
+    const f = fixture('postgresql'),
+      facts = { columns: f.columns, tableId: 't', targetType: f.columns[0]!.physical.type };
+    expect(
+      nativeExpressionDecision(f.context, literal('1'), {
+        columns: [],
+        tableId: '',
+        purpose: 'default',
+      }),
+    ).toMatchObject({ allowed: true, usable: false });
+    expect(
+      nativeExpressionDecision(f.context, literal('1'), { ...facts, purpose: 'default' }).usable,
+    ).toBe(hasDatabaseCoverage(nativeDefaultCoverage));
+    expect(
+      nativeExpressionDecision(f.context, literal('1'), { ...facts, purpose: 'computed' }),
+    ).toMatchObject({ allowed: true, usable: false });
+    expect(
+      nativeExpressionDecision(f.context, literal('2147483648'), { ...facts, purpose: 'default' }),
+    ).toMatchObject({ allowed: true, usable: false });
+    for (const generationStorage of ['stored', 'virtual'] as const)
+      expect(
+        nativeExpressionDecision(f.context, literal('1'), {
+          ...facts,
+          purpose: 'computed',
+          generationStorage,
+        }).usable,
+      ).toBe(
+        hasDatabaseCoverage(
+          nativeFeatureCoverage(
+            generationStorage === 'stored' ? 'generatedStored' : 'generatedVirtual',
+          ),
+        ),
+      );
+  });
+  it('does not promote PostgreSQL virtual enum targets or enum references just because generation is released', () => {
+    const f = fixture('postgresql');
+    f.columns[0]!.physical.type = { kind: 'projectEnum', database: 'postgresql', enumId: 'e' };
+    expect(
+      nativeExpressionDecision(f.context, column, {
+        columns: f.columns,
+        tableId: 't',
+        purpose: 'computed',
+        generationStorage: 'virtual',
+        targetType: f.columns[0]!.physical.type,
+      }),
+    ).toMatchObject({ allowed: true, usable: false });
+    expect(
+      nativeExpressionDecision(
+        f.context,
+        { kind: 'isNull', operand: column, negate: false },
+        {
+          columns: f.columns,
+          tableId: 't',
+          purpose: 'computed',
+          generationStorage: 'virtual',
+          targetType: {
+            kind: 'builtin',
+            database: 'postgresql',
+            typeId: 'postgresql:boolean',
+            parameters: {},
+          },
+        },
+      ),
+    ).toMatchObject({ allowed: true, usable: false });
+  });
+  it('requires every referenced type, not merely the inferred boolean result, to be released', () => {
+    const f = fixture('postgresql');
+    f.columns[0]!.physical.type = {
+      kind: 'builtin',
+      database: 'postgresql',
+      typeId: 'postgresql:txid_snapshot',
+      parameters: {},
+    };
+    const decision = nativeExpressionDecision(
+      f.context,
+      { kind: 'isNull', operand: column, negate: false },
+      { columns: f.columns, tableId: 't', purpose: 'check' },
+    );
+    expect(decision).toMatchObject({ allowed: true, usable: false, result: { family: 'boolean' } });
+    const injected = {
+      columns: f.columns,
+      tableId: 't',
+      purpose: 'check' as const,
+      usable: true,
+      evidence: { server: ['caller'] },
+    };
+    expect(
+      nativeExpressionDecision(
+        f.context,
+        { kind: 'isNull', operand: column, negate: false },
+        injected,
+      ).usable,
+    ).toBe(false);
+  });
+  it('distinguishes CHECK, partial predicate and expression-index feature paths', () => {
+    const f = fixture('postgresql'),
+      compare: NativeExpression = {
+        kind: 'binary',
+        operator: '>',
+        left: column,
+        right: literal('0'),
+      };
+    expect(f.decision(compare, 'check').usable).toBe(
+      hasDatabaseCoverage(nativeFeatureCoverage('check')),
+    );
+    expect(f.decision(compare, 'predicate').usable).toBe(
+      hasDatabaseCoverage(nativeFeatureCoverage('index')) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('partialIndex')),
+    );
+    expect(f.decision(column, 'index').usable).toBe(
+      hasDatabaseCoverage(nativeFeatureCoverage('index')) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('expressionIndex')),
+    );
+    expect(f.decision(literal('1'), 'check')).toMatchObject({ allowed: false, usable: false });
+  });
+});
 describe.each(['postgresql', 'mysql', 'sqlite'] as const)(
   '%s structured expression semantics',
   (kind) => {

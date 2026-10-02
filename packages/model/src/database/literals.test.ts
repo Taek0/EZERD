@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { databaseTypeCatalog } from './catalog.js';
+import { databaseTypeCatalog, getDatabaseType } from './catalog.js';
 import { literalDecision, inspectNativeLiteralToken } from './literals.js';
 import { defaultDatabaseContext } from './profiles.js';
-import type { DatabaseKind } from './definitions.js';
+import { hasDatabaseCoverage, type DatabaseKind } from './definitions.js';
+import { nativeDefaultCoverage, nativeFeatureCoverage } from './readiness.js';
 import type { NativeColumnType, NativeLiteral } from './native-document.js';
 import { nativeDDLFixture } from './ddl-fixtures.js';
 import { inspectNativeDatabaseDocument, validateDatabaseDocument } from './validation.js';
@@ -100,6 +101,119 @@ describe('MySQL literal effective charset facts', () => {
 });
 
 describe('native literal decisions with explicit target IDs', () => {
+  it('uses registry default readiness for checked values but never grants new permission from none or a lexical token', () => {
+    const context = defaultDatabaseContext('postgresql'),
+      t = type('postgresql', 'integer'),
+      ready = hasDatabaseCoverage(nativeDefaultCoverage);
+    expect(literalDecision(context, t, literal('1', 'number'))).toMatchObject({
+      allowed: true,
+      coverage: ready,
+      usable: ready,
+    });
+    expect(literalDecision(context, t, literal('2147483648', 'number'))).toMatchObject({
+      allowed: false,
+      usable: false,
+    });
+    expect(literalDecision(context, t, { kind: 'none' })).toMatchObject({
+      allowed: true,
+      coverage: false,
+      usable: false,
+    });
+    expect(inspectNativeLiteralToken(literal('1', 'number'))).toMatchObject({
+      allowed: true,
+      coverage: false,
+      usable: false,
+    });
+    expect(inspectNativeLiteralToken(literal('1', 'typedText'))).toMatchObject({
+      allowed: false,
+      coverage: false,
+      usable: false,
+    });
+  });
+  it('requires the project ENUM feature or the matching MySQL value-list family as well as default coverage', () => {
+    const pg = defaultDatabaseContext('postgresql'),
+      my = defaultDatabaseContext('mysql'),
+      label = literal('a', 'string');
+    const enumeration: NativeColumnType = {
+      kind: 'projectEnum',
+      database: 'postgresql',
+      enumId: 'e',
+    };
+    expect(literalDecision(pg, enumeration, label, { enumValues: ['a'] })).toMatchObject({
+      allowed: true,
+      usable:
+        hasDatabaseCoverage(nativeDefaultCoverage) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('enumType')),
+    });
+    for (const id of ['mysql:enum', 'mysql:set'] as const) {
+      const list: NativeColumnType = {
+        kind: 'valueList',
+        database: 'mysql',
+        typeId: id,
+        values: ['a'],
+      };
+      const ready =
+        hasDatabaseCoverage(nativeDefaultCoverage) &&
+        hasDatabaseCoverage(
+          nativeFeatureCoverage(id === 'mysql:enum' ? 'enumColumn' : 'setColumn'),
+        ) &&
+        hasDatabaseCoverage(getDatabaseType(id)!.coverage);
+      expect(literalDecision(my, list, label)).toMatchObject({
+        allowed: true,
+        coverage: ready,
+        usable: ready,
+      });
+      expect(literalDecision(my, list, literal('bad', 'string')).usable).toBe(false);
+    }
+  });
+  it('does not borrow builtin coverage for SQLite custom declarations or untyped columns', () => {
+    const context = defaultDatabaseContext('sqlite');
+    for (const t of [
+      { kind: 'declared', database: 'sqlite', name: 'Application number', numericArguments: [] },
+      { kind: 'untyped', database: 'sqlite' },
+    ] satisfies NativeColumnType[]) {
+      expect(literalDecision(context, t, literal('1', 'number'))).toMatchObject({
+        allowed: true,
+        coverage: false,
+        usable: false,
+        readinessCode: 'type.declaration-not-ready',
+      });
+    }
+  });
+  it('ignores caller readiness/evidence fields and preserves unsupported-profile diagnostics', () => {
+    const context = defaultDatabaseContext('postgresql');
+    const injected = {
+      nullable: true,
+      usable: true,
+      coverage: true,
+      evidence: { editor: ['caller'] },
+    };
+    expect(
+      literalDecision(context, type('postgresql', 'unknown'), literal('1', 'number'), injected),
+    ).toMatchObject({ allowed: false, coverage: false, usable: false });
+    expect(
+      literalDecision(
+        { ...context, profileId: 'invalid' as typeof context.profileId },
+        type('postgresql', 'integer'),
+        literal('1', 'number'),
+      ),
+    ).toMatchObject({
+      allowed: false,
+      code: 'database.profile-unsupported',
+      coverage: false,
+      usable: false,
+    });
+    expect(decide('xml', '<root/>')).toMatchObject({
+      allowed: false,
+      usable: false,
+      category: 'unsupported',
+    });
+    expect(decide('regclass', 'records')).toMatchObject({
+      allowed: false,
+      usable: false,
+      category: 'environment',
+    });
+  });
   it.each(databaseTypeCatalog)(
     '$id supports none/null separately from specialized literal support',
     (d) => {
@@ -119,8 +233,22 @@ describe('native literal decisions with explicit target IDs', () => {
       for (const value of [{ kind: 'none' }, { kind: 'null' }] as const) {
         expect(literalDecision(context, t, value)).toMatchObject({
           allowed: true,
-          coverage: false,
-          usable: false,
+          coverage:
+            value.kind === 'null' &&
+            hasDatabaseCoverage(nativeDefaultCoverage) &&
+            hasDatabaseCoverage(d.coverage) &&
+            (t.kind !== 'valueList' ||
+              hasDatabaseCoverage(
+                nativeFeatureCoverage(t.typeId === 'mysql:enum' ? 'enumColumn' : 'setColumn'),
+              )),
+          usable:
+            value.kind === 'null' &&
+            hasDatabaseCoverage(nativeDefaultCoverage) &&
+            hasDatabaseCoverage(d.coverage) &&
+            (t.kind !== 'valueList' ||
+              hasDatabaseCoverage(
+                nativeFeatureCoverage(t.typeId === 'mysql:enum' ? 'enumColumn' : 'setColumn'),
+              )),
         });
       }
       expect(literalDecision(context, t, { kind: 'null' }, { nullable: false }).allowed).toBe(
@@ -155,7 +283,10 @@ describe('native literal decisions with explicit target IDs', () => {
     ['pg_lsn', 'FFFFFFFF/FFFFFFFF', 'FFFFFFFFF/0'],
     ['bit', '1', '2'],
   ])('%s accepts a checked subset and rejects malformed values', (name, good, bad) => {
-    expect(decide(name, good)).toMatchObject({ allowed: true, usable: false, coverage: false });
+    const ready =
+      hasDatabaseCoverage(nativeDefaultCoverage) &&
+      hasDatabaseCoverage(getDatabaseType(`postgresql:${name}`)!.coverage);
+    expect(decide(name, good)).toMatchObject({ allowed: true, usable: ready, coverage: ready });
     expect(decide(name, bad).allowed).toBe(false);
     expect(decide(name, good, 'postgresql', 'string').allowed).toBe(false);
   });

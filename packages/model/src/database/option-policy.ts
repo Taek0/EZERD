@@ -9,10 +9,14 @@ import {
   type NativeGeneration,
 } from './native-document.js';
 import { nativeExpressionDecision } from './expression-policy.js';
+import { nativeTypeHasCoverage } from './literals.js';
+import { nativeDefaultCoverage } from './readiness.js';
+import { hasDatabaseCoverage } from './definitions.js';
 
 export interface NativeColumnOptionDecision {
   allowed: boolean;
-  usable: false;
+  usable: boolean;
+  readinessCode?: 'type.declaration-not-ready';
   code?: string;
   category?: 'invalid' | 'unsupported' | 'environment';
 }
@@ -37,6 +41,41 @@ export function nativeBuiltinDefaultDecision(
   type: NativeColumnType,
   expression: NativeExpression,
   facts: NativeBuiltinDefaultFacts = {},
+): NativeColumnOptionDecision {
+  const decision = engineBuiltinDefaultDecision(context, type, expression, facts);
+  if (!decision.allowed) return decision;
+  const coverage =
+    hasDatabaseCoverage(nativeDefaultCoverage) &&
+    nativeTypeHasCoverage(context, type, facts.strict);
+  // General expressions must also have covered source/result types, not just a ready target.
+  const expressionReady = nativeExpressionDecision(context, expression, {
+    columns: [],
+    tableId: '',
+    purpose: 'default',
+    targetType: type,
+    ...(facts.strict !== undefined && { strict: facts.strict }),
+    ...(facts.nullable !== undefined && { nullable: facts.nullable }),
+  }).usable;
+  // Engine-verified zero-argument defaults have their own target policy (e.g. SQLite affinity).
+  const builtin =
+    expression.kind === 'call' &&
+    expression.args.length === 0 &&
+    ['current_timestamp', 'current_date', 'current_time', 'gen_random_uuid', 'uuid'].includes(
+      expression.functionId.split(':')[1]!,
+    );
+  return {
+    ...decision,
+    usable: decision.allowed && coverage && (builtin || expressionReady),
+    ...((type.kind === 'declared' || type.kind === 'untyped') && {
+      readinessCode: 'type.declaration-not-ready' as const,
+    }),
+  };
+}
+function engineBuiltinDefaultDecision(
+  context: DatabaseContext,
+  type: NativeColumnType,
+  expression: NativeExpression,
+  facts: NativeBuiltinDefaultFacts,
 ): NativeColumnOptionDecision {
   getDatabaseProfile(context);
   if (type.kind === 'legacy' || type.database !== context.kind)
@@ -115,6 +154,21 @@ export function nativeOnUpdateDecision(
   expression: NativeExpression,
   generation: NativeGeneration = { kind: 'none' },
 ): NativeColumnOptionDecision {
+  const decision = engineOnUpdateDecision(context, type, expression, generation);
+  return {
+    ...decision,
+    usable:
+      decision.allowed &&
+      hasDatabaseCoverage(nativeDefaultCoverage) &&
+      nativeTypeHasCoverage(context, type),
+  };
+}
+function engineOnUpdateDecision(
+  context: DatabaseContext,
+  type: NativeColumnType,
+  expression: NativeExpression,
+  generation: NativeGeneration,
+): NativeColumnOptionDecision {
   getDatabaseProfile(context);
   if (
     context.kind !== 'mysql' ||
@@ -140,6 +194,46 @@ export function nativeGenerationDecision(
   type: NativeColumnType,
   generation: NativeGeneration,
   facts: NativeGenerationFacts = {},
+): NativeColumnOptionDecision {
+  const decision = engineGenerationDecision(context, type, generation, facts);
+  if (generation.kind === 'none' || !decision.allowed) return decision;
+  const feature =
+    generation.kind === 'computed'
+      ? generation.storage === 'stored'
+        ? 'generatedStored'
+        : 'generatedVirtual'
+      : generation.kind;
+  const { typeId: _callerTypeId, ...actualFacts } = facts;
+  const usable =
+    checkDatabaseFeature(context, feature, {
+      ...actualFacts,
+      ...((type.kind === 'builtin' || type.kind === 'valueList') && { typeId: type.typeId }),
+      array:
+        type.kind !== 'legacy' && type.database === 'postgresql' && 'array' in type && !!type.array,
+    }).usable &&
+    nativeTypeHasCoverage(context, type, facts.strict) &&
+    (generation.kind !== 'computed' ||
+      nativeExpressionDecision(context, generation.expression, {
+        columns: facts.columns ?? [],
+        tableId: facts.tableId ?? '',
+        purpose: 'computed',
+        targetType: type,
+        generationStorage: generation.storage,
+        ...(facts.strict !== undefined && { strict: facts.strict }),
+      }).usable);
+  return {
+    ...decision,
+    usable,
+    ...((type.kind === 'declared' || type.kind === 'untyped') && {
+      readinessCode: 'type.declaration-not-ready' as const,
+    }),
+  };
+}
+function engineGenerationDecision(
+  context: DatabaseContext,
+  type: NativeColumnType,
+  generation: NativeGeneration,
+  facts: NativeGenerationFacts,
 ): NativeColumnOptionDecision {
   getDatabaseProfile(context);
   if (generation.kind === 'none') return allow();
