@@ -1138,6 +1138,7 @@ export function App() {
           busy={busy}
           userId={user.id}
           canEdit={permissions.edit}
+          canPersonalEdit={permissions.personal}
           projectActions={(focus) => (
             <NativeProjectActions
               userId={user.id}

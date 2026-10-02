@@ -90,6 +90,7 @@ export function NativeProjectView({
   focusedReview,
   userId,
   canEdit = false,
+  canPersonalEdit = canEdit,
   projectActions,
 }: {
   entry: Extract<ProjectEntry, { kind: 'native' }>;
@@ -99,6 +100,7 @@ export function NativeProjectView({
   focusedReview?: Thread;
   userId?: string;
   canEdit?: boolean;
+  canPersonalEdit?: boolean;
   projectActions?: (focus: (id: string) => void) => ReactNode;
 }) {
   const { t } = useI18n();
@@ -422,6 +424,7 @@ export function NativeProjectView({
             snapshot={snapshot}
             {...(userId ? { userId } : {})}
             editable={editable}
+            personalEditable={!!userId && canPersonalEdit && snapshot.project.status === 'active'}
             busy={editorBusy}
             onSave={save}
             onReload={onReload}

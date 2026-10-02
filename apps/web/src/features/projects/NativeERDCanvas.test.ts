@@ -26,13 +26,19 @@ import {
 } from './NativeERDCanvas.js';
 import { loadNativeEditorDraft, storeNativeEditorDraft } from './native-editor-draft.js';
 import { request } from '../../shared/api/client.js';
+import { IDBFactory } from 'fake-indexeddb';
+import { getNativeDurableQueue } from './native-durable-queue.js';
 import { setLocale } from '../../shared/i18n/index.js';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeEditorForm } from './native-editor-form.js';
 const exportBlocker = vi.hoisted(() => vi.fn());
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker: exportBlocker }));
-beforeEach(() => vi.stubGlobal('localStorage', memory()));
-afterEach(() => {
+beforeEach(() => {
+  vi.stubGlobal('localStorage', memory());
+  vi.stubGlobal('indexedDB', new IDBFactory());
+});
+afterEach(async () => {
+  await getNativeDurableQueue().close();
   vi.unstubAllGlobals();
   exportBlocker.mockClear();
 });
@@ -113,6 +119,7 @@ function personalFixture() {
   const f = fixture();
   const candidate = upsertCombinedView(f.document, { id: 'v', name: 'Private', domainIds: ['d'] });
   const personal = {
+    databaseRevision: 3,
     version: 2,
     projectVersion: 7,
     syncSequence: 10,
@@ -148,10 +155,10 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
       type: 'set_viewport',
       value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
     });
-    const pending = stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
+    const pending = await stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
     expect(pending.revision).toMatch(uuid);
     expect(pending.revision).not.toBe(command.nodeId);
-    expect(loadNativeCanvasPersonalPending(userId, projectId, store)?.revision).toBe(
+    expect((await loadNativeCanvasPersonalPending(userId, projectId, store))?.revision).toBe(
       pending.revision,
     );
     await recoverNativeCanvasPersonal(
@@ -163,8 +170,8 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
         .fn()
         .mockResolvedValue({ ...f.personal, version: 3, state: pending.state }) as typeof request,
     );
-    expect(loadNativeCanvasPersonalPending(userId, projectId, store)).toBeNull();
-    expect(getRandomValues).toHaveBeenCalledTimes(2);
+    expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toBeNull();
+    expect(getRandomValues.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
   it('renders editable canvas action and fresh input revisions with only getRandomValues', () => {
     const f = fixture(),
@@ -307,9 +314,9 @@ describe('native private canvas stays separate from shared state', () => {
       type: 'set_viewport',
       value: { viewId: 'v', x: 70, y: 90, zoom: 2 },
     });
-    const pending = stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
-    expect(loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
-    expect(loadNativeCanvasPersonalPending(projectId, projectId, store)).toBeNull();
+    const pending = await stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
+    expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
+    expect(await loadNativeCanvasPersonalPending(projectId, projectId, store)).toBeNull();
     const saved = { ...f.personal, version: 3, state: pending.state };
     const api = vi.fn().mockResolvedValue(saved);
     const archived = {
@@ -318,7 +325,7 @@ describe('native private canvas stays separate from shared state', () => {
     };
     await recoverNativeCanvasPersonal(pending, archived, false, store, api as typeof request);
     expect(api).toHaveBeenCalledTimes(1);
-    expect(loadNativeCanvasPersonalPending(userId, projectId, store)).toBeNull();
+    expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toBeNull();
   });
   it('only replays an unchanged personal baseline and includes the expected native DB revision', async () => {
     const f = personalFixture(),
@@ -327,7 +334,7 @@ describe('native private canvas stays separate from shared state', () => {
       type: 'set_viewport',
       value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
     });
-    const pending = stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
+    const pending = await stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
     const api = vi
       .fn()
       .mockResolvedValueOnce(f.personal)
@@ -348,7 +355,13 @@ describe('native private canvas stays separate from shared state', () => {
         type: 'set_viewport',
         value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
       });
-      const pending = stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
+      const pending = await stageNativeCanvasPersonal(
+        userId,
+        f.snapshot,
+        f.personal,
+        changed,
+        store,
+      );
       const current = structuredClone(f.personal),
         snapshot = structuredClone(f.snapshot);
       if (reason === 'context') snapshot.project.databaseRevision++;
@@ -366,7 +379,7 @@ describe('native private canvas stays separate from shared state', () => {
         ),
       ).rejects.toThrow();
       expect(api).toHaveBeenCalledTimes(1);
-      expect(loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
+      expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
     },
   );
   it('clears only the captured canvas draft revision when a delayed personal ACK is confirmed', async () => {
@@ -387,10 +400,17 @@ describe('native private canvas stays separate from shared state', () => {
       type: 'set_viewport',
       value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
     });
-    const pending = stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store, {
-      key: draft.key,
-      revision,
-    });
+    const pending = await stageNativeCanvasPersonal(
+      userId,
+      f.snapshot,
+      f.personal,
+      changed,
+      store,
+      {
+        key: draft.key,
+        revision,
+      },
+    );
     const newer = { ...draft, revision: crypto.randomUUID(), values: { x: '150' } };
     storeNativeEditorDraft(newer, store);
     await recoverNativeCanvasPersonal(
@@ -411,7 +431,7 @@ describe('native private canvas stays separate from shared state', () => {
       type: 'set_viewport',
       value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
     });
-    const pending = stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
+    const pending = await stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
     const api = vi
       .fn()
       .mockResolvedValueOnce(f.personal)
@@ -419,10 +439,10 @@ describe('native private canvas stays separate from shared state', () => {
     await expect(
       recoverNativeCanvasPersonal(pending, f.snapshot, true, store, api as typeof request),
     ).rejects.toThrow('native.ack-mismatch');
-    expect(loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
-    expect(() => stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store)).toThrow(
-      'native.pending-exists',
-    );
+    expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
+    await expect(
+      stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store),
+    ).rejects.toThrow('native.pending-exists');
   });
 });
 describe('native input registers export blockers even without a durable storage record', () => {
@@ -551,7 +571,7 @@ describe('native input registers export blockers even without a durable storage 
     ]);
     expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).not.toContain('disabled=""');
   });
-  it('blocks canvas form export on storage failure and rejects pending staging before any PUT', () => {
+  it('blocks canvas form export on storage failure and rejects pending staging before any PUT', async () => {
     const f = fixture(),
       store = {
         ...memory(),
@@ -574,7 +594,7 @@ describe('native input registers export blockers even without a durable storage 
     );
     expect(exportBlocker.mock.calls).toContainEqual([userId, projectId, false, true]);
     const privateF = personalFixture();
-    expect(() =>
+    await expect(
       stageNativeCanvasPersonal(
         userId,
         privateF.snapshot,
@@ -582,6 +602,6 @@ describe('native input registers export blockers even without a durable storage 
         privateF.candidate,
         store,
       ),
-    ).toThrow('Storage denied');
+    ).rejects.toThrow('Storage denied');
   });
 });
