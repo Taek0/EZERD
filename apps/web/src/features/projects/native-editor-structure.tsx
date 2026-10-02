@@ -1019,14 +1019,18 @@ export function NativeStructureEditor({
   context,
   document,
   table,
+  initialSelection,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table?: NativeTable;
+  initialSelection?: { action: NativeStructureAction | 'patch' | 'delete'; target: string };
 }) {
   const { t } = useI18n();
-  const [action, setAction] = useState<NativeStructureAction | 'patch' | 'delete'>('table');
-  const [target, setTarget] = useState('');
+  const [action, setAction] = useState<NativeStructureAction | 'patch' | 'delete'>(
+    initialSelection?.action ?? 'table',
+  );
+  const [target, setTarget] = useState(initialSelection?.target ?? '');
   const objects = (
     ['tables', 'columns', 'keys', 'indexes', 'checks', 'enums', 'tableRelations'] as const
   ).flatMap((collection) =>
@@ -1056,7 +1060,7 @@ export function NativeStructureEditor({
   const create = !['patch', 'delete'].includes(action);
   const mountingKey = `${context.userId}:${context.snapshot.project.id}:${context.snapshot.project.version}:${context.snapshot.sequence}:${context.snapshot.project.databaseRevision}`;
   return (
-    <details className="native-property-editor">
+    <details className="native-property-editor" open={initialSelection ? true : undefined}>
       <summary>{t('구조 편집')}</summary>
       <NativeEditorField
         label="구조 편집"

@@ -1,13 +1,13 @@
 import {
   projectDDLExportSchema,
   projectDocumentStateSchema,
-  nativeEditorDraftSchema,
-  nativePropertyDraftSchema,
   type ProjectDDLExport,
 } from '@ezerd/contracts';
 import { request } from '../../shared/api/client.js';
 import { loadNativePending } from './native-save.js';
 import { assertNativeDurableReady, nativeEditorExportBlocked } from './native-export-state.js';
+import { nativeDraftMemoryState } from './native-durable-drafts.js';
+import { nativeDraftArchive, nativePropertyArchiveKey } from './native-draft-archive.js';
 type Storage = Pick<globalThis.Storage, 'getItem' | 'key' | 'length'>;
 
 /** Own project inputs only. A damaged own draft is preserved and blocks an outdated export. */
@@ -28,6 +28,8 @@ export function assertNativeLocalInputsReady(
   storage: Storage = localStorage,
 ): void {
   if (nativeEditorExportBlocked(userId, projectId)) throw Error('project-export.unsaved-draft');
+  const memory = nativeDraftMemoryState(userId, projectId, storage as globalThis.Storage);
+  if (memory.dirty || memory.storageFailure) throw Error('project-export.unsaved-draft');
   if (storage.getItem(`ezerd.native.pending:${userId}:${projectId}`) !== null)
     throw Error('project-export.pending');
   if (storage.getItem(`ezerd.native.history:${JSON.stringify([userId, projectId])}`) !== null)
@@ -43,12 +45,22 @@ export function assertNativeLocalInputsReady(
     const editor = key.startsWith('ezerd.native.editor:' + identity),
       property = key.startsWith('ezerd.native.draft:' + identity);
     if (!editor && !property) continue;
-    const value = JSON.parse(storage.getItem(key) ?? 'null');
-    const parsed = editor
-      ? nativeEditorDraftSchema.parse(value)
-      : nativePropertyDraftSchema.parse(value);
-    if (parsed.userId !== userId || parsed.projectId !== projectId)
+    const parts: unknown = JSON.parse(
+      key.slice((editor ? 'ezerd.native.editor:' : 'ezerd.native.draft:').length),
+    );
+    if (
+      !Array.isArray(parts) ||
+      parts.length !== (editor ? 3 : 4) ||
+      parts.some((value) => typeof value !== 'string')
+    )
       throw Error('native.draft-invalid');
+    const parsed = nativeDraftArchive(storage as globalThis.Storage).legacy(
+      userId,
+      projectId,
+      editor ? 'editor' : 'property',
+      editor ? parts[2] : nativePropertyArchiveKey(parts[2], parts[3]),
+    );
+    if (!parsed) continue;
     const fields = new Set([...Object.keys(parsed.values), ...Object.keys(parsed.before)]);
     if (
       [...fields].some(

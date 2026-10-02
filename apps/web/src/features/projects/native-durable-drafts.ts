@@ -53,6 +53,23 @@ export function getNativeMemoryDraft<T>(key: string, storage?: NativeDraftStorag
   const value = pool(storage).get(key)?.value;
   return value === undefined ? null : (structuredClone(value) as T);
 }
+/** Includes failed inputs from closed forms; no object/document lookup is required. */
+export function listNativeMemoryDrafts(
+  userId: string,
+  projectId: string,
+  storage?: NativeDraftStorage,
+) {
+  return [...pool(storage)]
+    .filter(
+      ([, draft]) =>
+        draft.userId === userId && draft.projectId === projectId && draft.value !== undefined,
+    )
+    .map(([key, draft]) => ({
+      key,
+      value: structuredClone(draft.value),
+      storageFailure: draft.storageFailure,
+    }));
+}
 export function nativeDraftMemoryState(
   userId: string,
   projectId: string,
