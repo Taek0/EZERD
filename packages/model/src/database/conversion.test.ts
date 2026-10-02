@@ -13,6 +13,7 @@ function physical(kind: DatabaseKind = 'postgresql') {
   const context = defaultDatabaseContext(kind);
   const table = createNativeTable(context, 't');
   table.physical.name = 'records';
+  if (kind === 'mysql') table.physical.options = { database: 'mysql', engine: 'InnoDB' };
   const column = createNativeColumn(context, table, 'c');
   column.physical.name = 'value';
   return { ...createEmptyNativeDocument(context), tables: [table], columns: [column] };
@@ -42,14 +43,17 @@ describe('native DB conversion without loss or readiness overrides', () => {
       }
     },
   );
-  it('preserves dormant logical native objects rather than reinterpreting their physical fields', () => {
+  it('blocks unsupported dormant mandatory physical fields without erasing them', () => {
     const document = physical();
     document.tables[0]!.scope = 'logical';
     document.columns[0]!.scope = 'logical';
     const plan = planNativeDatabaseConversion(document, pg, mysql);
-    expect(plan.canApply).toBe(true);
+    expect(plan.canApply).toBe(false);
     expect(plan.hasPhysicalDesign).toBe(false);
-    expect(plan.document).toEqual({ ...document, database: mysql });
+    expect(plan.document).toBeUndefined();
+    expect(plan.issues).toContainEqual(
+      expect.objectContaining({ objectId: 'c', code: 'database.conversion-mapping-unverified' }),
+    );
   });
   it('rejects a source document in another project context and mismatched target profiles', () => {
     const document = createEmptyNativeDocument(pg);
@@ -98,7 +102,7 @@ describe('native DB conversion without loss or readiness overrides', () => {
     { kind: 'builtin', database: 'postgresql', typeId: 'postgresql:uuid', parameters: {} },
     { kind: 'builtin', database: 'postgresql', typeId: 'postgresql:boolean', parameters: {} },
   ] satisfies NativeColumnType[])(
-    'does not assume a verified mapping for $typeId with $parameters',
+    'keeps $typeId blocked by actual readiness or unsupported mapping',
     (type) => {
       const document = physical();
       document.columns[0]!.physical.type = type;
@@ -108,7 +112,11 @@ describe('native DB conversion without loss or readiness overrides', () => {
       expect(plan.document).toBeUndefined();
       expect(plan.issues).toContainEqual(
         expect.objectContaining({
-          code: 'database.conversion-mapping-unverified',
+          code:
+            type.kind === 'builtin' &&
+            ['postgresql:integer', 'postgresql:bigint'].includes(type.typeId)
+              ? 'database.conversion-target-not-ready'
+              : 'database.conversion-mapping-unverified',
           objectId: 'c',
           path: '/columns/c/physical/type',
         }),
@@ -139,7 +147,7 @@ describe('native DB conversion without loss or readiness overrides', () => {
     { kind: 'builtin', database: 'mysql', typeId: 'mysql:int', parameters: { unsigned: true } },
     { kind: 'builtin', database: 'mysql', typeId: 'mysql:varchar', parameters: { length: 255 } },
   ] satisfies NativeColumnType[])(
-    'does not assume MySQL $typeId maps back to PostgreSQL',
+    'keeps MySQL $typeId blocked by actual readiness or unsupported mapping',
     (type) => {
       const document = physical('mysql');
       document.columns[0]!.physical.type = type;
@@ -148,7 +156,12 @@ describe('native DB conversion without loss or readiness overrides', () => {
       expect(plan.document).toBeUndefined();
       expect(plan.issues).toContainEqual(
         expect.objectContaining({
-          code: 'database.conversion-mapping-unverified',
+          code:
+            type.kind === 'builtin' &&
+            ['mysql:int', 'mysql:bigint'].includes(type.typeId) &&
+            (!('unsigned' in type.parameters) || type.parameters.unsigned === false)
+              ? 'database.conversion-target-not-ready'
+              : 'database.conversion-mapping-unverified',
           objectId: 'c',
         }),
       );

@@ -9,6 +9,7 @@ import {
   loadNativeHistoryPending,
   sendNativeHistory,
   stageNativeHistory,
+  cancelNativeHistory,
   type NativeHistoryPending,
 } from './native-history.js';
 
@@ -24,6 +25,9 @@ registerTranslations({
   '형식 변경 이전 이력': 'History from an earlier format',
   처리됨: 'Accepted',
   거부됨: 'Rejected',
+  '변경 요청이 적용되지 않았습니다. 최신 이력을 확인해 주세요.':
+    'The change was not applied. Review the latest history.',
+  '요청 취소 확정': 'Confirm request cancellation',
   닫기: 'Close',
 });
 export function NativeHistoryDialog({
@@ -45,6 +49,7 @@ export function NativeHistoryDialog({
     [pending, setPending] = useState<NativeHistoryPending | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
+  const active = useRef(true);
   async function load(since = 0) {
     const next = await fetchNativeHistory(snapshot.project.id, since);
     setPage((old) =>
@@ -57,38 +62,46 @@ export function NativeHistoryDialog({
     try {
       const input = pending ?? (await stageNativeHistory(userId, snapshot, source!, command!));
       setPending(input);
-      await sendNativeHistory(input);
+      const output = await sendNativeHistory(input);
+      if (!active.current) return;
       setPending(null);
       onReload();
-      onClose();
+      if (output.result.status === 'accepted') onClose();
+      else setError(t('변경 요청이 적용되지 않았습니다. 최신 이력을 확인해 주세요.'));
     } catch (cause) {
+      if (!active.current) return;
       setError(message(cause));
       try {
-        setPending(loadNativeHistoryPending(userId, snapshot.project.id));
+        const stored = await loadNativeHistoryPending(userId, snapshot.project.id);
+        if (active.current) setPending(stored);
       } catch (storageCause) {
         setError(message(storageCause));
       }
     } finally {
-      setBusy(false);
+      if (active.current) setBusy(false);
     }
   }
   useEffect(() => {
     dialog.current?.showModal();
-    let active = true;
-    try {
-      setPending(loadNativeHistoryPending(userId, snapshot.project.id));
-    } catch (cause) {
-      setError(message(cause));
-    }
-    void fetchNativeHistory(snapshot.project.id)
-      .then((result) => {
-        if (active) setPage(result);
+    active.current = true;
+    let alive = true;
+    void loadNativeHistoryPending(userId, snapshot.project.id)
+      .then((stored) => {
+        if (alive) setPending(stored);
       })
       .catch((cause) => {
-        if (active) setError(message(cause));
+        if (alive) setError(message(cause));
+      });
+    void fetchNativeHistory(snapshot.project.id)
+      .then((result) => {
+        if (alive) setPage(result);
+      })
+      .catch((cause) => {
+        if (alive) setError(message(cause));
       });
     return () => {
-      active = false;
+      active.current = false;
+      alive = false;
       dialog.current?.close();
     };
   }, [userId, snapshot.project.id]);
@@ -110,6 +123,28 @@ export function NativeHistoryDialog({
           <p>{t('확인되지 않은 이력 변경 요청이 있습니다.')}</p>
           <Button disabled={busy} onClick={() => void act()}>
             {t('저장 결과 확인')}
+          </Button>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError('');
+              void cancelNativeHistory(pending)
+                .then(() => {
+                  if (active.current) {
+                    setPending(null);
+                    onReload();
+                  }
+                })
+                .catch((cause) => {
+                  if (active.current) setError(message(cause));
+                })
+                .finally(() => {
+                  if (active.current) setBusy(false);
+                });
+            }}
+          >
+            {t('요청 취소 확정')}
           </Button>
         </div>
       )}

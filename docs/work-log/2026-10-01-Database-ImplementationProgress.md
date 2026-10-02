@@ -36,6 +36,16 @@
 
 ## 다음 작업
 
+- native 미확인 요청의 MCP 도구/웹 취소 버튼을 전용 marker에 연결했다. [결과](2026-10-02-Database-NativeCancellationConsumers.md). 실제 versioned/MCP 48개와 helper 40개, web typecheck 통과. 단순 lookup 404/transport 오류로 row를 지우지 않으며 late 요청은 같은 rejected ACK로 확정한다. 브라우저/개인 상태는 후속이다.
+
+- JSON v1/v2 parsing·갤러리 import/export·명시 업그레이드 검토/보관/ACK UI를 연결했다. [결과](2026-10-02-Database-NativeTransferUI.md). 59개 helper/static 테스트/skip0, actor·문맥·immutable queue·응답 검증 통과. App의 accepted→native 전환을 연결했으며 실제 브라우저·legacy import 복구 및 새 프로젝트 native 생성은 후속이다.
+
+- 미기록 native/명령/upgrade/history 요청의 취소를 프로젝트 수명 동안 유지하는 전용 marker로 확정했다. [결과](2026-10-02-Database-NativeRequestCancellation.md). 실제 AppModule 취소 56개와 PG 식 회귀 1개 통과. 늦은 요청은 rejected ACK만 재생하며 doc/version/sequence/stream을 바꾸지 않는다. MCP/web 취소 버튼은 후속이며 DB readiness에 새 테이블을 포함했다.
+
+- native 도메인 UI와 overview 카드 선택/초점·명시 이동/삭제 영향·LAN UUID를 연결했다. [결과](2026-10-02-Database-NativeDomainUI.md). 정책·비동기 pending·canvas/view targeted 56개, 기존 async 저장 변경은 선행 `9657dd8`에 분리했다. 실제 브라우저·clipboard·domain 관계 및 개인 DB revision gate는 후속이다.
+
+- IndexedDB의 actor/project 단일 pending·송신 lease·crash 재생과 실패 입력 메모리/계정 고정을 연결했다. [결과](2026-10-02-Database-NativeDurableQueue.md). 필수 fake-indexeddb6.2.5, targeted 64개/skip0 및 현재 web typecheck 통과. history/export/root도 async 보호를 소비한다. private/cancel/orphan draft 복구 및 실제 two-tab 브라우저 QA는 후속이다.
+
 - C7 제한 AST 결과/인자/연산자 타입 검증을 공통 validator·default/generation UI API에 연결했다. [결과](2026-10-02-Database-NativeExpressionPolicy.md). 260개 targeted와 PG stored/virtual/일반 식·SQLite/MySQL 고급 실행 fixture 통과. 전체 인덱스 방식·식 tree UI/clipboard 및 readiness QA는 후속이다.
 
 - 명시 native upgrade도 기존 ACK를 read 권한으로 원문 재생하도록 보강했다. [결과](2026-10-02-Database-NativeUpgradeReplay.md). 실제 AppModule REST 9개에서 viewer/보관/read 상실·오래된 요청·손상된 ACK·동시 업그레이드를 확인했다. 신규 migration 검증과 baseline/audit 원칙은 유지한다.

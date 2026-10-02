@@ -1,4 +1,5 @@
 import { getDatabaseType } from './catalog.js';
+import { effectiveMysqlCharacters } from './mysql-physical-policy.js';
 import type { DatabaseContext } from './definitions.js';
 import { getDatabaseProfile } from './profiles.js';
 import {
@@ -159,7 +160,7 @@ export function compileNativeDatabaseDDL(document: NativeDesignDocument): Native
           throw Error('literal.json-invalid');
         }
         return kind === 'postgresql'
-          ? `CAST(${text(value.value)} AS ${target ? typeSQL(target) : 'JSONB'})`
+          ? `CAST(${text(value.value)} AS ${target?.kind === 'builtin' && ['postgresql:json', 'postgresql:jsonb'].includes(target.typeId) ? typeSQL(target) : 'JSONB'})`
           : kind === 'mysql'
             ? `CAST(${text(value.value)} AS JSON)`
             : text(value.value);
@@ -325,9 +326,15 @@ export function compileNativeDatabaseDDL(document: NativeDesignDocument): Native
       }
       let sql = quote(value.name) + (type ? ' ' + type : '');
       const options = value.options;
-      if (options.database === 'mysql' && options.charset)
-        sql += ' CHARACTER SET ' + quote(options.charset);
-      if (options.collation) sql += ' COLLATE ' + quote(options.collation);
+      if (options.database === 'mysql' && (options.charset || options.collation)) {
+        const chars = effectiveMysqlCharacters(
+          tableMap.get(column.tableId)!.physical.options,
+          options,
+        );
+        if (!chars.engineSupported) throw Error(chars.code);
+        sql += ' CHARACTER SET ' + quote(chars.charset!) + ' COLLATE ' + quote(chars.collation!);
+      } else if (options.database === 'postgresql' && options.collation)
+        sql += ' COLLATE ' + quote(options.collation);
       if (
         options.database === 'mysql' &&
         value.type.kind === 'builtin' &&
@@ -447,12 +454,17 @@ export function compileNativeDatabaseDDL(document: NativeDesignDocument): Native
           body.push(foreignKey(relation));
       let tail = '';
       const options = table.physical.options;
-      if (options.database === 'mysql')
+      if (options.database === 'mysql') {
+        const chars = effectiveMysqlCharacters(options);
+        if (!chars.engineSupported) throw Error(chars.code);
         tail =
           ' ENGINE=InnoDB' +
-          (options.charset ? ' DEFAULT CHARACTER SET=' + quote(options.charset) : '') +
-          (options.collation ? ' COLLATE=' + quote(options.collation) : '') +
+          ' DEFAULT CHARACTER SET=' +
+          quote(chars.charset!) +
+          ' COLLATE=' +
+          quote(chars.collation!) +
           (table.physical.comment ? ' COMMENT=' + text(table.physical.comment) : '');
+      }
       if (options.database === 'sqlite')
         tail = [options.strict && 'STRICT', options.withoutRowid && 'WITHOUT ROWID']
           .filter(Boolean)
@@ -507,7 +519,11 @@ export function compileNativeDatabaseDDL(document: NativeDesignDocument): Native
             throw Error('index.prefix-invalid');
           sql += '(' + part.prefixLength + ')';
         }
-        if (index.options.database !== 'postgresql' || index.options.method === 'btree')
+        if (
+          index.options.database === 'sqlite' ||
+          (index.options.database === 'postgresql' && index.options.method === 'btree') ||
+          (index.options.database === 'mysql' && index.options.kind === 'btree')
+        )
           sql += ' ' + part.direction.toUpperCase();
         return sql;
       });

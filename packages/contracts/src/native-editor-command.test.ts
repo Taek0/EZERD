@@ -6,8 +6,81 @@ import {
   nativePersonalCanvasCommandSchema,
   nativeDomainCommandSchema,
 } from './native-editor-command.js';
+import {
+  clipboardCommand,
+  clipboardFixture,
+} from '../../../apps/web/src/features/projects/native-clipboard-test-fixtures.js';
+import { nativeTableClipboardSchema } from './native-clipboard.js';
+import {
+  nativeClipboardPasteCommandSchema,
+  planNativeClipboardCommand,
+} from './native-editor-command.js';
+import { createEmptyNativeDocument } from '@ezerd/model';
 
 describe('native structured editor commands', () => {
+  it('accepts only strict self-contained format2 clipboard commands with complete fresh UUID remaps', () => {
+    const command = clipboardCommand();
+    expect(nativeEditorCommandSchema.parse(command)).toEqual(command);
+    expect(nativePersonalCanvasCommandSchema.safeParse(command).success).toBe(false);
+    for (const input of [
+      { ...command, privilegedBefore: command.clipboard.document },
+      { ...command, bindExisting: { a: 'short-existing' } },
+      { ...command, newIds: command.newIds.slice(1) },
+      { ...command, newIds: command.newIds.map(() => command.newIds[0]) },
+      { ...command, clipboard: { ...command.clipboard, formatVersion: 1 } },
+      { ...command, clipboard: { ...command.clipboard, sourceProjectId: 'foreign-short' } },
+      { ...command, point: { x: 10000001, y: 0 } },
+    ])
+      expect(nativeClipboardPasteCommandSchema.safeParse(input).success).toBe(false);
+    const old = structuredClone(command.clipboard);
+    delete old.sourceProjectId;
+    expect(nativeTableClipboardSchema.safeParse(old).success).toBe(true);
+    const borrowed = structuredClone(command);
+    borrowed.clipboard.document.tableRelations![0]!.targetTableId = 'existing';
+    expect(nativeClipboardPasteCommandSchema.safeParse(borrowed).success).toBe(false);
+  });
+  it('clones all ENUM dependencies rather than auto-binding same-named target or source project IDs', () => {
+    const source = clipboardFixture();
+    source.enums = [{ id: 'enum', name: 'state', schema: 'public', values: ['ready'] }];
+    source.columns![0]!.physical.type = {
+      kind: 'projectEnum',
+      database: 'postgresql',
+      enumId: 'enum',
+    };
+    const command = clipboardCommand(source),
+      target = createEmptyNativeDocument(source.database);
+    target.enums = [{ ...source.enums[0]!, id: 'existing' }];
+    const plan = planNativeClipboardCommand(target, command);
+    expect(plan.document.enums).toHaveLength(2);
+    expect(plan.document.enums![1]!.id).not.toBe('existing');
+    expect(plan.document.enums![1]!.name).toBe('state_copy');
+    expect(plan.document.columns![0]!.physical.type).toMatchObject({
+      enumId: plan.document.enums![1]!.id,
+    });
+    const originalId = structuredClone(command);
+    originalId.clipboard.document.tables![0]!.id = command.newIds[0]!;
+    originalId.clipboard.document.columns![0]!.tableId = command.newIds[0]!;
+    expect(nativeClipboardPasteCommandSchema.safeParse(originalId).success).toBe(false);
+  });
+  it('preflights the ordinary 1000-change budget without truncating a large logical fragment', () => {
+    const source = clipboardFixture();
+    const template = source.columns![0]!;
+    source.columns!.push(
+      ...Array.from({ length: 1000 }, (_, index) => ({
+        ...structuredClone(template),
+        id: `extra-${index}`,
+        logical: { ...template.logical, name: `Extra ${index}` },
+        physical: { ...template.physical, name: `extra_${index}` },
+      })),
+    );
+    const before = structuredClone(source),
+      command = clipboardCommand(source);
+    const plan = planNativeClipboardCommand(createEmptyNativeDocument(source.database), command);
+    expect(plan.canApply).toBe(false);
+    expect(plan.issues).toContainEqual(expect.objectContaining({ code: 'sync.change-limit' }));
+    expect(plan.document.columns).toHaveLength(1002);
+    expect(source).toEqual(before);
+  });
   it('requires explicit domain removal policies and strict metadata/grouping-only patches', () => {
     for (const command of [
       {

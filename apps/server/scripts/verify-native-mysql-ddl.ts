@@ -87,6 +87,8 @@ try {
           parameters: ['varchar', 'varbinary'].includes(definition.sqlName) ? { length: 12 } : {},
         } as NativeColumnType);
     typed.columns = [column];
+    if (column.physical.type.kind === 'valueList')
+      column.physical.options = { database: 'mysql', collation: 'utf8mb4_bin' };
     const result = compileNativeDatabaseDDL(typed);
     assert.equal(result.canExport, true, JSON.stringify(result.issues));
     execute(use(result.sql));
@@ -208,6 +210,135 @@ try {
     execute(use("SELECT stamp>'2000-01-01 00:00:00',label_length FROM advanced;")).stdout.trim(),
     '1\t7',
   );
+  const special = structuredClone(advanced);
+  special.tables![0]!.physical.name = 'special_indexes';
+  special.keys = [];
+  special.checks = [];
+  special.tableRelations = [];
+  special.columns = special.columns!.filter((column) => column.id === 'label');
+  const point = createNativeColumn(special.database, special.tables![0]!, 'point');
+  point.physical.name = 'point_value';
+  point.physical.nullable = false;
+  point.physical.type = {
+    kind: 'builtin',
+    database: 'mysql',
+    typeId: 'mysql:point',
+    parameters: { srid: 0 },
+  };
+  special.columns.push(point);
+  special.indexes = [
+    {
+      id: 'fulltext',
+      tableId: parent.id,
+      name: 'label_words',
+      scope: 'both',
+      unique: false,
+      parts: [{ expression: { kind: 'column', columnId: 'label' }, direction: 'asc' }],
+      options: { database: 'mysql', kind: 'fulltext' },
+    },
+    {
+      id: 'spatial',
+      tableId: parent.id,
+      name: 'point_spatial',
+      scope: 'both',
+      unique: false,
+      parts: [{ expression: { kind: 'column', columnId: 'point' }, direction: 'asc' }],
+      options: { database: 'mysql', kind: 'spatial' },
+    },
+    {
+      id: 'functional',
+      tableId: parent.id,
+      name: 'label_length_index',
+      scope: 'both',
+      unique: false,
+      parts: [
+        {
+          expression: {
+            kind: 'call',
+            functionId: 'mysql:length',
+            args: [{ kind: 'column', columnId: 'label' }],
+          },
+          direction: 'asc',
+        },
+      ],
+      options: { database: 'mysql', kind: 'btree', invisible: true },
+    },
+  ];
+  const specialDDL = compileNativeDatabaseDDL(special);
+  assert.equal(specialDDL.canExport, true, JSON.stringify(specialDDL.issues));
+  execute(use(specialDDL.sql));
+  execute(
+    use(
+      "INSERT INTO special_indexes(label,point_value) VALUES('hello world',ST_GeomFromText('POINT(1 1)',0));",
+    ),
+  );
+  assert.equal(
+    execute(
+      use(
+        "SELECT COUNT(*) FROM special_indexes WHERE MATCH(label) AGAINST('hello' IN BOOLEAN MODE);",
+      ),
+    ).stdout.trim(),
+    '1',
+  );
+  assert.equal(
+    execute(
+      use(
+        "SELECT COUNT(*) FROM special_indexes WHERE ST_Contains(ST_GeomFromText('POLYGON((0 0,0 2,2 2,2 0,0 0))',0),point_value);",
+      ),
+    ).stdout.trim(),
+    '1',
+  );
+  assert.equal(
+    execute(
+      use(
+        "SELECT IS_VISIBLE FROM information_schema.statistics WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='special_indexes' AND INDEX_NAME='label_length_index';",
+      ),
+    ).stdout.trim(),
+    'NO',
+  );
+  for (const [i, collation] of ['latin1_bin', 'ascii_bin', 'utf8mb4_bin'].entries()) {
+    const charsDoc = nativeDDLFixture('mysql');
+    charsDoc.tables = [charsDoc.tables![0]!];
+    charsDoc.keys = [];
+    charsDoc.indexes = [];
+    charsDoc.checks = [];
+    charsDoc.tableRelations = [];
+    const table = charsDoc.tables[0]!;
+    table.physical.name = 'character_context_' + i;
+    table.physical.options = { database: 'mysql', engine: 'InnoDB', collation };
+    const column = createNativeColumn(charsDoc.database, table, 'value');
+    column.physical.name = 'value';
+    column.physical.options = { database: 'mysql', charset: 'utf8mb4' };
+    column.physical.defaultValue = { kind: 'literal', literalType: 'string', value: '😀' };
+    charsDoc.columns = [column];
+    const result = compileNativeDatabaseDDL(charsDoc);
+    assert.equal(result.canExport, true, JSON.stringify(result.issues));
+    execute(use(result.sql));
+    assert.equal(
+      execute(
+        use(
+          `SELECT TABLE_COLLATION FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='${table.physical.name}';`,
+        ),
+      ).stdout.trim(),
+      collation,
+    );
+    assert.equal(
+      execute(
+        use(
+          `SELECT CHARACTER_SET_NAME,COLLATION_NAME FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='${table.physical.name}';`,
+        ),
+      ).stdout.trim(),
+      'utf8mb4\tutf8mb4_0900_ai_ci',
+    );
+    assert.equal(
+      execute(
+        use(
+          `INSERT INTO ${table.physical.name} () VALUES (); SELECT HEX(value) FROM ${table.physical.name};`,
+        ),
+      ).stdout.trim(),
+      Buffer.from('😀').toString('hex').toUpperCase(),
+    );
+  }
   console.log(
     JSON.stringify({
       result: 'PASS',

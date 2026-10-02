@@ -108,6 +108,7 @@ describe('MCP server tools', () => {
       { exportProject: vi.fn() } as never,
       { history: vi.fn(), compensate: vi.fn() } as never,
       { baseline: vi.fn() } as never,
+      { cancel: vi.fn() } as never,
     );
     const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
     const server = factory.create(actor, crypto.randomUUID(), crypto.randomUUID());
@@ -182,6 +183,7 @@ describe('MCP server tools', () => {
         'get_native_project_history',
         'undo_native_project_operation',
         'restore_native_project_deletion',
+        'cancel_native_project_request',
       ]);
       expect(
         tools.tools
@@ -358,6 +360,7 @@ describe('MCP workspace authorization', () => {
       { exportProject: vi.fn() } as never,
       { history: vi.fn(), compensate: vi.fn() } as never,
       { baseline: vi.fn() } as never,
+      { cancel: vi.fn() } as never,
     );
     const server = factory.create(actor, tokenId, crypto.randomUUID());
     const client = new Client({ name: 'authorization-test', version: '1.0.0' });

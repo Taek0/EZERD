@@ -131,6 +131,36 @@ describe.each(['postgresql', 'mysql', 'sqlite'] as const)(
   },
 );
 describe('expression result assignment and numeric promotion', () => {
+  it('keeps json/jsonb distinct in coalesce and treats SQLite JSON text as text', () => {
+    const { context, columns, decision } = fixture('postgresql');
+    columns[0]!.physical.type = {
+      kind: 'builtin',
+      database: 'postgresql',
+      typeId: 'postgresql:json',
+      parameters: {},
+    };
+    expect(
+      decision(
+        {
+          kind: 'call',
+          functionId: 'postgresql:coalesce',
+          args: [column, { kind: 'literal', literalType: 'json', value: '{}' }],
+        },
+        'index',
+      ).code,
+    ).toBe('expression.function-type-mismatch');
+    expect(
+      nativeExpressionDecision(
+        context,
+        { kind: 'literal', literalType: 'json', value: '{}' },
+        { columns, tableId: 't', purpose: 'default', targetType: columns[0]!.physical.type },
+      ).result?.jsonKind,
+    ).toBe('json');
+    expect(
+      fixture('sqlite').decision({ kind: 'literal', literalType: 'json', value: '{}' }, 'computed')
+        .result?.family,
+    ).toBe('string');
+  });
   it('does not bypass a NOT NULL default through the expression NULL branch', () => {
     const { context, columns } = fixture('postgresql');
     expect(

@@ -36,6 +36,7 @@ import type { AuthenticatedUser } from '../identity/session.js';
 import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
 import { prepareNativeSyncCandidate } from '../shared/native-sync-candidate.js';
 import { SyncGateway } from './sync.gateway.js';
+import { readNativeCancellation } from './native-cancellation-record.js';
 
 function nativeDocument(value: unknown) {
   const parsed = nativeStoredDesignDocumentSchema.safeParse(value);
@@ -77,7 +78,13 @@ export class NativeSyncService {
         .where(
           and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
         );
-      if (!row) return undefined;
+      if (!row)
+        return (
+          await readNativeCancellation(tx, projectId, operationId, {
+            actorId: user.id,
+            fingerprint,
+          })
+        )?.result;
       if (row.actorId !== user.id || row.fingerprint !== fingerprint)
         throw new ConflictException({ code: 'sync.replay-mismatch' });
       return resultFrom(row.result);
@@ -174,7 +181,16 @@ export class NativeSyncService {
               eq(syncOperations.operationId, identity.data),
             ),
           );
-        if (!row) return undefined;
+        if (!row)
+          return (
+            await readNativeCancellation(
+              tx,
+              projectId,
+              identity.data,
+              { actorId: user.id, fingerprint },
+              [requestHash ? 'native-command' : 'protocol-operation'],
+            )
+          )?.result;
         if (row.actorId !== user.id || row.fingerprint !== fingerprint)
           throw new ConflictException({ code: 'sync.replay-mismatch' });
         return resultFrom(row.result);
@@ -363,7 +379,11 @@ export class NativeSyncService {
         .where(
           and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
         );
-      if (!row) throw new NotFoundException('작업 결과를 찾을 수 없습니다.');
+      if (!row) {
+        const marker = await readNativeCancellation(tx, projectId, operationId);
+        if (marker) return marker.result;
+        throw new NotFoundException('작업 결과를 찾을 수 없습니다.');
+      }
       return resultFrom(row.result);
     });
   }

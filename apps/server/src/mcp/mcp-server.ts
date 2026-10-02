@@ -36,6 +36,8 @@ import {
   nativeHistoryQuerySchema,
   nativeHistoryPageSchema,
   nativeSyncSnapshotSchema,
+  nativeCancellationInputSchema,
+  nativeCancellationResultSchema,
 } from '@ezerd/contracts';
 import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
@@ -50,6 +52,7 @@ import { NativeUpgradeService } from '../workspace/native-upgrade.service.js';
 import { NativeDDLService } from '../workspace/native-ddl.service.js';
 import { NativeHistoryService } from '../sync/native-history.service.js';
 import { NativeSyncService } from '../sync/native-sync.service.js';
+import { NativeCancellationService } from '../sync/native-cancellation.service.js';
 import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
@@ -158,6 +161,8 @@ export class McpServerFactory {
     @Inject(NativeDDLService) private readonly nativeDDL: NativeDDLService,
     @Inject(NativeHistoryService) private readonly nativeHistory: NativeHistoryService,
     @Inject(NativeSyncService) private readonly nativeSync: NativeSyncService,
+    @Inject(NativeCancellationService)
+    private readonly nativeCancellation: NativeCancellationService,
   ) {}
 
   create(user: AuthenticatedUser, tokenId: string, requestId: string): McpServer {
@@ -826,6 +831,42 @@ export class McpServerFactory {
           ),
       );
     }
+    server.registerTool(
+      'cancel_native_project_request',
+      {
+        description:
+          '보관한 원래 native operation/command/upgrade/history 요청을 서버에서 취소 확정합니다. 이미 처리된 같은 actor/fingerprint 요청은 원문 결과를 반환하고 미기록 요청은 취소 마커로 늦은 쓰기를 막습니다. request는 전송했던 원문 전체이며 최신 문서나 새 operationId로 바꾸지 마세요.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          kind: z.enum([
+            'protocol-operation',
+            'native-command',
+            'native-upgrade',
+            'history-undo',
+            'history-restore',
+          ]),
+          sourceOperationId: idSchema.optional(),
+          request: z.unknown(),
+        }),
+        outputSchema: z.strictObject({
+          outcome: z.enum(['recorded', 'cancelled']),
+          result: z
+            .object({ protocolVersion: z.union([z.literal(1), z.literal(2)]) })
+            .passthrough(),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      },
+      ({ projectId, ...raw }) =>
+        invoke('cancel_native_project_request', async () =>
+          nativeCancellationResultSchema.parse(
+            await this.nativeCancellation.cancel(
+              projectId,
+              nativeCancellationInputSchema.parse(raw),
+              user,
+            ),
+          ),
+        ),
+    );
     return server;
   }
 

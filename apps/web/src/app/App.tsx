@@ -47,6 +47,7 @@ import { previewDatabaseChange } from '../features/projects/database-preview.js'
 import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
 import { NativeProjectView } from '../features/projects/NativeProjectView.js';
 import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
+import { NativeUpgradeButton } from '../features/projects/NativeUpgradeButton.js';
 import { ProjectDDLDialog } from '../features/projects/ProjectDDLDialog.js';
 import {
   assertNativeExportReady,
@@ -244,7 +245,7 @@ export function App() {
     try {
       if (nativeEditorExportBlocked(user.id, projectId))
         throw Error('project-export.unsaved-draft');
-      assertNativeExportReady(user.id, projectId);
+      await assertNativeExportReady(user.id, projectId);
     } catch {
       throw Error(t('보관된 미저장 입력 또는 미확인 저장 요청을 확인한 뒤 다시 내보내 주세요.'));
     }
@@ -1209,6 +1210,31 @@ export function App() {
               />
             </div>
           </div>
+          {user && (
+            <NativeUpgradeButton
+              key={`upgrade:${user.id}:${opened.project.id}`}
+              userId={user.id}
+              projectId={opened.project.id}
+              workspaceId={opened.project.workspaceId}
+              canUpgrade={!designReadOnly}
+              busy={busy}
+              prepare={async () => {
+                await prepareProjectExport(opened.project.id);
+                return (
+                  currentExportIdentity.current.userId === user.id &&
+                  currentExportIdentity.current.projectId === opened.project.id
+                );
+              }}
+              onUpgraded={async (snapshot) => {
+                if (
+                  currentExportIdentity.current.userId !== user.id ||
+                  currentExportIdentity.current.projectId !== snapshot.project.id
+                )
+                  return;
+                await open(snapshot.project.id);
+              }}
+            />
+          )}
           {projectWorkspace?.status === 'archived' && (
             <div className="notice">
               {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}

@@ -70,14 +70,15 @@ function nativePlan(row: ProjectRow, source: DatabaseContext, target: DatabaseCo
     throw new BadRequestException({ code: 'database.document-size-limit' });
   // Validate shape without persisting parser normalization of raw names, comments or metadata.
   const plan = planNativeDatabaseConversion(raw as NativeDesignDocument, source, target);
-  if (plan.document) {
-    const targetShape = nativeStoredDesignDocumentSchema.safeParse(plan.document);
+  const candidate = plan.candidate ?? plan.document;
+  if (candidate) {
+    const targetShape = nativeStoredDesignDocumentSchema.safeParse(candidate);
     if (!targetShape.success)
       throw new BadRequestException({
         code: 'database.document-invalid',
         issues: targetShape.error.issues,
       });
-    if (Buffer.byteLength(JSON.stringify(plan.document), 'utf8') > MAX_DOCUMENT_BYTES)
+    if (Buffer.byteLength(JSON.stringify(candidate), 'utf8') > MAX_DOCUMENT_BYTES)
       throw new BadRequestException({ code: 'database.document-size-limit' });
   }
   return plan;
@@ -201,9 +202,11 @@ export class ProjectDatabaseService {
         if (changed) {
           let document: NativeDesignDocument | undefined;
           let paths: string[] = [];
+          let conversion: ReturnType<typeof nativePlan> | undefined;
           if (isNative(row)) {
             const plan = nativePlan(row, current, target);
-            if (plan.hasPhysicalDesign)
+            conversion = plan;
+            if (plan.hasPhysicalDesign || plan.sourceMap.length)
               await this.access.requireProject(actorId, projectId, 'design', tx);
             if (!plan.canApply || !plan.document)
               throw new ConflictException({
@@ -271,7 +274,13 @@ export class ProjectDatabaseService {
                 sourceVersion: row.version,
                 sourceSequence: row.syncSequence,
                 sequence,
-                conversion: 'empty-native-context',
+                conversion: conversion?.sourceMap.length
+                  ? 'verified-signed-integer-v1'
+                  : 'empty-native-context',
+                ...(conversion?.sourceMap.length && {
+                  sourceMap: conversion.sourceMap,
+                  engineVerified: conversion.engineVerified,
+                }),
               }),
             },
           });

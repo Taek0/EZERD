@@ -38,6 +38,8 @@ import { NativeDDLService } from './workspace/native-ddl.service.js';
 import { NativeDDLController } from './workspace/native-ddl.controller.js';
 import { NativeHistoryService } from './sync/native-history.service.js';
 import { NativeHistoryController } from './sync/native-history.controller.js';
+import { NativeCancellationService } from './sync/native-cancellation.service.js';
+import { NativeCancellationController } from './sync/native-cancellation.controller.js';
 
 @Module({
   controllers: [
@@ -52,6 +54,7 @@ import { NativeHistoryController } from './sync/native-history.controller.js';
     NativeTransferController,
     NativeDDLController,
     NativeHistoryController,
+    NativeCancellationController,
     McpTokenController,
     McpController,
     PersonalStateController,
@@ -67,6 +70,7 @@ import { NativeHistoryController } from './sync/native-history.controller.js';
     NativeTransferService,
     NativeDDLService,
     NativeHistoryService,
+    NativeCancellationService,
     McpNativeDocumentService,
     WorkspaceService,
     ProjectDatabaseService,

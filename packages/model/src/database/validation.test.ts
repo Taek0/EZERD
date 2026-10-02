@@ -76,7 +76,9 @@ function fixture(kind: DatabaseKind = 'postgresql'): NativeDesignDocument {
   };
 }
 const codes = (doc: NativeDesignDocument) =>
-  inspectNativeDatabaseDocument(doc, doc.database).map((issue) => issue.code);
+  inspectNativeDatabaseDocument(doc, doc.database)
+    .filter((issue) => issue.severity === 'error')
+    .map((issue) => issue.code);
 function withRelation(kind: DatabaseKind): NativeDesignDocument {
   const doc = fixture(kind);
   doc.tables!.push(table(kind, 'parent'));
@@ -458,15 +460,66 @@ describe('generation, defaults and FK conditions use the full candidate', () => 
     doc.tables![0]!.physical.options = {
       database: 'mysql',
       engine: 'InnoDB',
-      collation: 'different',
+      collation: 'utf8mb4_bin',
     };
     expect(codes(doc)).toContain('foreign-key.type-mismatch');
     doc.tables![1]!.physical.options = {
       database: 'mysql',
       engine: 'InnoDB',
-      collation: 'different',
+      collation: 'utf8mb4_bin',
     };
     expect(codes(doc)).toEqual([]);
+  });
+  it('uses effective MySQL charset for defaults and checks composite index bytes', () => {
+    const doc = fixture('mysql');
+    doc.keys = [];
+    const value = doc.columns![0]!;
+    value.physical.type = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:varchar',
+      parameters: { length: 1 },
+    };
+    value.physical.options = { database: 'mysql', collation: 'ascii_bin' };
+    value.physical.defaultValue = { kind: 'literal', literalType: 'string', value: 'é' };
+    expect(codes(doc)).toContain('default.charset-value-invalid');
+    value.physical.defaultValue = { kind: 'none' };
+    value.physical.type = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:varchar',
+      parameters: { length: 500 },
+    };
+    value.physical.options = { database: 'mysql' };
+    const second = structuredClone(value);
+    second.id = 'second';
+    second.physical.name = 'second';
+    doc.columns!.push(second);
+    doc.indexes = [
+      {
+        id: 'index',
+        tableId: value.tableId,
+        scope: 'physical',
+        name: 'composite',
+        unique: false,
+        options: { database: 'mysql', kind: 'btree' },
+        parts: [value, second].map((column) => ({
+          expression: { kind: 'column', columnId: column.id },
+          direction: 'asc',
+        })),
+      },
+    ];
+    expect(codes(doc)).toContain('index.length-exceeded');
+    doc.indexes[0]!.parts.forEach((part) => {
+      part.prefixLength = 100;
+    });
+    expect(codes(doc)).not.toContain('index.length-exceeded');
+    doc.indexes[0]!.options = { database: 'mysql', kind: 'fulltext' };
+    doc.indexes[0]!.parts.forEach((part) => {
+      delete part.prefixLength;
+    });
+    second.physical.options = { database: 'mysql', charset: 'latin1' };
+    expect(codes(doc)).toContain('index.fulltext-character-context-mismatch');
   });
   it('validates structured functions, owner references and generated cycles', () => {
     const doc = fixture('sqlite');

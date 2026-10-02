@@ -54,6 +54,8 @@ import {
 } from './native-editor-draft.js';
 import './NativeERDCanvas.css';
 import { useNativeExportBlocker } from './native-export-state.js';
+import { nativeDurableId } from './native-durable-queue.js';
+import { NativeClipboardMenu } from './native-clipboard.js';
 type PersonalStateSnapshot = ReturnType<typeof personalStateSnapshotSchema.parse>;
 type DraftRef = { key: string; revision: string };
 type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
@@ -99,8 +101,7 @@ registerTranslations({
   '개인 화면 저장은 아직 지원하지 않습니다. 이 프로젝트에서는 공유 캔버스를 사용해 주세요.':
     'Saving personal views is not available yet. Use the shared canvas in this project.',
   '카메라 초기화': 'Reset camera',
-  '도메인 관리와 테이블 소속 변경은 아직 지원하지 않습니다.':
-    'Domain management and table ownership changes are not available yet.',
+  '저장된 배치가 없는 도메인입니다.': 'This domain has no saved placement.',
 });
 
 const limit = (value: number) =>
@@ -292,7 +293,7 @@ export function stageNativeCanvasPersonal(
   const pending = nativeCanvasPersonalPendingSchema.parse({
     userId,
     projectId: snapshot.project.id,
-    revision: crypto.randomUUID(),
+    revision: nativeDurableId(),
     databaseRevision: snapshot.project.databaseRevision,
     projectVersion: snapshot.project.version,
     sequence: snapshot.sequence,
@@ -384,7 +385,7 @@ export function nativeCanvasMoveCommand(
     type: 'add_table_reference',
     tableId: displayed.objectId,
     viewId: displayed.viewId,
-    nodeId: crypto.randomUUID(),
+    nodeId: nativeDurableId(),
     placement: { ...patch, width: displayed.width, height: displayed.height },
   });
 }
@@ -395,7 +396,36 @@ export function nativeCanvasScene(
   mode: 'physical' | 'logical',
 ) {
   const view = viewFor(document, viewId);
-  const nodes = document.layout.nodes
+  const sceneNodes = [...document.layout.nodes];
+  if (view === 'overview') {
+    const ids = new Set(sceneNodes.map((node) => node.id));
+    const bottom = sceneNodes
+      .filter((node) => node.viewId === view)
+      .reduce(
+        (max, node) =>
+          Math.max(max, node.y + basicCardSize('domain', node.width, node.height).height),
+        -240,
+      );
+    document.domains
+      .filter(
+        (domain) => !sceneNodes.some((node) => node.viewId === view && node.objectId === domain.id),
+      )
+      .forEach((domain, index) => {
+        let id = `native-domain-preview:${index}`;
+        while (ids.has(id)) id += ':';
+        ids.add(id);
+        sceneNodes.push({
+          id,
+          objectId: domain.id,
+          viewId: view,
+          x: (index % 3) * 280,
+          y: limit(bottom + 280 + Math.floor(index / 3) * 250),
+          width: 240,
+          height: 210,
+        });
+      });
+  }
+  const nodes = sceneNodes
     .filter((node) => {
       if (node.viewId !== view) return false;
       const table = document.tables?.find((table) => table.id === node.objectId);
@@ -525,7 +555,9 @@ export function NativeERDCanvas({
   onReload,
   mode,
   selectedTableId,
+  selectedDomainId,
   onSelect,
+  onSelectDomain,
 }: {
   document: NativeDesignDocument;
   snapshot: ProjectDocumentState;
@@ -536,10 +568,12 @@ export function NativeERDCanvas({
   onReload: () => void;
   mode: 'physical' | 'logical';
   selectedTableId?: string;
+  selectedDomainId?: string;
   onSelect: (tableId: string, columnId?: string) => void;
+  onSelectDomain?: (domainId: string) => void;
 }) {
   const { t } = useI18n();
-  const [viewId, setViewId] = useState(TABLES_VIEW_ID);
+  const [viewId, setViewId] = useState(selectedDomainId ? 'overview' : TABLES_VIEW_ID);
   const [personal, setPersonal] = useState<PersonalStateSnapshot | null>(null);
   const [personalPending, setPersonalPending] = useState<NativeCanvasPersonalPending | null>(null);
   const [personalBusy, setPersonalBusy] = useState(false);
@@ -548,6 +582,9 @@ export function NativeERDCanvas({
   const [sharedStorageFailure, setSharedStorageFailure] = useState(false);
   const [draft, setDraft] = useState<NativeEditorDraft | null>(null);
   const draftRef = useRef<NativeEditorDraft | null>(null);
+  useEffect(() => {
+    if (selectedDomainId && !draftRef.current && !gesture.current) setViewId('overview');
+  }, [selectedDomainId]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
   const gesture = useRef<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>(
@@ -679,6 +716,11 @@ export function NativeERDCanvas({
   const drawn = nativeCanvasScene(displayDoc, effectiveView, mode);
   function preserve(node: NodeLayout, x: number, y: number) {
     if (!userId || !editable || allBusy || stale) return;
+    if (
+      base.domains.some((domain) => domain.id === node.objectId) &&
+      !sharedSource.layout.nodes.some((raw) => raw.id === node.id)
+    )
+      return;
     const command = nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
       x: limit(x),
       y: limit(y),
@@ -692,7 +734,7 @@ export function NativeERDCanvas({
       userId,
       projectId: snapshot.project.id,
       key: inputKey,
-      revision: crypto.randomUUID(),
+      revision: nativeDurableId(),
       expected: current?.expected ?? expected(snapshot),
       before: current?.before ?? {
         objectId: node.objectId,
@@ -935,7 +977,7 @@ export function NativeERDCanvas({
                     });
                     const next = {
                       ...draft,
-                      revision: crypto.randomUUID(),
+                      revision: nativeDurableId(),
                       expected: expected(snapshot),
                       before: {
                         objectId: node.objectId,
@@ -1075,6 +1117,8 @@ export function NativeERDCanvas({
             const table = base.tables?.find((table) => table.id === node.objectId);
             const note = base.notes.find((note) => note.id === node.objectId);
             const domain = base.domains.find((domain) => domain.id === node.objectId);
+            const unsavedDomain =
+              !!domain && !sharedSource.layout.nodes.some((raw) => raw.id === node.id);
             const title = table
               ? (mode === 'physical' ? table.physical.name : table.logical.name) ||
                 table.physical.name ||
@@ -1088,7 +1132,12 @@ export function NativeERDCanvas({
                 data-object-id={node.objectId}
                 aria-label={title}
                 tabIndex={0}
-                data-selected={selectedNode === node.id || table?.id === selectedTableId}
+                data-selected={
+                  selectedNode === node.id ||
+                  (!!table && table.id === selectedTableId) ||
+                  (!!domain && domain.id === selectedDomainId)
+                }
+                data-preview={unsavedDomain || undefined}
                 style={{
                   left: node.x,
                   top: node.y,
@@ -1103,8 +1152,15 @@ export function NativeERDCanvas({
                   setSelectedNode(node.id);
                   if (table && !(event.target instanceof Element && event.target.closest('button')))
                     onSelect(table.id);
+                  if (
+                    domain &&
+                    !(event.target instanceof Element && event.target.closest('button'))
+                  )
+                    onSelectDomain?.(domain.id);
                 }}
-                onPointerDown={(event) => begin(event, node)}
+                onPointerDown={(event) => {
+                  if (!unsavedDomain) begin(event, node);
+                }}
                 onPointerMove={(event) => {
                   const active = gesture.current;
                   if (active?.pointerId !== event.pointerId) return;
@@ -1139,8 +1195,9 @@ export function NativeERDCanvas({
                   }
                   if (event.key === 'Enter') {
                     event.preventDefault();
-                    if (draft) void savePlacement();
+                    if (draft && draft.values.objectId === node.objectId) void savePlacement();
                     else if (table) onSelect(table.id);
+                    else if (domain) onSelectDomain?.(domain.id);
                   }
                 }}
               >
@@ -1148,6 +1205,10 @@ export function NativeERDCanvas({
                   {table ? (
                     <button type="button" onClick={() => onSelect(table.id)}>
                       {title || t('이름 없는 테이블')}
+                    </button>
+                  ) : domain ? (
+                    <button type="button" onClick={() => onSelectDomain?.(domain.id)}>
+                      {title}
                     </button>
                   ) : (
                     <strong>{title}</strong>
@@ -1204,7 +1265,16 @@ export function NativeERDCanvas({
                   </>
                 )}
                 {note && <p>{note.text}</p>}
-                {domain && <p>{domain.description}</p>}
+                {domain && (
+                  <>
+                    <p>{domain.description}</p>
+                    <small>
+                      {t('테이블')}:{' '}
+                      {(base.tables ?? []).filter((table) => table.domainId === domain.id).length}
+                    </small>
+                    {unsavedDomain && <p>{t('저장된 배치가 없는 도메인입니다.')}</p>}
+                  </>
+                )}
               </article>
             );
           })}
@@ -1213,6 +1283,18 @@ export function NativeERDCanvas({
           <p className="native-erd-empty">{t('이 화면에 표시할 노드가 없습니다.')}</p>
         )}
       </div>
+      <NativeClipboardMenu
+        key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
+        snapshot={snapshot}
+        {...(userId ? { userId } : {})}
+        editable={editable}
+        busy={allBusy || !!draft}
+        onSave={onSave}
+        {...(selectedTableId ? { selectedTableId } : {})}
+        destinationDomainId={
+          base.domains.some((domain) => domain.id === effectiveView) ? effectiveView : null
+        }
+      />
       {userId && editable && (
         <NativeCanvasActions
           key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}
@@ -1252,7 +1334,7 @@ function NativeCanvasActions({
   const { t } = useI18n();
   const [action, setAction] = useState('note');
   const [target, setTarget] = useState('');
-  const [id] = useState(() => crypto.randomUUID());
+  const [id] = useState(() => nativeDurableId());
   const isPrivate = privateView(document, viewId),
     placementView = viewFor(document, viewId);
   const note = document.notes.find((note) => note.id === target);
@@ -1279,7 +1361,6 @@ function NativeCanvasActions({
       <summary>
         {t('공유 캔버스')} / {t('개인 화면')}
       </summary>
-      <p>{t('도메인 관리와 테이블 소속 변경은 아직 지원하지 않습니다.')}</p>
       <NativeEditorField
         label="작업"
         value={action}
@@ -1507,7 +1588,7 @@ function NativeCanvasInputForm({
     userId: context.userId,
     projectId: context.snapshot.project.id,
     key: draftKey,
-    revision: crypto.randomUUID(),
+    revision: nativeDurableId(),
     expected: currentExpected,
     before: { ...initial },
     values: { ...initial },
@@ -1623,7 +1704,7 @@ function NativeCanvasInputForm({
           const current = latest.current;
           preserve({
             ...current,
-            revision: crypto.randomUUID(),
+            revision: nativeDurableId(),
             values: { ...current.values, [field]: value },
           });
         })}

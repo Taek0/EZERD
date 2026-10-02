@@ -6,6 +6,7 @@ import {
   nativeStoredDesignDocumentSchema,
   type NativeEditorCommand,
   nativeDomainCommandTypes,
+  planNativeClipboardCommand,
 } from '@ezerd/contracts';
 import {
   addNativeColumn,
@@ -55,6 +56,7 @@ export const applyNativeProjectChangesMetadataSchema = z.strictObject({
         .object({
           type: z.enum([
             ...nativeDomainCommandTypes,
+            'paste_native_clipboard',
             'patch_column',
             'patch_table',
             'add_column',
@@ -133,6 +135,14 @@ export function nativeEditorCandidate(
       command.columnIds.forEach(claim);
     }
     switch (command.type) {
+      case 'paste_native_clipboard': {
+        const plan = planNativeClipboardCommand(candidate, command);
+        if (!plan.canApply)
+          throw new BadRequestException({ code: 'clipboard.policy-blocked', issues: plan.issues });
+        command.newIds.forEach(claim);
+        candidate = plan.document;
+        break;
+      }
       case 'add_domain':
       case 'patch_domain':
       case 'delete_domain':
@@ -285,6 +295,7 @@ export function nativeEditorCandidate(
       if (
         previousNodeIds.has(node.id) ||
         command.type === 'add_domain' ||
+        command.type === 'paste_native_clipboard' ||
         (command.type === 'add_table_reference' && command.nodeId === node.id)
       )
         continue;

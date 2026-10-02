@@ -2,6 +2,7 @@ import { getDatabaseType, validateDatabaseTypeParameters } from './catalog.js';
 import type { DatabaseContext } from './definitions.js';
 import type { NativeColumnType, NativeDefaultValue, NativeLiteral } from './native-document.js';
 import { getDatabaseProfile } from './profiles.js';
+import { mysqlStringMetrics } from './mysql-physical-policy.js';
 
 export interface NativeLiteralDecision {
   allowed: boolean;
@@ -17,6 +18,8 @@ export interface NativeLiteralFacts {
   primary?: boolean;
   strict?: boolean;
   enumValues?: readonly string[];
+  /** Effective MySQL column charset, resolved with table/collation precedence by the caller. */
+  charset?: string;
 }
 const numeric = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 const integer = /^[+-]?\d+$/;
@@ -122,6 +125,8 @@ export function literalDecision(
       : no('default.enum-value-invalid');
   if (type.kind === 'valueList') {
     if (value.literalType !== 'string') return mismatch();
+    const metrics = mysqlStringMetrics(value.value, facts.charset);
+    if (!metrics.engineSupported) return no(metrics.code!, metrics.category);
     if (type.typeId === 'mysql:enum')
       return type.values.includes(value.value)
         ? ok('enum-label')
@@ -221,14 +226,19 @@ export function literalDecision(
   if (category === 'string') {
     if (value.literalType !== 'string') return mismatch();
     const limit = ('length' in p ? p.length : undefined) ?? (name === 'char' ? 1 : undefined);
-    if (limit !== undefined && [...s].length > limit) return no('default.length-exceeded');
+    const metrics = context.kind === 'mysql' ? mysqlStringMetrics(s, facts.charset) : undefined;
+    if (metrics && !metrics.engineSupported) return no(metrics.code!, metrics.category);
+    if (limit !== undefined && (metrics?.lengthUnits ?? [...s].length) > limit)
+      return no('default.length-exceeded');
     const byteLimit = (
       { tinytext: 255, text: 65535, mediumtext: 16777215, longtext: 4294967295 } as Record<
         string,
         number
       >
     )[name];
-    return context.kind === 'mysql' && byteLimit !== undefined && bytes(s) > byteLimit
+    return context.kind === 'mysql' &&
+      byteLimit !== undefined &&
+      (metrics?.encodedBytes ?? bytes(s)) > byteLimit
       ? no('default.length-exceeded')
       : ok('string');
   }

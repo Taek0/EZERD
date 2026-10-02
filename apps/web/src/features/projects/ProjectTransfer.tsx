@@ -1,41 +1,36 @@
-import { translate as t, useI18n } from '../../shared/i18n/index.js';
+import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import '../collaboration/translations.js';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   MAX_PROJECT_TRANSFER_BYTES,
-  projectSchema,
-  projectTransferSchema,
   type Project,
-  type ProjectTransfer,
+  type NativeTransferRead,
 } from '@ezerd/contracts';
-import { body, message, request } from '../../shared/api/client.js';
+import { message } from '../../shared/api/client.js';
 import { Button, Input } from '../../components/ui/index.js';
-import { parseProjectTransfer, projectTransferFilename } from './project-transfer.js';
+import {
+  parseProjectTransfer,
+  projectTransferDocument,
+  importProjectTransfer,
+  projectTransferGuard,
+  currentTransferUserId,
+} from './project-transfer.js';
+import { exportCurrentProjectFile, type ProjectExportOptions } from './project-versioned-export.js';
 import './project-transfer.css';
+registerTranslations({
+  '원본 native 설계와 DB 문맥을 유지합니다. 미검증 기능과 legacy 가져오기는 서버 정책에 따라 차단될 수 있습니다.':
+    'The original native design and database context are retained. Unverified features and legacy imports may be blocked by server policy.',
+  '기존 타입·기본값·스키마 원문을 legacy로 보존합니다.':
+    'Original types, defaults and schemas are preserved as legacy data.',
+});
 
 /** Always fetch the server snapshot. Browser drafts and private preferences are excluded. */
-export async function exportProjectFile(projectId: string): Promise<void> {
-  let file: ProjectTransfer;
-  try {
-    file = projectTransferSchema.parse(
-      await request(`/api/projects/${encodeURIComponent(projectId)}/export`, { cache: 'no-store' }),
-    );
-  } catch {
-    throw new Error(
-      t('서버의 최신 저장 내용을 가져올 수 없습니다. 연결을 확인한 뒤 다시 내보내 주세요.'),
-    );
-  }
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(file)], { type: 'application/json;charset=utf-8' }),
-  );
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = projectTransferFilename(file.project.name);
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+export function exportProjectFile(
+  projectId: string,
+  options: ProjectExportOptions = {},
+): Promise<void> {
+  return exportCurrentProjectFile(projectId, options);
 }
 
 export function ProjectImportButton({
@@ -43,17 +38,52 @@ export function ProjectImportButton({
   workspaceId,
   disabled = false,
   renderTrigger,
+  userId,
 }: {
   onImported: (project: Project) => void;
   disabled?: boolean;
   workspaceId: string;
   renderTrigger?: (open: () => void, disabled: boolean) => ReactNode;
+  userId?: string | undefined;
 }) {
-  useI18n();
+  const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<ProjectTransfer | null>(null);
+  const [file, setFile] = useState<NativeTransferRead | null>(null);
+  const [checkSelection, setCheckSelection] = useState<(() => void) | null>(null);
   const [error, setError] = useState('');
   const [reading, setReading] = useState(false);
+  const live = useRef({ workspaceId, disabled, userId });
+  live.current = { workspaceId, disabled, userId };
+  const mounted = useRef(true);
+  const readTicket = useRef(0);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const currentScope = () =>
+    mounted.current && !live.current.disabled
+      ? {
+          workspaceId: live.current.workspaceId,
+          userId: live.current.userId ?? currentTransferUserId() ?? '',
+        }
+      : null;
+  useEffect(() => {
+    readTicket.current++;
+    setFile(null);
+    setCheckSelection(null);
+    setError('');
+    setReading(false);
+  }, [workspaceId, userId]);
+  let visibleFile = file;
+  if (visibleFile) {
+    try {
+      checkSelection?.();
+    } catch {
+      visibleFile = null;
+    }
+  }
   return (
     <>
       {renderTrigger ? (
@@ -75,16 +105,27 @@ export function ProjectImportButton({
           const selected = event.target.files?.[0];
           event.target.value = '';
           if (!selected) return;
+          const ticket = ++readTicket.current;
           setError('');
           setReading(true);
+          const scope = currentScope();
+          if (!scope) {
+            setReading(false);
+            return;
+          }
+          const assertCurrent = projectTransferGuard({ scope, currentScope });
           try {
             if (selected.size > MAX_PROJECT_TRANSFER_BYTES)
               throw new Error(t('프로젝트 파일은 2 MB까지 가져올 수 있습니다.'));
-            setFile(parseProjectTransfer(await selected.text()));
+            const text = await selected.text();
+            assertCurrent();
+            if (ticket !== readTicket.current) return;
+            setFile(parseProjectTransfer(text));
+            setCheckSelection(() => assertCurrent);
           } catch (e) {
-            setError(message(e));
+            if (mounted.current && ticket === readTicket.current) setError(message(e));
           } finally {
-            setReading(false);
+            if (mounted.current && ticket === readTicket.current) setReading(false);
           }
         }}
       />
@@ -93,10 +134,17 @@ export function ProjectImportButton({
           {error}
         </p>
       )}
-      {file && (
+      {visibleFile && (
         <ProjectImportDialog
-          file={file}
+          file={visibleFile}
+          userId={userId ?? currentTransferUserId() ?? ''}
           workspaceId={workspaceId}
+          assertCurrent={
+            checkSelection ??
+            (() => {
+              throw new Error('project-transfer.scope-changed');
+            })
+          }
           onCancel={() => setFile(null)}
           onImported={(project) => {
             setFile(null);
@@ -113,13 +161,17 @@ function ProjectImportDialog({
   workspaceId,
   onCancel,
   onImported,
+  assertCurrent,
+  userId,
 }: {
-  file: ProjectTransfer;
+  file: NativeTransferRead;
   workspaceId: string;
   onCancel: () => void;
   onImported: (project: Project) => void;
+  assertCurrent: () => void;
+  userId: string;
 }) {
-  useI18n();
+  const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
   const [name, setName] = useState(file.project.name);
@@ -136,7 +188,6 @@ function ProjectImportDialog({
       previous?.focus();
     };
   }, []);
-  const doc = file.document;
   return createPortal(
     <dialog
       ref={dialog}
@@ -155,13 +206,11 @@ function ProjectImportDialog({
           setBusy(true);
           setError('');
           try {
-            const transfer = projectTransferSchema.parse({
-              ...file,
-              project: { name: name.trim() },
+            const project = await importProjectTransfer(file, name, workspaceId, {
+              assertCurrent,
+              userId,
             });
-            const project = projectSchema.parse(
-              await request('/api/projects/import', body('POST', { workspaceId, transfer })),
-            );
+            assertCurrent();
             onImported(project);
           } catch (e) {
             setError(message(e));
@@ -183,36 +232,7 @@ function ProjectImportDialog({
           disabled={busy}
           autoFocus
         />
-        <dl className="project-transfer-counts">
-          <div>
-            <dt>{t('도메인')}</dt>
-            <dd>{doc.domains.length}</dd>
-          </div>
-          <div>
-            <dt>{t('테이블')}</dt>
-            <dd>{doc.tables?.length ?? 0}</dd>
-          </div>
-          <div>
-            <dt>{t('컬럼')}</dt>
-            <dd>{doc.columns?.length ?? 0}</dd>
-          </div>
-          <div>
-            <dt>{t('관계')}</dt>
-            <dd>{doc.domainRelations.length + (doc.tableRelations?.length ?? 0)}</dd>
-          </div>
-          <div>
-            <dt>ENUM</dt>
-            <dd>{doc.enums?.length ?? 0}</dd>
-          </div>
-          <div>
-            <dt>{t('메모')}</dt>
-            <dd>{doc.notes.length}</dd>
-          </div>
-          <div>
-            <dt>{t('저장된 뷰')}</dt>
-            <dd>{doc.views?.length ?? 0}</dd>
-          </div>
-        </dl>
+        <ProjectTransferSummary file={file} />
         <p className="project-transfer-hint">
           {t('계정, PIN, 대화, 변경 이력 및 개인 화면 설정은 포함되지 않습니다.')}
         </p>
@@ -225,12 +245,67 @@ function ProjectImportDialog({
           <Button type="button" disabled={busy} onClick={onCancel}>
             {t('취소')}
           </Button>
-          <Button type="submit" disabled={busy || !name.trim()}>
+          <Button
+            type="submit"
+            disabled={
+              busy || !name.trim() || ('native' in file && file.native.status === 'unavailable')
+            }
+          >
             {busy ? t('가져오는 중…') : t('새 프로젝트로 가져오기')}
           </Button>
         </div>
       </form>
     </dialog>,
     document.body,
+  );
+}
+/** Static, complete source counts and labelled diagnostics; never count a lossy v1 projection. */
+export function ProjectTransferSummary({ file }: { file: NativeTransferRead }) {
+  const { t } = useI18n();
+  const doc = projectTransferDocument(file);
+  const counts: [string, number][] = [
+    ['도메인', doc.domains.length],
+    ['테이블', doc.tables?.length ?? 0],
+    ['컬럼', doc.columns?.length ?? 0],
+    ['관계', doc.domainRelations.length + (doc.tableRelations?.length ?? 0)],
+    ['ENUM', doc.enums?.length ?? 0],
+    ['메모', doc.notes.length],
+    ['저장된 뷰', doc.views?.length ?? 0],
+  ];
+  if (doc.schemaVersion === 2)
+    counts.push(['INDEX', doc.indexes?.length ?? 0], ['CHECK', doc.checks?.length ?? 0]);
+  return (
+    <>
+      <p>
+        {`JSON v${file.formatVersion} · ${file.project.databaseKind ?? 'postgresql'}`}
+        {file.formatVersion === 2 && ` · ${file.project.databaseProfileId}`}
+      </p>
+      <dl className="project-transfer-counts">
+        {counts.map(([label, count]) => (
+          <div key={label}>
+            <dt>{t(label)}</dt>
+            <dd>{count}</dd>
+          </div>
+        ))}
+      </dl>
+      {file.formatVersion === 2 && (
+        <p>
+          {t(
+            '원본 native 설계와 DB 문맥을 유지합니다. 미검증 기능과 legacy 가져오기는 서버 정책에 따라 차단될 수 있습니다.',
+          )}
+        </p>
+      )}
+      {'native' in file &&
+        file.native.status === 'available' &&
+        file.native.migrationIssues.length > 0 && (
+          <p role="status">
+            {t('기존 타입·기본값·스키마 원문을 legacy로 보존합니다.')} (
+            {file.native.migrationIssues.length})
+          </p>
+        )}
+      {'native' in file && file.native.status === 'unavailable' && (
+        <p role="alert">{file.native.code}</p>
+      )}
+    </>
   );
 }

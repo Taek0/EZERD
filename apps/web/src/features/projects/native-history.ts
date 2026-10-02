@@ -6,15 +6,22 @@ import {
   type ProjectDocumentState,
   type NativeHistoryPending,
 } from '@ezerd/contracts';
-import { ApiError, body, request } from '../../shared/api/client.js';
-import { assertNativeExportReady } from './project-ddl-export.js';
+import { body, request } from '../../shared/api/client.js';
+import { assertNativeExportReady, assertNativeLocalInputsReady } from './project-ddl-export.js';
 import { nativeEditorExportBlocked } from './native-export-state.js';
+import {
+  getNativeDurableQueue,
+  nativeDurableId,
+  type NativeDurablePending,
+} from './native-durable-queue.js';
+import { captureNativeActorApi } from './native-actor-api.js';
+import { cancelNativeDurableEntry } from './native-cancellation.js';
 
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 const key = (actor: string, project: string) =>
   `ezerd.native.history:${JSON.stringify([actor, project])}`;
 export type { NativeHistoryPending };
-export function loadNativeHistoryPending(
+function loadLegacyHistoryPending(
   userId: string,
   projectId: string,
   storage: Storage = localStorage,
@@ -25,6 +32,69 @@ export function loadNativeHistoryPending(
   if (value.userId !== userId || value.projectId !== projectId)
     throw Error('native.history-identity-invalid');
   return value;
+}
+export function nativeHistoryEntry(pending: NativeHistoryPending): NativeDurablePending {
+  return {
+    userId: pending.userId,
+    projectId: pending.projectId,
+    operationId: pending.request.operationId,
+    kind: 'history',
+    payload: pending,
+  };
+}
+export async function cancelNativeHistory(
+  pending: NativeHistoryPending,
+  storage: Storage = localStorage,
+  api: typeof request = request,
+) {
+  return cancelNativeDurableEntry(nativeHistoryEntry(pending), {
+    api,
+    cleanup: () => {
+      if (
+        JSON.stringify(loadLegacyHistoryPending(pending.userId, pending.projectId, storage)) ===
+        JSON.stringify(pending)
+      )
+        storage.removeItem(key(pending.userId, pending.projectId));
+    },
+  });
+}
+export async function loadNativeHistoryPending(
+  userId: string,
+  projectId: string,
+  storage: Storage = localStorage,
+): Promise<NativeHistoryPending | null> {
+  const old = loadLegacyHistoryPending(userId, projectId, storage),
+    queue = getNativeDurableQueue();
+  if (old) {
+    await queue.claim(
+      nativeHistoryEntry(old),
+      () => {
+        if (
+          storage.getItem(`ezerd.native.pending:${userId}:${projectId}`) !== null ||
+          storage.getItem(`ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`) !==
+            null
+        )
+          throw Error('native.pending-exists');
+        if (
+          JSON.stringify(loadLegacyHistoryPending(userId, projectId, storage)) !==
+          JSON.stringify(old)
+        )
+          throw Error('native.history-pending-changed');
+      },
+      true,
+    );
+    return old;
+  }
+  const entry = await queue.read(userId, projectId);
+  if (!entry || entry.kind !== 'history') return null;
+  const parsed = pendingSchema.parse(entry.payload);
+  if (
+    parsed.userId !== userId ||
+    parsed.projectId !== projectId ||
+    parsed.request.operationId !== entry.operationId
+  )
+    throw Error('native.history-identity-invalid');
+  return parsed;
 }
 export async function fetchNativeHistory(
   projectId: string,
@@ -48,12 +118,13 @@ export async function stageNativeHistory(
   storage: Storage = localStorage,
   api: typeof request = request,
 ): Promise<NativeHistoryPending> {
+  api = captureNativeActorApi(userId, api);
   if (snapshot.sourceDocument.schemaVersion !== 2 || snapshot.project.status !== 'active')
     throw Error('project.read-only');
   if (nativeEditorExportBlocked(userId, snapshot.project.id))
     throw Error('project-export.unsaved-draft');
-  assertNativeExportReady(userId, snapshot.project.id, storage);
-  const clientId = crypto.randomUUID();
+  await assertNativeExportReady(userId, snapshot.project.id, storage);
+  const clientId = nativeDurableId();
   const baseline = nativeSyncSnapshotSchema.parse(
     await api(
       `/api/projects/${snapshot.project.id}/native-sync/baseline`,
@@ -76,7 +147,7 @@ export async function stageNativeHistory(
   )
     throw Error('database.context-changed');
   // Re-check after baseline I/O: another editor may have staged input in the meantime.
-  assertNativeExportReady(userId, snapshot.project.id, storage);
+  await assertNativeExportReady(userId, snapshot.project.id, storage);
   if (nativeEditorExportBlocked(userId, snapshot.project.id))
     throw Error('project-export.unsaved-draft');
   const pending = pendingSchema.parse({
@@ -85,8 +156,8 @@ export async function stageNativeHistory(
     sourceOperationId,
     command,
     request: {
-      operationId: crypto.randomUUID(),
-      groupId: crypto.randomUUID(),
+      operationId: nativeDurableId(),
+      groupId: nativeDurableId(),
       clientId,
       baselineId: baseline.baselineId,
       baselineIssuedAt: baseline.baselineIssuedAt,
@@ -96,10 +167,9 @@ export async function stageNativeHistory(
       databaseRevision: baseline.databaseRevision,
     },
   });
-  const raw = JSON.stringify(pending);
-  storage.setItem(key(userId, pending.projectId), raw);
-  if (storage.getItem(key(userId, pending.projectId)) !== raw)
-    throw Error('native.history-storage-failed');
+  await getNativeDurableQueue().claim(nativeHistoryEntry(pending), () =>
+    assertNativeLocalInputsReady(userId, pending.projectId, storage),
+  );
   return pending;
 }
 /** The exact persisted request is replayable even after the head/role changes. */
@@ -108,54 +178,45 @@ export async function sendNativeHistory(
   storage: Storage = localStorage,
   api: typeof request = request,
 ) {
-  const stored = loadNativeHistoryPending(pending.userId, pending.projectId, storage);
+  api = captureNativeActorApi(pending.userId, api);
+  const stored = await loadNativeHistoryPending(pending.userId, pending.projectId, storage);
   if (JSON.stringify(stored) !== JSON.stringify(pending))
     throw Error('native.history-pending-changed');
-  let response: unknown;
+  const queue = getNativeDurableQueue(),
+    entry = nativeHistoryEntry(pending),
+    token = await queue.beginTransmission(entry);
+  const heartbeat = setInterval(() => {
+    void queue.renewTransmission(entry, token).catch(() => {});
+  }, 5000);
   try {
-    response = await api(
+    const response = await api(
       `/api/projects/${pending.projectId}/native-history/${pending.sourceOperationId}/${pending.command}`,
       body('POST', pending.request),
     );
-  } catch (cause) {
-    if (cause instanceof ApiError && [400, 403, 404, 409, 422].includes(cause.status)) {
-      try {
-        await api(
-          `/api/projects/${pending.projectId}/native-sync/operations/${pending.request.operationId}`,
-          { cache: 'no-store' },
-        );
-      } catch (lookup) {
-        // Terminal rejection plus an authorized missing ledger entry confirms no ACK.
-        // Network/permission failures remain pending and replayable.
-        if (
-          lookup instanceof ApiError &&
-          lookup.status === 404 &&
-          JSON.stringify(loadNativeHistoryPending(pending.userId, pending.projectId, storage)) ===
-            JSON.stringify(pending)
-        )
-          storage.removeItem(key(pending.userId, pending.projectId));
-      }
-    }
-    throw cause;
+    const output = nativeHistoryCommandResultSchema.parse(response);
+    if (
+      output.command !== pending.command ||
+      output.sourceOperationId !== pending.sourceOperationId ||
+      output.result.operationId !== pending.request.operationId ||
+      output.result.groupId !== pending.request.groupId ||
+      output.result.actor.id !== pending.userId ||
+      (output.result.status === 'accepted' &&
+        (output.result.sequence <= pending.request.expectedSequence ||
+          output.result.databaseRevision !== pending.request.databaseRevision ||
+          output.result.database.kind !== pending.request.database.kind ||
+          output.result.database.profileId !== pending.request.database.profileId))
+    )
+      throw Error('native.history-ack-invalid');
+    await queue.acknowledge(entry, () => {
+      if (
+        JSON.stringify(loadLegacyHistoryPending(pending.userId, pending.projectId, storage)) ===
+        JSON.stringify(pending)
+      )
+        storage.removeItem(key(pending.userId, pending.projectId));
+    });
+    return output;
+  } finally {
+    clearInterval(heartbeat);
+    await queue.endTransmission(entry, token);
   }
-  const output = nativeHistoryCommandResultSchema.parse(response);
-  if (
-    output.command !== pending.command ||
-    output.sourceOperationId !== pending.sourceOperationId ||
-    output.result.operationId !== pending.request.operationId ||
-    output.result.groupId !== pending.request.groupId ||
-    output.result.actor.id !== pending.userId ||
-    output.result.databaseRevision !== pending.request.databaseRevision ||
-    output.result.database.kind !== pending.request.database.kind ||
-    output.result.database.profileId !== pending.request.database.profileId ||
-    output.result.status !== 'accepted'
-  )
-    throw Error('native.history-ack-invalid');
-  // A concurrent replacement is kept for its own ACK rather than erased.
-  if (
-    JSON.stringify(loadNativeHistoryPending(pending.userId, pending.projectId, storage)) ===
-    JSON.stringify(pending)
-  )
-    storage.removeItem(key(pending.userId, pending.projectId));
-  return output;
 }

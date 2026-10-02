@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { NativeColumn, NativeTable } from '@ezerd/model';
 import { Button, Input } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
@@ -6,6 +6,7 @@ import {
   loadNativeDraft,
   storeNativeDraft,
   discardNativeDraft,
+  resetNativeDraft,
   rebaseNativeDraft,
   type NativePropertyDraft,
   type NativeSaveExpected,
@@ -14,6 +15,8 @@ import {
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { NativeFormatEditor } from './native-editor-format.js';
 import { useNativeExportBlocker } from './native-export-state.js';
+import { nativeDraftMemoryState } from './native-durable-drafts.js';
+import { message } from '../../shared/api/client.js';
 registerTranslations({
   '속성 편집': 'Edit properties',
   '물리 이름': 'Physical name',
@@ -71,11 +74,10 @@ export function NativePropertyEditor({
   const [loaded] = useState(() => {
     try {
       return {
-        draft:
-          typeof localStorage !== 'undefined'
-            ? (loadNativeDraft(userId, snapshot.project.id, kind, original.id) ?? fresh())
-            : fresh(),
-        error: '',
+        draft: loadNativeDraft(userId, snapshot.project.id, kind, original.id) ?? fresh(),
+        error: nativeDraftMemoryState(userId, snapshot.project.id).storageFailure
+          ? 'native.draft-storage-failed'
+          : '',
       };
     } catch {
       return {
@@ -85,10 +87,18 @@ export function NativePropertyEditor({
     }
   });
   const [draft, setDraft] = useState(loaded.draft);
+  const currentDraft = useRef(loaded.draft);
   const [storageError, setStorageError] = useState(loaded.error);
   const { physicalName, comment, logicalName, definition } = draft.values;
   function change(field: keyof NativePropertyDraft['values'], value: string) {
-    const next = { ...draft, values: { ...draft.values, [field]: value } };
+    const next = {
+      ...currentDraft.current,
+      values: { ...currentDraft.current.values, [field]: value },
+    };
+    persist(next);
+  }
+  function persist(next: NativePropertyDraft) {
+    currentDraft.current = next;
     setDraft(next);
     try {
       storeNativeDraft(next);
@@ -102,7 +112,13 @@ export function NativePropertyEditor({
     comment !== draft.before.comment ||
     logicalName !== draft.before.logicalName ||
     definition !== draft.before.definition;
-  useNativeExportBlocker(userId, snapshot.project.id, dirty, !!storageError);
+  useNativeExportBlocker(
+    userId,
+    snapshot.project.id,
+    dirty,
+    !!storageError,
+    `property:${kind}:${original.id}`,
+  );
   const stale =
     draft.expected.version !== snapshot.project.version ||
     draft.expected.sequence !== snapshot.sequence ||
@@ -119,16 +135,25 @@ export function NativePropertyEditor({
         ...(definition !== draft.before.definition ? { definition } : {}),
       },
     };
-    const saved = await onSave(
-      [
-        column
-          ? { type: 'patch_column', id: column.id, patch }
-          : { type: 'patch_table', id: table.id, patch },
-      ],
-      draft.expected,
-    );
-    if (saved)
-      discardNativeDraft(userId, snapshot.project.id, kind, original.id, localStorage, draft);
+    try {
+      storeNativeDraft(draft);
+      const saved = await onSave(
+        [
+          column
+            ? { type: 'patch_column', id: column.id, patch }
+            : { type: 'patch_table', id: table.id, patch },
+        ],
+        draft.expected,
+      );
+      if (saved && currentDraft.current === draft) {
+        discardNativeDraft(userId, snapshot.project.id, kind, original.id, undefined, draft);
+        const next = fresh();
+        currentDraft.current = next;
+        setDraft(next);
+      }
+    } catch (error) {
+      setStorageError(message(error));
+    }
   }
   return (
     <>
@@ -140,7 +165,19 @@ export function NativePropertyEditor({
         }}
       >
         <fieldset disabled={busy}>
-          {storageError && <p role="alert">{storageError}</p>}
+          {storageError && (
+            <>
+              <p role="alert">{storageError}</p>
+              <p role="status">
+                {t(
+                  '입력은 이 탭의 메모리에 보관되었습니다. 탭을 닫기 전에 보관을 다시 시도해 주세요.',
+                )}
+              </p>
+              <Button onClick={() => persist(currentDraft.current)}>
+                {t('입력 보관 다시 시도')}
+              </Button>
+            </>
+          )}
           {stale && (
             <div className="native-draft-review">
               <p>{t('저장 기준이 변경되었습니다. 보관된 입력을 최신 내용과 비교해 주세요.')}</p>
@@ -155,15 +192,15 @@ export function NativePropertyEditor({
                 <dd>{original.logical.definition}</dd>
               </dl>
               <Button
+                disabled={draft.expected.databaseRevision !== snapshot.project.databaseRevision}
                 onClick={() => {
-                  const latest = fresh();
-                  const next = rebaseNativeDraft(draft, latest.expected, latest.values);
                   try {
-                    storeNativeDraft(next);
-                    setDraft(next);
-                    setStorageError('');
-                  } catch {
-                    setStorageError('변경 입력을 보관하지 못했습니다. 저장 공간을 확인해 주세요.');
+                    const latest = fresh();
+                    persist(
+                      rebaseNativeDraft(currentDraft.current, latest.expected, latest.values),
+                    );
+                  } catch (error) {
+                    setStorageError(message(error));
                   }
                 }}
               >
@@ -207,6 +244,21 @@ export function NativePropertyEditor({
           <p>{t('형식 정보와 기존 타입·기본값·생성 규칙은 유지됩니다.')}</p>
           <Button type="submit" disabled={!dirty || busy || !!storageError || stale}>
             {t('저장 요청')}
+          </Button>
+          <Button
+            onClick={() => {
+              try {
+                resetNativeDraft(userId, snapshot.project.id, kind, original.id);
+                const next = fresh();
+                currentDraft.current = next;
+                setDraft(next);
+                setStorageError('');
+              } catch (error) {
+                setStorageError(message(error));
+              }
+            }}
+          >
+            {t('입력 초기화')}
           </Button>
         </fieldset>
       </form>

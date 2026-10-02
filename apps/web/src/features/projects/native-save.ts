@@ -9,6 +9,23 @@ import {
 } from '@ezerd/contracts';
 import { loadNativeEditorDraft, discardNativeEditorDraft } from './native-editor-draft.js';
 import { ApiError, body, request } from '../../shared/api/client.js';
+import { captureNativeActorApi } from './native-actor-api.js';
+import { requestFingerprint } from '@ezerd/model';
+import { cancelNativeDurableEntry } from './native-cancellation.js';
+import {
+  getNativeDurableQueue,
+  nativeDurableId,
+  type NativeDurablePending,
+} from './native-durable-queue.js';
+import {
+  nativeDraftStorage,
+  nativeDraftMemoryState,
+  getNativeMemoryDraft,
+  retainNativeMemoryDraft,
+  forgetNativeMemoryDraft,
+  nativeMemoryDraftFailed,
+  markNativeDraftStorageFailure,
+} from './native-durable-drafts.js';
 
 export type NativeWebCommand = NativeEditorCommand;
 export type NativePendingSave = ReturnType<typeof pendingSchema.parse>;
@@ -28,7 +45,7 @@ export interface NativePropertyDraft {
 }
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
 const key = (userId: string, projectId: string) => `ezerd.native.pending:${userId}:${projectId}`;
-export function loadNativePending(
+function loadLegacyNativePending(
   userId: string,
   projectId: string,
   storage: Storage = localStorage,
@@ -40,14 +57,61 @@ export function loadNativePending(
     throw new Error('native.pending-invalid');
   return parsed.data;
 }
-export function stageNativeSave(
+const durable = (pending: NativePendingSave): NativeDurablePending => ({
+  userId: pending.userId,
+  projectId: pending.projectId,
+  operationId: pending.request.operationId,
+  kind: 'commands',
+  payload: pending,
+});
+function otherLegacyPending(userId: string, projectId: string, storage: Storage): void {
+  if (
+    storage.getItem(`ezerd.native.history:${JSON.stringify([userId, projectId])}`) !== null ||
+    storage.getItem(`ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`) !== null
+  )
+    throw Error('native.pending-exists');
+}
+export async function loadNativePending(
+  userId: string,
+  projectId: string,
+  storage: Storage = localStorage,
+): Promise<NativePendingSave | null> {
+  const old = loadLegacyNativePending(userId, projectId, storage),
+    queue = getNativeDurableQueue();
+  if (old) {
+    await queue.claim(
+      durable(old),
+      () => {
+        otherLegacyPending(userId, projectId, storage);
+        if (
+          requestFingerprint(loadLegacyNativePending(userId, projectId, storage)) !==
+          requestFingerprint(old)
+        )
+          throw Error('native.pending-changed');
+      },
+      true,
+    );
+    return old;
+  }
+  const pending = await queue.read(userId, projectId);
+  if (!pending || pending.kind !== 'commands') return null;
+  const parsed = pendingSchema.parse(pending.payload);
+  if (
+    parsed.userId !== userId ||
+    parsed.projectId !== projectId ||
+    parsed.request.operationId !== pending.operationId
+  )
+    throw Error('native.pending-invalid');
+  return parsed;
+}
+export async function stageNativeSave(
   userId: string,
   snapshot: ProjectDocumentState,
   input: NativeWebCommand[],
   storage: Storage = localStorage,
   expected?: NativeSaveExpected,
   editorDraft?: NativeEditorDraftRef,
-): NativePendingSave {
+): Promise<NativePendingSave> {
   if (snapshot.sourceDocument.schemaVersion !== 2)
     throw new Error('document.native-upgrade-required');
   if (snapshot.project.status !== 'active') throw new Error('project.read-only');
@@ -58,7 +122,7 @@ export function stageNativeSave(
     throw new Error('native.pending-exists');
   if (expected && expected.databaseRevision !== snapshot.project.databaseRevision)
     throw new Error('database.context-changed');
-  if (loadNativePending(userId, snapshot.project.id, storage))
+  if (loadLegacyNativePending(userId, snapshot.project.id, storage))
     throw new Error('native.pending-exists');
   if (editorDraft) {
     const draft = loadNativeEditorDraft(userId, snapshot.project.id, editorDraft.key, storage);
@@ -72,7 +136,7 @@ export function stageNativeSave(
     )
       throw new Error('native.draft-changed');
   }
-  const operationId = crypto.randomUUID();
+  const operationId = nativeDurableId();
   const pending = pendingSchema.parse({
     userId,
     projectId: snapshot.project.id,
@@ -82,7 +146,7 @@ export function stageNativeSave(
     request: {
       operationId,
       groupId: operationId,
-      clientId: crypto.randomUUID(),
+      clientId: nativeDurableId(),
       expectedVersion: expected?.version ?? snapshot.project.version,
       expectedSequence: expected?.sequence ?? snapshot.sequence,
       expectedDatabaseRevision: expected?.databaseRevision ?? snapshot.project.databaseRevision,
@@ -90,22 +154,36 @@ export function stageNativeSave(
       includeDocument: true,
     },
   });
-  const raw = JSON.stringify(pending);
-  storage.setItem(key(userId, pending.projectId), raw);
-  if (storage.getItem(key(userId, pending.projectId)) !== raw)
-    throw new Error('native.pending-storage-failed');
+  await getNativeDurableQueue().claim(durable(pending), () => {
+    // Recheck all legacy/draft guards inside the same transactional claim, after IDB I/O.
+    otherLegacyPending(userId, pending.projectId, storage);
+    if (loadLegacyNativePending(userId, pending.projectId, storage))
+      throw Error('native.pending-exists');
+    if (nativeDraftMemoryState(userId, pending.projectId, storage).storageFailure)
+      throw Error('native.draft-storage-failed');
+    if (editorDraft) {
+      const draft = loadNativeEditorDraft(userId, pending.projectId, editorDraft.key, storage);
+      if (
+        !draft ||
+        draft.revision !== editorDraft.revision ||
+        requestFingerprint(draft.expected) !== requestFingerprint(expected)
+      )
+        throw Error('native.draft-changed');
+    }
+  });
   return pending;
 }
+
 const draftKey = (userId: string, projectId: string, kind: string, objectId: string) =>
   `ezerd.native.draft:${JSON.stringify([userId, projectId, kind, objectId])}`;
-export function loadNativeDraft(
+function persistedPropertyDraft(
   userId: string,
   projectId: string,
   kind: 'table' | 'column',
   objectId: string,
-  storage: Storage = localStorage,
+  storage?: Storage,
 ): NativePropertyDraft | null {
-  const raw = storage.getItem(draftKey(userId, projectId, kind, objectId));
+  const raw = nativeDraftStorage(storage).getItem(draftKey(userId, projectId, kind, objectId));
   if (raw === null) return null;
   const draft = draftSchema.parse(JSON.parse(raw));
   if (
@@ -114,34 +192,70 @@ export function loadNativeDraft(
     draft.kind !== kind ||
     draft.objectId !== objectId
   )
-    throw new Error('native.draft-invalid');
+    throw Error('native.draft-invalid');
   return draft;
 }
-export function storeNativeDraft(
-  draft: NativePropertyDraft,
-  storage: Storage = localStorage,
-): void {
-  loadNativeDraft(draft.userId, draft.projectId, draft.kind, draft.objectId, storage);
+export function loadNativeDraft(
+  userId: string,
+  projectId: string,
+  kind: 'table' | 'column',
+  objectId: string,
+  storage?: Storage,
+): NativePropertyDraft | null {
+  const key = draftKey(userId, projectId, kind, objectId),
+    memory = getNativeMemoryDraft<NativePropertyDraft>(key, storage);
+  try {
+    const draft = persistedPropertyDraft(userId, projectId, kind, objectId, storage);
+    if (memory && nativeMemoryDraftFailed(key, storage)) return memory;
+    if (draft) retainNativeMemoryDraft(key, draft, false, storage);
+    else forgetNativeMemoryDraft(key, storage);
+    return draft;
+  } catch (error) {
+    markNativeDraftStorageFailure(key, userId, projectId, storage);
+    if (!memory) throw error;
+    retainNativeMemoryDraft(key, memory, true, storage);
+    return memory;
+  }
+}
+export function storeNativeDraft(draft: NativePropertyDraft, storage?: Storage): void {
+  const key = draftKey(draft.userId, draft.projectId, draft.kind, draft.objectId);
+  retainNativeMemoryDraft(key, draft, true, storage);
+  persistedPropertyDraft(draft.userId, draft.projectId, draft.kind, draft.objectId, storage);
   const value = JSON.stringify(draftSchema.parse(draft)),
-    key = draftKey(draft.userId, draft.projectId, draft.kind, draft.objectId);
-  storage.setItem(key, value);
-  if (storage.getItem(key) !== value) throw new Error('native.draft-storage-failed');
+    target = nativeDraftStorage(storage);
+  target.setItem(key, value);
+  if (target.getItem(key) !== value) throw Error('native.draft-storage-failed');
+  retainNativeMemoryDraft(key, draft, false, storage);
 }
 export function discardNativeDraft(
   userId: string,
   projectId: string,
   kind: 'table' | 'column',
   objectId: string,
-  storage: Storage = localStorage,
+  storage?: Storage,
   expected?: NativePropertyDraft,
 ): void {
-  if (
-    expected &&
-    JSON.stringify(loadNativeDraft(userId, projectId, kind, objectId, storage)) !==
-      JSON.stringify(expected)
-  )
-    return;
-  storage.removeItem(draftKey(userId, projectId, kind, objectId));
+  const key = draftKey(userId, projectId, kind, objectId),
+    memory = getNativeMemoryDraft<NativePropertyDraft>(key, storage);
+  if (expected && memory && requestFingerprint(memory) !== requestFingerprint(expected)) return;
+  const draft = persistedPropertyDraft(userId, projectId, kind, objectId, storage);
+  if (expected && draft && requestFingerprint(draft) !== requestFingerprint(expected)) return;
+  nativeDraftStorage(storage).removeItem(key);
+  if (nativeDraftStorage(storage).getItem(key) !== null) throw Error('native.draft-storage-failed');
+  forgetNativeMemoryDraft(key, storage);
+}
+export function resetNativeDraft(
+  userId: string,
+  projectId: string,
+  kind: 'table' | 'column',
+  objectId: string,
+  storage?: Storage,
+): void {
+  const key = draftKey(userId, projectId, kind, objectId),
+    target = nativeDraftStorage(storage);
+  target.removeItem(key);
+  if (target.getItem(key) !== null) throw Error('native.draft-storage-failed');
+  forgetNativeMemoryDraft(key, storage);
 }
 /** Explicit user review preserves only edited fields; other users' newer fields are inherited. */
 export function rebaseNativeDraft(
@@ -149,6 +263,8 @@ export function rebaseNativeDraft(
   expected: NativeSaveExpected,
   current: NativePropertyDraft['values'],
 ): NativePropertyDraft {
+  if (draft.expected.databaseRevision !== expected.databaseRevision)
+    throw Error('database.context-changed');
   return {
     ...draft,
     expected,
@@ -171,14 +287,40 @@ export function rebaseNativeDraft(
     },
   };
 }
-export function discardNativePending(
+export async function discardNativePending(
   userId: string,
   projectId: string,
   operationId: string,
   storage: Storage = localStorage,
-): void {
-  const pending = loadNativePending(userId, projectId, storage);
-  if (pending?.request.operationId === operationId) storage.removeItem(key(userId, projectId));
+): Promise<void> {
+  const pending = await loadNativePending(userId, projectId, storage);
+  if (pending?.request.operationId !== operationId) return;
+  if (await getNativeDurableQueue().discard(durable(pending))) {
+    const old = loadLegacyNativePending(userId, projectId, storage);
+    if (old?.request.operationId === operationId) storage.removeItem(key(userId, projectId));
+  }
+}
+/** Server cancellation fences late delivery; accepted ACKs still consume only matching input. */
+export async function cancelNativePending(
+  pending: NativePendingSave,
+  storage: Storage = localStorage,
+  api: typeof request = request,
+): Promise<NativeSyncOperationResult> {
+  return cancelNativeDurableEntry(durable(pending), {
+    api,
+    cleanup: (result) => {
+      checkNativeAck(pending, result);
+      if (result.status === 'accepted') {
+        acknowledgePropertyDrafts(pending, storage);
+        acknowledgeEditorDraft(pending, storage);
+      }
+      if (
+        requestFingerprint(loadLegacyNativePending(pending.userId, pending.projectId, storage)) ===
+        requestFingerprint(pending)
+      )
+        storage.removeItem(key(pending.userId, pending.projectId));
+    },
+  });
 }
 /** Clear only the property draft represented by this ACK; a newer tab's input stays intact. */
 function acknowledgePropertyDrafts(pending: NativePendingSave, storage: Storage): void {
@@ -222,26 +364,51 @@ function checkNativeAck(pending: NativePendingSave, result: NativeSyncOperationR
   )
     throw new Error('native.ack-mismatch');
 }
+async function ensureNativePending(pending: NativePendingSave, storage: Storage): Promise<void> {
+  otherLegacyPending(pending.userId, pending.projectId, storage);
+  const stored = await loadNativePending(pending.userId, pending.projectId, storage);
+  if (requestFingerprint(stored) !== requestFingerprint(pending))
+    throw Error('native.pending-changed');
+}
+async function consumeNativeAck(pending: NativePendingSave, storage: Storage): Promise<void> {
+  await getNativeDurableQueue().acknowledge(durable(pending), () => {
+    acknowledgePropertyDrafts(pending, storage);
+    acknowledgeEditorDraft(pending, storage);
+    const old = loadLegacyNativePending(pending.userId, pending.projectId, storage);
+    if (requestFingerprint(old) === requestFingerprint(pending))
+      storage.removeItem(key(pending.userId, pending.projectId));
+  });
+}
 export async function sendNativePending(
   pending: NativePendingSave,
   storage: Storage = localStorage,
   api: typeof request = request,
 ): Promise<NativeSyncOperationResult> {
-  const result = nativeSyncOperationResultSchema.parse(
-    await api(
-      `/api/projects/${encodeURIComponent(pending.projectId)}/native-sync/commands`,
-      body('POST', pending.request),
-    ),
-  );
-  checkNativeAck(pending, result);
-  if (result.status === 'accepted') {
-    acknowledgePropertyDrafts(pending, storage);
-    acknowledgeEditorDraft(pending, storage);
-    discardNativePending(pending.userId, pending.projectId, pending.request.operationId, storage);
+  const actorApi = captureNativeActorApi(pending.userId, api);
+  await ensureNativePending(pending, storage);
+  const queue = getNativeDurableQueue(),
+    entry = durable(pending),
+    token = await queue.beginTransmission(entry);
+  const heartbeat = setInterval(() => {
+    void queue.renewTransmission(entry, token).catch(() => {});
+  }, 5000);
+  try {
+    const result = nativeSyncOperationResultSchema.parse(
+      await actorApi(
+        `/api/projects/${encodeURIComponent(pending.projectId)}/native-sync/commands`,
+        body('POST', pending.request),
+      ),
+    );
+    checkNativeAck(pending, result);
+    if (result.status === 'accepted') await consumeNativeAck(pending, storage);
+    else await queue.confirmRejected(entry);
+    return result;
+  } finally {
+    clearInterval(heartbeat);
+    await queue.endTransmission(entry, token);
   }
-  return result;
 }
-/** A lookup can confirm an old ACK after context changes. Only a missing operation may be replayed. */
+/** Lookup is read-only and can confirm an old ACK. A missing result never steals another tab's transmission. */
 export async function recoverNativePending(
   pending: NativePendingSave,
   snapshot: ProjectDocumentState,
@@ -249,27 +416,27 @@ export async function recoverNativePending(
   api: typeof request = request,
   allowReplay = true,
 ): Promise<NativeSyncOperationResult> {
+  const actorApi = captureNativeActorApi(pending.userId, api);
+  await ensureNativePending(pending, storage);
   try {
     const result = nativeSyncOperationResultSchema.parse(
-      await api(
+      await actorApi(
         `/api/projects/${encodeURIComponent(pending.projectId)}/native-sync/operations/${pending.request.operationId}`,
+        { cache: 'no-store' },
       ),
     );
     checkNativeAck(pending, result);
-    if (result.status === 'accepted') {
-      acknowledgePropertyDrafts(pending, storage);
-      acknowledgeEditorDraft(pending, storage);
-      discardNativePending(pending.userId, pending.projectId, pending.request.operationId, storage);
-    }
+    if (result.status === 'accepted') await consumeNativeAck(pending, storage);
+    else await getNativeDurableQueue().confirmRejected(durable(pending));
     return result;
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
-    if (!allowReplay || snapshot.project.status !== 'active') throw new Error('project.read-only');
+    if (!allowReplay || snapshot.project.status !== 'active') throw Error('project.read-only');
     if (
       snapshot.project.id !== pending.projectId ||
       snapshot.project.databaseRevision !== pending.request.expectedDatabaseRevision
     )
-      throw new Error('database.context-changed');
-    return sendNativePending(pending, storage, api);
+      throw Error('database.context-changed');
+    return sendNativePending(pending, storage, actorApi);
   }
 }

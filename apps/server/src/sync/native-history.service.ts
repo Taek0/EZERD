@@ -50,6 +50,7 @@ import {
 import type { AuthenticatedUser } from '../identity/session.js';
 import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
 import { SyncGateway } from './sync.gateway.js';
+import { readNativeHistoryCancellation } from './native-cancellation-record.js';
 
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const BASELINE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -258,7 +259,16 @@ export class NativeHistoryService {
               eq(syncOperations.operationId, identity.data.operationId),
             ),
           );
-        if (!row) return undefined;
+        if (!row)
+          return readNativeHistoryCancellation(
+            tx,
+            projectId,
+            identity.data.operationId,
+            user.id,
+            fingerprint,
+            command,
+            sourceOperationId,
+          );
         if (row.actorId !== user.id)
           throw new ForbiddenException({ code: 'history.replay-actor-mismatch' });
         if (row.fingerprint !== fingerprint)

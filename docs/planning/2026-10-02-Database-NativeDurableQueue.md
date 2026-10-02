@@ -1,0 +1,11 @@
+# Native durable queue·실패 draft 보존 계획
+
+- 기준: model 정책 커밋 `64f6411`. 루트 AGENTS 및 기존 native-save/editor-draft/export-state 흐름을 읽었다. 커밋과 full check는 main 담당이며 이 단위에서 git add/commit을 하지 않는다.
+- 담당: native-save와 tests, native-editor-draft와 tests, native-export-state와 tests, NativePropertyEditor, native-editor-form, 새 native-durable 모듈/tests 및 이 계획/작업 로그. native-save 변경은 main consumers 커밋 완료 안내까지 대기한다. NativeProjectView/history/format/structure/policy UI 및 private canvas 코드는 수정하지 않는다.
+- IndexedDB의 같은 object store에 actor/project당 한 pending을 readwrite transaction으로 claim한다. native command/history/private canvas에 같은 namespace와 transmission lock을 제공한다. localStorage check/set은 exclusivity 근거로 쓰지 않으며 기존 history pending 검사는 migration 보호로 유지한다.
+- 네트워크 I/O는 IDB transaction 완료 뒤 실행한다. 전송 claim은 owner/token/30초 lease로 관리하며 만료 후 **동일 operation·동일 payload 재생만** 허용한다(후속 사용자 지시). pending row와 미확인 결과는 유지하고 새 request와 unknown discard는 차단한다. 이전 token의 end/renew는 새 lease를 변경할 수 없다. accepted ACK는 동일 operation/request/actor에만 적용한다. HTTP LAN에서도 사용 가능한 IDB를 사용하고 secure-context-only Web Locks에 의존하지 않는다.
+- 탭 동기화는 BroadcastChannel을 알림으로 사용하고 실제 읽기/판정은 IDB에서 수행한다. 이전 localStorage pending은 immutable request를 그대로 가져와 stage/replay 전에 보호한다. async 호출 변경·history/private canvas 소비 API 및 main 연결 목록을 작업 로그에 제공한다.
+- 실패한 typed input은 identity별 메모리에서 보존하고 reopen 때 복구한다. dirty/storageFailure를 컴포넌트 unmount cleanup만으로 해제하지 않는다. 보존 실패/보관된 입력의 navguard와 명시 reset/retry 동작을 제공하며 최신 입력을 과거 ACK로 지우지 않는다.
+- 의미 있는 targeted tests: 두 IDB 연결의 동시 claim/전송 race, 다른 actor/project 격리, abort/unknown storage 실패, immutable replay·accepted ACK matching clear, unmount/reopen 실패 draft 보존·navguard. 기존 fake-indexeddb 설치 유무를 먼저 확인하고 없으면 저장소 manifest/lock을 수정하지 않는 테스트 도구를 선택한다.
+- gateflags는 변경하지 않는다. 자료: [IndexedDB transaction ordering](https://www.w3.org/TR/IndexedDB/#transaction-scheduling), [IndexedDB usage](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB).
+- 후속 범위: main 설치 root devDependency `fake-indexeddb@6.2.5`를 필수 직접 import하고 optional fallback/skip을 제거한다. queue kind에 format-v1 upgrade를 포함하며 native actor API helper가 세션 actor 검증·인증 캡처를 첫 await 전에 수행한다. 기본 transport에서 wrong actor 또는 await 중 계정 변경은 POST 전에 거부하고 인증 token은 durable payload에 저장하지 않는다. 서버 cancel/rejected marker와 실제 브라우저 two-tab QA 및 history/private/upgrade 소비 연결은 main 담당이다.
