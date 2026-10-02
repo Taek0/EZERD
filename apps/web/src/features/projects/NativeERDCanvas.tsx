@@ -55,6 +55,7 @@ import {
 import './NativeERDCanvas.css';
 import { useNativeExportBlocker } from './native-export-state.js';
 import { nativeDurableId } from './native-durable-queue.js';
+import { NativeClipboardMenu } from './native-clipboard.js';
 type PersonalStateSnapshot = ReturnType<typeof personalStateSnapshotSchema.parse>;
 type DraftRef = { key: string; revision: string };
 type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
@@ -1282,6 +1283,18 @@ export function NativeERDCanvas({
           <p className="native-erd-empty">{t('이 화면에 표시할 노드가 없습니다.')}</p>
         )}
       </div>
+      <NativeClipboardMenu
+        key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
+        snapshot={snapshot}
+        {...(userId ? { userId } : {})}
+        editable={editable}
+        busy={allBusy || !!draft}
+        onSave={onSave}
+        {...(selectedTableId ? { selectedTableId } : {})}
+        destinationDomainId={
+          base.domains.some((domain) => domain.id === effectiveView) ? effectiveView : null
+        }
+      />
       {userId && editable && (
         <NativeCanvasActions
           key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}

@@ -163,6 +163,14 @@ async function flush() {
   await Promise.resolve();
 }
 beforeEach(() => {
+  vi.stubGlobal('sessionStorage', {
+    getItem: () =>
+      JSON.stringify({
+        userId: 'actor-a',
+        token: 'test-session',
+        expiresAt: '2099-01-01T00:00:00Z',
+      }),
+  });
   driver.slots = [];
   driver.cursor = 0;
   driver.effects = [];
@@ -199,11 +207,37 @@ describe('native project asynchronous pending calls', () => {
     io.load.mockResolvedValue(staged);
     wait.resolve(staged);
     expect(await saving).toBe(false);
-    expect(io.send).toHaveBeenCalledWith(staged);
+    expect(io.send).toHaveBeenCalledWith(staged, localStorage, expect.any(Function));
     expect(ui.canvas().props.busy).toBe(true);
     expect(
       ui.render().some((node) => node.props.role === 'alert' && node.props.children === 'Lost ACK'),
     ).toBe(true);
+    expect(ui.reload).not.toHaveBeenCalled();
+  });
+  it('pins the same actor session before durable staging and refuses a replacement session', async () => {
+    const state = snapshot(),
+      staged = pending(state),
+      wait = deferred<NativePendingSave>();
+    const fetcher = vi.fn();
+    vi.stubGlobal('fetch', fetcher);
+    const ui = mount(state);
+    await flush();
+    io.stage.mockReturnValue(wait.promise);
+    io.load.mockResolvedValue(staged);
+    io.send.mockImplementation((_pending, _storage, actorApi) => actorApi('/test-pinned-session'));
+    const saving = ui.save();
+    vi.stubGlobal('sessionStorage', {
+      getItem: () =>
+        JSON.stringify({
+          userId: 'actor-a',
+          token: 'replacement-session',
+          expiresAt: '2099-01-01T00:00:00Z',
+        }),
+    });
+    wait.resolve(staged);
+    expect(await saving).toBe(false);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(ui.canvas().props.busy).toBe(true);
     expect(ui.reload).not.toHaveBeenCalled();
   });
   it('ignores delayed old-actor and old-project loads and refuses to send an old staged request', async () => {

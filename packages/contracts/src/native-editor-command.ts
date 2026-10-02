@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   nativeDeletionCollections,
+  deriveOperationChanges,
   type NativeColumn,
   type NativeTable,
   type NativeColumnPatch,
@@ -30,6 +31,14 @@ import {
   personalStateSchema,
   domainSchema,
 } from './workspace.js';
+import {
+  nativeTableClipboardSchema,
+  nativeClipboardByteLength,
+  MAX_TABLE_CLIPBOARD_BYTES,
+  planNativeTablePaste,
+  type NativeTableClipboard,
+} from './native-clipboard.js';
+import type { NativeDesignDocument } from '@ezerd/model';
 
 const id = z
   .string()
@@ -222,7 +231,75 @@ export const nativeForeignKeyPatchSchema = z
   );
 
 /** Shape only. Current-project policy, legacy provenance and retired IDs are checked at commit. */
+export function nativeClipboardObjectIds(file: NativeTableClipboard): string[] {
+  const fragment = file.document;
+  return [
+    ...(fragment.tables ?? []),
+    ...(fragment.columns ?? []),
+    ...(fragment.keys ?? []),
+    ...(fragment.tableRelations ?? []),
+    ...(fragment.indexes ?? []),
+    ...(fragment.checks ?? []),
+    ...(fragment.enums ?? []),
+    ...fragment.layout.nodes,
+  ].map((item) => item.id);
+}
+/** Self-contained dependencies only. Provenance metadata never permits borrowed existing identities. */
+export const nativeClipboardPasteCommandSchema = z
+  .strictObject({
+    type: z.literal('paste_native_clipboard'),
+    clipboard: nativeTableClipboardSchema,
+    domainId: id.nullable(),
+    point: z.strictObject({ x: coordinate, y: coordinate }),
+    newIds: z.array(z.uuid()).min(1).max(70000),
+  })
+  .superRefine((command, ctx) => {
+    const sourceIds = nativeClipboardObjectIds(command.clipboard),
+      original = new Set(sourceIds);
+    if (
+      sourceIds.length !== command.newIds.length ||
+      new Set(command.newIds).size !== command.newIds.length ||
+      command.newIds.some((value) => original.has(value))
+    )
+      ctx.addIssue({ code: 'custom', message: 'clipboard.remap-invalid' });
+    if (nativeClipboardByteLength(JSON.stringify(command)) > MAX_TABLE_CLIPBOARD_BYTES)
+      ctx.addIssue({ code: 'custom', message: 'clipboard.size-limit' });
+  });
+export type NativeClipboardPasteCommand = z.output<typeof nativeClipboardPasteCommandSchema>;
+export function planNativeClipboardCommand(
+  target: NativeDesignDocument,
+  raw: NativeClipboardPasteCommand,
+) {
+  const command = nativeClipboardPasteCommandSchema.parse(raw);
+  let index = 0;
+  const plan = planNativeTablePaste(
+    target,
+    command.clipboard,
+    command.domainId,
+    command.point,
+    () => command.newIds[index++]!,
+    { reuseEnums: false },
+  );
+  if (deriveOperationChanges(target, plan.document).length > 1000)
+    return {
+      ...plan,
+      canApply: false,
+      issues: [
+        ...plan.issues,
+        {
+          code: 'sync.change-limit',
+          severity: 'error' as const,
+          category: 'invalid' as const,
+          objectId: null,
+          path: '',
+          params: { limit: 1000 },
+        },
+      ],
+    };
+  return plan;
+}
 export const nativeEditorCommandSchema = z.discriminatedUnion('type', [
+  nativeClipboardPasteCommandSchema,
   ...nativeDomainCommandSchema.options,
   ...nativeSharedCanvasCommandSchema.options,
   z.strictObject({ type: z.literal('patch_column'), id, patch: nativeColumnPatchSchema }),

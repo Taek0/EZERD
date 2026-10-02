@@ -14,7 +14,7 @@ import { nativeStoredDesignDocumentSchema } from './native-document.js';
 import { rawStoredDesignDocumentSchema } from './workspace.js';
 
 export const MAX_TABLE_CLIPBOARD_BYTES = 2_000_000;
-const bytes = (value: string) => {
+export const nativeClipboardByteLength = (value: string) => {
   let count = 0;
   for (const character of value) {
     const code = character.codePointAt(0)!;
@@ -22,6 +22,7 @@ const bytes = (value: string) => {
   }
   return count;
 };
+const bytes = nativeClipboardByteLength;
 const sameDatabase = (left: DatabaseContext, right: DatabaseContext) =>
   left.kind === right.kind && left.profileId === right.profileId;
 function fragmentError(document: NativeDesignDocument): string | undefined {
@@ -127,6 +128,7 @@ export const nativeTableClipboardSchema = z
   .strictObject({
     format: z.literal('ezerd/tables'),
     formatVersion: z.literal(2),
+    sourceProjectId: z.uuid().optional(),
     sourceDatabase: databaseContextSchema,
     document: nativeStoredDesignDocumentSchema,
   })
@@ -170,6 +172,7 @@ export function copyNativeTableClipboard(
   sourceInput: NativeDesignDocument,
   tableIds: readonly string[],
   placements: readonly NodeLayout[] = [],
+  sourceProjectId?: string,
 ) {
   const source = nativeStoredDesignDocumentSchema.parse(sourceInput);
   const selected = new Set(tableIds);
@@ -218,6 +221,7 @@ export function copyNativeTableClipboard(
   const file = nativeTableClipboardSchema.parse({
     format: 'ezerd/tables',
     formatVersion: 2,
+    ...(sourceProjectId ? { sourceProjectId } : {}),
     sourceDatabase: source.database,
     document,
   });
@@ -268,6 +272,7 @@ export function planNativeTablePaste(
   domainId: string | null,
   point: { x: number; y: number },
   newId: () => string,
+  options: { reuseEnums?: boolean } = {},
 ) {
   const target = nativeStoredDesignDocumentSchema.parse(targetInput);
   const clipboard = nativeTableClipboardSchema.parse(clipboardInput);
@@ -317,12 +322,15 @@ export function planNativeTablePaste(
     mapping.set(item.id, allocate());
   const reusedEnums = new Set<string>();
   for (const item of fragment.enums ?? []) {
-    const existing = target.enums?.find(
-      (value) =>
-        (value.schema || 'public') === (item.schema || 'public') &&
-        value.name === item.name &&
-        JSON.stringify(value.values) === JSON.stringify(item.values),
-    );
+    const existing =
+      options.reuseEnums === false
+        ? undefined
+        : target.enums?.find(
+            (value) =>
+              (value.schema || 'public') === (item.schema || 'public') &&
+              value.name === item.name &&
+              JSON.stringify(value.values) === JSON.stringify(item.values),
+          );
     mapping.set(item.id, existing?.id ?? allocate());
     if (existing) reusedEnums.add(existing.id);
   }

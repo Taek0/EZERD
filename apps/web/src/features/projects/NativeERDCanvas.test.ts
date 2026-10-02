@@ -187,7 +187,7 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
     );
     expect(html).toContain('native-erd-actions');
     expect(html).toContain('type="submit"');
-    expect(getRandomValues).toHaveBeenCalledTimes(2);
+    expect(getRandomValues).toHaveBeenCalledTimes(3);
     expect(save).not.toHaveBeenCalled();
     expect(f.document).toEqual(before);
   });

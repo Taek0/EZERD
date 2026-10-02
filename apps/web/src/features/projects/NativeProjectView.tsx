@@ -29,6 +29,7 @@ import {
   type NativeSaveExpected,
 } from './native-save.js';
 import { message, request } from '../../shared/api/client.js';
+import { captureNativeActorApi } from './native-actor-api.js';
 
 registerTranslations({
   '설계 조회': 'Design overview',
@@ -203,6 +204,7 @@ export function NativeProjectView({
     setSaving(true);
     setSaveError('');
     try {
+      const actorApi = captureNativeActorApi(userId);
       const staged = await stageNativeSave(
         userId,
         snapshot,
@@ -214,7 +216,7 @@ export function NativeProjectView({
       if (!currentEditor()) return false;
       setPending(staged);
       if (!activePermission.current || activeSaveContext.current !== saveContext) return false;
-      const result = await sendNativePending(staged);
+      const result = await sendNativePending(staged, localStorage, actorApi);
       if (!currentEditor()) return result.status === 'accepted';
       if (result.status === 'rejected') {
         setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
