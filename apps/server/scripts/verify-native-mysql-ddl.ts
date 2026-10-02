@@ -87,6 +87,8 @@ try {
           parameters: ['varchar', 'varbinary'].includes(definition.sqlName) ? { length: 12 } : {},
         } as NativeColumnType);
     typed.columns = [column];
+    if (column.physical.type.kind === 'valueList')
+      column.physical.options = { database: 'mysql', collation: 'utf8mb4_bin' };
     const result = compileNativeDatabaseDDL(typed);
     assert.equal(result.canExport, true, JSON.stringify(result.issues));
     execute(use(result.sql));
@@ -294,6 +296,49 @@ try {
     ).stdout.trim(),
     'NO',
   );
+  for (const [i, collation] of ['latin1_bin', 'ascii_bin', 'utf8mb4_bin'].entries()) {
+    const charsDoc = nativeDDLFixture('mysql');
+    charsDoc.tables = [charsDoc.tables![0]!];
+    charsDoc.keys = [];
+    charsDoc.indexes = [];
+    charsDoc.checks = [];
+    charsDoc.tableRelations = [];
+    const table = charsDoc.tables[0]!;
+    table.physical.name = 'character_context_' + i;
+    table.physical.options = { database: 'mysql', engine: 'InnoDB', collation };
+    const column = createNativeColumn(charsDoc.database, table, 'value');
+    column.physical.name = 'value';
+    column.physical.options = { database: 'mysql', charset: 'utf8mb4' };
+    column.physical.defaultValue = { kind: 'literal', literalType: 'string', value: '😀' };
+    charsDoc.columns = [column];
+    const result = compileNativeDatabaseDDL(charsDoc);
+    assert.equal(result.canExport, true, JSON.stringify(result.issues));
+    execute(use(result.sql));
+    assert.equal(
+      execute(
+        use(
+          `SELECT TABLE_COLLATION FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='${table.physical.name}';`,
+        ),
+      ).stdout.trim(),
+      collation,
+    );
+    assert.equal(
+      execute(
+        use(
+          `SELECT CHARACTER_SET_NAME,COLLATION_NAME FROM information_schema.columns WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='${table.physical.name}';`,
+        ),
+      ).stdout.trim(),
+      'utf8mb4\tutf8mb4_0900_ai_ci',
+    );
+    assert.equal(
+      execute(
+        use(
+          `INSERT INTO ${table.physical.name} () VALUES (); SELECT HEX(value) FROM ${table.physical.name};`,
+        ),
+      ).stdout.trim(),
+      Buffer.from('😀').toString('hex').toUpperCase(),
+    );
+  }
   console.log(
     JSON.stringify({
       result: 'PASS',

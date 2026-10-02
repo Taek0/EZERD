@@ -7,6 +7,19 @@ import { databaseTypeCatalog } from './catalog.js';
 import type { NativeColumnType } from './native-document.js';
 
 describe('native whole-design DDL compiler', () => {
+  it('pins MySQL collation-only table charset and independent column charset default', () => {
+    const doc = nativeDDLFixture('mysql');
+    doc.tables![0]!.physical.options = {
+      database: 'mysql',
+      engine: 'InnoDB',
+      collation: 'latin1_bin',
+    };
+    doc.columns![1]!.physical.options = { database: 'mysql', charset: 'utf8mb4' };
+    const result = compileNativeDatabaseDDL(doc);
+    expect(result.canExport, JSON.stringify(result.issues)).toBe(true);
+    expect(result.sql).toContain('DEFAULT CHARACTER SET=`latin1` COLLATE=`latin1_bin`');
+    expect(result.sql).toContain('CHARACTER SET `utf8mb4` COLLATE `utf8mb4_0900_ai_ci`');
+  });
   it('omits explicit ordering for MySQL FULLTEXT and SPATIAL indexes', () => {
     const doc = nativeDDLFixture('mysql');
     doc.tables = [doc.tables![0]!];

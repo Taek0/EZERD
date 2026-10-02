@@ -16,6 +16,11 @@ import {
 } from './option-policy.js';
 import { nativeExpressionDecision } from './expression-policy.js';
 import { nativePostgresIndexMethodDecision } from './index-policy.js';
+import {
+  effectiveMysqlCharacters,
+  inspectMysqlPhysicalDocument,
+  mysqlDeclaredColumnBytes,
+} from './mysql-physical-policy.js';
 import { nativeReferenceProblems } from './reference-graph.js';
 import {
   nativeExpressionColumnIds,
@@ -178,6 +183,18 @@ function collect(
     return issues;
   }
   const tables = new Map((doc.tables ?? []).map((table) => [table.id, table]));
+  if (context.kind === 'mysql' && [...tables.values()].some((table) => physical(table.scope))) {
+    for (const issue of inspectMysqlPhysicalDocument(doc).issues)
+      add(
+        issue.code,
+        issue.objectId,
+        issue.path,
+        issue.cause,
+        issue.category,
+        issue.params,
+        issue.severity,
+      );
+  }
   for (const problem of nativeReferenceProblems(doc))
     add(problem.code, problem.objectId, problem.path, problem.cause);
   const columns = new Map((doc.columns ?? []).map((column) => [column.id, column]));
@@ -698,6 +715,11 @@ function collect(
         defaultValue.expression.literalType !== 'typedText'
       ) {
         const decision = literalDecision(context, type, defaultValue.expression, {
+          ...(context.kind === 'mysql' && {
+            charset:
+              effectiveMysqlCharacters(table.physical.options, column.physical.options).charset ??
+              '__unverified__',
+          }),
           nullable: column.physical.nullable,
           primary: !!primary,
           strict: table.physical.options.database === 'sqlite' && table.physical.options.strict,
@@ -747,6 +769,11 @@ function collect(
       }
     } else if (defaultValue.kind === 'literal') {
       const decision = literalDecision(context, type, defaultValue, {
+        ...(context.kind === 'mysql' && {
+          charset:
+            effectiveMysqlCharacters(table.physical.options, column.physical.options).charset ??
+            '__unverified__',
+        }),
         nullable: column.physical.nullable,
         primary: !!primary,
         strict: table.physical.options.database === 'sqlite' && table.physical.options.strict,
@@ -827,7 +854,8 @@ function collect(
         generation: column.physical.generation,
         ...(columnOptions.database === 'mysql' &&
           ownerOptions.database === 'mysql' && {
-            charset: columnOptions.charset ?? ownerOptions.charset ?? 'utf8mb4',
+            charset:
+              effectiveMysqlCharacters(ownerOptions, columnOptions).charset ?? '__unverified__',
           }),
       });
       if (key.kind === 'primary' ? !eligibility.primaryAllowed : !eligibility.uniqueAllowed)
@@ -858,7 +886,8 @@ function collect(
         const decision = keyEligibility(context, column.physical.type, {
           ...(columnOptions.database === 'mysql' &&
             ownerOptions.database === 'mysql' && {
-              charset: columnOptions.charset ?? ownerOptions.charset ?? 'utf8mb4',
+              charset:
+                effectiveMysqlCharacters(ownerOptions, columnOptions).charset ?? '__unverified__',
             }),
         });
         return sum + (decision.estimatedBytes ?? 0);
@@ -1072,6 +1101,29 @@ function collect(
         );
     }
     if (index.options.database === 'mysql' && index.options.kind !== 'btree') {
+      if (index.options.kind === 'fulltext') {
+        const contexts = index.parts.map((part) => {
+          const column =
+            part.expression.kind === 'column' &&
+            visibleColumn(part.expression.columnId, index.tableId);
+          return (
+            column &&
+            effectiveMysqlCharacters(
+              tables.get(index.tableId)!.physical.options,
+              column.physical.options,
+            )
+          );
+        });
+        if (
+          contexts.some((value) => !value || !value.engineSupported) ||
+          new Set(contexts.map((value) => value && `${value.charset}:${value.collation}`)).size !==
+            1
+        )
+          add('index.fulltext-character-context-mismatch', index.id, `${path}/parts`, [
+            index.parts,
+            contexts,
+          ]);
+      }
       if (index.options.kind === 'spatial' && index.parts.length !== 1)
         add('index.spatial-single-part-required', index.id, `${path}/parts`, index.parts);
       if (
@@ -1235,6 +1287,37 @@ function collect(
           ]);
       }
     }
+    if (index.options.database === 'mysql' && index.options.kind === 'btree') {
+      const estimates = index.parts.map((part) => {
+        if (part.expression.kind !== 'column') return 3072;
+        const column = visibleColumn(part.expression.columnId, index.tableId);
+        if (!column) return 0;
+        const chars = effectiveMysqlCharacters(
+          tables.get(index.tableId)!.physical.options,
+          column.physical.options,
+        );
+        if (part.prefixLength !== undefined) {
+          const category = scalarType(column.physical.type)?.category;
+          return (
+            part.prefixLength * (category === 'string' ? (chars.maxBytesPerCharacter ?? 4) : 1)
+          );
+        }
+        return (
+          mysqlDeclaredColumnBytes(
+            { ...column, physical: { ...column.physical, generation: { kind: 'none' } } },
+            chars,
+          ).max ?? 3073
+        );
+      });
+      if (estimates.reduce((sum, bytes) => sum + bytes, 0) > 3072)
+        add(
+          'index.length-exceeded',
+          index.id,
+          `${path}/parts`,
+          [index.parts, estimates],
+          index.parts.some((part) => part.expression.kind !== 'column') ? 'unsupported' : 'invalid',
+        );
+    }
     if ('predicate' in index.options && index.options.predicate) {
       feature('partialIndex', index.id, `${path}/options/predicate`, {}, true);
       expression(
@@ -1300,8 +1383,17 @@ function compatible(
   if (isArray(a) !== isArray(b)) return false;
   if (a.kind === 'projectEnum' || b.kind === 'projectEnum')
     return a.kind === 'projectEnum' && b.kind === 'projectEnum' && a.enumId === b.enumId;
-  if (a.kind === 'valueList' || b.kind === 'valueList')
-    return requestFingerprint(a) === requestFingerprint(b);
+  if (a.kind === 'valueList' || b.kind === 'valueList') {
+    const lc = effectiveMysqlCharacters(leftTable.physical.options, left.physical.options);
+    const rc = effectiveMysqlCharacters(rightTable.physical.options, right.physical.options);
+    return (
+      requestFingerprint(a) === requestFingerprint(b) &&
+      lc.engineSupported &&
+      rc.engineSupported &&
+      lc.charset === rc.charset &&
+      lc.collation === rc.collation
+    );
+  }
   if (a.kind !== 'builtin' || b.kind !== 'builtin') return false;
   const leftType = getDatabaseType(a.typeId);
   const rightType = getDatabaseType(b.typeId);
@@ -1324,12 +1416,13 @@ function compatible(
       rt.database !== 'mysql'
     )
       return false;
-    const lc = l.charset ?? lt.charset ?? 'utf8mb4';
-    const rc = r.charset ?? rt.charset ?? 'utf8mb4';
+    const lc = effectiveMysqlCharacters(lt, l);
+    const rc = effectiveMysqlCharacters(rt, r);
     return (
-      lc === rc &&
-      (l.collation ?? lt.collation ?? `default:${lc}`) ===
-        (r.collation ?? rt.collation ?? `default:${rc}`)
+      lc.engineSupported &&
+      rc.engineSupported &&
+      lc.charset === rc.charset &&
+      lc.collation === rc.collation
     );
   }
   if (leftType.category === 'integer')

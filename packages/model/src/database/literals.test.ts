@@ -30,6 +30,74 @@ const decide = (
     type(kind, name, parameters),
     literal(value, literalType),
   );
+describe('MySQL literal effective charset facts', () => {
+  it.each([
+    ['ascii', 'é', false],
+    ['utf8mb3', '😀', false],
+    ['utf8mb4', '😀', true],
+    ['latin1', '€', true],
+    ['latin1', '한', false],
+    ['binary', 'é', false],
+  ])('%s default %s respects representation and encoded length', (charset, value, allowed) => {
+    const t: NativeColumnType = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:varchar',
+      parameters: { length: 1 },
+    };
+    expect(
+      literalDecision(defaultDatabaseContext('mysql'), t, literal(value, 'string'), { charset })
+        .allowed,
+    ).toBe(allowed);
+  });
+  it('uses latin1 byte capacity rather than UTF8 length and refuses an unknown charset', () => {
+    const t: NativeColumnType = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:tinytext',
+      parameters: {},
+    };
+    expect(
+      literalDecision(defaultDatabaseContext('mysql'), t, literal('é'.repeat(255), 'string'), {
+        charset: 'latin1',
+      }).allowed,
+    ).toBe(true);
+    expect(
+      literalDecision(defaultDatabaseContext('mysql'), t, literal('é'.repeat(256), 'string'), {
+        charset: 'latin1',
+      }).allowed,
+    ).toBe(false);
+    expect(
+      literalDecision(defaultDatabaseContext('mysql'), t, literal('a', 'string'), {
+        charset: 'unknown',
+      }).category,
+    ).toBe('environment');
+  });
+  it('applies charset representability to ENUM and SET defaults instead of trusting list membership', () => {
+    const t: NativeColumnType = {
+      kind: 'valueList',
+      database: 'mysql',
+      typeId: 'mysql:enum',
+      values: ['😀'],
+    };
+    expect(
+      literalDecision(defaultDatabaseContext('mysql'), t, literal('😀', 'string'), {
+        charset: 'utf8mb3',
+      }).allowed,
+    ).toBe(false);
+    const set: NativeColumnType = {
+      kind: 'valueList',
+      database: 'mysql',
+      typeId: 'mysql:set',
+      values: ['a', 'é'],
+    };
+    expect(
+      literalDecision(defaultDatabaseContext('mysql'), set, literal('a,é', 'string'), {
+        charset: 'ascii',
+      }).allowed,
+    ).toBe(false);
+  });
+});
 
 describe('native literal decisions with explicit target IDs', () => {
   it.each(databaseTypeCatalog)(

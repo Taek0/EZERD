@@ -18,3 +18,4 @@ export * from './native-domain.js';
 export * from './option-policy.js';
 export * from './expression-policy.js';
 export * from './index-policy.js';
+export * from './mysql-physical-policy.js';
