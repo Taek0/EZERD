@@ -1,0 +1,46 @@
+.comparison-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+.comparison-editor {
+  height: 640px;
+  position: relative;
+  overflow: hidden;
+}
+.comparison-editor .canvas-viewport,
+.comparison-editor .native-erd-surface {
+  height: 520px;
+}
+.comparison-editor .native-erd {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.comparison-editor.flat-style .canvas-world * {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+}
+.comparison-simple-card {
+  padding: 12px;
+  font-weight: 600;
+}
+textarea[aria-label='Comparison JSON'] {
+  width: 100%;
+  height: 240px;
+}
+
+.comparison-editor .workspace {
+  display: block;
+}
+.comparison-editor .inspector-shell {
+  display: none;
+}
+.comparison-editor .canvas-surface {
+  height: 520px;
+  min-height: 520px;
+}

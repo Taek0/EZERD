@@ -24,3 +24,4 @@ artifacts/
 # Documentation is maintained separately from code formatting.
 docs/
 **/*.md
+**/dist-performance-comparison/

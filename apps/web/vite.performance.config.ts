@@ -4,13 +4,27 @@ import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { measurementPlugin } from './performance/instrumentation.js';
+import { comparisonPlugin } from './performance/comparison-plugin.js';
 
 export default defineConfig(() => {
+  const comparison = process.env.EZERD_PERF_COMPARISON === '1';
   const frameMode = process.env.EZERD_PERF_FRAME_MODE ?? 'raf';
   if (frameMode !== 'raf' && frameMode !== 'immediate')
     throw new Error('Invalid performance frame mode');
   return {
+    resolve: {
+      alias: comparison
+        ? [{ find: /^react-dom\/client$/, replacement: 'react-dom/profiling' }]
+        : [],
+    },
     plugins: [
+      ...(comparison
+        ? [
+            comparisonPlugin(
+              fileURLToPath(new URL('./performance/comparison-control.ts', import.meta.url)),
+            ),
+          ]
+        : []),
       measurementPlugin(
         fileURLToPath(new URL('./src/shared/performance/collector.ts', import.meta.url)),
         frameMode,
@@ -28,10 +42,15 @@ export default defineConfig(() => {
       ),
     },
     build: {
-      outDir: frameMode === 'raf' ? 'dist-performance' : 'dist-performance-immediate',
+      outDir: comparison
+        ? 'dist-performance-comparison'
+        : frameMode === 'raf'
+          ? 'dist-performance'
+          : 'dist-performance-immediate',
       rollupOptions: {
         input: {
           legacy: fileURLToPath(new URL('./performance/index.html', import.meta.url)),
+          compare: fileURLToPath(new URL('./performance/compare.html', import.meta.url)),
           native: fileURLToPath(new URL('./performance/native.html', import.meta.url)),
         },
       },
