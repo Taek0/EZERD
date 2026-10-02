@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- native versioned JSON REST export/import를 실제 AppModule에 연결했다. [결과](2026-10-02-Database-NativeTransfer.md). 원본·preview/context 일관성과 v1 서버 migration/ID remap, actor/workspace/budget 보호를 확인했다. v2 legacy import provenance 및 MySQL/SQLite legacy ENUM remap은 미완료다.
+
 - C4 native 구조/형식 편집의 공통 명령·후보 및 UI/draft/ACK 보호를 확장했다. [결과](2026-10-02-Database-NativeEditorExpansion.md). gate false 유지, 세 DB 실제 논리 생성/삭제·ID 재사용 거부를 확인했다. ERD/clipboard·고급 option/default 모델 정책과 최종 브라우저 QA는 남았다.
 
 - C5 native DDL 컴파일러/실제 실행 단위를 완료했다. [결과](2026-10-02-Database-NativeDDLCompiler.md). PG65/MySQL37/SQLite23 기본 선언과 주요 조합을 실제 실행했다. 공유 메뉴/API/MCP 다운로드 및 readiness 활성화는 미완료이며 마지막 전체 check는 1041개 통과/89개 건너뜀이다.
