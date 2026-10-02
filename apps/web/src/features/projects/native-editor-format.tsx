@@ -36,6 +36,10 @@ import type { NativeWebCommand } from './native-save.js';
 registerTranslations({
   '형식·DB 옵션 편집': 'Edit type and database options',
   '현재 값': 'Current values',
+  엔진: 'Engine',
+  '현재 데이터베이스': 'Current database',
+  사용: 'Enabled',
+  '사용 안 함': 'Disabled',
   파라미터: 'Parameters',
   '배열 차원': 'Array dimensions',
   '타입 변경 시 기존 기본값·생성 규칙·ON UPDATE 제거를 확인했습니다.':
@@ -378,7 +382,31 @@ export function NativeFormatEditor({
           return (
             <>
               <p>
-                {t('현재 값')}: {json(table.physical.namespace)} · {json(table.physical.options)}
+                {t('현재 값')}: {t('스키마')}:{' '}
+                {table.physical.namespace.kind === 'postgresSchema'
+                  ? table.physical.namespace.name || 'public'
+                  : table.physical.namespace.kind === 'legacyNamespace'
+                    ? table.physical.namespace.original
+                    : table.physical.namespace.kind === 'mysqlCurrentDatabase'
+                      ? t('현재 데이터베이스')
+                      : 'main'}
+                {table.physical.options.database === 'mysql' && (
+                  <>
+                    {' · '}
+                    {t('엔진')}: {table.physical.options.engine}
+                    {table.physical.options.charset &&
+                      ` · Charset: ${table.physical.options.charset}`}
+                    {table.physical.options.collation &&
+                      ` · Collation: ${table.physical.options.collation}`}
+                  </>
+                )}
+                {table.physical.options.database === 'sqlite' && (
+                  <>
+                    {' · '}STRICT: {t(table.physical.options.strict ? '사용' : '사용 안 함')}
+                    {' · '}WITHOUT ROWID:{' '}
+                    {t(table.physical.options.withoutRowid ? '사용' : '사용 안 함')}
+                  </>
+                )}
               </p>
               {field('namespace', '스키마', blocked('schema'))}
               {field('charset', 'Charset', blocked('charset'))}

@@ -15,6 +15,14 @@ import {
   deriveOperationChanges,
   requestFingerprint,
   inspectNativeLegacyChanges,
+  addTableReference,
+  removeTableReference,
+  updateNodeLayout,
+  addNote,
+  updateNote,
+  removeNote,
+  upsertRelationLayout,
+  TABLES_VIEW_ID,
   type NativeColumn,
   type NativeTable,
   type NativeDesignDocument,
@@ -57,6 +65,14 @@ export const applyNativeProjectChangesMetadataSchema = z.strictObject({
             'patch_foreign_key',
             'delete_objects',
             'create_foreign_key',
+            'add_table_reference',
+            'remove_table_reference',
+            'update_node_layout',
+            'upsert_note',
+            'patch_note',
+            'delete_note',
+            'upsert_relation_layout',
+            'delete_relation_layout',
           ]),
         })
         .passthrough(),
@@ -99,15 +115,100 @@ export function nativeEditorCandidate(
     if (occupied.has(id)) throw new Error('document.duplicate-identities');
     occupied.add(id);
   };
+  const sharedView = (viewId: string) => {
+    if (
+      viewId !== 'overview' &&
+      viewId !== TABLES_VIEW_ID &&
+      !candidate.domains.some((domain) => domain.id === viewId)
+    )
+      throw new Error('canvas.shared-view-required');
+    if (candidate.views?.some((view) => view.id === viewId))
+      throw new Error('canvas.personal-command-required');
+  };
   for (const raw of commands) {
     const command = nativeEditorCommandSchema.parse(raw);
     // Deleting earlier in this batch is not an ordinary-write identity resurrection license.
-    if ('value' in command) claim(command.value.id);
+    if ('value' in command && 'id' in command.value && command.type !== 'upsert_note')
+      claim(command.value.id);
     if (command.type === 'create_foreign_key') {
       claim(command.relationId);
       command.columnIds.forEach(claim);
     }
     switch (command.type) {
+      case 'add_table_reference': {
+        sharedView(command.viewId);
+        if (command.nodeId) claim(command.nodeId);
+        candidate = addTableReference(
+          candidate,
+          command.tableId,
+          command.viewId,
+          command.placement,
+        );
+        const node = candidate.layout.nodes.find(
+          (node) => node.objectId === command.tableId && node.viewId === command.viewId,
+        )!;
+        candidate = updateNodeLayout(candidate, node.id, {
+          ...(command.placement.width !== undefined ? { width: command.placement.width } : {}),
+          ...(command.placement.height !== undefined ? { height: command.placement.height } : {}),
+        });
+        if (command.nodeId)
+          candidate.layout.nodes = candidate.layout.nodes.map((item) =>
+            item.id === node.id ? { ...item, id: command.nodeId! } : item,
+          );
+        break;
+      }
+      case 'update_node_layout': {
+        const node = candidate.layout.nodes.find((node) => node.id === command.nodeId);
+        if (!node) throw new Error('canvas.node-not-found');
+        sharedView(node.viewId);
+        candidate = updateNodeLayout(candidate, node.id, command.patch);
+        break;
+      }
+      case 'remove_table_reference': {
+        const node = candidate.layout.nodes.find((node) => node.id === command.nodeId);
+        if (!node) throw new Error('canvas.node-not-found');
+        sharedView(node.viewId);
+        candidate = removeTableReference(candidate, node.id);
+        break;
+      }
+      case 'upsert_note': {
+        sharedView(command.value.viewId);
+        const current = candidate.notes.find((note) => note.id === command.value.id);
+        if (current && current.viewId !== command.value.viewId)
+          throw new Error('canvas.note-view-immutable');
+        if (!current) {
+          claim(command.value.id);
+          candidate = addNote(candidate, command.value, command.placement ?? { x: 0, y: 0 });
+        } else candidate = updateNote(candidate, current.id, command.value);
+        if (command.placement) {
+          const node = candidate.layout.nodes.find(
+            (node) => node.objectId === command.value.id && node.viewId === command.value.viewId,
+          )!;
+          candidate = updateNodeLayout(candidate, node.id, command.placement);
+        }
+        break;
+      }
+      case 'patch_note':
+      case 'delete_note': {
+        const note = candidate.notes.find((note) => note.id === command.id);
+        if (!note) throw new Error('canvas.note-not-found');
+        sharedView(note.viewId);
+        candidate =
+          command.type === 'patch_note'
+            ? updateNote(candidate, note.id, command.patch)
+            : removeNote(candidate, note.id);
+        break;
+      }
+      case 'upsert_relation_layout':
+        sharedView(command.value.viewId);
+        candidate = upsertRelationLayout(candidate, command.value);
+        break;
+      case 'delete_relation_layout':
+        sharedView(command.viewId);
+        candidate.layout.relations = (candidate.layout.relations ?? []).filter(
+          (route) => route.relationId !== command.relationId || route.viewId !== command.viewId,
+        );
+        break;
       case 'patch_column':
         candidate = updateNativeColumn(candidate, command.id, command.patch);
         break;

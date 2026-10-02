@@ -10,12 +10,24 @@ import {
   type NativeCheck,
   type NativeTableRelation,
   type ProjectEnum,
+  type NodeLayout,
+  type Note,
+  type RelationLayout,
+  type CombinedView,
 } from '@ezerd/model';
 import {
   nativeStoredColumnSchema,
   nativeStoredTableSchema,
   nativeStoredDesignDocumentSchema,
 } from './native-document.js';
+import {
+  nodeLayoutSchema,
+  noteSchema,
+  relationLayoutSchema,
+  viewportSchema,
+  combinedViewSchema,
+  personalStateSchema,
+} from './workspace.js';
 
 const id = z
   .string()
@@ -47,6 +59,82 @@ const index = collections.indexes.unwrap().element;
 const check = collections.checks.unwrap().element;
 const enumeration = collections.enums.unwrap().element;
 const relation = collections.tableRelations.unwrap().element;
+const coordinate = nodeLayoutSchema.shape.x;
+const placement = z
+  .strictObject({
+    x: coordinate,
+    y: coordinate,
+    width: nodeLayoutSchema.shape.width.optional(),
+    height: nodeLayoutSchema.shape.height.optional(),
+  })
+  .transform((value) => value as { x: number; y: number; width?: number; height?: number });
+const nodePatch = nodeLayoutSchema
+  .pick({ x: true, y: true, width: true, height: true })
+  .partial()
+  .strict()
+  .refine((value) => Object.values(value).some((item) => item !== undefined))
+  .transform((value) => value as Partial<Pick<NodeLayout, 'x' | 'y' | 'width' | 'height'>>);
+const canvasId = z
+  .string()
+  .min(1)
+  .max(160)
+  .refine((value) => value === value.trim());
+/** Private combined views and all cameras belong to personal state, never shared sync. */
+export const nativeSharedCanvasCommandSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('add_table_reference'),
+    tableId: id,
+    viewId: canvasId,
+    nodeId: canvasId.optional(),
+    placement,
+  }),
+  z.strictObject({ type: z.literal('remove_table_reference'), nodeId: canvasId }),
+  z.strictObject({ type: z.literal('update_node_layout'), nodeId: canvasId, patch: nodePatch }),
+  z.strictObject({
+    type: z.literal('upsert_note'),
+    value: noteSchema.transform((value) => value as Note),
+    placement: placement.optional(),
+  }),
+  z.strictObject({
+    type: z.literal('patch_note'),
+    id,
+    patch: noteSchema
+      .pick({ text: true, color: true })
+      .partial()
+      .strict()
+      .transform((value) => value as Partial<Pick<Note, 'text' | 'color'>>),
+  }),
+  z.strictObject({ type: z.literal('delete_note'), id }),
+  z.strictObject({
+    type: z.literal('upsert_relation_layout'),
+    value: relationLayoutSchema.transform((value) => value as RelationLayout),
+  }),
+  z.strictObject({ type: z.literal('delete_relation_layout'), relationId: id, viewId: canvasId }),
+]);
+export type NativeSharedCanvasCommand = z.output<typeof nativeSharedCanvasCommandSchema>;
+export const nativePersonalCanvasCommandSchema = z.discriminatedUnion('type', [
+  ...nativeSharedCanvasCommandSchema.options,
+  z.strictObject({ type: z.literal('set_viewport'), value: viewportSchema }),
+  z.strictObject({
+    type: z.literal('upsert_combined_view'),
+    value: combinedViewSchema.transform((value) => value as CombinedView),
+  }),
+  z.strictObject({ type: z.literal('delete_combined_view'), id }),
+]);
+export type NativePersonalCanvasCommand = z.output<typeof nativePersonalCanvasCommandSchema>;
+export const nativeCanvasPersonalPendingSchema = z.strictObject({
+  userId: z.uuid(),
+  projectId: z.uuid(),
+  revision: z.uuid(),
+  databaseRevision: z.number().int().nonnegative(),
+  projectVersion: z.number().int().nonnegative(),
+  sequence: z.number().int().nonnegative(),
+  expectedVersion: z.number().int().nonnegative(),
+  before: personalStateSchema,
+  state: personalStateSchema,
+  editorDraft: z.strictObject({ key: z.string().min(1).max(320), revision: z.uuid() }).optional(),
+});
+export type NativeCanvasPersonalPending = z.output<typeof nativeCanvasPersonalPendingSchema>;
 export const nativeKeyPatchSchema = key
   .omit({ id: true, tableId: true })
   .partial()
@@ -86,6 +174,7 @@ export const nativeForeignKeyPatchSchema = z
 
 /** Shape only. Current-project policy, legacy provenance and retired IDs are checked at commit. */
 export const nativeEditorCommandSchema = z.discriminatedUnion('type', [
+  ...nativeSharedCanvasCommandSchema.options,
   z.strictObject({ type: z.literal('patch_column'), id, patch: nativeColumnPatchSchema }),
   z.strictObject({ type: z.literal('patch_table'), id, patch: nativeTablePatchSchema }),
   z.strictObject({

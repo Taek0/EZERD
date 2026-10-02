@@ -6,6 +6,8 @@ import {
   createNativeColumn,
   defaultDatabaseContext,
   type NativeDesignDocument,
+  upsertCombinedView,
+  addTableReference,
 } from '@ezerd/model';
 import {
   McpNativeDocumentService,
@@ -24,6 +26,86 @@ function fixture(): NativeDesignDocument {
   return doc;
 }
 describe('native editor candidate and MCP ordering', () => {
+  it('uses generic native canvas layout/note/reference helpers and preserves raw physical data', () => {
+    const source = fixture(),
+      before = structuredClone(source);
+    source.domains = [{ id: 'd', name: 'Shared', description: '' }];
+    let candidate = nativeEditorCandidate(source, [
+      {
+        type: 'add_table_reference',
+        tableId: 't',
+        viewId: '__tables__',
+        placement: { x: 100, y: 120, width: 600 },
+      },
+      {
+        type: 'upsert_note',
+        value: { id: 'note', viewId: '__tables__', text: 'Shared note' },
+        placement: { x: 30, y: 40 },
+      },
+      { type: 'add_table_reference', tableId: 't', viewId: 'd', placement: { x: 10, y: 20 } },
+    ]);
+    const node = candidate.layout.nodes.find(
+      (node) => node.objectId === 't' && node.viewId === '__tables__',
+    )!;
+    const reference = candidate.layout.nodes.find(
+      (node) => node.objectId === 't' && node.viewId === 'd',
+    )!;
+    candidate = nativeEditorCandidate(candidate, [
+      { type: 'update_node_layout', nodeId: node.id, patch: { x: -900, y: 150, height: 700 } },
+      { type: 'patch_note', id: 'note', patch: { text: 'edited' } },
+      { type: 'remove_table_reference', nodeId: reference.id },
+    ]);
+    expect(candidate.layout.nodes.find((item) => item.id === node.id)).toMatchObject({
+      x: -900,
+      y: 150,
+      width: 600,
+      height: 700,
+    });
+    expect(candidate.notes[0]!.text).toBe('edited');
+    expect(candidate.tables).toEqual(before.tables);
+    expect(candidate.columns).toEqual(before.columns);
+    candidate = nativeEditorCandidate(candidate, [
+      {
+        type: 'add_table_reference',
+        tableId: 't',
+        viewId: 'd',
+        nodeId: 'fresh-reference',
+        placement: { x: 30, y: 40 },
+      },
+    ]);
+    expect(candidate.layout.nodes.find((node) => node.viewId === 'd')!.id).toBe('fresh-reference');
+    candidate = nativeEditorCandidate(candidate, [{ type: 'delete_note', id: 'note' }]);
+    expect(candidate.notes).toEqual([]);
+    expect(() =>
+      nativeEditorCandidate(candidate, [{ type: 'remove_table_reference', nodeId: node.id }]),
+    ).toThrow('소유 화면');
+  });
+  it('rejects private view nodes/notes/cameras through the shared command route', () => {
+    const doc = fixture();
+    doc.domains = [{ id: 'd', name: 'D', description: '' }];
+    doc.tables![0]!.domainId = 'd';
+    const personal = upsertCombinedView(addTableReference(doc, 't', '__tables__', { x: 0, y: 0 }), {
+      id: 'v',
+      name: 'Private',
+      domainIds: ['d'],
+    });
+    const node = personal.layout.nodes.find((node) => node.viewId === 'v')!;
+    expect(() =>
+      nativeEditorCandidate(personal, [
+        { type: 'update_node_layout', nodeId: node.id, patch: { x: 0 } },
+      ]),
+    ).toThrow('canvas.shared-view-required');
+    expect(() =>
+      nativeEditorCandidate(personal, [
+        { type: 'upsert_note', value: { id: 'note', viewId: 'v', text: 'private' } },
+      ]),
+    ).toThrow('canvas.shared-view-required');
+    expect(() =>
+      nativeEditorCandidate(doc, [
+        { type: 'set_viewport', value: { viewId: '__tables__', x: 0, y: 0, zoom: 1 } } as never,
+      ]),
+    ).toThrow();
+  });
   it('adds native tables, columns and constraints atomically, then patches only supplied fields', () => {
     const doc = fixture(),
       database = doc.database;

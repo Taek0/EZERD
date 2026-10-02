@@ -744,6 +744,74 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await stored(id)).sync_sequence).toBe(1);
     });
     it.each(['postgresql', 'mysql', 'sqlite'])(
+      'stores %s shared native canvas references, notes and moves without changing physical data',
+      async (kind) => {
+        const id = await createProject(kind),
+          source = migrateDesignDocumentV1(
+            legacyDocument(),
+            defaultDatabaseContext(kind as 'postgresql' | 'mysql' | 'sqlite'),
+          ).document;
+        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+          id,
+          JSON.stringify(source),
+        ]);
+        const input = {
+          operationId: randomUUID(),
+          groupId: randomUUID(),
+          clientId: randomUUID(),
+          expectedVersion: 0,
+          expectedSequence: 0,
+          expectedDatabaseRevision: 0,
+          includeDocument: true,
+          commands: [
+            {
+              type: 'add_table_reference',
+              tableId: 't',
+              viewId: '__tables__',
+              nodeId: 'native-node',
+              placement: { x: 30, y: 40, width: 400 },
+            },
+            {
+              type: 'upsert_note',
+              value: { id: 'shared-note', viewId: '__tables__', text: 'Native shared note' },
+              placement: { x: 500, y: 30, width: 300 },
+            },
+          ],
+        };
+        const path = `/projects/${id}/native-sync/commands`,
+          saved = await request(path, 'POST', input);
+        expect(saved.data.status, JSON.stringify(saved.data)).toBe('accepted');
+        expect((await stored(id)).document.columns).toEqual(source.columns);
+        expect((await stored(id)).document.layout.nodes).toContainEqual(
+          expect.objectContaining({ id: 'native-node', objectId: 't', x: 30, y: 40 }),
+        );
+        const moved = await request(path, 'POST', {
+          ...input,
+          operationId: randomUUID(),
+          expectedVersion: 1,
+          expectedSequence: 1,
+          commands: [
+            { type: 'update_node_layout', nodeId: 'native-node', patch: { x: 200, y: 210 } },
+            { type: 'patch_note', id: 'shared-note', patch: { text: 'Updated note' } },
+          ],
+        });
+        expect(moved.data.status, JSON.stringify(moved.data)).toBe('accepted');
+        expect((await stored(id)).document.layout.nodes).toContainEqual(
+          expect.objectContaining({ id: 'native-node', x: 200, y: 210 }),
+        );
+        const deleted = await request(path, 'POST', {
+          ...input,
+          operationId: randomUUID(),
+          expectedVersion: 2,
+          expectedSequence: 2,
+          commands: [{ type: 'delete_note', id: 'shared-note' }],
+        });
+        expect(deleted.data.status, JSON.stringify(deleted.data)).toBe('accepted');
+        expect((await stored(id)).document.notes).toEqual([]);
+        expect((await stored(id)).document.columns).toEqual(source.columns);
+      },
+    );
+    it.each(['postgresql', 'mysql', 'sqlite'])(
       'stores %s native logical creation through structured command contracts and protects reused IDs',
       async (kind) => {
         const id = await createProject(kind);

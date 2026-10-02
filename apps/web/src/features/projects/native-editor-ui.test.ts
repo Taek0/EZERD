@@ -62,6 +62,52 @@ function fixture(kind: 'postgresql' | 'mysql' | 'sqlite') {
   };
 }
 describe('native structured forms and availability', () => {
+  it('shows schema and engine meanings for preserved MySQL namespace data without raw JSON', () => {
+    setLocale('ko');
+    const f = fixture('mysql');
+    f.table.physical.namespace = {
+      kind: 'legacyNamespace',
+      source: 'document-v1',
+      original: 'public',
+    };
+    const before = structuredClone(f.document);
+    const html = renderToStaticMarkup(
+      createElement(NativeFormatEditor, {
+        context: f.context,
+        document: f.document,
+        table: f.table,
+      }),
+    );
+    expect(html).toContain('스키마: public');
+    expect(html).toContain('엔진: InnoDB');
+    for (const internal of [
+      'legacyNamespace',
+      'document-v1',
+      'namespaceJSON',
+      'optionsJSON',
+      '&quot;database&quot;',
+    ])
+      expect(html).not.toContain(internal);
+    const submit = html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0];
+    expect(submit).toContain('disabled=""');
+    expect(f.document).toEqual(before);
+  });
+  it('shows SQLite table modes as labels and leaves a clean format form disabled', () => {
+    setLocale('ko');
+    const f = fixture('sqlite');
+    f.table.physical.options = { database: 'sqlite', strict: true, withoutRowid: false };
+    const html = renderToStaticMarkup(
+      createElement(NativeFormatEditor, {
+        context: f.context,
+        document: f.document,
+        table: f.table,
+      }),
+    );
+    expect(html).toContain('스키마: main');
+    expect(html).toContain('STRICT: 사용');
+    expect(html).toContain('WITHOUT ROWID: 사용 안 함');
+    expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'renders the type union, current values and unavailable reasons for %s',
     (kind) => {

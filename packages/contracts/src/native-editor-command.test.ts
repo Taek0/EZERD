@@ -1,8 +1,45 @@
 import { describe, expect, it } from 'vitest';
 import { createNativeColumn, createNativeTable, defaultDatabaseContext } from '@ezerd/model';
 import { nativeEditorCommandSchema, nativePendingSaveSchema } from './native-edit.js';
+import {
+  nativeSharedCanvasCommandSchema,
+  nativePersonalCanvasCommandSchema,
+} from './native-editor-command.js';
 
 describe('native structured editor commands', () => {
+  it('bounds native canvas IDs/layouts and separates personal camera/view commands', () => {
+    const command = {
+      type: 'update_node_layout',
+      nodeId: 'n'.repeat(160),
+      patch: { x: -1e7, y: 1e7, width: 10000 },
+    };
+    expect(nativeEditorCommandSchema.parse(command)).toEqual(command);
+    for (const input of [
+      { ...command, nodeId: 'n'.repeat(161) },
+      { ...command, patch: {} },
+      { ...command, patch: { x: 1e7 + 1 } },
+      { ...command, patch: { height: 0 } },
+      { ...command, patch: { objectId: 'hijack' } },
+    ])
+      expect(nativeEditorCommandSchema.safeParse(input).success).toBe(false);
+    const camera = { type: 'set_viewport', value: { viewId: '__tables__', x: 0, y: 0, zoom: 4 } };
+    expect(nativeSharedCanvasCommandSchema.safeParse(camera).success).toBe(false);
+    expect(nativePersonalCanvasCommandSchema.parse(camera)).toEqual(camera);
+    expect(
+      nativePersonalCanvasCommandSchema.safeParse({
+        ...camera,
+        value: { ...camera.value, zoom: 4.1 },
+      }).success,
+    ).toBe(false);
+    expect(
+      nativeEditorCommandSchema.safeParse({
+        type: 'add_table_reference',
+        tableId: 't',
+        viewId: ' private ',
+        placement: { x: 0, y: 0 },
+      }).success,
+    ).toBe(false);
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'accepts native %s factories without turning them into legacy objects',
     (kind) => {

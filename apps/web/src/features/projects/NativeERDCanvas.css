@@ -1,0 +1,103 @@
+.native-erd {
+  margin-block: 1rem;
+  border: 1px solid var(--line, #d8dce4);
+  border-radius: 8px;
+  padding: 12px;
+}
+.native-erd-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.native-erd-surface {
+  position: relative;
+  height: 520px;
+  overflow: hidden;
+  background: var(--canvas-bg, #f6f8fb);
+  border: 1px solid var(--line, #d8dce4);
+  touch-action: none;
+}
+.native-erd-world {
+  position: absolute;
+  transform-origin: 0 0;
+}
+.native-erd-lines {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.native-erd-lines path {
+  stroke: var(--muted, #617087);
+  stroke-width: 1.5;
+  fill: none;
+}
+.native-erd-lines marker path {
+  fill: var(--muted, #617087);
+}
+.native-erd-lines text {
+  font-size: 12px;
+  fill: var(--text, #26344a);
+  paint-order: stroke;
+  stroke: var(--canvas-bg, #f6f8fb);
+  stroke-width: 4px;
+}
+.native-erd-node {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: auto;
+  border: 1px solid var(--line, #c9d0dd);
+  border-radius: 6px;
+  background: var(--panel, white);
+  color: var(--text, #26344a);
+  box-shadow: 0 2px 5px #00000012;
+  touch-action: none;
+}
+.native-erd-node[data-selected='true'],
+.native-erd-node:focus-visible {
+  outline: 2px solid var(--accent, #3578db);
+  outline-offset: 2px;
+}
+.native-erd-node header {
+  padding: 10px;
+  border-bottom: 1px solid var(--line, #d8dce4);
+  cursor: grab;
+  font-weight: 600;
+}
+.native-erd-node button {
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.native-erd-node small,
+.native-erd-node p {
+  display: block;
+  padding-inline: 10px;
+  white-space: pre-wrap;
+}
+.native-erd-node table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.native-erd-node td,
+.native-erd-node th {
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--line, #e5e9ef);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.native-erd-node.note {
+  background: var(--note-bg, #fff9d9);
+}
+.native-erd-empty {
+  position: absolute;
+  inset: 30px;
+}
+.native-erd-actions {
+  margin-top: 12px;
+}

@@ -13,6 +13,7 @@ import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import './native-project-view.css';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeStructureEditor } from './native-editor-structure.js';
+import { NativeERDCanvas } from './NativeERDCanvas.js';
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
@@ -286,6 +287,24 @@ export function NativeProjectView({
               {t('개인 화면을 불러오지 못했습니다. 저장된 공유 설계를 표시합니다.')}
             </p>
           )}
+          <NativeERDCanvas
+            key={`${userId ?? ''}:${snapshot.project.id}`}
+            document={doc}
+            snapshot={snapshot}
+            {...(userId ? { userId } : {})}
+            editable={editable}
+            busy={saving || busy || !!pending}
+            onSave={save}
+            onReload={onReload}
+            mode={mode}
+            {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
+            onSelect={(tableId, columnId) => {
+              setSelected(tableId);
+              setEditingColumn(columnId ?? null);
+              setDomain('*');
+              setSearch('');
+            }}
+          />
           <div className="native-project-content" aria-label={t('설계 조회')}>
             <aside className="native-table-nav">
               <label>
