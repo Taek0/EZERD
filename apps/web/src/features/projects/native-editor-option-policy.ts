@@ -408,6 +408,9 @@ export function nativeGenerationPolicy(
   );
   return columnOptionPolicy(
     nativeGenerationDecision(document.database, column.physical.type, generation, {
+      columns: document.columns ?? [],
+      tableId: table.id,
+      strict: table.physical.options.database === 'sqlite' && table.physical.options.strict,
       nullable: facts.nullable ?? column.physical.nullable,
       hasDefault: facts.hasDefault ?? column.physical.defaultValue.kind !== 'none',
       isPrimaryKeyColumn: !!primary,

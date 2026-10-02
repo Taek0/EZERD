@@ -569,7 +569,7 @@ describe('native default and key UI policies without coverage promotion', () => 
         left: { kind: 'literal', literalType: 'number', value: '1' },
         right: { kind: 'literal', literalType: 'number', value: '2' },
       }),
-    ).toMatchObject({ engineAllowed: false, code: 'default.expression-validation-required' });
+    ).toMatchObject({ engineAllowed: false, code: 'expression.target-type-mismatch' });
     f.column.physical.generation = { kind: 'serial', database: 'postgresql' };
     expect(
       nativeBuiltinDefaultPolicy(f.document, f.table, f.column, { ...clock, args: [] }).code,
@@ -662,7 +662,7 @@ describe('native default and key UI policies without coverage promotion', () => 
         storage: 'stored',
         expression: { kind: 'literal', literalType: 'number', value: '1' },
       }).code,
-    ).toBe('generation.expression-validation-required');
+    ).toBe('generation.not-ready');
   });
   it('uses actual ON UPDATE type/generation rules and keeps a supported candidate blocked by readiness', () => {
     const f = fixture('mysql');

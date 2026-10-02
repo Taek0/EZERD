@@ -1,7 +1,14 @@
 import type { DatabaseContext } from './definitions.js';
 import { checkDatabaseFeature, type DatabaseFeatureFacts } from './features.js';
 import { getDatabaseProfile } from './profiles.js';
-import type { NativeColumnType, NativeExpression, NativeGeneration } from './native-document.js';
+import {
+  nativeExpressionColumnIds,
+  type NativeColumn,
+  type NativeColumnType,
+  type NativeExpression,
+  type NativeGeneration,
+} from './native-document.js';
+import { nativeExpressionDecision } from './expression-policy.js';
 
 export interface NativeColumnOptionDecision {
   allowed: boolean;
@@ -36,8 +43,24 @@ export function nativeBuiltinDefaultDecision(
     return reject('type.not-supported', 'unsupported');
   if (facts.generation && facts.generation.kind !== 'none')
     return reject('generation.default-not-supported');
-  if (expression.kind !== 'call')
-    return reject('default.expression-validation-required', 'unsupported');
+  if (
+    expression.kind !== 'call' ||
+    !['current_timestamp', 'current_date', 'current_time', 'gen_random_uuid', 'uuid'].includes(
+      expression.functionId.split(':')[1]!,
+    )
+  ) {
+    const decision = nativeExpressionDecision(context, expression, {
+      columns: [],
+      tableId: '',
+      purpose: 'default',
+      targetType: type,
+      ...(facts.strict !== undefined && { strict: facts.strict }),
+      ...(facts.nullable !== undefined && { nullable: facts.nullable }),
+    });
+    return decision.allowed
+      ? allow()
+      : reject(decision.code ?? 'default.expression-validation-required', 'unsupported');
+  }
   if (!expression.functionId.startsWith(context.kind + ':'))
     return reject('expression.function-not-supported', 'unsupported');
   if (expression.args.length) return reject('expression.function-arguments-invalid');
@@ -107,11 +130,16 @@ export function nativeOnUpdateDecision(
   return allow();
 }
 /** Exact sequence boundaries, preserving the supplied tokens rather than normalizing them. */
+export interface NativeGenerationFacts extends DatabaseFeatureFacts {
+  nullable?: boolean;
+  columns?: readonly NativeColumn[];
+  tableId?: string;
+}
 export function nativeGenerationDecision(
   context: DatabaseContext,
   type: NativeColumnType,
   generation: NativeGeneration,
-  facts: DatabaseFeatureFacts & { nullable?: boolean } = {},
+  facts: NativeGenerationFacts = {},
 ): NativeColumnOptionDecision {
   getDatabaseProfile(context);
   if (generation.kind === 'none') return allow();
@@ -124,8 +152,35 @@ export function nativeGenerationDecision(
   if (facts.nullable && generation.kind !== 'computed')
     return reject('generation.nullability-mismatch');
   if (facts.hasDefault) return reject('generation.default-not-supported');
-  if (generation.kind === 'computed')
-    return reject('generation.expression-validation-required', 'unsupported');
+  if (generation.kind === 'computed') {
+    const support = checkDatabaseFeature(
+      context,
+      generation.storage === 'stored' ? 'generatedStored' : 'generatedVirtual',
+      facts,
+    );
+    if (!support.supported)
+      return reject(support.code ?? 'generation.storage-not-supported', 'unsupported');
+    if (
+      context.kind === 'postgresql' &&
+      generation.storage === 'virtual' &&
+      (type.kind === 'projectEnum' ||
+        nativeExpressionColumnIds(generation.expression).some(
+          (id) =>
+            facts.columns?.find((column) => column.id === id)?.physical.type.kind === 'projectEnum',
+        ))
+    )
+      return reject('generation.virtual-type-not-supported', 'unsupported');
+    const decision = nativeExpressionDecision(context, generation.expression, {
+      columns: facts.columns ?? [],
+      tableId: facts.tableId ?? '',
+      purpose: 'computed',
+      targetType: type,
+      ...(facts.strict !== undefined && { strict: facts.strict }),
+    });
+    return decision.allowed
+      ? allow()
+      : reject(decision.code ?? 'generation.expression-validation-required', 'unsupported');
+  }
   const support = checkDatabaseFeature(context, generation.kind, {
     ...facts,
     ...(type.kind === 'builtin' && { typeId: type.typeId }),

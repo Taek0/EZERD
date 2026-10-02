@@ -20,6 +20,30 @@ const call = (
   functionId: Extract<NativeExpression, { kind: 'call' }>['functionId'],
 ): NativeExpression => ({ kind: 'call', functionId, args: [] });
 describe('native column option decisions', () => {
+  it('uses structured expression results for generated/default candidates and PG virtual type rules', () => {
+    const expression: NativeExpression = {
+      kind: 'binary',
+      operator: '+',
+      left: { kind: 'literal', literalType: 'number', value: '1' },
+      right: { kind: 'literal', literalType: 'number', value: '2' },
+    };
+    expect(nativeBuiltinDefaultDecision(pg, integer, expression).allowed).toBe(true);
+    expect(
+      nativeGenerationDecision(pg, integer, {
+        kind: 'computed',
+        database: 'postgresql',
+        storage: 'stored',
+        expression,
+      }).allowed,
+    ).toBe(true);
+    expect(
+      nativeGenerationDecision(
+        pg,
+        { kind: 'projectEnum', database: 'postgresql', enumId: 'enum' },
+        { kind: 'computed', database: 'postgresql', storage: 'virtual', expression },
+      ).code,
+    ).toBe('generation.virtual-type-not-supported');
+  });
   it.each(['smallint', 'integer', 'bigint'] as const)(
     'preserves %s exact sequence bounds including descending defaults',
     (name) => {

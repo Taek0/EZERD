@@ -14,6 +14,7 @@ import {
   nativeGenerationDecision,
   nativeOnUpdateDecision,
 } from './option-policy.js';
+import { nativeExpressionDecision } from './expression-policy.js';
 import { nativeReferenceProblems } from './reference-graph.js';
 import {
   nativeExpressionColumnIds,
@@ -226,7 +227,7 @@ function collect(
     objectId: string,
     path: string,
     tableId: string,
-    purpose: 'default' | 'computed' | 'check' | 'index',
+    purpose: 'default' | 'computed' | 'check' | 'index' | 'predicate',
   ) {
     let ids: string[];
     try {
@@ -272,6 +273,38 @@ function collect(
       else if (node.kind === 'unary' || node.kind === 'isNull') pending.push(node.operand);
       else if (node.kind === 'in') pending.push(node.operand, ...node.values);
     }
+    const owner = tables.get(tableId),
+      target = columns.get(objectId);
+    const decision = nativeExpressionDecision(context, value, {
+      columns: [...columns.values()],
+      tableId,
+      purpose,
+      ...(target && {
+        nullable: target.physical.nullable,
+        primary: tableKeys(tableId).some(
+          (key) => key.kind === 'primary' && key.columnIds.includes(target.id),
+        ),
+      }),
+      ...(target &&
+        (purpose === 'default' || purpose === 'computed') &&
+        !(purpose === 'default' && value.kind === 'literal') && {
+          targetType: target.physical.type,
+        }),
+      strict: owner?.physical.options.database === 'sqlite' && owner.physical.options.strict,
+    });
+    if (!decision.allowed)
+      add(
+        decision.code!,
+        objectId,
+        path,
+        [
+          value,
+          ids.map((id) => [id, columns.get(id)?.physical.type, columns.get(id)?.physical.nullable]),
+          target?.physical.type,
+          owner?.physical.options,
+        ],
+        'unsupported',
+      );
     return ids;
   }
 
@@ -554,6 +587,19 @@ function collect(
             'computed',
           ) ?? [];
         generatedDependencies.set(column.id, references);
+        if (
+          context.kind === 'postgresql' &&
+          generation.storage === 'virtual' &&
+          (type.kind === 'projectEnum' ||
+            references.some((id) => columns.get(id)?.physical.type.kind === 'projectEnum'))
+        )
+          add(
+            'generation.virtual-type-not-supported',
+            column.id,
+            `${path}/generation/expression`,
+            [type, generation, references.map((id) => columns.get(id)?.physical.type)],
+            'unsupported',
+          );
         const order = peers.findIndex((item) => item.id === column.id);
         if (
           references.some(
@@ -1142,7 +1188,7 @@ function collect(
         index.id,
         `${path}/options/predicate`,
         index.tableId,
-        'index',
+        'predicate',
       );
     }
     if (index.options.database === 'postgresql' && index.options.includeColumnIds) {

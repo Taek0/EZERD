@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- C7 제한 AST 결과/인자/연산자 타입 검증을 공통 validator·default/generation UI API에 연결했다. [결과](2026-10-02-Database-NativeExpressionPolicy.md). 260개 targeted와 PG stored/virtual/일반 식·SQLite/MySQL 고급 실행 fixture 통과. 전체 인덱스 방식·식 tree UI/clipboard 및 readiness QA는 후속이다.
+
 - 명시 native upgrade도 기존 ACK를 read 권한으로 원문 재생하도록 보강했다. [결과](2026-10-02-Database-NativeUpgradeReplay.md). 실제 AppModule REST 9개에서 viewer/보관/read 상실·오래된 요청·손상된 ACK·동시 업그레이드를 확인했다. 신규 migration 검증과 baseline/audit 원칙은 유지한다.
 
 - native REST/명령/MCP의 read→old ACK→잠긴 current→fresh design 권한 순서를 통합했다. [결과](2026-10-02-Database-NativeReplayAccess.md). 실제 21개와 history 36개, mocked-handler/MCP 12개 통과. 역할/보관 변경 뒤 동일 응답 재생과 raw actor 보존을 확인했으며 새 쓰기는 계속 차단한다. upgrade replay도 별도 보강 중이다.
