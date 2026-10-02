@@ -515,6 +515,26 @@ export class NativeHistoryService {
         candidate = applyChanges(current, inverse);
         if (snapshots.length) {
           const fresh = freshMapping([before, candidate], snapshots);
+          const immutableEnumOrigins = (candidate.columns ?? []).filter(
+            (column) =>
+              column.physical.type.kind === 'legacy' &&
+              column.physical.type.original.enumId !== undefined &&
+              fresh.mapping.entities.get(column.physical.type.original.enumId) !==
+                column.physical.type.original.enumId,
+          );
+          if (immutableEnumOrigins.length)
+            throw new UnprocessableEntityException({
+              code: 'history.legacy-enum-origin-remap-required',
+              objectIds: immutableEnumOrigins.map((column) => column.id),
+              issues: immutableEnumOrigins.map((column) => ({
+                code: 'document.enum-not-found',
+                category: 'invalid',
+                severity: 'error',
+                objectId: fresh.mapping.entities.get(column.id)!,
+                path: `/columns/${segment(fresh.mapping.entities.get(column.id)!)}/physical/type`,
+                params: { immutableOrigin: true },
+              })),
+            });
           identityMap = fresh.identityMap;
           candidate = remapNativeDocumentIds(candidate, fresh.mapping);
           const trustedBefore = remapNativeDocumentIds(before, fresh.mapping);
@@ -604,7 +624,8 @@ export class NativeHistoryService {
         }
         candidate = nativeDocument(candidate);
       } catch (error) {
-        if (error instanceof ConflictException) throw error;
+        if (error instanceof ConflictException || error instanceof UnprocessableEntityException)
+          throw error;
         throw new ConflictException({ code: 'history.restore-invalid' });
       }
       const graph = nativeReferenceProblems(candidate);

@@ -34,6 +34,11 @@ import {
 import { DatabaseService } from '../db/database.service.js';
 import { projects, workspaceAuditEvents } from '../db/schema.js';
 import { readNativeProjectDocument } from '../shared/native-document-reader.js';
+import {
+  importJsonSha256,
+  nativeImportLegacyProvenance,
+  validateNativeImportWithProvenance,
+} from '../shared/native-import-provenance.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
 
 async function storageOperation<T>(callback: () => Promise<T>): Promise<T> {
@@ -45,7 +50,10 @@ async function storageOperation<T>(callback: () => Promise<T>): Promise<T> {
   }
 }
 
-function freshIdentities(document: NativeDesignDocument): NativeIdentityRemap {
+function freshIdentities(
+  document: NativeDesignDocument,
+  preserveSourceIds: boolean,
+): NativeIdentityRemap {
   const entities = new Map<string, string>();
   for (const collection of [
     document.domains,
@@ -60,10 +68,13 @@ function freshIdentities(document: NativeDesignDocument): NativeIdentityRemap {
     document.indexes,
     document.checks,
   ])
-    for (const item of collection ?? []) entities.set(item.id, randomUUID());
+    for (const item of collection ?? [])
+      entities.set(item.id, preserveSourceIds ? item.id : randomUUID());
   return {
     entities,
-    nodes: new Map(document.layout.nodes.map((node) => [node.id, randomUUID()])),
+    nodes: new Map(
+      document.layout.nodes.map((node) => [node.id, preserveSourceIds ? node.id : randomUUID()]),
+    ),
   };
 }
 
@@ -156,7 +167,17 @@ export class NativeTransferService {
           source = migration.document;
           previous = structuredClone(migration.document);
           migrationIssues = migration.issues;
-        } else source = structuredClone(original);
+        } else {
+          source = structuredClone(original);
+          const canonical = nativeStoredDesignDocumentSchema.safeParse(source);
+          if (
+            !canonical.success ||
+            requestFingerprint(canonical.data) !== requestFingerprint(source)
+          )
+            throw new UnprocessableEntityException({
+              code: 'project-transfer.native-canonical-required',
+            });
+        }
 
         if ('native' in transfer) {
           if (transfer.native.status === 'unavailable')
@@ -177,7 +198,14 @@ export class NativeTransferService {
             issues: graph,
           });
         let document: NativeDesignDocument;
-        const mapping = freshIdentities(source);
+        // Immutable legacy enum evidence may retain an enumId. The entire document's IDs
+        // live inside the newly generated project UUID namespace; ordinary restores do not.
+        const preserveSourceIds = (source.columns ?? []).some(
+          (column) =>
+            column.physical.type.kind === 'legacy' &&
+            column.physical.type.original.enumId !== undefined,
+        );
+        const mapping = freshIdentities(source, preserveSourceIds);
         try {
           document = remapNativeDocumentIds(source, mapping);
           if (previous) previous = remapNativeDocumentIds(previous, mapping);
@@ -200,10 +228,16 @@ export class NativeTransferService {
             code: 'project-transfer.graph-invalid',
             issues: remappedGraph,
           });
-        const writeIssues = validateDatabaseDocument(document, context, {
-          mode: 'write',
-          ...(previous ? { previous } : {}),
-        });
+        const provenance =
+          original.schemaVersion === 2
+            ? nativeImportLegacyProvenance(document, context)
+            : undefined;
+        const writeIssues = provenance
+          ? validateNativeImportWithProvenance(document, context, provenance)
+          : validateDatabaseDocument(document, context, {
+              mode: 'write',
+              ...(previous ? { previous } : {}),
+            });
         if (writeIssues.some((issue) => issue.severity === 'error'))
           throw new UnprocessableEntityException({
             code: 'database.validation-failed',
@@ -230,6 +264,30 @@ export class NativeTransferService {
             sourceSchemaVersion: original.schemaVersion,
             // Source metadata is informational; it grants no trusted origin on later imports.
             ...('source' in transfer ? { source: transfer.source } : {}),
+            importProvenance: {
+              policyVersion: 1,
+              authority:
+                original.schemaVersion === 1 ? 'server-v1-migration' : 'validated-v1-legacy-mask',
+              hashEncoding: 'canonical-json-utf8',
+              sourceDocument: structuredClone(original),
+              sourceDocumentSha256: importJsonSha256(original),
+              transferSha256: importJsonSha256(transfer),
+              context,
+              targetProjectId: row!.id,
+              mappingPolicy: preserveSourceIds
+                ? 'preserve-source-project-namespace'
+                : 'fresh-project-object-ids',
+              identityMappingSha256: importJsonSha256({
+                entities: [...mapping.entities],
+                nodes: [...mapping.nodes],
+              }),
+              legacyMaskSha256: provenance
+                ? importJsonSha256(provenance.mask)
+                : previous
+                  ? importJsonSha256(previous)
+                  : null,
+              trustedLegacyPaths: provenance ? [...provenance.fieldPaths].sort() : [],
+            },
           },
         });
         // Diagnostics must use target IDs/paths, not source IDs from the uploaded file.

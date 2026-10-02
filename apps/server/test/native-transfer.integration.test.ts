@@ -11,6 +11,7 @@ import {
   createEmptyDocument,
   defaultDatabaseContext,
   migrateDesignDocumentV1,
+  nativeReferenceProblems,
   type DatabaseKind,
   type DesignDocument,
 } from '@ezerd/model';
@@ -18,6 +19,7 @@ import {
   nativeTransferImportResultSchema,
   versionedProjectTransferSchema,
 } from '../../../packages/contracts/src/native-transfer.js';
+import { importJsonSha256 } from '../src/shared/native-import-provenance.js';
 
 function legacyDocument(): DesignDocument {
   const document = createEmptyDocument();
@@ -466,7 +468,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await upload(exported.data)).status).toBe(422);
     });
 
-    it('exports unsupported native physical objects raw, but blocks untrusted legacy re-import atomically', async () => {
+    it('exports unsupported physical objects raw, but still blocks unverified native features after legacy validation', async () => {
       const document = migrateDesignDocumentV1(
         legacyDocument(),
         defaultDatabaseContext('mysql'),
@@ -501,9 +503,16 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(denied).toMatchObject({ status: 422, data: { code: 'database.validation-failed' } });
       expect(
         denied.data.issues.some(
-          (issue: { code: string }) => issue.code === 'legacy.source-not-trusted',
+          (issue: { code: string; params?: { feature?: string } }) =>
+            issue.code === 'feature.not-implemented' &&
+            ['index', 'check'].includes(issue.params?.feature ?? ''),
         ),
       ).toBe(true);
+      expect(
+        denied.data.issues.some(
+          (issue: { code: string }) => issue.code === 'legacy.source-not-trusted',
+        ),
+      ).toBe(false);
       expect(await counts()).toEqual(count);
       expect(await row(id)).toEqual(before);
     });
@@ -549,24 +558,59 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(await counts()).toEqual(count);
     });
 
-    it('keeps legacy enum evidence intact and explicitly blocks import when safe ID remap would break its reference', async () => {
+    it('imports legacy ENUM evidence with matching graph IDs inside an independent new project namespace', async () => {
       const document = legacyDocument();
       document.enums = [{ id: 'legacy-enum', name: 'Status', schema: 'public', values: ['a'] }];
       document.columns![0]!.physical.type = { name: 'enum', enumId: 'legacy-enum', isArray: false };
       const id = await seed('mysql', document);
+      const before = await row(id);
       expect((await request(`/${id}/native-transfer`)).data.sourceDocument).toEqual(document);
       const count = await counts();
-      const blocked = await upload(compact(document, 'mysql'));
-      expect(blocked).toMatchObject({
-        status: 422,
-        data: { code: 'project-transfer.graph-invalid' },
+      const file = compact(document, 'mysql'),
+        imported = await upload(file);
+      expect(imported.status, JSON.stringify(imported.data)).toBe(201);
+      const saved = await row(imported.data.project.id);
+      expect(saved.id).not.toBe(id);
+      expect(saved).toMatchObject({
+        workspace_id: workspaceId,
+        version: 0,
+        sync_sequence: 0,
+        database_revision: 0,
+        status: 'active',
       });
-      expect(
-        blocked.data.issues.some(
-          (issue: { code: string }) => issue.code === 'document.enum-not-found',
-        ),
-      ).toBe(true);
-      expect(await counts()).toEqual(count);
+      expect(saved.document).toEqual(
+        migrateDesignDocumentV1(document, defaultDatabaseContext('mysql')).document,
+      );
+      expect(nativeReferenceProblems(saved.document)).toEqual([]);
+      expect(saved.document.columns[0].physical.type.original).toEqual(
+        document.columns![0]!.physical.type,
+      );
+      expect(saved.document.enums[0].id).toBe(
+        saved.document.columns[0].physical.type.original.enumId,
+      );
+      expect(saved.document.enums[0].values).toEqual(document.enums![0]!.values);
+      expect(saved.document.layout).toEqual(document.layout);
+      const audit = (
+        await pool.query(
+          "SELECT details FROM workspace_audit_events WHERE workspace_id=$1 AND action='project.imported' AND details->>'projectId'=$2",
+          [workspaceId, saved.id],
+        )
+      ).rows[0].details.importProvenance;
+      expect(audit).toMatchObject({
+        authority: 'server-v1-migration',
+        mappingPolicy: 'preserve-source-project-namespace',
+        targetProjectId: saved.id,
+        hashEncoding: 'canonical-json-utf8',
+      });
+      expect(audit.sourceDocument).toEqual(document);
+      expect(audit.sourceDocumentSha256).toBe(importJsonSha256(document));
+      expect(audit.transferSha256).toBe(importJsonSha256(file));
+      expect(audit.identityMappingSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(await counts()).toEqual({
+        projects: String(Number(count.projects) + 1),
+        audits: String(Number(count.audits) + 1),
+      });
+      expect(await row(id)).toEqual(before);
     });
 
     it('enforces session, project read, createProject and active workspace permissions', async () => {
