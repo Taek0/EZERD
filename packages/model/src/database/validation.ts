@@ -15,6 +15,7 @@ import {
   nativeOnUpdateDecision,
 } from './option-policy.js';
 import { nativeExpressionDecision } from './expression-policy.js';
+import { nativePostgresIndexMethodDecision } from './index-policy.js';
 import { nativeReferenceProblems } from './reference-graph.js';
 import {
   nativeExpressionColumnIds,
@@ -1071,6 +1072,8 @@ function collect(
         );
     }
     if (index.options.database === 'mysql' && index.options.kind !== 'btree') {
+      if (index.options.kind === 'spatial' && index.parts.length !== 1)
+        add('index.spatial-single-part-required', index.id, `${path}/parts`, index.parts);
       if (
         index.unique ||
         index.parts.some(
@@ -1109,19 +1112,70 @@ function collect(
       const part = index.parts[i]!;
       expression(part.expression, index.id, `${path}/parts/${i}`, index.tableId, 'index');
       if (
-        context.kind === 'postgresql' &&
-        index.options.database === 'postgresql' &&
-        index.options.method === 'btree' &&
-        part.expression.kind === 'column'
+        context.kind === 'mysql' &&
+        index.options.database === 'mysql' &&
+        index.options.kind === 'btree' &&
+        part.expression.kind !== 'column'
       ) {
-        const column = visibleColumn(part.expression.columnId, index.tableId);
-        const decision = column && keyEligibility(context, column.physical.type);
-        if (decision && !decision.uniqueAllowed)
+        const result = nativeExpressionDecision(context, part.expression, {
+          columns: [...columns.values()],
+          tableId: index.tableId,
+          purpose: 'index',
+        }).result;
+        if (!result || ['json', 'unsupported'].includes(result.family))
+          add(
+            'index.expression-result-not-supported',
+            index.id,
+            `${path}/parts/${i}`,
+            [part, result?.family],
+            'unsupported',
+          );
+        if (result?.family === 'string') {
+          const referenced = nativeExpressionColumnIds(part.expression).map((id) =>
+            visibleColumn(id, index.tableId),
+          );
+          if (
+            referenced.some(
+              (column) =>
+                column &&
+                !['mysql:char', 'mysql:varchar', 'mysql:enum', 'mysql:set'].includes(
+                  scalarType(column.physical.type)?.id ?? '',
+                ),
+            )
+          )
+            add(
+              'index.expression-text-length-unverified',
+              index.id,
+              `${path}/parts/${i}`,
+              [part, referenced.map((column) => column?.physical.type)],
+              'unsupported',
+            );
+        }
+      }
+      if (context.kind === 'postgresql' && index.options.database === 'postgresql') {
+        const column =
+          part.expression.kind === 'column'
+            ? visibleColumn(part.expression.columnId, index.tableId)
+            : undefined;
+        const inferred = column
+          ? undefined
+          : nativeExpressionDecision(context, part.expression, {
+              columns: [...columns.values()],
+              tableId: index.tableId,
+              purpose: 'index',
+            }).result;
+        const decision = nativePostgresIndexMethodDecision(
+          context,
+          index.options.method,
+          column?.physical.type,
+          inferred,
+        );
+        if (!decision.allowed)
           add(
             'index.type-not-supported',
             index.id,
             `${path}/parts/${i}`,
-            [part, column!.physical.type],
+            [part, column?.physical.type, index.options.method],
             'unsupported',
           );
       }

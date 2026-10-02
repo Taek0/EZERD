@@ -21,6 +21,7 @@ export interface NativeExpressionType {
   family: NativeExpressionFamily;
   numeric?: 'integer' | 'decimal' | 'floating';
   enumId?: string;
+  jsonKind?: 'json' | 'jsonb';
   nullable: boolean;
 }
 export interface NativeExpressionDecision {
@@ -80,7 +81,8 @@ function family(type: NativeColumnType): NativeExpressionType {
             category === 'integer' ? 'integer' : category === 'decimal' ? 'decimal' : 'floating',
         });
   if (category === 'boolean') return result('boolean');
-  if (category === 'string' || category === 'binary' || category === 'json' || category === 'uuid')
+  if (category === 'json') return result('json', { jsonKind: name === 'jsonb' ? 'jsonb' : 'json' });
+  if (category === 'string' || category === 'binary' || category === 'uuid')
     return result(category);
   if (category === 'temporal')
     return result(
@@ -95,7 +97,9 @@ function family(type: NativeColumnType): NativeExpressionType {
   return result('unsupported');
 }
 const same = (a: NativeExpressionType, b: NativeExpressionType) =>
-  a.family === b.family && (a.family !== 'enum' || a.enumId === b.enumId);
+  a.family === b.family &&
+  (a.family !== 'enum' || a.enumId === b.enumId) &&
+  (a.family !== 'json' || a.jsonKind === b.jsonKind);
 /** Finite, structured SQL expression semantics. No implicit string/numeric coercion or SQL parsing. */
 export function nativeExpressionDecision(
   context: DatabaseContext,
@@ -115,16 +119,28 @@ export function nativeExpressionDecision(
       const decision = inspectNativeLiteralToken(node);
       if (!decision.allowed) return fail(decision.code!);
       return {
-        family: (
-          {
-            number: 'number',
-            string: 'string',
-            boolean: 'boolean',
-            binary: 'binary',
-            json: 'json',
-            typedText: 'unsupported',
-          } as const
-        )[node.literalType],
+        family:
+          node.literalType === 'json' && context.kind === 'sqlite'
+            ? 'string'
+            : (
+                {
+                  number: 'number',
+                  string: 'string',
+                  boolean: 'boolean',
+                  binary: 'binary',
+                  json: 'json',
+                  typedText: 'unsupported',
+                } as const
+              )[node.literalType],
+        ...(node.literalType === 'json' &&
+          context.kind !== 'sqlite' && {
+            jsonKind:
+              context.kind === 'mysql' ||
+              (facts.targetType?.kind === 'builtin' &&
+                facts.targetType.typeId === 'postgresql:json')
+                ? ('json' as const)
+                : ('jsonb' as const),
+          }),
         ...(node.literalType === 'number' && {
           numeric: /^[+-]?\d+$/.test(String(node.value))
             ? ('integer' as const)

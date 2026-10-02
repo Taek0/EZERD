@@ -7,6 +7,32 @@ import { databaseTypeCatalog } from './catalog.js';
 import type { NativeColumnType } from './native-document.js';
 
 describe('native whole-design DDL compiler', () => {
+  it('omits explicit ordering for MySQL FULLTEXT and SPATIAL indexes', () => {
+    const doc = nativeDDLFixture('mysql');
+    doc.tables = [doc.tables![0]!];
+    doc.columns = doc.columns!.filter((column) => column.tableId === 'parent');
+    doc.tableRelations = [];
+    doc.checks = [];
+    doc.indexes![0]!.options = { database: 'mysql', kind: 'fulltext' };
+    expect(compileNativeDatabaseDDL(doc).sql).toContain(
+      'FULLTEXT INDEX `parent_label_ix` ON `parent` (`label`)',
+    );
+    const point = createNativeColumn(doc.database, doc.tables[0]!, 'point');
+    point.physical.name = 'point';
+    point.physical.nullable = false;
+    point.physical.type = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:point',
+      parameters: { srid: 0 },
+    };
+    doc.columns.push(point);
+    doc.indexes![0]!.options = { database: 'mysql', kind: 'spatial' };
+    doc.indexes![0]!.parts[0]!.expression = { kind: 'column', columnId: point.id };
+    expect(compileNativeDatabaseDDL(doc).sql).toContain(
+      'SPATIAL INDEX `parent_label_ix` ON `parent` (`point`)',
+    );
+  });
   it('quotes SQLite declared type names so constraint keywords cannot change the column', () => {
     const doc = nativeDDLFixture('sqlite');
     doc.tables = [doc.tables![0]!];

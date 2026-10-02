@@ -159,7 +159,7 @@ export function compileNativeDatabaseDDL(document: NativeDesignDocument): Native
           throw Error('literal.json-invalid');
         }
         return kind === 'postgresql'
-          ? `CAST(${text(value.value)} AS ${target ? typeSQL(target) : 'JSONB'})`
+          ? `CAST(${text(value.value)} AS ${target?.kind === 'builtin' && ['postgresql:json', 'postgresql:jsonb'].includes(target.typeId) ? typeSQL(target) : 'JSONB'})`
           : kind === 'mysql'
             ? `CAST(${text(value.value)} AS JSON)`
             : text(value.value);
@@ -507,7 +507,11 @@ export function compileNativeDatabaseDDL(document: NativeDesignDocument): Native
             throw Error('index.prefix-invalid');
           sql += '(' + part.prefixLength + ')';
         }
-        if (index.options.database !== 'postgresql' || index.options.method === 'btree')
+        if (
+          index.options.database === 'sqlite' ||
+          (index.options.database === 'postgresql' && index.options.method === 'btree') ||
+          (index.options.database === 'mysql' && index.options.kind === 'btree')
+        )
           sql += ' ' + part.direction.toUpperCase();
         return sql;
       });

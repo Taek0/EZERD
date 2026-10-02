@@ -169,6 +169,40 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           ),
         ).rejects.toBeDefined();
         await client.query('ROLLBACK TO SAVEPOINT virtual_type');
+        const jsonDoc = createEmptyNativeDocument(context),
+          jsonTable = createNativeTable(context, 'json-t');
+        jsonTable.physical.name = 'json_boolean';
+        jsonTable.physical.namespace = { kind: 'postgresSchema', name: schema };
+        const jsonColumn = createNativeColumn(context, jsonTable, 'json-c');
+        jsonColumn.physical.name = 'missing';
+        jsonColumn.physical.type = {
+          kind: 'builtin',
+          database: 'postgresql',
+          typeId: 'postgresql:boolean',
+          parameters: {},
+        };
+        jsonColumn.physical.generation = {
+          kind: 'computed',
+          database: 'postgresql',
+          storage: 'stored',
+          expression: {
+            kind: 'isNull',
+            operand: { kind: 'literal', literalType: 'json', value: '{}' },
+            negate: false,
+          },
+        };
+        jsonDoc.tables = [jsonTable];
+        jsonDoc.columns = [jsonColumn];
+        const jsonDDL = compileNativeDatabaseDDL(jsonDoc);
+        expect(jsonDDL.canExport, JSON.stringify(jsonDDL.issues)).toBe(true);
+        await client.query(jsonDDL.sql);
+        expect(
+          (
+            await client.query(
+              `INSERT INTO "${schema}".json_boolean DEFAULT VALUES RETURNING missing`,
+            )
+          ).rows,
+        ).toEqual([{ missing: false }]);
       } finally {
         await client.query('ROLLBACK');
         await client.end();
