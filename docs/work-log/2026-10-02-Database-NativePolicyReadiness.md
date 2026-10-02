@@ -24,6 +24,8 @@ native registry는 계속 definitions만 import하는 방향이다. 공유 계�
 
 ## 부모 소비 인계
 
+부모 후속: 공통 validator가 실제 computed storage와 key kind/STRICT를 policy에 전달하고 허용된 engine AST/key라도 usable 미검증이면 신규 저장·export를 차단하도록 연결했다. defaults는 type family와 별도 coverage를 함께 요구한다. SQLite custom declaration의 default/key는 builtin coverage를 빌릴 수 없고 trusted 원문 보존·명시 제거는 유지한다. 전체 DB model813개 및 model build 통과.
+
 직접 computed expression의 usable을 확인하는 호출은 generationStorage를 넘긴다. storage 없이 허용된 AST를 특정 generated column의 쓰기 권한으로 처리하지 않는다. nativeGenerationDecision은 이미 실제 storage를 전달한다. key helper에서 특정 PK/UNIQUE를 판단하는 호출은 NativeKeyFacts.kind와 필요하면 strict를 넘길 수 있다. 직접 PG method decision의 inferred result는 expression-policy가 만든 numeric/jsonKind/enumId metadata를 소비하고 AST 자체 validation을 함께 유지한다. 이는 flags/evidence를 caller가 추가하는 API가 아니다.
 
 부모 registry의 default/advanced evidence를 실제 프로브 뒤 활성화하면 이 함수들은 실제 hasDatabaseCoverage 결과를 그대로 소비한다. 본 단위는 flag를 변경하지 않았고 현재 false인 gate의 테스트를 강제로 true로 mock하지 않았다. 공통 feature gate/declared write policy/srid0·4326 preset/추가 MySQL functional byte/invisible 문제는 부모/다른 담당 범위다.
@@ -32,5 +34,8 @@ native registry는 계속 definitions만 import하는 방향이다. 공유 계�
 
 - 지정5파일 **412 passed**, skip0. 기존396에16 meaningful cases 추가. global false 기대는 registry의 현재 coverage로 계산하도록 바꾸고 미검증 type subset/조건부 failure의 false 기대는 유지했다.
 - engine eligibility 전 catalog matrix, default none/null과 checked/malformed token, project ENUM/valueList/array, generated PRIMARY/UNIQUE, sequence/AUTO_INCREMENT prerequisites, predicate/index/result family, unverified referenced type, caller evidence/typeId injection, unchanged invalid default의 previous recovery를 검사했다. 기존 node:sqlite 실행 tests도 포함한다.
-- model build/typecheck, 다섯 test의 Node 타입 포함 strict 별도 typecheck 및 web typecheck 통과. 담당10개 파일 root Prettier 통과. 최종 broad targeted와 소비 패키지 typecheck는 ready 보고에서 확정한다.
+- model build/typecheck, 다섯 test의 Node 타입 포함 strict 별도 typecheck 및 server(src/tools) typecheck 통과. 초기 web typecheck는 통과했으나 최종 검사에는 병렬 담당 파일 apps/web/src/features/projects/native-constraint-options.ts:189의 widened physical.type→NativeColumnType 오류가 남았다. 해당 파일은 수정하지 않았다. 담당10개 파일 root Prettier 및 tracked whitespace check 통과.
+- 관련 policy5 + validation + DDL의7파일 **597 passed**, skip0. 부모의 registry candidate/validator usable 통합 전 상태에서 실행한 검사이며 이후 release candidate와 실제3DB/API/DDL broad 검사는 부모에게 인계한다. 본인은 추가 broad 검사나 registry/validator 수정을 하지 않고 scope를 종료한다.
 - 새 PG/MySQL/SQLite advanced API/DDL 실제 probe는 부모가 수행한다. 이 unit의 readiness wiring 테스트를 새 SQL 실행 evidence 또는 모든 literal/option 완료로 주장하지 않는다. 전체 check/build/commit은 부모 담당이다.
+
+최종 policy API는 ready다. 부모는 default/Builtin/generation의 allowed(엔진 의미)와 별도로 실제 non-none usable을 product write/export에서 검사하며 None/clear를 새 권한 판정에서 제외하는 validator 연결을 수행한다. declared/untyped 및 array의 specialized parser/미검증 조건을 기본 coverage flag로 우회하지 않는다. 담당의 임시 strict-test config는 제거했고 git add/commit 하지 않았다.

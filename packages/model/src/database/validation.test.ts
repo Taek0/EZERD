@@ -111,6 +111,53 @@ function withRelation(kind: DatabaseKind): NativeDesignDocument {
 }
 
 describe('native DB policy is separate from draft and activation rules', () => {
+  it('does not borrow ready builtin paths for unverified SQLite declaration defaults and keys', () => {
+    const original = fixture('sqlite');
+    original.keys = [];
+    original.columns![0]!.physical.type = {
+      kind: 'declared',
+      database: 'sqlite',
+      name: 'AppNumber',
+      numericArguments: [],
+    };
+    const candidate = structuredClone(original);
+    candidate.columns![0]!.physical.defaultValue = {
+      kind: 'literal',
+      literalType: 'number',
+      value: '7',
+    };
+    candidate.keys = [
+      {
+        id: 'k',
+        tableId: 't',
+        name: 'app_key',
+        kind: 'unique',
+        scope: 'physical',
+        columnIds: ['c'],
+      },
+    ];
+    expect(codes(candidate)).toEqual([]);
+    const issues = validateDatabaseDocument(candidate, candidate.database, {
+      mode: 'write',
+      previous: original,
+    });
+    expect(issues.map((issue) => issue.code)).toContain('default.not-ready');
+    expect(issues.map((issue) => issue.code)).toContain('type.declaration-not-ready');
+    expect(
+      validateDatabaseDocument(candidate, candidate.database, {
+        mode: 'write',
+        previous: candidate,
+      }),
+    ).toEqual([]);
+    candidate.columns![0]!.physical.defaultValue = { kind: 'none' };
+    candidate.keys = [];
+    expect(
+      validateDatabaseDocument(candidate, candidate.database, {
+        mode: 'write',
+        previous: original,
+      }),
+    ).toEqual([]);
+  });
   it('requires verified MySQL SRID presets while preserving unchanged stored originals', () => {
     const original = fixture('mysql');
     original.keys = [];

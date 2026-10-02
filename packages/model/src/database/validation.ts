@@ -7,7 +7,7 @@ import {
   type DatabaseFeatureFacts,
 } from './features.js';
 import { getDatabaseProfile } from './profiles.js';
-import { literalDecision, inspectNativeLiteralToken } from './literals.js';
+import { literalDecision, inspectNativeLiteralToken, nativeTypeHasCoverage } from './literals.js';
 import { keyEligibility } from './key-policy.js';
 import {
   nativeBuiltinDefaultDecision,
@@ -310,6 +310,10 @@ function collect(
           targetType: target.physical.type,
         }),
       strict: owner?.physical.options.database === 'sqlite' && owner.physical.options.strict,
+      ...(purpose === 'computed' &&
+        target?.physical.generation.kind === 'computed' && {
+          generationStorage: target.physical.generation.storage,
+        }),
     });
     if (!decision.allowed)
       add(
@@ -322,6 +326,18 @@ function collect(
           target?.physical.type,
           owner?.physical.options,
         ],
+        'unsupported',
+      );
+    else if (
+      availability &&
+      !decision.usable &&
+      !(purpose === 'default' && value.kind === 'literal')
+    )
+      add(
+        decision.readinessCode ?? 'expression.not-ready',
+        objectId,
+        path,
+        [value, ids.map((id) => columns.get(id)?.physical.type), target?.physical.type, purpose],
         'unsupported',
       );
     return ids;
@@ -717,7 +733,8 @@ function collect(
     const defaultValue = column.physical.defaultValue;
     if (
       availability &&
-      !hasDatabaseCoverage(nativeDefaultCoverage) &&
+      (!hasDatabaseCoverage(nativeDefaultCoverage) ||
+        !nativeTypeHasCoverage(context, type, tableMode?.strict)) &&
       defaultValue.kind !== 'none' &&
       defaultValue.kind !== 'legacyExpression'
     )
@@ -899,6 +916,10 @@ function collect(
       const ownerOptions = tables.get(key.tableId)!.physical.options;
       const columnOptions = column.physical.options;
       const eligibility = keyEligibility(context, column.physical.type, {
+        kind: key.kind,
+        strict:
+          tables.get(key.tableId)!.physical.options.database === 'sqlite' &&
+          (tables.get(key.tableId)!.physical.options as { strict: boolean }).strict,
         generation: column.physical.generation,
         ...(columnOptions.database === 'mysql' &&
           ownerOptions.database === 'mysql' && {
@@ -923,6 +944,14 @@ function collect(
               : undefined,
           ],
           eligibility.category ?? 'unsupported',
+        );
+      else if (availability && !eligibility.usable)
+        add(
+          eligibility.readinessCode ?? 'key.not-ready',
+          key.id,
+          `${path}/columnIds`,
+          [key.kind, key.columnIds, column.physical.type, column.physical.generation],
+          'unsupported',
         );
     }
     if (context.kind === 'mysql') {
