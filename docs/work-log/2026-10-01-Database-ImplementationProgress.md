@@ -36,6 +36,8 @@
 
 ## 다음 작업
 
+- C6 제한 literal parser와 PK/UNIQUE 공통 정책을 연결했다. [결과](2026-10-02-Database-NativeLiteralKeyPolicy.md). PG65/MySQL37의 기본 선언 및 키 허용/거부를 실제 실행하고 SQLite23/STRICT 및 대표 리터럴 roundtrip을 확인했다. main literal/key/validation 350개 테스트 통과. 특수 parser·전체 AST 결과 타입 추론·advanced 환경 조건은 명시 미완료이며 usable/coverage false를 유지한다.
+
 - native 이력 조회·trusted undo/삭제 restore를 실제 AppModule에 연결했다. [결과](2026-10-02-Database-NativeHistory.md). 계약 5개와 실제 AppModule 격리 REST/DB 35개, server typecheck를 통과했다. 원본 ledger/ACK/tombstone 출처와 fresh-ID 복구·권한 변경 뒤 동일 ACK 재생을 확인했다. MCP/web 소비는 다음 독립 단위다.
 
 - native ERD 읽기·공유 참조/메모·배치 명령과 UI를 연결했다. [결과](2026-10-02-Database-NativeCanvas.md). 세 DB 실제 HTTP 저장/ACK와 물리 필드 원본 보존을 확인했다. 개인 UI 저장은 DB revision 계약이 미연결이라 차단하며 도메인 lifecycle/소유권 이동·clipboard·고급 배치는 남았다.

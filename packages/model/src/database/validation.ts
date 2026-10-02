@@ -7,6 +7,8 @@ import {
   type DatabaseFeatureFacts,
 } from './features.js';
 import { getDatabaseProfile } from './profiles.js';
+import { literalDecision, inspectNativeLiteralToken } from './literals.js';
+import { keyEligibility } from './key-policy.js';
 import { nativeReferenceProblems } from './reference-graph.js';
 import {
   nativeExpressionColumnIds,
@@ -237,6 +239,10 @@ function collect(
     const pending = [value];
     while (pending.length) {
       const node = pending.pop()!;
+      if (node.kind === 'literal') {
+        const decision = inspectNativeLiteralToken(node);
+        if (!decision.allowed) add(decision.code!, objectId, path, node, decision.category);
+      }
       if (node.kind === 'call') {
         if (!node.functionId.startsWith(`${context.kind}:`))
           add('expression.function-not-supported', objectId, path, node, 'unsupported');
@@ -589,7 +595,7 @@ function collect(
       }
     }
     const defaultValue = column.physical.defaultValue;
-    if (isArray(type) && defaultValue.kind !== 'none' && defaultValue.kind !== 'null')
+    if (isArray(type) && defaultValue.kind === 'expression')
       add(
         'default.array-literal-not-supported',
         column.id,
@@ -619,6 +625,25 @@ function collect(
         table.id,
         'default',
       );
+      if (
+        defaultValue.expression.kind === 'literal' &&
+        defaultValue.expression.literalType !== 'typedText'
+      ) {
+        const decision = literalDecision(context, type, defaultValue.expression, {
+          nullable: column.physical.nullable,
+          primary: !!primary,
+          strict: table.physical.options.database === 'sqlite' && table.physical.options.strict,
+          ...(type.kind === 'projectEnum' && { enumValues: enums.get(type.enumId)?.values ?? [] }),
+        });
+        if (!decision.allowed)
+          add(
+            decision.code!,
+            column.id,
+            `${path}/defaultValue/expression`,
+            [type, defaultValue],
+            decision.category,
+          );
+      }
       if (defaultValue.expression.kind === 'call') {
         const functionName = defaultValue.expression.functionId.split(':')[1];
         const typeName = definition?.sqlName;
@@ -635,104 +660,25 @@ function collect(
           add('default.type-mismatch', column.id, `${path}/defaultValue`, [type, defaultValue]);
       }
     } else if (defaultValue.kind === 'literal') {
-      if (
-        type.kind === 'projectEnum' &&
-        (defaultValue.literalType !== 'string' ||
-          !enums.get(type.enumId)?.values.includes(String(defaultValue.value)))
-      )
-        add('default.enum-value-invalid', column.id, `${path}/defaultValue`, [
-          defaultValue,
-          enums.get(type.enumId)?.values,
-        ]);
-      if (
-        type.kind === 'valueList' &&
-        type.typeId === 'mysql:enum' &&
-        (defaultValue.literalType !== 'string' || !type.values.includes(String(defaultValue.value)))
-      )
-        add('default.enum-value-invalid', column.id, `${path}/defaultValue`, [
-          defaultValue,
-          type.values,
-        ]);
-      if (definition && context.kind !== 'sqlite') {
-        const value = defaultValue.value;
-        const category = definition.category;
-        const booleanAlias =
-          type.kind === 'builtin' &&
-          type.database === 'mysql' &&
-          type.declarationAlias === 'boolean' &&
-          defaultValue.literalType === 'boolean';
-        if (
-          category === 'integer' &&
-          !booleanAlias &&
-          (defaultValue.literalType !== 'number' ||
-            typeof value !== 'string' ||
-            !/^[+-]?\d+$/.test(value))
-        )
-          add('default.type-mismatch', column.id, `${path}/defaultValue`, [defaultValue, type]);
-        else if (category === 'integer' && typeof value === 'string') {
-          const width = {
-            smallint: 16,
-            integer: 32,
-            bigint: 64,
-            tinyint: 8,
-            mediumint: 24,
-            int: 32,
-          }[definition.sqlName];
-          if (width) {
-            const unsigned =
-              type.kind === 'builtin' &&
-              type.database === 'mysql' &&
-              'unsigned' in type.parameters &&
-              type.parameters.unsigned;
-            const upper = (1n << BigInt(unsigned ? width : width - 1)) - 1n;
-            const lower = unsigned ? 0n : -upper - 1n;
-            if (BigInt(value) < lower || BigInt(value) > upper)
-              add('default.number-out-of-range', column.id, `${path}/defaultValue`, [
-                defaultValue,
-                type,
-              ]);
-          }
-        }
-        if (
-          (category === 'decimal' || category === 'floating') &&
-          defaultValue.literalType !== 'number'
-        )
-          add('default.type-mismatch', column.id, `${path}/defaultValue`, [defaultValue, type]);
-        if (
-          category === 'decimal' &&
-          defaultValue.literalType === 'number' &&
-          typeof value === 'string' &&
-          type.kind === 'builtin'
-        ) {
-          const p = 'precision' in type.parameters ? type.parameters.precision : undefined;
-          const s = 'scale' in type.parameters ? type.parameters.scale : undefined;
-          const precision = p ?? (context.kind === 'mysql' ? 10 : undefined);
-          if (precision !== undefined && !decimalFits(value, precision, s ?? 0))
-            add('default.number-out-of-range', column.id, `${path}/defaultValue`, [
-              type,
-              defaultValue,
-            ]);
-        }
-        if (category === 'boolean' && defaultValue.literalType !== 'boolean')
-          add('default.type-mismatch', column.id, `${path}/defaultValue`, [defaultValue, type]);
-        if (
-          category === 'json' &&
-          ['json', 'jsonb'].includes(definition.sqlName) &&
-          defaultValue.literalType !== 'json'
-        )
-          add('default.type-mismatch', column.id, `${path}/defaultValue`, [defaultValue, type]);
-        if (category === 'string' && defaultValue.literalType !== 'string')
-          add('default.type-mismatch', column.id, `${path}/defaultValue`, [defaultValue, type]);
-        if (
-          category === 'string' &&
-          typeof value === 'string' &&
-          type.kind === 'builtin' &&
-          'length' in type.parameters &&
-          type.parameters.length !== undefined &&
-          [...value].length > type.parameters.length
-        )
-          add('default.length-exceeded', column.id, `${path}/defaultValue`, [defaultValue, type]);
-      }
+      const decision = literalDecision(context, type, defaultValue, {
+        nullable: column.physical.nullable,
+        primary: !!primary,
+        strict: table.physical.options.database === 'sqlite' && table.physical.options.strict,
+        ...(type.kind === 'projectEnum' && { enumValues: enums.get(type.enumId)?.values ?? [] }),
+      });
+      if (!decision.allowed)
+        add(
+          decision.code!,
+          column.id,
+          `${path}/defaultValue`,
+          [
+            type,
+            defaultValue,
+            type.kind === 'projectEnum' ? enums.get(type.enumId)?.values : undefined,
+            table.physical.options,
+          ],
+          decision.category,
+        );
     }
   }
 
@@ -789,34 +735,56 @@ function collect(
     for (const id of key.columnIds) {
       const column = visibleColumn(id, key.tableId);
       if (!column) continue;
-      const definition = scalarType(column.physical.type);
-      if (
-        context.kind === 'sqlite' &&
-        key.kind === 'primary' &&
-        column.physical.generation.kind === 'computed'
-      )
+      const ownerOptions = tables.get(key.tableId)!.physical.options;
+      const columnOptions = column.physical.options;
+      const eligibility = keyEligibility(context, column.physical.type, {
+        generation: column.physical.generation,
+        ...(columnOptions.database === 'mysql' &&
+          ownerOptions.database === 'mysql' && {
+            charset: columnOptions.charset ?? ownerOptions.charset ?? 'utf8mb4',
+          }),
+      });
+      if (key.kind === 'primary' ? !eligibility.primaryAllowed : !eligibility.uniqueAllowed)
         add(
-          'key.generated-not-supported',
+          eligibility.code ?? 'key.type-not-supported',
           key.id,
           `${path}/columnIds`,
-          [key.columnIds, column.physical.generation],
-          'unsupported',
+          [
+            key.kind,
+            key.columnIds,
+            column.physical.type,
+            eligibility.code === 'key.generated-not-supported'
+              ? column.physical.generation
+              : undefined,
+            ['key.length-exceeded', 'key.charset-unverified'].includes(eligibility.code ?? '')
+              ? [columnOptions, ownerOptions]
+              : undefined,
+          ],
+          eligibility.category ?? 'unsupported',
         );
-      if (
-        (context.kind === 'postgresql' && definition?.id === 'postgresql:json') ||
-        (context.kind === 'mysql' &&
-          definition &&
-          (definition.category === 'json' ||
-            definition.category === 'geometry' ||
-            /^(tiny|medium|long)?(text|blob)$/.test(definition.sqlName)))
-      )
-        add(
-          'key.type-not-supported',
-          key.id,
-          `${path}/columnIds`,
-          [key.columnIds, column.physical.type],
-          'unsupported',
-        );
+    }
+    if (context.kind === 'mysql') {
+      const ownerOptions = tables.get(key.tableId)!.physical.options;
+      const byteCount = key.columnIds.reduce((sum, id) => {
+        const column = visibleColumn(id, key.tableId);
+        if (!column) return sum;
+        const columnOptions = column.physical.options;
+        const decision = keyEligibility(context, column.physical.type, {
+          ...(columnOptions.database === 'mysql' &&
+            ownerOptions.database === 'mysql' && {
+              charset: columnOptions.charset ?? ownerOptions.charset ?? 'utf8mb4',
+            }),
+        });
+        return sum + (decision.estimatedBytes ?? 0);
+      }, 0);
+      if (byteCount > 3072)
+        add('key.length-exceeded', key.id, `${path}/columnIds`, [
+          key.kind,
+          key.columnIds.map((id) => {
+            const c = columns.get(id);
+            return [id, c?.physical.type, c?.physical.options, ownerOptions];
+          }),
+        ]);
     }
   }
 
@@ -1055,6 +1023,23 @@ function collect(
     for (let i = 0; i < index.parts.length; i++) {
       const part = index.parts[i]!;
       expression(part.expression, index.id, `${path}/parts/${i}`, index.tableId, 'index');
+      if (
+        context.kind === 'postgresql' &&
+        index.options.database === 'postgresql' &&
+        index.options.method === 'btree' &&
+        part.expression.kind === 'column'
+      ) {
+        const column = visibleColumn(part.expression.columnId, index.tableId);
+        const decision = column && keyEligibility(context, column.physical.type);
+        if (decision && !decision.uniqueAllowed)
+          add(
+            'index.type-not-supported',
+            index.id,
+            `${path}/parts/${i}`,
+            [part, column!.physical.type],
+            'unsupported',
+          );
+      }
       if (part.expression.kind !== 'column')
         feature('expressionIndex', index.id, `${path}/parts/${i}`, {}, part.expression);
       if (part.prefixLength !== undefined && context.kind !== 'mysql')
@@ -1221,20 +1206,4 @@ function compatible(
         ('scale' in b.parameters ? (b.parameters.scale ?? 0) : 0)
     );
   return requestFingerprint(a.parameters) === requestFingerprint(b.parameters);
-}
-
-/** Compare decimal digits after scale rounding without converting the value to JS number. */
-function decimalFits(value: string, precision: number, scale: number): boolean {
-  const [mantissa = '', exponent = '0'] = value.replace(/^[+-]/, '').toLowerCase().split('e');
-  const [whole = '', fraction = ''] = mantissa.split('.');
-  const digits = (whole + fraction).replace(/^0+/, '') || '0';
-  if (digits === '0') return true;
-  const shift = Number(exponent) - fraction.length + scale;
-  if (shift >= 0) return digits.length + shift <= precision;
-  const divisorPower = -shift;
-  if (divisorPower > digits.length) return true;
-  const divisor = 10n ** BigInt(divisorPower);
-  const number = BigInt(digits);
-  const rounded = number / divisor + ((number % divisor) * 2n >= divisor ? 1n : 0n);
-  return rounded < 10n ** BigInt(precision);
 }
