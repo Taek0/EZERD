@@ -14,6 +14,7 @@ import './native-project-view.css';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
+import { NativeDomainEditor } from './NativeDomainEditor.js';
 import { useNativeDurableState } from './native-export-state.js';
 import { NativeHistoryDialog } from './NativeHistoryDialog.js';
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
@@ -109,6 +110,7 @@ export function NativeProjectView({
   const [mode, setMode] = useState<'physical' | 'logical'>('physical');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [pending, setPending] = useState<NativePendingSave | null>(null);
   const [saving, setSaving] = useState(false);
@@ -165,6 +167,7 @@ export function NativeProjectView({
     setPendingBlocked(!!userId);
     setSaveError('');
     setEditingColumn(null);
+    setSelectedDomain(null);
     setSaving(false);
     savingRef.current = false;
     if (!userId) return;
@@ -308,6 +311,10 @@ export function NativeProjectView({
     id;
   function focusIssue(id: string | null) {
     if (!doc || !id) return;
+    if (doc.domains.some((item) => item.id === id)) {
+      setSelectedDomain(id);
+      return;
+    }
     const owner =
       doc.tables?.find((table) => table.id === id)?.id ??
       doc.columns?.find((column) => column.id === id)?.tableId ??
@@ -316,6 +323,7 @@ export function NativeProjectView({
       doc.checks?.find((check) => check.id === id)?.tableId ??
       doc.tableRelations?.find((relation) => relation.id === id)?.sourceTableId;
     if (owner) {
+      setSelectedDomain(null);
       setSelected(owner);
       setDomain('*');
       setSearch('');
@@ -416,12 +424,27 @@ export function NativeProjectView({
             onReload={onReload}
             mode={mode}
             {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
+            {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
+            onSelectDomain={setSelectedDomain}
             onSelect={(tableId, columnId) => {
+              setSelectedDomain(null);
               setSelected(tableId);
               setEditingColumn(columnId ?? null);
               setDomain('*');
               setSearch('');
             }}
+          />
+          <NativeDomainEditor
+            key={`domains:${userId ?? ''}:${snapshot.project.id}`}
+            document={doc}
+            snapshot={snapshot}
+            {...(userId ? { userId } : {})}
+            editable={editable}
+            busy={editorBusy}
+            onSave={save}
+            {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
+            {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
+            onSelectDomain={setSelectedDomain}
           />
           <div className="native-project-content" aria-label={t('설계 조회')}>
             <aside className="native-table-nav">
@@ -459,6 +482,7 @@ export function NativeProjectView({
                       aria-current={selectedTable?.id === table.id ? 'true' : undefined}
                       onClick={() => {
                         setSelected(table.id);
+                        setSelectedDomain(null);
                       }}
                     >
                       {tableName(table.id)}

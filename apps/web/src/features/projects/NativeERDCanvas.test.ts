@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createEmptyNativeDocument,
   createNativeTable,
@@ -31,6 +31,7 @@ import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeEditorForm } from './native-editor-form.js';
 const exportBlocker = vi.hoisted(() => vi.fn());
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker: exportBlocker }));
+beforeEach(() => vi.stubGlobal('localStorage', memory()));
 afterEach(() => {
   vi.unstubAllGlobals();
   exportBlocker.mockClear();
@@ -119,6 +120,78 @@ function personalFixture() {
   };
   return { ...f, candidate, personal };
 }
+describe('native canvas IDs on HTTP LAN crypto', () => {
+  it('creates reference and pending UUIDs without randomUUID or subtle and preserves recovery identity', async () => {
+    const f = personalFixture(),
+      store = memory();
+    const getRandomValues = vi.fn(crypto.getRandomValues.bind(crypto));
+    vi.stubGlobal('crypto', { getRandomValues });
+    vi.stubGlobal('isSecureContext', false);
+    expect(crypto.randomUUID).toBeUndefined();
+    expect(crypto.subtle).toBeUndefined();
+    const node = f.candidate.layout.nodes.find(
+      (node) => node.objectId === 'a' && node.viewId === '__tables__',
+    )!;
+    const absent = {
+      ...f.document,
+      layout: {
+        ...f.document.layout,
+        nodes: f.document.layout.nodes.filter((current) => current.id !== node.id),
+      },
+    };
+    const command = nativeCanvasMoveCommand(absent, node, { x: 50, y: 60 });
+    expect(command.type).toBe('add_table_reference');
+    if (command.type !== 'add_table_reference') throw Error('Expected new reference');
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    expect(command.nodeId).toMatch(uuid);
+    const changed = nativeCanvasPersonalCandidate(f.candidate, {
+      type: 'set_viewport',
+      value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
+    });
+    const pending = stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
+    expect(pending.revision).toMatch(uuid);
+    expect(pending.revision).not.toBe(command.nodeId);
+    expect(loadNativeCanvasPersonalPending(userId, projectId, store)?.revision).toBe(
+      pending.revision,
+    );
+    await recoverNativeCanvasPersonal(
+      pending,
+      f.snapshot,
+      false,
+      store,
+      vi
+        .fn()
+        .mockResolvedValue({ ...f.personal, version: 3, state: pending.state }) as typeof request,
+    );
+    expect(loadNativeCanvasPersonalPending(userId, projectId, store)).toBeNull();
+    expect(getRandomValues).toHaveBeenCalledTimes(2);
+  });
+  it('renders editable canvas action and fresh input revisions with only getRandomValues', () => {
+    const f = fixture(),
+      before = structuredClone(f.document);
+    const getRandomValues = vi.fn(crypto.getRandomValues.bind(crypto));
+    vi.stubGlobal('crypto', { getRandomValues });
+    vi.stubGlobal('isSecureContext', false);
+    const save = vi.fn(async () => true);
+    const html = renderToStaticMarkup(
+      createElement(NativeERDCanvas, {
+        ...f,
+        userId,
+        editable: true,
+        busy: false,
+        mode: 'physical',
+        onSave: save,
+        onReload() {},
+        onSelect() {},
+      }),
+    );
+    expect(html).toContain('native-erd-actions');
+    expect(html).toContain('type="submit"');
+    expect(getRandomValues).toHaveBeenCalledTimes(2);
+    expect(save).not.toHaveBeenCalled();
+    expect(f.document).toEqual(before);
+  });
+});
 describe('native ERD consumes raw native payloads', () => {
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'renders %s native labels, keys and FK lines without rewriting the document',
@@ -435,7 +508,13 @@ describe('native input registers export blockers even without a durable storage 
         onSave: async () => true,
       }),
     );
-    expect(exportBlocker.mock.calls).toContainEqual([userId, projectId, false, true]);
+    expect(exportBlocker.mock.calls).toContainEqual([
+      userId,
+      projectId,
+      false,
+      true,
+      'property:table:a',
+    ]);
   });
   it('blocks structured form export on loaded dirty input and isolates the actor/project scope', () => {
     const f = fixture(),
@@ -463,7 +542,13 @@ describe('native input registers export blockers even without a durable storage 
         children: () => null,
       }),
     );
-    expect(exportBlocker.mock.calls).toContainEqual([userId, projectId, true, false]);
+    expect(exportBlocker.mock.calls).toContainEqual([
+      userId,
+      projectId,
+      true,
+      false,
+      'editor:form',
+    ]);
     expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).not.toContain('disabled=""');
   });
   it('blocks canvas form export on storage failure and rejects pending staging before any PUT', () => {
