@@ -27,4 +27,10 @@
 
 - main browser QA: private view의 저장 노드/메모/FK를 PNG decode·실파일로 확인하고 미저장 drag/form/local pan/zoom이 제외되는지 비교한다. 공유 PNG 및 readonly 개인 view도 함께 확인한다. 이 단위는 HTTP 서버 또는 실제 browser를 새로 실행하지 않았다.
 - 이미지 범위는 기존 공유 PNG와 같은 저장된 전체 view scene이며 viewport screenshot이 아니다. 고급 wrapping/font/style 개선이나 PNG의 서버 생성은 추가하지 않았다.
+
+## 실제 브라우저 다운로드 후속
+
+- 부모 loopback3139의 자체 UUID QA DB에서 공유 도메인을 저장하고 개인 화면 Private PNG QA/개인 메모를 실제 guarded PUT으로 저장했다. 그 화면의 PNG 버튼으로 실파일17526바이트를 다운로드하고 이미지 decode를 확인했다. [PNG](assets/2026-10-02-Database-NativePrivatePNGQA.png)는 저장된 한국어 메모를 표시한다.
+- 두 번 확대하고 새 미저장 메모를 입력한 상태에서 다시 내보냈다. 두 실파일의 SHA256이 동일한 `cd485ac515bf235c0f805ed74773dc1b5546f50a3093e61aadc371e457aba56e`로, 로컬 확대/미저장 입력을 포함하지 않음을 확인했다. 원본 Downloads는 삭제하지 않았다.
+- 이 후속은 저장된 개인 메모·실제 파일/픽셀 소비의 증거다. FK/표 스타일의 엔진별 scene tests, actor/storage/head race 검증과 구분하며 모든 복구 브라우저 QA를 완료했다고 주장하지 않는다.
 - 이 경로는 읽기 전용 GET 결과와 로컬 writer 상태를 재검증한다. 서버 export lock/atomic paired snapshot 계약을 추가하지 않았으므로 마지막 검증 이후 타기기의 저장을 봉쇄하는 기능은 없다. physical coverage/DDL export/개인 저장 권한 및 전체 native 기능 완료를 주장하지 않는다.
