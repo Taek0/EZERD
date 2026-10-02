@@ -23,6 +23,8 @@ export function nativeEditorErrorCode(cause: unknown, fallback = 'native.input-i
 }
 
 registerTranslations({
+  '공간 참조계는 검증된 SRID 0 또는 4326을 사용하세요. 현재 원문은 유지됩니다.':
+    'Use verified spatial reference SRID 0 or 4326. The current original is preserved.',
   '인덱스 키 컬럼을 먼저 추가하세요.': 'Add a column for the index key first.',
   '인덱스 키 컬럼 또는 키 식을 추가하세요.': 'Add an index key column or expression.',
   '식에서 사용할 컬럼을 선택하세요.': 'Select a column for the expression.',
@@ -104,6 +106,8 @@ const conditions: Record<string, string> = {
   'default.type-mismatch': '식의 결과 타입을 대상 컬럼 타입에 맞추세요.',
   'default.environment-value-unverified':
     '환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.',
+  'type.srid-unverified':
+    '공간 참조계는 검증된 SRID 0 또는 4326을 사용하세요. 현재 원문은 유지됩니다.',
   'expression.non-deterministic': '이 용도에서는 값이 일정하게 계산되는 함수만 사용할 수 있습니다.',
   'expression.division-by-zero': '0으로 나누는 식은 사용할 수 없습니다.',
   'default.column-reference-not-supported': '기본값 식에서는 다른 컬럼을 참조할 수 없습니다.',

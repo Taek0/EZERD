@@ -111,6 +111,39 @@ function withRelation(kind: DatabaseKind): NativeDesignDocument {
 }
 
 describe('native DB policy is separate from draft and activation rules', () => {
+  it('requires verified MySQL SRID presets while preserving unchanged stored originals', () => {
+    const original = fixture('mysql');
+    original.keys = [];
+    original.columns![0]!.physical.type = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:point',
+      parameters: { srid: 999999 },
+    };
+    expect(codes(original)).toContain('type.srid-unverified');
+    expect(
+      validateDatabaseDocument(original, original.database, { mode: 'write', previous: original }),
+    ).toEqual([]);
+    expect(
+      validateDatabaseDocument(original, original.database, { mode: 'export' }).map(
+        (issue) => issue.code,
+      ),
+    ).toContain('type.srid-unverified');
+    const changed = structuredClone(original);
+    const type = changed.columns![0]!.physical.type;
+    if (type.kind !== 'builtin' || !('srid' in type.parameters)) throw Error('fixture');
+    type.parameters.srid = 999998;
+    expect(
+      validateDatabaseDocument(changed, changed.database, {
+        mode: 'write',
+        previous: original,
+      }).map((issue) => issue.code),
+    ).toContain('type.srid-unverified');
+    for (const srid of [0, 4326]) {
+      type.parameters.srid = srid;
+      expect(codes(changed)).toEqual([]);
+    }
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'validates a native %s design without cross-DB inference',
     (kind) => {

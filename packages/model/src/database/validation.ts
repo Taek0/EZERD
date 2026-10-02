@@ -453,6 +453,18 @@ function collect(
           add('type.not-implemented', column.id, `${path}/type`, type, 'unsupported');
         if (tableMode?.strict && !definition.sqliteStrict)
           add('type.strict-not-supported', column.id, `${path}/type`, [type, true], 'unsupported');
+        if ('srid' in type.parameters && type.parameters.srid !== undefined) {
+          const srid = type.parameters.srid;
+          feature('srid', column.id, `${path}/type/parameters/srid`, { typeId: type.typeId }, srid);
+          if (![0, 4326].includes(srid))
+            add(
+              'type.srid-unverified',
+              column.id,
+              `${path}/type/parameters/srid`,
+              srid,
+              'environment',
+            );
+        }
       }
       if (isArray(type))
         feature(
