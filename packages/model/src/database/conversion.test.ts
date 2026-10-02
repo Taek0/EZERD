@@ -74,20 +74,23 @@ describe('native DB conversion without loss or readiness overrides', () => {
       expect.objectContaining({ objectId: 'n', category: 'invalid' }),
     );
   });
-  it('does not promote any current catalog entry to verified', () => {
+  it('consumes activated catalog coverage without mutating or promoting it in the planner', () => {
     expect(databaseTypeCatalog.length).toBeGreaterThan(0);
-    expect(databaseTypeCatalog.every((type) => !hasDatabaseCoverage(type.coverage))).toBe(true);
+    const before = structuredClone(databaseTypeCatalog);
+    for (const id of ['postgresql:integer', 'mysql:int'])
+      expect(
+        hasDatabaseCoverage(databaseTypeCatalog.find((type) => type.id === id)!.coverage),
+      ).toBe(true);
     const document = physical();
     const issues = validateDatabaseDocument(document, pg, { mode: 'write' });
-    expect(issues).toContainEqual(
-      expect.objectContaining({ code: 'type.not-implemented', objectId: 'c' }),
-    );
+    expect(issues.some((issue) => issue.code === 'type.not-implemented')).toBe(false);
     const plan = planNativeDatabaseConversion(document, pg, mysql);
     expect(plan.canApply).toBe(false);
     expect(plan.document).toBeUndefined();
     expect(plan.issues).toContainEqual(
-      expect.objectContaining({ code: 'database.conversion-target-not-ready', path: '/target' }),
+      expect.objectContaining({ code: 'database.conversion-mapping-unverified', objectId: 'c' }),
     );
+    expect(databaseTypeCatalog).toEqual(before);
   });
   it.each([
     { kind: 'builtin', database: 'postgresql', typeId: 'postgresql:integer', parameters: {} },
@@ -102,21 +105,32 @@ describe('native DB conversion without loss or readiness overrides', () => {
     { kind: 'builtin', database: 'postgresql', typeId: 'postgresql:uuid', parameters: {} },
     { kind: 'builtin', database: 'postgresql', typeId: 'postgresql:boolean', parameters: {} },
   ] satisfies NativeColumnType[])(
-    'keeps $typeId blocked by actual readiness or unsupported mapping',
+    'uses verified PG integers and blocks unverified $typeId mappings',
     (type) => {
       const document = physical();
       document.columns[0]!.physical.type = type;
       const before = structuredClone(document);
       const plan = planNativeDatabaseConversion(document, pg, mysql);
+      if (
+        type.kind === 'builtin' &&
+        ['postgresql:integer', 'postgresql:bigint'].includes(type.typeId)
+      ) {
+        expect(plan.canApply).toBe(true);
+        expect(plan.document).toEqual(plan.candidate);
+        expect(plan.issues).toEqual([
+          expect.objectContaining({
+            code: 'mysql.environment-profile-assumed',
+            severity: 'warning',
+          }),
+        ]);
+        expect(document).toEqual(before);
+        return;
+      }
       expect(plan.canApply).toBe(false);
       expect(plan.document).toBeUndefined();
       expect(plan.issues).toContainEqual(
         expect.objectContaining({
-          code:
-            type.kind === 'builtin' &&
-            ['postgresql:integer', 'postgresql:bigint'].includes(type.typeId)
-              ? 'database.conversion-target-not-ready'
-              : 'database.conversion-mapping-unverified',
+          code: 'database.conversion-mapping-unverified',
           objectId: 'c',
           path: '/columns/c/physical/type',
         }),
@@ -147,21 +161,31 @@ describe('native DB conversion without loss or readiness overrides', () => {
     { kind: 'builtin', database: 'mysql', typeId: 'mysql:int', parameters: { unsigned: true } },
     { kind: 'builtin', database: 'mysql', typeId: 'mysql:varchar', parameters: { length: 255 } },
   ] satisfies NativeColumnType[])(
-    'keeps MySQL $typeId blocked by actual readiness or unsupported mapping',
+    'uses verified signed MySQL integers and blocks unverified $typeId mappings',
     (type) => {
       const document = physical('mysql');
       document.columns[0]!.physical.type = type;
       const plan = planNativeDatabaseConversion(document, mysql, pg);
+      if (
+        type.kind === 'builtin' &&
+        ['mysql:int', 'mysql:bigint'].includes(type.typeId) &&
+        (!('unsigned' in type.parameters) || type.parameters.unsigned === false)
+      ) {
+        expect(plan.canApply).toBe(true);
+        expect(plan.document).toEqual(plan.candidate);
+        expect(plan.issues).toEqual([
+          expect.objectContaining({
+            code: 'mysql.environment-profile-assumed',
+            severity: 'warning',
+          }),
+        ]);
+        return;
+      }
       expect(plan.canApply).toBe(false);
       expect(plan.document).toBeUndefined();
       expect(plan.issues).toContainEqual(
         expect.objectContaining({
-          code:
-            type.kind === 'builtin' &&
-            ['mysql:int', 'mysql:bigint'].includes(type.typeId) &&
-            (!('unsigned' in type.parameters) || type.parameters.unsigned === false)
-              ? 'database.conversion-target-not-ready'
-              : 'database.conversion-mapping-unverified',
+          code: 'database.conversion-mapping-unverified',
           objectId: 'c',
         }),
       );

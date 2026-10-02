@@ -27,3 +27,10 @@
 - 실제 AppModule + isolated DB API에서 세 DB v1 legacy ENUM 및 안전한 native2 legacy export/import, 독립 project namespace, 원문/labels/공유 canvas/private 제외, 예산, 권한/보관 workspace, rollback을 검증한다.
 - unverified native 타입/옵션/keys/FK/index/check, changed/dangling legacy references, namespace/type의 위조 origin, context/source metadata 및 preview 변조는 차단한다. 이력에서 live ENUM column restore와 unsafe deleted ENUM restore의 경계를 확인한다.
 - targeted format, helper 및 관련 integration, strict TypeScript만 실행하며 전체 pnpm check/build는 main 담당이다. 변경된 정책 때문에 과거 transfer 테스트의 구체 기대값을 교정해야 하면 기존 파일을 직접 수정하지 않고 main에 hunk/새 동작을 보고한다.
+
+## Basic activation 이후 승인된 transfer QA 갱신
+
+- 부모가 basic type/table/comment/namespace/STRICT 등의 coverage를 활성화한 뒤, 두 담당 transfer integration 파일의 과거 type.not-implemented 기대값을 현재 정책 경계로 교정하도록 승인했다. 기존 model/validation/default/onUpdate/gate 정책은 수정하지 않는다.
+- 기존 음성 샘플은 유지하고 실제 차단 원인(참조를 잃은 ENUM 정의의 enumType 또는 legacy context, invalid STRICT 타입, 미검증 PK/FK)을 명시 검사한다. 별도 양성 샘플로 legacy origin을 유지한 기본 native 컬럼과 새 순수 native 프로젝트의 기본 타입/유효한 SQLite STRICT를 201·원문·graph/remap·audit/hash와 검증한다.
+- literal default 1과 WITHOUT ROWID는 별도 false coverage 경계로 추가 검사한다. client source coordinates/empty diagnostics/previous는 authority가 아니며, 기본 타입만 유효한 경우 import를 허용하되 source counters는 새 프로젝트에 복사하지 않는다. 같은 claims로 미검증 default/advanced ENUM를 주입하면 계속 차단한다.
+- actual AppModule + 기존 isolated runner로 신규/기존 transfer 전체를 재실행하고, 두 test의 targeted strict TypeScript/Prettier만 검사한다. full check/build 및 git 작업은 하지 않는다.

@@ -14,6 +14,7 @@ import {
   type SqliteAffinity,
 } from './definitions.js';
 import { getDatabaseProfile } from './profiles.js';
+import { nativeBuiltinCoverage } from './readiness.js';
 
 const pg = 'https://www.postgresql.org/docs/18/datatype.html';
 const my = 'https://dev.mysql.com/doc/refman/8.4/en/data-types.html';
@@ -59,7 +60,7 @@ function define(
     deprecated: false,
     sqliteStrict: false,
     ...extras,
-    coverage: specifiedDatabaseCoverage,
+    coverage: nativeBuiltinCoverage(databaseKind, name),
     sources: Object.freeze([
       databaseKind === 'postgresql' ? pg : databaseKind === 'mysql' ? my : sq,
     ]),

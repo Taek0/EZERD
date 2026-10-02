@@ -275,7 +275,7 @@ describe('server native candidate preparation under trusted context', () => {
       doc.columns![0]!.physical.type = {
         kind: 'builtin',
         database: 'postgresql',
-        typeId: 'postgresql:integer',
+        typeId: 'postgresql:txid_snapshot',
         parameters: {},
       };
       doc.columns![0]!.physical.defaultValue = { kind: 'none' };

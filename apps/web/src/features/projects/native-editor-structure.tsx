@@ -27,6 +27,8 @@ import { nativeKeyColumnPolicies, nativeKeyInput } from './native-editor-option-
 import { NativeAdvancedEditor } from './NativeAdvancedEditor.js';
 
 registerTranslations({
+  '물리·논리 범위를 선택하고 이름을 입력하세요.':
+    'Choose the physical or logical scope and enter a name.',
   '구조 편집': 'Edit structure',
   '새 테이블': 'New table',
   '새 컬럼': 'New column',
@@ -444,7 +446,9 @@ function NativeCreateForm({
               <>
                 <p>
                   {t(
-                    '논리 초안은 저장할 수 있습니다. 신규 물리 기능은 검증 완료 후 사용할 수 있습니다.',
+                    policy.feature(action === 'table' ? 'table' : 'column').usable
+                      ? '물리·논리 범위를 선택하고 이름을 입력하세요.'
+                      : '논리 초안은 저장할 수 있습니다. 신규 물리 기능은 검증 완료 후 사용할 수 있습니다.',
                   )}
                 </p>
                 {field(

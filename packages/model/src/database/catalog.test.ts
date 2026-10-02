@@ -38,7 +38,7 @@ describe('native database catalog boundaries', () => {
       getDatabaseProfile({ ...pg, profileId: 'postgresql-17' as typeof pg.profileId }),
     ).toThrow();
   });
-  it('records all advanced native type families without advertising them as implemented', () => {
+  it('exposes verified native declarations while preserving the deprecated snapshot boundary', () => {
     for (const id of [
       'postgresql:jsonpath',
       'postgresql:xml',
@@ -53,14 +53,18 @@ describe('native database catalog boundaries', () => {
       'mysql:geometrycollection',
       'sqlite:any',
     ] as const) {
-      expect(getDatabaseType(id)?.coverage.availability).toBe('specified');
+      expect(hasDatabaseCoverage(getDatabaseType(id)!.coverage)).toBe(true);
     }
     expect(new Set(databaseTypeCatalog.map((type) => type.id)).size).toBe(
       databaseTypeCatalog.length,
     );
-    expect(listDatabaseTypes(mysql)).toEqual([]);
-    expect(listDatabaseTypes(pg)).toEqual([]);
-    expect(listDatabaseTypes(sqlite)).toEqual([]);
+    expect(listDatabaseTypes(mysql)).toHaveLength(37);
+    expect(listDatabaseTypes(pg)).toHaveLength(64);
+    expect(listDatabaseTypes(sqlite)).toHaveLength(23);
+    expect(listDatabaseTypes(pg).some((type) => type.id === 'postgresql:txid_snapshot')).toBe(
+      false,
+    );
+    expect(getDatabaseType('postgresql:txid_snapshot')?.coverage.availability).toBe('specified');
   });
   it('preserves serial semantics and does not allow SQL snippets through aliases', () => {
     expect(resolveDatabaseType(pg, 'serial8')).toMatchObject({
@@ -207,7 +211,7 @@ describe('SQLite modes and conditional native features', () => {
     ).toMatchObject({ supported: false });
     expect(
       checkDatabaseFeature(sqlite, 'column', { strict: true, typeId: 'sqlite:text' }),
-    ).toMatchObject({ supported: true, usable: false });
+    ).toMatchObject({ supported: true, usable: true });
   });
   it('distinguishes engines that have native arrays, ENUM objects and SET', () => {
     expect(checkDatabaseFeature(mysql, 'array', { typeId: 'mysql:int' }).supported).toBe(false);

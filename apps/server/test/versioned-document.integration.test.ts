@@ -218,8 +218,13 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           JSON.stringify(native),
         ]);
         const gated = await request(`/projects/${id}/ddl`);
-        expect(gated.data).toMatchObject({ documentSchemaVersion: 2, canExport: false, sql: '' });
-        expect(gated.data.issues.length).toBeGreaterThan(0);
+        if (kind === 'postgresql') {
+          expect(gated.data).toMatchObject({ documentSchemaVersion: 2, canExport: true });
+          expect(gated.data.sql).toContain('REAL');
+        } else {
+          expect(gated.data).toMatchObject({ documentSchemaVersion: 2, canExport: false, sql: '' });
+          expect(gated.data.issues.length).toBeGreaterThan(0);
+        }
       },
     );
     it.each(['postgresql', 'mysql', 'sqlite'])(
@@ -1083,11 +1088,15 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           const forbidden = structuredClone(next.document);
           forbidden.columns[0].physical.type =
             kind === 'postgresql'
-              ? { kind: 'builtin', database: kind, typeId: 'postgresql:text', parameters: {} }
+              ? { kind: 'builtin', database: kind, typeId: 'postgresql:integer', parameters: {} }
               : kind === 'mysql'
                 ? { kind: 'builtin', database: kind, typeId: 'mysql:int', parameters: {} }
                 : { kind: 'builtin', database: kind, typeId: 'sqlite:integer', parameters: {} };
           forbidden.columns[0].physical.defaultValue = { kind: 'none' };
+          forbidden.columns[0].physical.generation =
+            kind === 'postgresql'
+              ? { kind: 'identity', database: kind, mode: 'always' }
+              : { kind: 'autoIncrement', database: kind };
           const invalidInput = makeInput(next, forbidden);
           const rejected = await request(
             `/projects/${id}/native-sync/operations`,
@@ -1101,8 +1110,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             reasonCode: 'database.candidate-invalid',
           });
           expect(
-            rejected.data.issues.some(
-              (issue: { code: string }) => issue.code === 'type.not-implemented',
+            rejected.data.issues.some((issue: { path: string }) =>
+              issue.path.includes('/generation'),
             ),
           ).toBe(true);
           expect((await stored(id)).version).toBe(2);

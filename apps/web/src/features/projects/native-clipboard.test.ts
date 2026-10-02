@@ -213,7 +213,7 @@ describe('native clipboard live preparation and menu', () => {
     ).toBe(true);
     expect(() => readNativeClipboard('🙂'.repeat(500001))).toThrow('clipboard.size-limit');
   });
-  it('allocates fresh IDs with LAN getRandomValues and keeps physical feature gates closed', () => {
+  it('allocates fresh IDs on LAN and accepts verified basic physical declarations', () => {
     const getRandomValues = crypto.getRandomValues.bind(crypto);
     vi.stubGlobal('crypto', { getRandomValues });
     vi.stubGlobal('isSecureContext', false);
@@ -240,8 +240,8 @@ describe('native clipboard live preparation and menu', () => {
       createEmptyNativeDocument(source.database),
       clipboardCommand(source),
     );
-    expect(gated.canApply).toBe(false);
-    expect(gated.issues.some((issue) => issue.severity === 'error')).toBe(true);
+    expect(gated.canApply).toBe(true);
+    expect(gated.issues.some((issue) => issue.severity === 'error')).toBe(false);
   });
   it.each([false, true])(
     'renders readonly/archive copy selection and no paste writer (%s)',

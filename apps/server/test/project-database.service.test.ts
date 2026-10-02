@@ -277,7 +277,7 @@ describe('ProjectDatabaseService native conversion policy and transaction orderi
       ForbiddenException,
     );
   });
-  it('prepares the verified integer candidate but preserves every row/audit/baseline when real coverage is false', async () => {
+  it('applies the activated integer plan under lock and audits its exact source/map before notification', async () => {
     const table = createNativeTable(pg, 't');
     table.physical.name = 'records';
     const column = createNativeColumn(pg, table, 'c');
@@ -292,29 +292,46 @@ describe('ProjectDatabaseService native conversion policy and transaction orderi
     const plan = planNativeDatabaseConversion(document, pg, defaultDatabaseContext('mysql'));
     expect(plan.engineVerified).toBe(true);
     expect(plan.candidate?.columns?.[0]?.physical.type).toMatchObject({ typeId: 'mysql:int' });
-    expect(plan.canApply).toBe(false);
+    expect(plan.canApply).toBe(true);
     const f = fixture(document),
       before = structuredClone(f.row),
       input = request();
     expect(await f.service.preview(actorId, projectId, input)).toMatchObject({
-      canChange: false,
-      issues: expect.arrayContaining([
-        expect.objectContaining({ code: 'type.not-implemented', objectId: 'c' }),
-      ]),
+      canChange: true,
+      issues: plan.issues,
     });
-    await expect(f.service.change(actorId, projectId, input)).rejects.toMatchObject({
-      response: {
-        code: 'database.conversion-required',
-        issues: expect.arrayContaining([
-          expect.objectContaining({ code: 'database.conversion-target-not-ready' }),
-        ]),
-      },
+    expect(await f.service.change(actorId, projectId, input)).toMatchObject({
+      changed: true,
+      version: 8,
+      sequence: 12,
+      database: { kind: 'mysql', revision: 4 },
     });
+    // Mock SQL executors record writes without materializing them into the fixture row.
     expect(f.row).toEqual(before);
-    expect(f.updates).toEqual([]);
-    expect(f.inserts).toEqual([]);
-    expect(f.log).not.toContain('baseline-reset');
-    expect(f.publishDatabaseContext).not.toHaveBeenCalled();
+    expect(f.updates).toHaveLength(1);
+    expect(f.updates[0]).toMatchObject({
+      databaseKind: 'mysql',
+      databaseRevision: 4,
+      syncSequence: 12,
+    });
+    expect(f.log).toContain('baseline-reset');
+    expect(f.inserts.map((item) => item.values)).toContainEqual(
+      expect.objectContaining({
+        action: 'project.database_changed',
+        details: expect.objectContaining({
+          sourceDocument: document,
+          sourceVersion: 7,
+          sourceSequence: 11,
+          sequence: 12,
+          sourceMap: plan.sourceMap,
+          changedPaths: plan.changedPaths,
+          engineVerified: true,
+          conversion: 'verified-signed-integer-v1',
+        }),
+      }),
+    );
+    expect(f.publishDatabaseContext).toHaveBeenCalledWith(projectId, 12, 4);
+    expect(f.log.slice(-2)).toEqual(['commit', 'notify']);
     expect(f.log.slice(f.log.indexOf('transaction'), f.log.indexOf('transaction') + 6)).toEqual([
       'transaction',
       'read',

@@ -73,6 +73,19 @@ describe('native clipboard ordinary renderer and MCP handler', () => {
       item.scope = 'both';
       item.physical.defaultValue = { kind: 'none' };
     });
+    physical.indexes = [
+      {
+        id: 'unverified-index',
+        tableId: physical.tables![0]!.id,
+        scope: 'both',
+        name: 'idx',
+        unique: false,
+        parts: [
+          { expression: { kind: 'column', columnId: physical.columns![0]!.id }, direction: 'asc' },
+        ],
+        options: { database: 'postgresql', method: 'btree' },
+      },
+    ];
     try {
       nativeEditorCandidate(baseline, [clipboardCommand(physical)]);
       throw Error('Expected rejection');

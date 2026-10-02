@@ -119,7 +119,8 @@ describe('native DB policy is separate from draft and activation rules', () => {
       expect(codes(doc)).toEqual([]);
       expect(
         validateDatabaseDocument(doc, doc.database, { mode: 'export' }).some(
-          (issue) => issue.code === 'type.not-implemented',
+          (issue) =>
+            issue.code === 'feature.not-implemented' && issue.params.feature === 'foreignKey',
         ),
       ).toBe(true);
     },

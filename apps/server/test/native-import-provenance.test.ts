@@ -89,7 +89,7 @@ describe('server-derived native import legacy cause mask', () => {
     document.columns![0]!.physical.type = {
       kind: 'builtin',
       database: 'postgresql',
-      typeId: 'postgresql:integer',
+      typeId: 'postgresql:txid_snapshot',
       parameters: {},
     };
     const proof = nativeImportLegacyProvenance(document, context);
@@ -151,7 +151,8 @@ describe('server-derived native import legacy cause mask', () => {
       expect(checked).toContainEqual(issue);
     expect(
       checked.some(
-        (issue) => issue.code === 'feature.not-implemented' && issue.params.feature === 'column',
+        (issue) =>
+          issue.code === 'feature.not-implemented' && issue.params.feature === 'generatedStored',
       ),
     ).toBe(true);
   });
@@ -194,13 +195,14 @@ describe('server-derived native import legacy cause mask', () => {
     );
     expect(
       checked.some(
-        (issue) => issue.code === 'feature.not-implemented' && issue.params.feature === 'table',
+        (issue) =>
+          issue.code === 'feature.not-implemented' && issue.params.feature === 'withoutRowid',
       ),
     ).toBe(true);
     expect(
       checked.some(
         (issue) =>
-          issue.code === 'feature.not-implemented' && issue.params.feature === 'strictTable',
+          issue.code === 'type.strict-not-supported' || issue.code === 'legacy.type-unresolved',
       ),
     ).toBe(true);
   });

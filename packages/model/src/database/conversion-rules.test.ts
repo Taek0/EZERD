@@ -58,7 +58,7 @@ function fixture(
   };
 }
 describe('bounded execution-verified signed integer conversion', () => {
-  it('has only three immutable exact-width rules, with real-engine fixture references and no readiness promotion', () => {
+  it('has only three immutable exact-width rules with real-engine fixture references', () => {
     expect(nativeIntegerConversionRules).toHaveLength(3);
     expect(Object.isFrozen(nativeIntegerConversionRules)).toBe(true);
     for (const rule of nativeIntegerConversionRules) {
@@ -70,7 +70,7 @@ describe('bounded execution-verified signed integer conversion', () => {
     }
   });
   it.each(nativeIntegerConversionRules)(
-    'previews $id in both directions without permitting current target writes',
+    'applies $id in both directions with current readiness and preserves raw metadata',
     (rule) => {
       for (const kind of ['postgresql', 'mysql'] as const) {
         const source = defaultDatabaseContext(kind),
@@ -82,23 +82,25 @@ describe('bounded execution-verified signed integer conversion', () => {
           parameters: {},
         } as NativeColumnType;
         const decision = nativeIntegerConversionDecision(type, source, target);
-        expect(decision).toMatchObject({ engineVerified: true, usable: false, rule });
+        expect(decision).toMatchObject({ engineVerified: true, usable: true, rule });
         const doc = fixture(kind, type),
           before = structuredClone(doc);
         const plan = planNativeDatabaseConversion(doc, source, target);
         expect(plan.engineVerified).toBe(true);
-        expect(plan.canApply).toBe(false);
-        expect(plan.document).toBeUndefined();
+        expect(plan.canApply).toBe(true);
+        expect(plan.document).toEqual(plan.candidate);
         expect(plan.candidate?.columns?.[0]?.physical.type).toEqual(decision.targetType);
-        expect(plan.issues).toContainEqual(
+        expect(plan.issues).toEqual([
           expect.objectContaining({
-            code: 'database.conversion-target-not-ready',
-            objectId: 'column/a~b',
+            code: 'mysql.environment-profile-assumed',
+            severity: 'warning',
           }),
-        );
-        expect(validateDatabaseDocument(plan.candidate!, target, { mode: 'write' })).toContainEqual(
-          expect.objectContaining({ code: 'type.not-implemented' }),
-        );
+        ]);
+        expect(
+          validateDatabaseDocument(plan.document!, target, { mode: 'write' }).filter(
+            (issue) => issue.severity === 'error',
+          ),
+        ).toEqual([]);
         expect(plan.sourceMap).toContainEqual(
           expect.objectContaining({
             path: '/columns/column~1a~0b/physical/type',
@@ -123,6 +125,8 @@ describe('bounded execution-verified signed integer conversion', () => {
         expect(stable(plan.candidate!)).toEqual(stable(before));
         expect(doc).toEqual(before);
         const roundtrip = planNativeDatabaseConversion(plan.candidate!, target, source);
+        expect(roundtrip.canApply).toBe(true);
+        expect(roundtrip.document).toEqual(roundtrip.candidate);
         expect(roundtrip.candidate?.columns?.[0]?.physical.type).toEqual(type);
         expect(stable(roundtrip.candidate!)).toEqual(stable(before));
       }
@@ -345,7 +349,8 @@ describe('bounded execution-verified signed integer conversion', () => {
     doc.columns![0]!.scope = 'logical';
     const supported = planNativeDatabaseConversion(doc, pg, mysql);
     expect(supported.candidate).toBeDefined();
-    expect(supported.canApply).toBe(false);
+    expect(supported.canApply).toBe(true);
+    expect(supported.document).toEqual(supported.candidate);
     doc.columns![0]!.physical.type = {
       kind: 'builtin',
       database: 'postgresql',
@@ -366,14 +371,11 @@ describe('bounded execution-verified signed integer conversion', () => {
       database: 'mysql',
       engine: 'InnoDB',
     });
-    expect(plan.canApply).toBe(false);
-    expect(plan.issues).toContainEqual(
-      expect.objectContaining({
-        code: 'database.conversion-target-not-ready',
-        objectId: 'table/a~b',
-        params: expect.objectContaining({ feature: 'table' }),
-      }),
-    );
+    expect(plan.canApply).toBe(true);
+    expect(plan.issues).toEqual([
+      expect.objectContaining({ code: 'mysql.environment-profile-assumed', severity: 'warning' }),
+    ]);
+    expect(plan.document).toEqual(plan.candidate);
   });
   it('blocks explicit MySQL table charset and on-update expressions without erasing their values', () => {
     const doc = fixture('mysql'),

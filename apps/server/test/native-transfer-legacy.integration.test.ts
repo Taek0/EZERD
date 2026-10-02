@@ -8,6 +8,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   createEmptyDocument,
+  createNativeColumn,
   defaultDatabaseContext,
   deriveOperationChanges,
   type DatabaseKind,
@@ -401,7 +402,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     });
 
     it.each(kinds)(
-      '%s native typed input remains gated even beside verified legacy fields',
+      '%s changing the last legacy ENUM reference to a verified primitive cannot grandfather its orphan definition',
       async (kind) => {
         const source = await imported(kind),
           file = await exported(source.id),
@@ -420,14 +421,115 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         const before = await counts(),
           denied = await upload(transfer(doc, kind, 2));
         expect(denied.status, JSON.stringify(denied.data)).toBe(422);
-        expect(denied.data.issues.some((issue: any) => issue.code === 'type.not-implemented')).toBe(
-          true,
-        );
+        expect(
+          denied.data.issues.some((issue: any) =>
+            kind === 'postgresql'
+              ? issue.code === 'feature.not-implemented' && issue.params?.feature === 'enumType'
+              : issue.code === 'legacy.enum-context-mismatch',
+          ),
+          JSON.stringify(denied.data),
+        ).toBe(true);
         expect(await counts()).toEqual(before);
       },
     );
 
-    it.each(['index', 'check', 'key', 'generation', 'table-options'] as const)(
+    it.each(kinds)(
+      '%s imports verified basic types beside unchanged legacy origins with exact source/audit',
+      async (kind) => {
+        const source = await imported(kind),
+          file = await exported(source.id),
+          doc = file.sourceDocument;
+        const column = createNativeColumn(
+          defaultDatabaseContext(kind),
+          doc.tables[0],
+          'native-column',
+        );
+        column.scope = 'both';
+        column.logical.name = 'Verified primitive';
+        column.physical.name = 'verified_primitive';
+        column.physical.comment = ' native raw comment ';
+        column.physical.type =
+          kind === 'postgresql'
+            ? {
+                kind: 'builtin',
+                database: 'postgresql',
+                typeId: 'postgresql:integer',
+                parameters: {},
+              }
+            : kind === 'mysql'
+              ? { kind: 'builtin', database: 'mysql', typeId: 'mysql:int', parameters: {} }
+              : { kind: 'builtin', database: 'sqlite', typeId: 'sqlite:text', parameters: {} };
+        doc.columns.push(column);
+        const input = transfer(doc, kind, 2),
+          before = await counts(),
+          original = await row(source.id);
+        const result = await upload(input);
+        expect(result.status, JSON.stringify(result.data)).toBe(201);
+        const saved = await row(result.data.project.id),
+          provenance = await audit(saved.id);
+        expect(saved.id).not.toBe(source.id);
+        expect(saved.document).toEqual(doc);
+        expect(saved).toMatchObject({
+          version: 0,
+          sync_sequence: 0,
+          database_revision: 0,
+          status: 'active',
+        });
+        expect(saved.document.columns.find((item: any) => item.id === column.id)).toEqual(column);
+        expect(provenance.sourceDocument).toEqual(doc);
+        expect(provenance.sourceDocumentSha256).toBe(importJsonSha256(doc));
+        expect(provenance.transferSha256).toBe(importJsonSha256(input));
+        expect(provenance.mappingPolicy).toBe('preserve-source-project-namespace');
+        expect(provenance.trustedLegacyPaths).toContain('/columns/column/physical/type');
+        expect(provenance.trustedLegacyPaths).not.toContain('/columns/native-column/physical/type');
+        expect(await counts()).toEqual({
+          projects: before.projects + 1,
+          audits: before.audits + 1,
+        });
+        expect(await row(source.id)).toEqual(original);
+      },
+    );
+
+    it.each(kinds)(
+      '%s verified primitive defaults still require their own coverage and cannot use legacy as previous',
+      async (kind) => {
+        const source = await imported(kind),
+          doc = (await exported(source.id)).sourceDocument;
+        const column = createNativeColumn(
+          defaultDatabaseContext(kind),
+          doc.tables[0],
+          'default-column',
+        );
+        column.scope = 'both';
+        column.physical.name = 'unverified_default';
+        column.physical.type =
+          kind === 'postgresql'
+            ? {
+                kind: 'builtin',
+                database: 'postgresql',
+                typeId: 'postgresql:integer',
+                parameters: {},
+              }
+            : kind === 'mysql'
+              ? { kind: 'builtin', database: 'mysql', typeId: 'mysql:int', parameters: {} }
+              : { kind: 'builtin', database: 'sqlite', typeId: 'sqlite:integer', parameters: {} };
+        column.physical.defaultValue = { kind: 'literal', literalType: 'number', value: '1' };
+        doc.columns.push(column);
+        const before = await counts(),
+          denied = await upload(transfer(doc, kind, 2));
+        expect(denied.status, JSON.stringify(denied.data)).toBe(422);
+        expect(
+          denied.data.issues.some(
+            (issue: any) =>
+              issue.code === 'default.not-ready' && issue.path.endsWith('/physical/defaultValue'),
+          ),
+          JSON.stringify(denied.data),
+        ).toBe(true);
+        expect(await counts()).toEqual(before);
+      },
+    );
+
+    it.each(['index', 'check', 'key', 'generation', 'table-options', 'without-rowid'] as const)(
       'does not grandfather added native %s via legacy tags',
       async (feature) => {
         const source = await imported('sqlite'),
@@ -478,11 +580,23 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             strict: true,
             withoutRowid: false,
           };
+        if (feature === 'without-rowid')
+          doc.tables[0].physical.options = {
+            database: 'sqlite',
+            strict: false,
+            withoutRowid: true,
+          };
         const before = await counts(),
           denied = await upload(transfer(doc, 'sqlite', 2));
         expect(denied.status, JSON.stringify(denied.data)).toBe(422);
         expect(
-          denied.data.issues.some((issue: any) => issue.code === 'feature.not-implemented'),
+          denied.data.issues.some((issue: any) =>
+            feature === 'table-options'
+              ? issue.code === 'type.strict-not-supported'
+              : issue.code === 'feature.not-implemented' &&
+                (feature !== 'without-rowid' || issue.params?.feature === 'withoutRowid'),
+          ),
+          JSON.stringify(denied.data),
         ).toBe(true);
         expect(await counts()).toEqual(before);
       },
@@ -551,11 +665,62 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       const before = await counts(),
         result = await upload(file);
       expect(result.status, JSON.stringify(result.data)).toBe(422);
-      expect(result.data.issues.some((issue: any) => issue.code === 'type.not-implemented')).toBe(
-        true,
-      );
+      expect(
+        result.data.issues.some(
+          (issue: any) =>
+            issue.code === 'feature.not-implemented' && issue.params?.feature === 'enumType',
+        ),
+        JSON.stringify(result.data),
+      ).toBe(true);
       expect((await upload({ ...file, previous: file.sourceDocument })).status).toBe(400);
       expect(await counts()).toEqual(before);
+      // Removing the unsupported orphan ENUM makes the primitive valid. Coordinates remain audit only.
+      const valid = structuredClone(file);
+      valid.sourceDocument.enums = [];
+      valid.native.document.enums = [];
+      const accepted = await upload(valid);
+      expect(accepted.status, JSON.stringify(accepted.data)).toBe(201);
+      const saved = await row(accepted.data.project.id),
+        provenance = await audit(saved.id);
+      expect(saved.id).not.toBe(source.id);
+      expect(saved).toMatchObject({
+        version: 0,
+        sync_sequence: 0,
+        database_revision: 0,
+        status: 'active',
+      });
+      expect(saved.document.columns[0].physical.type).toEqual(type);
+      expect(provenance.sourceDocument).toEqual(valid.sourceDocument);
+      expect(provenance.sourceDocumentSha256).toBe(importJsonSha256(valid.sourceDocument));
+      expect(provenance.transferSha256).toBe(importJsonSha256(valid));
+      expect(provenance.trustedLegacyPaths).not.toContain(
+        `/columns/${saved.document.columns[0].id}/physical/type`,
+      );
+      const recorded = (
+        await pool.query(
+          "SELECT details FROM workspace_audit_events WHERE workspace_id=$1 AND action='project.imported' AND details->>'projectId'=$2",
+          [workspaceId, saved.id],
+        )
+      ).rows[0].details;
+      expect(recorded.source).toEqual(file.source);
+      const measured = await counts();
+      expect(measured).toEqual({ projects: before.projects + 1, audits: before.audits + 1 });
+      const defaultClaim = structuredClone(valid);
+      defaultClaim.sourceDocument.columns[0].physical.defaultValue = {
+        kind: 'literal',
+        literalType: 'number',
+        value: '1',
+      };
+      defaultClaim.native.document.columns[0].physical.defaultValue = structuredClone(
+        defaultClaim.sourceDocument.columns[0].physical.defaultValue,
+      );
+      const blocked = await upload(defaultClaim);
+      expect(blocked.status, JSON.stringify(blocked.data)).toBe(422);
+      expect(
+        blocked.data.issues.some((issue: any) => issue.code === 'default.not-ready'),
+        JSON.stringify(blocked.data),
+      ).toBe(true);
+      expect(await counts()).toEqual(measured);
     });
 
     it('keeps canonical/new-name errors rather than copying them into legacy previous authority', async () => {
