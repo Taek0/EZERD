@@ -25,12 +25,19 @@ export class DatabaseService implements OnApplicationShutdown {
     await this.db
       .select({
         id: schema.projects.id,
+        workspaceId: schema.projects.workspaceId,
         version: schema.projects.version,
         document: schema.projects.document,
+        databaseProfileId: schema.projects.databaseProfileId,
+        databaseRevision: schema.projects.databaseRevision,
       })
       .from(schema.projects)
       .limit(1);
     await this.db.select({ id: schema.users.id }).from(schema.users).limit(1);
+    await this.db.select().from(schema.workspaces).limit(1);
+    await this.db.select().from(schema.userWorkspaces).limit(1);
+    await this.db.select().from(schema.workspaceInvitations).limit(1);
+    await this.db.select().from(schema.workspaceAuditEvents).limit(1);
     await this.db.select().from(schema.threads).limit(1);
     await this.db.select().from(schema.messages).limit(1);
     await this.db.select().from(schema.notifications).limit(1);
@@ -38,6 +45,7 @@ export class DatabaseService implements OnApplicationShutdown {
     await this.db.select().from(schema.syncOperations).limit(1);
     await this.db.select().from(schema.syncFieldVersions).limit(1);
     await this.db.select().from(schema.syncClientBaselines).limit(1);
+    await this.db.select().from(schema.projectDatabaseOperations).limit(1);
     await this.db.select().from(schema.syncTombstones).limit(1);
     await this.db.select().from(schema.projectPersonalStates).limit(1);
     await this.db.select().from(schema.projectPersonalOperations).limit(1);

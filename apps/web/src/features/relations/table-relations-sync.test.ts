@@ -227,3 +227,9 @@ it('cancels only the dragged endpoint fields while retaining a concurrent opposi
   });
   expect(Object.hasOwn(rollback, 'targetAnchor')).toBe(false);
 });
+
+it('keeps explicitly enabled personal route controls available to viewers', () => {
+  const markup = renderControls({ readOnly: true, layoutReadOnly: false });
+  expect(markup).toContain('table-route-segment');
+  expect(markup).toContain('table-route-endpoint');
+});

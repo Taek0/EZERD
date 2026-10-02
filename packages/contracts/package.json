@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ezerd/model": "workspace:*",
     "zod": "4.6.5"
   }
 }

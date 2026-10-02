@@ -22,7 +22,7 @@
 - 공통 TypeScript strict 설정, lockfile, 모델 테스트, API·DB 상태 화면, 초기 마이그레이션과 DB 검증 스크립트를 제공한다.
 - Tailwind CSS·React Aria와 무료 Untitled UI 기반 공통 컴포넌트를 적용했다. shadcn/ui, React Flow, Yjs·Hocuspocus, Playwright는 프로젝트 의존성에 추가하지 않았다. 공통 API와 테마는 [SHARED_UI.md](../work-log/SHARED_UI.md)를 참고한다.
 - PostgreSQL DDL 생성기는 packages/model/src/postgres.ts에 구현했고 지원 범위와 진단은 [DDL 문서](../work-log/POSTGRES_EXPORT.md)에 정리했다.
-- 구체적인 버전과 실행 명령은 [README](../../README.md), Drizzle 학습 예제는 [입문 문서](../work-log/DRIZZLE_START.md)를 참고한다.
+- 구체적인 버전과 실행 명령은 [README](../../README.md), Drizzle 학습 예제는 [입문 문서](../etc/DRIZZLE_START.md)를 참고한다.
 - 실행 환경의 상세 버전은 [개발 환경 버전 기준](../work-log/DEVELOPMENT_VERSIONS.md), 모든 직접·간접 의존성은 [전체 버전 목록](../work-log/DEPENDENCY_VERSIONS.md)에 기록한다.
 
 ## 추천 구성

@@ -1,3 +1,9 @@
+import {
+  canonicalPostgresTypeName as canonical,
+  normalizePhysicalType,
+  validatePhysicalType,
+  postgresTypeNames,
+} from './postgres-types.js';
 import type { Column, DesignDocument, Table, TableKey, ProjectEnum } from './document.js';
 
 export interface PostgresDiagnostic {
@@ -10,54 +16,11 @@ export interface PostgresExport {
   diagnostics: PostgresDiagnostic[];
   canExport: boolean;
 }
-const supported = new Set([
-  'uuid',
-  'integer',
-  'bigint',
-  'smallint',
-  'serial',
-  'bigserial',
-  'smallserial',
-  'boolean',
-  'text',
-  'varchar',
-  'char',
-  'numeric',
-  'real',
-  'double precision',
-  'date',
-  'time',
-  'timetz',
-  'timestamp',
-  'timestamptz',
-  'json',
-  'jsonb',
-  'bytea',
-]);
-const aliases: Record<string, string> = {
-  int: 'integer',
-  int4: 'integer',
-  int8: 'bigint',
-  int2: 'smallint',
-  bool: 'boolean',
-  decimal: 'numeric',
-  'character varying': 'varchar',
-  character: 'char',
-  float4: 'real',
-  float8: 'double precision',
-  'timestamp with time zone': 'timestamptz',
-  'timestamp without time zone': 'timestamp',
-  'time with time zone': 'timetz',
-  'time without time zone': 'time',
-};
-const canonical = (name: string) => {
-  const value = name.trim().toLowerCase().replace(/\s+/g, ' ');
-  return aliases[value] ?? value;
-};
+const supported = new Set(postgresTypeNames);
 const serials = new Set(['serial', 'bigserial', 'smallserial']);
 const integers = new Set(['integer', 'bigint', 'smallint', 'serial', 'bigserial', 'smallserial']);
 const numeric = new Set([...integers, 'numeric', 'real', 'double precision']);
-const temporal = new Set(['time', 'timetz', 'timestamp', 'timestamptz']);
+
 const quote = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 const literal = (value: string) =>
   "E'" + value.replaceAll('\\', '\\\\').replaceAll("'", "''") + "'";
@@ -70,17 +33,12 @@ function bytes(value: string) {
   return count;
 }
 function typeSql(column: Column, enums: Map<string, ProjectEnum>): string | null {
-  const value = column.physical.type,
-    name = canonical(value.name);
+  const value = normalizePhysicalType(column.physical.type),
+    name = value.name;
+  if (validatePhysicalType(value).length) return null;
   if (value.enumId !== undefined) {
     const definition = enums.get(value.enumId);
-    if (
-      !definition ||
-      value.length !== undefined ||
-      value.precision !== undefined ||
-      value.scale !== undefined
-    )
-      return null;
+    if (!definition) return null;
     return (
       quote(definition.schema || 'public') +
       '.' +
@@ -89,32 +47,6 @@ function typeSql(column: Column, enums: Map<string, ProjectEnum>): string | null
     );
   }
   if (!supported.has(name)) return null;
-  if (value.isArray && serials.has(name)) return null;
-  if (
-    value.length !== undefined &&
-    (!['varchar', 'char'].includes(name) ||
-      !Number.isInteger(value.length) ||
-      value.length < 1 ||
-      value.length > 10485760)
-  )
-    return null;
-  if (
-    value.precision !== undefined &&
-    (!['numeric', ...temporal].includes(name) ||
-      !Number.isInteger(value.precision) ||
-      value.precision < (name === 'numeric' ? 1 : 0) ||
-      value.precision > (name === 'numeric' ? 1000 : 6))
-  )
-    return null;
-  if (
-    value.scale !== undefined &&
-    (name !== 'numeric' ||
-      value.precision === undefined ||
-      !Number.isInteger(value.scale) ||
-      value.scale < -1000 ||
-      value.scale > 1000)
-  )
-    return null;
   let parameters = '';
   if (value.length !== undefined) parameters = `(${value.length})`;
   if (value.precision !== undefined)
@@ -273,7 +205,7 @@ export function exportPostgres(doc: DesignDocument): PostgresExport {
       error('duplicate-table', table.id, '같은 스키마에 물리 테이블 이름이 중복됩니다.');
     tableNames.add(key);
     constraints.set(table.id, new Set());
-    if (!doc.domains.some((d) => d.id === table.domainId))
+    if (table.domainId !== null && !doc.domains.some((d) => d.id === table.domainId))
       error('missing-domain', table.id, '소유 도메인이 없습니다.');
     keysByTable.set(
       table.id,

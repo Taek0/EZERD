@@ -1,15 +1,39 @@
-import type { DesignDocument } from '@ezerd/model';
+import { TABLES_VIEW_ID, type DesignDocument } from '@ezerd/model';
 export type ReviewTarget = { viewId: string; objectId: string | null; x: number; y: number };
+/** Resolve legacy domain/saved-view pins against their canonical shared placements. */
+export function reviewCanvasView(
+  document: DesignDocument,
+  target: Pick<ReviewTarget, 'viewId' | 'objectId'>,
+): string {
+  if (target.viewId === 'overview' || target.viewId === TABLES_VIEW_ID) return target.viewId;
+  return document.domains.some((d) => d.id === target.viewId) ||
+    document.layout.nodes.some((n) => n.viewId === TABLES_VIEW_ID && n.objectId === target.objectId)
+    ? TABLES_VIEW_ID
+    : target.viewId;
+}
+
+export function pinVisibleInCanvas(
+  document: DesignDocument,
+  target: ReviewTarget,
+  viewId: string,
+  visibleObjectIds?: readonly string[],
+): boolean {
+  return (
+    reviewCanvasView(document, target) === viewId &&
+    (!target.objectId || !visibleObjectIds || visibleObjectIds.includes(target.objectId))
+  );
+}
+
 export function pinPosition(document: DesignDocument, target: ReviewTarget) {
+  const viewId = reviewCanvasView(document, target);
   const node = target.objectId
-    ? document.layout.nodes.find(
-        (n) => n.objectId === target.objectId && n.viewId === target.viewId,
-      )
+    ? document.layout.nodes.find((n) => n.objectId === target.objectId && n.viewId === viewId)
     : undefined;
   const missingView =
-    target.viewId !== 'overview' &&
-    !document.domains.some((domain) => domain.id === target.viewId) &&
-    !document.views?.some((view) => view.id === target.viewId);
+    viewId !== 'overview' &&
+    viewId !== TABLES_VIEW_ID &&
+    !document.domains.some((domain) => domain.id === viewId) &&
+    !document.views?.some((view) => view.id === viewId);
   return {
     x: target.x + (node?.x ?? 0),
     y: target.y + (node?.y ?? 0),

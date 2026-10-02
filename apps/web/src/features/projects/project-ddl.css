@@ -1,0 +1,22 @@
+.project-ddl-dialog {
+  max-width: 680px;
+  width: calc(100vw - 40px);
+  max-height: 85vh;
+  overflow: auto;
+  border: 1px solid var(--border-color, #cbd2dc);
+  border-radius: 14px;
+  padding: 24px;
+  background: var(--background-color, #f7f9fc);
+  color: inherit;
+}
+.project-ddl-dialog::backdrop {
+  background: rgb(20 30 45 / 30%);
+}
+.project-ddl-dialog .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.project-ddl-dialog li {
+  margin: 8px 0;
+}

@@ -1,6 +1,10 @@
 import { registerTranslations } from '../../shared/i18n/index.js';
 
 registerTranslations({
+  '프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.':
+    'The project database settings changed. Reopen the project.',
+  'DB 설정 변경 전의 편집은 재적용할 수 없습니다.':
+    'Edits made before the database settings changed cannot be reapplied.',
   '이 값은 다시 표시되지 않으며 {date}에 만료됩니다.':
     'This value will not be shown again. It expires on {date}.',
   '핀 등록': 'Post pin',

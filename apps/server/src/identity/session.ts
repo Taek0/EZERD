@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import {
   Body,
   Controller,
@@ -30,10 +31,26 @@ function hash(value: string): string {
 
 @Injectable()
 export class SessionService {
+  private readonly events = new EventEmitter();
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(RateLimitService) private readonly rateLimits: RateLimitService,
   ) {}
+
+  onSessionRevoked(listener: (tokenHash: string) => void): () => void {
+    this.events.on('revoked', listener);
+    return () => this.events.off('revoked', listener);
+  }
+
+  async logout(authorization: string | undefined) {
+    const actor = await this.authenticateHeader(authorization);
+    const tokenHash = hash(authorization!.slice('Bearer '.length));
+    await this.database.db
+      .delete(sessions)
+      .where(and(eq(sessions.userId, actor.id), eq(sessions.tokenHash, tokenHash)));
+    this.events.emit('revoked', tokenHash);
+    return { revoked: true as const };
+  }
 
   async create(body: unknown, clientAddress = 'unknown') {
     const parsed = createSessionSchema.safeParse(body);
@@ -93,6 +110,9 @@ export class SessionController {
   constructor(@Inject(SessionService) private readonly sessions: SessionService) {}
   @Post('sessions') create(@Body() body: unknown, @Req() request: { ip?: string }) {
     return this.sessions.create(body, request.ip);
+  }
+  @Post('sessions/logout') logout(@Headers('authorization') authorization: string | undefined) {
+    return this.sessions.logout(authorization);
   }
 }
 

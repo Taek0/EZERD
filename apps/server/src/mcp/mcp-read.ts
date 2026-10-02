@@ -14,6 +14,8 @@ import {
   viewportSchema,
 } from '@ezerd/contracts';
 import type { DesignDocument, Project } from '@ezerd/contracts';
+import { TABLES_VIEW_ID } from '@ezerd/model';
+import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
 
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const objectId = z.string().trim().min(1).max(160);
@@ -22,6 +24,7 @@ const tableSummarySchema = tableSchema
     id: true,
     domainId: true,
     scope: true,
+    color: true,
   })
   .extend({
     logicalName: z.string(),
@@ -33,7 +36,7 @@ const domainSummarySchema = domainSchema.pick({ id: true, name: true }).extend({
 const viewSummarySchema = z.strictObject({
   id: objectId,
   name: z.string(),
-  kind: z.enum(['overview', 'domain', 'combined']),
+  kind: z.enum(['overview', 'tables', 'domain', 'combined']),
   domainIds: z.array(objectId),
 });
 const baseSchema = z.strictObject({ project: projectSchema, syncSequence: sequence });
@@ -53,7 +56,7 @@ export const projectSummarySchema = baseSchema.extend({
 });
 export const listTablesInputSchema = z.strictObject({
   projectId: z.uuid(),
-  domainId: objectId.optional(),
+  domainId: objectId.nullable().optional(),
   search: z.string().trim().max(120).default(''),
   cursor: objectId.optional(),
   limit: z.number().int().min(1).max(100).default(50),
@@ -114,7 +117,7 @@ export const viewRelationsSchema = baseSchema.extend({
 });
 export const tableDetailsSchema = baseSchema.extend({
   table: tableSchema,
-  domain: domainSchema.pick({ id: true, name: true, color: true }),
+  domain: domainSchema.pick({ id: true, name: true, color: true }).nullable(),
   columns: z.array(columnSchema),
   keys: z.array(tableKeySchema),
   relations: z.array(tableRelationSchema),
@@ -123,13 +126,19 @@ export const tableDetailsSchema = baseSchema.extend({
   nodes: z.array(nodeLayoutSchema),
 });
 
-export type ProjectState = { project: Project; document: DesignDocument; syncSequence: number };
+export type ProjectState = {
+  project: Project;
+  document: DesignDocument;
+  syncSequence: number;
+  personalViewIds?: readonly string[];
+};
 
 function tableSummary(table: NonNullable<DesignDocument['tables']>[number]) {
   return {
     id: table.id,
     domainId: table.domainId,
     scope: table.scope,
+    ...(table.color !== undefined ? { color: table.color } : {}),
     logicalName: table.logical.name,
     physicalName: table.physical.name,
   };
@@ -138,6 +147,7 @@ function tableSummary(table: NonNullable<DesignDocument['tables']>[number]) {
 function views(document: DesignDocument) {
   return [
     { id: 'overview', name: 'Overview', kind: 'overview' as const, domainIds: [] },
+    { id: TABLES_VIEW_ID, name: 'Tables', kind: 'tables' as const, domainIds: [] },
     ...document.domains.map((domain) => ({
       id: domain.id,
       name: domain.name,
@@ -181,7 +191,7 @@ export function listTables(state: ProjectState, input: z.infer<typeof listTables
   const filtered = (state.document.tables ?? [])
     .filter(
       (table) =>
-        (!input.domainId || table.domainId === input.domainId) &&
+        (input.domainId === undefined || table.domainId === input.domainId) &&
         (!input.cursor || table.id > input.cursor) &&
         (!search ||
           table.id.toLocaleLowerCase().includes(search) ||
@@ -204,9 +214,10 @@ export function projectView(state: ProjectState, viewId: string, limit = 50, cur
   const { project, document, syncSequence } = state;
   const view = views(document).find((item) => item.id === viewId);
   if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
-  const allNodes = document.layout.nodes
-    .filter((node) => node.viewId === viewId)
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const layoutViewId = sharedCanvasSelection(document, viewId, state.personalViewIds)!.layoutViewId;
+  const allNodes = sharedCanvasNodes(document, viewId, state.personalViewIds).sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
   const page = allNodes.filter((node) => !cursor || node.id > cursor).slice(0, limit + 1);
   const nodes = page.slice(0, limit);
   const visible = new Set(nodes.map((node) => node.objectId));
@@ -231,7 +242,7 @@ export function projectView(state: ProjectState, viewId: string, limit = 50, cur
       .filter((domain) => visible.has(domain.id))
       .map(({ id, name, color }) => ({ id, name, ...(color ? { color } : {}) })),
     tables: (document.tables ?? []).filter((table) => visible.has(table.id)).map(tableSummary),
-    notes: document.notes.filter((note) => note.viewId === viewId && visible.has(note.id)),
+    notes: document.notes.filter((note) => note.viewId === layoutViewId && visible.has(note.id)),
     domainRelations: document.domainRelations
       .filter(
         (relation) => visible.has(relation.sourceDomainId) && visible.has(relation.targetDomainId),
@@ -245,9 +256,10 @@ export function projectView(state: ProjectState, viewId: string, limit = 50, cur
     tableRelations,
     nodes,
     relationLayouts: (document.layout.relations ?? []).filter(
-      (relation) => relation.viewId === viewId && visibleRelationIds.has(relation.relationId),
+      (relation) => relation.viewId === layoutViewId && visibleRelationIds.has(relation.relationId),
     ),
-    viewport: document.layout.viewports.find((viewport) => viewport.viewId === viewId) ?? null,
+    viewport:
+      document.layout.viewports.find((viewport) => viewport.viewId === layoutViewId) ?? null,
   });
 }
 
@@ -260,12 +272,13 @@ export function listViewRelations(
   const { project, document, syncSequence } = state;
   const view = views(document).find((item) => item.id === viewId);
   if (!view) throw new NotFoundException('화면을 찾을 수 없습니다.');
+  const layoutViewId = sharedCanvasSelection(document, viewId, state.personalViewIds)!.layoutViewId;
   const visible = new Set(
-    document.layout.nodes.filter((node) => node.viewId === viewId).map((node) => node.objectId),
+    sharedCanvasNodes(document, viewId, state.personalViewIds).map((node) => node.objectId),
   );
   const layouts = new Map(
     (document.layout.relations ?? [])
-      .filter((item) => item.viewId === viewId)
+      .filter((item) => item.viewId === layoutViewId)
       .map((item) => [item.relationId, item]),
   );
   const relations = [
@@ -308,7 +321,8 @@ export function tableDetails(state: ProjectState, tableId: string) {
   const table = document.tables?.find((item) => item.id === tableId);
   if (!table) throw new NotFoundException('테이블을 찾을 수 없습니다.');
   const domain = document.domains.find((item) => item.id === table.domainId);
-  if (!domain) throw new NotFoundException('테이블의 도메인을 찾을 수 없습니다.');
+  if (table.domainId !== null && !domain)
+    throw new NotFoundException('테이블의 도메인을 찾을 수 없습니다.');
   const columns = (document.columns ?? []).filter((column) => column.tableId === tableId);
   const relations = (document.tableRelations ?? []).filter(
     (relation) => relation.sourceTableId === tableId || relation.targetTableId === tableId,
@@ -322,11 +336,13 @@ export function tableDetails(state: ProjectState, tableId: string) {
     project,
     syncSequence,
     table,
-    domain: {
-      id: domain.id,
-      name: domain.name,
-      ...(domain.color ? { color: domain.color } : {}),
-    },
+    domain: domain
+      ? {
+          id: domain.id,
+          name: domain.name,
+          ...(domain.color ? { color: domain.color } : {}),
+        }
+      : null,
     columns,
     keys: (document.keys ?? []).filter((key) => key.tableId === tableId),
     relations,

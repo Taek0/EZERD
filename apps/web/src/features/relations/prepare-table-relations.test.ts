@@ -8,6 +8,27 @@ import { prepareTableRelations } from './prepare-table-relations.js';
 import { relationGeometry } from './relation-routing.js';
 import { prepareTableRelationsReference } from './prepare-table-relations.reference.js';
 import * as cardGeometry from '../tables/table-geometry.js';
+import { TABLES_VIEW_ID, ensureTableCanvasLayout, updateTable } from '@ezerd/model';
+
+it('renders global relationships across assigned and unassigned owners and excludes unassigned endpoints from combined views', () => {
+  const doc = updateTable(ensureTableCanvasLayout(createTestDocument()), 't0', { domainId: null });
+  const before = structuredClone(doc);
+  const global = prepareTableRelations(doc, TABLES_VIEW_ID, 'physical').filter(Boolean);
+  expect(global).toHaveLength(10);
+  expect(global.some((item) => item?.relation.sourceTableId === 't0')).toBe(true);
+  expect(doc).toEqual(before);
+  const combined = {
+    ...doc,
+    views: [{ id: 'combined', name: 'Combined', domainIds: ['perf'] }],
+    layout: {
+      ...doc.layout,
+      nodes: doc.layout.nodes
+        .filter((node) => node.viewId === TABLES_VIEW_ID)
+        .map((node) => ({ ...node, viewId: 'combined' })),
+    },
+  };
+  expect(prepareTableRelations(combined, 'combined', 'physical').filter(Boolean)).toHaveLength(8);
+});
 
 it('calculates each participating card boundary once per preparation, including obstacles', () => {
   const doc = createTestDocument();
@@ -190,4 +211,37 @@ it('updates card bounds and unrelated obstacles when the document changes', () =
   );
   const filtered = prepareTableRelations(next, 'perf', 'physical', ['node-t0', 'node-t1'])[0]!;
   expect(filtered.obstacles).toEqual([]);
+});
+
+it('filters global relations by both endpoints while using only shared routes and canonical table coordinates', () => {
+  const doc = createTestDocument();
+  const globalView = '__tables__';
+  const originals = doc.layout.nodes.filter((n) => n.viewId === 'perf');
+  doc.layout.nodes.push(
+    ...originals.map((n) => ({
+      ...n,
+      id: 'global-' + n.id,
+      viewId: globalView,
+      x: n.x + 500,
+      y: n.y + 800,
+    })),
+  );
+  doc.views = [{ id: 'personal', name: 'Personal', domainIds: ['perf'] }];
+  doc.layout.relations = [
+    { relationId: 'r0', viewId: 'personal', offset: 999, waypoints: [{ x: 9000, y: 9000 }] },
+    { relationId: 'r0', viewId: globalView, offset: 21 },
+  ];
+  const before = structuredClone(doc);
+  const filtered = prepareTableRelations(doc, globalView, 'physical', [
+    'global-node-t0',
+    'global-node-t1',
+  ]).filter((r) => r !== null);
+  expect(filtered).toHaveLength(1);
+  expect(filtered[0]!.route).toEqual({ relationId: 'r0', viewId: globalView, offset: 21 });
+  expect(filtered[0]!.sourceBounds.x).toBe(originals.find((n) => n.objectId === 't0')!.x + 500);
+  expect(filtered[0]!.obstacles).toEqual([]);
+  expect(
+    prepareTableRelations(doc, globalView, 'physical', ['global-node-t0']).filter(Boolean),
+  ).toHaveLength(0);
+  expect(doc).toEqual(before);
 });

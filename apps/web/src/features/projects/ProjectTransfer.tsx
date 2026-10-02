@@ -1,6 +1,6 @@
 import { translate as t, useI18n } from '../../shared/i18n/index.js';
 import '../collaboration/translations.js';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   MAX_PROJECT_TRANSFER_BYTES,
@@ -40,10 +40,14 @@ export async function exportProjectFile(projectId: string): Promise<void> {
 
 export function ProjectImportButton({
   onImported,
+  workspaceId,
   disabled = false,
+  renderTrigger,
 }: {
   onImported: (project: Project) => void;
   disabled?: boolean;
+  workspaceId: string;
+  renderTrigger?: (open: () => void, disabled: boolean) => ReactNode;
 }) {
   useI18n();
   const input = useRef<HTMLInputElement>(null);
@@ -52,9 +56,15 @@ export function ProjectImportButton({
   const [reading, setReading] = useState(false);
   return (
     <>
-      <Button disabled={disabled || reading} onClick={() => input.current?.click()}>
-        {reading ? t('파일 확인 중…') : t('프로젝트 가져오기')}
-      </Button>
+      {renderTrigger ? (
+        renderTrigger(() => {
+          if (!disabled && !reading) input.current?.click();
+        }, disabled || reading)
+      ) : (
+        <Button disabled={disabled || reading} onClick={() => input.current?.click()}>
+          {reading ? t('파일 확인 중…') : t('프로젝트 가져오기')}
+        </Button>
+      )}
       <input
         ref={input}
         type="file"
@@ -86,6 +96,7 @@ export function ProjectImportButton({
       {file && (
         <ProjectImportDialog
           file={file}
+          workspaceId={workspaceId}
           onCancel={() => setFile(null)}
           onImported={(project) => {
             setFile(null);
@@ -99,10 +110,12 @@ export function ProjectImportButton({
 
 function ProjectImportDialog({
   file,
+  workspaceId,
   onCancel,
   onImported,
 }: {
   file: ProjectTransfer;
+  workspaceId: string;
   onCancel: () => void;
   onImported: (project: Project) => void;
 }) {
@@ -147,7 +160,7 @@ function ProjectImportDialog({
               project: { name: name.trim() },
             });
             const project = projectSchema.parse(
-              await request('/api/projects/import', body('POST', transfer)),
+              await request('/api/projects/import', body('POST', { workspaceId, transfer })),
             );
             onImported(project);
           } catch (e) {

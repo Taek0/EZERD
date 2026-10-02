@@ -1,3 +1,14 @@
+import { canonicalPostgresTypeName, postgresTypeNames } from '@ezerd/model';
+import { columnTypeOptions, columnTypeValue } from './column-type-options.js';
+import {
+  tableColor,
+  tableHeaderStyle,
+  tableDomainValue,
+  tableDomainFromValue,
+  UNASSIGNED_DOMAIN_VALUE,
+} from './table-appearance.js';
+import { tableCanvasOwner } from '../canvas/canvas-view.js';
+import { DomainColorPicker } from '../domains/DomainColorPicker.js';
 import { translate, useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
 import {
@@ -21,6 +32,7 @@ import {
 } from 'react';
 import {
   type DesignDocument,
+  TABLES_VIEW_ID,
   type ModelScope,
   type Table,
   type Column,
@@ -66,46 +78,18 @@ import {
   PanelRow,
   PanelSection,
 } from '../../shared/editor/panel.js';
-export const physicalTypes = [
-  'uuid',
-  'integer',
-  'bigint',
-  'smallint',
-  'serial',
-  'bigserial',
-  'smallserial',
-  'boolean',
-  'text',
-  'varchar',
-  'char',
-  'numeric',
-  'decimal',
-  'real',
-  'double precision',
-  'date',
-  'time',
-  'timetz',
-  'timestamp',
-  'timestamptz',
-  'json',
-  'jsonb',
-  'bytea',
-];
+export const physicalTypes = postgresTypeNames;
 export function typeParameterEnabled(
   type: Column['physical']['type'],
   parameter: 'length' | 'precision' | 'scale',
 ) {
   if (type.enumId) return false;
-  if (parameter === 'length')
-    return ['varchar', 'char', 'character varying', 'character', 'bit', 'bit varying'].includes(
-      type.name,
-    );
-  if (parameter === 'scale')
-    return ['numeric', 'decimal'].includes(type.name) && type.precision !== undefined;
-  return ['numeric', 'decimal', 'time', 'timetz', 'timestamp', 'timestamptz', 'interval'].includes(
-    type.name,
-  );
+  const name = canonicalPostgresTypeName(type.name);
+  if (parameter === 'length') return ['varchar', 'char', 'bit', 'bit varying'].includes(name);
+  if (parameter === 'scale') return name === 'numeric' && type.precision !== undefined;
+  return ['numeric', 'time', 'timetz', 'timestamp', 'timestamptz', 'interval'].includes(name);
 }
+
 export function canSaveKey(key: TableKey, columns: Column[], keys: TableKey[]) {
   return (
     key.columnIds.length > 0 &&
@@ -271,11 +255,13 @@ function InlineCell({
   label,
   onCommit,
   disabled = false,
+  title = false,
 }: {
   value: string;
   label: string;
   onCommit: (value: string) => void;
   disabled?: boolean;
+  title?: boolean;
 }) {
   useI18n();
   const [editing, setEditing] = useState(false),
@@ -291,9 +277,10 @@ function InlineCell({
     if (!cancel.current && draft !== value) onCommit(draft);
     setEditing(false);
   };
+  const Field = title ? 'input' : Input;
   return (
     <span
-      className="table-inline"
+      className={title ? 'table-inline table-title-inline' : 'table-inline'}
       data-inline-cell
       tabIndex={disabled || editing ? -1 : 0}
       title={
@@ -311,7 +298,9 @@ function InlineCell({
       }}
     >
       {editing ? (
-        <Input
+        <Field
+          className={title ? 'table-title-input' : undefined}
+          maxLength={title ? 120 : undefined}
           autoFocus
           aria-label={label}
           value={draft}
@@ -321,6 +310,7 @@ function InlineCell({
           onBlur={commit}
           onKeyDown={(e) => {
             e.stopPropagation();
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (e.key === 'Escape') {
               e.preventDefault();
               cancel.current = true;
@@ -432,6 +422,9 @@ export function TableNodeContent({
   const metrics = useMemo(() => tableCardMetrics(doc, tableId), [doc, tableId]);
   const table = doc.tables?.find((t) => t.id === tableId);
   if (!table) return null;
+  const ownerName =
+    doc.domains.find((domain) => domain.id === table.domainId)?.name ?? translate('미지정');
+  const ownerTitle = translate('소유 도메인 · {domain}', { domain: ownerName });
   const showNullable = table.canvasDisplay?.showNullable !== false,
     showComment = table.canvasDisplay?.showComment !== false;
   const display = (patch: NonNullable<Table['canvasDisplay']>) =>
@@ -459,14 +452,26 @@ export function TableNodeContent({
       }}
     >
       <header
-        style={{ background: doc.domains.find((d) => d.id === table.domainId)?.color || '#8993a3' }}
-        title={`${viewId && viewId !== table.domainId ? translate('외부 참조 · ') : ''}${doc.domains.find((d) => d.id === table.domainId)?.name ?? ''}`}
+        className={viewId === TABLES_VIEW_ID ? 'table-global-header' : undefined}
+        style={tableHeaderStyle(doc, table)}
+        title={`${viewId && viewId !== TABLES_VIEW_ID && viewId !== table.domainId ? translate('외부 참조 · ') : ''}${ownerTitle}`}
       >
         <strong>
-          {cell(table.physical.name, translate('테이블명'), (name) =>
-            updateTable(doc, tableId, { physical: { ...table.physical, name } }),
-          )}
+          <InlineCell
+            title
+            value={table.physical.name}
+            label={translate('테이블명')}
+            disabled={!editable}
+            onCommit={(name) =>
+              onChange?.(updateTable(doc, tableId, { physical: { ...table.physical, name } }))
+            }
+          />
         </strong>
+        {viewId === TABLES_VIEW_ID && (
+          <small className="table-owner-badge" title={ownerName}>
+            {ownerName}
+          </small>
+        )}
       </header>
       <div className="table-columns">
         <div className="table-column-row table-column-head">
@@ -509,6 +514,7 @@ export function TableNodeContent({
               {cell(c.physical.name, translate('컬럼명'), (name) => patch({ name }))}
               <span
                 className="table-type-label table-direct-control"
+                data-export-text={columnTypeDisplay(c.physical.type, doc.enums)}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
@@ -517,32 +523,10 @@ export function TableNodeContent({
                   <InlineType
                     display={columnTypeDisplay(c.physical.type, doc.enums)}
                     label={translate('{x0} 타입', { x0: columnName(c) })}
-                    value={
-                      c.physical.type.enumId
-                        ? `enum:${c.physical.type.enumId}`
-                        : c.physical.type.name
-                    }
-                    options={[
-                      ...[...new Set([...physicalTypes, c.physical.type.name])].map((value) => ({
-                        value,
-                        label:
-                          value === c.physical.type.name && !c.physical.type.enumId
-                            ? columnTypeDisplay(c.physical.type, doc.enums)
-                            : value.toUpperCase(),
-                      })),
-                      ...(doc.enums ?? []).map((type) => ({
-                        value: `enum:${type.id}`,
-                        label: type.name.toUpperCase(),
-                      })),
-                    ]}
+                    value={columnTypeValue(c.physical.type)}
+                    options={columnTypeOptions(c.physical.type, doc.enums)}
                     onValueChange={(value) => {
-                      if (
-                        value ===
-                        (c.physical.type.enumId
-                          ? `enum:${c.physical.type.enumId}`
-                          : c.physical.type.name)
-                      )
-                        return;
+                      if (value === columnTypeValue(c.physical.type)) return;
                       onChange?.(
                         patch({
                           type: {
@@ -699,6 +683,7 @@ export function TableNodeContent({
 export function TableWorkspaceTools({
   document: doc,
   viewId,
+  creationOwner,
   onChange,
   readOnly,
   position,
@@ -706,6 +691,7 @@ export function TableWorkspaceTools({
 }: {
   document: DesignDocument;
   viewId: string;
+  creationOwner?: string | null;
   viewMode: ModelScope;
   onViewModeChange: (v: ModelScope) => void;
   onChange: (d: DesignDocument) => void;
@@ -722,21 +708,27 @@ export function TableWorkspaceTools({
       <Button
         variant="primary"
         className="primary"
-        disabled={readOnly || viewId === 'overview'}
+        disabled={
+          readOnly || (creationOwner === undefined && tableCanvasOwner(doc, viewId) === undefined)
+        }
         onClick={() => {
+          const domainId =
+            creationOwner === undefined ? tableCanvasOwner(doc, viewId) : creationOwner;
+          if (readOnly || domainId === undefined) return;
           const id = newId();
           onChange(
             addTable(
               doc,
               {
                 id,
-                domainId: viewId,
+                domainId,
                 scope: 'physical',
                 logical: { name: translate('새 테이블'), definition: '' },
                 physical: { name, schema: 'public', comment: '' },
                 customProperties: emptyMetadata(),
               },
               position,
+              viewId === TABLES_VIEW_ID ? TABLES_VIEW_ID : (domainId ?? TABLES_VIEW_ID),
             ),
           );
           setName('');
@@ -746,9 +738,16 @@ export function TableWorkspaceTools({
         {translate('+ 테이블')}
       </Button>
       <PanelNote>
-        {translate(
-          '이름을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이 화면으로 참조할 수 있습니다.',
-        )}
+        {viewId === TABLES_VIEW_ID
+          ? creationOwner
+            ? translate('{domain} 도메인에 테이블을 생성합니다.', {
+                domain:
+                  doc.domains.find((domain) => domain.id === creationOwner)?.name ?? creationOwner,
+              })
+            : translate('도메인 없이 테이블을 만들고, 필요하면 속성에서 도메인을 지정하세요.')
+          : translate(
+              '이름을 비워 두고 만든 뒤 속성에서 채워도 됩니다. 목록 탭에서 다른 도메인의 테이블을 이 화면으로 참조할 수 있습니다.',
+            )}
       </PanelNote>
     </div>
   );
@@ -756,12 +755,14 @@ export function TableWorkspaceTools({
 export function TableInspector({
   document: doc,
   tableId,
+  viewId,
   onChange,
   readOnly,
   onStartForeignKey,
 }: {
   document: DesignDocument;
   tableId: string;
+  viewId?: string;
   onChange: (d: DesignDocument) => void;
   readOnly: boolean;
   onStartForeignKey?: (id: string) => void;
@@ -805,9 +806,14 @@ export function TableInspector({
   return (
     <section className="table-inspector">
       <p className="table-owner">
-        {translate('소유 도메인 · {domain} · 참조 화면에서도 원본을 편집합니다.', {
-          domain: doc.domains.find((d) => d.id === table.domainId)?.name ?? '',
-        })}
+        {translate(
+          viewId === TABLES_VIEW_ID
+            ? '소유 도메인 · {domain}'
+            : '소유 도메인 · {domain} · 참조 화면에서도 원본을 편집합니다.',
+          {
+            domain: doc.domains.find((d) => d.id === table.domainId)?.name ?? translate('미지정'),
+          },
+        )}
       </p>
       <fieldset disabled={readOnly}>
         <PanelSection title={translate('기본 정보')} defaultOpen>
@@ -815,17 +821,25 @@ export function TableInspector({
             {translate('도메인')}
             <Select
               aria-label={translate('도메인')}
-              value={table.domainId}
+              value={tableDomainValue(table.domainId)}
               disabled={readOnly}
-              onValueChange={(domainId) => patch({ domainId })}
+              onValueChange={(value) => patch({ domainId: tableDomainFromValue(value) })}
             >
+              <option value={UNASSIGNED_DOMAIN_VALUE}>{translate('미지정')}</option>
               {doc.domains.map((domain) => (
-                <option key={domain.id} value={domain.id}>
+                <option key={domain.id} value={tableDomainValue(domain.id)}>
                   {domain.name}
                 </option>
               ))}
             </Select>
           </label>
+          <DomainColorPicker
+            label={translate('테이블 색상')}
+            value={tableColor(doc, table)}
+            disabled={readOnly}
+            onChange={(color) => patch({ color })}
+            onReset={() => patch({ color: undefined })}
+          />
           <TextField
             label={translate('테이블명')}
             value={table.physical.name}
@@ -1131,13 +1145,9 @@ function ColumnEditor({
           {translate('타입')}
           <SearchType
             label={translate('타입')}
-            value={c.physical.type.enumId ? `enum:${c.physical.type.enumId}` : c.physical.type.name}
+            value={columnTypeValue(c.physical.type)}
             onValueChange={(value) => {
-              if (
-                value ===
-                (c.physical.type.enumId ? `enum:${c.physical.type.enumId}` : c.physical.type.name)
-              )
-                return;
+              if (value === columnTypeValue(c.physical.type)) return;
               const enumType = doc.enums?.find((item) => `enum:${item.id}` === value);
               physical({
                 type: {
@@ -1149,24 +1159,7 @@ function ColumnEditor({
                 },
               });
             }}
-            options={[
-              ...[
-                ...new Set([
-                  ...physicalTypes,
-                  ...(!c.physical.type.enumId ? [c.physical.type.name] : []),
-                ]),
-              ].map((value) => ({
-                value,
-                label:
-                  value === c.physical.type.name && !c.physical.type.enumId
-                    ? columnTypeDisplay(c.physical.type, doc.enums)
-                    : value.toUpperCase(),
-              })),
-              ...(doc.enums ?? []).map((item) => ({
-                value: `enum:${item.id}`,
-                label: item.name.toUpperCase() + ' · ENUM',
-              })),
-            ]}
+            options={columnTypeOptions(c.physical.type, doc.enums)}
           />
         </label>
       </div>
@@ -1187,14 +1180,16 @@ function ColumnEditor({
               min={
                 key === 'scale'
                   ? -1000
-                  : key === 'precision' && !['numeric', 'decimal'].includes(c.physical.type.name)
+                  : key === 'precision' &&
+                      canonicalPostgresTypeName(c.physical.type.name) !== 'numeric'
                     ? 0
                     : 1
               }
               max={
                 key === 'length'
                   ? 10485760
-                  : key === 'precision' && !['numeric', 'decimal'].includes(c.physical.type.name)
+                  : key === 'precision' &&
+                      canonicalPostgresTypeName(c.physical.type.name) !== 'numeric'
                     ? 6
                     : 1000
               }
@@ -1208,14 +1203,14 @@ function ColumnEditor({
                       (key === 'scale'
                         ? -1000
                         : key === 'precision' &&
-                            !['numeric', 'decimal'].includes(c.physical.type.name)
+                            canonicalPostgresTypeName(c.physical.type.name) !== 'numeric'
                           ? 0
                           : 1) &&
                     value <=
                       (key === 'length'
                         ? 10485760
                         : key === 'precision' &&
-                            !['numeric', 'decimal'].includes(c.physical.type.name)
+                            canonicalPostgresTypeName(c.physical.type.name) !== 'numeric'
                           ? 6
                           : 1000))
                 )
@@ -1529,7 +1524,8 @@ export function RelationEditor({
             >
               {doc.tables?.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {doc.domains.find((d) => d.id === t.domainId)?.name} / {tableName(t)}
+                  {doc.domains.find((d) => d.id === t.domainId)?.name ?? translate('미지정')} /{' '}
+                  {tableName(t)}
                 </option>
               ))}
             </Select>
@@ -1684,13 +1680,7 @@ function ColumnCreationForm({
               setType(value);
               setDefaultExpression(null);
             }}
-            options={[
-              ...physicalTypes.map((value) => ({ value, label: value.toUpperCase() })),
-              ...(doc.enums ?? []).map((e) => ({
-                value: `enum:${e.id}`,
-                label: e.name.toUpperCase(),
-              })),
-            ]}
+            options={columnTypeOptions(undefined, doc.enums)}
           />
         </label>
         <label>

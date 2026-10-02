@@ -1,3 +1,4 @@
+import { canonicalPostgresTypeName } from './postgres-types.js';
 import type { Column, DesignDocument, ModelScope, NodeLayout } from './document.js';
 
 export function columnTypeDisplay(
@@ -6,7 +7,7 @@ export function columnTypeDisplay(
 ) {
   let label = type.enumId
     ? (enums?.find((item) => item.id === type.enumId)?.name ?? 'ENUM')
-    : type.name;
+    : canonicalPostgresTypeName(type.name);
   if (!type.enumId) {
     if (type.length !== undefined) label += '(' + type.length + ')';
     else if (type.precision !== undefined)

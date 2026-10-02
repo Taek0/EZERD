@@ -1,4 +1,10 @@
+import {
+  WorkspacePanel,
+  type WorkspacePanelHandle,
+} from '../features/workspaces/WorkspacePanel.js';
+import { workspacePermissions, type Workspace } from '../features/workspaces/workspace-policy.js';
 import { useI18n } from '../shared/i18n/index.js';
+import { HelpDialog } from '../features/projects/HelpDialog.js';
 import { LanguageDialog } from '../shared/i18n/LanguageDialog.js';
 import '../shared/i18n/app-translations.js';
 import { PinPanelResizer } from '../features/comments/PinPanelResizer.js';
@@ -6,31 +12,23 @@ import { userColorStyle } from '../features/identity/user-color-style.js';
 import { UserColorEditor } from '../features/identity/UserColorEditor.js';
 import { clampCommentsPanelWidth } from '../features/comments/comments-panel-size.js';
 import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
-import {
-  applyChanges,
-  diffSharedDocument,
-  type DesignDocument,
-  createEmptyDocument,
-  mergeStoredPersonalState,
-} from '@ezerd/model';
+import { applyChanges, diffSharedDocument, type DesignDocument } from '@ezerd/model';
 import {
   userSchema,
   projectSchema,
-  projectDocumentSchema,
-  personalStateSnapshotSchema,
   threadSchema,
   type Thread,
   type Notification,
+  type ProjectDDLExport,
 } from '@ezerd/contracts';
-import { body, message, newId, request } from '../shared/api/client.js';
-import { Canvas } from '../features/canvas/Canvas.js';
+import { ApiError, body, message, newId, request } from '../shared/api/client.js';
+import { Canvas, type CanvasContext } from '../features/canvas/Canvas.js';
 import {
   CommentsPanel,
   CommentPins,
   Notifications,
   type CommentContext,
 } from '../features/comments/CommentsPanel.js';
-import { RenameDialog } from '../components/ui/RenameDialog.js';
 import { useConfirm } from '../components/ui/ConfirmProvider.js';
 import { LatestRequest } from '../features/comments/comments-state.js';
 import {
@@ -40,10 +38,24 @@ import {
   type SyncSnapshot,
 } from '../features/collaboration/sync-client.js';
 import { SyncHistoryPanel } from '../features/collaboration/sync-history-panel.js';
-import { Avatar, Badge, Button, Dropdown, Input, TabButton } from '../components/ui/index.js';
+import { Avatar, Badge, Button, Dropdown, Input } from '../components/ui/index.js';
 import '../styles/responsive-shell.css';
 import { McpConnectionPanel } from '../features/mcp/McpConnectionPanel.js';
-import { ProjectImportButton, exportProjectFile } from '../features/projects/ProjectTransfer.js';
+import { exportProjectFile } from '../features/projects/ProjectTransfer.js';
+import { ProjectGallery, type GalleryHandle } from '../features/projects/ProjectGallery.js';
+import { previewDatabaseChange } from '../features/projects/database-preview.js';
+import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
+import { NativeProjectView } from '../features/projects/NativeProjectView.js';
+import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
+import { ProjectDDLDialog } from '../features/projects/ProjectDDLDialog.js';
+import {
+  assertNativeExportReady,
+  fetchProjectDDL,
+  confirmProjectDDLSnapshot,
+  downloadProjectDDL,
+} from '../features/projects/project-ddl-export.js';
+import { exportVersionedProjectFile } from '../features/projects/project-versioned-export.js';
+import { nativeEditorExportBlocked } from '../features/projects/native-export-state.js';
 
 type User = {
   id: string;
@@ -54,8 +66,18 @@ type User = {
 };
 export type Project = {
   id: string;
+  workspaceId: string;
   name: string;
   status: 'active' | 'archived';
+  databaseKind?: 'postgresql' | 'mysql' | 'sqlite';
+  databaseRevision?: number | undefined;
+  preview?:
+    | {
+        tableCount: number;
+        relationCount: number;
+        tables: { name: string; columns: { name: string; type: string; primaryKey: boolean }[] }[];
+      }
+    | undefined;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -74,28 +96,65 @@ type OpenProject = {
   project: Project;
   document: DesignDocument;
 };
-async function loadProjectWithPersonal(id: string): Promise<OpenProject> {
-  const [projectValue, personalValue] = await Promise.all([
-    request(`/api/projects/${id}`),
-    request(`/api/projects/${id}/personal-state`).catch(() => null),
-  ]);
-  const project = projectDocumentSchema.parse(projectValue);
-  const personal = personalValue ? personalStateSnapshotSchema.parse(personalValue) : null;
-  return {
-    project: project.project,
-    document: personal
-      ? mergeStoredPersonalState(project.document, personal.state)
-      : project.document,
-  };
-}
 const identityKey = 'ezerd.userId';
+export function cachedIdentitySession(
+  raw: string | null,
+  userId: string | null,
+): SyncSession | null {
+  if (!raw || !userId) return null;
+  try {
+    const value = JSON.parse(raw) as SyncSession & { userId?: string };
+    return value.userId === userId &&
+      typeof value.token === 'string' &&
+      !!value.token &&
+      typeof value.baselineIssuedAt === 'string' &&
+      Date.parse(value.expiresAt) > Date.now()
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
+export function sessionForIdentity(
+  previousUserId: string | undefined,
+  nextUserId: string,
+  session: SyncSession | null,
+) {
+  return previousUserId === nextUserId && session && Date.parse(session.expiresAt) > Date.now()
+    ? session
+    : null;
+}
+export async function clearSignIn(
+  revoke: () => Promise<unknown>,
+  persistent: Pick<Storage, 'removeItem'>,
+  tab: Pick<Storage, 'removeItem'>,
+): Promise<'remote' | 'storage' | null> {
+  let failure: 'remote' | 'storage' | null = null;
+  try {
+    await revoke();
+  } catch {
+    failure = 'remote';
+  }
+  for (const [storage, key] of [
+    [persistent, identityKey],
+    [tab, 'ezerd.sync.session'],
+  ] as const) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      failure = 'storage';
+    }
+  }
+  return failure;
+}
 export function App() {
   const { t, locale } = useI18n();
   const [editingLanguage, setEditingLanguage] = useState(false);
+  const [showingHelp, setShowingHelp] = useState(false);
   const confirm = useConfirm();
   const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
-  const [renamingProject, setRenamingProject] = useState<Project | null>(null);
+  const gallery = useRef<GalleryHandle>(null);
   const [draftTarget, setDraftTarget] = useState<CommentContext & { nonce: number }>();
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true);
@@ -123,16 +182,88 @@ export function App() {
   }
   const [username, setUsername] = useState(''),
     [editingName, setEditingName] = useState(false);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
+  const workspacePanel = useRef<WorkspacePanelHandle>(null);
+  const [workspaceId, setWorkspaceId] = useState('');
+  const selectedWorkspace = workspaces.find((space) => space.id === workspaceId);
   const [projects, setProjects] = useState<Project[]>([]),
     [search, setSearch] = useState(''),
     [status, setStatus] = useState<'active' | 'archived'>('active');
-  const [projectName, setProjectName] = useState(''),
-    [error, setError] = useState(''),
+  const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false);
   const [opened, setOpened] = useState<OpenProject | null>(null),
     [refresh, setRefresh] = useState(0);
+  const [nativeOpened, setNativeOpened] = useState<Extract<
+    ProjectEntry,
+    { kind: 'native' }
+  > | null>(null);
+  const nativeCurrent = useRef(nativeOpened);
+  nativeCurrent.current = nativeOpened;
+  const activeProject = opened?.project ?? nativeOpened?.snapshot.project;
+  const [ddlExport, setDDLExport] = useState<{
+    actorId: string;
+    result: ProjectDDLExport;
+    onFocusIssue?: (id: string) => void;
+  } | null>(null);
+  const ddlCurrent = useRef(ddlExport);
+  ddlCurrent.current = ddlExport;
+  const currentExportIdentity = useRef({ userId: user?.id, projectId: activeProject?.id });
+  currentExportIdentity.current = { userId: user?.id, projectId: activeProject?.id };
+  const projectWorkspace = workspaces.find((space) => space.id === activeProject?.workspaceId);
+  const permissions = workspacePermissions(activeProject ? projectWorkspace : selectedWorkspace);
+  const designPermissionReadOnly = !permissions.edit || opened?.project.status === 'archived';
+  const personalReadOnly = !permissions.personal || opened?.project.status === 'archived';
   const [sync, setSync] = useState<SyncSnapshot | null>(null);
+  const designReadOnly = designPermissionReadOnly || sync?.databaseContextChanged === true;
+  const latestSync = useRef<SyncSnapshot | null>(null);
+  async function prepareProjectExport(projectId: string) {
+    if (
+      !user ||
+      currentExportIdentity.current.userId !== user.id ||
+      currentExportIdentity.current.projectId !== projectId
+    )
+      throw Error(t('프로젝트가 변경되었습니다. 최신 프로젝트에서 다시 내보내 주세요.'));
+    const exportingRuntime = opened ? runtime.current : null;
+    if (opened) await flushAutosave();
+    if (
+      currentExportIdentity.current.userId !== user.id ||
+      currentExportIdentity.current.projectId !== projectId
+    )
+      throw Error(t('프로젝트가 변경되었습니다. 최신 프로젝트에서 다시 내보내 주세요.'));
+    await exportingRuntime?.prepareToLeave();
+    if (
+      opened &&
+      (latestSync.current?.pending.length ||
+        latestSync.current?.storageFailure ||
+        latestSync.current?.databaseContextChanged ||
+        latestSync.current?.status === 'action-needed')
+    )
+      throw Error(t('변경 내용이 저장된 뒤 다시 내보내 주세요.'));
+    try {
+      if (nativeEditorExportBlocked(user.id, projectId))
+        throw Error('project-export.unsaved-draft');
+      assertNativeExportReady(user.id, projectId);
+    } catch {
+      throw Error(t('보관된 미저장 입력 또는 미확인 저장 요청을 확인한 뒤 다시 내보내 주세요.'));
+    }
+  }
+  async function openProjectDDL(
+    projectId: string,
+    revision: number,
+    onFocusIssue?: (id: string) => void,
+  ) {
+    if (!user) return;
+    await prepareProjectExport(projectId);
+    const result = await fetchProjectDDL(projectId, revision);
+    if (
+      currentExportIdentity.current.userId !== user.id ||
+      currentExportIdentity.current.projectId !== projectId
+    )
+      return;
+    setDDLExport({ actorId: user.id, result, ...(onFocusIssue ? { onFocusIssue } : {}) });
+  }
   const [historyAction, setHistoryAction] = useState<string | null>(null);
   const [historyNotice, setHistoryNotice] = useState('');
   const current = useRef(opened),
@@ -146,7 +277,7 @@ export function App() {
   current.current = opened;
   const [commentsOpen, setCommentsOpen] = useState(false),
     [threads, setThreads] = useState<Thread[]>([]);
-  const [canvasContext, setCanvasContext] = useState<CommentContext>({
+  const [canvasContext, setCanvasContext] = useState<CanvasContext>({
     viewId: 'overview',
     selectedObjectId: null,
     position: { x: 120, y: 120 },
@@ -159,18 +290,34 @@ export function App() {
     y: number;
     nonce: number;
   }>();
+  const [nativeReview, setNativeReview] = useState<Thread | null>(null);
   const navigation = useRef(new LatestRequest());
   function replaceProject(value: OpenProject | null) {
+    nativeCurrent.current = null;
+    setNativeOpened(null);
+    setNativeReview(null);
     if (autosave.current.timer) clearTimeout(autosave.current.timer);
     autosave.current = { composing: false };
     runtime.current?.stop();
     runtime.current = null;
     setSync(null);
+    latestSync.current = null;
     current.current = value;
+    if (value) setWorkspaceId(value.project.workspaceId);
     setOpened(value);
   }
+  function replaceEntry(entry: ProjectEntry) {
+    if (entry.kind === 'legacy') {
+      replaceProject(entry.value);
+      return;
+    }
+    replaceProject(null);
+    nativeCurrent.current = entry;
+    setNativeOpened(entry);
+    setWorkspaceId(entry.snapshot.project.workspaceId);
+  }
   function restoreHistory(direction: 'undo' | 'redo') {
-    if (!current.current || current.current.project.status === 'archived' || busy) return;
+    if (!current.current || designReadOnly || busy) return;
     void runtime.current?.[direction]().catch((cause) => setError(message(cause)));
   }
   useEffect(() => {
@@ -190,7 +337,7 @@ export function App() {
         return;
       const key = event.key.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && !event.altKey && (key === 'z' || key === 'y')) {
-        if (!current.current || current.current.project.status === 'archived' || busy) return;
+        if (!current.current || designReadOnly || busy) return;
         event.preventDefault();
         restoreHistory(key === 'y' || event.shiftKey ? 'redo' : 'undo');
       }
@@ -219,6 +366,7 @@ export function App() {
     setCanvasContext({ viewId: 'overview', selectedObjectId: null, position: { x: 120, y: 120 } });
   }
   async function visitNotification(notification: Notification): Promise<boolean> {
+    if (gallery.current && !(await gallery.current.flush())) return false;
     if (busy) return false;
     const sameProject = current.current?.project.id === notification.projectId;
     const ticket = navigation.current.begin();
@@ -227,7 +375,7 @@ export function App() {
     try {
       const [threadValues, projectValue] = await Promise.all([
         request<unknown[]>(`/api/projects/${notification.projectId}/threads`),
-        sameProject ? Promise.resolve(null) : loadProjectWithPersonal(notification.projectId),
+        sameProject ? Promise.resolve(null) : loadProjectEntry(notification.projectId),
       ]);
       if (!navigation.current.isCurrent(ticket)) return false;
       const thread = threadValues
@@ -235,10 +383,14 @@ export function App() {
         .find((t) => t.id === notification.threadId);
       if (!thread) throw new Error(t('알림의 댓글을 찾을 수 없습니다.'));
       if (projectValue) {
-        replaceProject(projectValue);
+        await flushAutosave();
+        await runtime.current?.prepareToLeave();
+        if (!navigation.current.isCurrent(ticket)) return false;
+        replaceEntry(projectValue);
         resetReview();
       }
-      focusThread(thread);
+      if (nativeCurrent.current) setNativeReview(thread);
+      else focusThread(thread);
       return true;
     } catch (e) {
       if (navigation.current.isCurrent(ticket)) setError(message(e));
@@ -250,30 +402,45 @@ export function App() {
   useEffect(() => {
     let live = true;
     let id: string | null = null;
+    let candidate: SyncSession | null = null;
+    const clearCached = () =>
+      clearSignIn(
+        async () => {},
+        { removeItem: (key) => localStorage.removeItem(key) },
+        { removeItem: (key) => sessionStorage.removeItem(key) },
+      );
     try {
       id = localStorage.getItem(identityKey);
-      const storedSession = sessionStorage.getItem('ezerd.sync.session');
-      if (storedSession) {
-        const parsed = JSON.parse(storedSession) as SyncSession;
-        if (Date.parse(parsed.expiresAt) > Date.now()) setSession(parsed);
-      }
+      candidate = cachedIdentitySession(sessionStorage.getItem('ezerd.sync.session'), id);
     } catch {
-      /* private browser storage may be unavailable */
+      /* Private browser storage may be unavailable. */
     }
-    if (!id) {
+    if (!id || !candidate) {
+      void clearCached();
       setChecking(false);
       return;
     }
-    void request(`/api/users/${encodeURIComponent(id)}`)
+    const validatedCandidate = candidate;
+    void request(`/api/users/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${validatedCandidate.token}` },
+    })
       .then((value) => {
         if (live) {
           const restored = userSchema.parse(value);
+          setSession(validatedCandidate);
           setUser(restored);
           setUsername(restored.username);
         }
       })
-      .catch((e) => {
-        if (live) setError(message(e));
+      .catch(async (e) => {
+        if (!live) return;
+        if (e instanceof ApiError && [401, 403, 404].includes(e.status)) {
+          await clearCached();
+          if (!live) return;
+          setSession(null);
+          setUser(null);
+        }
+        setError(message(e));
       })
       .finally(() => {
         if (live) setChecking(false);
@@ -283,13 +450,57 @@ export function App() {
     };
   }, []);
   useEffect(() => {
-    if (!user || opened) return;
+    if (!user || !session) return;
+    const controller = new AbortController();
+    const load = () =>
+      void request<Workspace[]>('/api/workspaces', { signal: controller.signal })
+        .then((spaces) => {
+          if (controller.signal.aborted) return;
+          setWorkspaces(spaces);
+          setWorkspacesLoaded(true);
+          setWorkspaceId((id) =>
+            spaces.some((space) => space.id === id) ? id : (spaces[0]?.id ?? ''),
+          );
+          if (
+            (current.current || nativeCurrent.current) &&
+            !spaces.some(
+              (space) =>
+                space.id ===
+                (current.current?.project.workspaceId ??
+                  nativeCurrent.current?.snapshot.project.workspaceId),
+            )
+          ) {
+            replaceProject(null);
+            resetReview();
+            setError(t('워크스페이스 접근 권한이 변경되었습니다.'));
+          }
+        })
+        .catch((cause) => {
+          if (!controller.signal.aborted) setError(message(cause));
+        });
+    load();
+    const timer = window.setInterval(load, 15000);
+    window.addEventListener('focus', load);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      window.removeEventListener('focus', load);
+    };
+  }, [user?.id, session?.token, refresh]);
+  useEffect(() => {
+    if (!user || !session || opened || nativeOpened || !workspaceId) {
+      setProjects([]);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
-    setError('');
-    void request<unknown[]>(`/api/projects?status=${status}&search=${encodeURIComponent(search)}`, {
-      signal: controller.signal,
-    })
+    setError((value) => (value === t('워크스페이스 접근 권한이 변경되었습니다.') ? value : ''));
+    void request<unknown[]>(
+      `/api/projects?workspaceId=${encodeURIComponent(workspaceId)}&status=${status}&search=${encodeURIComponent(search)}`,
+      {
+        signal: controller.signal,
+      },
+    )
       .then((values) => {
         if (!controller.signal.aborted) setProjects(values.map((v) => projectSchema.parse(v)));
       })
@@ -300,9 +511,10 @@ export function App() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [user, opened, status, search, refresh]);
+  }, [user, session, opened, nativeOpened, workspaceId, status, search, refresh]);
   useEffect(() => {
-    if (!opened || !user || !session || opened.project.status === 'archived') return;
+    if (!opened || !user || !session || !projectWorkspace || opened.project.status === 'archived')
+      return;
     const projectId = opened.project.id;
     const instance = new ProjectSyncRuntime({
       projectId,
@@ -310,8 +522,19 @@ export function App() {
       clientId: stableClientId(),
       session,
       initialDocument: opened.document,
+      initialDatabaseRevision: opened.project.databaseRevision ?? 0,
+      sharedReadOnly: designPermissionReadOnly,
+      personalReadOnly,
+      onWorkspaceAccessChange: (id) => {
+        if (autosave.current.timer) clearTimeout(autosave.current.timer);
+        autosave.current = { composing: false };
+        setDraftTarget(undefined);
+        setWorkspaces((spaces) => spaces.filter((space) => space.id !== id));
+        setRefresh((value) => value + 1);
+      },
       onChange: (snapshot) => {
         setSync(snapshot);
+        latestSync.current = snapshot;
         const value = current.current;
         if (!value || value.project.id !== projectId) return;
         let document = snapshot.document;
@@ -336,7 +559,14 @@ export function App() {
       instance.stop();
       if (runtime.current === instance) runtime.current = null;
     };
-  }, [opened?.project.id, opened?.project.status, user?.id, session?.token]);
+  }, [
+    opened?.project.id,
+    opened?.project.status,
+    projectWorkspace?.role,
+    projectWorkspace?.status,
+    user?.id,
+    session?.token,
+  ]);
   async function identify(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -354,7 +584,7 @@ export function App() {
                 body('POST', { username: username.trim(), pin: registrationPin }),
               ),
             ));
-      let nextSession = session;
+      let nextSession = sessionForIdentity(user?.id, value.id, session);
       if (!nextSession) {
         const result = await request<{
           token: string;
@@ -368,7 +598,10 @@ export function App() {
         };
         setSession(nextSession);
         try {
-          sessionStorage.setItem('ezerd.sync.session', JSON.stringify(nextSession));
+          sessionStorage.setItem(
+            'ezerd.sync.session',
+            JSON.stringify({ ...nextSession, userId: value.id }),
+          );
         } catch {
           /* Login remains valid in this tab. */
         }
@@ -385,7 +618,11 @@ export function App() {
         );
       }
     } catch (e) {
-      setError(message(e));
+      setError(
+        (!user || !session) && e instanceof ApiError && (e.status === 409 || e.status === 401)
+          ? t('이미 사용중인 이름이거나 올바르지 않은 PIN 입니다')
+          : message(e),
+      );
     } finally {
       setBusy(false);
     }
@@ -395,45 +632,43 @@ export function App() {
     setBusy(true);
     setError('');
     try {
-      const value = await loadProjectWithPersonal(id);
+      const value = await loadProjectEntry(id);
       if (!navigation.current.isCurrent(ticket)) return;
       resetReview();
-      replaceProject(value);
+      await flushAutosave();
+      await runtime.current?.prepareToLeave();
+      if (!navigation.current.isCurrent(ticket)) return;
+      replaceEntry(value);
     } catch (e) {
       if (navigation.current.isCurrent(ticket)) setError(message(e));
     } finally {
       if (navigation.current.isCurrent(ticket)) setBusy(false);
     }
   }
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    const ticket = navigation.current.begin();
-    setBusy(true);
-    setError('');
-    try {
-      const project = projectSchema.parse(
-        await request('/api/projects', body('POST', { name: projectName.trim() })),
-      );
-      if (!navigation.current.isCurrent(ticket)) return;
-      setProjectName('');
-      resetReview();
-      replaceProject({ project, document: createEmptyDocument() });
-    } catch (e) {
-      if (navigation.current.isCurrent(ticket)) setError(message(e));
-    } finally {
-      if (navigation.current.isCurrent(ticket)) setBusy(false);
-    }
+  async function createGalleryProject(
+    name: string,
+    databaseKind: 'postgresql' | 'mysql' | 'sqlite',
+  ) {
+    if (!permissions.edit || !workspaceId) throw new Error(t('프로젝트를 만들 수 없습니다.'));
+    const project = projectSchema.parse(
+      await request('/api/projects', body('POST', { name, databaseKind, workspaceId })),
+    );
+    setProjects((items) => [project, ...items]);
+    setRefresh((value) => value + 1);
   }
   async function changeProject(
     project: Project,
     patch: {
       name?: string;
+      databaseKind?: 'postgresql' | 'mysql' | 'sqlite';
       status?: 'active' | 'archived';
     },
   ) {
+    if (!permissions.edit) return false;
     setBusy(true);
     setError('');
     try {
+      if (patch.databaseKind) await previewDatabaseChange(project, patch.databaseKind);
       await request(
         `/api/projects/${project.id}`,
         body('PATCH', { expectedVersion: project.version, ...patch }),
@@ -449,7 +684,7 @@ export function App() {
     }
   }
   async function deleteProject(project: Project) {
-    if (busy || project.status !== 'archived') return;
+    if (!permissions.deleteProject || busy || project.status !== 'archived') return;
     if (
       !(await confirm({
         title: t('프로젝트 영구 삭제'),
@@ -485,7 +720,7 @@ export function App() {
   }
   function scheduleAutosave() {
     const draft = autosave.current;
-    if (draft.composing || !draft.document) return;
+    if (personalReadOnly || draft.composing || !draft.document) return;
     if (draft.timer) clearTimeout(draft.timer);
     draft.timer = setTimeout(() => {
       void flushAutosave();
@@ -493,22 +728,30 @@ export function App() {
   }
   async function flushAutosave() {
     const draft = autosave.current;
-    if (draft.composing || !draft.document) return;
+    if (personalReadOnly || draft.composing || !draft.document) return;
     if (draft.timer) clearTimeout(draft.timer);
     const document = draft.document;
     autosave.current = { composing: draft.composing };
     await runtime.current?.edit(document);
   }
   function previewEdit(document: DesignDocument) {
+    if (personalReadOnly) return;
     const previous = current.current?.document;
-    if (!previous || document === previous) return;
+    if (
+      !previous ||
+      document === previous ||
+      (designReadOnly && diffSharedDocument(previous, document).length > 0)
+    )
+      return;
     const draft = autosave.current;
     draft.base ??= previous;
     draft.document = document;
     applyDocument(document);
   }
   function edit(document: DesignDocument) {
+    if (personalReadOnly) return;
     const previous = current.current?.document;
+    if (previous && designReadOnly && diffSharedDocument(previous, document).length > 0) return;
     if (!previous || (document === previous && autosave.current.document !== document)) return;
     if (document !== previous) applyDocument(document);
     const active = globalThis.document?.activeElement;
@@ -527,9 +770,82 @@ export function App() {
     autosave.current = { composing: false };
     void runtime.current?.edit(document);
   }
-  async function leave() {
+  async function signOut() {
+    if (gallery.current && !(await gallery.current.flush())) return;
+    if (busy) return;
+    setBusy(true);
+    navigation.current.begin();
+    if (autosave.current.timer) clearTimeout(autosave.current.timer);
+    autosave.current = { composing: false };
+    runtime.current?.stop();
+    setEditingName(false);
+    setEditingColor(false);
+    setEditingLanguage(false);
+    setEditingMcp(false);
+    const failure = await clearSignIn(
+      () =>
+        request('/api/sessions/logout', { ...body('POST', {}), signal: AbortSignal.timeout(5000) }),
+      { removeItem: (key) => localStorage.removeItem(key) },
+      { removeItem: (key) => sessionStorage.removeItem(key) },
+    );
+    replaceProject(null);
+    resetReview();
+    setSession(null);
+    setUser(null);
+    setUsername('');
+    setRegistrationPin('');
+    setWorkspaces([]);
+    setWorkspacesLoaded(false);
+    setWorkspaceId('');
+    setProjects([]);
+    setMembers([]);
+    setCommentsOpen(false);
+    setSearch('');
+    setStatus('active');
+    setBusy(false);
+    setError(
+      failure === 'remote'
+        ? t('이 브라우저에서 로그아웃했습니다. 서버 세션 종료는 확인하지 못했습니다.')
+        : failure === 'storage'
+          ? t('브라우저의 로그인 정보를 지우지 못했습니다. 이 탭을 닫아 주세요.')
+          : '',
+    );
+  }
+  const workspaceSwitchPending = useRef(false);
+  async function selectWorkspace(id: string) {
+    if (gallery.current && !(await gallery.current.flush())) return;
     if (
-      current.current &&
+      workspaceSwitchPending.current ||
+      busy ||
+      (id === workspaceId && !current.current && !nativeCurrent.current)
+    )
+      return;
+    workspaceSwitchPending.current = true;
+    setBusy(true);
+    setError('');
+    const ticket = navigation.current.begin();
+    try {
+      await flushAutosave();
+      await runtime.current?.prepareToLeave();
+      if (!navigation.current.isCurrent(ticket)) return;
+      resetReview();
+      replaceProject(null);
+      setWorkspaceId(id);
+      setProjects([]);
+      setSearch('');
+      setStatus('active');
+      setCommentsOpen(false);
+    } catch (cause) {
+      if (navigation.current.isCurrent(ticket)) setError(message(cause));
+    } finally {
+      workspaceSwitchPending.current = false;
+      if (navigation.current.isCurrent(ticket)) setBusy(false);
+    }
+  }
+  async function leave() {
+    if (gallery.current && !(await gallery.current.flush())) return;
+    if (
+      (current.current || nativeCurrent.current) &&
       !(await confirm({
         title: t('갤러리로 이동할까요?'),
         description: t('현재 프로젝트를 닫고 프로젝트 갤러리로 이동합니다.'),
@@ -545,7 +861,7 @@ export function App() {
   }
   async function restoreDeletion(operationId: string) {
     const value = current.current;
-    if (!value || !session || historyAction) return;
+    if (!value || !session || historyAction || designReadOnly) return;
     setHistoryAction(operationId);
     setHistoryNotice('');
     setError('');
@@ -579,7 +895,7 @@ export function App() {
   }
   async function resolvePendingEdit(action: 'reapply' | 'discard', operationId: string) {
     const instance = runtime.current;
-    if (!instance || historyAction) return;
+    if (!instance || historyAction || (action === 'reapply' && designReadOnly)) return;
     setHistoryAction(operationId);
     setError('');
     try {
@@ -655,19 +971,38 @@ export function App() {
     </form>
   );
   return (
-    <div className={opened ? 'app-shell editor-shell' : 'app-shell'}>
+    <div className={opened || nativeOpened ? 'app-shell editor-shell' : 'app-shell'}>
       <a className="skip-link" href="#main">
         {t('본문으로 이동')}
       </a>
-      <header className="app-header">
+      <header
+        className="app-header"
+        onPointerDownCapture={() => {
+          void gallery.current?.flush();
+        }}
+        onFocusCapture={() => {
+          void gallery.current?.flush();
+        }}
+      >
         <Button className="brand" onClick={leave} aria-label={t('EZERD 프로젝트 갤러리')}>
           EZERD<span>.</span>
         </Button>
-        <span className="header-caption">
-          A SHARED SPACE
-          <br />
-          FOR CLEAR THINKING.
-        </span>
+        {user ? (
+          <WorkspacePanel
+            ref={workspacePanel}
+            workspaces={workspaces}
+            selected={selectedWorkspace}
+            disabled={busy}
+            onSelect={(id) => void selectWorkspace(id)}
+            onRefresh={() => setRefresh((value) => value + 1)}
+          />
+        ) : (
+          <span className="header-caption">
+            A SHARED SPACE
+            <br />
+            FOR CLEAR THINKING.
+          </span>
+        )}
         {user && <Notifications userId={user.id} onNavigate={visitNotification} />}
         {user && (
           <Dropdown
@@ -700,12 +1035,30 @@ export function App() {
                 },
               },
               {
+                id: 'sign-out',
+                label: t('로그아웃'),
+                disabled: busy,
+                onAction: () => {
+                  void signOut();
+                },
+              },
+              {
                 id: 'mcp',
                 label: t('MCP 연결'),
                 onAction: () => {
                   setEditingName(false);
                   setEditingColor(false);
                   setEditingMcp(true);
+                },
+              },
+              {
+                id: 'help',
+                label: t('도움말'),
+                onAction: () => {
+                  setEditingName(false);
+                  setEditingColor(false);
+                  setEditingMcp(false);
+                  setShowingHelp(true);
                 },
               },
             ]}
@@ -725,6 +1078,7 @@ export function App() {
           />
         )}
       </header>
+      {showingHelp && <HelpDialog onClose={() => setShowingHelp(false)} />}
       {editingLanguage && <LanguageDialog onClose={() => setEditingLanguage(false)} />}
       {editingColor && user && (
         <UserColorEditor
@@ -766,8 +1120,39 @@ export function App() {
           </p>
           {userForm}
         </main>
+      ) : nativeOpened ? (
+        <NativeProjectView
+          key={nativeOpened.snapshot.project.id}
+          entry={nativeOpened}
+          onLeave={() => void leave()}
+          onReload={() => void open(nativeOpened.snapshot.project.id)}
+          busy={busy}
+          userId={user.id}
+          canEdit={permissions.edit}
+          projectActions={(focus) => (
+            <NativeProjectActions
+              userId={user.id}
+              projectId={nativeOpened.snapshot.project.id}
+              onExportProject={async () => {
+                await prepareProjectExport(nativeOpened.snapshot.project.id);
+                await exportVersionedProjectFile(
+                  nativeOpened.snapshot.project.id,
+                  nativeOpened.snapshot.project.databaseRevision,
+                );
+              }}
+              onExportDDL={() =>
+                openProjectDDL(
+                  nativeOpened.snapshot.project.id,
+                  nativeOpened.snapshot.project.databaseRevision,
+                  focus,
+                )
+              }
+            />
+          )}
+          {...(nativeReview ? { focusedReview: nativeReview } : {})}
+        />
       ) : opened ? (
-        <main id="main" className="editor">
+        <main id="main" className="editor" inert={workspaceSwitchPending.current}>
           <div className="editor-heading">
             <div className="project-title" role="group" aria-label={t('프로젝트 이동')}>
               <Button className="gallery-return" onClick={leave}>
@@ -782,7 +1167,7 @@ export function App() {
               <Button
                 aria-label={t('실행 취소')}
                 title={t('실행 취소 (Ctrl+Z / ⌘Z)')}
-                disabled={busy || opened.project.status === 'archived' || !sync?.canUndo}
+                disabled={busy || designReadOnly || !sync?.canUndo}
                 onClick={() => restoreHistory('undo')}
               >
                 ↶
@@ -790,7 +1175,7 @@ export function App() {
               <Button
                 aria-label={t('다시 실행')}
                 title={t('다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)')}
-                disabled={busy || opened.project.status === 'archived' || !sync?.canRedo}
+                disabled={busy || designReadOnly || !sync?.canRedo}
                 onClick={() => restoreHistory('redo')}
               >
                 ↷
@@ -808,6 +1193,7 @@ export function App() {
                       : t('✓ 동기화됨')}
               </span>
               <SyncHistoryPanel
+                readOnly={designReadOnly}
                 snapshot={sync}
                 activeOperationId={historyAction}
                 notice={historyNotice}
@@ -823,6 +1209,16 @@ export function App() {
               />
             </div>
           </div>
+          {projectWorkspace?.status === 'archived' && (
+            <div className="notice">
+              {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}
+            </div>
+          )}
+          {projectWorkspace?.status === 'active' && projectWorkspace.role === 'viewer' && (
+            <div className="notice">
+              {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
+            </div>
+          )}
           {opened.project.status === 'archived' && (
             <div className="notice">
               {t('보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.')}
@@ -852,6 +1248,32 @@ export function App() {
             <Canvas
               key={opened.project.id}
               document={opened.document}
+              onExportProject={async () => {
+                await flushAutosave();
+                await runtime.current?.prepareToLeave();
+                if (latestSync.current?.pending.length || latestSync.current?.storageFailure)
+                  throw new Error(t('변경 내용이 저장된 뒤 다시 내보내 주세요.'));
+                await exportProjectFile(opened.project.id);
+              }}
+              onExportDDL={() =>
+                openProjectDDL(opened.project.id, opened.project.databaseRevision ?? 0, (id) => {
+                  const tableId =
+                    opened.document.tables?.find((item) => item.id === id)?.id ??
+                    opened.document.columns?.find((item) => item.id === id)?.tableId ??
+                    opened.document.keys?.find((item) => item.id === id)?.tableId ??
+                    opened.document.tableRelations?.find((item) => item.id === id)?.sourceTableId;
+                  const node = opened.document.layout.nodes.find(
+                    (item) => item.objectId === (tableId ?? id),
+                  );
+                  setFocusTarget({
+                    viewId: node?.viewId ?? '__tables__',
+                    objectId: tableId ?? id,
+                    x: node?.x ?? 0,
+                    y: node?.y ?? 0,
+                    nonce: Date.now(),
+                  });
+                })
+              }
               toolbarHost={toolbarHost}
               pathHost={pathHost}
               panelToggle={
@@ -873,14 +1295,19 @@ export function App() {
               }
               onChange={edit}
               onPreviewChange={previewEdit}
-              readOnly={opened.project.status === 'archived'}
+              readOnly={designReadOnly}
+              personalReadOnly={personalReadOnly}
               onContextChange={setCanvasContext}
-              onCreatePin={(context) => {
-                setCanvasContext(context);
-                setFocusTarget(undefined);
-                setDraftTarget({ ...context, selectedObjectId: null, nonce: Date.now() });
-                setCommentsOpen(true);
-              }}
+              {...(!personalReadOnly
+                ? {
+                    onCreatePin: (context: CommentContext) => {
+                      setCanvasContext(context);
+                      setFocusTarget(undefined);
+                      setDraftTarget({ ...context, selectedObjectId: null, nonce: Date.now() });
+                      setCommentsOpen(true);
+                    },
+                  }
+                : {})}
               {...(focusTarget ? { focusTarget } : {})}
               pins={
                 <CommentPins
@@ -891,6 +1318,9 @@ export function App() {
                   threads={threads}
                   document={opened.document}
                   viewId={canvasContext.viewId}
+                  {...(canvasContext.visibleObjectIds
+                    ? { visibleObjectIds: canvasContext.visibleObjectIds }
+                    : {})}
                   onOpen={focusThread}
                 />
               }
@@ -911,6 +1341,8 @@ export function App() {
                 />
               )}
               <CommentsPanel
+                readOnly={personalReadOnly}
+                workspaceId={opened.project.workspaceId}
                 onMembers={setMembers}
                 currentUserColor={user.color}
                 key={opened.project.id}
@@ -932,198 +1364,112 @@ export function App() {
           </div>
         </main>
       ) : (
-        <main id="main" className="gallery">
-          <div className="section-marker">
-            01 / WORKSPACE
-            <span />
-          </div>
-          <section className="gallery-hero">
-            <div>
-              <p className="eyebrow">{t('도메인에서 시작하는 데이터 설계')}</p>
-              <h1>
-                {t('우리 팀의 설계')}
-                <span>.</span>
-              </h1>
-              <p>{t('아이디어를 연결하고, 함께 구조를 만들어 가세요.')}</p>
-            </div>
-            <div className="hero-index">
-              {String(projects.length).padStart(2, '0')}
-              <small>PROJECTS</small>
-            </div>
-          </section>
-          <div className="gallery-tools">
-            <ProjectImportButton
-              disabled={busy}
-              onImported={() => {
-                setStatus('active');
-                setSearch('');
-                setError('');
-                setRefresh((value) => value + 1);
-              }}
-            />
-            <div className="tabs" aria-label={t('프로젝트 상태')}>
-              <TabButton selected={status === 'active'} onClick={() => setStatus('active')}>
-                {t('진행 중')}
-              </TabButton>
-              <TabButton selected={status === 'archived'} onClick={() => setStatus('archived')}>
-                {t('보관함')}
-              </TabButton>
-            </div>
-            <label className="search">
-              <span>{t('검색')}</span>
-              <Input
-                aria-label={t('프로젝트 검색')}
-                placeholder={t('프로젝트 이름 검색')}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </label>
-          </div>
-          <form className="create-project" onSubmit={(e) => void create(e)}>
-            <Input
-              aria-label={t('새 프로젝트 이름')}
-              placeholder={t('새 프로젝트 이름')}
-              maxLength={120}
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              required
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              className="primary"
-              disabled={busy || !projectName.trim()}
-            >
-              <span aria-hidden="true">＋</span>
-              <span>{t('프로젝트 만들기')}</span>
-            </Button>
-          </form>
-          {loading ? (
-            <p role="status">{t('프로젝트를 불러오는 중…')}</p>
-          ) : (
-            <section className="project-grid" aria-label={t('프로젝트 목록')}>
-              {projects.map((project, index) => (
-                <article className="project-card" key={project.id}>
-                  <div className="card-top">
-                    <span>{String(index + 1).padStart(2, '0')}</span>
-                    <Badge
-                      variant="plain"
-                      tone={project.status === 'active' ? 'blue' : 'neutral'}
-                      className="project-state"
-                    >
-                      {project.status === 'active' ? t('진행 중') : t('보관됨')}
-                    </Badge>
-                  </div>
-                  <Button
-                    className="project-open"
-                    title={project.name}
-                    disabled={busy}
-                    onClick={() => void open(project.id)}
-                  >
-                    <h2>{project.name}</h2>
-                    <span aria-hidden="true">↗</span>
-                  </Button>
-                  <p>
-                    {t('수정', undefined, 'date')}{' '}
-                    {new Date(project.updatedAt).toLocaleDateString(
-                      locale === 'en' ? 'en-US' : 'ko-KR',
-                    )}
-                  </p>
-                  <div className="card-actions">
-                    <Button
-                      disabled={busy}
-                      aria-label={t('{name} 내보내기', { name: project.name })}
-                      onClick={async () => {
-                        setBusy(true);
-                        setError('');
-                        try {
-                          await exportProjectFile(project.id);
-                        } catch (error) {
-                          setError(message(error));
-                        } finally {
-                          setBusy(false);
-                        }
-                      }}
-                    >
-                      {t('내보내기')}
-                    </Button>
-                    <Button disabled={busy} onClick={() => setRenamingProject(project)}>
-                      {t('이름 수정')}
-                    </Button>
-                    <Button
-                      className={
-                        project.status === 'active' ? 'project-archive' : 'project-restore'
-                      }
-                      disabled={busy}
-                      onClick={async () => {
-                        if (
-                          project.status === 'archived' ||
-                          (await confirm({
-                            title: t('프로젝트 보관'),
-                            description: t(
-                              '“{name}” 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.',
-                              { name: project.name },
-                            ),
-                            confirmLabel: t('보관'),
-                          }))
-                        )
-                          void changeProject(project, {
-                            status: project.status === 'active' ? 'archived' : 'active',
-                          });
-                      }}
-                    >
-                      {project.status === 'active' ? t('보관') : t('복원')}
-                    </Button>
-                    {project.status === 'archived' && (
-                      <Button
-                        className="project-delete"
-                        variant="danger"
-                        disabled={busy}
-                        onClick={() => void deleteProject(project)}
-                      >
-                        {t('삭제')}
-                      </Button>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </section>
-          )}
-          {!loading && !projects.length && (
-            <div className="empty-gallery">
-              <span aria-hidden="true">＋</span>
-              <h2>
-                {search
-                  ? t('검색 결과가 없습니다')
-                  : status === 'archived'
-                    ? t('보관한 프로젝트가 없습니다')
-                    : t('첫 설계의 큰 그림을 그려 보세요')}
-              </h2>
-              <p>
-                {search
-                  ? t('다른 프로젝트 이름으로 검색해 주세요.')
-                  : t('프로젝트를 만들면 도메인과 업무 관계를 정리할 수 있습니다.')}
-              </p>
-            </div>
-          )}
-          <footer>
-            <span>EZERD — TEAM WORKSPACE</span>
-            <span>{t('명확한 구조. 함께 만드는 설계.')}</span>
-          </footer>
-        </main>
-      )}
-      {renamingProject && (
-        <RenameDialog
-          title={t('프로젝트 이름 수정')}
-          label={t('프로젝트 이름')}
-          initialValue={renamingProject.name}
-          maxLength={120}
-          onCancel={() => setRenamingProject(null)}
-          onSave={async (name) => {
-            if (await changeProject(renamingProject, { name })) setRenamingProject(null);
+        <ProjectGallery
+          key={workspaceId}
+          ref={gallery}
+          workspace={selectedWorkspace}
+          workspaceId={workspaceId}
+          needsWorkspace={workspacesLoaded && workspaces.length === 0}
+          onCreateWorkspace={() => workspacePanel.current?.openCreate()}
+          projects={projects}
+          loading={loading}
+          busy={busy}
+          canEdit={permissions.edit}
+          canDelete={permissions.deleteProject}
+          status={status}
+          search={search}
+          onSearch={setSearch}
+          onStatus={setStatus}
+          onCreate={createGalleryProject}
+          onEdit={changeProject}
+          onOpen={(id) => void open(id)}
+          onExport={async (project) => {
+            setBusy(true);
+            setError('');
+            try {
+              await exportProjectFile(project.id);
+            } catch (cause) {
+              setError(message(cause));
+            } finally {
+              setBusy(false);
+            }
+          }}
+          onArchive={async (project) => {
+            if (
+              project.status === 'archived' ||
+              (await confirm({
+                title: t('프로젝트 보관'),
+                description: t('“{name}” 프로젝트를 보관할까요? 보관함에서 복원할 수 있습니다.', {
+                  name: project.name,
+                }),
+                confirmLabel: t('보관'),
+              }))
+            )
+              await changeProject(project, {
+                status: project.status === 'active' ? 'archived' : 'active',
+              });
+          }}
+          onDelete={(project) => void deleteProject(project)}
+          onImported={() => {
+            setStatus('active');
+            setSearch('');
+            setError('');
+            setRefresh((value) => value + 1);
           }}
         />
       )}
+      {user &&
+        ddlExport?.actorId === user.id &&
+        ddlExport.result.projectId === activeProject?.id && (
+          <ProjectDDLDialog
+            key={`ddl:${ddlExport.actorId}:${ddlExport.result.projectId}`}
+            result={ddlExport.result}
+            onClose={() => {
+              ddlCurrent.current = null;
+              setDDLExport(null);
+            }}
+            objectName={(id) => {
+              const doc = opened?.document ?? nativeOpened?.document;
+              const item =
+                doc?.tables?.find((item) => item.id === id) ??
+                doc?.columns?.find((item) => item.id === id);
+              if (item) return item.physical.name || item.logical.name || id;
+              const key = doc?.keys?.find((item) => item.id === id),
+                relation = doc?.tableRelations?.find((item) => item.id === id),
+                enumeration = doc?.enums?.find((item) => item.id === id);
+              if (key) return key.name || t('키');
+              if (relation) return relation.physical?.name || relation.logical.name || t('외래 키');
+              if (enumeration) return enumeration.name || 'ENUM';
+              if (doc?.schemaVersion === 2)
+                return (
+                  doc.indexes?.find((item) => item.id === id)?.name ||
+                  doc.checks?.find((item) => item.id === id)?.name ||
+                  id
+                );
+              return id;
+            }}
+            {...(ddlExport.onFocusIssue ? { onFocusIssue: ddlExport.onFocusIssue } : {})}
+            onRegenerate={() =>
+              openProjectDDL(
+                ddlExport.result.projectId,
+                ddlExport.result.database.revision,
+                ddlExport.onFocusIssue,
+              )
+            }
+            onDownload={async () => {
+              const expected = ddlExport;
+              await prepareProjectExport(expected.result.projectId);
+              await confirmProjectDDLSnapshot(expected.result);
+              if (
+                ddlCurrent.current !== expected ||
+                currentExportIdentity.current.userId !== expected.actorId ||
+                currentExportIdentity.current.projectId !== expected.result.projectId
+              )
+                return;
+              downloadProjectDDL(expected.result);
+            }}
+          />
+        )}
     </div>
   );
 }

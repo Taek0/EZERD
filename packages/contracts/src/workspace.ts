@@ -1,11 +1,16 @@
 import {
   tableSchema,
   columnSchema,
+  storedColumnSchema,
+  rawStoredColumnSchema,
+  rawColumnSchema,
   tableKeySchema,
   tableRelationSchema,
   projectEnumSchema,
 } from './relational.js';
 import { z } from 'zod';
+import { TABLES_VIEW_ID, databaseKinds } from '@ezerd/model';
+import { databaseProfileIdSchema, databaseRevisionSchema } from './database-state.js';
 export const MAX_DOCUMENT_BYTES = 1_500_000;
 function withinDocumentBudget(doc: unknown): boolean {
   let bytes = 0;
@@ -18,8 +23,8 @@ function withinDocumentBudget(doc: unknown): boolean {
 }
 const id = z.string().trim().min(1).max(160);
 const objectId = id.refine(
-  (value) => value !== 'overview',
-  'overview is reserved for the domain map',
+  (value) => value !== 'overview' && value !== TABLES_VIEW_ID,
+  'Built-in view identities are reserved',
 );
 const name = z.string().max(120);
 const coordinate = z.number().min(-1e7).max(1e7);
@@ -89,13 +94,13 @@ export const relationLayoutSchema = z.strictObject({
     .max(128)
     .optional(),
 });
-export const designDocumentSchema = z
+export const storedDesignDocumentSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
     views: z.array(combinedViewSchema).max(1000).optional(),
     enums: z.array(projectEnumSchema).max(1000).optional(),
     tables: z.array(tableSchema).max(5000).optional(),
-    columns: z.array(columnSchema).max(20000).optional(),
+    columns: z.array(storedColumnSchema).max(20000).optional(),
     keys: z.array(tableKeySchema).max(10000).optional(),
     tableRelations: z.array(tableRelationSchema).max(10000).optional(),
     domains: z.array(domainSchema).max(2000),
@@ -148,6 +153,16 @@ export const designDocumentSchema = z
       ['layout', 'relations'],
     );
   });
+export const designDocumentSchema = storedDesignDocumentSchema.safeExtend({
+  columns: z.array(columnSchema).max(20000).optional(),
+});
+/** Sync checks the claimed diff against the original spellings before normalizing. */
+export const rawStoredDesignDocumentSchema = storedDesignDocumentSchema.safeExtend({
+  columns: z.array(rawStoredColumnSchema).max(20000).optional(),
+});
+export const rawDesignDocumentSchema = storedDesignDocumentSchema.safeExtend({
+  columns: z.array(rawColumnSchema).max(20000).optional(),
+});
 export const personalStateSchema = z.strictObject({
   views: z.array(combinedViewSchema).max(1000),
   notes: z.array(noteSchema).max(10000),
@@ -194,21 +209,52 @@ export const userSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
-export const createProjectSchema = z.strictObject({ name: projectName });
+export const databaseKindSchema = z.enum(databaseKinds);
+export type DatabaseKind = z.infer<typeof databaseKindSchema>;
+export const createProjectSchema = z.strictObject({
+  name: z.string().trim().max(120).optional(),
+  workspaceId: z.uuid(),
+  databaseKind: databaseKindSchema.optional(),
+});
 export const updateProjectSchema = z
   .strictObject({
     expectedVersion: version,
     name: projectName.optional(),
+    databaseKind: databaseKindSchema.optional(),
     status: z.enum(['active', 'archived']).optional(),
   })
-  .refine((input) => input.name !== undefined || input.status !== undefined, 'No update supplied.');
+  .refine(
+    (input) =>
+      input.name !== undefined || input.status !== undefined || input.databaseKind !== undefined,
+    'No update supplied.',
+  );
 export const projectQuerySchema = z.strictObject({
+  workspaceId: z.uuid().optional(),
   status: z.enum(['active', 'archived']).default('active'),
   search: z.string().trim().max(120).default(''),
 });
+export const projectPreviewSchema = z.strictObject({
+  tableCount: z.number().int().nonnegative(),
+  relationCount: z.number().int().nonnegative(),
+  tables: z
+    .array(
+      z.strictObject({
+        name: z.string(),
+        columns: z
+          .array(z.strictObject({ name: z.string(), type: z.string(), primaryKey: z.boolean() }))
+          .max(3),
+      }),
+    )
+    .max(2),
+});
 export const projectSchema = z.strictObject({
+  workspaceId: z.uuid(),
   id: z.uuid(),
   name: projectName,
+  databaseKind: databaseKindSchema.default('postgresql'),
+  databaseProfileId: databaseProfileIdSchema.optional(),
+  databaseRevision: databaseRevisionSchema.optional(),
+  preview: projectPreviewSchema.optional(),
   status: z.enum(['active', 'archived']),
   version,
   createdAt: z.iso.datetime(),
@@ -216,7 +262,7 @@ export const projectSchema = z.strictObject({
 });
 export const projectDocumentSchema = z.strictObject({
   project: projectSchema,
-  document: designDocumentSchema,
+  document: storedDesignDocumentSchema,
 });
 export const saveDocumentSchema = z.strictObject({
   expectedVersion: version,

@@ -19,9 +19,25 @@ describe('API input boundaries', () => {
       username: '태경',
       pin: '0012',
     });
-    expect(createProjectSchema.parse({ name: ' 주문 ' })).toEqual({ name: '주문' });
+    const workspaceId = '00000000-0000-4000-8000-000000000001';
+    expect(createProjectSchema.parse({ name: ' 주문 ', workspaceId })).toEqual({
+      name: '주문',
+      workspaceId,
+    });
+    expect(createProjectSchema.parse({ name: '   ', workspaceId }).name).toBe('');
+    expect(createProjectSchema.safeParse({ workspaceId }).success).toBe(true);
+    expect(
+      updateProjectSchema.safeParse({ expectedVersion: 0, databaseKind: 'sqlite' }).success,
+    ).toBe(true);
+    expect(
+      updateProjectSchema.safeParse({ expectedVersion: 0, databaseKind: 'oracle' }).success,
+    ).toBe(false);
+    expect(updateProjectSchema.safeParse({ expectedVersion: 0, name: '   ' }).success).toBe(false);
+    expect(createProjectSchema.safeParse({ name: '주문' }).success).toBe(false);
     expect(usernameInputSchema.safeParse({ username: '  ' }).success).toBe(false);
-    expect(createProjectSchema.safeParse({ name: 'x'.repeat(121) }).success).toBe(false);
+    expect(createProjectSchema.safeParse({ name: 'x'.repeat(121), workspaceId }).success).toBe(
+      false,
+    );
     expect(updateProjectSchema.safeParse({ expectedVersion: 0 }).success).toBe(false);
     expect(
       updateProjectSchema.safeParse({ expectedVersion: 0, name: 'x', document: empty() }).success,

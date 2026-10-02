@@ -14,7 +14,12 @@ import { body, message, request } from '../../shared/api/client.js';
 import { pinRequest, replyRequest } from './pin-request.js';
 import { usePanelDismiss } from '../../shared/hooks/use-panel-dismiss.js';
 import '../../styles/collaboration-panels.css';
-import { pinAttachment, pinPosition, selectedMentions } from './comments-state.js';
+import {
+  pinAttachment,
+  pinPosition,
+  pinVisibleInCanvas,
+  selectedMentions,
+} from './comments-state.js';
 import {
   Avatar,
   Badge,
@@ -34,6 +39,7 @@ type Member = {
 export type CommentContext = {
   viewId: string;
   selectedObjectId: string | null;
+  visibleObjectIds?: string[];
   position: {
     x: number;
     y: number;
@@ -45,8 +51,10 @@ export function CommentPins({
   viewId,
   onOpen,
   memberColors = {},
+  visibleObjectIds,
 }: {
   threads: Thread[];
+  visibleObjectIds?: readonly string[];
   memberColors?: Record<string, string>;
   document: DesignDocument;
   viewId: string;
@@ -56,7 +64,7 @@ export function CommentPins({
   return (
     <>
       {threads
-        .filter((t) => t.viewId === viewId && !t.resolved)
+        .filter((t) => pinVisibleInCanvas(document, t, viewId, visibleObjectIds) && !t.resolved)
         .map((thread, index) => {
           const point = pinPosition(document, thread);
           if (point.missing) return null;
@@ -219,6 +227,8 @@ function Composer({
   );
 }
 export function CommentsPanel({
+  readOnly = false,
+  workspaceId,
   projectId,
   userId,
   document,
@@ -232,6 +242,8 @@ export function CommentsPanel({
   onMembers,
   currentUserColor,
 }: {
+  readOnly?: boolean;
+  workspaceId: string;
   onMembers?: (members: Member[]) => void;
   currentUserColor?: string;
   draftTarget?: CommentContext & { nonce: number };
@@ -281,15 +293,19 @@ export function CommentsPanel({
       .catch((e) => {
         if (!controller.signal.aborted) setError(message(e));
       });
-    void request<unknown[]>('/api/users', { signal: controller.signal })
+    void request<Array<{ userId: string; username: string; color: string }>>(
+      `/api/workspaces/${workspaceId}/members`,
+      { signal: controller.signal },
+    )
       .then((values) => {
-        if (!controller.signal.aborted) setUsers(values.map((v) => userSchema.parse(v)));
+        if (!controller.signal.aborted)
+          setUsers(values.map((v) => ({ id: v.userId, username: v.username, color: v.color })));
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(message(e));
       });
     return () => controller.abort();
-  }, [projectId, refresh, activeThreadId, currentUserColor]);
+  }, [projectId, workspaceId, refresh, activeThreadId, currentUserColor]);
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (!mutation.current && !window.document.hidden) setRefresh((value) => value + 1);
@@ -322,7 +338,7 @@ export function CommentsPanel({
     value: unknown,
     navigate = true,
   ): Promise<boolean> {
-    if (mutation.current) return false;
+    if (readOnly || mutation.current) return false;
     mutation.current = true;
     ++threadRevision.current;
     setBusy(true);
@@ -348,7 +364,7 @@ export function CommentsPanel({
     }
   }
   async function deleteThread(thread: Thread) {
-    if (mutation.current) return;
+    if (readOnly || mutation.current) return;
     const accepted = await confirm({
       title: t('핀 삭제'),
       description: t('이 핀과 모든 답글을 삭제합니다. 삭제한 내용은 되돌릴 수 없습니다.'),
@@ -386,7 +402,9 @@ export function CommentsPanel({
     }
   }
   const visible = threads.filter(
-    (t) => (allViews || t.viewId === context.viewId) && (showResolved || !t.resolved),
+    (t) =>
+      (allViews || pinVisibleInCanvas(document, t, context.viewId, context.visibleObjectIds)) &&
+      (showResolved || !t.resolved),
   );
   return (
     <aside className="comments-panel" aria-label={t('핀')}>
@@ -433,7 +451,7 @@ export function CommentsPanel({
                     : t('핀 위치로 이동 ↗')}
               </Button>
               <Button
-                disabled={busy}
+                disabled={busy || readOnly}
                 onClick={() =>
                   void mutate(
                     `/api/threads/${thread.id}`,
@@ -446,7 +464,7 @@ export function CommentsPanel({
                 {thread.resolved ? t('다시 열기') : t('해결')}
               </Button>
               <Button
-                disabled={busy}
+                disabled={busy || readOnly}
                 aria-label={t('핀 삭제')}
                 onClick={() => void deleteThread(thread)}
               >
@@ -516,7 +534,7 @@ export function CommentsPanel({
                 key={thread.id}
                 users={users}
                 authorName={users.find((u) => u.id === userId)?.username ?? t('나')}
-                busy={busy}
+                busy={busy || readOnly}
                 label={t('답글 등록')}
                 onSend={(text, mentionIds) =>
                   mutate(
@@ -535,7 +553,7 @@ export function CommentsPanel({
           </p>
         )}
       </div>
-      {draftContext && (
+      {draftContext && !readOnly && (
         <div className="new-thread" aria-label={t('선택한 위치에 핀 작성')}>
           <Button type="button" disabled={busy} onClick={onCancelPinDraft}>
             {t('작성 취소')}
@@ -545,7 +563,7 @@ export function CommentsPanel({
             key={draftContext.nonce}
             users={users}
             authorName={users.find((u) => u.id === userId)?.username ?? t('나')}
-            busy={busy}
+            busy={busy || readOnly}
             label={t('핀 등록')}
             focusNonce={draftContext.nonce}
             onSend={(text, mentionIds) =>
@@ -632,6 +650,9 @@ export function Notifications({
       }}
     >
       <Button
+        className="notification-trigger"
+        aria-label={t('알림')}
+        title={t('알림')}
         aria-expanded={opened}
         onClick={() => {
           if (opened) notificationPanel.close();
@@ -639,7 +660,20 @@ export function Notifications({
           setRefresh((v) => v + 1);
         }}
       >
-        {t('알림')}{' '}
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+          <path d="M10 21h4" />
+        </svg>
         {items.filter((n) => !n.read).length > 0 && (
           <Badge variant="plain" className="notification-count">
             {items.filter((n) => !n.read).length}

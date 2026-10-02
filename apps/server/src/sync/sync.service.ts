@@ -8,7 +8,12 @@ import {
 } from '@nestjs/common';
 import type { OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { and, asc, eq, gt, lt, sql } from 'drizzle-orm';
-import { designDocumentSchema, syncEventSchema, syncOperationResultSchema } from '@ezerd/contracts';
+import {
+  designDocumentSchema,
+  nodeLayoutSchema,
+  syncEventSchema,
+  syncOperationResultSchema,
+} from '@ezerd/contracts';
 import type {
   SyncActor,
   SyncEvent,
@@ -26,10 +31,16 @@ import {
   findFieldVersionConflicts,
   findInverseConflicts,
   inverseChanges,
+  TABLES_VIEW_ID,
   requestFingerprint,
   sharedDocument,
+  resolveProjectDatabaseState,
 } from '@ezerd/model';
 import type { DesignDocument, DocumentChange } from '@ezerd/model';
+import {
+  normalizeServerDocument,
+  requireLegacyServerDocument,
+} from '../shared/normalize-document.js';
 import { DatabaseService } from '../db/database.service.js';
 import {
   projects,
@@ -40,6 +51,7 @@ import {
 } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncGateway } from './sync.gateway.js';
+import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
 
 const RECONNECT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -51,8 +63,21 @@ function fingerprint(input: SyncOperationInput): string {
 function actor(user: AuthenticatedUser): SyncActor {
   return { id: user.id, username: user.username, color: user.color };
 }
+function storedResult(value: unknown): SyncOperationResult {
+  if (
+    value &&
+    typeof value === 'object' &&
+    'protocolVersion' in value &&
+    value.protocolVersion === 2
+  )
+    throw new ConflictException({ code: 'document.client-upgrade-required' });
+  const result = syncOperationResultSchema.parse(value);
+  return result.document
+    ? { ...result, document: normalizeServerDocument(result.document) }
+    : result;
+}
 function eventFrom(row: typeof syncOperations.$inferSelect): SyncEvent {
-  const result = syncOperationResultSchema.parse(row.result);
+  const result = storedResult(row.result);
   return syncEventSchema.parse({ ...result, changes: row.changes });
 }
 type ApplyOptions = {
@@ -127,6 +152,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SyncGateway) private readonly gateway: SyncGateway,
+    @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
   ) {}
 
   onModuleInit(): void {
@@ -149,6 +175,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
   ): Promise<SyncOperationResult> {
     const requestHash = options.requestHash ?? fingerprint(input);
     const outcome = await this.database.db.transaction(async (tx) => {
+      await this.access.requireProject(user.id, projectId, 'design', tx);
       // Idempotency is checked before age, baseline, status, and conflict validation.
       const [replay] = await tx
         .select()
@@ -162,7 +189,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (replay) {
         if (replay.fingerprint !== requestHash || replay.actorId !== user.id)
           throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
-        return { result: syncOperationResultSchema.parse(replay.result), event: undefined };
+        return { result: storedResult(replay.result), event: undefined };
       }
 
       const [project] = await tx
@@ -183,15 +210,16 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (lockedReplay) {
         if (lockedReplay.fingerprint !== requestHash || lockedReplay.actorId !== user.id)
           throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
-        return { result: syncOperationResultSchema.parse(lockedReplay.result), event: undefined };
+        return { result: storedResult(lockedReplay.result), event: undefined };
       }
+      requireLegacyServerDocument(project.document);
       if (project.status !== 'active')
         throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
       if (project.syncSequence >= MAX_SEQUENCE)
         throw new ConflictException('프로젝트 변경 순서 한도를 초과했습니다.');
+      const database = resolveProjectDatabaseState(project);
 
-      const derived = deriveOperationChanges(input.baselineDocument, input.document);
-      const dependencyPaths = deriveStructuralDependencyPaths(input.document, derived);
+      const rawDerived = deriveOperationChanges(input.baselineDocument, input.document);
       const claimed: DocumentChange[] = input.changes.map((change) => ({
         path: change.path,
         before: change.before,
@@ -199,8 +227,14 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         ...(change.beforeExists !== undefined ? { beforeExists: change.beforeExists } : {}),
         ...(change.afterExists !== undefined ? { afterExists: change.afterExists } : {}),
       }));
-      if (!claimedChangesMatch(derived, claimed))
+      if (!claimedChangesMatch(rawDerived, claimed))
         throw new BadRequestException('문서와 변경 목록이 일치하지 않습니다.');
+      // Verify raw claims first: normalization must not disguise forged changes.
+      // Normalize both sides and the stored document to the same canvas baseline.
+      const baselineDocument = normalizeServerDocument(input.baselineDocument);
+      const document = normalizeServerDocument(input.document);
+      const derived = deriveOperationChanges(baselineDocument, document);
+      const dependencyPaths = deriveStructuralDependencyPaths(document, derived);
 
       const versionRows = await tx
         .select({ path: syncFieldVersions.path, sequence: syncFieldVersions.sequence })
@@ -208,7 +242,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         .where(eq(syncFieldVersions.projectId, projectId));
       const versions = new Map(versionRows.map((row) => [row.path, row.sequence]));
       let reason: string | undefined;
-      if (options.inverseGuard) {
+      let reasonCode: string | undefined;
+      if ((input.databaseRevision ?? 0) !== database.revision) {
+        reasonCode = 'database.context-changed';
+        reason = '프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.';
+      }
+      if (!reason && options.inverseGuard) {
         const conflicts = findInverseConflicts(
           options.inverseGuard.paths.map((path) => ({ path, before: null, after: null })),
           options.inverseGuard.acceptedSequence,
@@ -229,14 +268,18 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           ),
         );
       const issuedAt = new Date(input.baselineIssuedAt);
+      if (!reason && baseline && (baseline.databaseRevision ?? 0) !== database.revision) {
+        reasonCode = 'database.context-changed';
+        reason = '프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.';
+      }
       if (
         !reason &&
         (!baseline ||
           baseline.lastSuccessfulSyncAt.getTime() !== issuedAt.getTime() ||
           baseline.lastSequence !== input.baseSequence ||
           input.baseSequence > project.syncSequence ||
-          requestFingerprint(sharedDocument(baseline.document)) !==
-            requestFingerprint(input.baselineDocument) ||
+          requestFingerprint(sharedDocument(normalizeServerDocument(baseline.document))) !==
+            requestFingerprint(baselineDocument) ||
           Date.now() - baseline.lastSuccessfulSyncAt.getTime() > RECONNECT_MAX_AGE_MS)
       ) {
         reason = '서버가 발급한 동기화 기준이 만료되었거나 일치하지 않습니다.';
@@ -254,7 +297,74 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
 
       if (!reason)
         for (const change of derived) {
-          if (change.before === null && change.after && versions.has(change.path)) {
+          const entityCreation =
+            /^\/(?:domains|domainRelations|tables|columns|keys|tableRelations|notes|enums|views)\/[^/]+$/.test(
+              change.path,
+            ) || /^\/layout\/(?:nodes|relations)\/[^/]+$/.test(change.path);
+          if (
+            entityCreation &&
+            change.before === null &&
+            change.after &&
+            versions.has(change.path)
+          ) {
+            // Owner placements are derived from table membership. Reassignment may
+            // recreate that canonical node, but never revive an entity or repurpose
+            // another layout's ID. Require the latest tombstone to prove the pair.
+            const parsed = nodeLayoutSchema.safeParse(change.after);
+            if (change.path.startsWith('/layout/nodes/') && parsed.success) {
+              const node = parsed.data;
+              const table = document.tables?.find((item) => item.id === node.objectId);
+              const continuousTable =
+                baselineDocument.tables?.some((item) => item.id === node.objectId) &&
+                project.document.tables?.some((item) => item.id === node.objectId);
+              const continuousDomain =
+                document.domains.some((item) => item.id === node.viewId) &&
+                baselineDocument.domains.some((item) => item.id === node.viewId) &&
+                project.document.domains.some((item) => item.id === node.viewId);
+              const canonicalOwner =
+                node.id === `node:${node.objectId}:${node.viewId}` &&
+                table?.domainId === node.viewId &&
+                continuousTable &&
+                continuousDomain &&
+                !project.document.layout.nodes.some((item) => item.id === node.id);
+              if (canonicalOwner) {
+                const [retired] = await tx
+                  .select()
+                  .from(syncTombstones)
+                  .where(
+                    and(
+                      eq(syncTombstones.projectId, projectId),
+                      eq(syncTombstones.objectId, change.path.split('/').at(-1)!),
+                    ),
+                  );
+                const deleted = retired?.snapshot as
+                  { path?: string; snapshot?: unknown } | undefined;
+                const original = nodeLayoutSchema.safeParse(deleted?.snapshot);
+                if (!retired) {
+                  // Deletion snapshots expire. Use a fresh owner-layout ID rather
+                  // than reusing an identity whose original pair cannot be proved.
+                  // Canonical global placements are never renamed here.
+                  let replacement: string;
+                  do replacement = `node:owner:${randomUUID()}`;
+                  while (
+                    versions.has(`/layout/nodes/${replacement}`) ||
+                    document.layout.nodes.some((item) => item.id === replacement)
+                  );
+                  change.path = `/layout/nodes/${replacement}`;
+                  change.after = { ...node, id: replacement };
+                  continue;
+                }
+                if (
+                  retired?.sequence === versions.get(change.path) &&
+                  deleted?.path === change.path &&
+                  original.success &&
+                  original.data.id === node.id &&
+                  original.data.objectId === node.objectId &&
+                  original.data.viewId === node.viewId
+                )
+                  continue;
+              }
+            }
             reason = '과거에 삭제되거나 사용된 객체 ID는 다시 사용할 수 없습니다.';
             break;
           }
@@ -264,7 +374,9 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       let acceptedChanges: DocumentChange[] = [];
       if (!reason) {
         try {
-          nextDocument = applyChanges(project.document, derived);
+          nextDocument = normalizeServerDocument(
+            applyChanges(normalizeServerDocument(project.document), derived),
+          );
         } catch {
           reason = '변경 대상이 삭제되었거나 현재 문서에 없습니다.';
         }
@@ -274,7 +386,10 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         if (!valid.success) reason = '변경 후 문서 구조가 유효하지 않습니다.';
         else {
           nextDocument = valid.data;
-          acceptedChanges = deriveOperationChanges(project.document, nextDocument);
+          acceptedChanges = deriveOperationChanges(
+            normalizeServerDocument(project.document),
+            nextDocument,
+          );
         }
       }
 
@@ -289,6 +404,9 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         sequence,
         status: reason ? 'rejected' : 'accepted',
         ...(reason && { reason }),
+        ...(reasonCode && { reasonCode }),
+        database: { kind: database.kind, profileId: database.profileId },
+        databaseRevision: database.revision,
         actor: actor(user),
         changedPaths: reason ? [] : acceptedChanges.map((change) => change.path),
         createdAt: createdAt.toISOString(),
@@ -297,6 +415,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           baselineId: nextBaselineId,
           baseSequence: nextBaselineSequence,
           baselineIssuedAt: nextBaselineIssuedAt,
+          databaseRevision: reason ? (input.databaseRevision ?? 0) : database.revision,
         },
       });
       const snapshots = reason ? [] : deletionSnapshots(acceptedChanges);
@@ -382,6 +501,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           userId: user.id,
           lastSuccessfulSyncAt: createdAt,
           lastSequence: sequence,
+          databaseRevision: database.revision,
           document: sharedDocument(nextDocument!),
         });
       const event = syncEventSchema.parse({ ...result, changes: acceptedChanges });
@@ -396,16 +516,17 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     operationId: string,
     user: AuthenticatedUser,
   ): Promise<SyncOperationResult> {
-    const [row] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
-      );
-    if (!row) throw new NotFoundException('작업 결과를 찾을 수 없습니다.');
-    // All collaborators can inspect project history, but authentication is mandatory.
-    void user;
-    return syncOperationResultSchema.parse(row.result);
+    return this.access.runProject(user.id, projectId, 'read', async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(syncOperations)
+        .where(
+          and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
+        );
+      if (!row) throw new NotFoundException('작업 결과를 찾을 수 없습니다.');
+      // All collaborators can inspect project history, but authentication is mandatory.
+      return storedResult(row.result);
+    });
   }
 
   async findReplay(
@@ -414,34 +535,44 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     requestHash: string,
     user: AuthenticatedUser,
   ): Promise<SyncOperationResult | undefined> {
-    const [row] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
-      );
-    if (!row) return undefined;
-    if (row.actorId !== user.id || row.fingerprint !== requestHash)
-      throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
-    return syncOperationResultSchema.parse(row.result);
+    return this.access.runProject(user.id, projectId, 'design', async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(syncOperations)
+        .where(
+          and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
+        );
+      if (!row) return undefined;
+      if (row.actorId !== user.id || row.fingerprint !== requestHash)
+        throw new ConflictException('같은 작업 ID에 다른 요청을 사용할 수 없습니다.');
+      return storedResult(row.result);
+    });
   }
 
   async events(
+    actorId: string,
     projectId: string,
     since: number,
   ): Promise<{
     sequence: number;
     events: SyncEvent[];
     resetRequired: boolean;
+    databaseRevision: number;
     document?: DesignDocument;
   }> {
     return this.database.db.transaction(
       async (tx) => {
+        await this.access.requireProject(actorId, projectId, 'read', tx);
         const [project] = await tx
-          .select({ sequence: projects.syncSequence, document: projects.document })
+          .select({
+            sequence: projects.syncSequence,
+            document: projects.document,
+            databaseRevision: projects.databaseRevision,
+          })
           .from(projects)
           .where(eq(projects.id, projectId));
         if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+        requireLegacyServerDocument(project.document);
         const rows = await tx
           .select()
           .from(syncOperations)
@@ -452,50 +583,23 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         return {
           sequence: project.sequence,
           events: rows.map(eventFrom),
+          databaseRevision: project.databaseRevision ?? 0,
           resetRequired,
-          ...(resetRequired ? { document: project.document } : {}),
+          ...(resetRequired ? { document: normalizeServerDocument(project.document) } : {}),
         };
       },
       { isolationLevel: 'repeatable read', accessMode: 'read only' },
     );
   }
 
-  async history(projectId: string, since: number): Promise<SyncHistoryEntry[]> {
-    const rows = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
-      .orderBy(asc(syncOperations.sequence));
-    return rows.map((row) => {
-      const snapshot = row.deletionSnapshot as { items?: unknown[] } | null;
-      return {
-        ...eventFrom(row),
-        clientId: row.clientId,
-        kind: row.kind as 'online' | 'reconnect',
-        ...(snapshot?.items?.length ? { deletionSnapshot: { items: snapshot.items } } : {}),
-      };
-    });
-  }
-
-  async historyPage(
-    projectId: string,
-    since: number,
-    limit: number,
-  ): Promise<{ history: SyncHistoryEntry[]; nextSince: number | null }> {
-    const [project] = await this.database.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.id, projectId));
-    if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-    const rows = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
-      .orderBy(asc(syncOperations.sequence))
-      .limit(limit + 1);
-    const page = rows.slice(0, limit);
-    return {
-      history: page.map((row) => {
+  async history(actorId: string, projectId: string, since: number): Promise<SyncHistoryEntry[]> {
+    return this.access.runProject(actorId, projectId, 'read', async (tx) => {
+      const rows = await tx
+        .select()
+        .from(syncOperations)
+        .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
+        .orderBy(asc(syncOperations.sequence));
+      return rows.map((row) => {
         const snapshot = row.deletionSnapshot as { items?: unknown[] } | null;
         return {
           ...eventFrom(row),
@@ -503,32 +607,71 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
           kind: row.kind as 'online' | 'reconnect',
           ...(snapshot?.items?.length ? { deletionSnapshot: { items: snapshot.items } } : {}),
         };
-      }),
-      nextSince: rows.length > limit ? page.at(-1)!.sequence : null,
-    };
+      });
+    });
+  }
+
+  async historyPage(
+    actorId: string,
+    projectId: string,
+    since: number,
+    limit: number,
+  ): Promise<{ history: SyncHistoryEntry[]; nextSince: number | null }> {
+    return this.access.runProject(actorId, projectId, 'read', async (tx) => {
+      const [project] = await tx
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+      if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+      const rows = await tx
+        .select()
+        .from(syncOperations)
+        .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
+        .orderBy(asc(syncOperations.sequence))
+        .limit(limit + 1);
+      const page = rows.slice(0, limit);
+      return {
+        history: page.map((row) => {
+          const snapshot = row.deletionSnapshot as { items?: unknown[] } | null;
+          return {
+            ...eventFrom(row),
+            clientId: row.clientId,
+            kind: row.kind as 'online' | 'reconnect',
+            ...(snapshot?.items?.length ? { deletionSnapshot: { items: snapshot.items } } : {}),
+          };
+        }),
+        nextSince: rows.length > limit ? page.at(-1)!.sequence : null,
+      };
+    });
   }
 
   async establishBaseline(
     projectId: string,
     clientId: string,
     user: AuthenticatedUser,
-    expected?: { version: number; sequence: number },
+    expected?: { version: number; sequence: number; databaseRevision?: number },
   ): Promise<{
     baselineId: string;
     sequence: number;
     baselineIssuedAt: string;
+    databaseRevision: number;
     document: DesignDocument;
   }> {
     return this.database.db.transaction(async (tx) => {
+      await this.access.requireProject(user.id, projectId, expected ? 'design' : 'personal', tx);
       const [project] = await tx
         .select({
           sequence: projects.syncSequence,
           version: projects.version,
           status: projects.status,
           document: projects.document,
+          databaseKind: projects.databaseKind,
+          databaseProfileId: projects.databaseProfileId,
+          databaseRevision: projects.databaseRevision,
         })
         .from(projects)
-        .where(eq(projects.id, projectId));
+        .where(eq(projects.id, projectId))
+        .for('share');
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
       if (expected && project.status !== 'active')
         throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
@@ -539,9 +682,18 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         throw new ConflictException(
           '프로젝트가 변경되었습니다. 최신 내용과 동기화 순서를 다시 확인해주세요.',
         );
+      const database = resolveProjectDatabaseState(project);
+      if (
+        expected?.databaseRevision !== undefined &&
+        expected.databaseRevision !== database.revision
+      )
+        throw new ConflictException({
+          code: 'database.context-changed',
+          message: '프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.',
+        });
       const now = new Date();
       const baselineId = randomUUID();
-      const document = sharedDocument(project.document);
+      const document = sharedDocument(normalizeServerDocument(project.document));
       await tx.insert(syncClientBaselines).values({
         baselineId,
         projectId,
@@ -549,12 +701,14 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         userId: user.id,
         lastSuccessfulSyncAt: now,
         lastSequence: project.sequence,
+        databaseRevision: database.revision,
         document,
       });
       return {
         baselineId,
         sequence: project.sequence,
         baselineIssuedAt: now.toISOString(),
+        databaseRevision: database.revision,
         document,
       };
     });
@@ -579,15 +733,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         }),
       )
       .digest('hex');
-    const [replay] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(
-          eq(syncOperations.projectId, projectId),
-          eq(syncOperations.operationId, request.operationId),
-        ),
-      );
+    const { replay, source, project } = await this.commandSnapshot(
+      user.id,
+      projectId,
+      request.operationId,
+      deletedOperationId,
+    );
     if (replay) {
       const metadata = restoreMetadata(replay.deletionSnapshot);
       if (
@@ -600,19 +751,10 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       )
         throw new ConflictException('같은 복원 작업 ID에 다른 요청을 사용할 수 없습니다.');
       return {
-        result: syncOperationResultSchema.parse(replay.result),
+        result: storedResult(replay.result),
         omittedRelations: metadata.omittedRelations,
       };
     }
-    const [source] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(
-          eq(syncOperations.projectId, projectId),
-          eq(syncOperations.operationId, deletedOperationId),
-        ),
-      );
     const rawItems = (
       source?.deletionSnapshot as { items?: Array<{ path: string; snapshot: unknown }> } | null
     )?.items;
@@ -622,10 +764,6 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       source.createdAt.getTime() < Date.now() - HISTORY_RETENTION_MS
     )
       throw new NotFoundException('복원 가능한 삭제 기록을 찾을 수 없습니다.');
-    const [project] = await this.database.db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
     if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
     if (project.status !== 'active')
       throw new ConflictException('보관된 프로젝트는 복원할 수 없습니다.');
@@ -636,7 +774,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       if (snapshot && typeof snapshot === 'object' && typeof snapshot.id === 'string')
         idMap.set(snapshot.id, randomUUID());
     }
-    const existingIds = new Set<string>(['overview']);
+    const existingIds = new Set<string>(['overview', TABLES_VIEW_ID]);
     const collect = (items: unknown[] | undefined) =>
       items?.forEach((item) => {
         if (item && typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string')
@@ -709,7 +847,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     if (!changes.length)
       throw new ConflictException('현재 문서에 유효하게 복원할 객체가 없습니다.');
     const baseline = await this.establishBaseline(projectId, request.clientId, user);
-    let candidate = applyChanges(baseline.document, changes);
+    if ((storedResult(source.result).databaseRevision ?? 0) !== baseline.databaseRevision)
+      throw new ConflictException({
+        code: 'database.context-changed',
+        message: 'DB 설정 변경 전의 작업은 복원할 수 없습니다.',
+      });
+    let candidate = normalizeServerDocument(applyChanges(baseline.document, changes));
     const restoredRelationIds = new Set(
       changes
         .filter((change) => change.path.startsWith('/tableRelations/'))
@@ -740,11 +883,13 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         }
         return true;
       });
-      candidate = applyChanges(baseline.document, filtered);
+      candidate = normalizeServerDocument(applyChanges(baseline.document, filtered));
       changes.splice(0, changes.length, ...filtered);
     }
-    if (!designDocumentSchema.safeParse(candidate).success)
+    const parsedCandidate = designDocumentSchema.safeParse(candidate);
+    if (!parsedCandidate.success)
       throw new ConflictException('현재 문서 구조와 호환되는 범위를 복원할 수 없습니다.');
+    candidate = parsedCandidate.data;
     const restoredIds = new Set(
       changes.map((change) => String((change.after as { id?: unknown })?.id ?? '')).filter(Boolean),
     );
@@ -763,6 +908,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       baselineId: baseline.baselineId,
       baseSequence: baseline.sequence,
       baselineIssuedAt: baseline.baselineIssuedAt,
+      databaseRevision: baseline.databaseRevision,
       kind: 'online',
       dependencyPaths: [],
       changes: derived,
@@ -793,15 +939,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     const commandHash = createHash('sha256')
       .update(requestFingerprint({ command: 'undo', projectId, sourceOperationId, ...request }))
       .digest('hex');
-    const [replay] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(
-          eq(syncOperations.projectId, projectId),
-          eq(syncOperations.operationId, request.operationId),
-        ),
-      );
+    const { replay, source } = await this.commandSnapshot(
+      user.id,
+      projectId,
+      request.operationId,
+      sourceOperationId,
+    );
     if (replay) {
       if (
         replay.actorId !== user.id ||
@@ -810,17 +953,8 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         replay.clientId !== request.clientId
       )
         throw new ConflictException('같은 실행 취소 작업 ID에 다른 요청을 사용할 수 없습니다.');
-      return syncOperationResultSchema.parse(replay.result);
+      return storedResult(replay.result);
     }
-    const [source] = await this.database.db
-      .select()
-      .from(syncOperations)
-      .where(
-        and(
-          eq(syncOperations.projectId, projectId),
-          eq(syncOperations.operationId, sourceOperationId),
-        ),
-      );
     if (!source) throw new NotFoundException('되돌릴 작업을 찾을 수 없습니다.');
     if (source.actorId !== user.id)
       throw new ConflictException('내가 승인받은 작업만 실행 취소할 수 있습니다.');
@@ -831,6 +965,11 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       return (await this.restore(projectId, sourceOperationId, request, user, 'undo')).result;
     }
     const baseline = await this.establishBaseline(projectId, request.clientId, user);
+    if ((sourceResult.databaseRevision ?? 0) !== baseline.databaseRevision)
+      throw new ConflictException({
+        code: 'database.context-changed',
+        message: 'DB 설정 변경 전의 작업은 실행 취소할 수 없습니다.',
+      });
     const changes = inverseChanges(source.changes as DocumentChange[]);
     let candidate: DesignDocument;
     try {
@@ -845,6 +984,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       baselineId: baseline.baselineId,
       baseSequence: baseline.sequence,
       baselineIssuedAt: baseline.baselineIssuedAt,
+      databaseRevision: baseline.databaseRevision,
       kind: 'online',
       dependencyPaths: [],
       changes: deriveOperationChanges(baseline.document, candidate),
@@ -863,6 +1003,33 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         paths: [...changes.map((change) => change.path), ...dependencies],
         acceptedSequence: source.sequence,
       },
+    });
+  }
+
+  private commandSnapshot(
+    userId: string,
+    projectId: string,
+    operationId: string,
+    sourceOperationId: string,
+  ) {
+    return this.access.runProject(userId, projectId, 'design', async (tx) => {
+      const [replay] = await tx
+        .select()
+        .from(syncOperations)
+        .where(
+          and(eq(syncOperations.projectId, projectId), eq(syncOperations.operationId, operationId)),
+        );
+      const [source] = await tx
+        .select()
+        .from(syncOperations)
+        .where(
+          and(
+            eq(syncOperations.projectId, projectId),
+            eq(syncOperations.operationId, sourceOperationId),
+          ),
+        );
+      const [project] = await tx.select().from(projects).where(eq(projects.id, projectId));
+      return { replay, source, project };
     });
   }
 

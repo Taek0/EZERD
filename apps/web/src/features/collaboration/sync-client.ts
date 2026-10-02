@@ -41,6 +41,7 @@ export type SyncSnapshot = {
   error?: string;
   canUndo: boolean;
   canRedo: boolean;
+  databaseContextChanged?: boolean;
 };
 
 type OwnEdit = {
@@ -50,6 +51,7 @@ type OwnEdit = {
 };
 type RebasedSyncOperation = SyncOperationInput & { rebaseAncestors?: string[] };
 type IssuedBaseline = {
+  databaseRevision?: number;
   baselineId: string;
   sequence: number;
   baselineIssuedAt: string;
@@ -62,10 +64,14 @@ type RuntimeOptions = {
   session: SyncSession;
   initialDocument: DesignDocument;
   initialSequence?: number;
+  initialDatabaseRevision?: number;
+  sharedReadOnly?: boolean;
+  personalReadOnly?: boolean;
   fetcher?: typeof fetch;
   socketFactory?: (url: string) => WebSocket;
   store?: SyncOperationStore<SyncOperationInput>;
   onChange: (snapshot: SyncSnapshot) => void;
+  onWorkspaceAccessChange?: (workspaceId: string) => void;
 };
 
 function arrayPayload(value: unknown, key: 'events' | 'history'): unknown[] {
@@ -141,6 +147,8 @@ export class ProjectSyncRuntime {
   private baselineSequence: number;
   private baselineIssuedAt: string;
   private baselineId = newId();
+  private databaseRevision: number;
+  private databaseContextChanged = false;
   private baselineDocument: DesignDocument;
   private baselineRefresh: Promise<void> | undefined;
   private baselineRefreshFailed = false;
@@ -148,11 +156,20 @@ export class ProjectSyncRuntime {
   private personalLoaded = false;
   private personalPending: PersonalState | undefined;
   private personalSaving = false;
+  private personalSave: Promise<void> | undefined;
   private personalConflict = false;
+  private readonly editing = new Set<Promise<void>>();
+  private unsavedSharedEdit = false;
   private cursor: SyncEventCursor<SyncEvent>;
   private readonly rebases = new Map<
     string,
-    { baselineId: string; baseSequence: number; baselineIssuedAt: string; document: DesignDocument }
+    {
+      baselineId: string;
+      baseSequence: number;
+      baselineIssuedAt: string;
+      databaseRevision: number;
+      document: DesignDocument;
+    }
   >();
 
   constructor(private readonly options: RuntimeOptions) {
@@ -162,6 +179,7 @@ export class ProjectSyncRuntime {
     this.baselineDocument = this.serverDocument;
     this.visibleDocument = options.initialDocument;
     this.sequence = options.initialSequence ?? 0;
+    this.databaseRevision = options.initialDatabaseRevision ?? 0;
     this.baselineSequence = this.sequence;
     this.baselineIssuedAt = options.session.baselineIssuedAt;
     this.cursor = new SyncEventCursor(
@@ -179,17 +197,29 @@ export class ProjectSyncRuntime {
 
   private async initialize() {
     try {
-      const baseline = (await this.api('/sync-baseline', {
-        method: 'POST',
-        body: JSON.stringify({ clientId: this.options.clientId }),
-      })) as {
+      const baseline = (
+        this.options.personalReadOnly
+          ? {}
+          : await this.api('/sync-baseline', {
+              method: 'POST',
+              body: JSON.stringify({ clientId: this.options.clientId }),
+            })
+      ) as {
         baselineId?: unknown;
         sequence?: unknown;
         baselineIssuedAt?: unknown;
         document?: unknown;
+        databaseRevision?: number;
       };
       if (this.stopped) return;
-      if (typeof baseline.sequence === 'number' && typeof baseline.baselineIssuedAt === 'string') {
+      if (this.options.initialDatabaseRevision === undefined)
+        this.databaseRevision = baseline.databaseRevision ?? 0;
+      this.observeDatabaseRevision(baseline.databaseRevision);
+      if (
+        !this.databaseContextChanged &&
+        typeof baseline.sequence === 'number' &&
+        typeof baseline.baselineIssuedAt === 'string'
+      ) {
         this.sequence = baseline.sequence;
         this.baselineSequence = baseline.sequence;
         this.baselineIssuedAt = baseline.baselineIssuedAt;
@@ -231,7 +261,9 @@ export class ProjectSyncRuntime {
             .map((baselineId) => this.rebases.get(baselineId))
             .filter(
               (value): value is NonNullable<typeof value> =>
-                !!value && value.baseSequence >= operation.baseSequence,
+                !!value &&
+                value.baseSequence >= operation.baseSequence &&
+                value.databaseRevision === (operation.databaseRevision ?? 0),
             )
             .sort((left, right) => right.baseSequence - left.baseSequence)[0];
           if (!rebase) return operation;
@@ -271,7 +303,7 @@ export class ProjectSyncRuntime {
     this.connect();
     this.headTimer = setInterval(() => void this.pollHead(), 15_000);
     await Promise.allSettled([
-      this.queue.pump(),
+      this.pumpShared(),
       this.refreshHistory(),
       this.cursor.receiveHead(Number.MAX_SAFE_INTEGER),
     ]);
@@ -285,8 +317,45 @@ export class ProjectSyncRuntime {
     this.socket?.close();
   }
 
-  async edit(next: DesignDocument) {
+  /** Waits for local edit persistence and personal saves before changing projects. */
+  async prepareToLeave() {
+    while (this.editing.size) await Promise.all([...this.editing]);
+    if (this.unsavedSharedEdit) throw new Error(t('로컬 변경을 보관하지 못했습니다.'));
+    if (this.personalPending && !this.personalLoaded) await this.refreshPersonal();
+    await this.flushPersonal();
+    if (this.personalPending || this.personalConflict || this.personalSaving)
+      throw new Error(this.error ?? t('개인 화면을 저장하지 못했습니다.'));
+    // Sending/unknown operations remain recoverable by operation id in durable storage.
+    // Do not wait for server acknowledgements when an offline queue can be restored.
+    if (!this.store?.durable && (await this.queue?.items())?.length)
+      throw new Error(t('로컬 변경을 보관하지 못했습니다.'));
+  }
+
+  private async pumpShared() {
+    if (!this.stopped && !this.options.sharedReadOnly) await this.queue?.pump();
+  }
+
+  edit(next: DesignDocument) {
+    const edit = this.applyEdit(next);
+    this.editing.add(edit);
+    void edit.then(
+      () => this.editing.delete(edit),
+      () => {
+        this.unsavedSharedEdit = true;
+        this.editing.delete(edit);
+      },
+    );
+    return edit;
+  }
+
+  private async applyEdit(next: DesignDocument) {
+    if (this.stopped || this.options.personalReadOnly) return;
     const changes = diffSharedDocument(this.visibleDocument, next);
+    if (this.databaseContextChanged && changes.length) {
+      this.publish();
+      return;
+    }
+    if (this.options.sharedReadOnly && changes.length) return;
     if (
       JSON.stringify(extractPersonalState(this.visibleDocument)) !==
       JSON.stringify(extractPersonalState(next))
@@ -304,6 +373,7 @@ export class ProjectSyncRuntime {
     await this.ensureCurrentBaseline();
     if (this.stopped) return;
     if (!this.queue) {
+      this.unsavedSharedEdit = true;
       this.error = t('동기화 대기열이 준비되지 않아 편집을 보관하지 못했습니다.');
       this.publish();
       return;
@@ -333,6 +403,7 @@ export class ProjectSyncRuntime {
       baselineId: this.baselineId,
       baseSequence: this.baselineSequence,
       baselineIssuedAt: this.baselineIssuedAt,
+      databaseRevision: this.databaseRevision,
       kind: this.connected ? 'online' : 'reconnect',
       dependencyPaths: [],
       changes: claimed,
@@ -356,14 +427,16 @@ export class ProjectSyncRuntime {
         this.publish();
         return;
       }
-      void this.queue.pump();
+      void this.pumpShared();
     } catch (error) {
+      this.unsavedSharedEdit = true;
       this.error = error instanceof Error ? error.message : t('로컬 변경을 보관하지 못했습니다.');
     }
     this.publish();
   }
 
   async reapply(operationId: string) {
+    if (this.options.sharedReadOnly || this.databaseContextChanged) return;
     await this.starting;
     if (this.stopped || !this.queue) return;
     const source = (await this.queue.items()).find(
@@ -372,6 +445,14 @@ export class ProjectSyncRuntime {
     if (!source) return;
     await this.ensureCurrentBaseline();
     if (this.stopped) return;
+    if (
+      this.databaseContextChanged ||
+      (source.operation.databaseRevision ?? 0) !== this.databaseRevision
+    ) {
+      this.error = t('DB 설정 변경 전의 편집은 재적용할 수 없습니다.');
+      this.publish();
+      return;
+    }
     const operationBaseline = sharedDocument(this.baselineDocument);
     let candidate: DesignDocument;
     try {
@@ -407,7 +488,7 @@ export class ProjectSyncRuntime {
     this.ownPast.push({ operation });
     this.ownFuture = [];
     this.error = undefined;
-    void this.queue.pump();
+    void this.pumpShared();
   }
 
   async discard(operationId: string) {
@@ -420,11 +501,11 @@ export class ProjectSyncRuntime {
     await this.queue.discard(operationId);
     this.ownPast = this.ownPast.filter((value) => value.operation.operationId !== operationId);
     this.ownFuture = this.ownFuture.filter((value) => value.operation.operationId !== operationId);
-    void this.queue.pump();
+    void this.pumpShared();
   }
 
   async undo() {
-    if (this.historyBusy) return;
+    if (this.historyBusy || this.options.sharedReadOnly || this.databaseContextChanged) return;
     this.historyBusy = true;
     try {
       await this.undoOne();
@@ -442,7 +523,7 @@ export class ProjectSyncRuntime {
       if (!discarded) {
         this.settlingOwn = own;
         try {
-          await this.queue.pump();
+          await this.pumpShared();
         } finally {
           this.settlingOwn = undefined;
         }
@@ -476,7 +557,7 @@ export class ProjectSyncRuntime {
       if (queued && (queued.state === 'sending' || queued.state === 'unknown')) {
         this.settlingOwn = own;
         try {
-          await this.queue.pump();
+          await this.pumpShared();
         } finally {
           this.settlingOwn = undefined;
         }
@@ -510,7 +591,7 @@ export class ProjectSyncRuntime {
   }
 
   async redo() {
-    if (this.historyBusy) return;
+    if (this.historyBusy || this.options.sharedReadOnly || this.databaseContextChanged) return;
     this.historyBusy = true;
     try {
       await this.redoOne();
@@ -558,7 +639,7 @@ export class ProjectSyncRuntime {
     };
     await this.queue.enqueue(operation);
     this.ownPast.push({ operation });
-    void this.queue.pump();
+    void this.pumpShared();
   }
 
   private async toggleAcceptedEdit(own: OwnEdit) {
@@ -575,6 +656,8 @@ export class ProjectSyncRuntime {
     );
     if (result.status !== 'accepted')
       throw new Error(result.reason ?? t('서버가 작업을 되돌리지 않았습니다.'));
+    this.observeDatabaseRevision(result.databaseRevision);
+    if (this.databaseContextChanged) return;
     own.commandSourceId = result.operationId;
     own.acceptedSequence = result.sequence;
     const newest = result.sequence >= this.sequence;
@@ -616,11 +699,14 @@ export class ProjectSyncRuntime {
 
   private async fetchEvents(since: number) {
     const payload = await this.api(`/events?since=${since}`);
+    if (payload && typeof payload === 'object')
+      this.observeDatabaseRevision((payload as { databaseRevision?: number }).databaseRevision);
     return arrayPayload(payload, 'events').map((value) => syncEventSchema.parse(value));
   }
 
   private async ensureCurrentBaseline() {
-    while (!this.stopped && this.baselineSequence < this.sequence) {
+    if (this.options.personalReadOnly) return;
+    while (!this.stopped && !this.databaseContextChanged && this.baselineSequence < this.sequence) {
       if (!this.baselineRefresh) {
         this.baselineRefreshFailed = false;
         const refresh = (async () => {
@@ -637,6 +723,8 @@ export class ProjectSyncRuntime {
               !value.document
             )
               return;
+            this.observeDatabaseRevision(value.databaseRevision);
+            if (this.databaseContextChanged) return;
             if (value.sequence < this.sequence) return;
             this.baselineId = value.baselineId;
             this.baselineSequence = value.sequence;
@@ -667,6 +755,9 @@ export class ProjectSyncRuntime {
 
   private applyEvent(event: SyncEvent) {
     if (this.stopped) return;
+    this.observeDatabaseRevision(event.databaseRevision);
+    if (this.databaseContextChanged || (event.databaseRevision ?? 0) !== this.databaseRevision)
+      return;
     if (event.sequence <= this.sequence) return;
     this.sequence = event.sequence;
     if (event.status === 'accepted') {
@@ -684,6 +775,11 @@ export class ProjectSyncRuntime {
       this.rebuildVisible();
     } else if (event.type === 'ack') {
       const result = event.result;
+      this.observeDatabaseRevision(result.databaseRevision);
+      if (this.databaseContextChanged || (result.databaseRevision ?? 0) !== this.databaseRevision) {
+        this.publish();
+        return;
+      }
       if (result.status === 'accepted') {
         const newest = result.sequence >= this.sequence;
         this.sequence = Math.max(this.sequence, result.sequence);
@@ -708,6 +804,7 @@ export class ProjectSyncRuntime {
                 baselineId: result.nextBaseline.baselineId,
                 baseSequence: result.nextBaseline.baseSequence,
                 baselineIssuedAt: result.nextBaseline.baselineIssuedAt,
+                databaseRevision: result.databaseRevision ?? 0,
                 document: sharedDocument(result.document),
               });
             }
@@ -763,7 +860,7 @@ export class ProjectSyncRuntime {
     const unresolved = this.pending.some((item) => item.state === 'unresolved');
     const active = this.pending.some((item) => item.state !== 'unresolved');
     const status: SyncStatus =
-      this.storageFailure || unresolved || this.personalConflict
+      this.storageFailure || unresolved || this.personalConflict || this.databaseContextChanged
         ? 'action-needed'
         : active
           ? this.connected
@@ -778,9 +875,16 @@ export class ProjectSyncRuntime {
       pending: this.pending,
       history: this.history,
       ...(this.storageFailure ? { storageFailure: this.storageFailure } : {}),
-      ...(this.error ? { error: this.error } : {}),
-      canUndo: this.ownPast.length > 0,
-      canRedo: this.ownFuture.length > 0,
+      ...(this.databaseContextChanged
+        ? {
+            error: t('프로젝트 DB 설정이 변경되었습니다. 프로젝트를 다시 열어 주세요.'),
+            databaseContextChanged: true,
+          }
+        : this.error
+          ? { error: this.error }
+          : {}),
+      canUndo: !this.databaseContextChanged && this.ownPast.length > 0,
+      canRedo: !this.databaseContextChanged && this.ownFuture.length > 0,
     });
   }
 
@@ -808,16 +912,24 @@ export class ProjectSyncRuntime {
         const value = JSON.parse(String(message.data)) as {
           type?: string;
           projectId?: string;
+          workspaceId?: string;
           sequence?: number;
+          databaseRevision?: number;
           event?: unknown;
         };
+        if (value.type === 'workspace-access-changed' && value.workspaceId) {
+          this.stop();
+          this.options.onWorkspaceAccessChange?.(value.workspaceId);
+          return;
+        }
         if (value.projectId !== this.options.projectId) return;
+        this.observeDatabaseRevision(value.databaseRevision);
         if (value.type === 'subscribed') {
           this.connected = true;
           this.error = undefined;
           void this.cursor
             .receiveHead(value.sequence ?? this.sequence)
-            .then(() => this.queue?.pump());
+            .then(() => this.pumpShared());
           this.publish();
         } else if (value.type === 'head')
           void this.cursor.receiveHead(value.sequence ?? this.sequence);
@@ -848,12 +960,20 @@ export class ProjectSyncRuntime {
       if (this.stopped) return;
       for (const event of events) await this.cursor.receive(event);
       if (events.length) this.connected = true;
-      await this.queue?.pump();
+      await this.pumpShared();
       await this.refreshPersonal().catch(() => undefined);
       void this.flushPersonal();
     } catch {
       if (this.stopped) return;
       this.connected = false;
+      this.publish();
+    }
+  }
+
+  private observeDatabaseRevision(revision: number | undefined) {
+    // Old acknowledgements are replayable, so they must not roll the current context back.
+    if (typeof revision === 'number' && revision > this.databaseRevision) {
+      this.databaseContextChanged = true;
       this.publish();
     }
   }
@@ -895,7 +1015,23 @@ export class ProjectSyncRuntime {
     void this.flushPersonal();
   }
 
-  private async flushPersonal() {
+  private flushPersonal(): Promise<void> {
+    if (this.personalSave) return this.personalSave;
+    const save = this.savePersonal();
+    this.personalSave = save;
+    void save.then(
+      () => {
+        if (this.personalSave === save) this.personalSave = undefined;
+      },
+      () => {
+        if (this.personalSave === save) this.personalSave = undefined;
+      },
+    );
+    return save;
+  }
+
+  private async savePersonal() {
+    if (this.stopped || this.options.personalReadOnly) return;
     if (this.personalSaving || !this.personalLoaded || this.personalConflict) return;
     this.personalSaving = true;
     try {

@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { normalizePhysicalType, validatePhysicalType, TABLES_VIEW_ID } from '@ezerd/model';
 const id = z
   .string()
   .trim()
   .min(1)
   .max(160)
-  .refine((value) => value !== 'overview');
+  .refine((value) => value !== 'overview' && value !== TABLES_VIEW_ID);
 const name = z.string().max(120);
 const description = z.string().max(10000);
 const scope = z.enum(['both', 'logical', 'physical']);
@@ -21,13 +22,17 @@ export const tableSchema = z.strictObject({
     .strictObject({ showNullable: z.boolean().optional(), showComment: z.boolean().optional() })
     .optional(),
   id,
-  domainId: id,
+  domainId: id.nullable(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .optional(),
   scope,
   logical: z.strictObject({ name, definition: description }),
   physical: z.strictObject({ name, schema: name, comment: description }),
   customProperties: customPropertiesSchema,
 });
-export const physicalTypeSchema = z.strictObject({
+export const physicalTypeInputSchema = z.strictObject({
   name,
   enumId: id.optional(),
   length: z.number().int().min(1).max(10485760).optional(),
@@ -35,6 +40,14 @@ export const physicalTypeSchema = z.strictObject({
   scale: z.number().int().min(-1000).max(1000).optional(),
   isArray: z.boolean(),
 });
+export const physicalTypePatchSchema = physicalTypeInputSchema.partial();
+export const storedPhysicalTypeSchema = physicalTypeInputSchema.overwrite(normalizePhysicalType);
+export const rawPhysicalTypeSchema = physicalTypeInputSchema.superRefine((value, ctx) => {
+  for (const issue of validatePhysicalType(value)) {
+    ctx.addIssue({ code: 'custom', path: [issue.path], message: issue.message });
+  }
+});
+export const physicalTypeSchema = rawPhysicalTypeSchema.overwrite(normalizePhysicalType);
 export const columnSchema = z.strictObject({
   id,
   tableId: id,
@@ -53,6 +66,15 @@ export const columnSchema = z.strictObject({
     comment: description,
   }),
   customProperties: customPropertiesSchema,
+});
+export const storedColumnSchema = columnSchema.extend({
+  physical: columnSchema.shape.physical.extend({ type: storedPhysicalTypeSchema }),
+});
+export const rawStoredColumnSchema = columnSchema.extend({
+  physical: columnSchema.shape.physical.extend({ type: physicalTypeInputSchema }),
+});
+export const rawColumnSchema = columnSchema.extend({
+  physical: columnSchema.shape.physical.extend({ type: rawPhysicalTypeSchema }),
 });
 export const tableKeySchema = z.strictObject({
   id,

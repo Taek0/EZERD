@@ -5,6 +5,8 @@ import {
   addTable,
   type Table,
   type DesignDocument,
+  TABLES_VIEW_ID,
+  updateTable,
 } from '@ezerd/model';
 import { diagnosticTarget } from './ddl-diagnostics.js';
 const table: Table = {
@@ -36,6 +38,16 @@ const document: DesignDocument = {
   ],
 };
 describe('actionable DDL diagnostics', () => {
+  it('focuses an unassigned table and its owned keys in the global canvas', () => {
+    const unassigned = updateTable(document, 't', { domainId: null });
+    expect(diagnosticTarget(unassigned, 't').target).toMatchObject({
+      viewId: TABLES_VIEW_ID,
+      objectId: 't',
+    });
+    expect(diagnosticTarget(unassigned, 'k').target).toEqual(
+      diagnosticTarget(unassigned, 't').target,
+    );
+  });
   it('labels keys and relations and focuses the owning table', () => {
     const key = diagnosticTarget(document, 'k');
     expect(key.label).toBe('orders / orders_pk');

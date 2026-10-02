@@ -44,9 +44,13 @@ try {
     [
       fileURLToPath(new URL('../../../node_modules/vitest/vitest.mjs', import.meta.url)),
       'run',
-      'apps/server/test/api.integration.test.ts',
-      'apps/server/test/autosync.integration.test.ts',
-      'apps/server/test/mcp.integration.test.ts',
+      ...(process.argv.length > 2
+        ? process.argv.slice(2)
+        : [
+            'apps/server/test/api.integration.test.ts',
+            'apps/server/test/autosync.integration.test.ts',
+            'apps/server/test/mcp.integration.test.ts',
+          ]),
     ],
     { cwd: root, env, stdio: 'inherit' },
   );

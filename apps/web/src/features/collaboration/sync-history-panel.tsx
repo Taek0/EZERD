@@ -67,6 +67,7 @@ const isDeletion = (change: {
   (change.afterExists === false || (change.after === null && change.before !== null));
 
 type SyncHistoryPanelProps = {
+  readOnly?: boolean;
   snapshot: SyncSnapshot | null;
   onRestore?: (operationId: string) => void;
   onReapply?: (operationId: string) => void;
@@ -95,6 +96,7 @@ export function SyncHistoryPanel(props: SyncHistoryPanelProps) {
 }
 
 export function SyncHistoryContent({
+  readOnly = false,
   snapshot,
   onRestore,
   onReapply,
@@ -159,7 +161,7 @@ export function SyncHistoryContent({
               </small>
               <div className="sync-history-actions">
                 <Button
-                  disabled={!onReapply || activeOperationId === item.operationId}
+                  disabled={readOnly || !onReapply || activeOperationId === item.operationId}
                   onClick={() => onReapply?.(item.operationId)}
                 >
                   {t('재적용')}
@@ -237,7 +239,7 @@ export function SyncHistoryContent({
                 )}
                 <div className="sync-history-actions">
                   <Button
-                    disabled={!onRestore || activeOperationId === entry.operationId}
+                    disabled={readOnly || !onRestore || activeOperationId === entry.operationId}
                     onClick={() => onRestore?.(entry.operationId)}
                   >
                     {activeOperationId === entry.operationId ? t('복원 중…') : t('새 객체로 복원')}

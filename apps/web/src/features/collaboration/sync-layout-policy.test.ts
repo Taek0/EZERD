@@ -31,3 +31,14 @@ describe('combined view sync policy', () => {
     expect(syncLayoutPolicy(true, false).camera).toBe('local');
   });
 });
+
+it('allows viewers to adjust personal combined routes without changing shared layout', () => {
+  expect(syncLayoutPolicy(true, true, false)).toMatchObject({
+    editContent: false,
+    editRoutes: true,
+    editRelations: false,
+    moveNodes: false,
+  });
+  expect(syncLayoutPolicy(true, false, false).editRoutes).toBe(false);
+  expect(syncLayoutPolicy(true, true, true).editRoutes).toBe(false);
+});

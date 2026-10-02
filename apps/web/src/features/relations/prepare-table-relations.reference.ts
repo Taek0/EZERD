@@ -36,7 +36,9 @@ export function prepareTableRelationsReference(
     const combined = doc.views?.find((view) => view.id === viewId);
     if (
       combined &&
-      (!combined.domainIds.includes(source.domainId) ||
+      (source.domainId === null ||
+        target.domainId === null ||
+        !combined.domainIds.includes(source.domainId) ||
         !combined.domainIds.includes(target.domainId))
     )
       return null;

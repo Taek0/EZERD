@@ -121,6 +121,9 @@ importers:
 
   packages/contracts:
     dependencies:
+      '@ezerd/model':
+        specifier: workspace:*
+        version: link:../model
       zod:
         specifier: 4.6.5
         version: 4.6.5

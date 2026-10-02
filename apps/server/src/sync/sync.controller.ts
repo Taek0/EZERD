@@ -59,8 +59,8 @@ export class SyncController {
     @Query('since') rawSince: unknown,
     @Headers('authorization') authorization?: string,
   ) {
-    await requireSession(this.sessions, authorization);
-    return this.sync.events(parse(idSchema, rawProjectId), parse(sinceSchema, rawSince));
+    const user = await requireSession(this.sessions, authorization);
+    return this.sync.events(user.id, parse(idSchema, rawProjectId), parse(sinceSchema, rawSince));
   }
 
   @Get('projects/:projectId/history')
@@ -69,8 +69,8 @@ export class SyncController {
     @Query('since') rawSince: unknown,
     @Headers('authorization') authorization?: string,
   ) {
-    await requireSession(this.sessions, authorization);
-    return this.sync.history(parse(idSchema, rawProjectId), parse(sinceSchema, rawSince));
+    const user = await requireSession(this.sessions, authorization);
+    return this.sync.history(user.id, parse(idSchema, rawProjectId), parse(sinceSchema, rawSince));
   }
 
   @Post('projects/:projectId/sync-baseline')

@@ -20,11 +20,13 @@ export function DomainColorPicker({
   onChange,
   disabled = false,
   label = tr('도메인 색상'),
+  onReset,
 }: {
   label?: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  onReset?: () => void;
 }) {
   useI18n();
   return (
@@ -104,6 +106,11 @@ export function DomainColorPicker({
           </UntitledPopover>
         </DialogTrigger>
       </ColorPicker>
+      {onReset && (
+        <Button disabled={disabled} onClick={onReset}>
+          {tr('자동 색상으로 되돌리기')}
+        </Button>
+      )}
     </div>
   );
 }

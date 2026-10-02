@@ -638,10 +638,12 @@ export function Dropdown({
   trigger,
   items,
   label = '메뉴',
+  popoverClassName,
 }: {
   trigger: ReactElement;
   items: ContextMenuItem[];
   label?: string;
+  popoverClassName?: string;
 }) {
   const root = useRef<HTMLSpanElement>(null);
   const { t } = useI18n();
@@ -654,7 +656,7 @@ export function Dropdown({
       <MenuTrigger>
         {trigger}
         <UntitledPopover
-          className="ui-dropdown-popover"
+          className={['ui-dropdown-popover', popoverClassName].filter(Boolean).join(' ')}
           placement="bottom end"
           {...(portalContainer ? { UNSTABLE_portalContainer: portalContainer } : {})}
         >

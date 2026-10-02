@@ -11,6 +11,22 @@ export type McpPrincipal = { user: AuthenticatedUser; tokenId: string };
 export class McpAuthService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
+  async assertActiveToken(tokenId: string, userId: string): Promise<void> {
+    const [token] = await this.database.db
+      .select({ id: mcpTokens.id })
+      .from(mcpTokens)
+      .innerJoin(users, eq(users.id, mcpTokens.userId))
+      .where(
+        and(
+          eq(mcpTokens.id, tokenId),
+          eq(mcpTokens.userId, userId),
+          gt(mcpTokens.expiresAt, new Date()),
+          isNull(mcpTokens.revokedAt),
+        ),
+      );
+    if (!token) throw new UnauthorizedException('MCP 토큰이 만료되었거나 폐기되었습니다.');
+  }
+
   async authenticateHeader(authorization: string | undefined): Promise<McpPrincipal> {
     const pattern = new RegExp(`^Bearer (${MCP_TOKEN_PREFIX}[A-Za-z0-9_-]{43})$`);
     const match = pattern.exec(authorization ?? '');

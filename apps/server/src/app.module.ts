@@ -21,6 +21,23 @@ import { McpPersonalService } from './mcp/mcp-personal.service.js';
 import { LanAccessService } from './network/network-access.js';
 import { PersonalStateController } from './workspace/personal-state.controller.js';
 import { PersonalStateService } from './workspace/personal-state.service.js';
+import { SpaceController } from './workspace/space.controller.js';
+import { SpaceService } from './workspace/space.service.js';
+import { WorkspaceAccessService } from './workspace/workspace-access.service.js';
+import { WorkspaceEventsService } from './workspace/workspace-events.service.js';
+import { ProjectDatabaseService } from './workspace/project-database.service.js';
+import { NativeSyncService } from './sync/native-sync.service.js';
+import { NativeSyncController } from './sync/native-sync.controller.js';
+import { McpNativeDocumentService } from './mcp/mcp-native-document.service.js';
+import { NativeUpgradeService } from './workspace/native-upgrade.service.js';
+import { NativeUpgradeController } from './workspace/native-upgrade.controller.js';
+import { NativeCommandController } from './sync/native-command.controller.js';
+import { NativeTransferController } from './workspace/native-transfer.controller.js';
+import { NativeTransferService } from './workspace/native-transfer.service.js';
+import { NativeDDLService } from './workspace/native-ddl.service.js';
+import { NativeDDLController } from './workspace/native-ddl.controller.js';
+import { NativeHistoryService } from './sync/native-history.service.js';
+import { NativeHistoryController } from './sync/native-history.controller.js';
 
 @Module({
   controllers: [
@@ -29,16 +46,30 @@ import { PersonalStateService } from './workspace/personal-state.service.js';
     ReviewController,
     SessionController,
     SyncController,
+    NativeSyncController,
+    NativeUpgradeController,
+    NativeCommandController,
+    NativeTransferController,
+    NativeDDLController,
+    NativeHistoryController,
     McpTokenController,
     McpController,
     PersonalStateController,
+    SpaceController,
   ],
   providers: [
     DatabaseService,
     SessionService,
     SyncGateway,
     SyncService,
+    NativeSyncService,
+    NativeUpgradeService,
+    NativeTransferService,
+    NativeDDLService,
+    NativeHistoryService,
+    McpNativeDocumentService,
     WorkspaceService,
+    ProjectDatabaseService,
     ReviewService,
     RateLimitService,
     McpTokenService,
@@ -49,6 +80,9 @@ import { PersonalStateService } from './workspace/personal-state.service.js';
     McpPersonalService,
     LanAccessService,
     PersonalStateService,
+    SpaceService,
+    WorkspaceAccessService,
+    WorkspaceEventsService,
   ],
 })
 export class AppModule {}

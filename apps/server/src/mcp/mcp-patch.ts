@@ -4,7 +4,7 @@ import {
   domainRelationSchema,
   domainSchema,
   noteSchema,
-  physicalTypeSchema,
+  physicalTypePatchSchema,
   projectEnumSchema,
   tableKeySchema,
   tableRelationSchema,
@@ -50,6 +50,7 @@ const domainPatch = nonEmpty(
 const tablePatch = nonEmpty(
   z.strictObject({
     domainId: tableSchema.shape.domainId.optional(),
+    color: tableSchema.shape.color.nullable(),
     scope: tableSchema.shape.scope.optional(),
     logical: tableSchema.shape.logical.partial().optional(),
     physical: tableSchema.shape.physical.partial().optional(),
@@ -64,7 +65,7 @@ const columnPatch = nonEmpty(
     physical: columnSchema.shape.physical
       .omit({ type: true })
       .partial()
-      .extend({ type: physicalTypeSchema.partial().optional() })
+      .extend({ type: physicalTypePatchSchema.optional() })
       .optional(),
     customProperties: customPropertiesPatch.optional(),
   }),
@@ -144,7 +145,7 @@ export function applyPatchCommand(document: DesignDocument, command: PatchComman
     }
     case 'patch_table': {
       const current = existing(document.tables, command.id);
-      const { logical, physical, customProperties, ...rest } = command.patch;
+      const { logical, physical, customProperties, color, ...rest } = command.patch;
       const next: Table = {
         ...current,
         ...defined<Table>(rest),
@@ -158,6 +159,8 @@ export function applyPatchCommand(document: DesignDocument, command: PatchComman
           ? { customProperties: mergeCustomProperties(current.customProperties, customProperties) }
           : {}),
       };
+      if (color === null) next.color = undefined;
+      else if (color !== undefined) next.color = color;
       return updateTable(document, command.id, next);
     }
     case 'patch_column': {

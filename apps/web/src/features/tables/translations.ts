@@ -1,6 +1,12 @@
 import { registerTranslations } from '../../shared/i18n/index.js';
 
 registerTranslations({
+  '{domain} 도메인에 테이블을 생성합니다.': 'New tables belong to the {domain} domain.',
+  '도메인 없이 테이블을 만들고, 필요하면 속성에서 도메인을 지정하세요.':
+    'Create tables without a domain, then assign one in properties when needed.',
+  미지정: 'Unassigned',
+  '테이블 색상': 'Table color',
+  '소유 도메인 · {domain}': 'Owner domain · {domain}',
   '이름 없는 테이블': 'Unnamed table',
   '이름 없는 컬럼': 'Unnamed column',
   '최대 100개, 키 120자 / 문자열 값 10,000자까지 입력하세요.':

@@ -1,4 +1,5 @@
 import { registerTranslations, translate as t } from '../i18n/index.js';
+import { TABLES_VIEW_ID } from '@ezerd/model';
 
 registerTranslations({
   '다른 저장 내용이 있습니다. 최신 내용을 다시 열어 주세요.':
@@ -85,8 +86,10 @@ export function acknowledgeSave<T, P>(
     dirty: current.revision !== snapshotRevision,
   };
 }
-export function validViewId(viewId: string, domainIds: readonly string[]) {
-  return viewId === 'overview' || domainIds.includes(viewId) ? viewId : 'overview';
+export function validViewId(viewId: string, domainIds: readonly string[], fallback = 'overview') {
+  return viewId === 'overview' || viewId === TABLES_VIEW_ID || domainIds.includes(viewId)
+    ? viewId
+    : fallback;
 }
 export function viewportDestination(readOnly: boolean) {
   return readOnly ? 'local' : 'document';

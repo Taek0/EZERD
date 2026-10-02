@@ -1,6 +1,34 @@
 import { registerTranslations } from '../../shared/i18n/index.js';
 
 registerTranslations({
+  '도메인 필터': 'Domain filter',
+  '전체 테이블 표시': 'Show all tables',
+  '필터 해제': 'Clear filter',
+  '선택 없음': 'No selection',
+  '필터에 해당하는 테이블이 없습니다': 'No tables match this filter',
+  '필터는 내 화면에만 적용됩니다. 테이블 위치와 편집 내용은 모두 공유됩니다.':
+    'Filters apply only to your screen. Table positions and edits are shared with everyone.',
+
+  '전체 테이블의 컬럼·키·관계를 설계하고 속성에서 도메인과 색상을 지정할 수 있습니다.':
+    'Design columns, keys and relationships for all tables. Set domains and colors in properties.',
+  '전체 테이블': 'All tables',
+  '전체 테이블 캔버스': 'All tables canvas',
+  '테이블부터 시작하세요': 'Start with tables',
+  '첫 테이블 만들기': 'Create your first table',
+  '이 화면에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.':
+    'No tables in this view. Add one with ＋ Table in the toolbar.',
+  '자동 색상으로 되돌리기': 'Reset to automatic color',
+  '테이블 메뉴': 'Table menu',
+  오려두기: 'Cut',
+  복사하기: 'Copy',
+  붙여넣기: 'Paste',
+  '테이블을 클립보드에 보관하지 못했습니다.': 'Could not copy the tables to the clipboard.',
+  '복사한 테이블이 없습니다.': 'No copied tables are available.',
+  '테이블을 붙여넣지 못했습니다. 문서 크기와 내용을 확인해 주세요.':
+    'Could not paste the tables. Check the document size and contents.',
+  공유: 'Share',
+  '내보내는 중…': 'Exporting…',
+  '프로젝트 내보내기': 'Export project',
   '이름 없는 테이블': 'Unnamed table',
   '테이블 관계': 'Table relations',
   테이블: 'Table',

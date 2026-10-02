@@ -1,9 +1,31 @@
 import { createFrameQueue } from './frame-queue.js';
+import { initialCanvasView, visibleCanvasTable } from './canvas-view.js';
+import {
+  copyTables,
+  acknowledgeSystemTableClipboard,
+  localTablePasteFallback,
+  parseTableClipboard,
+  pasteTables,
+  readLocalTableClipboard,
+  rememberTableClipboard,
+} from './table-clipboard.js';
+import {
+  canvasToolShortcut,
+  toolShortcutInputSelector,
+  toolShortcutOverlaySelector,
+  type CanvasTool,
+} from './canvas-tool-shortcuts.js';
 import { prepareTableRelations } from '../relations/prepare-table-relations.js';
 import { translate as tr, useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
 import { createPortal } from 'react-dom';
-import { applyDomainSelection, domainViewExitTarget } from '../domains/domain-view.js';
+import {
+  domainCanvasTarget,
+  domainFilterOwner,
+  domainFilterNames,
+  matchesDomainFilter,
+  type DomainFilter,
+} from '../domains/domain-view.js';
 import {
   selectionRect,
   intersectingObjects,
@@ -32,12 +54,12 @@ import {
 import {
   type DesignDocument,
   type Table,
+  TABLES_VIEW_ID,
   upsertTableRelation,
   removeTableRelation,
   removeTable,
   isVisibleInView,
   autoLayoutView,
-  removeTableReference,
   addTable,
   addDomain,
   updateDomain,
@@ -72,11 +94,12 @@ import {
   EnumDialog,
   emptyMetadata,
 } from '../tables/TableEditor.js';
-import { clampLayoutPatch, newId, validViewId } from '../../shared/api/client.js';
+import { clampLayoutPatch, message, newId } from '../../shared/api/client.js';
 import {
   Button,
   Checkbox,
   ContextMenu,
+  Dropdown,
   IconButton,
   Input,
   Select,
@@ -89,12 +112,15 @@ import '../domains/domain-workflow.css';
 export type CanvasContext = {
   viewId: string;
   selectedObjectId: string | null;
+  visibleObjectIds?: string[];
   position: { x: number; y: number };
 };
 type Props = {
   toolbarHost?: HTMLElement | null;
   pathHost?: HTMLElement | null;
   panelToggle?: ReactNode;
+  onExportProject?: () => Promise<void>;
+  onExportDDL?: () => Promise<void>;
   onCreatePin?: (context: CanvasContext) => void;
   onContextChange?: (context: CanvasContext) => void;
   focusTarget?: {
@@ -110,6 +136,7 @@ type Props = {
   onChange: (document: DesignDocument) => void;
   onPreviewChange?: (document: DesignDocument) => void;
   readOnly: boolean;
+  personalReadOnly?: boolean;
 };
 export function Canvas({
   document: doc,
@@ -123,6 +150,8 @@ export function Canvas({
   toolbarHost,
   pathHost,
   panelToggle,
+  onExportProject,
+  onExportDDL,
 }: Props) {
   useI18n();
   const confirm = useConfirm();
@@ -130,16 +159,22 @@ export function Canvas({
   latestDeletion.current = { doc, onChange, readOnly };
   const deletionPending = useRef(false);
   const [viewPickerOpen, setViewPickerOpen] = useState(false);
-  const [viewDraftId, setViewDraftId] = useState<string | null>(null);
+  const [domainFilter, setDomainFilter] = useState<DomainFilter>(null);
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [includeUnassigned, setIncludeUnassigned] = useState(true);
+  const [selectAllDomains, setSelectAllDomains] = useState(true);
   const selectedDomainSet = new Set(selectedDomains);
-  const selectedDomainCount = doc.domains.filter((domain) =>
-    selectedDomainSet.has(domain.id),
-  ).length;
-  const domainViewOrigin = useRef<string | null>(null);
-  const [combinedName, setCombinedName] = useState('함께 보기');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [clipboardError, setClipboardError] = useState('');
+  const pasteCount = useRef(0);
+  const clipboardActive = useRef(true);
+  useEffect(() => {
+    clipboardActive.current = true;
+    return () => {
+      clipboardActive.current = false;
+    };
+  }, []);
   const viewMode = 'physical' as const;
   const [inspectorOpen, setInspectorOpen] = useState(() => {
     try {
@@ -200,10 +235,10 @@ export function Canvas({
       /* Storage can be unavailable in private browsing. */
     }
   }, [inspectorOpen]);
-  const [requestedViewId, setViewId] = useState('overview'),
+  const [requestedViewId, setViewId] = useState(() => initialCanvasView(doc)),
     [selected, setSelectedState] = useState<string | null>(null),
     [relationId, setRelationId] = useState('');
-  const [tool, setTool] = useState<'select' | 'hand'>('select');
+  const [tool, setTool] = useState<CanvasTool>('select');
   const [multiSelection, setMultiSelection] = useState<string[]>([]);
   const [marquee, setMarquee] = useState<ReturnType<typeof selectionRect> | null>(null);
   function setSelected(value: SetStateAction<string | null>) {
@@ -226,10 +261,9 @@ export function Canvas({
       ? relationNameDraft.value
       : editingDomainRelation.name
     : relationName;
-  const viewId = validViewId(requestedViewId, [
-    ...doc.domains.map((d) => d.id),
-    ...(doc.views ?? []).map((v) => v.id),
-  ]);
+  const viewId = requestedViewId === 'overview' ? 'overview' : TABLES_VIEW_ID;
+  const fullCanvas = viewId === TABLES_VIEW_ID;
+  const creationOwner = fullCanvas ? domainFilterOwner(doc, domainFilter) : undefined;
   const [localViewports, setLocalViewports] = useState<
     Record<
       string,
@@ -274,6 +308,23 @@ export function Canvas({
   previewLatest.current = preview;
   const finishLatest = useRef(finish);
   finishLatest.current = finish;
+  const switchToolLatest = useRef(switchTool);
+  switchToolLatest.current = switchTool;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const nextTool = canvasToolShortcut(event, {
+        editing: !!target?.closest(toolShortcutInputSelector),
+        overlayOpen: !!document.querySelector(toolShortcutOverlaySelector),
+        dragging: !!drag.current || !!inspectorDrag.current,
+      });
+      if (!nextTool) return;
+      event.preventDefault();
+      switchToolLatest.current(nextTool);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   useLayoutEffect(() => {
     setMarquee(null);
     return () => {
@@ -285,7 +336,7 @@ export function Canvas({
       if (active?.captureTarget.hasPointerCapture(active.pointerId))
         active.captureTarget.releasePointerCapture(active.pointerId);
     };
-  }, [viewId, readOnly, previewFrame, cameraFrame]);
+  }, [viewId, domainFilter, readOnly, previewFrame, cameraFrame]);
   useEffect(() => {
     const finishInput = () => finishLatest.current();
     const hidden = () => {
@@ -298,8 +349,8 @@ export function Canvas({
       document.removeEventListener('visibilitychange', hidden);
     };
   }, []);
-  const activeCombined = doc.views?.find((v) => v.id === viewId);
-  const layoutPolicy = syncLayoutPolicy(readOnly, !!activeCombined);
+  const layoutPolicy = syncLayoutPolicy(readOnly, false);
+  const noteReadOnly = readOnly;
   // Camera state does not change document-space geometry. Any new document invalidates it.
   const nodes = useMemo(
     () =>
@@ -308,11 +359,7 @@ export function Canvas({
           const table = (doc.tables ?? []).find((t) => t.id === n.objectId);
           return (
             n.viewId === viewId &&
-            (!table ||
-              (isVisibleInView(table.scope, viewMode) &&
-                (activeCombined
-                  ? activeCombined.domainIds.includes(table.domainId)
-                  : table.domainId === viewId)))
+            (!table || visibleCanvasTable(doc, table, viewId, viewMode, domainFilter))
           );
         })
         .map((node) => {
@@ -328,9 +375,15 @@ export function Canvas({
               : cardSize(kind, node.width, node.height)),
           };
         }),
-    [doc, viewId, viewMode, activeCombined],
+    [doc, viewId, viewMode, domainFilter],
   );
   const visibleNodeIds = useMemo(() => nodes.map((node) => node.id), [nodes]);
+  // Context updates rerender the parent. Keep IDs stable even if it supplies a new document wrapper.
+  const visibleObjectKey = JSON.stringify(nodes.map((node) => node.objectId));
+  const visibleObjectIds = useMemo(
+    () => JSON.parse(visibleObjectKey) as string[],
+    [visibleObjectKey],
+  );
   const domainRoutes = useMemo(
     () => layoutDomainRelations(doc.domainRelations, nodes),
     [doc.domainRelations, nodes],
@@ -341,9 +394,91 @@ export function Canvas({
     [doc, viewId, viewMode, visibleNodeIds],
   );
   const selectedNode = nodes.find((n) => n.objectId === selected),
-    domain = doc.domains.find((d) => d.id === selected),
-    note = doc.notes.find((n) => n.id === selected);
+    domain = selectedNode && doc.domains.find((d) => d.id === selected),
+    note = selectedNode && doc.notes.find((n) => n.id === selected);
   const selectedObjects = multiSelection.filter((id) => nodes.some((n) => n.objectId === id));
+  const selectedTableIds = (
+    selectedObjects.length ? selectedObjects : selectedNode && selected ? [selected] : []
+  ).filter((id) => doc.tables?.some((t) => t.id === id));
+  const tableMenu = !!menu?.source && !!doc.tables?.some((t) => t.id === menu.source);
+  function clipboardTarget(target: EventTarget | null) {
+    return (
+      target instanceof Element &&
+      surface.current?.contains(target) &&
+      !target.closest(toolShortcutInputSelector) &&
+      !document.querySelector(toolShortcutOverlaySelector) &&
+      tool === 'select' &&
+      !drag.current
+    );
+  }
+  function copySelection(cut: boolean, transfer?: DataTransfer) {
+    if (!selectedTableIds.length || (cut && readOnly)) return;
+    try {
+      const text = copyTables(doc, selectedTableIds, nodes);
+      if (!parseTableClipboard(text)) throw new Error();
+      if (transfer) transfer.setData('text/plain', text);
+      rememberTableClipboard(text, !transfer);
+      pasteCount.current = 0;
+      if (!transfer)
+        void navigator.clipboard
+          ?.writeText(text)
+          .then(() => acknowledgeSystemTableClipboard(text))
+          .catch(() => {
+            // LAN / denied clipboard access: preserve the complete in-tab snapshot.
+          });
+      if (cut) {
+        change(selectedTableIds.reduce((next, id) => removeTable(next, id), doc));
+        setSelected(null);
+      }
+      setClipboardError('');
+      surface.current?.focus({ preventScroll: true });
+    } catch {
+      setClipboardError(tr('테이블을 클립보드에 보관하지 못했습니다.'));
+    }
+  }
+  function pasteSelection(text: string, atPointer = false) {
+    if (readOnly || creationOwner === undefined) return;
+    const fragment = parseTableClipboard(text);
+    if (!fragment) {
+      setClipboardError(tr('복사한 테이블이 없습니다.'));
+      return;
+    }
+    try {
+      const camera = cameraCurrent.current;
+      const offset = 32 * (pasteCount.current + 1);
+      const point =
+        atPointer && blankPosition.current?.viewId === viewId
+          ? blankPosition.current
+          : { x: -camera.x / camera.zoom + offset, y: -camera.y / camera.zoom + offset };
+      const result = pasteTables(doc, fragment, creationOwner, point, newId);
+      change(result.document);
+      setSelectedState(result.ids[0] ?? null);
+      setMultiSelection(result.ids);
+      pasteCount.current++;
+      setClipboardError('');
+      surface.current?.focus({ preventScroll: true });
+    } catch {
+      setClipboardError(tr('테이블을 붙여넣지 못했습니다. 문서 크기와 내용을 확인해 주세요.'));
+    }
+  }
+  async function pasteFromMenu() {
+    const original = doc;
+    let text = readLocalTableClipboard();
+    try {
+      if (navigator.clipboard?.readText && !localTablePasteFallback())
+        text = await navigator.clipboard.readText();
+    } catch {
+      // Retain the local copy when system clipboard access is unavailable.
+    }
+    if (
+      !clipboardActive.current ||
+      latestDeletion.current.doc !== original ||
+      latestDeletion.current.readOnly ||
+      gestureContext.current.viewId !== viewId
+    )
+      return;
+    pasteSelection(text, true);
+  }
   useEffect(() => {
     if (source && !doc.domains.some((d) => d.id === source)) setSource('');
     if (target && !doc.domains.some((d) => d.id === target)) setTarget('');
@@ -353,12 +488,45 @@ export function Canvas({
       setRelationDescription('');
     }
   }, [doc.domains, doc.domainRelations, source, target, relationId]);
-  const table = (doc.tables ?? []).find((t) => t.id === selected);
-  const selectedTableRelation = (doc.tableRelations ?? []).find((r) => r.id === selected);
+  const table = selectedNode && (doc.tables ?? []).find((t) => t.id === selected);
+  const selectedTableRelation = tableRelations.find(
+    (item) => item?.relation.id === selected,
+  )?.relation;
+  const visibleSelection =
+    selectedNode ||
+    selectedTableRelation ||
+    (viewId === 'overview' && doc.domainRelations.some((relation) => relation.id === selected));
+  useEffect(() => {
+    if (selected && !visibleSelection) setSelected(null);
+    setMultiSelection((ids) => {
+      const visible = ids.filter((id) => nodes.some((node) => node.objectId === id));
+      return visible.length === ids.length ? ids : visible;
+    });
+    if (menu?.source && !nodes.some((node) => node.objectId === menu.source)) setMenu(null);
+    if (
+      fkSource &&
+      !doc.columns?.some(
+        (column) => column.id === fkSource && viewTables.some((item) => item.id === column.tableId),
+      )
+    ) {
+      setFkSource(null);
+      setFkTarget(null);
+    }
+  }, [doc, viewId, nodes, selected, visibleSelection, menu?.source, fkSource]);
+  useEffect(() => {
+    setMenu(null);
+    setViewPickerOpen(false);
+    setConnectSource(null);
+    setConnectPointer(null);
+    setFkSource(null);
+    setFkTarget(null);
+    resetRelation();
+  }, [viewId, readOnly]);
   useEffect(() => {
     contextCallback.current?.({
       viewId,
-      selectedObjectId: selected,
+      selectedObjectId: visibleSelection ? selected : null,
+      visibleObjectIds,
       position: selectedNode
         ? {
             x: selectedNode.x + selectedNode.width / 2,
@@ -371,6 +539,8 @@ export function Canvas({
   }, [
     viewId,
     selected,
+    !!visibleSelection,
+    visibleObjectIds,
     selectedNode?.x,
     selectedNode?.y,
     selectedNode?.width,
@@ -379,15 +549,21 @@ export function Canvas({
   useEffect(() => {
     if (!focusTarget) return;
     finish();
-    const destinationView = validViewId(focusTarget.viewId, [
-      ...doc.domains.map((d) => d.id),
-      ...(doc.views ?? []).map((v) => v.id),
-    ]);
+    const destination = domainCanvasTarget(doc, focusTarget.viewId);
+    const destinationView = destination.viewId;
+    let filter = destination.filter;
+    const focusedTable = doc.tables?.find((item) => item.id === focusTarget.objectId);
+    if (focusedTable && !matchesDomainFilter(focusedTable, filter))
+      filter = {
+        domainIds: focusedTable.domainId ? [focusedTable.domainId] : [],
+        unassigned: focusedTable.domainId === null,
+      };
+    setDomainFilter(filter);
     setViewId(destinationView);
-    setSelected(destinationView === focusTarget.viewId ? focusTarget.objectId : null);
     const node = doc.layout.nodes.find(
-      (n) => n.viewId === focusTarget.viewId && n.objectId === focusTarget.objectId,
+      (n) => n.viewId === destinationView && n.objectId === focusTarget.objectId,
     );
+    setSelected(node ? focusTarget.objectId : null);
     const rect = surface.current?.getBoundingClientRect();
     const next = clampLayoutPatch({
       viewId: destinationView,
@@ -431,14 +607,12 @@ export function Canvas({
   useEffect(() => {
     if (connectSource && !doc.domains.some((d) => d.id === connectSource)) setConnectSource(null);
   }, [doc.domains, connectSource]);
-  const activeDomain = doc.domains.find((d) => d.id === viewId);
   const query = relationSearch.trim().toLocaleLowerCase();
   const matches = (...values: (string | undefined | null)[]) =>
     !query || values.filter(Boolean).join(' ').toLocaleLowerCase().includes(query);
   const viewTables = (doc.tables ?? []).filter(
     (t) => isVisibleInView(t.scope, viewMode) && nodes.some((n) => n.objectId === t.id),
   );
-  const otherTables = referencedDomainTables(doc, viewId);
   const viewRelations = (doc.tableRelations ?? []).filter(
     (r) =>
       isVisibleInView(r.scope, viewMode) &&
@@ -485,9 +659,9 @@ export function Canvas({
         ? doc
         : {
             ...doc,
-            tables: (doc.tables ?? []).filter((t) => isVisibleInView(t.scope, viewMode)),
-            tableRelations: (doc.tableRelations ?? []).filter(
-              (r) => isVisibleInView(r.scope, viewMode) && !!r.physical,
+            tables: viewTables,
+            tableRelations: (doc.tableRelations ?? []).filter((r) =>
+              viewRelations.some((visible) => visible.id === r.id),
             ),
           };
     const sized = {
@@ -555,7 +729,9 @@ export function Canvas({
     setConnectPointer(null);
     setFkSource(null);
     setFkTarget(null);
-    setViewId(id);
+    const destination = domainCanvasTarget(doc, id);
+    if (destination.viewId === TABLES_VIEW_ID) setDomainFilter(destination.filter);
+    setViewId(destination.viewId);
     setSelected(null);
   }
   function position() {
@@ -576,26 +752,27 @@ export function Canvas({
     setMenu(null);
   }
   function newNote() {
-    if (readOnly) return;
+    if (noteReadOnly) return;
     const id = newId();
     change(addNote(doc, { id, viewId, text: '업무 설명을 입력하세요.' }, position()));
     pick(id);
   }
   function newTable(name = '', at?: { x: number; y: number }) {
-    if (readOnly || viewId === 'overview' || activeCombined) return;
+    if (readOnly || creationOwner === undefined) return;
     const id = newId();
     change(
       addTable(
         doc,
         {
           id,
-          domainId: viewId,
+          domainId: creationOwner,
           scope: 'physical',
           logical: { name: '새 테이블', definition: '' },
           physical: { name, schema: 'public', comment: '' },
           customProperties: emptyMetadata(),
         },
         at ?? position(),
+        TABLES_VIEW_ID,
       ),
     );
     pick(id);
@@ -866,6 +1043,15 @@ export function Canvas({
       }
     }
   }
+  function switchTool(nextTool: CanvasTool) {
+    finish();
+    setTool(nextTool);
+    if (nextTool === 'hand') setSelected(null);
+    setConnectSource(null);
+    setConnectPointer(null);
+    setFkSource(null);
+    setFkTarget(null);
+  }
   function editRelation(id: string) {
     const relation = doc.domainRelations.find((r) => r.id === id);
     if (!relation) return;
@@ -906,48 +1092,23 @@ export function Canvas({
       globalThis.document.querySelector<HTMLInputElement>('[data-relation-name-input]')?.focus(),
     );
   }
-  const currentViewName = activeCombined?.name ?? activeDomain?.name ?? '';
+  const filterNames = domainFilterNames(doc, domainFilter);
+  if (domainFilter?.unassigned) filterNames.push(tr('미지정'));
+  const filterLabel =
+    domainFilter === null ? tr('전체') : filterNames.join(' · ') || tr('선택 없음');
+  const currentViewName = fullCanvas
+    ? domainFilter === null
+      ? tr('전체 테이블')
+      : `${tr('전체 테이블')} · ${filterLabel}`
+    : tr('도메인 맵');
   const pathTrail = (
     <nav className="editor-path" aria-label={tr('현재 위치')}>
       <span className="path-sep" aria-hidden="true">
         /
       </span>
-      {viewId === 'overview' ? (
-        <strong className="path-current">{tr('도메인 맵')}</strong>
-      ) : (
-        <>
-          <Button className="path-step" onClick={() => navigate('overview')}>
-            {tr('도메인 맵')}
-          </Button>
-          <span className="path-sep" aria-hidden="true">
-            /
-          </span>
-          <strong
-            className="path-current"
-            key={viewId}
-            title={activeCombined ? currentViewName + tr(' (도메인 뷰)') : currentViewName}
-          >
-            {activeCombined && (
-              <svg
-                className="path-icon"
-                width="13"
-                height="13"
-                viewBox="0 0 20 20"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M3 5h14M3 10h14M3 15h14"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                />
-              </svg>
-            )}
-            {currentViewName}
-          </strong>
-        </>
-      )}
+      <strong className="path-current" title={currentViewName}>
+        {currentViewName}
+      </strong>
     </nav>
   );
   const toolbar = (
@@ -959,46 +1120,39 @@ export function Canvas({
               {tr('＋ 도메인')}
             </Button>
           ) : (
-            <Button disabled={readOnly || !!activeCombined} onClick={() => newTable()}>
+            <Button disabled={readOnly || creationOwner === undefined} onClick={() => newTable()}>
               {tr('＋ 테이블')}
             </Button>
           )}
-          <Button disabled={readOnly} onClick={newNote}>
+          <Button disabled={noteReadOnly} onClick={newNote}>
             {tr('＋ 메모')}
           </Button>
         </div>
         <span className="toolbar-divider" aria-hidden="true" />
         <div className="toolbar-group" role="group" aria-label={tr('보기와 내보내기')}>
-          {viewId !== 'overview' && (
+          <Button aria-pressed={fullCanvas} onClick={() => navigate(TABLES_VIEW_ID)}>
+            {tr('전체 테이블')}
+          </Button>
+          <Button aria-pressed={viewId === 'overview'} onClick={() => navigate('overview')}>
+            {tr('도메인 맵')}
+          </Button>
+          {fullCanvas && (
             <DialogTrigger
               isOpen={viewPickerOpen}
               onOpenChange={(open) => {
                 setViewPickerOpen(open);
                 if (open) {
-                  setSelectedDomains(
-                    activeCombined?.domainIds ??
-                      (activeDomain ? [activeDomain.id] : (doc.views?.[0]?.domainIds ?? [])),
-                  );
+                  setSelectedDomains(domainFilter?.domainIds ?? doc.domains.map((d) => d.id));
+                  setIncludeUnassigned(domainFilter?.unassigned ?? true);
+                  setSelectAllDomains(domainFilter === null);
                 }
               }}
             >
               <Button
-                className={activeCombined ? 'domain-view-trigger is-active' : 'domain-view-trigger'}
-                title={
-                  activeCombined
-                    ? tr('테이블 고정 배치 · 키 관계 설정 및 관계선 이동 가능')
-                    : tr('도메인 뷰')
-                }
+                className={domainFilter ? 'domain-view-trigger is-active' : 'domain-view-trigger'}
+                title={filterLabel}
               >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none">
-                  <path
-                    d="M3 5h14M3 10h14M3 15h14"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                {tr('도메인 뷰')}
+                {tr('도메인 필터')}
               </Button>
               <UntitledPopover
                 className="domain-view-popover"
@@ -1006,29 +1160,25 @@ export function Canvas({
                 shouldFlip={false}
                 offset={8}
               >
-                <Dialog aria-label={tr('도메인 뷰')} className="combined-view-picker">
-                  <strong>{tr('도메인 선택')}</strong>
+                <Dialog aria-label={tr('도메인 필터')} className="combined-view-picker">
+                  <strong>{tr('도메인 필터')}</strong>
                   <p className="panel-note">
                     {tr(
-                      '함께 볼 도메인을 선택하세요. 도메인 맵의 배치를 따라 테이블 묶음을 표시하고, 묶음 안의 배치는 유지합니다. 테이블 위치는 고정되며, 키 관계 설정과 관계선 이동은 가능합니다.',
+                      '필터는 내 화면에만 적용됩니다. 테이블 위치와 편집 내용은 모두 공유됩니다.',
                     )}
                   </p>
                   <div className="combined-domain-options">
                     <label className="combined-select-all">
                       <Checkbox
-                        aria-label={tr('모든 도메인 선택')}
-                        disabled={!doc.domains.length}
-                        checked={
-                          doc.domains.length > 0 && selectedDomainCount === doc.domains.length
-                        }
-                        indeterminate={
-                          selectedDomainCount > 0 && selectedDomainCount < doc.domains.length
-                        }
-                        onChange={(event) =>
+                        aria-label={tr('전체 테이블 표시')}
+                        checked={selectAllDomains}
+                        onChange={(event) => {
+                          setSelectAllDomains(event.target.checked);
                           setSelectedDomains(
-                            event.target.checked ? doc.domains.map((domain) => domain.id) : [],
-                          )
-                        }
+                            event.target.checked ? doc.domains.map((d) => d.id) : [],
+                          );
+                          setIncludeUnassigned(event.target.checked);
+                        }}
                       />
                       {tr('전체')}
                     </label>
@@ -1037,32 +1187,45 @@ export function Canvas({
                         <Checkbox
                           aria-label={d.name}
                           checked={selectedDomainSet.has(d.id)}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            setSelectAllDomains(false);
                             setSelectedDomains((value) =>
                               e.target.checked
                                 ? [...value, d.id]
                                 : value.filter((id) => id !== d.id),
-                            )
-                          }
+                            );
+                          }}
                         />
                         <span style={{ color: d.color ?? '#8993a3' }}>●</span>
                         {d.name}
                       </label>
                     ))}
+                    <label>
+                      <Checkbox
+                        aria-label={tr('미지정')}
+                        checked={includeUnassigned}
+                        onChange={(e) => {
+                          setSelectAllDomains(false);
+                          setIncludeUnassigned(e.target.checked);
+                        }}
+                      />
+                      {tr('미지정')}
+                    </label>
                   </div>
                   <div className="actions">
                     <Button
-                      disabled={readOnly || !selectedDomains.length}
                       onClick={() => {
-                        const result = applyDomainSelection(
-                          doc,
-                          selectedDomains,
-                          activeCombined?.id ?? null,
-                          newId,
+                        finish();
+                        setDomainFilter(
+                          selectAllDomains
+                            ? null
+                            : { domainIds: selectedDomains, unassigned: includeUnassigned },
                         );
-                        if (!activeCombined) domainViewOrigin.current = activeDomain?.id ?? null;
-                        change(result.document);
-                        navigate(result.viewId);
+                        setMenu(null);
+                        setConnectSource(null);
+                        setConnectPointer(null);
+                        setFkSource(null);
+                        setFkTarget(null);
                         setViewPickerOpen(false);
                       }}
                     >
@@ -1074,45 +1237,88 @@ export function Canvas({
               </UntitledPopover>
             </DialogTrigger>
           )}
-          {activeCombined && (
-            <Button
-              className="domain-view-exit"
-              onClick={() => {
-                setViewPickerOpen(false);
-                navigate(
-                  domainViewExitTarget(doc, activeCombined.domainIds, domainViewOrigin.current),
-                );
-              }}
-            >
-              {tr('도메인 뷰 나가기')}
-            </Button>
+          {fullCanvas && domainFilter !== null && (
+            <Button onClick={() => navigate(TABLES_VIEW_ID)}>{tr('필터 해제')}</Button>
           )}
           <Button onClick={() => setEnumOpen(true)}>ENUM</Button>
-          <Button
-            disabled={exporting || !nodes.length}
-            onClick={async () => {
-              const world = surface.current?.querySelector<HTMLElement>('.canvas-world');
-              if (!world) return;
-              setExporting(true);
-              setExportError('');
-              try {
-                await exportCanvasPng(
-                  world,
-                  nodes,
-                  activeCombined?.name ??
-                    activeCombined?.name ??
-                    activeDomain?.name ??
-                    tr('도메인 맵'),
-                );
-              } catch {
-                setExportError(tr('이미지를 만들지 못했습니다. 다시 시도해 주세요.'));
-              } finally {
-                setExporting(false);
-              }
-            }}
-          >
-            {exporting ? tr('이미지 생성 중…') : tr('고화질 PNG')}
-          </Button>
+          <Dropdown
+            label={tr('공유')}
+            trigger={
+              <IconButton
+                aria-label={tr('공유')}
+                title={exporting ? tr('내보내는 중…') : tr('공유')}
+                aria-busy={exporting}
+                disabled={exporting}
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  aria-hidden="true"
+                >
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+                </svg>
+              </IconButton>
+            }
+            items={[
+              {
+                id: 'project-export',
+                label: tr('프로젝트 내보내기'),
+                disabled: exporting || !onExportProject,
+                onAction: async () => {
+                  setExporting(true);
+                  setExportError('');
+                  try {
+                    await onExportProject?.();
+                  } catch (cause) {
+                    setExportError(message(cause));
+                  } finally {
+                    setExporting(false);
+                  }
+                },
+              },
+              {
+                id: 'ddl-export',
+                label: tr('DDL 내보내기'),
+                disabled: exporting || !onExportDDL,
+                onAction: async () => {
+                  setExporting(true);
+                  setExportError('');
+                  try {
+                    await onExportDDL?.();
+                  } catch (cause) {
+                    setExportError(message(cause));
+                  } finally {
+                    setExporting(false);
+                  }
+                },
+              },
+              {
+                id: 'png-export',
+                label: tr('고화질 PNG'),
+                disabled: exporting || !nodes.length,
+                onAction: async () => {
+                  const world = surface.current?.querySelector<HTMLElement>('.canvas-world');
+                  if (!world) return;
+                  setExporting(true);
+                  setExportError('');
+                  try {
+                    await exportCanvasPng(world, nodes, currentViewName);
+                  } catch {
+                    setExportError(tr('이미지를 만들지 못했습니다. 다시 시도해 주세요.'));
+                  } finally {
+                    setExporting(false);
+                  }
+                },
+              },
+            ]}
+          />
         </div>
         <span className="toolbar-divider" aria-hidden="true" />
         <div
@@ -1143,7 +1349,44 @@ export function Canvas({
   return (
     <div
       ref={workspaceRef}
+      onCopy={(event) => {
+        if (!clipboardTarget(event.target) || !selectedTableIds.length) return;
+        event.preventDefault();
+        event.stopPropagation();
+        copySelection(false, event.clipboardData);
+      }}
+      onCut={(event) => {
+        if (!clipboardTarget(event.target) || !selectedTableIds.length || readOnly) return;
+        event.preventDefault();
+        event.stopPropagation();
+        copySelection(true, event.clipboardData);
+      }}
+      onPaste={(event) => {
+        if (!clipboardTarget(event.target) || readOnly || creationOwner === undefined) return;
+        const text = event.clipboardData.getData('text/plain');
+        if (!parseTableClipboard(text)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        pasteSelection(text);
+      }}
       onKeyDown={async (event) => {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          !event.altKey &&
+          !event.shiftKey &&
+          !event.repeat &&
+          !event.nativeEvent.isComposing &&
+          event.key.toLowerCase() === 'v' &&
+          !readOnly &&
+          creationOwner !== undefined &&
+          clipboardTarget(event.target) &&
+          localTablePasteFallback()
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          pasteSelection(localTablePasteFallback());
+          return;
+        }
         if (
           event.key !== 'Delete' ||
           event.repeat ||
@@ -1215,6 +1458,7 @@ export function Canvas({
         {pathHost ? createPortal(pathTrail, pathHost) : pathTrail}
         {toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
         {exportError && <p role="alert">{exportError}</p>}
+        {clipboardError && <p role="alert">{clipboardError}</p>}
 
         <div
           ref={surface}
@@ -1263,7 +1507,9 @@ export function Canvas({
           aria-label={
             viewId === 'overview'
               ? tr('도메인 맵 캔버스')
-              : tr('{name} 내부 캔버스', { name: activeCombined?.name ?? activeDomain?.name ?? '' })
+              : fullCanvas
+                ? tr('전체 테이블 캔버스')
+                : tr('{name} 내부 캔버스', { name: currentViewName })
           }
           onPointerDown={(e) => begin(e, null)}
           onPointerMove={move}
@@ -1433,15 +1679,31 @@ export function Canvas({
                     } as CSSProperties
                   }
                   onPointerDown={(e) => begin(e, node.id)}
-                  onContextMenu={(e) => {
+                  onContextMenuCapture={(e) => {
+                    if (
+                      !t ||
+                      selectedObjects.length < 2 ||
+                      !selectedObjects.includes(t.id) ||
+                      (e.target as Element).closest('input,textarea,[contenteditable="true"]')
+                    )
+                      return;
                     e.preventDefault();
-                    if (!d || (readOnly && !onCreatePin)) return;
+                    e.stopPropagation();
+                    menuPointer.current = { x: e.clientX, y: e.clientY };
+                    e.currentTarget.focus();
+                    setMenu({ source: t.id, x: e.clientX, y: e.clientY });
+                  }}
+                  onContextMenu={(e) => {
+                    if ((e.target as Element).closest('input,textarea,[contenteditable="true"]'))
+                      return;
+                    e.preventDefault();
+                    if ((!d && !t) || (d && readOnly && !onCreatePin)) return;
                     menuPointer.current = { x: e.clientX, y: e.clientY };
                     e.stopPropagation();
                     e.currentTarget.focus();
-                    setSelected(d.id);
+                    if (!selectedObjects.includes(node.objectId)) setSelected(node.objectId);
                     setMenu({
-                      source: d.id,
+                      source: node.objectId,
                       x: Math.max(8, Math.min(e.clientX, window.innerWidth - 290)),
                       y: Math.max(8, Math.min(e.clientY, window.innerHeight - 320)),
                     });
@@ -1460,17 +1722,17 @@ export function Canvas({
                       navigate(d.id);
                       return;
                     }
-                    if (!layoutPolicy.moveNodes) return;
-                    if (d && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
+                    if ((d || t) && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
                       e.preventDefault();
                       const rect = e.currentTarget.getBoundingClientRect();
                       setMenu({
-                        source: d.id,
+                        source: node.objectId,
                         x: Math.max(8, Math.min(rect.left, window.innerWidth - 290)),
                         y: Math.max(8, Math.min(rect.top + 40, window.innerHeight - 320)),
                       });
                       return;
                     }
+                    if (!layoutPolicy.moveNodes) return;
                     const delta = e.shiftKey ? 10 : 1;
                     const offsets: Record<string, [number, number]> = {
                       ArrowLeft: [-delta, 0],
@@ -1547,7 +1809,7 @@ export function Canvas({
                       memo
                       name={tr('메모')}
                       value={n?.text ?? ''}
-                      readOnly={readOnly}
+                      readOnly={noteReadOnly}
                       onCommit={(text) => n && change(updateNote(doc, n.id, text))}
                     />
                   )}
@@ -1584,7 +1846,11 @@ export function Canvas({
               <h2>
                 {viewId === 'overview'
                   ? tr('큰 그림부터 시작하세요')
-                  : tr('이 도메인의 구조를 준비하세요')}
+                  : fullCanvas
+                    ? domainFilter
+                      ? tr('필터에 해당하는 테이블이 없습니다')
+                      : tr('테이블부터 시작하세요')
+                    : tr('이 도메인의 구조를 준비하세요')}
               </h2>
               <p>
                 {viewId === 'overview'
@@ -1601,6 +1867,16 @@ export function Canvas({
                   onClick={() => newDomain()}
                 >
                   {tr('첫 도메인 만들기')}
+                </Button>
+              )}
+              {fullCanvas && (
+                <Button
+                  variant="primary"
+                  disabled={readOnly}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => newTable()}
+                >
+                  {tr('첫 테이블 만들기')}
                 </Button>
               )}
             </div>
@@ -1620,15 +1896,11 @@ export function Canvas({
             <div className="canvas-tool-picker" role="group" aria-label={tr('캔버스 도구')}>
               <IconButton
                 aria-label={tr('커서 도구')}
-                title={tr('커서 · 드래그로 여러 객체 선택')}
+                title={`${tr('커서 · 드래그로 여러 객체 선택')} (V)`}
+                tooltip={`${tr('커서 · 드래그로 여러 객체 선택')} (V)`}
+                aria-keyshortcuts="V"
                 aria-pressed={tool === 'select'}
-                onClick={() => {
-                  finish();
-                  setTool('select');
-                  setConnectSource(null);
-                  setFkSource(null);
-                  setFkTarget(null);
-                }}
+                onClick={() => switchTool('select')}
               >
                 <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path
@@ -1641,16 +1913,11 @@ export function Canvas({
               </IconButton>
               <IconButton
                 aria-label={tr('손 도구')}
-                title={tr('손 · 화면 이동만')}
+                title={`${tr('손 · 화면 이동만')} (H)`}
+                tooltip={`${tr('손 · 화면 이동만')} (H)`}
+                aria-keyshortcuts="H"
                 aria-pressed={tool === 'hand'}
-                onClick={() => {
-                  finish();
-                  setTool('hand');
-                  setSelected(null);
-                  setConnectSource(null);
-                  setFkSource(null);
-                  setFkTarget(null);
-                }}
+                onClick={() => switchTool('hand')}
               >
                 <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path
@@ -1695,11 +1962,39 @@ export function Canvas({
       )}
       <ContextMenu
         position={menu ? { x: menu.x, y: menu.y } : null}
-        label={menu?.source ? tr('도메인 관계 설정') : tr('캔버스 메뉴')}
+        label={
+          tableMenu ? tr('테이블 메뉴') : menu?.source ? tr('도메인 관계 설정') : tr('캔버스 메뉴')
+        }
         onClose={() => setMenu(null)}
         items={
           menu
             ? [
+                ...(tableMenu
+                  ? [
+                      {
+                        id: 'cut-tables',
+                        label: tr('오려두기'),
+                        disabled: readOnly || !selectedTableIds.length,
+                        onAction: () => copySelection(true),
+                      },
+                      {
+                        id: 'copy-tables',
+                        label: tr('복사하기'),
+                        disabled: !selectedTableIds.length,
+                        onAction: () => copySelection(false),
+                      },
+                    ]
+                  : []),
+                ...(!readOnly && !menu.source && viewId !== 'overview'
+                  ? [
+                      {
+                        id: 'paste-tables',
+                        label: tr('붙여넣기'),
+                        disabled: creationOwner === undefined,
+                        onAction: () => void pasteFromMenu(),
+                      },
+                    ]
+                  : []),
                 ...(onCreatePin
                   ? [
                       {
@@ -1709,7 +2004,7 @@ export function Canvas({
                       },
                     ]
                   : []),
-                ...(!readOnly
+                ...(!readOnly && !tableMenu
                   ? menu.source
                     ? [
                         {
@@ -1751,10 +2046,8 @@ export function Canvas({
                           : [
                               {
                                 id: 'new-table',
-                                label: activeCombined
-                                  ? tr('새 테이블은 소유 도메인 화면에서 생성하세요')
-                                  : tr('새 테이블 생성'),
-                                disabled: !!activeCombined || !activeDomain,
+                                label: tr('새 테이블 생성'),
+                                disabled: creationOwner === undefined,
                                 onAction: () =>
                                   newTable(
                                     '',
@@ -1845,10 +2138,8 @@ export function Canvas({
         <aside id="canvas-inspector" className="inspector" data-panel-tab={panelTab}>
           <div className="inspector-topbar">
             <div className="inspector-place">
-              <span>{viewId === 'overview' ? 'VIEW' : 'DOMAIN'}</span>
-              <strong title={activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵')}>
-                {activeCombined?.name ?? activeDomain?.name ?? tr('도메인 맵')}
-              </strong>
+              <span>{viewId === 'overview' || fullCanvas ? 'VIEW' : 'DOMAIN'}</span>
+              <strong title={currentViewName}>{currentViewName}</strong>
             </div>
             {selectionName && (
               <div className="inspector-selection">
@@ -1873,13 +2164,6 @@ export function Canvas({
             </div>
           </div>
           <div className="inspector-body">
-            {activeCombined && (
-              <PanelNote>
-                {tr(
-                  '도메인 뷰 · 테이블은 고정 배치입니다. 키 관계 설정과 관계선 이동은 가능합니다.',
-                )}
-              </PanelNote>
-            )}
             {panelTab === 'outline' ? (
               <>
                 <div className="panel-search">
@@ -1943,7 +2227,7 @@ export function Canvas({
                       defaultOpen
                     >
                       <PanelList
-                        empty={tr('이 도메인에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.')}
+                        empty={tr('이 화면에 테이블이 없습니다. 툴바의 ＋ 테이블로 추가하세요.')}
                       >
                         {viewTables
                           .filter((t) => matches(t.physical.name, t.logical.name))
@@ -1957,7 +2241,14 @@ export function Canvas({
                                   (c) => c.tableId === t.id && isVisibleInView(c.scope, viewMode),
                                 ).length,
                               })}
-                              badge={t.domainId === viewId ? undefined : tr('참조')}
+                              badge={
+                                fullCanvas
+                                  ? (doc.domains.find((domain) => domain.id === t.domainId)?.name ??
+                                    tr('미지정'))
+                                  : t.domainId === viewId
+                                    ? undefined
+                                    : tr('참조')
+                              }
                               onSelect={() => pick(t.id)}
                             />
                           ))}
@@ -1989,34 +2280,6 @@ export function Canvas({
                           ))}
                       </PanelList>
                     </PanelSection>
-                    {!activeCombined && (
-                      <PanelSection title={tr('다른 도메인 테이블')} count={otherTables.length}>
-                        <PanelNote>
-                          {tr('도메인 뷰에서 현재 도메인과 키 관계로 연결된 참조 테이블입니다.')}
-                        </PanelNote>
-                        <PanelList
-                          empty={tr(
-                            '도메인 뷰에서 참조 관계를 설정한 다른 도메인 테이블이 없습니다.',
-                          )}
-                        >
-                          {otherTables
-                            .filter((t) => matches(t.physical.name, t.logical.name))
-                            .map((t) => (
-                              <li key={t.id} className="panel-row">
-                                <div className="panel-row-main reference-table-row">
-                                  <span className="panel-row-text">
-                                    <span className="panel-row-title">{tableLabel(t)}</span>
-                                    <small>
-                                      {doc.domains.find((d) => d.id === t.domainId)?.name}
-                                    </small>
-                                  </span>
-                                  <span className="panel-row-badge">{tr('참조')}</span>
-                                </div>
-                              </li>
-                            ))}
-                        </PanelList>
-                      </PanelSection>
-                    )}
                   </>
                 )}
               </>
@@ -2037,23 +2300,11 @@ export function Canvas({
               </section>
             ) : table ? (
               <>
-                {selectedNode && !activeCombined && table.domainId !== viewId && (
-                  <Button
-                    variant="danger"
-                    className="danger"
-                    disabled={readOnly}
-                    onClick={() => {
-                      change(removeTableReference(doc, selectedNode.id));
-                      setSelected(null);
-                    }}
-                  >
-                    {tr('이 화면의 참조 제거')}
-                  </Button>
-                )}
                 <TableInspector
                   key={table.id}
                   document={doc}
                   tableId={table.id}
+                  viewId={viewId}
                   onChange={change}
                   readOnly={readOnly}
                   onStartForeignKey={(columnId) => {
@@ -2106,7 +2357,7 @@ export function Canvas({
                       <DomainColorPicker
                         label={tr('메모 색상')}
                         value={note?.color ?? '#fff3c4'}
-                        disabled={readOnly}
+                        disabled={noteReadOnly}
                         onChange={(color) => note && change(updateNote(doc, note.id, { color }))}
                       />
                       <label>
@@ -2114,7 +2365,7 @@ export function Canvas({
                         <Textarea
                           maxLength={20000}
                           value={note?.text ?? ''}
-                          disabled={readOnly}
+                          disabled={noteReadOnly}
                           onChange={(e) => note && change(updateNote(doc, note.id, e.target.value))}
                         />
                       </label>
@@ -2163,7 +2414,7 @@ export function Canvas({
                           }
                           max={key === 'x' || key === 'y' ? 10000000 : 10000}
                           value={Math.round(selectedNode[key])}
-                          disabled={readOnly}
+                          disabled={domain ? readOnly : noteReadOnly}
                           onChange={(e) => {
                             const number = Number(e.target.value);
                             if (
@@ -2181,7 +2432,7 @@ export function Canvas({
                   <Button
                     variant="danger"
                     className="danger"
-                    disabled={readOnly}
+                    disabled={domain ? readOnly : noteReadOnly}
                     onClick={async () => {
                       if (
                         !(await confirm({
@@ -2440,7 +2691,7 @@ export function Canvas({
             ) : (
               <>
                 <div className="panel-empty">
-                  <strong>{activeCombined?.name ?? activeDomain?.name ?? tr('도메인')}</strong>
+                  <strong>{currentViewName}</strong>
                   <p>{tr('테이블을 선택하면 컬럼·키·관계를 여기에서 편집합니다.')}</p>
                 </div>
                 <div className="panel-summary">
@@ -2456,25 +2707,28 @@ export function Canvas({
                     ENUM <b>{(doc.enums ?? []).length}</b>
                   </span>
                 </div>
-                {!activeCombined && (
-                  <PanelSection title={tr('새 테이블 만들기')} defaultOpen>
-                    <TableWorkspaceTools
-                      hideViewMode
-                      document={doc}
-                      viewId={viewId}
-                      viewMode={viewMode}
-                      onViewModeChange={() => {}}
-                      onChange={change}
-                      readOnly={readOnly}
-                      position={position()}
-                      onSelect={pick}
-                    />
-                  </PanelSection>
-                )}
+                <PanelSection title={tr('새 테이블 만들기')} defaultOpen>
+                  <TableWorkspaceTools
+                    hideViewMode
+                    document={doc}
+                    viewId={viewId}
+                    creationOwner={creationOwner ?? null}
+                    viewMode={viewMode}
+                    onViewModeChange={() => {}}
+                    onChange={change}
+                    readOnly={readOnly}
+                    position={position()}
+                    onSelect={pick}
+                  />
+                </PanelSection>
                 <PanelNote>
-                  {tr(
-                    '목록 탭에서 테이블과 다른 도메인의 참조 관계를 확인할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.',
-                  )}
+                  {fullCanvas
+                    ? tr(
+                        '전체 테이블의 컬럼·키·관계를 설계하고 속성에서 도메인과 색상을 지정할 수 있습니다.',
+                      )
+                    : tr(
+                        '목록 탭에서 테이블과 다른 도메인의 참조 관계를 확인할 수 있습니다. 빈 캔버스 우클릭으로 자동 배치를 실행합니다.',
+                      )}
                 </PanelNote>
               </>
             )}
@@ -2504,6 +2758,10 @@ export function referencedDomainTables(doc: DesignDocument, domainId: string): T
       ),
   );
   return tables.filter(
-    (t) => t.domainId !== domainId && sharedDomains.has(t.domainId) && referencedIds.has(t.id),
+    (t) =>
+      t.domainId !== null &&
+      t.domainId !== domainId &&
+      sharedDomains.has(t.domainId) &&
+      referencedIds.has(t.id),
   );
 }
