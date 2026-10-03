@@ -229,6 +229,8 @@ export function nativeKeyColumnPolicies(
       const options = column.physical.options;
       const tableOptions = table.physical.options;
       const eligibility = keyEligibility(document.database, column.physical.type, {
+        kind,
+        strict: tableOptions.database === 'sqlite' && tableOptions.strict,
         generation: column.physical.generation,
         ...(options.database === 'mysql' && tableOptions.database === 'mysql'
           ? { charset: effectiveMysqlCharacters(tableOptions, options).charset ?? '__unverified__' }
@@ -246,7 +248,9 @@ export function nativeKeyColumnPolicies(
           ? 'document.scope-mismatch'
           : !engineAllowed
             ? (eligibility.code ?? 'key.type-not-supported')
-            : 'key.not-ready',
+            : !eligibility.usable
+              ? (eligibility.readinessCode ?? 'key.not-ready')
+              : undefined,
         preserved: preservedIds.includes(column.id),
       };
     });
