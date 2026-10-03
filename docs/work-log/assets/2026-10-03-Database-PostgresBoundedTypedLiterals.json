@@ -1,0 +1,1033 @@
+{
+  "source": "actual-PostgreSQL-cast-and-default-probe",
+  "version": "18.6 (Debian 18.6-1.pgdg13+2)",
+  "encoding": "UTF8",
+  "productAdapter": "separate-required",
+  "rolledBack": true,
+  "cases": 62,
+  "evidence": [
+    {
+      "key": "tsvector",
+      "input": "Ezerd_42",
+      "output": "'Ezerd_42'",
+      "defaultOutput": "'Ezerd_42'",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "tsvector",
+      "input": "two tokens",
+      "output": "'tokens' 'two'",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tsquery",
+      "input": "Ezerd_42",
+      "output": "'Ezerd_42'",
+      "defaultOutput": "'Ezerd_42'",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "tsquery",
+      "input": "a & b",
+      "output": "'a' & 'b'",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "int4multirange",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "int4multirange",
+      "input": "{empty}",
+      "output": "{}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "int8multirange",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "int8multirange",
+      "input": "{empty}",
+      "output": "{}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "nummultirange",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "nummultirange",
+      "input": "{empty}",
+      "output": "{}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tsmultirange",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "tsmultirange",
+      "input": "{empty}",
+      "output": "{}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tstzmultirange",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "tstzmultirange",
+      "input": "{empty}",
+      "output": "{}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "datemultirange",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "datemultirange",
+      "input": "{empty}",
+      "output": "{}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "pg_snapshot",
+      "input": "10:20:10,14,15",
+      "output": "10:20:10,14,15",
+      "defaultOutput": "10:20:10,14,15",
+      "classification": "supported-cast-and-default"
+    },
+    {
+      "key": "pg_snapshot",
+      "input": "10:20:20",
+      "output": "",
+      "classification": "engine-invalid-product-blocked",
+      "code": "22P02"
+    },
+    {
+      "key": "smallint_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "smallint_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "integer_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "integer_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "bigint_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "bigint_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "numeric_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "numeric_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "real_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "real_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "double_precision_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "double_precision_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "char_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "char_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "varchar_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "varchar_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "text_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "text_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "bytea_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "bytea_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "boolean_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "boolean_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "date_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "date_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "time_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "time_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "timetz_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "timetz_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "timestamp_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "timestamp_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "timestamptz_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "timestamptz_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "interval_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "interval_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "uuid_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "uuid_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "json_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "json_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "jsonb_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "jsonb_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "jsonpath_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "jsonpath_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "xml_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "xml_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "bit_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "bit_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "bit_varying_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "bit_varying_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "point_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "point_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "line_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "line_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "lseg_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "lseg_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "box_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "box_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "path_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "path_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "polygon_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "polygon_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "circle_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "circle_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "inet_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "inet_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "cidr_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "cidr_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "macaddr_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "macaddr_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "macaddr8_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "macaddr8_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tsvector_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "tsvector_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tsquery_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "tsquery_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "int4range_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "int4range_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "int8range_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "int8range_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "numrange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "numrange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tsrange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "tsrange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tstzrange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "tstzrange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "daterange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "daterange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "int4multirange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "int4multirange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "int8multirange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "int8multirange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "nummultirange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "nummultirange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tsmultirange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "tsmultirange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "tstzmultirange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "tstzmultirange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "datemultirange_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "datemultirange_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "oid_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "oid_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "pg_lsn_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "pg_lsn_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "pg_snapshot_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "pg_snapshot_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "project_enum_array",
+      "input": "{}",
+      "output": "{}",
+      "defaultOutput": "{}",
+      "classification": "supported-cast-and-default",
+      "cardinality": 0,
+      "dimensions": 0
+    },
+    {
+      "key": "project_enum_array",
+      "input": "{NULL}",
+      "output": "{NULL}",
+      "classification": "engine-valid-product-subset-blocked"
+    },
+    {
+      "key": "pg_snapshot-boundary",
+      "input": "1:1:",
+      "output": "1:1:",
+      "classification": "supported-exact-counter-cast"
+    },
+    {
+      "key": "pg_snapshot-boundary",
+      "input": "9007199254740995:9007199254740998:9007199254740995,9007199254740996",
+      "output": "9007199254740995:9007199254740998:9007199254740995,9007199254740996",
+      "classification": "supported-exact-counter-cast"
+    },
+    {
+      "key": "pg_snapshot-boundary",
+      "input": "18446744073709551614:18446744073709551615:18446744073709551614",
+      "output": "18446744073709551614:18446744073709551615:18446744073709551614",
+      "classification": "supported-exact-counter-cast"
+    },
+    {
+      "key": "pg_snapshot-boundary",
+      "input": "18446744073709551615:18446744073709551615:",
+      "output": "18446744073709551615:18446744073709551615:",
+      "classification": "supported-exact-counter-cast"
+    },
+    {
+      "key": "tsvector-boundary",
+      "input": "a",
+      "output": "'a'",
+      "classification": "supported-search-token-boundary"
+    },
+    {
+      "key": "tsvector-boundary",
+      "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "output": "'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'",
+      "classification": "supported-search-token-boundary"
+    },
+    {
+      "key": "tsquery-boundary",
+      "input": "a",
+      "output": "'a'",
+      "classification": "supported-search-token-boundary"
+    },
+    {
+      "key": "tsquery-boundary",
+      "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "output": "'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'",
+      "classification": "supported-search-token-boundary"
+    },
+    {
+      "key": "pg_snapshot-128-xips",
+      "input": "1:200:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128",
+      "output": "1:200:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128",
+      "classification": "supported-xip-cardinality-boundary"
+    },
+    {
+      "key": "pg_snapshot-invalid",
+      "input": "0:1:",
+      "output": "",
+      "classification": "engine-invalid-cast",
+      "code": "22P02"
+    },
+    {
+      "key": "pg_snapshot-invalid",
+      "input": "20:10:",
+      "output": "",
+      "classification": "engine-invalid-cast",
+      "code": "22P02"
+    },
+    {
+      "key": "pg_snapshot-invalid",
+      "input": "10:20:20",
+      "output": "",
+      "classification": "engine-invalid-cast",
+      "code": "22P02"
+    },
+    {
+      "key": "pg_snapshot-invalid",
+      "input": "9007199254740995:9007199254740998:9007199254740996,9007199254740995",
+      "output": "",
+      "classification": "engine-invalid-cast",
+      "code": "22P02"
+    },
+    {
+      "key": "tsquery-invalid",
+      "input": "a &",
+      "output": "",
+      "classification": "engine-invalid-cast",
+      "code": "42601"
+    },
+    {
+      "key": "tsvector-invalid",
+      "input": "a:bad",
+      "output": "",
+      "classification": "engine-invalid-cast",
+      "code": "42601"
+    },
+    {
+      "key": "pg_snapshot-invalid",
+      "input": "9007199254740992:9007199254740995:",
+      "output": "",
+      "classification": "engine-invalid-cast",
+      "code": "22P02"
+    },
+    {
+      "key": "pg_snapshot-invalid",
+      "input": "4294967295:4294967296:",
+      "output": "",
+      "classification": "engine-invalid-cast",
+      "code": "22P02"
+    }
+  ]
+}
