@@ -186,7 +186,7 @@ export function NativeOrderedColumns({
                 {item.eligibility.estimatedBytes !== undefined &&
                   ` · ${item.eligibility.estimatedBytes} bytes`}
                 {item.eligibility.conditions.length > 0 &&
-                  ` · ${item.eligibility.conditions.join(', ')}`}
+                  ` · ${item.eligibility.conditions.map(nativeEditorConditionText).join(' · ')}`}
               </li>
             ))}
           </ul>

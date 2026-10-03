@@ -23,6 +23,40 @@ export function nativeEditorErrorCode(cause: unknown, fallback = 'native.input-i
 }
 
 registerTranslations({
+  '이 타입의 기본값 형식을 확인하세요. 원문 초안은 유지됩니다.':
+    'Check the default value format for this type. The original draft is preserved.',
+  '이 타입에서 검증된 기본값 문법만 지원합니다. 원문은 유지됩니다.':
+    'Only verified default value syntax is supported for this type. The original is preserved.',
+  '기본값의 길이와 바이트 수를 이 타입의 허용 범위 안으로 줄이세요. 원문은 유지됩니다.':
+    'Reduce the default value length and byte count to the limits for this type. The original is preserved.',
+  '키로 사용할 프로젝트 ENUM 정의와 값을 확인하세요.':
+    'Check the project ENUM definition and values used by this key.',
+  '키 컬럼 타입이 테이블의 STRICT·WITHOUT ROWID 설정에 맞는지 확인하세요.':
+    'Check that the key column type matches the table STRICT and WITHOUT ROWID settings.',
+  'InnoDB 키의 인코딩된 길이는 3072바이트 이하여야 합니다.':
+    'The encoded InnoDB key length must be at most 3072 bytes.',
+  '복합 키는 모든 컬럼의 인코딩된 길이 합계를 확인하세요.':
+    'Check the total encoded length of all columns in a composite key.',
+  'B-tree 키 값이 너무 크면 저장할 수 없습니다. 긴 값의 크기를 확인하세요.':
+    'Oversized B-tree key values cannot be stored. Check the size of long values.',
+  'SQLite 기본 키의 NULL 허용과 INTEGER 행 식별자 동작은 테이블 설정에 따라 달라집니다.':
+    'SQLite primary key NULL handling and INTEGER row identifier behavior depend on table settings.',
+  '검색 기본값은 영문자로 시작하는 영문·숫자·밑줄 단어 하나(최대 128자)만 지원합니다. 원문은 유지됩니다.':
+    'Search defaults support one word starting with an ASCII letter, using letters, digits or underscores (up to 128 characters). The original is preserved.',
+  '다중 범위 기본값은 빈 값 {}만 지원합니다. 원문은 유지됩니다.':
+    'Multirange defaults support only the empty value {}. The original is preserved.',
+  '배열 기본값은 빈 배열 {}만 지원합니다. 선언 차원은 실제 배열 차원을 강제하지 않습니다. 원문은 유지됩니다.':
+    'Array defaults support only the empty array {}. Declared dimensions do not enforce actual array dimensions. The original is preserved.',
+  'snapshot은 xmin:xmax:xip 형식으로 입력하세요. xip가 없으면 마지막 콜론을 남겨 두세요.':
+    'Enter snapshot as xmin:xmax:xip. Keep the final colon when xip is empty.',
+  'snapshot의 xmin·xmax를 검증된 양의 정수 범위에서 xmin ≤ xmax로 입력하세요.':
+    'Enter snapshot xmin and xmax within the verified positive integer range, with xmin ≤ xmax.',
+  'snapshot의 xip 값은 xmin 이상, xmax 미만의 검증된 정수로 입력하세요.':
+    'Enter snapshot xip values as verified integers at least xmin and below xmax.',
+  'snapshot의 xip 값은 중복 없이 오름차순으로 입력하세요. 원문은 자동 정렬하지 않습니다.':
+    'Enter snapshot xip values in ascending order without duplicates. The original is not sorted automatically.',
+  'snapshot 입력 길이를 줄이고 xip는 최대 128개까지 입력하세요. 원문은 유지됩니다.':
+    'Reduce the snapshot input length and use at most 128 xip values. The original is preserved.',
   '공간 참조계는 검증된 SRID 0 또는 4326을 사용하세요. 현재 원문은 유지됩니다.':
     'Use verified spatial reference SRID 0 or 4326. The current original is preserved.',
   '인덱스 키 컬럼을 먼저 추가하세요.': 'Add a column for the index key first.',
@@ -78,6 +112,36 @@ registerTranslations({
 });
 
 const conditions: Record<string, string> = {
+  'default.literal-format-invalid': '이 타입의 기본값 형식을 확인하세요. 원문 초안은 유지됩니다.',
+  'default.literal-not-supported':
+    '이 타입에서 검증된 기본값 문법만 지원합니다. 원문은 유지됩니다.',
+  'default.length-exceeded':
+    '기본값의 길이와 바이트 수를 이 타입의 허용 범위 안으로 줄이세요. 원문은 유지됩니다.',
+  'enum.definition-required': '키로 사용할 프로젝트 ENUM 정의와 값을 확인하세요.',
+  'table.mode-validation-required':
+    '키 컬럼 타입이 테이블의 STRICT·WITHOUT ROWID 설정에 맞는지 확인하세요.',
+  'key.innodb-byte-limit': 'InnoDB 키의 인코딩된 길이는 3072바이트 이하여야 합니다.',
+  'key.composite-byte-limit': '복합 키는 모든 컬럼의 인코딩된 길이 합계를 확인하세요.',
+  'key.btree-entry-size-limit':
+    'B-tree 키 값이 너무 크면 저장할 수 없습니다. 긴 값의 크기를 확인하세요.',
+  'key.sqlite-null-rowid-semantics':
+    'SQLite 기본 키의 NULL 허용과 INTEGER 행 식별자 동작은 테이블 설정에 따라 달라집니다.',
+  'default.pg-search-subset-unsupported':
+    '검색 기본값은 영문자로 시작하는 영문·숫자·밑줄 단어 하나(최대 128자)만 지원합니다. 원문은 유지됩니다.',
+  'default.pg-multirange-subset-unsupported':
+    '다중 범위 기본값은 빈 값 {}만 지원합니다. 원문은 유지됩니다.',
+  'default.array-literal-not-supported':
+    '배열 기본값은 빈 배열 {}만 지원합니다. 선언 차원은 실제 배열 차원을 강제하지 않습니다. 원문은 유지됩니다.',
+  'default.pg-snapshot-invalid':
+    'snapshot은 xmin:xmax:xip 형식으로 입력하세요. xip가 없으면 마지막 콜론을 남겨 두세요.',
+  'default.pg-snapshot-counter-invalid':
+    'snapshot의 xmin·xmax를 검증된 양의 정수 범위에서 xmin ≤ xmax로 입력하세요.',
+  'default.pg-snapshot-xip-invalid':
+    'snapshot의 xip 값은 xmin 이상, xmax 미만의 검증된 정수로 입력하세요.',
+  'default.pg-snapshot-xip-order-unsupported':
+    'snapshot의 xip 값은 중복 없이 오름차순으로 입력하세요. 원문은 자동 정렬하지 않습니다.',
+  'default.pg-snapshot-subset-limit':
+    'snapshot 입력 길이를 줄이고 xip는 최대 128개까지 입력하세요. 원문은 유지됩니다.',
   'index.key-columns-required': '인덱스 키 컬럼을 먼저 추가하세요.',
   'index.key-parts-required': '인덱스 키 컬럼 또는 키 식을 추가하세요.',
   'expression.column-required': '식에서 사용할 컬럼을 선택하세요.',
