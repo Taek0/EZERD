@@ -349,6 +349,35 @@ export class NativeDurableQueue {
       return { row: { ...row, uncertain: false }, result: true };
     });
   }
+  /**
+   * No-new-mutation proof, not a terminal ledger rejection or proof nothing was applied earlier.
+   * The required synchronous guard checks fresh remote/actor context and durably archives the
+   * exact original request. Keep the row and live lease; callers end transmission then explicitly
+   * discard. A subsequent transmission makes the row uncertain again and requires fresh proof.
+   */
+  confirmDatabaseChangePreconditionConsumed(
+    pending: NativeDurablePending,
+    token: string,
+    guard: () => void,
+  ): Promise<boolean> {
+    return this.transaction(pending.userId, pending.projectId, true, (row) => {
+      if (
+        pending.kind !== 'databaseChange' ||
+        !this.matches(row, pending) ||
+        !row.uncertain ||
+        !this.leaseActive(row) ||
+        !this.tokenMatches(row, token) ||
+        !row.transmission ||
+        typeof row.transmission === 'string' ||
+        row.transmission.owner !== this.ownerId
+      )
+        return { row, result: false };
+      const result: unknown = guard();
+      if (result && typeof (result as { then?: unknown }).then === 'function')
+        throw Error('native.database-change-proof-guard-async');
+      return { row: { ...row, uncertain: false }, result: true };
+    });
+  }
   /** Only a validated terminal ledger rejection establishes that no mutation was applied. */
   confirmRejected(pending: NativeDurablePending): Promise<boolean> {
     return this.transaction(pending.userId, pending.projectId, true, (row) => {

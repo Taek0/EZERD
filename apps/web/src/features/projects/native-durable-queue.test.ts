@@ -404,3 +404,180 @@ describe('databaseChange shares every native writer fence', () => {
     expect(await reader.read('actor', 'project')).toBeNull();
   });
 });
+
+describe('databaseChange no-new-mutation precondition proof fence', () => {
+  function timedPair() {
+    const factory = createNativeTestIndexedDB(),
+      name = nativeDurableId();
+    let time = 1000;
+    const a = new NativeDurableQueue(factory, name, {
+        now: () => time,
+        leaseMs: 100,
+        ownerId: 'proof-owner-a',
+      }),
+      b = new NativeDurableQueue(factory, name, {
+        now: () => time,
+        leaseMs: 100,
+        ownerId: 'proof-owner-b',
+      });
+    queues.push(a, b);
+    return {
+      a,
+      b,
+      factory,
+      name,
+      advance: (value: number) => {
+        time = value;
+      },
+    };
+  }
+  const change = () => {
+    const pending = entry('databaseChange');
+    pending.payload = {
+      input: {
+        operationId: pending.operationId,
+        targetKind: 'mysql',
+        expectedVersion: 7,
+        expectedSequence: 11,
+        expectedDatabaseRevision: 2,
+      },
+    };
+    return pending;
+  };
+  it('archives once under the live owner fence, retains original row and only enables explicit discard after end', async () => {
+    const { a, b } = timedPair(),
+      pending = change(),
+      archive = new Map<string, string>();
+    await a.claim(pending);
+    const token = await a.beginTransmission(pending);
+    const guard = vi.fn(() => {
+      archive.set(pending.operationId, JSON.stringify(pending));
+      expect(archive.get(pending.operationId)).toBe(JSON.stringify(pending));
+    });
+    expect(await b.confirmDatabaseChangePreconditionConsumed(pending, token, guard)).toBe(false);
+    expect(guard).not.toHaveBeenCalled();
+    // Competing transactions on the same owner/token may consume its uncertainty just once.
+    const outcomes = await Promise.all([
+      a.confirmDatabaseChangePreconditionConsumed(pending, token, guard),
+      a.confirmDatabaseChangePreconditionConsumed(pending, token, guard),
+    ]);
+    expect(outcomes.sort()).toEqual([false, true]);
+    expect(guard).toHaveBeenCalledOnce();
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    expect(b.state('actor', 'project')).toBe('sending');
+    await expect(b.discard(pending)).rejects.toThrow('native.transmission-busy');
+    await a.endTransmission(pending, token);
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    expect(b.state('actor', 'project')).toBe('pending');
+    expect(await b.discard(pending)).toBe(true);
+    expect(await a.read('actor', 'project')).toBeNull();
+    expect(JSON.parse(archive.get(pending.operationId)!)).toEqual(pending);
+  });
+  it.each(['commands', 'history', 'privateCanvas', 'upgrade'] as const)(
+    'cannot release %s through a DB-change proof or run its archive guard',
+    async (kind) => {
+      const { a, b } = timedPair(),
+        pending = entry(kind),
+        guard = vi.fn();
+      await a.claim(pending);
+      const token = await a.beginTransmission(pending);
+      expect(await a.confirmDatabaseChangePreconditionConsumed(pending, token, guard)).toBe(false);
+      expect(guard).not.toHaveBeenCalled();
+      await a.endTransmission(pending, token);
+      await expect(b.discard(pending)).rejects.toThrow('native.transmission-unknown');
+      expect(await b.read('actor', 'project')).toEqual(pending);
+    },
+  );
+  it('never runs the proof for altered exact payload/op/kind/actor/project or a wrong token', async () => {
+    const { a, b } = timedPair(),
+      pending = change(),
+      guard = vi.fn();
+    await a.claim(pending);
+    const token = await a.beginTransmission(pending);
+    for (const changed of [
+      { ...pending, payload: { input: { targetKind: 'sqlite' } } },
+      { ...pending, operationId: nativeDurableId() },
+      { ...pending, kind: 'privateCanvas' as const },
+      { ...pending, userId: 'changed-actor' },
+      { ...pending, projectId: 'changed-project' },
+    ])
+      expect(await a.confirmDatabaseChangePreconditionConsumed(changed, token, guard)).toBe(false);
+    expect(await a.confirmDatabaseChangePreconditionConsumed(pending, 'wrong-token', guard)).toBe(
+      false,
+    );
+    expect(guard).not.toHaveBeenCalled();
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    await a.endTransmission(pending, token);
+    expect(await a.confirmDatabaseChangePreconditionConsumed(pending, token, guard)).toBe(false);
+    await expect(b.discard(pending)).rejects.toThrow('native.transmission-unknown');
+    expect(guard).not.toHaveBeenCalled();
+  });
+  it.each([
+    'stale-proof',
+    'actor-context-changed',
+    'archive-quota',
+    'archive-readback-failed',
+  ] as const)('aborts %s guard and preserves unknown original on reload', async (failure) => {
+    const { a, b, factory, name } = timedPair(),
+      pending = change(),
+      archive = new Map<string, string>();
+    await a.claim(pending);
+    const token = await a.beginTransmission(pending);
+    const guard = vi.fn(() => {
+      if (failure === 'archive-readback-failed')
+        archive.set(pending.operationId, JSON.stringify(pending));
+      throw Error(failure);
+    });
+    await expect(
+      a.confirmDatabaseChangePreconditionConsumed(pending, token, guard),
+    ).rejects.toThrow(failure);
+    expect(guard).toHaveBeenCalledOnce();
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    await a.endTransmission(pending, token);
+    await a.close();
+    const reopened = new NativeDurableQueue(factory, name);
+    queues.push(reopened);
+    expect(await reopened.read('actor', 'project')).toEqual(pending);
+    expect(reopened.state('actor', 'project')).toBe('unknown');
+    await expect(reopened.discard(pending)).rejects.toThrow('native.transmission-unknown');
+    // An archive side effect before a later failure cannot itself release the durable row.
+    if (failure === 'archive-readback-failed')
+      expect(JSON.parse(archive.get(pending.operationId)!)).toEqual(pending);
+  });
+  it('rejects expired proof, old token/current-owner mismatch and a newly uncertain retransmission', async () => {
+    const { a, b, advance } = timedPair(),
+      pending = change(),
+      guard = vi.fn();
+    await a.claim(pending);
+    const oldToken = await a.beginTransmission(pending);
+    advance(1100); // exact expiration is not live
+    expect(await a.confirmDatabaseChangePreconditionConsumed(pending, oldToken, guard)).toBe(false);
+    expect(guard).not.toHaveBeenCalled();
+    const next = await b.beginTransmission(pending);
+    expect(await a.confirmDatabaseChangePreconditionConsumed(pending, oldToken, guard)).toBe(false);
+    expect(await a.confirmDatabaseChangePreconditionConsumed(pending, next, guard)).toBe(false);
+    expect(guard).not.toHaveBeenCalled();
+    await a.endTransmission(pending, oldToken);
+    expect(await b.confirmDatabaseChangePreconditionConsumed(pending, next, guard)).toBe(true);
+    expect(guard).toHaveBeenCalledOnce();
+    await b.endTransmission(pending, next);
+    const retry = await a.beginTransmission(pending);
+    expect(await b.confirmDatabaseChangePreconditionConsumed(pending, next, guard)).toBe(false);
+    expect(guard).toHaveBeenCalledOnce();
+    await a.endTransmission(pending, retry);
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    await expect(b.discard(pending)).rejects.toThrow('native.transmission-unknown');
+  });
+  it('requires a synchronous guard and aborts rather than accepting a thenable archive', async () => {
+    const { a, b } = timedPair(),
+      pending = change();
+    await a.claim(pending);
+    const token = await a.beginTransmission(pending);
+    await expect(
+      a.confirmDatabaseChangePreconditionConsumed(pending, token, () => Promise.resolve()),
+    ).rejects.toThrow('native.database-change-proof-guard-async');
+    await a.endTransmission(pending, token);
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    await expect(b.discard(pending)).rejects.toThrow('native.transmission-unknown');
+  });
+});
