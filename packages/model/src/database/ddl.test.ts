@@ -151,8 +151,8 @@ describe('native whole-design DDL compiler', () => {
         );
       else expect(result.sql).not.toContain('ALTER TABLE');
       const gated = exportNativeDatabaseDDL(doc);
-      expect(gated).toMatchObject({ sql: '', canExport: false });
-      expect(gated.issues.some((issue) => issue.code === 'feature.not-implemented')).toBe(true);
+      expect(gated).toMatchObject({ sql: result.sql, canExport: true });
+      expect(gated.issues.some((issue) => issue.code === 'feature.not-implemented')).toBe(false);
     },
   );
   it('executes SQLite generation/defaults/checks/FK cascades and safely preserves comments', () => {

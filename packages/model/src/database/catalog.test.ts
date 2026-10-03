@@ -221,7 +221,7 @@ describe('SQLite modes and conditional native features', () => {
     ).toBe(false);
     expect(checkDatabaseFeature(pg, 'array', { typeId: 'postgresql:integer' })).toMatchObject({
       supported: true,
-      usable: false,
+      usable: true,
     });
     expect(checkDatabaseFeature(sqlite, 'enumType').supported).toBe(false);
     expect(checkDatabaseFeature(mysql, 'enumColumn').supported).toBe(true);

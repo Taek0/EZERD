@@ -260,7 +260,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           },
         });
         expect(changed.isError, JSON.stringify(changed.content)).not.toBe(true);
-        const unreadyDefault = await api(`/projects/${id}/native-sync/commands`, 'POST', {
+        const invalidDefault = await api(`/projects/${id}/native-sync/commands`, 'POST', {
           ...input,
           operationId: randomUUID(),
           expectedVersion: 2,
@@ -270,14 +270,17 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
               type: 'patch_column',
               id: columns[0]!.id,
               patch: {
-                physical: { defaultValue: { kind: 'literal', literalType: 'number', value: '1' } },
+                physical: {
+                  nullable: false,
+                  defaultValue: { kind: 'null' },
+                },
               },
             },
           ],
         });
-        expect(unreadyDefault.data.status).toBe('rejected');
-        expect(unreadyDefault.data.issues).toContainEqual(
-          expect.objectContaining({ code: 'default.not-ready' }),
+        expect(invalidDefault.data.status).toBe('rejected');
+        expect(invalidDefault.data.issues).toContainEqual(
+          expect.objectContaining({ code: 'default.null-not-supported' }),
         );
         const ddl = projectDDLExportSchema.parse((await api(`/projects/${id}/ddl`)).data);
         expect(ddl.canExport, JSON.stringify(ddl)).toBe(true);

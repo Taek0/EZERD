@@ -32,13 +32,57 @@ const coreFeatures = new Set([
   'collation',
   'strictTable',
 ]);
-/** Defaults and ON UPDATE have separate parser/expression paths; declaration coverage is insufficient. */
-export const nativeDefaultCoverage = specifiedDatabaseCoverage;
+const advancedCoverage: DatabaseCoverage = Object.freeze({
+  availability: 'verified',
+  evidence: Object.freeze({
+    editor: Object.freeze([
+      'native-advanced-editor-ui',
+      'native-constraint-options',
+      'native-editor-option-policy',
+    ]),
+    contracts: Object.freeze(['native-editor-command:strict-native-feature-payloads']),
+    server: Object.freeze(['native-feature-path:issued-baseline-persist-and-replay']),
+    mcp: Object.freeze(['native-feature-path:authenticated-commands-read-export']),
+    ddl: Object.freeze(['verify-native-feature-path-ddl:postgresql-18-mysql-8.4-sqlite-3.45']),
+    integration: Object.freeze(['native-feature-path:whole-physical-77-feature-combinations']),
+  }),
+});
+const advancedFeatures = new Set([
+  'primaryKey',
+  'unique',
+  'foreignKey',
+  'array',
+  'serial',
+  'identity',
+  'autoIncrement',
+  'rowid',
+  'enumType',
+  'index',
+  'partialIndex',
+  'expressionIndex',
+  'includedIndexColumns',
+  'nullsNotDistinct',
+  'fullTextIndex',
+  'spatialIndex',
+  'indexMethod',
+  'check',
+  'generatedStored',
+  'generatedVirtual',
+  'srid',
+  'deferrableForeignKey',
+  'withoutRowid',
+]);
+/** Constrained defaults have independent AST/parser evidence; this never grants arbitrary SQL. */
+export const nativeDefaultCoverage = advancedCoverage;
 export function nativeBuiltinCoverage(kind: DatabaseKind, name: string): DatabaseCoverage {
   return kind === 'postgresql' && name === 'txid_snapshot'
     ? specifiedDatabaseCoverage
     : catalogCoverage;
 }
 export function nativeFeatureCoverage(id: string): DatabaseCoverage {
-  return coreFeatures.has(id) ? catalogCoverage : specifiedDatabaseCoverage;
+  return coreFeatures.has(id)
+    ? catalogCoverage
+    : advancedFeatures.has(id)
+      ? advancedCoverage
+      : specifiedDatabaseCoverage;
 }

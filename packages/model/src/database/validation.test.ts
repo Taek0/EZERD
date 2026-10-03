@@ -202,7 +202,7 @@ describe('native DB policy is separate from draft and activation rules', () => {
           (issue) =>
             issue.code === 'feature.not-implemented' && issue.params.feature === 'foreignKey',
         ),
-      ).toBe(true);
+      ).toBe(false);
     },
   );
   it('never treats stale project context as a repairable old error', () => {
@@ -496,7 +496,7 @@ describe('generation, defaults and FK conditions use the full candidate', () => 
       validateDatabaseDocument(enumDoc, pg, { mode: 'export' }).some(
         (issue) => issue.params.feature === 'array',
       ),
-    ).toBe(true);
+      ).toBe(false);
   });
   it('checks MySQL generation index/count/default and integer signedness', () => {
     const doc = fixture('mysql');

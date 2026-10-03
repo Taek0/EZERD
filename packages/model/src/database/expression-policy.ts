@@ -484,7 +484,9 @@ export function nativeExpressionDecision(
           ...(facts.nullable !== undefined && { nullable: facts.nullable }),
           ...(facts.primary !== undefined && { primary: facts.primary }),
         }).allowed) &&
-      nativeExpressionTypeHasCoverage(context, result);
+      (facts.purpose === 'index' && expression.kind === 'column'
+        ? referencedTypesCovered
+        : nativeExpressionTypeHasCoverage(context, result));
     return {
       allowed: true,
       usable,
