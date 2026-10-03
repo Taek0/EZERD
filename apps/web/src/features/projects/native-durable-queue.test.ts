@@ -63,12 +63,14 @@ describe('native IndexedDB transaction claims across two connections', () => {
     expect(await a.read(pending.userId, pending.projectId)).toBeNull();
   });
   it('does not apply a private CAS observation to command or upgrade requests', async () => {
-    for (const kind of ['commands', 'history', 'upgrade'] as const) {
+    for (const kind of ['commands', 'history', 'upgrade', 'databaseChange'] as const) {
       const { a } = pair(),
         pending = entry(kind);
       await a.claim(pending);
-      const token = await a.beginTransmission(pending);
-      expect(await a.confirmPrivateCASPreconditionConsumed(pending, token)).toBe(false);
+      const token = await a.beginTransmission(pending),
+        guard = vi.fn();
+      expect(await a.confirmPrivateCASPreconditionConsumed(pending, token, guard)).toBe(false);
+      expect(guard).not.toHaveBeenCalled();
       await a.endTransmission(pending, token);
       await expect(a.discard(pending)).rejects.toThrow('native.transmission-unknown');
     }
@@ -90,20 +92,22 @@ describe('native IndexedDB transaction claims across two connections', () => {
     await a.endTransmission(pending, token);
     await expect(a.discard(pending)).rejects.toThrow('native.transmission-unknown');
   });
-  it('allows exactly one actor/project pending across command/history/private canvas racers', async () => {
+  it('allows exactly one actor/project pending across all five native writers', async () => {
     const { a, b } = pair();
     const first = entry('commands'),
       second = entry('history'),
       third = entry('privateCanvas'),
-      fourth = entry('upgrade');
+      fourth = entry('upgrade'),
+      fifth = entry('databaseChange');
     const results = await Promise.allSettled([
       a.claim(first),
       b.claim(second),
       b.claim(third),
       a.claim(fourth),
+      b.claim(fifth),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(3);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(4);
     expect(await a.read('actor', 'project')).toEqual(await b.read('actor', 'project'));
     expect(await b.read('actor', 'project')).toEqual(first);
   });
@@ -245,5 +249,158 @@ describe('native IndexedDB transaction claims across two connections', () => {
     await pending.promise;
     expect(await b.read('actor', 'project')).toEqual(value);
     unsubscribe();
+  });
+});
+
+describe('databaseChange shares every native writer fence', () => {
+  function change(): NativeDurablePending {
+    const value = entry('databaseChange');
+    value.payload = {
+      input: {
+        operationId: value.operationId,
+        targetKind: 'mysql',
+        expectedVersion: 7,
+        expectedSequence: 11,
+        expectedDatabaseRevision: 2,
+      },
+      sourceDatabase: { kind: 'postgresql', profileId: 'postgresql-18-v1' },
+    };
+    return value;
+  }
+  it.each(['commands', 'history', 'privateCanvas', 'upgrade'] as const)(
+    'serializes databaseChange vs %s competing claims in both orders',
+    async (kind) => {
+      for (const databaseFirst of [true, false]) {
+        const { a, b } = pair(),
+          database = change(),
+          other = entry(kind);
+        const candidates = databaseFirst ? [database, other] : [other, database];
+        const results = await Promise.allSettled([
+          a.claim(candidates[0]!),
+          b.claim(candidates[1]!),
+        ]);
+        expect(results.filter((value) => value.status === 'fulfilled')).toHaveLength(1);
+        const failure = results.find(
+          (value) => value.status === 'rejected',
+        ) as PromiseRejectedResult;
+        expect(failure.reason).toMatchObject({ message: 'native.pending-exists' });
+        const stored = await a.read('actor', 'project');
+        expect(candidates).toContainEqual(stored);
+        expect(await b.read('actor', 'project')).toEqual(stored);
+        const loser = stored!.kind === 'databaseChange' ? other : database;
+        await expect(b.beginTransmission(loser)).rejects.toThrow('native.pending-changed');
+        expect(await b.acknowledge(loser)).toBe(false);
+        expect(await a.read('actor', 'project')).toEqual(stored);
+      }
+    },
+  );
+  it('preserves exact DB-change payload across reopen and rejects alias, target/counter/operation and actor changes', async () => {
+    const { a, b, factory, name } = pair(),
+      pending = change(),
+      original = structuredClone(pending);
+    await a.claim(pending);
+    (pending.payload as { input: { targetKind: string } }).input.targetKind = 'sqlite';
+    await a.close();
+    const reopened = new NativeDurableQueue(factory, name);
+    queues.push(reopened);
+    expect(await reopened.read('actor', 'project')).toEqual(original);
+    await expect(reopened.beginTransmission(pending)).rejects.toThrow('native.pending-changed');
+    for (const changed of [
+      { ...original, kind: 'commands' as const },
+      { ...original, operationId: nativeDurableId() },
+      {
+        ...original,
+        payload: {
+          ...(original.payload as object),
+          input: { targetKind: 'mysql', expectedVersion: 8 },
+        },
+      },
+    ]) {
+      await expect(reopened.claim(changed, undefined, true)).rejects.toThrow(
+        'native.pending-exists',
+      );
+      expect(await reopened.confirmRejected(changed)).toBe(false);
+      expect(await reopened.acknowledge(changed)).toBe(false);
+    }
+    expect(await reopened.acknowledge({ ...original, userId: 'another-actor' })).toBe(false);
+    expect(await reopened.acknowledge({ ...original, projectId: 'another-project' })).toBe(false);
+    expect(await b.read('actor', 'project')).toEqual(original);
+    const token = await reopened.beginTransmission(original);
+    const archive = vi.fn();
+    expect(await reopened.confirmPrivateCASPreconditionConsumed(original, token, archive)).toBe(
+      false,
+    );
+    expect(archive).not.toHaveBeenCalled();
+    await reopened.endTransmission(original, token);
+    await expect(reopened.discard(original)).rejects.toThrow('native.transmission-unknown');
+    expect(await b.acknowledge(original)).toBe(true);
+    const replacement = change();
+    await b.claim(replacement);
+    await reopened.endTransmission(original, token);
+    expect(await reopened.acknowledge(original)).toBe(false);
+    expect(await reopened.read('actor', 'project')).toEqual(replacement);
+  });
+  it('keeps crashed DB-change request uncertain on reload and replays only it after lease expiry', async () => {
+    const factory = createNativeTestIndexedDB(),
+      name = nativeDurableId();
+    let now = 1000;
+    const a = new NativeDurableQueue(factory, name, {
+        now: () => now,
+        leaseMs: 100,
+        ownerId: 'old-tab',
+      }),
+      b = new NativeDurableQueue(factory, name, {
+        now: () => now,
+        leaseMs: 100,
+        ownerId: 'new-tab',
+      });
+    queues.push(a, b);
+    const pending = change();
+    await a.claim(pending);
+    const oldToken = await a.beginTransmission(pending);
+    await a.close();
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    expect(b.state('actor', 'project')).toBe('sending');
+    await expect(b.beginTransmission(pending)).rejects.toThrow('native.transmission-busy');
+    now = 1101;
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    expect(b.state('actor', 'project')).toBe('unknown');
+    await expect(b.discard(pending)).rejects.toThrow('native.transmission-unknown');
+    for (const kind of [
+      'commands',
+      'history',
+      'privateCanvas',
+      'upgrade',
+      'databaseChange',
+    ] as const)
+      await expect(b.claim(entry(kind))).rejects.toThrow('native.pending-exists');
+    await expect(
+      b.beginTransmission({ ...pending, payload: { input: { targetKind: 'sqlite' } } }),
+    ).rejects.toThrow('native.pending-changed');
+    const resumed = await b.beginTransmission(pending);
+    expect(resumed).not.toBe(oldToken);
+    await a.endTransmission(pending, oldToken);
+    expect(await a.renewTransmission(pending, oldToken)).toBe(false);
+    await expect(a.beginTransmission(pending)).rejects.toThrow('native.transmission-busy');
+    const release = vi.fn();
+    expect(await b.confirmPrivateCASPreconditionConsumed(pending, resumed, release)).toBe(false);
+    expect(release).not.toHaveBeenCalled();
+    await b.endTransmission(pending, resumed);
+    await expect(b.discard(pending)).rejects.toThrow('native.transmission-unknown');
+    expect(await b.confirmRejected(pending)).toBe(true); // caller already validated a terminal endpoint rejection
+    expect(await b.discard(pending)).toBe(true);
+    expect(await a.read('actor', 'project')).toBeNull();
+  });
+  it('allows the new runtime kind but rejects unknown kinds at transactional admission', async () => {
+    const { a, b } = pair(),
+      pending = change();
+    await a.claim(pending);
+    expect(await b.read('actor', 'project')).toEqual(pending);
+    const { a: invalid, b: reader } = pair();
+    await expect(
+      invalid.claim({ ...pending, kind: 'unregistered-change' } as unknown as NativeDurablePending),
+    ).rejects.toThrow('native.pending-storage-unknown');
+    expect(invalid.state('actor', 'project')).toBe('unknown');
+    expect(await reader.read('actor', 'project')).toBeNull();
   });
 });
