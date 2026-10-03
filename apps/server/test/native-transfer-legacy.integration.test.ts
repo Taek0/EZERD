@@ -402,7 +402,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     });
 
     it.each(kinds)(
-      '%s changing the last legacy ENUM reference to a verified primitive cannot grandfather its orphan definition',
+      '%s validates a standalone ENUM after its last legacy reference becomes a verified primitive',
       async (kind) => {
         const source = await imported(kind),
           file = await exported(source.id),
@@ -419,17 +419,39 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           parameters: {},
         };
         const before = await counts(),
-          denied = await upload(transfer(doc, kind, 2));
-        expect(denied.status, JSON.stringify(denied.data)).toBe(422);
-        expect(
-          denied.data.issues.some((issue: any) =>
-            kind === 'postgresql'
-              ? issue.code === 'feature.not-implemented' && issue.params?.feature === 'enumType'
-              : issue.code === 'legacy.enum-context-mismatch',
-          ),
-          JSON.stringify(denied.data),
-        ).toBe(true);
-        expect(await counts()).toEqual(before);
+          input = transfer(doc, kind, 2),
+          result = await upload(input);
+        if (kind === 'postgresql') {
+          expect(result.status, JSON.stringify(result.data)).toBe(201);
+          const saved = await row(result.data.project.id),
+            provenance = await audit(saved.id);
+          expect(saved.document.enums[0].values).toEqual(doc.enums[0].values);
+          expect(saved.document.columns[0].physical).toEqual(doc.columns[0].physical);
+          expect(provenance.sourceDocument).toEqual(doc);
+          expect(provenance.transferSha256).toBe(importJsonSha256(input));
+          expect(provenance.trustedLegacyPaths).not.toContain(
+            `/columns/${saved.document.columns[0].id}/physical/type`,
+          );
+          expect(await counts()).toEqual({
+            projects: before.projects + 1,
+            audits: before.audits + 1,
+          });
+          const measured = await counts(),
+            invalid = structuredClone(doc);
+          invalid.enums[0].values.push(invalid.enums[0].values[0]);
+          const denied = await upload(transfer(invalid, kind, 2));
+          expect(denied.status, JSON.stringify(denied.data)).toBe(422);
+          expect(denied.data.issues).toContainEqual(
+            expect.objectContaining({ code: 'enum.values-invalid' }),
+          );
+          expect(await counts()).toEqual(measured);
+        } else {
+          expect(result.status, JSON.stringify(result.data)).toBe(422);
+          expect(result.data.issues).toContainEqual(
+            expect.objectContaining({ code: 'legacy.enum-context-mismatch' }),
+          );
+          expect(await counts()).toEqual(before);
+        }
       },
     );
 
@@ -491,7 +513,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     );
 
     it.each(kinds)(
-      '%s verified primitive defaults still require their own coverage and cannot use legacy as previous',
+      '%s imports verified defaults beside legacy but rejects invalid default combinations without trusting previous',
       async (kind) => {
         const source = await imported(kind),
           doc = (await exported(source.id)).sourceDocument;
@@ -501,7 +523,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           'default-column',
         );
         column.scope = 'both';
-        column.physical.name = 'unverified_default';
+        column.physical.name = 'verified_default';
         column.physical.type =
           kind === 'postgresql'
             ? {
@@ -516,21 +538,39 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         column.physical.defaultValue = { kind: 'literal', literalType: 'number', value: '1' };
         doc.columns.push(column);
         const before = await counts(),
-          denied = await upload(transfer(doc, kind, 2));
+          input = transfer(doc, kind, 2),
+          accepted = await upload(input);
+        expect(accepted.status, JSON.stringify(accepted.data)).toBe(201);
+        const saved = await row(accepted.data.project.id),
+          provenance = await audit(saved.id);
+        expect(saved.document).toEqual(doc);
+        expect(provenance.sourceDocument).toEqual(doc);
+        expect(provenance.sourceDocumentSha256).toBe(importJsonSha256(doc));
+        expect(provenance.transferSha256).toBe(importJsonSha256(input));
+        expect(provenance.trustedLegacyPaths).not.toContain(
+          '/columns/default-column/physical/defaultValue',
+        );
+        expect(await counts()).toEqual({
+          projects: before.projects + 1,
+          audits: before.audits + 1,
+        });
+        const measured = await counts(),
+          invalid = structuredClone(doc);
+        invalid.columns.find((item: any) => item.id === column.id).physical.nullable = false;
+        invalid.columns.find((item: any) => item.id === column.id).physical.defaultValue = {
+          kind: 'null',
+        };
+        const denied = await upload(transfer(invalid, kind, 2));
         expect(denied.status, JSON.stringify(denied.data)).toBe(422);
-        expect(
-          denied.data.issues.some(
-            (issue: any) =>
-              issue.code === 'default.not-ready' && issue.path.endsWith('/physical/defaultValue'),
-          ),
-          JSON.stringify(denied.data),
-        ).toBe(true);
-        expect(await counts()).toEqual(before);
+        expect(denied.data.issues).toContainEqual(
+          expect.objectContaining({ code: 'default.null-not-supported' }),
+        );
+        expect(await counts()).toEqual(measured);
       },
     );
 
     it.each(['index', 'check', 'key', 'generation', 'table-options', 'without-rowid'] as const)(
-      'does not grandfather added native %s via legacy tags',
+      'validates added native %s independently of legacy provenance',
       async (feature) => {
         const source = await imported('sqlite'),
           doc = (await exported(source.id)).sourceDocument;
@@ -586,18 +626,40 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             strict: false,
             withoutRowid: true,
           };
+        if (feature === 'check') {
+          const input = transfer(doc, 'sqlite', 2),
+            accepted = await upload(input);
+          expect(accepted.status, JSON.stringify(accepted.data)).toBe(201);
+          const saved = await row(accepted.data.project.id),
+            provenance = await audit(saved.id);
+          expect(saved.document).toEqual(doc);
+          expect(provenance.sourceDocument).toEqual(doc);
+          expect(provenance.trustedLegacyPaths).not.toContain('/checks/check');
+          doc.checks[0].expression = { kind: 'literal', literalType: 'number', value: '1' };
+        }
         const before = await counts(),
           denied = await upload(transfer(doc, 'sqlite', 2));
         expect(denied.status, JSON.stringify(denied.data)).toBe(422);
-        expect(
-          denied.data.issues.some((issue: any) =>
-            feature === 'table-options'
-              ? issue.code === 'type.strict-not-supported'
-              : issue.code === 'feature.not-implemented' &&
-                (feature !== 'without-rowid' || issue.params?.feature === 'withoutRowid'),
-          ),
-          JSON.stringify(denied.data),
-        ).toBe(true);
+        const expectedCodes = {
+          index: ['expression.column-type-not-supported'],
+          check: ['expression.boolean-required'],
+          key: ['legacy.type-unresolved'],
+          generation: ['generation.default-not-supported', 'expression.target-type-not-supported'],
+          'table-options': ['type.strict-not-supported'],
+          'without-rowid': ['table.primary-key-required'],
+        }[feature];
+        for (const code of expectedCodes)
+          expect(denied.data.issues, JSON.stringify(denied.data)).toContainEqual(
+            expect.objectContaining({ code }),
+          );
+        if (feature === 'key')
+          expect(denied.data.issues).toContainEqual(
+            expect.objectContaining({
+              objectId: 'key',
+              path: '/keys/key/columnIds',
+              code: 'legacy.type-unresolved',
+            }),
+          );
         expect(await counts()).toEqual(before);
       },
     );
@@ -654,7 +716,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       const type = {
         kind: 'builtin',
         database: 'postgresql',
-        typeId: 'postgresql:integer',
+        typeId: 'postgresql:txid_snapshot',
         parameters: {},
       };
       file.sourceDocument.columns[0].physical.type = type;
@@ -666,18 +728,20 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         result = await upload(file);
       expect(result.status, JSON.stringify(result.data)).toBe(422);
       expect(
-        result.data.issues.some(
-          (issue: any) =>
-            issue.code === 'feature.not-implemented' && issue.params?.feature === 'enumType',
-        ),
+        result.data.issues.some((issue: any) => issue.code === 'type.not-implemented'),
         JSON.stringify(result.data),
       ).toBe(true);
       expect((await upload({ ...file, previous: file.sourceDocument })).status).toBe(400);
       expect(await counts()).toEqual(before);
-      // Removing the unsupported orphan ENUM makes the primitive valid. Coordinates remain audit only.
+      // A verified primitive and valid standalone PG ENUM pass; client coordinates remain audit only.
       const valid = structuredClone(file);
-      valid.sourceDocument.enums = [];
-      valid.native.document.enums = [];
+      valid.sourceDocument.columns[0].physical.type = {
+        kind: 'builtin',
+        database: 'postgresql',
+        typeId: 'postgresql:integer',
+        parameters: {},
+      };
+      valid.native.document = structuredClone(valid.sourceDocument);
       const accepted = await upload(valid);
       expect(accepted.status, JSON.stringify(accepted.data)).toBe(201);
       const saved = await row(accepted.data.project.id),
@@ -689,7 +753,10 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         database_revision: 0,
         status: 'active',
       });
-      expect(saved.document.columns[0].physical.type).toEqual(type);
+      expect(saved.document.columns[0].physical.type).toEqual(
+        valid.sourceDocument.columns[0].physical.type,
+      );
+      expect(saved.document.enums[0].values).toEqual(valid.sourceDocument.enums[0].values);
       expect(provenance.sourceDocument).toEqual(valid.sourceDocument);
       expect(provenance.sourceDocumentSha256).toBe(importJsonSha256(valid.sourceDocument));
       expect(provenance.transferSha256).toBe(importJsonSha256(valid));
@@ -706,18 +773,16 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       const measured = await counts();
       expect(measured).toEqual({ projects: before.projects + 1, audits: before.audits + 1 });
       const defaultClaim = structuredClone(valid);
-      defaultClaim.sourceDocument.columns[0].physical.defaultValue = {
-        kind: 'literal',
-        literalType: 'number',
-        value: '1',
-      };
+      defaultClaim.sourceDocument.columns[0].physical.nullable = false;
+      defaultClaim.native.document.columns[0].physical.nullable = false;
+      defaultClaim.sourceDocument.columns[0].physical.defaultValue = { kind: 'null' };
       defaultClaim.native.document.columns[0].physical.defaultValue = structuredClone(
         defaultClaim.sourceDocument.columns[0].physical.defaultValue,
       );
       const blocked = await upload(defaultClaim);
       expect(blocked.status, JSON.stringify(blocked.data)).toBe(422);
       expect(
-        blocked.data.issues.some((issue: any) => issue.code === 'default.not-ready'),
+        blocked.data.issues.some((issue: any) => issue.code === 'default.null-not-supported'),
         JSON.stringify(blocked.data),
       ).toBe(true);
       expect(await counts()).toEqual(measured);

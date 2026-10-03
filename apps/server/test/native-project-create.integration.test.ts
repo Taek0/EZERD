@@ -10,6 +10,7 @@ import {
   createEmptyNativeDocument,
   sharedDocument,
   defaultDatabaseContext,
+  projectDatabaseCapabilities,
   type DatabaseKind,
 } from '@ezerd/model';
 import { projectDocumentStateSchema, projectSchema } from '@ezerd/contracts';
@@ -180,8 +181,25 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         const caps = (await request(`/projects/${project.id}/database/capabilities`)).data;
         expect(caps.documentSchemaVersion).toBe(2);
         expect(caps.database).toMatchObject({ ...context, revision: 0 });
-        expect(caps.types.every((item: { usable: boolean }) => !item.usable)).toBe(true);
-        expect(caps.features.every((item: { usable: boolean }) => !item.usable)).toBe(true);
+        const expectedCapabilities = projectDatabaseCapabilities({ ...context, revision: 0 }, 2);
+        expect(caps.types).toEqual(expectedCapabilities.types);
+        expect(caps.features).toEqual(expectedCapabilities.features);
+        expect(
+          caps.types.find((item: { id: string }) => item.id === caps.defaultTypeId),
+        ).toMatchObject({ usable: true });
+        expect(
+          caps.features.find((item: { id: string }) => item.id === 'primaryKey'),
+        ).toMatchObject({ usable: true });
+        expect(
+          caps.types
+            .filter((item: { deprecated: boolean }) => item.deprecated)
+            .every((item: { usable: boolean }) => !item.usable),
+        ).toBe(true);
+        expect(
+          caps.features
+            .filter((item: { supportedByEngine: boolean }) => !item.supportedByEngine)
+            .every((item: { usable: boolean }) => !item.usable),
+        ).toBe(true);
         const count = (
           await pool.query(
             'SELECT (SELECT COUNT(*) FROM project_personal_states WHERE project_id=$1) AS personal, (SELECT COUNT(*) FROM sync_operations WHERE project_id=$1) AS ledger',

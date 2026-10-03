@@ -471,7 +471,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await upload(exported.data)).status).toBe(422);
     });
 
-    it('exports unsupported physical objects raw, but still blocks unverified native features after legacy validation', async () => {
+    it('exports unsupported physical objects raw but rejects new expressions over unresolved legacy types', async () => {
       const document = migrateDesignDocumentV1(
         legacyDocument(),
         defaultDatabaseContext('mysql'),
@@ -506,9 +506,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(denied).toMatchObject({ status: 422, data: { code: 'database.validation-failed' } });
       expect(
         denied.data.issues.some(
-          (issue: { code: string; params?: { feature?: string } }) =>
-            issue.code === 'feature.not-implemented' &&
-            ['index', 'check'].includes(issue.params?.feature ?? ''),
+          (issue: { code: string; path: string }) =>
+            issue.code === 'expression.column-type-not-supported' &&
+            (issue.path.startsWith('/indexes/') || issue.path.startsWith('/checks/')),
         ),
       ).toBe(true);
       expect(
@@ -520,27 +520,64 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(await row(id)).toEqual(before);
     });
 
-    it('verified native types do not activate primary/FK coverage through supplied source metadata', async () => {
+    it('imports verified native PK/FK with fresh IDs and rejects incompatible new FK types despite source claims', async () => {
       const legacy = legacyDocument();
       for (const column of legacy.columns!) column.physical.defaultExpression = '';
       const document = migrateDesignDocumentV1(
         legacy,
         defaultDatabaseContext('postgresql'),
       ).document;
-      const id = await seed('postgresql', document);
+      const id = await seed('postgresql', document),
+        original = await row(id);
       const exported = await request(`/${id}/native-transfer`);
-      const count = await counts();
-      const denied = await upload(exported.data);
-      expect(denied.status).toBe(422);
-      expect(
-        denied.data.issues.some(
-          (issue: { code: string; params?: { feature?: string } }) =>
-            issue.code === 'feature.not-implemented' &&
-            ['primaryKey', 'foreignKey'].includes(issue.params?.feature ?? ''),
-        ),
-        JSON.stringify(denied.data),
-      ).toBe(true);
-      expect(await counts()).toEqual(count);
+      const count = await counts(),
+        accepted = await upload(exported.data);
+      expect(accepted.status, JSON.stringify(accepted.data)).toBe(201);
+      const saved = await row(accepted.data.project.id);
+      expect(saved.id).not.toBe(id);
+      expect(saved).toMatchObject({ version: 0, sync_sequence: 0, database_revision: 0 });
+      expect(nativeReferenceProblems(saved.document)).toEqual([]);
+      expect(saved.document.keys[0].id).not.toBe(document.keys![0]!.id);
+      expect(saved.document.keys[0].columnIds).toEqual([saved.document.columns[0].id]);
+      expect(saved.document.tableRelations[0].physical).toMatchObject({
+        sourceColumnIds: [saved.document.columns[1].id],
+        targetColumnIds: [saved.document.columns[0].id],
+      });
+      expect(saved.document.columns.map((column: any) => column.physical)).toEqual(
+        document.columns!.map((column) => column.physical),
+      );
+      const provenance = (
+        await pool.query(
+          "SELECT details FROM workspace_audit_events WHERE workspace_id=$1 AND action='project.imported' AND details->>'projectId'=$2",
+          [workspaceId, saved.id],
+        )
+      ).rows[0].details.importProvenance;
+      expect(provenance.sourceDocument).toEqual(document);
+      expect(provenance.sourceDocumentSha256).toBe(importJsonSha256(document));
+      expect(provenance.transferSha256).toBe(importJsonSha256(exported.data));
+      expect(provenance.trustedLegacyPaths).toEqual([]);
+      expect(await counts()).toEqual({
+        projects: String(Number(count.projects) + 1),
+        audits: String(Number(count.audits) + 1),
+      });
+      const measured = await counts(),
+        invalid = structuredClone(exported.data);
+      invalid.sourceDocument.columns[1].physical.type = {
+        kind: 'builtin',
+        database: 'postgresql',
+        typeId: 'postgresql:text',
+        parameters: {},
+      };
+      invalid.native.document = structuredClone(invalid.sourceDocument);
+      invalid.native.issues = [];
+      invalid.source = { projectId: id, version: 999, sequence: 999, databaseRevision: 999 };
+      const denied = await upload(invalid);
+      expect(denied.status, JSON.stringify(denied.data)).toBe(422);
+      expect(denied.data.issues).toContainEqual(
+        expect.objectContaining({ code: 'foreign-key.type-mismatch' }),
+      );
+      expect(await counts()).toEqual(measured);
+      expect(await row(id)).toEqual(original);
     });
 
     it.each(['postgresql', 'mysql', 'sqlite'] as const)(
