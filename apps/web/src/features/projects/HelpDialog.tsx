@@ -19,7 +19,7 @@ const guidance = [
   ],
   [
     '데이터베이스 종류',
-    '프로젝트의 데이터베이스 종류는 분류 정보입니다. 현재 모델링 타입과 SQL 기능은 PostgreSQL을 기준으로 제공되며, MySQL 또는 SQLite를 선택해도 해당 엔진으로 자동 변환되지는 않습니다.',
+    'Native 설계는 PostgreSQL·MySQL·SQLite별 타입과 검증된 기능을 제공합니다. DDL 내보내기는 선택한 DB의 프로젝트 전체 물리 설계를 SQL로 만듭니다. DB 변경은 미리보기 후 적용할 때 최신 상태를 다시 검증하며, 지원이 확인된 범위만 변환합니다. 미지원 항목이나 의미 손실이 있는 변경은 차단됩니다. 구버전 설계에서 native 기능을 사용하려면 명시적으로 업그레이드해야 하며, 변환할 수 없는 원문은 진단과 함께 보존됩니다.',
   ],
 ] as const;
 registerTranslations({
@@ -35,7 +35,7 @@ registerTranslations({
   [guidance[2][1]]:
     'Use the cursor tool to select and edit items. Drag with the hand tool, or hold the middle mouse button and drag, to pan the canvas.',
   [guidance[3][1]]:
-    'The project database kind is classification metadata. Modeling types and SQL features currently target PostgreSQL. Choosing MySQL or SQLite does not automatically convert the design to that engine.',
+    'Native designs provide database-specific types and verified features for PostgreSQL, MySQL and SQLite. DDL export creates SQL for the entire physical design in the selected database. Database changes are previewed and revalidated against the latest state when applied, and only verified conversions are supported. Unsupported items or changes that lose meaning are blocked. Legacy designs require an explicit upgrade to use native features; originals that cannot be converted are preserved with diagnostics.',
 });
 export function HelpDialog({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();

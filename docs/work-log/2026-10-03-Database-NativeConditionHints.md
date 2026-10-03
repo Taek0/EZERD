@@ -27,3 +27,12 @@
 5. 이 결과 문서
 
 engine/model/policy/readiness/server 및 `docs/EZERD.txt`는 수정하지 않았다. 부모의 진행 기록·validation test·브라우저 QA 변경은 커밋에 포함하지 않는다.
+
+## 도움말 안내 후속 결과
+
+부모의 추가 요청에 따라 `HelpDialog.tsx`의 과거 “DB 종류는 분류 정보 / PostgreSQL 기준” 설명을 한국어/영어 모두 현재 native 동작으로 바꿨다. PostgreSQL·MySQL·SQLite별 타입과 검증된 기능, 선택 DB의 전체 물리 설계 DDL, preview 이후 apply 시 최신 상태 재검증과 확인된 변환 범위, 미지원/의미 손실 차단을 안내한다. 구버전은 native 기능을 쓰려면 명시 업그레이드가 필요하며 변환 불가 원문이 진단과 함께 보존됨을 설명한다. 기존 v1 import/export 사용 자체가 업그레이드를 강제한다고 표현하지 않는다.
+
+- 새 `HelpDialog.test.ts` 2개: 실제 컴포넌트의 한국어/영어 SSR markup에 최신 안내가 표시되고 과거 설명은 없음을 확인. 기존 제목 연결·도움말 섹션·닫기 버튼 유지 확인. portal은 테스트에서만 표시 내용으로 전달하며 실제 modal focus lifecycle 검증을 주장하지 않는다.
+- 도움말 2개 + `native-condition-hints-ui.test.ts` 13개 = **15 PASS / 0 FAIL**.
+- web Typecheck 및 도움말 TSX/test targeted Prettier check PASS.
+- 후속 파일: `HelpDialog.tsx`, 새 `HelpDialog.test.ts`, 기존 계획/결과 문서. 원래 조건 hint 커밋 `ff93235`는 보존하며 후속 독립 커밋으로 분리한다. engine/policy/readiness는 변경하지 않았다.

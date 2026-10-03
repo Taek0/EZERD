@@ -6,3 +6,7 @@
 - 새 PostgreSQL bounded typed literal helper가 실제 반환하는 search/multirange/array/snapshot 제한 코드와 XML/jsonpath가 공유하는 형식·문법·길이 진단만 동일 안내 패턴에 추가한다. 문구는 현재 검증 범위와 원문 보존을 설명하며 engine/parser 지원을 확대하지 않는다.
 - 실제 정책을 소비한 정적 React markup에서 원시 코드가 안 보이고 정상 선택과 기존 미지원 선택이 유지되는지 검증한다. typed default의 거부 draft도 실제 렌더링으로 확인한다. coverage/current/previous를 위조하지 않는다.
 - 생산 engine/model/policy/readiness는 읽기만 한다. UI helper/component/tests 및 계획/결과 문서만 수정한다. targeted tests/Prettier/web typecheck 후 독립 커밋한다. 부모의 브라우저/전체 check와 Singer QA는 건드리지 않으며 Git index에 타 작업이 있으면 커밋 충돌을 피한다. docs/EZERD.txt는 수정하지 않는다.
+
+## 도움말 안내 후속
+
+부모가 추가 승인한 `HelpDialog.tsx`의 DB 설명을 현재 native별 타입·검증된 기능, 전체 physical DDL 및 최신 상태 재검증을 거친 명시 DB 변경으로 갱신한다. 구버전의 native 기능은 명시 업그레이드가 필요하다는 안내를 덧붙이고 기존 v1 import/export 호환을 제거하는 표현은 쓰지 않는다. 한국어/영어 실제 React 도움말 markup을 확인하되 modal focus/portal lifecycle 재구현은 하지 않는다. 도움말/전용 test 및 이 계획/결과만 후속 독립 커밋한다.
