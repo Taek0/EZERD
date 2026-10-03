@@ -203,7 +203,7 @@ describe('native literal decisions with explicit target IDs', () => {
       coverage: false,
       usable: false,
     });
-    expect(decide('xml', '<root/>')).toMatchObject({
+    expect(decide('xml', '<!DOCTYPE root><root/>')).toMatchObject({
       allowed: false,
       usable: false,
       category: 'unsupported',
@@ -290,19 +290,31 @@ describe('native literal decisions with explicit target IDs', () => {
     expect(decide(name, bad).allowed).toBe(false);
     expect(decide(name, good, 'postgresql', 'string').allowed).toBe(false);
   });
-  it.each([
-    'xml',
-    'jsonpath',
-    'tsvector',
-    'tsquery',
-    'pg_snapshot',
-    'txid_snapshot',
-    'int4multirange',
-    'tsrange',
-    'tstzrange',
-  ])('%s does not silently trust unimplemented grammar', (name) => {
-    expect(decide(name, 'anything')).toMatchObject({ allowed: false, category: 'unsupported' });
+  it.each(['tsvector', 'tsquery'])(
+    '%s permits its checked single-lexeme subset, not a query grammar',
+    (name) => {
+      expect(decide(name, 'alpha')).toMatchObject({ allowed: true, usable: true });
+      expect(decide(name, 'alpha & beta')).toMatchObject({
+        allowed: false,
+        category: 'unsupported',
+      });
+      expect(decide(name, 'alpha', 'postgresql', 'string').allowed).toBe(false);
+    },
+  );
+  it('checks snapshot syntax rather than trusting a type declaration', () => {
+    expect(decide('pg_snapshot', '1:2:')).toMatchObject({ allowed: true, usable: true });
+    expect(decide('pg_snapshot', 'anything')).toMatchObject({
+      allowed: false,
+      category: 'invalid',
+    });
+    expect(decide('pg_snapshot', '2:1:')).toMatchObject({ allowed: false, category: 'invalid' });
   });
+  it.each(['txid_snapshot', 'int4multirange', 'tsrange', 'tstzrange'])(
+    '%s does not silently trust unimplemented grammar',
+    (name) => {
+      expect(decide(name, 'anything')).toMatchObject({ allowed: false, category: 'unsupported' });
+    },
+  );
   it.each(
     databaseTypeCatalog.filter(
       (d) => d.id.startsWith('postgresql:reg') || d.id === 'postgresql:money',

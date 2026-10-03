@@ -106,6 +106,14 @@ function literalProbe(
   kind: NativeLiteral['literalType'],
 ): string {
   const type = column.physical.type;
+  if (
+    kind === 'typedText' &&
+    type.kind !== 'legacy' &&
+    type.database === 'postgresql' &&
+    'array' in type &&
+    type.array
+  )
+    return '{}';
   if (kind === 'boolean') return 'false';
   if (kind === 'number') return '0';
   if (kind === 'binary') return '';
@@ -129,6 +137,11 @@ function literalProbe(
   if (type.kind !== 'builtin') return '';
   const name = type.typeId.split(':')[1]!;
   const hints: Record<string, string> = {
+    tsvector: 'alpha',
+    tsquery: 'alpha',
+    pg_snapshot: '1:2:',
+    xml: '<root/>',
+    jsonpath: '$.items[0].value',
     uuid: '00000000-0000-4000-8000-000000000001',
     date: '2024-01-01',
     time: '00:00:00',
@@ -152,7 +165,11 @@ function literalProbe(
     oid: '0',
     pg_lsn: '0/0',
   };
-  return name.endsWith('range') ? 'empty' : (hints[name] ?? '');
+  return name.endsWith('multirange')
+    ? '{}'
+    : name.endsWith('range')
+      ? 'empty'
+      : (hints[name] ?? '');
 }
 export function nativeDefaultChoices(
   document: NativeDesignDocument,

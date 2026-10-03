@@ -1,3 +1,4 @@
+import { inspectPostgresBoundedTypedLiteral } from './postgres-typed-literal-helper.js';
 import { getDatabaseType, validateDatabaseTypeParameters } from './catalog.js';
 import { hasDatabaseCoverage, type DatabaseContext } from './definitions.js';
 import { checkDatabaseFeature } from './features.js';
@@ -5,6 +6,10 @@ import { nativeDefaultCoverage } from './readiness.js';
 import type { NativeColumnType, NativeDefaultValue, NativeLiteral } from './native-document.js';
 import { getDatabaseProfile } from './profiles.js';
 import { mysqlStringMetrics } from './mysql-physical-policy.js';
+import {
+  inspectPostgresXmlLiteral,
+  inspectPostgresJsonpathLiteral,
+} from './postgres-structured-literals.js';
 
 export interface NativeLiteralDecision {
   /** Engine/value subset decision, independent of registry release evidence. */
@@ -182,6 +187,10 @@ function engineLiteralDecision(
       ? no('default.null-not-supported')
       : ok('null');
   if (value.kind === 'legacyExpression') return no('legacy.default-unresolved', 'unsupported');
+  if (context.kind === 'postgresql' && value.kind === 'literal') {
+    const bounded = inspectPostgresBoundedTypedLiteral(context, type, value);
+    if (bounded) return bounded.allowed ? ok(bounded.format!) : no(bounded.code!, bounded.category);
+  }
   if ('array' in type && type.array)
     return no('default.array-literal-not-supported', 'unsupported');
   if (value.kind === 'expression')
@@ -241,9 +250,14 @@ function engineLiteralDecision(
     category = definition.category;
   const s = typeof value.value === 'string' ? value.value : '';
   const p = type.parameters;
+  if (context.kind === 'postgresql' && (name === 'xml' || name === 'jsonpath')) {
+    if (value.literalType !== 'typedText') return mismatch();
+    const inspected =
+      name === 'xml' ? inspectPostgresXmlLiteral(s) : inspectPostgresJsonpathLiteral(s);
+    return inspected.allowed ? ok(inspected.format) : no(inspected.code, inspected.category);
+  }
   if (
-    ['xml', 'search', 'multirange'].includes(category) ||
-    name === 'jsonpath' ||
+    ['search', 'multirange'].includes(category) ||
     ['pg_snapshot', 'txid_snapshot'].includes(name) ||
     (context.kind === 'mysql' && category === 'geometry')
   )

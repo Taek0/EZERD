@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { defaultDatabaseContext } from '@ezerd/model';
-import { inspectPostgresBoundedTypedLiteral } from '../../../packages/model/src/database/postgres-typed-literal-helper.js';
+import { defaultDatabaseContext, inspectPostgresBoundedTypedLiteral } from '@ezerd/model';
 import { readConfig } from '../src/config.js';
 import {
   boundedLiteral,
