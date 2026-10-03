@@ -37,6 +37,8 @@ registerTranslations({
     'Change the database settings of an empty physical design.',
   'DB 변경이 확인된 뒤 프로젝트 이름을 별도로 저장합니다.':
     'The project name is saved separately after the database change is confirmed.',
+  '표시된 MySQL 설정이 실제 서버 설정과 맞는지 확인하세요.':
+    'Check that the displayed MySQL settings match the actual server configuration.',
   '영향받는 객체': 'Affected objects',
   '보관된 DB 변경 입력': 'Archived database change input',
   '원문 보관 후 요청 해제': 'Archive the original input and release the request',
@@ -110,11 +112,13 @@ export function NativeGalleryConversionReview({
     return [databaseLabel(data.database ?? ''), data.engine].filter(Boolean).join(' · ');
   };
   const describe = (code: string) =>
-    code.includes('legacy')
-      ? t('기존 타입·기본값·스키마 원문을 먼저 확인해 주세요.')
-      : /unverified|not-ready|unsupported/.test(code)
-        ? t('대상 DB에서 이 기능의 변환이 아직 검증되지 않았습니다.')
-        : t('기존 원문을 대상 DB의 표현으로 변환할 수 없습니다.');
+    code === 'mysql.environment-profile-assumed'
+      ? t('표시된 MySQL 설정이 실제 서버 설정과 맞는지 확인하세요.')
+      : code.includes('legacy')
+        ? t('기존 타입·기본값·스키마 원문을 먼저 확인해 주세요.')
+        : /unverified|not-ready|unsupported/.test(code)
+          ? t('대상 DB에서 이 기능의 변환이 아직 검증되지 않았습니다.')
+          : t('기존 원문을 대상 DB의 표현으로 변환할 수 없습니다.');
   return (
     <section>
       <p>

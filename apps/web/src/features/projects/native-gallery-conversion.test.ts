@@ -845,6 +845,14 @@ describe('native gallery conversion review product text', () => {
     expect(html).toContain('public');
     expect(html).toContain('PostgreSQL 18');
     expect(html).toContain('MySQL 8.4');
+    expect(plan.preview.canChange).toBe(true);
+    expect(plan.preview.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'mysql.environment-profile-assumed', severity: 'warning' }),
+      ]),
+    );
+    expect(html).toContain('표시된 MySQL 설정이 실제 서버 설정과 맞는지 확인하세요.');
+    expect(html).not.toContain('기존 원문을 대상 DB의 표현으로 변환할 수 없습니다.');
     expect(html).not.toContain('postgresql-18-v1');
     expect(html).not.toContain('mysql-8.4-innodb-v1');
     expect(html).not.toContain('<pre>');
