@@ -133,7 +133,8 @@ export function NativeProjectView({
   } | null>(null);
   const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
   const queueBlocked = !!userId && durableState !== 'empty';
-  const editorBusy = saving || busy || !!pending || pendingBlocked || queueBlocked;
+  const recoveryBusy = saving || busy || !!pending || pendingBlocked;
+  const editorBusy = recoveryBusy || queueBlocked;
   const activeEditor = useRef('');
   const activeGeneration = useRef(0);
   const mounted = useRef(true);
@@ -501,6 +502,7 @@ export function NativeProjectView({
             editable={editable}
             personalEditable={!!userId && canPersonalEdit && snapshot.project.status === 'active'}
             busy={editorBusy}
+            recoveryBusy={recoveryBusy}
             onSave={save}
             onReload={onReload}
             mode={mode}

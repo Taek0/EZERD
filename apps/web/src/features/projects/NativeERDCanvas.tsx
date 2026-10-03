@@ -491,6 +491,7 @@ export function NativeERDCanvas({
   editable,
   personalEditable = editable,
   busy,
+  recoveryBusy = busy,
   onSave,
   onReload,
   mode,
@@ -507,6 +508,8 @@ export function NativeERDCanvas({
   /** Main can pass the workspace's own-personal permission separately from shared editing. */
   personalEditable?: boolean;
   busy: boolean;
+  /** External operations may block recovery; the pending row itself must not. */
+  recoveryBusy?: boolean;
   onSave: NativeEditorSave;
   onReload: () => void;
   mode: 'physical' | 'logical';
@@ -1123,7 +1126,7 @@ export function NativeERDCanvas({
               userId={userId}
               snapshot={snapshot}
               pending={personalPending}
-              disabled={busy || personalBusy}
+              disabled={recoveryBusy || personalBusy || privateQueueState === 'sending'}
               options={{
                 assertCurrent: () => {
                   if (!alive.current || activeIdentity.current !== privateIdentity)
