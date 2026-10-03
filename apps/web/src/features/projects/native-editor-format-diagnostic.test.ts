@@ -185,3 +185,30 @@ describe('format option condition diagnostics', () => {
     expect(f.context.onSave).not.toHaveBeenCalled();
   });
 });
+
+it('labels MySQL none and preserved numeric defaults plainly in both languages without changing policy', () => {
+  const f = advancedFixture('mysql'),
+    column = f.columns[0]!;
+  column.physical.type = {
+    kind: 'builtin',
+    database: 'mysql',
+    typeId: 'mysql:int',
+    parameters: { unsigned: true },
+  };
+  for (const locale of ['ko', 'en'] as const) {
+    setLocale(locale);
+    column.physical.defaultValue = { kind: 'none' };
+    const none = render(f).match(/<option value="none"[^>]*>([\s\S]*?)<\/option>/)?.[1];
+    expect(none).toBe(locale === 'ko' ? '기본값 없음' : 'No default');
+    column.physical.defaultValue = { kind: 'literal', literalType: 'number', value: '7' };
+    const initial = nativeFormatInitial(f.table, column);
+    const current = render(f).match(
+      /<option value="literal:number"[^>]*>([\s\S]*?)<\/option>/,
+    )?.[1];
+    expect(current).toBe(
+      locale === 'ko' ? 'literal:number · 현재값 유지' : 'literal:number · Keep current value',
+    );
+    expect(nativeFormatCommands(f.document, f.table, column, initial, initial)).toEqual([]);
+  }
+  expect(f.context.onSave).not.toHaveBeenCalled();
+});

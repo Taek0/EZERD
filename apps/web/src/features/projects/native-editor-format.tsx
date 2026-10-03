@@ -7,6 +7,7 @@ import {
   nativeDefaultDisplay,
   nativeGenerationDisplay,
   nativeExpressionDisplay,
+  inspectNativeDatabaseDocument,
   type NativeColumn,
   type NativeDesignDocument,
   type NativeTable,
@@ -35,10 +36,11 @@ import type { NativeWebCommand } from './native-save.js';
 import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
   nativeSelectedArrayPolicy,
-  nativeEnumTextareaEditable,
   nativeSridParameterDecision,
 } from './native-constraint-options.js';
 import { NativeSridParameterField } from './native-constraint-option-fields.js';
+import { NativeLabelFields } from './NativeLabelFields.js';
+import { serializeNativeLabels, nativeLabelsForCommand } from './native-label-draft.js';
 import {
   nativeBoundedInteger,
   nativeExactBoolean,
@@ -75,6 +77,8 @@ registerTranslations({
   '엔진에서 허용': 'Allowed by the engine',
   '제품 검증 미완료': 'Product verification is incomplete',
   '현재 원문 유지': 'Preserve the current original value',
+  '기본값 없음': 'No default',
+  '현재값 유지': 'Keep current value',
   '환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.':
     'Verify the environment, then remove this default or recover with a verified value.',
   '완성된 입력과 제품 검증이 필요합니다. 초안은 원문으로 보관됩니다.':
@@ -88,8 +92,8 @@ registerTranslations({
   '환경 검증 필요': 'Environment verification is required',
   '배열 차원은 1부터 6까지 입력하세요. 배열을 제거하려면 비워 두세요.':
     'Enter array dimensions from 1 to 6. Leave blank to remove the array.',
-  '빈 값이나 개행을 포함한 기존 label은 원문으로 유지됩니다. 값 목록 편집에는 개별 label 편집기가 필요합니다.':
-    'Existing empty or multiline labels are preserved. Editing the value list requires individual label controls.',
+  'SET 값은 최대 64개이며 쉼표를 포함할 수 없습니다.':
+    'SET supports at most 64 values, and values cannot contain commas.',
 });
 const json = (value: unknown) => JSON.stringify(value);
 const yes = (value: boolean | undefined) => (value ? 'true' : 'false');
@@ -126,7 +130,7 @@ export function nativeFormatInitial(
     typeJSON: json(type),
     ...parameters,
     array: 'array' in type ? String(type.array?.dimensions ?? '') : '',
-    values: type.kind === 'valueList' ? type.values.join('\n') : '',
+    labelsJSON: serializeNativeLabels(type.kind === 'valueList' ? type.values : []),
     declaredName: type.kind === 'declared' ? type.name : '',
     numericArguments: type.kind === 'declared' ? type.numericArguments.join('\n') : '',
     nullable: yes(column.physical.nullable),
@@ -243,17 +247,12 @@ export function nativeFormatCommands(
     'typeChoice',
     'array',
     'values',
+    'labelsJSON',
     'declaredName',
     'numericArguments',
     ...parameterKeys,
   ]);
   if (typeChanged) {
-    if (
-      column.physical.type.kind === 'valueList' &&
-      values.values !== before.values &&
-      !nativeEnumTextareaEditable(column.physical.type.values)
-    )
-      throw Error('native.enum-structured-label-editor-required');
     const selected = values.typeChoice ?? '';
     const parameters = Object.fromEntries(
       Object.entries(nativeTypeParameterRules(selected)).flatMap(([key, rule]) => {
@@ -296,10 +295,13 @@ export function nativeFormatCommands(
                   kind: 'valueList',
                   database: 'mysql',
                   typeId: selected,
-                  values:
-                    column.physical.type.kind === 'valueList' && values.values === before.values
-                      ? [...column.physical.type.values]
-                      : split(values.values ?? ''),
+                  values: nativeLabelsForCommand(
+                    values,
+                    before,
+                    'labelsJSON',
+                    'values',
+                    column.physical.type.kind === 'valueList' ? column.physical.type.values : [],
+                  ),
                 }
               : {
                   kind: 'builtin',
@@ -335,6 +337,34 @@ export function nativeFormatCommands(
     const options = JSON.parse(before.optionsJSON!) as NativeColumn['physical']['options'];
     if (options.database === 'mysql') delete options.onUpdate;
     physical.options = options;
+    if (type.kind === 'valueList') {
+      const candidate = {
+        ...document,
+        columns: document.columns?.map((c) =>
+          c.id === column.id
+            ? {
+                ...c,
+                scope: c.scope === 'logical' ? ('physical' as const) : c.scope,
+                physical: {
+                  ...c.physical,
+                  type,
+                  defaultValue: { kind: 'none' as const },
+                  generation: { kind: 'none' as const },
+                  options,
+                },
+              }
+            : c,
+        ),
+        tables: document.tables?.map((t) =>
+          t.id === table.id && t.scope === 'logical' ? { ...t, scope: 'physical' as const } : t,
+        ),
+      };
+      const issue = inspectNativeDatabaseDocument(candidate, document.database).find(
+        (i) =>
+          i.severity === 'error' && i.objectId === column.id && i.path.includes('/type/values'),
+      );
+      if (issue) throw Error(issue.code);
+    }
   } else {
     if (
       changed(values, before, [
@@ -616,7 +646,8 @@ export function NativeFormatEditor({
               values[key] !== nativeFormatInitial(table, column)[key],
           ) ||
           values.array !== nativeFormatInitial(table, column).array ||
-          values.values !== nativeFormatInitial(table, column).values;
+          (values.labelsJSON !== undefined &&
+            values.labelsJSON !== nativeFormatInitial(table, column).labelsJSON);
         const arrayPolicy = nativeSelectedArrayPolicy(
           document,
           table,
@@ -624,9 +655,6 @@ export function NativeFormatEditor({
           values.typeChoice ?? '',
           typeChanged,
         );
-        const preservedLabels =
-          column.physical.type.kind === 'valueList' &&
-          !nativeEnumTextareaEditable(column.physical.type.values);
         const generationChoices = [
           { value: 'none', label: 'none' },
           ...(
@@ -673,7 +701,12 @@ export function NativeFormatEditor({
         ];
         const defaults = policy.defaults.map((item) => ({
           value: item.choice,
-          label: `${item.choice} · ${item.preserved ? t('현재 원문 유지') : item.engineAllowed ? t('엔진에서 허용') : t(item.category === 'invalid' ? '입력·타입 조건에 맞지 않음' : item.category === 'environment' ? '환경 검증 필요' : '이 DB에서 지원하지 않음')}${item.choice !== 'none' && !item.productUsable ? ` · ${t('제품 검증 미완료')}` : ''}${condition(item.code)}`,
+          label:
+            item.choice === 'none'
+              ? t('기본값 없음')
+              : item.preserved
+                ? `${item.choice} · ${t('현재값 유지')}${!item.engineAllowed && item.code && !item.code.endsWith('not-ready') && item.code !== 'feature.not-implemented' ? condition(item.code) : ''}`
+                : `${item.choice} · ${item.engineAllowed ? t('엔진에서 허용') : t(item.category === 'invalid' ? '입력·타입 조건에 맞지 않음' : item.category === 'environment' ? '환경 검증 필요' : '이 DB에서 지원하지 않음')}${!item.productUsable ? ` · ${t('제품 검증 미완료')}` : ''}${condition(item.code)}`,
           disabled: !item.selectable,
         }));
         const originalDefault = column.physical.defaultValue;
@@ -740,14 +773,17 @@ export function NativeFormatEditor({
               </>
             )}
             {values.typeChoice?.startsWith('mysql:') &&
-              ['mysql:enum', 'mysql:set'].includes(values.typeChoice) &&
-              field('values', '값 목록 (한 줄에 하나)', !ready || preservedLabels, undefined, true)}
-            {preservedLabels && (
-              <p role="status">
-                {t(
-                  '빈 값이나 개행을 포함한 기존 label은 원문으로 유지됩니다. 값 목록 편집에는 개별 label 편집기가 필요합니다.',
-                )}
-              </p>
+              ['mysql:enum', 'mysql:set'].includes(values.typeChoice) && (
+                <NativeLabelFields
+                  value={values.labelsJSON ?? ''}
+                  onChange={(raw) => change('labelsJSON', raw)}
+                  disabled={!ready || context.busy}
+                  maxItems={values.typeChoice === 'mysql:set' ? 64 : 1000}
+                  legacyDraft={values.values !== undefined}
+                />
+              )}
+            {values.typeChoice === 'mysql:set' && (
+              <p>{t('SET 값은 최대 64개이며 쉼표를 포함할 수 없습니다.')}</p>
             )}
             {column.physical.type.kind === 'declared' && (
               <p>

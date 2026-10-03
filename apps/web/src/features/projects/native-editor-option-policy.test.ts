@@ -141,18 +141,20 @@ describe('native default and key UI policies without coverage promotion', () => 
       'string',
     ],
   ] satisfies [NativeColumnType, string][])(
-    'labels the engine-compatible literal kind for $0.typeId while keeping product readiness false',
+    'labels the engine-compatible literal kind for $0.typeId with the actual activated product policy',
     (type, expected) => {
       const f = fixture();
       f.column.physical.type = type;
       const choices = nativeDefaultChoices(f.document, f.table, f.column);
       expect(choices.find((item) => item.choice === `literal:${expected}`)).toMatchObject({
         engineAllowed: true,
-        productUsable: false,
-        selectable: false,
+        productUsable: true,
+        selectable: true,
       });
       expect(choices.find((item) => item.choice === 'none')).toMatchObject({ selectable: true });
-      expect(choices.every((item) => !item.productUsable)).toBe(true);
+      expect(
+        choices.filter((item) => !item.engineAllowed).every((item) => !item.productUsable),
+      ).toBe(true);
     },
   );
   it('uses nullable, primary key, strict mode and enum values from the current document', () => {
@@ -189,7 +191,7 @@ describe('native default and key UI policies without coverage promotion', () => 
       nativeDefaultInput(sq.document, sq.table, sq.column, 'literal:string', '00', true),
     ).toThrow('default.type-mismatch');
   });
-  it('retains exact numeric and JSON tokens and does not activate their writes', () => {
+  it('retains exact numeric and JSON tokens and prepares their activated writes', () => {
     const f = fixture();
     f.column.physical.type = {
       kind: 'builtin',
@@ -200,9 +202,9 @@ describe('native default and key UI policies without coverage promotion', () => 
     const token = '+0009007199254740993.00';
     const input = nativeDefaultInput(f.document, f.table, f.column, 'literal:number', token, false);
     expect(input.value).toEqual({ kind: 'literal', literalType: 'number', value: token });
-    expect(input.decision).toMatchObject({ engineAllowed: true, productUsable: false });
+    expect(input.decision).toMatchObject({ engineAllowed: true, productUsable: true });
     const initial = nativeFormatInitial(f.table, f.column);
-    expect(() =>
+    expect(
       nativeFormatCommands(
         f.document,
         f.table,
@@ -210,7 +212,13 @@ describe('native default and key UI policies without coverage promotion', () => 
         { ...initial, defaultChoice: 'literal:number', defaultValue: token },
         initial,
       ),
-    ).toThrow('default.not-ready');
+    ).toMatchObject([
+      {
+        patch: {
+          physical: { defaultValue: { kind: 'literal', literalType: 'number', value: token } },
+        },
+      },
+    ]);
     expect(nativeLiteralFromToken('json', '{ "n":9007199254740993, "e":1e2 }')).toMatchObject({
       value: '{ "n":9007199254740993, "e":1e2 }',
     });
@@ -332,7 +340,7 @@ describe('native default and key UI policies without coverage promotion', () => 
     });
     expect(choices.find((item) => item.column.id === 'good')).toMatchObject({
       engineAllowed: true,
-      productUsable: false,
+      productUsable: true,
     });
     const html = renderToStaticMarkup(
       createElement(NativeOrderedColumns, {
@@ -343,7 +351,9 @@ describe('native default and key UI policies without coverage promotion', () => 
         change: () => undefined,
       }),
     );
-    expect(html).toContain('key.type-not-supported');
+    expect(html).toContain('이 DB나 타입에서는 해당 조합을 지원하지 않습니다.');
+    expect(html).not.toContain('key.type-not-supported');
+    expect(html).not.toContain('(undefined)');
     expect(html).toContain('엔진에서 허용');
     expect(html).toContain('제품 검증 미완료');
     expect(() =>
@@ -441,7 +451,7 @@ describe('native default and key UI policies without coverage promotion', () => 
         }),
       ).toMatchObject({
         engineAllowed: true,
-        productUsable: false,
+        productUsable: true,
       });
     },
   );
@@ -489,7 +499,7 @@ describe('native default and key UI policies without coverage promotion', () => 
     f.column.physical.generation = original;
     expect(nativeGenerationPolicy(f.document, f.table, f.column, original)).toMatchObject({
       engineAllowed: true,
-      productUsable: false,
+      productUsable: true,
     });
     const before = nativeFormatInitial(f.table, f.column);
     expect(nativeFormatCommands(f.document, f.table, f.column, before, before)).toEqual([]);
@@ -535,7 +545,7 @@ describe('native default and key UI policies without coverage promotion', () => 
       ),
     ).toMatchObject({
       engineAllowed: true,
-      productUsable: false,
+      productUsable: true,
     });
     expect(nativeOnUpdateInput(f.document, 'mysql:current_timestamp')).toEqual({
       kind: 'call',
@@ -561,7 +571,7 @@ describe('native default and key UI policies without coverage promotion', () => 
       ),
     ).toMatchObject({ engineAllowed: false, code: 'literal.string-invalid' });
   });
-  it('uses actual model default type/generation/argument and STRICT decisions without enabling writes', () => {
+  it('uses actual model default type/generation/argument and STRICT decisions with activated compatible writes', () => {
     const f = fixture();
     const clock = { kind: 'call', functionId: 'postgresql:current_timestamp', args: [] } as const;
     expect(
@@ -577,9 +587,9 @@ describe('native default and key UI policies without coverage promotion', () => 
       nativeFunctionOptionPolicies(f.document, f.table, f.column, 'default').find(
         (item) => item.id === clock.functionId,
       ),
-    ).toMatchObject({ engineAllowed: true, productUsable: false });
+    ).toMatchObject({ engineAllowed: true, productUsable: true });
     const initial = nativeFormatInitial(f.table, f.column);
-    expect(() =>
+    expect(
       nativeFormatCommands(
         f.document,
         f.table,
@@ -592,7 +602,9 @@ describe('native default and key UI policies without coverage promotion', () => 
         },
         initial,
       ),
-    ).toThrow('default.not-ready');
+    ).toMatchObject([
+      { patch: { physical: { defaultValue: { kind: 'expression', expression: clock } } } },
+    ]);
     expect(
       nativeBuiltinDefaultPolicy(f.document, f.table, f.column, {
         kind: 'binary',
@@ -637,7 +649,7 @@ describe('native default and key UI policies without coverage promotion', () => 
     };
     expect(nativeGenerationPolicy(f.document, f.table, f.column, good)).toMatchObject({
       engineAllowed: true,
-      productUsable: false,
+      productUsable: true,
     });
     expect(
       nativeGenerationPolicy(f.document, f.table, f.column, {
@@ -676,7 +688,7 @@ describe('native default and key UI policies without coverage promotion', () => 
     ];
     expect(nativeGenerationPolicy(f.document, f.table, f.column, generation)).toMatchObject({
       engineAllowed: true,
-      productUsable: false,
+      productUsable: true,
     });
     f.document.columns!.push({
       ...f.column,
@@ -693,9 +705,9 @@ describe('native default and key UI policies without coverage promotion', () => 
         storage: 'stored',
         expression: { kind: 'literal', literalType: 'number', value: '1' },
       }).code,
-    ).toBe('generation.not-ready');
+    ).toBeUndefined();
   });
-  it('uses actual ON UPDATE type/generation rules and keeps a supported candidate blocked by readiness', () => {
+  it('uses actual ON UPDATE type/generation rules and prepares a supported activated candidate', () => {
     const f = fixture('mysql');
     const expression = nativeOnUpdateInput(f.document, 'mysql:current_timestamp');
     expect(nativeOnUpdatePolicy(f.document, f.column, expression).code).toBe(
@@ -709,10 +721,10 @@ describe('native default and key UI policies without coverage promotion', () => 
     };
     expect(nativeOnUpdatePolicy(f.document, f.column, expression)).toMatchObject({
       engineAllowed: true,
-      productUsable: false,
+      productUsable: true,
     });
     const before = nativeFormatInitial(f.table, f.column);
-    expect(() =>
+    expect(
       nativeFormatCommands(
         f.document,
         f.table,
@@ -720,7 +732,7 @@ describe('native default and key UI policies without coverage promotion', () => 
         { ...before, onUpdateMode: 'function', onUpdateFunction: 'mysql:current_timestamp' },
         before,
       ),
-    ).toThrow('column.on-update.not-ready');
+    ).toMatchObject([{ patch: { physical: { options: { onUpdate: expression } } } }]);
     expect(
       nativeOnUpdatePolicy(f.document, f.column, expression, {
         kind: 'autoIncrement',

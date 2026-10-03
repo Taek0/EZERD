@@ -57,7 +57,7 @@ describe('bounded exact native AST drafts', () => {
         draft,
         nativeAdvancedExpressionFacts(f.document, f.table, 'check'),
       ),
-    ).toMatchObject({ allowed: true, usable: false });
+    ).toMatchObject({ allowed: true, usable: true });
     expect(draft).toEqual(before);
   });
   it('edits only an addressed subtree and rejects unsafe/missing paths', () => {

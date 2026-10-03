@@ -30,12 +30,15 @@ import {
   nativeConstraintOptionsInitial,
   nativeConstraintOptionsPatch,
   nativeConstraintOptionsDecision,
-  nativeEnumTextareaEditable,
+  nativeEnumOptionsDecision,
 } from './native-constraint-options.js';
 import {
   NativeConstraintOptionFields,
   NativeEnumOptionSummary,
 } from './native-constraint-option-fields.js';
+import { NativeLabelFields } from './NativeLabelFields.js';
+import { serializeNativeLabels, nativeLabelsForCommand } from './native-label-draft.js';
+import { nativeEditorConditionText } from './native-editor-diagnostic.js';
 
 registerTranslations({
   '물리·논리 범위를 선택하고 이름을 입력하세요.':
@@ -178,7 +181,8 @@ export function NativeOrderedColumns({
               <li key={item.column.id}>
                 {item.column.physical.name || item.column.id} ·{' '}
                 {t(item.engineAllowed ? '엔진에서 허용' : '이 DB에서 지원하지 않음')}
-                {!item.productUsable && ` · ${t('제품 검증 미완료')}`} ({item.code})
+                {!item.productUsable && ` · ${t('제품 검증 미완료')}`}
+                {item.code && ` · ${nativeEditorConditionText(item.code)}`}
                 {item.eligibility.estimatedBytes !== undefined &&
                   ` · ${item.eligibility.estimatedBytes} bytes`}
                 {item.eligibility.conditions.length > 0 &&
@@ -305,7 +309,12 @@ export function nativeStructureCommands(
   else if (action === 'enum')
     command = {
       type: 'add_enum',
-      value: { id, name, schema: values.schema, values: list(values.enumValues) },
+      value: {
+        id,
+        name,
+        schema: values.schema,
+        values: nativeLabelsForCommand(values, {}, 'enumLabelsJSON', 'enumValues', []),
+      },
     };
   else if (values.foreignMode === 'derived') {
     const key = document.keys?.find(
@@ -345,6 +354,17 @@ export function nativeStructureCommands(
       },
     };
   const parsed = nativeEditorCommandSchema.parse(command);
+  if (parsed.type === 'add_enum') {
+    const decision = nativeEnumOptionsDecision(
+      document,
+      parsed.value.id,
+      parsed.value.name,
+      parsed.value.schema,
+      serializeNativeLabels(parsed.value.values),
+    );
+    if (!decision.allowed || !decision.usable)
+      throw Error(decision.code ?? 'feature.not-implemented');
+  }
   const options = nativeConstraintOptionsPatch(action === 'key' ? 'key' : 'foreignKey', values);
   if (['key', 'foreignKey'].includes(action) && Object.keys(options).length) {
     if (
@@ -418,7 +438,7 @@ function NativeCreateForm({
     unique: 'false',
     direction: 'asc',
     schema: 'public',
-    enumValues: '',
+    enumLabelsJSON: serializeNativeLabels([]),
     targetTableId: '',
     targetColumnIds: '',
     primaryKeyId: '',
@@ -587,13 +607,18 @@ function NativeCreateForm({
               {action === 'enum' && (
                 <>
                   {field('schema', '스키마')}
-                  {field('enumValues', '값 목록 (한 줄에 하나)', undefined, true)}
+                  <NativeLabelFields
+                    value={values.enumLabelsJSON ?? ''}
+                    legacyDraft={values.enumValues !== undefined}
+                    onChange={(raw) => change('enumLabelsJSON', raw)}
+                    disabled={disabled || context.busy}
+                  />
                   <NativeEnumOptionSummary
                     document={document}
                     id={values.id!}
                     name={values.name ?? ''}
                     schema={values.schema ?? ''}
-                    text={values.enumValues ?? ''}
+                    text={values.enumLabelsJSON ?? ''}
                   />
                 </>
               )}
@@ -724,7 +749,7 @@ export function nativeConstraintInitial(
   if (collection === 'enums') {
     const enumeration = document.enums!.find((item) => item.id === id)!;
     result.schema = enumeration.schema;
-    result.enumValues = enumeration.values.join('\n');
+    result.enumLabelsJSON = serializeNativeLabels(enumeration.values);
   }
   if (collection === 'tableRelations') {
     const relation = document.tableRelations!.find((item) => item.id === id)!;
@@ -783,7 +808,7 @@ export function nativeConstraintCommands(
     const options = nativeConstraintOptionsPatch('foreignKey', values, before, relation);
     if (Object.keys(options).length) {
       requireFeature('foreignKey');
-      requireFeature('deferrableForeignKey');
+      if (options.deferrable) requireFeature('deferrableForeignKey');
       const decision = nativeConstraintOptionsDecision(
         document,
         'foreignKey',
@@ -862,14 +887,31 @@ export function nativeConstraintCommands(
       requireFeature('check');
       patch.expression = nativeExpressionFromInputs(values);
     } else if (collection === 'enums') {
-      if (
-        changed('enumValues') &&
-        !nativeEnumTextareaEditable(document.enums!.find((e) => e.id === id)!.values)
-      )
-        throw Error('native.enum-structured-label-editor-required');
-      if (changed('schema') || changed('enumValues')) requireFeature('enumType');
+      const labelsChanged = changed('enumLabelsJSON') || changed('enumValues');
+      const labels = labelsChanged
+        ? nativeLabelsForCommand(
+            values,
+            before,
+            'enumLabelsJSON',
+            'enumValues',
+            document.enums!.find((e) => e.id === id)!.values,
+          )
+        : undefined;
+      if (changed('schema') || labelsChanged) requireFeature('enumType');
+      if (labelsChanged) {
+        const current = document.enums!.find((e) => e.id === id)!;
+        const decision = nativeEnumOptionsDecision(
+          document,
+          id,
+          values.name ?? current.name,
+          values.schema ?? current.schema,
+          serializeNativeLabels(labels!),
+        );
+        if (!decision.allowed || !decision.usable)
+          throw Error(decision.code ?? 'feature.not-implemented');
+      }
       if (changed('schema')) patch.schema = values.schema;
-      if (changed('enumValues')) patch.values = list(values.enumValues);
+      if (labels) patch.values = labels;
     }
   }
   if (!Object.keys(patch).length) return [];
@@ -1032,20 +1074,18 @@ function NativeConstraintForm({
             {collection === 'enums' && (
               <>
                 {field('schema', '스키마')}
-                {field(
-                  'enumValues',
-                  '값 목록 (한 줄에 하나)',
-                  disabled ||
-                    !nativeEnumTextareaEditable(document.enums!.find((e) => e.id === id)!.values),
-                  undefined,
-                  true,
-                )}
+                <NativeLabelFields
+                  value={values.enumLabelsJSON ?? ''}
+                  legacyDraft={values.enumValues !== undefined}
+                  onChange={(raw) => change('enumLabelsJSON', raw)}
+                  disabled={disabled || context.busy}
+                />
                 <NativeEnumOptionSummary
                   document={document}
                   id={id}
                   name={values.name ?? ''}
                   schema={values.schema ?? ''}
-                  text={values.enumValues ?? ''}
+                  text={values.enumLabelsJSON ?? ''}
                 />
               </>
             )}

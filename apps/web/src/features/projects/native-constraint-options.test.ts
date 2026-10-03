@@ -5,12 +5,12 @@ import type { NativeTableKey, NativeTableRelation } from '@ezerd/model';
 import { nativeEditorCommandSchema, nativeStoredDesignDocumentSchema } from '@ezerd/contracts';
 import { setLocale } from '../../shared/i18n/index.js';
 import { advancedFixture } from './native-advanced-test-fixtures.js';
+import { serializeNativeLabels } from './native-label-draft.js';
 import {
   nativeConstraintOptionsInitial,
   nativeConstraintOptionsPatch,
   nativeConstraintOptionsDecision,
   nativeEnumOptionsDecision,
-  nativeEnumTextareaEditable,
   nativeSelectedArrayPolicy,
   nativeSridParameterDecision,
 } from './native-constraint-options.js';
@@ -71,8 +71,7 @@ describe('native missing constraint option consumers', () => {
     for (const token of ['0', '4326'])
       expect(nativeSridParameterDecision(f.document, column, 'mysql:point', token)).toMatchObject({
         allowed: true,
-        usable: false,
-        code: 'feature.not-implemented',
+        usable: true,
       });
     expect(nativeSridParameterDecision(f.document, column, 'mysql:point', '999998')).toMatchObject({
       allowed: false,
@@ -117,7 +116,7 @@ describe('native missing constraint option consumers', () => {
         before,
       ),
     ).toThrow('type.srid-unverified');
-    expect(() =>
+    expect(
       nativeFormatCommands(
         f.document,
         f.table,
@@ -125,7 +124,7 @@ describe('native missing constraint option consumers', () => {
         { ...before, 'parameter:srid': '4326', confirmTypeReset: 'true' },
         before,
       ),
-    ).toThrow('feature.not-implemented');
+    ).toMatchObject([{ patch: { physical: { type: { parameters: { srid: 4326 } } } } }]);
     expect(
       nativeFormatCommands(
         f.document,
@@ -184,7 +183,7 @@ describe('native missing constraint option consumers', () => {
     }
     expect(change).not.toHaveBeenCalled();
   });
-  it('prepares minimal typed options, preserves explicit false and refuses unrepresentable removal', () => {
+  it('prepares minimal typed options, preserves explicit false and prepares explicit nullable removal', () => {
     const current = { deferrable: { initially: 'immediate' as const }, nullsNotDistinct: true },
       before = nativeConstraintOptionsInitial(current);
     expect(nativeConstraintOptionsPatch('key', before, before, current)).toEqual({});
@@ -198,15 +197,15 @@ describe('native missing constraint option consumers', () => {
     expect(nativeEditorCommandSchema.safeParse({ type: 'patch_key', id: 'k', patch }).success).toBe(
       true,
     );
-    expect(() =>
+    expect(
       nativeConstraintOptionsPatch('key', { ...before, deferrability: 'none' }, before, current),
-    ).toThrow('native.deferrability-removal-contract-required');
+    ).toEqual({ deferrable: null });
     expect(() => nativeConstraintOptionsPatch('key', { nullsNotDistinct: 'unfinished' })).toThrow(
       'native.boolean-invalid',
     );
   });
   it.each(['primary', 'unique'] as const)(
-    'uses real PG %s deferrability policy while blocking current write readiness',
+    'uses real PG %s deferrability policy and prepares activated patches',
     (kind) => {
       const f = advancedFixture(),
         item = { ...key(), kind };
@@ -215,10 +214,10 @@ describe('native missing constraint option consumers', () => {
         patch = { deferrable: { initially: 'deferred' as const } };
       const decision = nativeConstraintOptionsDecision(f.document, 'key', item, patch);
       expect(decision.allowed).toBe(true);
-      expect(decision.usable).toBe(false);
+      expect(decision.usable).toBe(true);
       expect(decision.candidate?.keys?.[0]).toMatchObject(patch);
       const before = nativeConstraintInitial(f.document, 'keys', 'k');
-      expect(() =>
+      expect(
         nativeConstraintCommands(
           f.document,
           'keys',
@@ -226,7 +225,7 @@ describe('native missing constraint option consumers', () => {
           { ...before, deferrability: 'deferred' },
           before,
         ),
-      ).toThrow('feature.not-implemented');
+      ).toEqual([{ type: 'patch_key', id: 'k', patch: { deferrable: { initially: 'deferred' } } }]);
       expect(
         nativeConstraintCommands(f.document, 'keys', 'k', { ...before, name: 'renamed' }, before),
       ).toEqual([{ type: 'patch_key', id: 'k', patch: { name: 'renamed' } }]);
@@ -245,13 +244,13 @@ describe('native missing constraint option consumers', () => {
         patch = { deferrable: { initially: 'immediate' as const } };
       const fkDecision = nativeConstraintOptionsDecision(f.document, 'foreignKey', fk, patch);
       expect(fkDecision.allowed).toBe(kind !== 'mysql');
-      expect(fkDecision.usable).toBe(false);
+      expect(fkDecision.usable).toBe(kind !== 'mysql');
       if (kind === 'mysql')
         expect(fkDecision.issues.some((i) => i.code === 'feature.not-supported')).toBe(true);
       f.document.tableRelations = [];
       const keyDecision = nativeConstraintOptionsDecision(f.document, 'key', item, patch);
       expect(keyDecision.allowed).toBe(kind === 'postgresql');
-      expect(keyDecision.usable).toBe(false);
+      expect(keyDecision.usable).toBe(kind === 'postgresql');
       if (kind !== 'postgresql') expect(keyDecision.code).toBe('key.deferrable-not-supported');
       expect(source.tableRelations?.[0]).toEqual(fk);
       const html = renderToStaticMarkup(
@@ -277,7 +276,7 @@ describe('native missing constraint option consumers', () => {
     f.document.keys = [item];
     expect(
       nativeConstraintOptionsDecision(f.document, 'key', item, { nullsNotDistinct: true }),
-    ).toMatchObject({ allowed: true, usable: false });
+    ).toMatchObject({ allowed: true, usable: true });
     const primary = { ...item, kind: 'primary' as const };
     expect(
       nativeConstraintOptionsDecision(f.document, 'key', primary, { nullsNotDistinct: true }).code,
@@ -309,12 +308,8 @@ describe('native missing constraint option consumers', () => {
       expect(existing).toContain(
         locale === 'ko' ? 'NULL을 같은 값으로 취급' : 'Treat NULL values as equal',
       );
-      expect(existing).toMatch(/<option value="none" disabled=""/);
-      expect(existing).toContain(
-        locale === 'ko'
-          ? '현재 계약에서는 지연 가능 설정을 제거할 수 없습니다.'
-          : 'The current contract cannot remove deferrability.',
-      );
+      expect(existing).toMatch(/<option value="none">/);
+      expect(existing).not.toMatch(/<option value="none" disabled=""/);
       const created = renderToStaticMarkup(
         createElement(NativeStructureEditor, {
           context: f.context,
@@ -327,7 +322,7 @@ describe('native missing constraint option consumers', () => {
     }
     expect(f.context.onSave).not.toHaveBeenCalled();
   });
-  it('keeps mapped and derived FK creation blocked by actual readiness', () => {
+  it('prepares mapped and derived FK root timing with actual readiness', () => {
     const f = advancedFixture();
     f.document.keys = [key()];
     const values = {
@@ -342,19 +337,29 @@ describe('native missing constraint option consumers', () => {
       onUpdate: 'NO ACTION',
       deferrability: 'deferred',
     };
-    expect(() => nativeStructureCommands(f.document, f.table, 'foreignKey', values)).toThrow(
-      'feature.not-implemented',
-    );
-    expect(() =>
+    expect(nativeStructureCommands(f.document, f.table, 'foreignKey', values)).toMatchObject([
+      { type: 'add_foreign_key', value: { deferrable: { initially: 'deferred' } } },
+    ]);
+    expect(
       nativeStructureCommands(f.document, f.table, 'foreignKey', {
         ...values,
         foreignMode: 'derived',
         primaryKeyId: 'k',
         generatedColumnIds: 'new_b',
       }),
-    ).toThrow('feature.not-implemented');
+    ).toEqual([
+      {
+        type: 'create_foreign_key',
+        primaryTableId: 't',
+        foreignTableId: 't',
+        primaryKeyId: 'k',
+        relationId: 'r',
+        columnIds: ['new_b'],
+      },
+      { type: 'patch_foreign_key', id: 'r', patch: { deferrable: { initially: 'deferred' } } },
+    ]);
   });
-  it('preserves FK timing and physical mappings when renaming and blocks removal explicitly', () => {
+  it('preserves FK mappings when renaming and emits explicit nullable timing removal', () => {
     const f = advancedFixture(),
       fk = { ...relation(), deferrable: { initially: 'deferred' as const } };
     f.document.keys = [key()];
@@ -370,7 +375,7 @@ describe('native missing constraint option consumers', () => {
         before,
       ),
     ).toEqual([{ type: 'patch_foreign_key', id: 'r', patch: { physical: { name: 'renamed' } } }]);
-    expect(() =>
+    expect(
       nativeConstraintCommands(
         f.document,
         'tableRelations',
@@ -378,44 +383,64 @@ describe('native missing constraint option consumers', () => {
         { ...before, deferrability: 'none' },
         before,
       ),
-    ).toThrow('native.deferrability-removal-contract-required');
+    ).toEqual([{ type: 'patch_foreign_key', id: 'r', patch: { deferrable: null } }]);
     expect(f.document.tableRelations[0]).toEqual(fk);
   });
-  it('checks exact enum UTF-8 namespace/label boundaries and keeps product availability false', () => {
+  it('checks exact enum UTF-8 namespace/label boundaries with actual activated product availability', () => {
     const f = advancedFixture();
-    const valid = nativeEnumOptionsDecision(f.document, 'e', 'state', '', '가'.repeat(21));
-    expect(valid).toMatchObject({ allowed: true, usable: false, byteCounts: [63] });
-    expect(nativeEnumOptionsDecision(f.document, 'e', 'state', '', '가'.repeat(22))).toMatchObject({
+    const valid = nativeEnumOptionsDecision(
+      f.document,
+      'e',
+      'state',
+      '',
+      serializeNativeLabels(['가'.repeat(21)]),
+    );
+    expect(valid).toMatchObject({ allowed: true, usable: true, byteCounts: [63] });
+    expect(
+      nativeEnumOptionsDecision(
+        f.document,
+        'e',
+        'state',
+        '',
+        serializeNativeLabels(['가'.repeat(22)]),
+      ),
+    ).toMatchObject({
       allowed: false,
       code: 'enum.values-invalid',
       byteCounts: [66],
     });
-    expect(nativeEnumOptionsDecision(f.document, 'e', 'state', 'x'.repeat(64), 'a').allowed).toBe(
-      false,
-    );
-    expect(nativeEnumOptionsDecision(f.document, 'e', 'state', '', 'a\na').code).toBe(
-      'enum.values-invalid',
-    );
+    expect(
+      nativeEnumOptionsDecision(
+        f.document,
+        'e',
+        'state',
+        'x'.repeat(64),
+        serializeNativeLabels(['a']),
+      ).allowed,
+    ).toBe(false);
+    expect(
+      nativeEnumOptionsDecision(f.document, 'e', 'state', '', serializeNativeLabels(['a', 'a']))
+        .code,
+    ).toBe('enum.values-invalid');
     const html = renderToStaticMarkup(
       createElement(NativeEnumOptionSummary, {
         document: f.document,
         id: 'e',
         name: 'state',
         schema: '',
-        text: '가'.repeat(21),
+        text: serializeNativeLabels(['가'.repeat(21)]),
       }),
     );
     expect(html).toContain('63바이트');
     expect(html).not.toContain('enum.values-invalid');
   });
-  it('preserves engine-valid empty/newline labels and blocks ambiguous textarea edits only', () => {
+  it('preserves engine-valid empty/newline labels using exact arrays and rejects old text edits', () => {
     const f = advancedFixture();
     f.document.enums = [{ id: 'e', name: 'state', schema: '', values: ['', 'line\nbreak'] }];
     expect(nativeStoredDesignDocumentSchema.safeParse(f.document).success).toBe(true);
-    expect(nativeEnumTextareaEditable(f.document.enums[0]!.values)).toBe(false);
     const before = nativeConstraintInitial(f.document, 'enums', 'e');
-    const status = nativeEnumOptionsDecision(f.document, 'e', 'state', '', before.enumValues!);
-    expect(status).toMatchObject({ allowed: true, usable: false, byteCounts: [0, 10] });
+    const status = nativeEnumOptionsDecision(f.document, 'e', 'state', '', before.enumLabelsJSON!);
+    expect(status).toMatchObject({ allowed: true, usable: true, byteCounts: [0, 10] });
     expect(
       nativeConstraintCommands(f.document, 'enums', 'e', { ...before, name: 'renamed' }, before),
     ).toEqual([{ type: 'patch_enum', id: 'e', patch: { name: 'renamed' } }]);
@@ -427,7 +452,7 @@ describe('native missing constraint option consumers', () => {
         { ...before, enumValues: 'replacement' },
         before,
       ),
-    ).toThrow('native.enum-structured-label-editor-required');
+    ).toThrow('native.labels-draft-upgrade-required');
     const my = advancedFixture('mysql'),
       column = my.columns[0]!;
     column.physical.type = {
@@ -436,6 +461,7 @@ describe('native missing constraint option consumers', () => {
       typeId: 'mysql:enum',
       values: ['', 'x\ny'],
     };
+    column.physical.options = { database: 'mysql', collation: 'utf8mb4_bin' };
     const initial = nativeFormatInitial(my.table, column);
     expect(nativeFormatCommands(my.document, my.table, column, initial, initial)).toEqual([]);
     expect(() =>
@@ -446,7 +472,7 @@ describe('native missing constraint option consumers', () => {
         { ...initial, values: 'replacement' },
         initial,
       ),
-    ).toThrow('native.enum-structured-label-editor-required');
+    ).toThrow('native.labels-draft-upgrade-required');
     expect(column.physical.type.values).toEqual(['', 'x\ny']);
     const commands = nativeFormatCommands(
       my.document,
@@ -469,10 +495,10 @@ describe('native missing constraint option consumers', () => {
     f.document.enums = [{ id: 'e', name: 'state', schema: '', values: ['a'] }];
     expect(
       nativeSelectedArrayPolicy(f.document, f.table, f.columns[0]!, 'enum:e', true),
-    ).toMatchObject({ supported: true, usable: false });
+    ).toMatchObject({ supported: true, usable: true });
     expect(
       nativeSelectedArrayPolicy(f.document, f.table, f.columns[0]!, 'postgresql:integer', true),
-    ).toMatchObject({ supported: true, usable: false });
+    ).toMatchObject({ supported: true, usable: true });
     const my = advancedFixture('mysql');
     expect(
       nativeSelectedArrayPolicy(my.document, my.table, my.columns[0]!, 'mysql:int'),

@@ -146,7 +146,7 @@ describe('native structured forms and availability', () => {
         initial,
       ),
     ).toThrow('type.not-implemented');
-    expect(() =>
+    expect(
       nativeStructureCommands(f.document, f.table, 'key', {
         id: 'key',
         name: 'pk',
@@ -154,9 +154,9 @@ describe('native structured forms and availability', () => {
         scope: 'physical',
         columnIds: 'c',
       }),
-    ).toThrow('feature.not-implemented');
+    ).toMatchObject([{ type: 'add_key', value: { kind: 'primary', columnIds: ['c'] } }]);
   });
-  it('allows actual logical table/column drafts without activating physical coverage', () => {
+  it('preserves scopes for actual logical table and column drafts', () => {
     const f = fixture('postgresql');
     const [table] = nativeStructureCommands(f.document, undefined, 'table', {
       id: 'new',
@@ -277,7 +277,7 @@ describe('native structured forms and availability', () => {
         before,
       ),
     ).toEqual([{ type: 'patch_index', id: 'idx', patch: { name: 'renamed' } }]);
-    expect(() =>
+    expect(
       nativeConstraintCommands(
         f.document,
         'indexes',
@@ -285,7 +285,17 @@ describe('native structured forms and availability', () => {
         { ...before, direction: 'desc' },
         before,
       ),
-    ).toThrow('feature.not-implemented');
+    ).toMatchObject([
+      {
+        type: 'patch_index',
+        patch: {
+          parts: [
+            { direction: 'desc', expression: f.document.indexes![0]!.parts[0]!.expression },
+            { direction: 'desc', expression: f.document.indexes![0]!.parts[1]!.expression },
+          ],
+        },
+      },
+    ]);
   });
   it('keeps decimal/integer tokens as strings in structured expressions', () => {
     expect(
@@ -316,6 +326,6 @@ describe('native structured forms and availability', () => {
       nativeEditorPolicy(f.document, f.table).capabilities.features.find(
         (feature) => feature.id === 'check',
       )?.usable,
-    ).toBe(false);
+    ).toBe(true);
   });
 });

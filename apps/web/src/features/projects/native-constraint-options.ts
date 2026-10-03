@@ -17,9 +17,16 @@ import {
 } from '@ezerd/model';
 import { nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import { nativeBoundedInteger } from './native-editor-option-policy.js';
+import { parseNativeLabels } from './native-label-draft.js';
 
-type Options = { deferrable?: NativeTableKey['deferrable']; nullsNotDistinct?: boolean };
-export function nativeConstraintOptionsInitial(current: Options = {}): Record<string, string> {
+type StoredOptions = { deferrable?: NativeTableKey['deferrable']; nullsNotDistinct?: boolean };
+type Options = {
+  deferrable?: NonNullable<NativeTableKey['deferrable']> | null;
+  nullsNotDistinct?: boolean;
+};
+export function nativeConstraintOptionsInitial(
+  current: StoredOptions = {},
+): Record<string, string> {
   return {
     deferrability: current.deferrable?.initially ?? 'none',
     nullsNotDistinct: String(current.nullsNotDistinct ?? false),
@@ -30,7 +37,7 @@ export function nativeConstraintOptionsPatch(
   kind: 'key' | 'foreignKey',
   values: Record<string, string>,
   before: Record<string, string> = {},
-  current: Options = {},
+  current: StoredOptions = {},
 ): Options {
   const original = { ...nativeConstraintOptionsInitial(current), ...before },
     patch: Options = {};
@@ -39,7 +46,7 @@ export function nativeConstraintOptionsPatch(
     if (!['none', 'immediate', 'deferred'].includes(mode))
       throw Error('native.deferrability-input-invalid');
     if (mode === 'none') {
-      if (current.deferrable) throw Error('native.deferrability-removal-contract-required');
+      if (current.deferrable) patch.deferrable = null;
     } else patch.deferrable = { initially: mode as 'immediate' | 'deferred' };
   }
   if (
@@ -66,6 +73,7 @@ export function nativeConstraintOptionsDecision(
       throw Error('native.advanced-physical-object-required');
     const candidate = structuredClone(document);
     const value = { ...item, ...patch };
+    if (patch.deferrable === null) delete value.deferrable;
     if (kind === 'key')
       candidate.keys = candidate.keys?.some((k) => k.id === item.id)
         ? candidate.keys.map((k) => (k.id === item.id ? (value as NativeTableKey) : k))
@@ -98,9 +106,6 @@ export function nativeConstraintOptionsDecision(
     return { allowed: false, usable: false, issues: [], code: nativeEditorErrorCode(error) };
   }
 }
-export function nativeEnumTextareaEditable(values: readonly string[]) {
-  return values.every((value) => value !== '' && !value.includes('\n') && !value.includes('\r'));
-}
 export function nativeEnumOptionsDecision(
   document: NativeDesignDocument,
   id: string,
@@ -108,15 +113,10 @@ export function nativeEnumOptionsDecision(
   schema: string,
   text: string,
 ) {
-  const current = document.enums?.find((e) => e.id === id);
-  const values =
-      current && text === current.values.join('\n')
-        ? [...current.values]
-        : text
-          ? text.split('\n')
-          : [],
-    byteCounts = values.map((value) => new TextEncoder().encode(value).byteLength);
+  let byteCounts: number[] = [];
   try {
+    const values = parseNativeLabels(text);
+    byteCounts = values.map((value) => new TextEncoder().encode(value).byteLength);
     const candidate = structuredClone(document);
     candidate.enums = [
       ...(candidate.enums ?? []).filter((e) => e.id !== id),

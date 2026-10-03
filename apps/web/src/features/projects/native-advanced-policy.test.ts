@@ -89,7 +89,7 @@ describe('advanced index and expression command consumers', () => {
     ).toBe(false);
   });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
-    'builds the full %s index union but keeps the actual advanced gate closed',
+    'builds the full activated %s index union and emits the exact prepared command',
     (kind) => {
       const f = advancedFixture(kind),
         draft = nativeIndexDraft(f.document, f.table);
@@ -106,7 +106,7 @@ describe('advanced index and expression command consumers', () => {
       const before = structuredClone(f.document),
         status = nativeIndexCandidate(f.document, f.table, 'idx', draft);
       expect(status.allowed).toBe(true);
-      expect(status.usable).toBe(false);
+      expect(status.usable).toBe(true);
       expect(status.command).toMatchObject({
         type: 'add_index',
         value: {
@@ -115,7 +115,7 @@ describe('advanced index and expression command consumers', () => {
         },
       });
       expect(nativeEditorCommandSchema.safeParse(status.command).success).toBe(true);
-      expect(() => nativeAdvancedCommands(status)).toThrow('not-implemented');
+      expect(nativeAdvancedCommands(status)).toEqual([status.command]);
       expect(f.document).toEqual(before);
     },
   );
@@ -205,8 +205,9 @@ describe('advanced index and expression command consumers', () => {
     draft.options.method = 'gin';
     const status = nativeIndexCandidate(f.document, f.table, 'i', draft);
     expect(status.allowed).toBe(true);
-    expect(status.usable).toBe(false);
+    expect(status.usable).toBe(true);
     expect(status.command).toMatchObject({ value: { options: { method: 'gin' } } });
+    expect(nativeAdvancedCommands(status)).toEqual([status.command]);
   });
   it('consumes the shared MySQL FULLTEXT charset/collation mismatch rule', () => {
     const f = advancedFixture('mysql'),
@@ -362,10 +363,12 @@ describe('advanced index and expression command consumers', () => {
       };
       const status = nativeExpressionCandidate(f.document, f.table, target, values, initial);
       expect(status.allowed).toBe(true);
-      expect(status.usable).toBe(false);
+      expect(status.usable).toBe(kind !== 'computed');
       expect(status.command).toBeDefined();
       expect(nativeEditorCommandSchema.safeParse(status.command).success).toBe(true);
-      expect(() => nativeAdvancedCommands(status)).toThrow();
+      if (kind === 'computed')
+        expect(() => nativeAdvancedCommands(status)).toThrow('feature.not-implemented');
+      else expect(nativeAdvancedCommands(status)).toEqual([status.command]);
       expect(f.document).toEqual(before);
       if (kind !== 'check') {
         expect(status.command).toMatchObject({

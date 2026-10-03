@@ -9,7 +9,6 @@ import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { NativeEditorField } from './native-editor-form.js';
 import {
   nativeEnumOptionsDecision,
-  nativeEnumTextareaEditable,
   nativeSridParameterDecision,
 } from './native-constraint-options.js';
 import { nativeEditorConditionText } from './native-editor-diagnostic.js';
@@ -20,24 +19,20 @@ registerTranslations({
   '지연 가능 · 기본 즉시 검사': 'Deferrable · initially immediate',
   '지연 가능 · 기본 지연 검사': 'Deferrable · initially deferred',
   'NULL을 같은 값으로 취급': 'Treat NULL values as equal',
-  '현재 계약에서는 지연 가능 설정을 제거할 수 없습니다. 원문은 유지됩니다.':
-    'The current contract cannot remove deferrability. The original is preserved.',
   'NULL 동일 취급은 PostgreSQL 고유 키에서만 사용할 수 있습니다.':
     'Treating NULL values as equal is available only for PostgreSQL unique keys.',
   '이 DB에서는 현재 지연 설정을 지원하지 않습니다. 원문은 유지됩니다.':
     'This database does not support the current deferrability setting. The original is preserved.',
   'ENUM 이름과 스키마는 UTF-8 63바이트 이하로 입력하세요. 빈 스키마는 public을 사용합니다.':
     'ENUM names and schemas must be at most 63 UTF-8 bytes. An empty schema uses public.',
-  'ENUM 값은 한 줄에 하나씩, 중복 없이 UTF-8 63바이트 이하로 입력하세요.':
-    'Enter one ENUM value per line, without duplicates, using at most 63 UTF-8 bytes each.',
+  'ENUM 값은 중복 없이 각각 UTF-8 63바이트 이하로 입력하세요.':
+    'Enter each ENUM value without duplicates, using at most 63 UTF-8 bytes.',
   '이름 {nameBytes}바이트 · 스키마 {schemaBytes}바이트':
     'Name: {nameBytes} bytes · Schema: {schemaBytes} bytes',
   '{position}번째 값: {bytes}바이트': 'Value {position}: {bytes} bytes',
   '공간 참조계 (SRID)': 'Spatial reference system (SRID)',
   'SRID 제한 없음': 'No SRID restriction',
   '현재 원문 유지': 'Preserve the current original value',
-  '빈 값이나 개행을 포함한 기존 label은 원문으로 유지됩니다. 값 목록 편집에는 개별 label 편집기가 필요합니다.':
-    'Existing empty or multiline labels are preserved. Editing the value list requires individual label controls.',
 });
 export function NativeSridParameterField({
   document,
@@ -104,7 +99,6 @@ export function NativeConstraintOptionFields({
       ? checkDatabaseFeature(document.database, 'deferrableForeignKey').supported
       : document.database.kind === 'postgresql';
   const mode = values.deferrability ?? current.deferrable?.initially ?? 'none';
-  const removalBlocked = !!current.deferrable;
   const nulls =
     values.nullsNotDistinct ??
     String(('nullsNotDistinct' in current && current.nullsNotDistinct) || false);
@@ -116,18 +110,21 @@ export function NativeConstraintOptionFields({
             label="제약 검사 시점"
             value={mode}
             onChange={(v) => change('deferrability', v)}
-            disabled={disabled || !supported}
+            disabled={disabled || (!supported && !current.deferrable)}
             choices={[
-              { value: 'none', label: t('지연 불가'), disabled: removalBlocked },
-              { value: 'immediate', label: t('지연 가능 · 기본 즉시 검사') },
-              { value: 'deferred', label: t('지연 가능 · 기본 지연 검사') },
+              { value: 'none', label: t('지연 불가') },
+              {
+                value: 'immediate',
+                label: t('지연 가능 · 기본 즉시 검사'),
+                disabled: !supported && mode !== 'immediate',
+              },
+              {
+                value: 'deferred',
+                label: t('지연 가능 · 기본 지연 검사'),
+                disabled: !supported && mode !== 'deferred',
+              },
             ]}
           />
-          {removalBlocked && (
-            <p role="status">
-              {t('현재 계약에서는 지연 가능 설정을 제거할 수 없습니다. 원문은 유지됩니다.')}
-            </p>
-          )}
           {!supported && (
             <p role="status">
               {t('이 DB에서는 현재 지연 설정을 지원하지 않습니다. 원문은 유지됩니다.')}
@@ -176,13 +173,6 @@ export function NativeEnumOptionSummary({
     status = nativeEnumOptionsDecision(document, id, name, schema, text);
   return (
     <div role="status">
-      {document.enums?.some((e) => e.id === id && !nativeEnumTextareaEditable(e.values)) && (
-        <p>
-          {t(
-            '빈 값이나 개행을 포함한 기존 label은 원문으로 유지됩니다. 값 목록 편집에는 개별 label 편집기가 필요합니다.',
-          )}
-        </p>
-      )}
       <p>
         {t(
           'ENUM 이름과 스키마는 UTF-8 63바이트 이하로 입력하세요. 빈 스키마는 public을 사용합니다.',
@@ -194,7 +184,7 @@ export function NativeEnumOptionSummary({
           schemaBytes: new TextEncoder().encode(schema).byteLength,
         })}
       </p>
-      <p>{t('ENUM 값은 한 줄에 하나씩, 중복 없이 UTF-8 63바이트 이하로 입력하세요.')}</p>
+      <p>{t('ENUM 값은 중복 없이 각각 UTF-8 63바이트 이하로 입력하세요.')}</p>
       <ul>
         {status.byteCounts.slice(0, 1000).map((bytes, i) => (
           <li key={i}>{t('{position}번째 값: {bytes}바이트', { position: i + 1, bytes })}</li>
@@ -203,7 +193,7 @@ export function NativeEnumOptionSummary({
       {!status.allowed && (
         <p>
           {status.code === 'enum.values-invalid'
-            ? t('ENUM 값은 한 줄에 하나씩, 중복 없이 UTF-8 63바이트 이하로 입력하세요.')
+            ? t('ENUM 값은 중복 없이 각각 UTF-8 63바이트 이하로 입력하세요.')
             : nativeEditorConditionText(status.code)}
         </p>
       )}
