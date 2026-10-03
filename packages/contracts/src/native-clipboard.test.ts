@@ -167,7 +167,7 @@ function file(document: NativeDesignDocument, ids = ['p', 'c']) {
 
 describe('native table clipboard consumer preparation', () => {
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
-    'copies/pastes a complete %s graph, while preserving original inputs and product readiness gates',
+    'copies/pastes an active complete %s graph while preserving original inputs and remapping references',
     (kind) => {
       const source = fixture(kind);
       const original = structuredClone(source);
@@ -217,8 +217,8 @@ describe('native table clipboard consumer preparation', () => {
         bend: { x: 290, y: 230 },
         waypoints: [{ x: 190, y: 200 }],
       });
-      expect(plan.canApply).toBe(false);
-      expect(plan.issues.some((issue) => issue.code.endsWith('not-implemented'))).toBe(true);
+      expect(plan.canApply, JSON.stringify(plan.issues)).toBe(true);
+      expect(plan.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
       expect(source).toEqual(original);
       expect(target).toEqual(targetBefore);
       expect(clipboard.document.domains).toEqual([]);
@@ -352,6 +352,7 @@ describe('native table clipboard consumer preparation', () => {
     const plan = planNativeTablePaste(target, clipboard, null, { x: 0, y: 0 }, allocator());
     expect(plan.document.enums).toHaveLength(1);
     expect(plan.document.columns![3]!.physical.type).toMatchObject({ enumId: 'e' });
+    expect(plan.canApply, JSON.stringify(plan.issues)).toBe(true);
     const name = plan.document.tables![2]!.physical.name;
     expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(63);
     expect(name.endsWith('_copy')).toBe(true);
@@ -361,6 +362,7 @@ describe('native table clipboard consumer preparation', () => {
     expect(second.document.enums).toHaveLength(2);
     expect(second.document.enums![1]!.name).toBe('state_copy');
     expect(second.document.columns![3]!.physical.type).not.toMatchObject({ enumId: 'e' });
+    expect(second.canApply, JSON.stringify(second.issues)).toBe(true);
   });
   it('rejects allocator/destination/coordinate problems and preserves existing unrelated legacy problems', () => {
     const clipboard = file(fixture());

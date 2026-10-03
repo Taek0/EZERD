@@ -39,7 +39,7 @@ describe('native clipboard ordinary renderer and MCP handler', () => {
       expect(baseline).toEqual(before);
     },
   );
-  it('rejects foreign DB, logical legacy and same-batch identity resurrection and collisions', () => {
+  it('rejects foreign DB, logical legacy, identity reuse and invalid physical index combinations', () => {
     const command = clipboardCommand(),
       baseline = createEmptyNativeDocument(command.clipboard.sourceDatabase);
     expect(() =>
@@ -75,7 +75,7 @@ describe('native clipboard ordinary renderer and MCP handler', () => {
     });
     physical.indexes = [
       {
-        id: 'unverified-index',
+        id: 'physical-index',
         tableId: physical.tables![0]!.id,
         scope: 'both',
         name: 'idx',
@@ -86,15 +86,49 @@ describe('native clipboard ordinary renderer and MCP handler', () => {
         options: { database: 'postgresql', method: 'btree' },
       },
     ];
+    const validCommand = clipboardCommand(physical);
+    const valid = nativeEditorCandidate(baseline, [validCommand]);
+    expect(valid.indexes).toMatchObject([{ unique: false, options: { method: 'btree' } }]);
+    const invalidCommand = structuredClone(validCommand);
+    invalidCommand.clipboard.document.indexes![0]!.unique = true;
+    invalidCommand.clipboard.document.indexes![0]!.options = {
+      database: 'postgresql',
+      method: 'hash',
+    };
+    expect(() => nativeEditorCandidate(baseline, [invalidCommand])).toThrow(
+      'index.unique-method-not-supported',
+    );
+    expect(baseline.tables).toBeUndefined();
+  });
+  it('keeps an unverified native type blocked by ordinary write policy', () => {
+    const source = clipboardFixture();
+    source.tables!.forEach((table) => {
+      table.scope = 'both';
+    });
+    source.columns!.forEach((column) => {
+      column.scope = 'both';
+      column.physical.defaultValue = { kind: 'none' };
+    });
+    source.columns![0]!.physical.type = {
+      kind: 'builtin',
+      database: 'postgresql',
+      typeId: 'postgresql:txid_snapshot',
+      parameters: {},
+    };
+    const command = clipboardCommand(source),
+      baseline = createEmptyNativeDocument(source.database),
+      before = structuredClone(baseline);
     try {
-      nativeEditorCandidate(baseline, [clipboardCommand(physical)]);
+      nativeEditorCandidate(baseline, [command]);
       throw Error('Expected rejection');
     } catch (error) {
       expect(error).toBeInstanceOf(BadRequestException);
       expect((error as BadRequestException).getResponse()).toMatchObject({
         code: 'clipboard.policy-blocked',
+        issues: expect.arrayContaining([expect.objectContaining({ code: 'type.not-implemented' })]),
       });
     }
+    expect(baseline).toEqual(before);
   });
   it('routes paste metadata and actual strict handler preparation through locked sync', async () => {
     const command = clipboardCommand(),

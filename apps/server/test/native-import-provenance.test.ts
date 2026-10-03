@@ -109,7 +109,7 @@ describe('server-derived native import legacy cause mask', () => {
     expect(issues.some((issue) => issue.code === 'comment.invalid')).toBe(true);
     expect(issues.some((issue) => issue.code === 'column.duplicate-name')).toBe(true);
   });
-  it('does not grandfather native index/check/key features or generation/options from the uploaded candidate', () => {
+  it('preserves fresh engine-invalid index/check/key/generation failures beside proven legacy fields', () => {
     const document = fixture(),
       context = defaultDatabaseContext('postgresql');
     document.indexes = [
@@ -118,9 +118,9 @@ describe('server-derived native import legacy cause mask', () => {
         tableId: 't',
         name: 'idx',
         scope: 'both',
-        unique: false,
+        unique: true,
         parts: [{ expression: { kind: 'column', columnId: 'c' }, direction: 'asc' }],
-        options: { database: 'postgresql', method: 'btree' },
+        options: { database: 'postgresql', method: 'hash' },
       },
     ];
     document.checks = [
@@ -129,11 +129,11 @@ describe('server-derived native import legacy cause mask', () => {
         tableId: 't',
         name: 'check',
         scope: 'both',
-        expression: { kind: 'literal', literalType: 'boolean', value: true },
+        expression: { kind: 'literal', literalType: 'number', value: '1' },
       },
     ];
     document.keys = [
-      { id: 'k', tableId: 't', name: 'key', scope: 'both', kind: 'unique', columnIds: ['c'] },
+      { id: 'k', tableId: 't', name: 'key', scope: 'both', kind: 'unique', columnIds: ['c', 'c'] },
     ];
     document.columns![0]!.physical.generation = {
       kind: 'computed',
@@ -143,18 +143,99 @@ describe('server-derived native import legacy cause mask', () => {
     };
     const proof = nativeImportLegacyProvenance(document, context),
       fresh = validateDatabaseDocument(document, context, { mode: 'write' });
+    expect(proof.problems).toEqual([]);
+    expect(proof.mask.indexes ?? []).toEqual([]);
+    expect(proof.mask.checks ?? []).toEqual([]);
+    expect(proof.mask.keys ?? []).toEqual([]);
+    expect(proof.mask.columns![0]!.physical.generation).toEqual({ kind: 'none' });
     const checked = validateNativeImportWithProvenance(document, context, proof);
-    for (const issue of fresh.filter(
+    const nativeFailures = fresh.filter(
       (issue) =>
-        ['i', 'ch', 'k'].includes(issue.objectId ?? '') || issue.path.includes('/generation'),
-    ))
-      expect(checked).toContainEqual(issue);
+        ['i', 'ch', 'k'].includes(issue.objectId ?? '') ||
+        issue.code === 'generation.default-not-supported' ||
+        issue.path.includes('/generation'),
+    );
+    expect(nativeFailures.length).toBeGreaterThan(0);
+    for (const issue of nativeFailures) expect(checked).toContainEqual(issue);
+    expect(checked).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ objectId: 'i', code: 'index.unique-method-not-supported' }),
+        expect.objectContaining({ objectId: 'k', code: 'key.columns-invalid' }),
+        expect.objectContaining({ objectId: 'ch', code: 'expression.boolean-required' }),
+        expect.objectContaining({ objectId: 'c', code: 'generation.default-not-supported' }),
+      ]),
+    );
     expect(
-      checked.some(
-        (issue) =>
-          issue.code === 'feature.not-implemented' && issue.params.feature === 'generatedStored',
+      checked.some((issue) => issue.code === 'legacy.source-not-trusted'),
+      JSON.stringify(checked),
+    ).toBe(false);
+  });
+  it('accepts verified native graph additions alongside exact legacy provenance without trusting them as previous', () => {
+    const document = fixture(),
+      context = defaultDatabaseContext('postgresql'),
+      legacy = structuredClone(document.columns![0]!);
+    const native = structuredClone(legacy);
+    native.id = 'n';
+    native.physical.name = 'n';
+    native.physical.type = {
+      kind: 'builtin',
+      database: 'postgresql',
+      typeId: 'postgresql:integer',
+      parameters: {},
+    };
+    native.physical.defaultValue = { kind: 'none' };
+    const generated = structuredClone(native);
+    generated.id = 'g';
+    generated.physical.name = 'g';
+    generated.physical.generation = {
+      kind: 'computed',
+      database: 'postgresql',
+      storage: 'stored',
+      expression: {
+        kind: 'binary',
+        operator: '+',
+        left: { kind: 'column', columnId: 'n' },
+        right: { kind: 'literal', literalType: 'number', value: '1' },
+      },
+    };
+    document.columns!.push(native, generated);
+    document.keys = [
+      { id: 'k', tableId: 't', name: 'key', scope: 'physical', kind: 'unique', columnIds: ['n'] },
+    ];
+    document.indexes = [
+      {
+        id: 'i',
+        tableId: 't',
+        name: 'idx',
+        scope: 'physical',
+        unique: false,
+        parts: [{ expression: { kind: 'column', columnId: 'n' }, direction: 'asc' }],
+        options: { database: 'postgresql', method: 'btree' },
+      },
+    ];
+    document.checks = [
+      {
+        id: 'ch',
+        tableId: 't',
+        name: 'check',
+        scope: 'physical',
+        expression: { kind: 'literal', literalType: 'boolean', value: true },
+      },
+    ];
+    const before = structuredClone(document),
+      proof = nativeImportLegacyProvenance(document, context);
+    expect(proof.problems).toEqual([]);
+    expect(proof.mask.keys ?? []).toEqual([]);
+    expect(proof.mask.indexes ?? []).toEqual([]);
+    expect(proof.mask.checks ?? []).toEqual([]);
+    expect(proof.mask.columns!.map((column) => column.id)).toEqual(['c']);
+    expect(
+      validateNativeImportWithProvenance(document, context, proof).filter(
+        (issue) => issue.severity === 'error',
       ),
-    ).toBe(true);
+    ).toEqual([]);
+    expect(document).toEqual(before);
+    expect(document.columns![0]).toEqual(legacy);
   });
   it('rejects changed legacy references and context rather than trusting old proof paths', () => {
     const document = fixture(),
@@ -193,18 +274,59 @@ describe('server-derived native import legacy cause mask', () => {
       context,
       nativeImportLegacyProvenance(sqlite, context),
     );
-    expect(
-      checked.some(
-        (issue) =>
-          issue.code === 'feature.not-implemented' && issue.params.feature === 'withoutRowid',
-      ),
-    ).toBe(true);
+    expect(checked).toContainEqual(
+      expect.objectContaining({
+        code: 'table.primary-key-required',
+        objectId: 't',
+        path: '/tables/t/physical/options/withoutRowid',
+      }),
+    );
     expect(
       checked.some(
         (issue) =>
           issue.code === 'type.strict-not-supported' || issue.code === 'legacy.type-unresolved',
       ),
     ).toBe(true);
+    const fresh = validateDatabaseDocument(sqlite, context, { mode: 'write' });
+    for (const issue of fresh.filter((issue) => issue.code === 'table.primary-key-required'))
+      expect(checked).toContainEqual(issue);
+    // A valid WITHOUT ROWID table can retain proven legacy types outside STRICT mode.
+    sqlite.tables![0]!.physical.options = { database: 'sqlite', strict: false, withoutRowid: true };
+    const keyColumn = structuredClone(sqlite.columns![0]!);
+    keyColumn.id = 'pk-column';
+    keyColumn.physical.name = 'pk_column';
+    keyColumn.physical.type = {
+      kind: 'builtin',
+      database: 'sqlite',
+      typeId: 'sqlite:integer',
+      parameters: {},
+    };
+    keyColumn.physical.nullable = false;
+    keyColumn.physical.defaultValue = { kind: 'none' };
+    sqlite.columns!.push(keyColumn);
+    sqlite.keys = [
+      {
+        id: 'pk',
+        tableId: 't',
+        name: 'pk',
+        scope: 'physical',
+        kind: 'primary',
+        columnIds: ['pk-column'],
+      },
+    ];
+    const proof = nativeImportLegacyProvenance(sqlite, context);
+    expect(proof.problems).toEqual([]);
+    expect(proof.mask.tables![0]!.physical.options).toEqual({
+      database: 'sqlite',
+      strict: false,
+      withoutRowid: false,
+    });
+    expect(proof.mask.keys ?? []).toEqual([]);
+    expect(
+      validateNativeImportWithProvenance(sqlite, context, proof).filter(
+        (issue) => issue.severity === 'error',
+      ),
+    ).toEqual([]);
   });
   it.each(['column-options', 'table-options', 'generation'] as const)(
     'does not suppress legacy byte uncertainty after new native %s',
