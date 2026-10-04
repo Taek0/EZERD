@@ -16,6 +16,7 @@ import type { ProjectDocumentState } from '@ezerd/contracts';
 import {
   NativeERDCanvas,
   nativeCanvasScene,
+  nativeCanvasDraftScene,
   nativeCanvasMoveCommand,
   nativeCanvasPersonalCandidate,
   nativeCanvasWheel,
@@ -625,5 +626,100 @@ describe('native input registers export blockers even without a durable storage 
         store,
       ),
     ).rejects.toThrow('Storage denied');
+  });
+});
+
+describe('native scene reuse', () => {
+  function previousDraw(
+    document: NativeDesignDocument,
+    view: string,
+    mode: 'physical' | 'logical',
+    objectId?: string,
+    x?: string,
+    y?: string,
+  ) {
+    const scene = nativeCanvasScene(document, view, mode);
+    const displayed = scene.nodes.map((node) =>
+      node.objectId === objectId ? { ...node, x: Number(x), y: Number(y) } : node,
+    );
+    return nativeCanvasScene(
+      {
+        ...document,
+        layout: {
+          ...document.layout,
+          nodes: document.layout.nodes.map(
+            (node) => displayed.find((shown) => shown.id === node.id) ?? node,
+          ),
+        },
+      },
+      view,
+      mode,
+    );
+  }
+  it.each(['physical', 'logical'] as const)(
+    'preserves existing geometry with and without placement drafts in %s mode',
+    (mode) => {
+      const { document } = fixture();
+      const original = structuredClone(document);
+      for (const view of ['__tables__', 'd', 'overview']) {
+        const scene = nativeCanvasScene(document, view, mode);
+        for (const [id, x, y] of [
+          [undefined, undefined, undefined],
+          ['a', '140', '220'],
+          ['missing', '1', '2'],
+          ['d', '100', '300'],
+        ] as const) {
+          expect(nativeCanvasDraftScene(document, scene, view, mode, id, x, y)).toEqual(
+            previousDraw(document, view, mode, id, x, y),
+          );
+        }
+      }
+      expect(document).toEqual(original);
+    },
+  );
+  it('returns the same scene for absent, hidden, generated or unchanged placement targets', () => {
+    const { document } = fixture();
+    const scene = nativeCanvasScene(document, '__tables__', 'physical');
+    expect(nativeCanvasDraftScene(document, scene, '__tables__', 'physical')).toBe(scene);
+    expect(
+      nativeCanvasDraftScene(document, scene, '__tables__', 'physical', 'missing', '0', '0'),
+    ).toBe(scene);
+    const node = scene.nodes.find((node) => node.objectId === 'a')!;
+    expect(
+      nativeCanvasDraftScene(
+        document,
+        scene,
+        '__tables__',
+        'physical',
+        'a',
+        String(node.x),
+        String(node.y),
+      ),
+    ).toBe(scene);
+    const overview = nativeCanvasScene(document, 'overview', 'physical');
+    expect(nativeCanvasDraftScene(document, overview, 'overview', 'physical', 'a', '5', '6')).toBe(
+      overview,
+    );
+    expect(nativeCanvasDraftScene(document, overview, 'overview', 'physical', 'd', '5', '6')).toBe(
+      overview,
+    );
+  });
+  it('moves the draft node and recomputes its FK without changing the original scene', () => {
+    const { document } = fixture();
+    const scene = nativeCanvasScene(document, '__tables__', 'physical');
+    const before = structuredClone(scene);
+    const drawn = nativeCanvasDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      'a',
+      '140',
+      '220',
+    );
+    expect(drawn.nodes.find((node) => node.objectId === 'a')).toMatchObject({ x: 140, y: 220 });
+    expect(drawn.relations[0]!.geometry.path).not.toEqual(scene.relations[0]!.geometry.path);
+    expect(scene).toEqual(before);
+    expect(nativeCanvasDraftScene(document, scene, '__tables__', 'physical')).toBe(scene);
   });
 });
