@@ -78,6 +78,7 @@ import {
   shouldStackInspector,
 } from './inspector-state.js';
 import { tableCardSize } from '../tables/table-geometry.js';
+import type { LegacyDatabaseEditorContext } from '../tables/legacy-database-editor-policy.js';
 import { exportCanvasPng } from './canvas-export.js';
 import { layoutDomainRelations } from '../domains/domain-relations.js';
 import { DomainDescription } from '../domains/DomainDescription.js';
@@ -115,7 +116,7 @@ export type CanvasContext = {
   visibleObjectIds?: string[];
   position: { x: number; y: number };
 };
-type Props = {
+type Props = LegacyDatabaseEditorContext & {
   toolbarHost?: HTMLElement | null;
   pathHost?: HTMLElement | null;
   panelToggle?: ReactNode;
@@ -152,6 +153,8 @@ export function Canvas({
   panelToggle,
   onExportProject,
   onExportDDL,
+  databaseKind,
+  onRequestNativeUpgrade,
 }: Props) {
   useI18n();
   const confirm = useConfirm();
@@ -1786,6 +1789,8 @@ export function Canvas({
                     </>
                   ) : t ? (
                     <TableNodeContent
+                      databaseKind={databaseKind}
+                      onRequestNativeUpgrade={onRequestNativeUpgrade}
                       {...(onCreatePin
                         ? {
                             onCreatePin: (point: { clientX: number; clientY: number }) =>
@@ -2074,6 +2079,8 @@ export function Canvas({
       />
       {enumOpen && (
         <EnumDialog
+          databaseKind={databaseKind}
+          onRequestNativeUpgrade={onRequestNativeUpgrade}
           document={doc}
           onChange={change}
           readOnly={readOnly}
@@ -2301,6 +2308,8 @@ export function Canvas({
             ) : table ? (
               <>
                 <TableInspector
+                  databaseKind={databaseKind}
+                  onRequestNativeUpgrade={onRequestNativeUpgrade}
                   key={table.id}
                   document={doc}
                   tableId={table.id}

@@ -239,6 +239,7 @@ export function NativeDomainEditor({
   selectedDomainId,
   selectedTableId,
   onSelectDomain,
+  initialAction,
 }: {
   document: NativeDesignDocument;
   snapshot: ProjectDocumentState;
@@ -249,14 +250,17 @@ export function NativeDomainEditor({
   selectedDomainId?: string;
   selectedTableId?: string;
   onSelectDomain?: (id: string) => void;
+  initialAction?: NativeDomainAction;
 }) {
   const { t } = useI18n();
-  const [action, setAction] = useState<NativeDomainAction>(selectedDomainId ? 'edit' : 'create');
+  const [action, setAction] = useState<NativeDomainAction>(
+    initialAction ?? (selectedDomainId ? 'edit' : 'create'),
+  );
   const [targetDomain, setTargetDomain] = useState(
     selectedDomainId ?? document.domains[0]?.id ?? '',
   );
   const [targetTable, setTargetTable] = useState(selectedTableId ?? document.tables?.[0]?.id ?? '');
-  const [open, setOpen] = useState(!!selectedDomainId);
+  const [open, setOpen] = useState(!!selectedDomainId || !!initialAction);
   const editor = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => {
     if (selectedDomainId) {

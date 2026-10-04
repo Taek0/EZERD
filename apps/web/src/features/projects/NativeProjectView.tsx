@@ -30,6 +30,11 @@ import {
 } from './native-save.js';
 import { message, request } from '../../shared/api/client.js';
 import { captureNativeActorApi } from './native-actor-api.js';
+import { currentTransferUserId } from './project-transfer.js';
+import { NativeDraftRecoveryPanel } from './NativeDraftRecoveryPanel.js';
+import type { NativeDraftArchiveEntry } from './native-draft-archive.js';
+import { nativeDraftRecoveryTarget } from './native-draft-recovery-target.js';
+import { NativeAdvancedEditor } from './NativeAdvancedEditor.js';
 
 registerTranslations({
   '설계 조회': 'Design overview',
@@ -90,6 +95,7 @@ export function NativeProjectView({
   focusedReview,
   userId,
   canEdit = false,
+  canPersonalEdit = canEdit,
   projectActions,
 }: {
   entry: Extract<ProjectEntry, { kind: 'native' }>;
@@ -99,6 +105,7 @@ export function NativeProjectView({
   focusedReview?: Thread;
   userId?: string;
   canEdit?: boolean;
+  canPersonalEdit?: boolean;
   projectActions?: (focus: (id: string) => void) => ReactNode;
 }) {
   const { t } = useI18n();
@@ -118,9 +125,16 @@ export function NativeProjectView({
   const [pendingBlocked, setPendingBlocked] = useState(!!userId);
   const [saveError, setSaveError] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
+  const [recoveryEpoch, setRecoveryEpoch] = useState(0);
+  const [recoveredInput, setRecoveredInput] = useState<{
+    entry: NativeDraftArchiveEntry;
+    generation: number;
+  } | null>(null);
   const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
   const queueBlocked = !!userId && durableState !== 'empty';
-  const editorBusy = saving || busy || !!pending || pendingBlocked || queueBlocked;
+  const recoveryBusy = saving || busy || !!pending || pendingBlocked;
+  const editorBusy = recoveryBusy || queueBlocked;
   const activeEditor = useRef('');
   const activeGeneration = useRef(0);
   const mounted = useRef(true);
@@ -136,6 +150,46 @@ export function NativeProjectView({
   const editable = !!userId && canEdit && snapshot.project.status === 'active' && !!doc;
   const activePermission = useRef(editable);
   activePermission.current = editable;
+  const activeDocument = useRef(doc);
+  activeDocument.current = doc;
+  const activePersonalPermission = useRef(false);
+  activePersonalPermission.current =
+    !!userId && canPersonalEdit && snapshot.project.status === 'active' && !!doc;
+  const recoveryActorCurrent = (actor: string) =>
+    actor === userId && currentEditor() && currentTransferUserId() === actor;
+  function canRecoverDraft(input: NativeDraftArchiveEntry) {
+    if (!recoveryActorCurrent(input.userId) || input.projectId !== snapshot.project.id)
+      return false;
+    const target = nativeDraftRecoveryTarget(activeDocument.current, input);
+    return (
+      !!target && (target.personal ? activePersonalPermission.current : activePermission.current)
+    );
+  }
+  function openRecoveredDraft(input: NativeDraftArchiveEntry) {
+    if (!canRecoverDraft(input)) throw Error('native.draft-recovery-unavailable');
+    const target = nativeDraftRecoveryTarget(activeDocument.current, input)!;
+    setRecoveredInput({ entry: input, generation });
+    setRecoveryEpoch((value) => value + 1);
+    setDomain('*');
+    setSearch('');
+    const tableId = 'tableId' in target ? target.tableId : undefined;
+    const table = activeDocument.current?.tables?.find((item) => item.id === tableId);
+    setMode(table?.scope === 'logical' ? 'logical' : 'physical');
+    setSelected(tableId ?? null);
+    setEditingColumn('columnId' in target ? (target.columnId ?? null) : null);
+    setSelectedDomain(target.kind === 'domain' ? (target.domainId ?? null) : null);
+  }
+  function leaveRecoveredSelection() {
+    if (!recoveredInput) return;
+    setRecoveredInput(null);
+    setRecoveryEpoch((value) => value + 1);
+  }
+  const recovered =
+    recoveredInput?.generation === generation &&
+    recoveredInput.entry.userId === userId &&
+    recoveredInput.entry.projectId === snapshot.project.id
+      ? nativeDraftRecoveryTarget(doc, recoveredInput.entry)
+      : null;
   const saveContext = JSON.stringify([
     snapshot.project.version,
     snapshot.sequence,
@@ -169,6 +223,8 @@ export function NativeProjectView({
     setSaveError('');
     setEditingColumn(null);
     setSelectedDomain(null);
+    setRecoveredInput(null);
+    setDraftRecoveryOpen(false);
     setSaving(false);
     savingRef.current = false;
     if (!userId) return;
@@ -314,6 +370,7 @@ export function NativeProjectView({
     id;
   function focusIssue(id: string | null) {
     if (!doc || !id) return;
+    leaveRecoveredSelection();
     if (doc.domains.some((item) => item.id === id)) {
       setSelectedDomain(id);
       return;
@@ -364,6 +421,11 @@ export function NativeProjectView({
               {t('설계 이력')}
             </Button>
           )}
+          {userId && (
+            <Button onClick={() => setDraftRecoveryOpen((value) => !value)}>
+              {t('보관된 입력 복구')}
+            </Button>
+          )}
           <Button onClick={onReload} disabled={busy}>
             {t('다시 불러오기')}
           </Button>
@@ -377,6 +439,22 @@ export function NativeProjectView({
           canEdit={editable}
           onClose={() => setHistoryOpen(false)}
           onReload={onReload}
+        />
+      )}
+      {draftRecoveryOpen && userId && (
+        <NativeDraftRecoveryPanel
+          key={`draft-recovery:${userId}:${snapshot.project.id}:${generation}`}
+          userId={userId}
+          projectId={snapshot.project.id}
+          currentExpected={{
+            version: snapshot.project.version,
+            sequence: snapshot.sequence,
+            databaseRevision: snapshot.project.databaseRevision,
+          }}
+          isActorCurrent={recoveryActorCurrent}
+          isObjectAvailable={(input) => !!nativeDraftRecoveryTarget(activeDocument.current, input)}
+          canRecover={canRecoverDraft}
+          onRecovered={openRecoveredDraft}
         />
       )}
       {saveError && (
@@ -417,19 +495,26 @@ export function NativeProjectView({
             </p>
           )}
           <NativeERDCanvas
-            key={`${userId ?? ''}:${snapshot.project.id}`}
+            key={`${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
             document={doc}
             snapshot={snapshot}
             {...(userId ? { userId } : {})}
             editable={editable}
+            personalEditable={!!userId && canPersonalEdit && snapshot.project.status === 'active'}
             busy={editorBusy}
+            recoveryBusy={recoveryBusy}
             onSave={save}
             onReload={onReload}
             mode={mode}
             {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
             {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
-            onSelectDomain={setSelectedDomain}
+            {...(recovered?.kind === 'canvas' ? { recoverySelection: recovered.selection } : {})}
+            onSelectDomain={(id) => {
+              leaveRecoveredSelection();
+              setSelectedDomain(id);
+            }}
             onSelect={(tableId, columnId) => {
+              leaveRecoveredSelection();
               setSelectedDomain(null);
               setSelected(tableId);
               setEditingColumn(columnId ?? null);
@@ -438,7 +523,7 @@ export function NativeProjectView({
             }}
           />
           <NativeDomainEditor
-            key={`domains:${userId ?? ''}:${snapshot.project.id}`}
+            key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
             document={doc}
             snapshot={snapshot}
             {...(userId ? { userId } : {})}
@@ -447,7 +532,11 @@ export function NativeProjectView({
             onSave={save}
             {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
             {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
-            onSelectDomain={setSelectedDomain}
+            {...(recovered?.kind === 'domain' ? { initialAction: recovered.action } : {})}
+            onSelectDomain={(id) => {
+              leaveRecoveredSelection();
+              setSelectedDomain(id);
+            }}
           />
           <div className="native-project-content" aria-label={t('설계 조회')}>
             <aside className="native-table-nav">
@@ -484,6 +573,7 @@ export function NativeProjectView({
                       data-object-id={table.id}
                       aria-current={selectedTable?.id === table.id ? 'true' : undefined}
                       onClick={() => {
+                        leaveRecoveredSelection();
                         setSelected(table.id);
                         setSelectedDomain(null);
                       }}
@@ -496,9 +586,18 @@ export function NativeProjectView({
               {!tables.length && <p>{t('선택한 범위에 테이블이 없습니다.')}</p>}
             </aside>
             <section className="native-table-detail" aria-live="polite">
-              {editable && (
+              {editable && recovered?.kind === 'advanced' && selectedTable && (
+                <NativeAdvancedEditor
+                  key={`advanced-recovery:${recoveryEpoch}`}
+                  context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
+                  document={doc}
+                  table={selectedTable}
+                  initialSelection={recovered.selection}
+                />
+              )}
+              {editable && recovered?.kind !== 'advanced' && (
                 <NativeStructureEditor
-                  key={`${userId}:${snapshot.project.id}`}
+                  key={`${userId}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
                   context={{
                     userId: userId!,
                     snapshot,
@@ -506,7 +605,17 @@ export function NativeProjectView({
                     onSave: save,
                   }}
                   document={doc}
-                  {...(selectedTable ? { table: selectedTable } : {})}
+                  {...(recovered?.kind === 'structure'
+                    ? {
+                        initialSelection: recovered.selection,
+                        ...(recovered.tableId &&
+                        doc.tables?.find((table) => table.id === recovered.tableId)
+                          ? { table: doc.tables.find((table) => table.id === recovered.tableId)! }
+                          : {}),
+                      }
+                    : selectedTable
+                      ? { table: selectedTable }
+                      : {})}
                 />
               )}
               {focusedReview && (
@@ -526,7 +635,10 @@ export function NativeProjectView({
                         {t('속성 편집')}
                         <select
                           value={editingColumn ?? ''}
-                          onChange={(event) => setEditingColumn(event.target.value || null)}
+                          onChange={(event) => {
+                            leaveRecoveredSelection();
+                            setEditingColumn(event.target.value || null);
+                          }}
                         >
                           <option value="">{t('테이블')}</option>
                           {(doc.columns ?? [])
@@ -539,7 +651,7 @@ export function NativeProjectView({
                         </select>
                       </label>
                       <NativePropertyEditor
-                        key={`${userId}:${snapshot.project.id}:${selectedTable.id}:${editingColumn ?? ''}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}`}
+                        key={`${userId}:${snapshot.project.id}:${selectedTable.id}:${editingColumn ?? ''}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
                         table={selectedTable}
                         userId={userId!}
                         snapshot={snapshot}

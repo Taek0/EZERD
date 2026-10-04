@@ -7,7 +7,7 @@ import {
   type DatabaseFeatureFacts,
 } from './features.js';
 import { getDatabaseProfile } from './profiles.js';
-import { literalDecision, inspectNativeLiteralToken } from './literals.js';
+import { literalDecision, inspectNativeLiteralToken, nativeTypeHasCoverage } from './literals.js';
 import { keyEligibility } from './key-policy.js';
 import {
   nativeBuiltinDefaultDecision,
@@ -16,6 +16,7 @@ import {
 } from './option-policy.js';
 import { nativeExpressionDecision } from './expression-policy.js';
 import { nativePostgresIndexMethodDecision } from './index-policy.js';
+import { nativeDefaultCoverage } from './readiness.js';
 import {
   effectiveMysqlCharacters,
   inspectMysqlPhysicalDocument,
@@ -309,6 +310,10 @@ function collect(
           targetType: target.physical.type,
         }),
       strict: owner?.physical.options.database === 'sqlite' && owner.physical.options.strict,
+      ...(purpose === 'computed' &&
+        target?.physical.generation.kind === 'computed' && {
+          generationStorage: target.physical.generation.storage,
+        }),
     });
     if (!decision.allowed)
       add(
@@ -321,6 +326,18 @@ function collect(
           target?.physical.type,
           owner?.physical.options,
         ],
+        'unsupported',
+      );
+    else if (
+      availability &&
+      !decision.usable &&
+      !(purpose === 'default' && value.kind === 'literal')
+    )
+      add(
+        decision.readinessCode ?? 'expression.not-ready',
+        objectId,
+        path,
+        [value, ids.map((id) => columns.get(id)?.physical.type), target?.physical.type, purpose],
         'unsupported',
       );
     return ids;
@@ -429,9 +446,11 @@ function collect(
     const definition = scalarType(type);
     const tableMode =
       table.physical.options.database === 'sqlite' ? table.physical.options : undefined;
-    if (type.kind === 'legacy')
+    if (type.kind === 'legacy') {
       add('legacy.type-unresolved', column.id, `${path}/type`, type, 'unsupported');
-    else if (type.database !== context.kind)
+      if (tableMode?.strict)
+        add('type.strict-not-supported', column.id, `${path}/type`, [type, true], 'unsupported');
+    } else if (type.database !== context.kind)
       add('type.not-supported', column.id, `${path}/type`, type, 'unsupported');
     else if (type.kind === 'builtin') {
       if (!definition || definition.databaseKind !== context.kind)
@@ -450,6 +469,18 @@ function collect(
           add('type.not-implemented', column.id, `${path}/type`, type, 'unsupported');
         if (tableMode?.strict && !definition.sqliteStrict)
           add('type.strict-not-supported', column.id, `${path}/type`, [type, true], 'unsupported');
+        if ('srid' in type.parameters && type.parameters.srid !== undefined) {
+          const srid = type.parameters.srid;
+          feature('srid', column.id, `${path}/type/parameters/srid`, { typeId: type.typeId }, srid);
+          if (![0, 4326].includes(srid))
+            add(
+              'type.srid-unverified',
+              column.id,
+              `${path}/type/parameters/srid`,
+              srid,
+              'environment',
+            );
+        }
       }
       if (isArray(type))
         feature(
@@ -515,6 +546,18 @@ function collect(
         'unsupported',
       );
     const options = column.physical.options;
+    if (
+      options.database === 'postgresql' &&
+      options.collation &&
+      !['C', 'POSIX'].includes(options.collation)
+    )
+      add(
+        'column.collation-unverified',
+        column.id,
+        `${path}/options/collation`,
+        options.collation,
+        'environment',
+      );
     if (options.database === 'postgresql' && options.collation && definition?.category !== 'string')
       add(
         'column.collation-not-supported',
@@ -551,6 +594,14 @@ function collect(
             `${path}/options/onUpdate`,
             [type, options.onUpdate],
             decision.category,
+          );
+        else if (availability && !decision.usable)
+          add(
+            'column.on-update-not-ready',
+            column.id,
+            `${path}/options/onUpdate`,
+            [type, options.onUpdate],
+            'unsupported',
           );
       }
     }
@@ -680,6 +731,20 @@ function collect(
       }
     }
     const defaultValue = column.physical.defaultValue;
+    if (
+      availability &&
+      (!hasDatabaseCoverage(nativeDefaultCoverage) ||
+        !nativeTypeHasCoverage(context, type, tableMode?.strict)) &&
+      defaultValue.kind !== 'none' &&
+      defaultValue.kind !== 'legacyExpression'
+    )
+      add(
+        'default.not-ready',
+        column.id,
+        `${path}/defaultValue`,
+        [type, defaultValue],
+        'unsupported',
+      );
     if (isArray(type) && defaultValue.kind === 'expression')
       add(
         'default.array-literal-not-supported',
@@ -851,6 +916,10 @@ function collect(
       const ownerOptions = tables.get(key.tableId)!.physical.options;
       const columnOptions = column.physical.options;
       const eligibility = keyEligibility(context, column.physical.type, {
+        kind: key.kind,
+        strict:
+          tables.get(key.tableId)!.physical.options.database === 'sqlite' &&
+          (tables.get(key.tableId)!.physical.options as { strict: boolean }).strict,
         generation: column.physical.generation,
         ...(columnOptions.database === 'mysql' &&
           ownerOptions.database === 'mysql' && {
@@ -875,6 +944,14 @@ function collect(
               : undefined,
           ],
           eligibility.category ?? 'unsupported',
+        );
+      else if (availability && !eligibility.usable)
+        add(
+          eligibility.readinessCode ?? 'key.not-ready',
+          key.id,
+          `${path}/columnIds`,
+          [key.kind, key.columnIds, column.physical.type, column.physical.generation],
+          'unsupported',
         );
     }
     if (context.kind === 'mysql') {
@@ -1162,6 +1239,17 @@ function collect(
     }
     for (let i = 0; i < index.parts.length; i++) {
       const part = index.parts[i]!;
+      if (
+        part.prefixLength !== undefined &&
+        (context.kind !== 'mysql' || part.expression.kind !== 'column')
+      )
+        add(
+          'index.expression-prefix-policy-required',
+          index.id,
+          `${path}/parts/${i}/prefixLength`,
+          [part, context.kind],
+          'unsupported',
+        );
       expression(part.expression, index.id, `${path}/parts/${i}`, index.tableId, 'index');
       if (
         context.kind === 'mysql' &&

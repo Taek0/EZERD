@@ -5,6 +5,7 @@ import {
   createNativeColumn,
   nativeExpressionDisplay,
   planNativeDeletion,
+  createNativeForeignKeyFromPrimaryKey,
   type NativeDesignDocument,
   type NativeTable,
   type NativeDeletionCollection,
@@ -24,8 +25,24 @@ import {
 import { nativeEditorPolicy } from './native-editor-policy.js';
 import type { NativeWebCommand } from './native-save.js';
 import { nativeKeyColumnPolicies, nativeKeyInput } from './native-editor-option-policy.js';
+import { NativeAdvancedEditor } from './NativeAdvancedEditor.js';
+import {
+  nativeConstraintOptionsInitial,
+  nativeConstraintOptionsPatch,
+  nativeConstraintOptionsDecision,
+  nativeEnumOptionsDecision,
+} from './native-constraint-options.js';
+import {
+  NativeConstraintOptionFields,
+  NativeEnumOptionSummary,
+} from './native-constraint-option-fields.js';
+import { NativeLabelFields } from './NativeLabelFields.js';
+import { serializeNativeLabels, nativeLabelsForCommand } from './native-label-draft.js';
+import { nativeEditorConditionText } from './native-editor-diagnostic.js';
 
 registerTranslations({
+  '물리·논리 범위를 선택하고 이름을 입력하세요.':
+    'Choose the physical or logical scope and enter a name.',
   '구조 편집': 'Edit structure',
   '새 테이블': 'New table',
   '새 컬럼': 'New column',
@@ -164,11 +181,12 @@ export function NativeOrderedColumns({
               <li key={item.column.id}>
                 {item.column.physical.name || item.column.id} ·{' '}
                 {t(item.engineAllowed ? '엔진에서 허용' : '이 DB에서 지원하지 않음')}
-                {!item.productUsable && ` · ${t('제품 검증 미완료')}`} ({item.code})
+                {!item.productUsable && ` · ${t('제품 검증 미완료')}`}
+                {item.code && ` · ${nativeEditorConditionText(item.code)}`}
                 {item.eligibility.estimatedBytes !== undefined &&
                   ` · ${item.eligibility.estimatedBytes} bytes`}
                 {item.eligibility.conditions.length > 0 &&
-                  ` · ${item.eligibility.conditions.join(', ')}`}
+                  ` · ${item.eligibility.conditions.map(nativeEditorConditionText).join(' · ')}`}
               </li>
             ))}
           </ul>
@@ -253,6 +271,7 @@ export function nativeStructureCommands(
         scope,
         kind: values.keyKind,
         columnIds: list(values.columnIds),
+        ...nativeConstraintOptionsPatch('key', values),
       },
     };
   else if (action === 'index')
@@ -290,7 +309,12 @@ export function nativeStructureCommands(
   else if (action === 'enum')
     command = {
       type: 'add_enum',
-      value: { id, name, schema: values.schema, values: list(values.enumValues) },
+      value: {
+        id,
+        name,
+        schema: values.schema,
+        values: nativeLabelsForCommand(values, {}, 'enumLabelsJSON', 'enumValues', []),
+      },
     };
   else if (values.foreignMode === 'derived') {
     const key = document.keys?.find(
@@ -326,9 +350,59 @@ export function nativeStructureCommands(
           onDelete: values.onDelete,
           onUpdate: values.onUpdate,
         },
+        ...nativeConstraintOptionsPatch('foreignKey', values),
       },
     };
-  return [nativeEditorCommandSchema.parse(command)];
+  const parsed = nativeEditorCommandSchema.parse(command);
+  if (parsed.type === 'add_enum') {
+    const decision = nativeEnumOptionsDecision(
+      document,
+      parsed.value.id,
+      parsed.value.name,
+      parsed.value.schema,
+      serializeNativeLabels(parsed.value.values),
+    );
+    if (!decision.allowed || !decision.usable)
+      throw Error(decision.code ?? 'feature.not-implemented');
+  }
+  const options = nativeConstraintOptionsPatch(action === 'key' ? 'key' : 'foreignKey', values);
+  if (['key', 'foreignKey'].includes(action) && Object.keys(options).length) {
+    if (
+      action === 'foreignKey' &&
+      options.deferrable &&
+      !policy.feature('deferrableForeignKey').usable
+    )
+      throw Error(policy.feature('deferrableForeignKey').code);
+    if (action === 'key' && options.nullsNotDistinct && !policy.feature('nullsNotDistinct').usable)
+      throw Error(policy.feature('nullsNotDistinct').code);
+    if (parsed.type === 'add_key' || parsed.type === 'add_foreign_key') {
+      const decision = nativeConstraintOptionsDecision(
+        document,
+        action === 'key' ? 'key' : 'foreignKey',
+        parsed.value,
+        options,
+      );
+      if (!decision.allowed || !decision.usable)
+        throw Error(decision.code ?? 'feature.not-implemented');
+    }
+    if (parsed.type === 'create_foreign_key') {
+      const { type: _type, ...input } = parsed;
+      const candidate = createNativeForeignKeyFromPrimaryKey(document, input),
+        relation = candidate.tableRelations!.find((r) => r.id === parsed.relationId)!;
+      const decision = nativeConstraintOptionsDecision(candidate, 'foreignKey', relation, options);
+      if (!decision.allowed || !decision.usable)
+        throw Error(decision.code ?? 'feature.not-implemented');
+      return [
+        parsed,
+        nativeEditorCommandSchema.parse({
+          type: 'patch_foreign_key',
+          id: parsed.relationId,
+          patch: options,
+        }),
+      ];
+    }
+  }
+  return [parsed];
 }
 
 function NativeCreateForm({
@@ -364,7 +438,7 @@ function NativeCreateForm({
     unique: 'false',
     direction: 'asc',
     schema: 'public',
-    enumValues: '',
+    enumLabelsJSON: serializeNativeLabels([]),
     targetTableId: '',
     targetColumnIds: '',
     primaryKeyId: '',
@@ -372,6 +446,7 @@ function NativeCreateForm({
     foreignMode: 'mapped',
     onDelete: 'NO ACTION',
     onUpdate: 'NO ACTION',
+    ...nativeConstraintOptionsInitial(),
     ...nativeExpressionInputs(),
   };
   const title = {
@@ -443,7 +518,9 @@ function NativeCreateForm({
               <>
                 <p>
                   {t(
-                    '논리 초안은 저장할 수 있습니다. 신규 물리 기능은 검증 완료 후 사용할 수 있습니다.',
+                    policy.feature(action === 'table' ? 'table' : 'column').usable
+                      ? '물리·논리 범위를 선택하고 이름을 입력하세요.'
+                      : '논리 초안은 저장할 수 있습니다. 신규 물리 기능은 검증 완료 후 사용할 수 있습니다.',
                   )}
                 </p>
                 {field(
@@ -481,6 +558,16 @@ function NativeCreateForm({
                   '키 종류',
                   ['primary', 'unique'].map((value) => ({ value, label: value })),
                 )}
+              {action === 'key' && (
+                <NativeConstraintOptionFields
+                  document={document}
+                  kind="key"
+                  keyKind={values.keyKind ?? 'primary'}
+                  values={values}
+                  change={change}
+                  disabled={disabled || context.busy}
+                />
+              )}
               {['key', 'index'].includes(action) && table && (
                 <NativeOrderedColumns
                   value={values.columnIds ?? ''}
@@ -520,11 +607,30 @@ function NativeCreateForm({
               {action === 'enum' && (
                 <>
                   {field('schema', '스키마')}
-                  {field('enumValues', '값 목록 (한 줄에 하나)', undefined, true)}
+                  <NativeLabelFields
+                    value={values.enumLabelsJSON ?? ''}
+                    legacyDraft={values.enumValues !== undefined}
+                    onChange={(raw) => change('enumLabelsJSON', raw)}
+                    disabled={disabled || context.busy}
+                  />
+                  <NativeEnumOptionSummary
+                    document={document}
+                    id={values.id!}
+                    name={values.name ?? ''}
+                    schema={values.schema ?? ''}
+                    text={values.enumLabelsJSON ?? ''}
+                  />
                 </>
               )}
               {action === 'foreignKey' && table && (
                 <>
+                  <NativeConstraintOptionFields
+                    document={document}
+                    kind="foreignKey"
+                    values={values}
+                    change={change}
+                    disabled={disabled || context.busy}
+                  />
                   {field('foreignMode', '입력 방식', [
                     { value: 'mapped', label: t('직접 컬럼 연결') },
                     { value: 'derived', label: t('PK에서 컬럼 자동 생성') },
@@ -624,6 +730,7 @@ export function nativeConstraintInitial(
     const key = document.keys!.find((item) => item.id === id)!;
     result.keyKind = key.kind;
     result.columnIds = key.columnIds.join('\n');
+    Object.assign(result, nativeConstraintOptionsInitial(key));
   }
   if (collection === 'indexes') {
     const index = document.indexes!.find((item) => item.id === id)!;
@@ -642,7 +749,7 @@ export function nativeConstraintInitial(
   if (collection === 'enums') {
     const enumeration = document.enums!.find((item) => item.id === id)!;
     result.schema = enumeration.schema;
-    result.enumValues = enumeration.values.join('\n');
+    result.enumLabelsJSON = serializeNativeLabels(enumeration.values);
   }
   if (collection === 'tableRelations') {
     const relation = document.tableRelations!.find((item) => item.id === id)!;
@@ -652,6 +759,7 @@ export function nativeConstraintInitial(
     result.targetColumnIds = relation.physical?.targetColumnIds.join('\n') ?? '';
     result.onDelete = relation.physical?.onDelete ?? 'NO ACTION';
     result.onUpdate = relation.physical?.onUpdate ?? 'NO ACTION';
+    Object.assign(result, nativeConstraintOptionsInitial(relation));
   }
   return result;
 }
@@ -696,6 +804,24 @@ export function nativeConstraintCommands(
             : values[input];
       }
     if (Object.keys(physical).length) patch.physical = physical;
+    const relation = document.tableRelations!.find((r) => r.id === id)!;
+    const options = nativeConstraintOptionsPatch('foreignKey', values, before, relation);
+    if (Object.keys(options).length) {
+      requireFeature('foreignKey');
+      if (options.deferrable) requireFeature('deferrableForeignKey');
+      const decision = nativeConstraintOptionsDecision(
+        document,
+        'foreignKey',
+        {
+          ...relation,
+          ...(relation.physical ? { physical: { ...relation.physical, ...physical } } : {}),
+        },
+        options,
+      );
+      if (!decision.allowed || !decision.usable)
+        throw Error(decision.code ?? 'feature.not-implemented');
+      Object.assign(patch, options);
+    }
   } else {
     if (changed('name')) patch.name = values.name;
     if (collection === 'keys') {
@@ -721,6 +847,21 @@ export function nativeConstraintCommands(
         throw new Error('key.not-ready');
       if (changed('columnIds')) patch.columnIds = list(values.columnIds);
       if (changed('keyKind')) patch.kind = values.keyKind;
+      const key = document.keys!.find((k) => k.id === id)!;
+      const options = nativeConstraintOptionsPatch('key', values, before, key);
+      if (Object.keys(options).length) {
+        requireFeature(values.keyKind === 'primary' ? 'primaryKey' : 'unique');
+        if (options.nullsNotDistinct) requireFeature('nullsNotDistinct');
+        const decision = nativeConstraintOptionsDecision(
+          document,
+          'key',
+          { ...key, ...patch } as typeof key,
+          options,
+        );
+        if (!decision.allowed || !decision.usable)
+          throw Error(decision.code ?? 'feature.not-implemented');
+        Object.assign(patch, options);
+      }
     } else if (collection === 'indexes') {
       if (changed('columnIds') || changed('direction') || changed('unique'))
         requireFeature('index');
@@ -746,9 +887,31 @@ export function nativeConstraintCommands(
       requireFeature('check');
       patch.expression = nativeExpressionFromInputs(values);
     } else if (collection === 'enums') {
-      if (changed('schema') || changed('enumValues')) requireFeature('enumType');
+      const labelsChanged = changed('enumLabelsJSON') || changed('enumValues');
+      const labels = labelsChanged
+        ? nativeLabelsForCommand(
+            values,
+            before,
+            'enumLabelsJSON',
+            'enumValues',
+            document.enums!.find((e) => e.id === id)!.values,
+          )
+        : undefined;
+      if (changed('schema') || labelsChanged) requireFeature('enumType');
+      if (labelsChanged) {
+        const current = document.enums!.find((e) => e.id === id)!;
+        const decision = nativeEnumOptionsDecision(
+          document,
+          id,
+          values.name ?? current.name,
+          values.schema ?? current.schema,
+          serializeNativeLabels(labels!),
+        );
+        if (!decision.allowed || !decision.usable)
+          throw Error(decision.code ?? 'feature.not-implemented');
+      }
       if (changed('schema')) patch.schema = values.schema;
-      if (changed('enumValues')) patch.values = list(values.enumValues);
+      if (labels) patch.values = labels;
     }
   }
   if (!Object.keys(patch).length) return [];
@@ -841,6 +1004,17 @@ function NativeConstraintForm({
                 disabled,
                 ['primary', 'unique'].map((value) => ({ value, label: value })),
               )}
+            {collection === 'keys' && (
+              <NativeConstraintOptionFields
+                document={document}
+                kind="key"
+                keyKind={values.keyKind ?? 'primary'}
+                values={values}
+                change={change}
+                current={document.keys!.find((k) => k.id === id)!}
+                disabled={disabled || context.busy}
+              />
+            )}
             {['keys', 'indexes', 'tableRelations'].includes(collection) && (
               <NativeOrderedColumns
                 value={values.columnIds ?? ''}
@@ -900,11 +1074,31 @@ function NativeConstraintForm({
             {collection === 'enums' && (
               <>
                 {field('schema', '스키마')}
-                {field('enumValues', '값 목록 (한 줄에 하나)', disabled, undefined, true)}
+                <NativeLabelFields
+                  value={values.enumLabelsJSON ?? ''}
+                  legacyDraft={values.enumValues !== undefined}
+                  onChange={(raw) => change('enumLabelsJSON', raw)}
+                  disabled={disabled || context.busy}
+                />
+                <NativeEnumOptionSummary
+                  document={document}
+                  id={id}
+                  name={values.name ?? ''}
+                  schema={values.schema ?? ''}
+                  text={values.enumLabelsJSON ?? ''}
+                />
               </>
             )}
             {collection === 'tableRelations' && 'targetTableId' in item && (
               <>
+                <NativeConstraintOptionFields
+                  document={document}
+                  kind="foreignKey"
+                  values={values}
+                  change={change}
+                  current={document.tableRelations!.find((r) => r.id === id)!}
+                  disabled={disabled || context.busy}
+                />
                 {field('logicalName', '논리 이름', false)}
                 <NativeOrderedColumns
                   value={values.targetColumnIds ?? ''}
@@ -1018,14 +1212,18 @@ export function NativeStructureEditor({
   context,
   document,
   table,
+  initialSelection,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table?: NativeTable;
+  initialSelection?: { action: NativeStructureAction | 'patch' | 'delete'; target: string };
 }) {
   const { t } = useI18n();
-  const [action, setAction] = useState<NativeStructureAction | 'patch' | 'delete'>('table');
-  const [target, setTarget] = useState('');
+  const [action, setAction] = useState<NativeStructureAction | 'patch' | 'delete'>(
+    initialSelection?.action ?? 'table',
+  );
+  const [target, setTarget] = useState(initialSelection?.target ?? '');
   const objects = (
     ['tables', 'columns', 'keys', 'indexes', 'checks', 'enums', 'tableRelations'] as const
   ).flatMap((collection) =>
@@ -1055,7 +1253,7 @@ export function NativeStructureEditor({
   const create = !['patch', 'delete'].includes(action);
   const mountingKey = `${context.userId}:${context.snapshot.project.id}:${context.snapshot.project.version}:${context.snapshot.sequence}:${context.snapshot.project.databaseRevision}`;
   return (
-    <details className="native-property-editor">
+    <details className="native-property-editor" open={initialSelection ? true : undefined}>
       <summary>{t('구조 편집')}</summary>
       <NativeEditorField
         label="구조 편집"
@@ -1076,7 +1274,10 @@ export function NativeStructureEditor({
         ).map(([value, label]) => ({
           value,
           label: t(label),
-          disabled: !table && !['table', 'enum', 'delete', 'patch'].includes(value),
+          disabled:
+            (!table && !['table', 'enum', 'delete', 'patch'].includes(value)) ||
+            (value === 'enum' &&
+              !nativeEditorPolicy(document, table).feature('enumType').supported),
         }))}
         disabled={context.busy}
       />
@@ -1126,6 +1327,14 @@ export function NativeStructureEditor({
               />
             ))}
         </>
+      )}
+      {table && (
+        <NativeAdvancedEditor
+          key={`${context.userId}:${context.snapshot.project.id}:${table.id}`}
+          context={context}
+          document={document}
+          table={table}
+        />
       )}
     </details>
   );

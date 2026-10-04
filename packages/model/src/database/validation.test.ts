@@ -111,6 +111,86 @@ function withRelation(kind: DatabaseKind): NativeDesignDocument {
 }
 
 describe('native DB policy is separate from draft and activation rules', () => {
+  it('does not borrow ready builtin paths for unverified SQLite declaration defaults and keys', () => {
+    const original = fixture('sqlite');
+    original.keys = [];
+    original.columns![0]!.physical.type = {
+      kind: 'declared',
+      database: 'sqlite',
+      name: 'AppNumber',
+      numericArguments: [],
+    };
+    const candidate = structuredClone(original);
+    candidate.columns![0]!.physical.defaultValue = {
+      kind: 'literal',
+      literalType: 'number',
+      value: '7',
+    };
+    candidate.keys = [
+      {
+        id: 'k',
+        tableId: 't',
+        name: 'app_key',
+        kind: 'unique',
+        scope: 'physical',
+        columnIds: ['c'],
+      },
+    ];
+    expect(codes(candidate)).toEqual([]);
+    const issues = validateDatabaseDocument(candidate, candidate.database, {
+      mode: 'write',
+      previous: original,
+    });
+    expect(issues.map((issue) => issue.code)).toContain('default.not-ready');
+    expect(issues.map((issue) => issue.code)).toContain('type.declaration-not-ready');
+    expect(
+      validateDatabaseDocument(candidate, candidate.database, {
+        mode: 'write',
+        previous: candidate,
+      }),
+    ).toEqual([]);
+    candidate.columns![0]!.physical.defaultValue = { kind: 'none' };
+    candidate.keys = [];
+    expect(
+      validateDatabaseDocument(candidate, candidate.database, {
+        mode: 'write',
+        previous: original,
+      }),
+    ).toEqual([]);
+  });
+  it('requires verified MySQL SRID presets while preserving unchanged stored originals', () => {
+    const original = fixture('mysql');
+    original.keys = [];
+    original.columns![0]!.physical.type = {
+      kind: 'builtin',
+      database: 'mysql',
+      typeId: 'mysql:point',
+      parameters: { srid: 999999 },
+    };
+    expect(codes(original)).toContain('type.srid-unverified');
+    expect(
+      validateDatabaseDocument(original, original.database, { mode: 'write', previous: original }),
+    ).toEqual([]);
+    expect(
+      validateDatabaseDocument(original, original.database, { mode: 'export' }).map(
+        (issue) => issue.code,
+      ),
+    ).toContain('type.srid-unverified');
+    const changed = structuredClone(original);
+    const type = changed.columns![0]!.physical.type;
+    if (type.kind !== 'builtin' || !('srid' in type.parameters)) throw Error('fixture');
+    type.parameters.srid = 999998;
+    expect(
+      validateDatabaseDocument(changed, changed.database, {
+        mode: 'write',
+        previous: original,
+      }).map((issue) => issue.code),
+    ).toContain('type.srid-unverified');
+    for (const srid of [0, 4326]) {
+      type.parameters.srid = srid;
+      expect(codes(changed)).toEqual([]);
+    }
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'validates a native %s design without cross-DB inference',
     (kind) => {
@@ -119,9 +199,10 @@ describe('native DB policy is separate from draft and activation rules', () => {
       expect(codes(doc)).toEqual([]);
       expect(
         validateDatabaseDocument(doc, doc.database, { mode: 'export' }).some(
-          (issue) => issue.code === 'type.not-implemented',
+          (issue) =>
+            issue.code === 'feature.not-implemented' && issue.params.feature === 'foreignKey',
         ),
-      ).toBe(true);
+      ).toBe(false);
     },
   );
   it('never treats stale project context as a repairable old error', () => {
@@ -415,7 +496,7 @@ describe('generation, defaults and FK conditions use the full candidate', () => 
       validateDatabaseDocument(enumDoc, pg, { mode: 'export' }).some(
         (issue) => issue.params.feature === 'array',
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
   it('checks MySQL generation index/count/default and integer signedness', () => {
     const doc = fixture('mysql');

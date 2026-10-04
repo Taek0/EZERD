@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { databaseTypeCatalog } from './catalog.js';
 import { keyEligibility } from './key-policy.js';
 import { defaultDatabaseContext } from './profiles.js';
-import type { DatabaseKind } from './definitions.js';
+import { hasDatabaseCoverage, type DatabaseKind } from './definitions.js';
+import { nativeFeatureCoverage } from './readiness.js';
 import type { NativeColumnType } from './native-document.js';
 import { nativeDDLFixture } from './ddl-fixtures.js';
 import { inspectNativeDatabaseDocument, validateDatabaseDocument } from './validation.js';
@@ -31,6 +32,77 @@ const pgDenied = [
 ];
 
 describe('default direct PK/UNIQUE type policy', () => {
+  it('selects primary versus unique readiness without changing virtual-column engine eligibility', () => {
+    const context = defaultDatabaseContext('mysql'),
+      type = nativeType('mysql', 'int'),
+      generation = {
+        kind: 'computed',
+        database: 'mysql',
+        storage: 'virtual',
+        expression: { kind: 'literal', literalType: 'number', value: '1' },
+      } as const;
+    const primary = keyEligibility(context, type, { generation, kind: 'primary' }),
+      unique = keyEligibility(context, type, { generation, kind: 'unique' });
+    expect(primary).toMatchObject({ primaryAllowed: false, uniqueAllowed: true, usable: false });
+    expect(unique.usable).toBe(
+      hasDatabaseCoverage(nativeFeatureCoverage('unique')) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('generatedVirtual')),
+    );
+    expect(unique.uniqueAllowed).toBe(true);
+  });
+  it('leaves unsupported key conditions unusable even with verified type declarations', () => {
+    const my = defaultDatabaseContext('mysql'),
+      type: NativeColumnType = {
+        kind: 'builtin',
+        database: 'mysql',
+        typeId: 'mysql:varchar',
+        parameters: { length: 769 },
+      };
+    expect(keyEligibility(my, type, { kind: 'primary' })).toMatchObject({
+      primaryAllowed: false,
+      usable: false,
+      code: 'key.length-exceeded',
+    });
+    expect(keyEligibility(my, type, { kind: 'unique', charset: 'unknown' })).toMatchObject({
+      uniqueAllowed: false,
+      usable: false,
+      code: 'key.charset-unverified',
+    });
+    expect(
+      keyEligibility(
+        defaultDatabaseContext('postgresql'),
+        nativeType('postgresql', 'txid_snapshot'),
+        { kind: 'unique' },
+      ).usable,
+    ).toBe(false);
+  });
+  it('requires ENUM/array and SQLite declaration family gates rather than a fabricated builtin ID', () => {
+    const pg = defaultDatabaseContext('postgresql'),
+      enumeration: NativeColumnType = { kind: 'projectEnum', database: 'postgresql', enumId: 'e' };
+    expect(keyEligibility(pg, enumeration, { kind: 'unique' }).usable).toBe(
+      hasDatabaseCoverage(nativeFeatureCoverage('enumType')) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('unique')),
+    );
+    expect(
+      keyEligibility(pg, { ...enumeration, array: { dimensions: 1 } }, { kind: 'unique' }).usable,
+    ).toBe(
+      hasDatabaseCoverage(nativeFeatureCoverage('enumType')) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('unique')) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('array')),
+    );
+    for (const t of [
+      { kind: 'declared', database: 'sqlite', name: 'Custom text', numericArguments: [] },
+      { kind: 'untyped', database: 'sqlite' },
+    ] satisfies NativeColumnType[])
+      expect(keyEligibility(defaultDatabaseContext('sqlite'), t, { kind: 'unique' })).toMatchObject(
+        {
+          uniqueAllowed: true,
+          coverage: false,
+          usable: false,
+          readinessCode: 'type.declaration-not-ready',
+        },
+      );
+  });
   it.each(databaseTypeCatalog)(
     '$id reports actual type eligibility separately from coverage',
     (d) => {
@@ -49,11 +121,19 @@ describe('default direct PK/UNIQUE type policy', () => {
           (['json', 'geometry'].includes(d.category) ||
             /^(tiny|medium|long)?(text|blob)$/.test(d.sqlName)))
       );
+      const covered =
+        hasDatabaseCoverage(d.coverage) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('primaryKey')) &&
+        hasDatabaseCoverage(nativeFeatureCoverage('unique')) &&
+        (type.kind !== 'valueList' ||
+          hasDatabaseCoverage(
+            nativeFeatureCoverage(type.typeId === 'mysql:enum' ? 'enumColumn' : 'setColumn'),
+          ));
       expect(decision).toMatchObject({
         primaryAllowed: allowed,
         uniqueAllowed: allowed,
-        coverage: false,
-        usable: false,
+        coverage: covered,
+        usable: allowed && covered,
       });
       if (!allowed) expect(decision.code).toBe('key.type-not-supported');
     },

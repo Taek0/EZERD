@@ -11,16 +11,14 @@ describe('native project capabilities', () => {
       expect(legacy.database.revision).toBe(2);
       expect(legacy.types.length).toBeGreaterThan(0);
       expect(
-        legacy.types.every(
-          (type) =>
-            type.id.startsWith(`${databaseKind}:`) &&
-            !type.usable &&
-            type.availability === 'specified',
-        ),
+        legacy.types.every((type) => type.id.startsWith(`${databaseKind}:`) && !type.usable),
       ).toBe(true);
       expect(legacy.features.every((feature) => !feature.usable)).toBe(true);
       const native = projectDatabaseCapabilities(database, 2);
-      expect(native.types.every((type) => !type.usable)).toBe(true);
+      expect(native.types.filter((type) => type.usable)).toHaveLength(
+        databaseKind === 'postgresql' ? 64 : databaseKind === 'mysql' ? 37 : 23,
+      );
+      expect(native.features.find((feature) => feature.id === 'table')?.usable).toBe(true);
       expect(native.features.find((feature) => feature.id === 'array')?.supportedByEngine).toBe(
         databaseKind === 'postgresql',
       );

@@ -9,8 +9,12 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createEmptyDocument,
+  createEmptyNativeDocument,
+  createNativeTable,
+  createNativeColumn,
   defaultDatabaseContext,
   migrateDesignDocumentV1,
+  nativeReferenceProblems,
   type DatabaseKind,
   type DesignDocument,
 } from '@ezerd/model';
@@ -18,6 +22,7 @@ import {
   nativeTransferImportResultSchema,
   versionedProjectTransferSchema,
 } from '../../../packages/contracts/src/native-transfer.js';
+import { importJsonSha256 } from '../src/shared/native-import-provenance.js';
 
 function legacyDocument(): DesignDocument {
   const document = createEmptyDocument();
@@ -466,7 +471,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await upload(exported.data)).status).toBe(422);
     });
 
-    it('exports unsupported native physical objects raw, but blocks untrusted legacy re-import atomically', async () => {
+    it('exports unsupported physical objects raw but rejects new expressions over unresolved legacy types', async () => {
       const document = migrateDesignDocumentV1(
         legacyDocument(),
         defaultDatabaseContext('mysql'),
@@ -501,30 +506,133 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(denied).toMatchObject({ status: 422, data: { code: 'database.validation-failed' } });
       expect(
         denied.data.issues.some(
-          (issue: { code: string }) => issue.code === 'legacy.source-not-trusted',
+          (issue: { code: string; path: string }) =>
+            issue.code === 'expression.column-type-not-supported' &&
+            (issue.path.startsWith('/indexes/') || issue.path.startsWith('/checks/')),
         ),
       ).toBe(true);
+      expect(
+        denied.data.issues.some(
+          (issue: { code: string }) => issue.code === 'legacy.source-not-trusted',
+        ),
+      ).toBe(false);
       expect(await counts()).toEqual(count);
       expect(await row(id)).toEqual(before);
     });
 
-    it('rejects a fresh native physical type using current gate coverage, regardless of supplied source metadata', async () => {
+    it('imports verified native PK/FK with fresh IDs and rejects incompatible new FK types despite source claims', async () => {
       const legacy = legacyDocument();
       for (const column of legacy.columns!) column.physical.defaultExpression = '';
       const document = migrateDesignDocumentV1(
         legacy,
         defaultDatabaseContext('postgresql'),
       ).document;
-      const id = await seed('postgresql', document);
+      const id = await seed('postgresql', document),
+        original = await row(id);
       const exported = await request(`/${id}/native-transfer`);
-      const count = await counts();
-      const denied = await upload(exported.data);
-      expect(denied.status).toBe(422);
-      expect(
-        denied.data.issues.some((issue: { code: string }) => issue.code === 'type.not-implemented'),
-      ).toBe(true);
-      expect(await counts()).toEqual(count);
+      const count = await counts(),
+        accepted = await upload(exported.data);
+      expect(accepted.status, JSON.stringify(accepted.data)).toBe(201);
+      const saved = await row(accepted.data.project.id);
+      expect(saved.id).not.toBe(id);
+      expect(saved).toMatchObject({ version: 0, sync_sequence: 0, database_revision: 0 });
+      expect(nativeReferenceProblems(saved.document)).toEqual([]);
+      expect(saved.document.keys[0].id).not.toBe(document.keys![0]!.id);
+      expect(saved.document.keys[0].columnIds).toEqual([saved.document.columns[0].id]);
+      expect(saved.document.tableRelations[0].physical).toMatchObject({
+        sourceColumnIds: [saved.document.columns[1].id],
+        targetColumnIds: [saved.document.columns[0].id],
+      });
+      expect(saved.document.columns.map((column: any) => column.physical)).toEqual(
+        document.columns!.map((column) => column.physical),
+      );
+      const provenance = (
+        await pool.query(
+          "SELECT details FROM workspace_audit_events WHERE workspace_id=$1 AND action='project.imported' AND details->>'projectId'=$2",
+          [workspaceId, saved.id],
+        )
+      ).rows[0].details.importProvenance;
+      expect(provenance.sourceDocument).toEqual(document);
+      expect(provenance.sourceDocumentSha256).toBe(importJsonSha256(document));
+      expect(provenance.transferSha256).toBe(importJsonSha256(exported.data));
+      expect(provenance.trustedLegacyPaths).toEqual([]);
+      expect(await counts()).toEqual({
+        projects: String(Number(count.projects) + 1),
+        audits: String(Number(count.audits) + 1),
+      });
+      const measured = await counts(),
+        invalid = structuredClone(exported.data);
+      invalid.sourceDocument.columns[1].physical.type = {
+        kind: 'builtin',
+        database: 'postgresql',
+        typeId: 'postgresql:text',
+        parameters: {},
+      };
+      invalid.native.document = structuredClone(invalid.sourceDocument);
+      invalid.native.issues = [];
+      invalid.source = { projectId: id, version: 999, sequence: 999, databaseRevision: 999 };
+      const denied = await upload(invalid);
+      expect(denied.status, JSON.stringify(denied.data)).toBe(422);
+      expect(denied.data.issues).toContainEqual(
+        expect.objectContaining({ code: 'foreign-key.type-mismatch' }),
+      );
+      expect(await counts()).toEqual(measured);
+      expect(await row(id)).toEqual(original);
     });
+
+    it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+      'imports verified %s native primitives with fresh graph IDs and original audit values',
+      async (kind) => {
+        const context = defaultDatabaseContext(kind),
+          document = createEmptyNativeDocument(context);
+        const table = createNativeTable(context, 'basic-table', null, 'both');
+        table.physical.name = 'native_basic';
+        table.physical.comment = ' original basic comment ';
+        if (table.physical.options.database === 'sqlite') table.physical.options.strict = true;
+        const column = createNativeColumn(context, table, 'basic-column');
+        column.scope = 'both';
+        column.physical.name = 'basic_value';
+        column.physical.type =
+          kind === 'postgresql'
+            ? {
+                kind: 'builtin',
+                database: 'postgresql',
+                typeId: 'postgresql:integer',
+                parameters: {},
+              }
+            : kind === 'mysql'
+              ? { kind: 'builtin', database: 'mysql', typeId: 'mysql:int', parameters: {} }
+              : { kind: 'builtin', database: 'sqlite', typeId: 'sqlite:text', parameters: {} };
+        document.tables = [table];
+        document.columns = [column];
+        const file = compact(document, kind, 2),
+          before = await counts(),
+          result = await upload(file);
+        expect(result.status, JSON.stringify(result.data)).toBe(201);
+        const saved = await row(result.data.project.id);
+        expect(saved.document.tables[0].id).not.toBe(table.id);
+        expect(saved.document.columns[0].id).not.toBe(column.id);
+        expect(saved.document.columns[0].tableId).toBe(saved.document.tables[0].id);
+        expect(saved.document.columns[0].physical).toEqual(column.physical);
+        expect(saved.document.tables[0].physical).toEqual(table.physical);
+        expect(nativeReferenceProblems(saved.document)).toEqual([]);
+        const provenance = (
+          await pool.query(
+            "SELECT details FROM workspace_audit_events WHERE workspace_id=$1 AND action='project.imported' AND details->>'projectId'=$2",
+            [workspaceId, saved.id],
+          )
+        ).rows[0].details.importProvenance;
+        expect(provenance.sourceDocument).toEqual(document);
+        expect(provenance.sourceDocumentSha256).toBe(importJsonSha256(document));
+        expect(provenance.transferSha256).toBe(importJsonSha256(file));
+        expect(provenance.mappingPolicy).toBe('fresh-project-object-ids');
+        expect(provenance.trustedLegacyPaths).toEqual([]);
+        expect(await counts()).toEqual({
+          projects: String(Number(before.projects) + 1),
+          audits: String(Number(before.audits) + 1),
+        });
+      },
+    );
 
     it('rejects tampered preview, native context mismatch and malformed graph before any insertion', async () => {
       const id = await seed('postgresql', legacyDocument());
@@ -549,24 +657,59 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(await counts()).toEqual(count);
     });
 
-    it('keeps legacy enum evidence intact and explicitly blocks import when safe ID remap would break its reference', async () => {
+    it('imports legacy ENUM evidence with matching graph IDs inside an independent new project namespace', async () => {
       const document = legacyDocument();
       document.enums = [{ id: 'legacy-enum', name: 'Status', schema: 'public', values: ['a'] }];
       document.columns![0]!.physical.type = { name: 'enum', enumId: 'legacy-enum', isArray: false };
       const id = await seed('mysql', document);
+      const before = await row(id);
       expect((await request(`/${id}/native-transfer`)).data.sourceDocument).toEqual(document);
       const count = await counts();
-      const blocked = await upload(compact(document, 'mysql'));
-      expect(blocked).toMatchObject({
-        status: 422,
-        data: { code: 'project-transfer.graph-invalid' },
+      const file = compact(document, 'mysql'),
+        imported = await upload(file);
+      expect(imported.status, JSON.stringify(imported.data)).toBe(201);
+      const saved = await row(imported.data.project.id);
+      expect(saved.id).not.toBe(id);
+      expect(saved).toMatchObject({
+        workspace_id: workspaceId,
+        version: 0,
+        sync_sequence: 0,
+        database_revision: 0,
+        status: 'active',
       });
-      expect(
-        blocked.data.issues.some(
-          (issue: { code: string }) => issue.code === 'document.enum-not-found',
-        ),
-      ).toBe(true);
-      expect(await counts()).toEqual(count);
+      expect(saved.document).toEqual(
+        migrateDesignDocumentV1(document, defaultDatabaseContext('mysql')).document,
+      );
+      expect(nativeReferenceProblems(saved.document)).toEqual([]);
+      expect(saved.document.columns[0].physical.type.original).toEqual(
+        document.columns![0]!.physical.type,
+      );
+      expect(saved.document.enums[0].id).toBe(
+        saved.document.columns[0].physical.type.original.enumId,
+      );
+      expect(saved.document.enums[0].values).toEqual(document.enums![0]!.values);
+      expect(saved.document.layout).toEqual(document.layout);
+      const audit = (
+        await pool.query(
+          "SELECT details FROM workspace_audit_events WHERE workspace_id=$1 AND action='project.imported' AND details->>'projectId'=$2",
+          [workspaceId, saved.id],
+        )
+      ).rows[0].details.importProvenance;
+      expect(audit).toMatchObject({
+        authority: 'server-v1-migration',
+        mappingPolicy: 'preserve-source-project-namespace',
+        targetProjectId: saved.id,
+        hashEncoding: 'canonical-json-utf8',
+      });
+      expect(audit.sourceDocument).toEqual(document);
+      expect(audit.sourceDocumentSha256).toBe(importJsonSha256(document));
+      expect(audit.transferSha256).toBe(importJsonSha256(file));
+      expect(audit.identityMappingSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(await counts()).toEqual({
+        projects: String(Number(count.projects) + 1),
+        audits: String(Number(count.audits) + 1),
+      });
+      expect(await row(id)).toEqual(before);
     });
 
     it('enforces session, project read, createProject and active workspace permissions', async () => {

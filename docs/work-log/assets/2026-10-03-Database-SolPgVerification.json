@@ -1,0 +1,81 @@
+{
+  "status": "PASS",
+  "engine": "PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "sqlBytes": 369,
+  "sha256": "26da11c4bc70a3790497422c2b6af46a153be8f42e788cbacb7ecedd8fb7af42",
+  "project": {
+    "version": 6,
+    "sequence": 6,
+    "revision": 0,
+    "databaseKind": "postgresql",
+    "profile": "postgresql-18-v1"
+  },
+  "labels": [
+    {
+      "enumlabel": "",
+      "enumsortorder": 1
+    },
+    {
+      "enumlabel": "line\nbreak",
+      "enumsortorder": 2
+    },
+    {
+      "enumlabel": "한글😀",
+      "enumsortorder": 3
+    }
+  ],
+  "column": [
+    {
+      "attname": "record_id",
+      "type": "integer",
+      "attnotnull": true
+    }
+  ],
+  "key": [
+    {
+      "conname": "pk_pg_records",
+      "contype": "p",
+      "condeferrable": false,
+      "condeferred": false
+    }
+  ],
+  "ledger": [
+    {
+      "sequence": 1,
+      "baseSequence": 0,
+      "kind": "online"
+    },
+    {
+      "sequence": 2,
+      "baseSequence": 1,
+      "kind": "online"
+    },
+    {
+      "sequence": 3,
+      "baseSequence": 2,
+      "kind": "online"
+    },
+    {
+      "sequence": 4,
+      "baseSequence": 3,
+      "kind": "online"
+    },
+    {
+      "sequence": 5,
+      "baseSequence": 4,
+      "kind": "online"
+    },
+    {
+      "sequence": 6,
+      "baseSequence": 5,
+      "kind": "online"
+    }
+  ],
+  "explicitNoneClearDeletion": true,
+  "rollback": {
+    "relation": null,
+    "enum": null,
+    "namespace": false
+  },
+  "projectMetadataUnchanged": true
+}

@@ -7,10 +7,17 @@ import {
   type NativeEditorCommand,
   type NativeEditorDraftRef,
 } from '@ezerd/contracts';
-import { loadNativeEditorDraft, discardNativeEditorDraft } from './native-editor-draft.js';
+import { loadNativeEditorDraft } from './native-editor-draft.js';
 import { ApiError, body, request } from '../../shared/api/client.js';
 import { captureNativeActorApi } from './native-actor-api.js';
 import { requestFingerprint } from '@ezerd/model';
+import {
+  nativeDraftArchive,
+  nativePropertyArchiveKey,
+  preserveNativeDraftAckSources,
+  consumeNativeDraftAckSources,
+  type NativeDraftArchiveEntry,
+} from './native-draft-archive.js';
 import { cancelNativeDurableEntry } from './native-cancellation.js';
 import {
   getNativeDurableQueue,
@@ -18,7 +25,6 @@ import {
   type NativeDurablePending,
 } from './native-durable-queue.js';
 import {
-  nativeDraftStorage,
   nativeDraftMemoryState,
   getNativeMemoryDraft,
   retainNativeMemoryDraft,
@@ -170,6 +176,51 @@ export async function stageNativeSave(
       )
         throw Error('native.draft-changed');
     }
+    const sources: NativeDraftArchiveEntry[] = [];
+    const archive = nativeDraftArchive(storage);
+    if (editorDraft) {
+      const entry = archive.read(userId, pending.projectId, 'editor', editorDraft.key);
+      if (entry?.revision === editorDraft.revision) sources.push(entry);
+    }
+    for (const command of pending.request.commands) {
+      if (command.type !== 'patch_table' && command.type !== 'patch_column') continue;
+      const kind = command.type === 'patch_table' ? 'table' : 'column';
+      const entry = archive.read(
+        userId,
+        pending.projectId,
+        'property',
+        nativePropertyArchiveKey(kind, command.id),
+      );
+      if (!entry || !('kind' in entry.draft)) continue;
+      const draft = entry.draft;
+      if (
+        draft.expected.version !== pending.request.expectedVersion ||
+        draft.expected.sequence !== pending.request.expectedSequence ||
+        draft.expected.databaseRevision !== pending.request.expectedDatabaseRevision
+      )
+        continue;
+      const saved = {
+        physicalName: command.patch.physical?.name ?? draft.before.physicalName,
+        comment: command.patch.physical?.comment ?? draft.before.comment,
+        logicalName: command.patch.logical?.name ?? draft.before.logicalName,
+        definition: command.patch.logical?.definition ?? draft.before.definition,
+      };
+      if (
+        Object.keys(saved).every(
+          (field) =>
+            saved[field as keyof typeof saved] === draft.values[field as keyof typeof saved],
+        )
+      )
+        sources.push(entry);
+    }
+    preserveNativeDraftAckSources(
+      userId,
+      pending.projectId,
+      operationId,
+      pending.request,
+      sources,
+      storage,
+    );
   });
   return pending;
 }
@@ -183,17 +234,12 @@ function persistedPropertyDraft(
   objectId: string,
   storage?: Storage,
 ): NativePropertyDraft | null {
-  const raw = nativeDraftStorage(storage).getItem(draftKey(userId, projectId, kind, objectId));
-  if (raw === null) return null;
-  const draft = draftSchema.parse(JSON.parse(raw));
-  if (
-    draft.userId !== userId ||
-    draft.projectId !== projectId ||
-    draft.kind !== kind ||
-    draft.objectId !== objectId
-  )
-    throw Error('native.draft-invalid');
-  return draft;
+  const archive = nativeDraftArchive(storage),
+    logicalKey = nativePropertyArchiveKey(kind, objectId);
+  const legacy = archive.legacy(userId, projectId, 'property', logicalKey);
+  const entry = archive.read(userId, projectId, 'property', logicalKey);
+  if (!entry && legacy) throw Error('native.draft-recovery-required');
+  return entry ? draftSchema.parse(entry.draft) : null;
 }
 export function loadNativeDraft(
   userId: string,
@@ -220,11 +266,10 @@ export function loadNativeDraft(
 export function storeNativeDraft(draft: NativePropertyDraft, storage?: Storage): void {
   const key = draftKey(draft.userId, draft.projectId, draft.kind, draft.objectId);
   retainNativeMemoryDraft(key, draft, true, storage);
-  persistedPropertyDraft(draft.userId, draft.projectId, draft.kind, draft.objectId, storage);
-  const value = JSON.stringify(draftSchema.parse(draft)),
-    target = nativeDraftStorage(storage);
-  target.setItem(key, value);
-  if (target.getItem(key) !== value) throw Error('native.draft-storage-failed');
+  const archive = nativeDraftArchive(storage),
+    logicalKey = nativePropertyArchiveKey(draft.kind, draft.objectId);
+  archive.legacy(draft.userId, draft.projectId, 'property', logicalKey);
+  archive.store('property', logicalKey, draftSchema.parse(draft));
   retainNativeMemoryDraft(key, draft, false, storage);
 }
 export function discardNativeDraft(
@@ -238,10 +283,10 @@ export function discardNativeDraft(
   const key = draftKey(userId, projectId, kind, objectId),
     memory = getNativeMemoryDraft<NativePropertyDraft>(key, storage);
   if (expected && memory && requestFingerprint(memory) !== requestFingerprint(expected)) return;
-  const draft = persistedPropertyDraft(userId, projectId, kind, objectId, storage);
-  if (expected && draft && requestFingerprint(draft) !== requestFingerprint(expected)) return;
-  nativeDraftStorage(storage).removeItem(key);
-  if (nativeDraftStorage(storage).getItem(key) !== null) throw Error('native.draft-storage-failed');
+  const archive = nativeDraftArchive(storage),
+    entry = archive.read(userId, projectId, 'property', nativePropertyArchiveKey(kind, objectId));
+  if (expected && entry && requestFingerprint(entry.draft) !== requestFingerprint(expected)) return;
+  if (entry) archive.discard(userId, projectId, entry);
   forgetNativeMemoryDraft(key, storage);
 }
 export function resetNativeDraft(
@@ -251,10 +296,13 @@ export function resetNativeDraft(
   objectId: string,
   storage?: Storage,
 ): void {
-  const key = draftKey(userId, projectId, kind, objectId),
-    target = nativeDraftStorage(storage);
-  target.removeItem(key);
-  if (target.getItem(key) !== null) throw Error('native.draft-storage-failed');
+  const key = draftKey(userId, projectId, kind, objectId);
+  nativeDraftArchive(storage).reset(
+    userId,
+    projectId,
+    'property',
+    nativePropertyArchiveKey(kind, objectId),
+  );
   forgetNativeMemoryDraft(key, storage);
 }
 /** Explicit user review preserves only edited fields; other users' newer fields are inherited. */
@@ -311,8 +359,7 @@ export async function cancelNativePending(
     cleanup: (result) => {
       checkNativeAck(pending, result);
       if (result.status === 'accepted') {
-        acknowledgePropertyDrafts(pending, storage);
-        acknowledgeEditorDraft(pending, storage);
+        acknowledgeNativeDrafts(pending, storage);
       }
       if (
         requestFingerprint(loadLegacyNativePending(pending.userId, pending.projectId, storage)) ===
@@ -322,36 +369,15 @@ export async function cancelNativePending(
     },
   });
 }
-/** Clear only the property draft represented by this ACK; a newer tab's input stays intact. */
-function acknowledgePropertyDrafts(pending: NativePendingSave, storage: Storage): void {
-  for (const command of pending.request.commands) {
-    if (command.type !== 'patch_table' && command.type !== 'patch_column') continue;
-    const kind = command.type === 'patch_table' ? 'table' : 'column';
-    const draft = loadNativeDraft(pending.userId, pending.projectId, kind, command.id, storage);
-    if (
-      !draft ||
-      draft.expected.version !== pending.request.expectedVersion ||
-      draft.expected.sequence !== pending.request.expectedSequence ||
-      draft.expected.databaseRevision !== pending.request.expectedDatabaseRevision
-    )
-      continue;
-    const saved = {
-      physicalName: command.patch.physical?.name ?? draft.before.physicalName,
-      comment: command.patch.physical?.comment ?? draft.before.comment,
-      logicalName: command.patch.logical?.name ?? draft.before.logicalName,
-      definition: command.patch.logical?.definition ?? draft.before.definition,
-    };
-    if (
-      Object.keys(saved).every(
-        (field) => saved[field as keyof typeof saved] === draft.values[field as keyof typeof saved],
-      )
-    )
-      discardNativeDraft(pending.userId, pending.projectId, kind, command.id, storage, draft);
-  }
-}
-function acknowledgeEditorDraft(pending: NativePendingSave, storage: Storage): void {
-  if (pending.editorDraft)
-    discardNativeEditorDraft(pending.userId, pending.projectId, pending.editorDraft, storage);
+/** No local staging evidence means no authority to erase a subsequently recovered input. */
+function acknowledgeNativeDrafts(pending: NativePendingSave, storage: Storage): void {
+  consumeNativeDraftAckSources(
+    pending.userId,
+    pending.projectId,
+    pending.request.operationId,
+    pending.request,
+    storage,
+  );
 }
 function checkNativeAck(pending: NativePendingSave, result: NativeSyncOperationResult): void {
   if (
@@ -372,8 +398,7 @@ async function ensureNativePending(pending: NativePendingSave, storage: Storage)
 }
 async function consumeNativeAck(pending: NativePendingSave, storage: Storage): Promise<void> {
   await getNativeDurableQueue().acknowledge(durable(pending), () => {
-    acknowledgePropertyDrafts(pending, storage);
-    acknowledgeEditorDraft(pending, storage);
+    acknowledgeNativeDrafts(pending, storage);
     const old = loadLegacyNativePending(pending.userId, pending.projectId, storage);
     if (requestFingerprint(old) === requestFingerprint(pending))
       storage.removeItem(key(pending.userId, pending.projectId));

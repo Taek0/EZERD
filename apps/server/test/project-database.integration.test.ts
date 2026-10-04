@@ -10,6 +10,7 @@ import {
   createNativeTable,
   defaultDatabaseContext,
   planNativeDatabaseConversion,
+  nativeIntegerConversionRules,
   type DatabaseKind,
   type NativeDesignDocument,
 } from '@ezerd/model';
@@ -33,6 +34,64 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     const editorId = randomUUID();
     const outsiderId = randomUUID();
     const publishDatabaseContext = vi.fn();
+    const integerCases = nativeIntegerConversionRules.flatMap((rule) =>
+      (['postgresql', 'mysql'] as const).map((sourceKind) => ({
+        rule,
+        sourceKind,
+        targetKind: sourceKind === 'postgresql' ? ('mysql' as const) : ('postgresql' as const),
+      })),
+    );
+    const integerDocument = (
+      sourceKind: 'postgresql' | 'mysql' = 'postgresql',
+      rule = nativeIntegerConversionRules[1]!,
+    ) => {
+      const context = defaultDatabaseContext(sourceKind),
+        table = createNativeTable(context, 'table/a~b');
+      table.physical.name = 'records';
+      table.physical.comment = '原文 table';
+      table.logical = { name: ' Raw logical ', definition: 'INTEGER bigint text preserved' };
+      table.customProperties.common = { raw: 'SMALLINT INTEGER BIGINT' };
+      if (sourceKind === 'mysql') table.physical.options = { database: 'mysql', engine: 'InnoDB' };
+      const column = createNativeColumn(context, table, 'column/a~b');
+      column.physical.name = 'value';
+      column.physical.comment = '原文 column';
+      column.physical.type =
+        sourceKind === 'postgresql'
+          ? {
+              kind: 'builtin',
+              database: 'postgresql',
+              typeId: rule.postgresTypeId as
+                'postgresql:smallint' | 'postgresql:integer' | 'postgresql:bigint',
+              parameters: {},
+            }
+          : {
+              kind: 'builtin',
+              database: 'mysql',
+              typeId: rule.mysqlTypeId as 'mysql:smallint' | 'mysql:int' | 'mysql:bigint',
+              parameters: {},
+            };
+      return {
+        ...createEmptyNativeDocument(context),
+        tables: [table],
+        columns: [column],
+        domains: [{ id: 'd', name: ' Raw domain ', description: 'Untouched' }],
+        notes: [{ id: 'n', viewId: 'overview', text: 'CREATE SMALLINT INTEGER BIGINT' }],
+        layout: {
+          nodes: [
+            {
+              id: 'node',
+              objectId: table.id,
+              viewId: '__tables__',
+              x: 40,
+              y: 50,
+              width: 320,
+              height: 200,
+            },
+          ],
+          viewports: [],
+        },
+      } satisfies NativeDesignDocument;
+    };
     const input = (targetKind: DatabaseKind = 'mysql') => ({
       operationId: randomUUID(),
       expectedVersion: 7,
@@ -176,7 +235,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       },
     );
     it('keeps native polling reset, old histories/tombstones and personal state after a DB boundary', async () => {
-      const id = await seed();
+      const source = integerDocument();
+      const id = await seed('postgresql', source);
       const clientId = randomUUID();
       const user = { id: ownerId, username: 'conversion-owner', color: '#123456' };
       await sync.baseline(id, clientId, user);
@@ -202,7 +262,19 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       const oldHistory = (
         await pool.query('SELECT * FROM sync_operations WHERE project_id=$1', [id])
       ).rows[0];
+      const oldPersonal = (
+        await pool.query('SELECT * FROM project_personal_states WHERE project_id=$1', [id])
+      ).rows;
+      const oldTombstones = (
+        await pool.query('SELECT * FROM sync_tombstones WHERE project_id=$1', [id])
+      ).rows;
       await service.change(ownerId, id, input());
+      expect(
+        (await pool.query('SELECT * FROM project_personal_states WHERE project_id=$1', [id])).rows,
+      ).toEqual(oldPersonal);
+      expect(
+        (await pool.query('SELECT * FROM sync_tombstones WHERE project_id=$1', [id])).rows,
+      ).toEqual(oldTombstones);
       expect(
         (
           await pool.query('SELECT * FROM sync_field_versions WHERE project_id=$1 AND path=$2', [
@@ -235,11 +307,11 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await sync.baseline(id, clientId, user)).databaseRevision).toBe(4);
     });
     it('replays after later DB changes/archiving/invalid current source without duplicate audit or WS', async () => {
-      const id = await seed();
+      const id = await seed('postgresql', integerDocument());
       const first = input();
       const result = await service.change(ownerId, id, first);
       await service.change(ownerId, id, {
-        ...input('sqlite'),
+        ...input('postgresql'),
         expectedVersion: 8,
         expectedSequence: 12,
         expectedDatabaseRevision: 4,
@@ -260,7 +332,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     it.each(['viewer', 'archived'] as const)(
       'replays the same actor ACK after %s change while rejecting new writes and lost read access',
       async (mode) => {
-        const id = await seed();
+        const id = await seed('postgresql', integerDocument());
         const first = input();
         const result = await service.change(editorId, id, first);
         try {
@@ -318,7 +390,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       },
     );
     it('serializes concurrent duplicate operation IDs and stale competing changes', async () => {
-      const id = await seed();
+      const id = await seed('postgresql', integerDocument());
       const first = input();
       const notifications = publishDatabaseContext.mock.calls.length;
       const duplicate = await Promise.all([
@@ -341,7 +413,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(await counts(secondId)).toMatchObject({ operations: '1', audits: '1' });
     });
     it('waits on the same row lock as a document writer and rejects its stale snapshot', async () => {
-      const id = await seed();
+      const id = await seed('postgresql', integerDocument());
       const client = await pool.connect();
       await client.query('BEGIN');
       try {
@@ -367,90 +439,197 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         client.release();
       }
     });
-    it('rolls back project/document, ledger, audit, baseline and field versions if storage fails before commit', async () => {
-      const id = await seed();
-      const before = await row(id);
-      await sync.baseline(id, randomUUID(), { id: ownerId, username: 'owner', color: '#123456' });
-      const beforeCounts = await counts(id);
-      const notifications = publishDatabaseContext.mock.calls.length;
-      const original = database.db.transaction.bind(database.db);
-      const hook = vi.spyOn(database.db, 'transaction').mockImplementationOnce((callback, config) =>
-        original(async (tx) => {
-          await callback(tx);
-          throw new Error('Injected post-write storage failure');
-        }, config),
-      );
-      try {
-        await expect(service.change(ownerId, id, input())).rejects.toBeInstanceOf(
-          ServiceUnavailableException,
+    it.each(integerCases)(
+      'rolls back $rule.bits-bit $sourceKind to $targetKind after all durable writes',
+      async ({ rule, sourceKind, targetKind }) => {
+        const document = integerDocument(sourceKind, rule),
+          beforeDocument = structuredClone(document);
+        const id = await seed(sourceKind, document);
+        const before = await row(id);
+        await sync.baseline(id, randomUUID(), { id: ownerId, username: 'owner', color: '#123456' });
+        await pool.query(
+          'INSERT INTO sync_field_versions(project_id,path,sequence,operation_id) VALUES($1,$2,11,$3)',
+          [id, '/metadata/raw', randomUUID()],
         );
-      } finally {
-        hook.mockRestore();
-      }
-      expect(await row(id)).toEqual(before);
-      expect(await counts(id)).toEqual(beforeCounts);
-      expect(publishDatabaseContext.mock.calls.length).toBe(notifications);
-    });
-    it('blocks actual nonempty native writes under current readiness and checks role/read permissions', async () => {
-      const context = defaultDatabaseContext('postgresql');
-      const table = createNativeTable(context, 't');
-      table.physical.name = 'records';
-      const column = createNativeColumn(context, table, 'c');
-      column.physical.name = 'id';
-      column.physical.type = {
-        kind: 'builtin',
-        database: 'postgresql',
-        typeId: 'postgresql:integer',
-        parameters: {},
-      };
-      const document: NativeDesignDocument = {
-        ...createEmptyNativeDocument(context),
-        tables: [table],
-        columns: [column],
-      };
-      const id = await seed('postgresql', document);
-      const before = await row(id);
-      const plan = planNativeDatabaseConversion(document, context, defaultDatabaseContext('mysql'));
-      expect(plan.engineVerified).toBe(true);
-      expect(plan.candidate?.columns?.[0]?.physical.type).toMatchObject({ typeId: 'mysql:int' });
-      expect(plan.canApply).toBe(false);
-      await sync.baseline(id, randomUUID(), { id: ownerId, username: 'owner', color: '#123456' });
-      const beforeCounts = await counts(id);
-      const notifications = publishDatabaseContext.mock.calls.length;
-      const preview = await service.preview(viewerId, id, input());
-      expect(preview).toMatchObject({
-        canChange: false,
-        reasonCode: 'database.conversion-required',
-        issues: expect.arrayContaining([
-          expect.objectContaining({
-            code: 'database.conversion-target-not-ready',
-            objectId: 'c',
-          }),
-        ]),
-      });
-      const permission = vi.spyOn(access, 'requireProject');
-      try {
-        await expect(service.change(ownerId, id, input())).rejects.toMatchObject({
-          response: {
-            issues: expect.arrayContaining([
-              expect.objectContaining({ code: 'database.conversion-target-not-ready' }),
-            ]),
+        const beforeBaselines = (
+          await pool.query(
+            'SELECT * FROM sync_client_baselines WHERE project_id=$1 ORDER BY client_id',
+            [id],
+          )
+        ).rows;
+        const beforeFields = (
+          await pool.query('SELECT * FROM sync_field_versions WHERE project_id=$1 ORDER BY path', [
+            id,
+          ])
+        ).rows;
+        const beforeCounts = await counts(id);
+        const notifications = publishDatabaseContext.mock.calls.length;
+        const original = database.db.transaction.bind(database.db);
+        const hook = vi
+          .spyOn(database.db, 'transaction')
+          .mockImplementationOnce((callback, config) =>
+            original(async (tx) => {
+              const output = await callback(tx);
+              // A rejected plan never reaches this assertion or the injected post-write failure.
+              expect(output).toMatchObject({
+                notify: true,
+                result: { changed: true, version: 8, sequence: 12 },
+              });
+              throw new Error('Injected post-write storage failure');
+            }, config),
+          );
+        try {
+          await expect(service.change(ownerId, id, input(targetKind))).rejects.toBeInstanceOf(
+            ServiceUnavailableException,
+          );
+        } finally {
+          hook.mockRestore();
+        }
+        expect(await row(id)).toEqual(before);
+        expect(await counts(id)).toEqual(beforeCounts);
+        expect(
+          (
+            await pool.query(
+              'SELECT * FROM sync_client_baselines WHERE project_id=$1 ORDER BY client_id',
+              [id],
+            )
+          ).rows,
+        ).toEqual(beforeBaselines);
+        expect(
+          (
+            await pool.query(
+              'SELECT * FROM sync_field_versions WHERE project_id=$1 ORDER BY path',
+              [id],
+            )
+          ).rows,
+        ).toEqual(beforeFields);
+        expect(document).toEqual(beforeDocument);
+        expect(publishDatabaseContext.mock.calls.length).toBe(notifications);
+      },
+    );
+    it.each(integerCases)(
+      'commits activated nonempty $rule.bits-bit $sourceKind to $targetKind with exact audit and boundary counters',
+      async ({ rule, sourceKind, targetKind }) => {
+        const context = defaultDatabaseContext(sourceKind),
+          target = defaultDatabaseContext(targetKind);
+        const document = integerDocument(sourceKind, rule),
+          beforeDocument = structuredClone(document);
+        const id = await seed(sourceKind, document),
+          request = input(targetKind);
+        const before = await row(id);
+        const plan = planNativeDatabaseConversion(document, context, target);
+        expect(plan.engineVerified).toBe(true);
+        expect(plan.document?.columns?.[0]?.physical.type).toMatchObject({
+          typeId: targetKind === 'mysql' ? rule.mysqlTypeId : rule.postgresTypeId,
+        });
+        expect(plan.canApply).toBe(true);
+        const user = { id: ownerId, username: 'owner', color: '#123456' },
+          clientId = randomUUID();
+        await sync.baseline(id, clientId, user);
+        const notifications = publishDatabaseContext.mock.calls.length;
+        expect(await service.preview(viewerId, id, request)).toMatchObject({
+          canChange: true,
+          issues: plan.issues,
+        });
+        expect(await row(id)).toEqual(before);
+        await expect(service.change(viewerId, id, request)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        await expect(service.preview(outsiderId, id, request)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        const permission = vi.spyOn(access, 'requireProject');
+        let result;
+        try {
+          result = await service.change(ownerId, id, request);
+          expect(permission).toHaveBeenCalledWith(ownerId, id, 'design', expect.anything());
+        } finally {
+          permission.mockRestore();
+        }
+        expect(result).toMatchObject({
+          operationId: request.operationId,
+          changed: true,
+          version: 8,
+          sequence: 12,
+          database: { ...target, revision: 4 },
+        });
+        expect(await row(id)).toMatchObject({
+          document: plan.document,
+          database_kind: targetKind,
+          database_profile_id: target.profileId,
+          version: 8,
+          sync_sequence: 12,
+          database_revision: 4,
+        });
+        const audit = (
+          await pool.query(
+            "SELECT actor_id,details FROM workspace_audit_events WHERE details->>'operationId'=$1",
+            [request.operationId],
+          )
+        ).rows[0];
+        expect(audit).toMatchObject({
+          actor_id: ownerId,
+          details: {
+            sourceDocument: beforeDocument,
+            sourceVersion: 7,
+            sourceSequence: 11,
+            sequence: 12,
+            sourceMap: plan.sourceMap,
+            changedPaths: plan.changedPaths,
+            conversion: 'verified-signed-integer-v1',
+            engineVerified: true,
+            from: { ...context, revision: 3 },
+            to: { ...target, revision: 4 },
           },
         });
-        expect(permission).toHaveBeenCalledWith(ownerId, id, 'design', expect.anything());
-      } finally {
-        permission.mockRestore();
-      }
-      await expect(service.change(viewerId, id, input())).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
-      await expect(service.preview(outsiderId, id, input())).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
-      expect(await row(id)).toEqual(before);
-      expect(await counts(id)).toEqual(beforeCounts);
-      expect(publishDatabaseContext.mock.calls.length).toBe(notifications);
-    });
+        expect(plan.sourceMap).toContainEqual(
+          expect.objectContaining({
+            objectId: 'column/a~b',
+            path: '/columns/column~1a~0b/physical/type',
+            source: document.columns[0]!.physical.type,
+            target: plan.document!.columns![0]!.physical.type,
+            fixtureId: rule.fixtureId,
+            ruleId: rule.id,
+          }),
+        );
+        expect(await counts(id)).toMatchObject({
+          operations: '1',
+          audits: '1',
+          baselines: '0',
+          fields: String(plan.changedPaths.length),
+        });
+        const fields = (
+          await pool.query(
+            'SELECT path,sequence,operation_id FROM sync_field_versions WHERE project_id=$1 ORDER BY path',
+            [id],
+          )
+        ).rows;
+        expect(fields.map((f) => f.path).sort()).toEqual([...plan.changedPaths].sort());
+        expect(
+          fields.every((f) => f.sequence === 12 && f.operation_id === request.operationId),
+        ).toBe(true);
+        expect(publishDatabaseContext.mock.calls.length).toBe(notifications + 1);
+        expect(publishDatabaseContext).toHaveBeenLastCalledWith(id, 12, 4);
+        expect(await sync.events(id, 11, user)).toMatchObject({
+          resetRequired: true,
+          sequence: 12,
+          databaseRevision: 4,
+          events: [],
+          document: plan.document,
+        });
+        expect(await sync.baseline(id, clientId, user)).toMatchObject({
+          databaseRevision: 4,
+          sequence: 12,
+        });
+        const saved = await row(id),
+          savedCounts = await counts(id);
+        expect(await service.change(ownerId, id, request)).toEqual(result);
+        expect(await row(id)).toEqual(saved);
+        expect(await counts(id)).toEqual(savedCounts);
+        expect(publishDatabaseContext.mock.calls.length).toBe(notifications + 1);
+        expect(document).toEqual(beforeDocument);
+      },
+    );
     it('retains v1 empty physical change and native no-op compatibility', async () => {
       const legacy = createEmptyDocument();
       const id = await seed('postgresql', legacy);

@@ -218,8 +218,13 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           JSON.stringify(native),
         ]);
         const gated = await request(`/projects/${id}/ddl`);
-        expect(gated.data).toMatchObject({ documentSchemaVersion: 2, canExport: false, sql: '' });
-        expect(gated.data.issues.length).toBeGreaterThan(0);
+        if (kind === 'postgresql') {
+          expect(gated.data).toMatchObject({ documentSchemaVersion: 2, canExport: true });
+          expect(gated.data.sql).toContain('REAL');
+        } else {
+          expect(gated.data).toMatchObject({ documentSchemaVersion: 2, canExport: false, sql: '' });
+          expect(gated.data.issues.length).toBeGreaterThan(0);
+        }
       },
     );
     it.each(['postgresql', 'mysql', 'sqlite'])(
@@ -436,6 +441,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         const savedPersonal = await client.callTool({
           name: 'apply_personal_changes',
           arguments: {
+            expectedDatabaseRevision: (await stored(id)).database_revision,
+            expectedProjectVersion: (await stored(id)).version,
+            expectedSyncSequence: (await stored(id)).sync_sequence,
             projectId: id,
             expectedVersion: 0,
             operationId: randomUUID(),
@@ -1080,11 +1088,15 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           const forbidden = structuredClone(next.document);
           forbidden.columns[0].physical.type =
             kind === 'postgresql'
-              ? { kind: 'builtin', database: kind, typeId: 'postgresql:text', parameters: {} }
+              ? { kind: 'builtin', database: kind, typeId: 'postgresql:integer', parameters: {} }
               : kind === 'mysql'
                 ? { kind: 'builtin', database: kind, typeId: 'mysql:int', parameters: {} }
                 : { kind: 'builtin', database: kind, typeId: 'sqlite:integer', parameters: {} };
           forbidden.columns[0].physical.defaultValue = { kind: 'none' };
+          forbidden.columns[0].physical.generation =
+            kind === 'postgresql'
+              ? { kind: 'identity', database: kind, mode: 'always' }
+              : { kind: 'autoIncrement', database: kind };
           const invalidInput = makeInput(next, forbidden);
           const rejected = await request(
             `/projects/${id}/native-sync/operations`,
@@ -1098,8 +1110,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             reasonCode: 'database.candidate-invalid',
           });
           expect(
-            rejected.data.issues.some(
-              (issue: { code: string }) => issue.code === 'type.not-implemented',
+            rejected.data.issues.some((issue: { path: string }) =>
+              issue.path.includes('/generation'),
             ),
           ).toBe(true);
           expect((await stored(id)).version).toBe(2);
@@ -1431,7 +1443,15 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         const issued = { status: 201, data: { token: ownerMcpToken } };
         const client = new Client({ name: 'native-personal-fixture', version: '1.0.0' });
         const call = (arguments_: Record<string, unknown>) =>
-          client.callTool({ name: 'apply_personal_changes', arguments: arguments_ });
+          client.callTool({
+            name: 'apply_personal_changes',
+            arguments: {
+              expectedDatabaseRevision: 0,
+              expectedProjectVersion: 7,
+              expectedSyncSequence: 11,
+              ...arguments_,
+            },
+          });
         try {
           await client.connect(
             new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
@@ -1481,6 +1501,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           );
           expect(saved.state.notes[0]).not.toHaveProperty('color');
           expect((await call(input)).structuredContent).toEqual(saved);
+          await pool.query('UPDATE projects SET status=$2 WHERE id=$1', [id, 'archived']);
+          expect((await call(input)).structuredContent).toEqual(saved);
+          expect(
+            (await call({ ...input, operationId: randomUUID(), expectedVersion: 1 })).isError,
+          ).toBe(true);
+          await pool.query('UPDATE projects SET status=$2 WHERE id=$1', [id, 'active']);
           expect(
             (
               await call({
@@ -1606,6 +1632,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
               name: 'apply_personal_changes',
               arguments: {
                 projectId: id,
+                expectedDatabaseRevision: 0,
+                expectedProjectVersion: 7,
+                expectedSyncSequence: 11,
                 expectedVersion: 0,
                 operationId: randomUUID(),
                 commands: [
@@ -1721,10 +1750,47 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           ],
           viewports: [{ viewId: '__tables__', x: 12, y: 34, zoom: 0.8 }],
         };
-        const saved = await request(`/projects/${id}/personal-state`, 'PUT', {
+        for (const context of [
+          {},
+          { expectedDatabaseRevision: first.data.databaseRevision },
+          {
+            expectedDatabaseRevision: first.data.databaseRevision + 1,
+            expectedProjectVersion: first.data.projectVersion,
+            expectedSyncSequence: first.data.syncSequence,
+          },
+          {
+            expectedDatabaseRevision: first.data.databaseRevision,
+            expectedProjectVersion: first.data.projectVersion + 1,
+            expectedSyncSequence: first.data.syncSequence,
+          },
+          {
+            expectedDatabaseRevision: first.data.databaseRevision,
+            expectedProjectVersion: first.data.projectVersion,
+            expectedSyncSequence: first.data.syncSequence + 1,
+          },
+        ]) {
+          const rejected = await request(`/projects/${id}/personal-state`, 'PUT', {
+            expectedVersion: first.data.version,
+            state,
+            ...context,
+          });
+          expect(rejected.status, JSON.stringify(rejected.data)).toBe(409);
+          expect((await request(`/projects/${id}/personal-state`)).data).toEqual(first.data);
+          expect(await stored(id)).toEqual(before);
+        }
+        const saveInput = {
+          expectedDatabaseRevision: first.data.databaseRevision,
+          expectedProjectVersion: first.data.projectVersion,
+          expectedSyncSequence: first.data.syncSequence,
           expectedVersion: first.data.version,
           state,
-        });
+        };
+        const raced = await Promise.all([
+          request(`/projects/${id}/personal-state`, 'PUT', saveInput),
+          request(`/projects/${id}/personal-state`, 'PUT', saveInput),
+        ]);
+        expect(raced.map((response) => response.status).sort()).toEqual([200, 409]);
+        const saved = raced.find((response) => response.status === 200)!;
         expect(saved).toMatchObject({ status: 200, data: { version: 1, state } });
         expect((await request(`/projects/${id}/personal-state`)).data.state).toEqual(state);
         const collision = structuredClone(state);
@@ -1735,6 +1801,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             await request(`/projects/${id}/personal-state`, 'PUT', {
               expectedVersion: 1,
               state: collision,
+              expectedDatabaseRevision: first.data.databaseRevision,
+              expectedProjectVersion: first.data.projectVersion,
+              expectedSyncSequence: first.data.syncSequence,
             })
           ).status,
         ).toBe(400);
@@ -1827,6 +1896,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
                   ...viewer.data.state,
                   viewports: [{ viewId: '__tables__', x: 50, y: 60, zoom: 1 }],
                 },
+                expectedDatabaseRevision: viewer.data.databaseRevision,
+                expectedProjectVersion: viewer.data.projectVersion,
+                expectedSyncSequence: viewer.data.syncSequence,
               },
               session,
             )

@@ -3,12 +3,9 @@ import {
   nativeEditorCommandSchema,
   nativeSharedCanvasCommandSchema,
   nativePersonalCanvasCommandSchema,
-  nativeCanvasPersonalPendingSchema,
   personalStateSnapshotSchema,
-  personalStateSchema,
   viewportSchema,
   nodeLayoutSchema,
-  savePersonalStateSchema,
   type NativeCanvasPersonalPending,
   type NativePersonalCanvasCommand,
   type NativeEditorCommand,
@@ -30,7 +27,6 @@ import {
   extractPersonalState,
   reconcilePersonalState,
   mergeStoredPersonalState,
-  requestFingerprint,
   isVisibleInView,
   nativeColumnTypeDisplay,
   nativeDefaultDisplay,
@@ -43,7 +39,7 @@ import { relationGeometry } from '../relations/relation-routing.js';
 import { wheelCamera } from '../canvas/canvas-wheel.js';
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
-import { body, message, request, storedAuthorization } from '../../shared/api/client.js';
+import { message, request } from '../../shared/api/client.js';
 import { NativeEditorField, type NativeEditorSave } from './native-editor-form.js';
 import {
   loadNativeEditorDraft,
@@ -56,11 +52,31 @@ import './NativeERDCanvas.css';
 import { useNativeExportBlocker } from './native-export-state.js';
 import { nativeDurableId } from './native-durable-queue.js';
 import { NativeClipboardMenu } from './native-clipboard.js';
+import { NativePrivateCASRecovery } from './NativePrivateCASRecovery.js';
+import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
+import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
+import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
+import { NativeDomainLines } from './native-domain-lines.js';
+import { NativeCanvasPngExport } from './NativeCanvasPngExport.js';
+import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
+import { nativeTableCanvasRows, nativeCardColor } from './native-canvas-style.js';
+import { captureNativeActorApi } from './native-actor-api.js';
+import { getNativeDurableQueue, type NativeDurableState } from './native-durable-queue.js';
+import {
+  nativePrivateCanvasGuardAvailable,
+  nativePrivateSnapshotSchema,
+  loadNativePrivatePending,
+  discardNativePrivatePending,
+  stageNativePrivateCanvas,
+  recoverNativePrivateCanvas,
+} from './native-private-canvas.js';
 type PersonalStateSnapshot = ReturnType<typeof personalStateSnapshotSchema.parse>;
 type DraftRef = { key: string; revision: string };
 type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
 
 registerTranslations({
+  '복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.':
+    'Loading the recovery view. You can download its source from preserved input.',
   'Native ERD': 'Native ERD',
   '공유 캔버스': 'Shared canvas',
   '도메인 개요': 'Domain overview',
@@ -137,12 +153,10 @@ const expected = (snapshot: ProjectDocumentState) => ({
 });
 const privateView = (doc: NativeDesignDocument, viewId: string) =>
   !!doc.views?.some((view) => view.id === viewId);
-const personalGuardAvailable = () => 'expectedDatabaseRevision' in savePersonalStateSchema.shape;
+const personalGuardAvailable = nativePrivateCanvasGuardAvailable;
 const viewFor = (doc: NativeDesignDocument, viewId: string) =>
   doc.domains.some((domain) => domain.id === viewId) ? TABLES_VIEW_ID : viewId;
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
-const personalKey = (userId: string, projectId: string) =>
-  `ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`;
 
 export function nativeCanvasPersonalCandidate(
   document: NativeDesignDocument,
@@ -240,23 +254,14 @@ export function loadNativeCanvasPersonalPending(
   userId: string,
   projectId: string,
   storage: Storage = localStorage,
-): NativeCanvasPersonalPending | null {
-  const raw = storage.getItem(personalKey(userId, projectId));
-  if (raw === null) return null;
-  const pending = nativeCanvasPersonalPendingSchema.parse(JSON.parse(raw));
-  if (pending.userId !== userId || pending.projectId !== projectId)
-    throw new Error('native.pending-invalid');
-  return pending;
+) {
+  return loadNativePrivatePending(userId, projectId, { storage });
 }
 export function discardNativeCanvasPersonalPending(
   pending: NativeCanvasPersonalPending,
   storage: Storage = localStorage,
-): void {
-  if (
-    loadNativeCanvasPersonalPending(pending.userId, pending.projectId, storage)?.revision ===
-    pending.revision
-  )
-    storage.removeItem(personalKey(pending.userId, pending.projectId));
+) {
+  return discardNativePrivatePending(pending, { storage });
 }
 export function stageNativeCanvasPersonal(
   userId: string,
@@ -265,109 +270,25 @@ export function stageNativeCanvasPersonal(
   candidate: NativeDesignDocument,
   storage: Storage = localStorage,
   editorDraft?: DraftRef,
-): NativeCanvasPersonalPending {
-  if (snapshot.sourceDocument.schemaVersion !== 2)
-    throw new Error('document.native-upgrade-required');
-  if (snapshot.project.status !== 'active') throw new Error('project.read-only');
-  if (loadNativeCanvasPersonalPending(userId, snapshot.project.id, storage))
-    throw new Error('native.pending-exists');
-  if (
-    personal.projectVersion !== snapshot.project.version ||
-    personal.syncSequence !== snapshot.sequence
-  )
-    throw new Error('native.personal-snapshot-stale');
-  if (editorDraft) {
-    const draft = loadNativeEditorDraft(userId, snapshot.project.id, editorDraft.key, storage);
-    if (
-      !draft ||
-      draft.revision !== editorDraft.revision ||
-      draft.expected.version !== snapshot.project.version ||
-      draft.expected.sequence !== snapshot.sequence ||
-      draft.expected.databaseRevision !== snapshot.project.databaseRevision
-    )
-      throw new Error('native.draft-changed');
-  }
-  const state = personalStateSchema.parse(extractPersonalState(candidate));
-  if (requestFingerprint(state) === requestFingerprint(personal.state))
-    throw new Error('sync.no-changes');
-  const pending = nativeCanvasPersonalPendingSchema.parse({
+) {
+  return stageNativePrivateCanvas(
     userId,
-    projectId: snapshot.project.id,
-    revision: nativeDurableId(),
-    databaseRevision: snapshot.project.databaseRevision,
-    projectVersion: snapshot.project.version,
-    sequence: snapshot.sequence,
-    expectedVersion: personal.version,
-    before: personal.state,
-    state,
-    ...(editorDraft
-      ? { editorDraft: { key: editorDraft.key, revision: editorDraft.revision } }
-      : {}),
-  });
-  const raw = JSON.stringify(pending),
-    key = personalKey(userId, snapshot.project.id);
-  storage.setItem(key, raw);
-  if (storage.getItem(key) !== raw) throw new Error('native.pending-storage-failed');
-  return pending;
+    snapshot,
+    nativePrivateSnapshotSchema.parse(personal),
+    candidate,
+    { storage },
+    editorDraft,
+  );
 }
-export async function recoverNativeCanvasPersonal(
+export function recoverNativeCanvasPersonal(
   pending: NativeCanvasPersonalPending,
   snapshot: ProjectDocumentState,
   allowReplay: boolean,
   storage: Storage = localStorage,
   api: typeof request = request,
-): Promise<PersonalStateSnapshot> {
-  if (snapshot.project.id !== pending.projectId) throw new Error('native.ack-mismatch');
-  const url = `/api/projects/${encodeURIComponent(pending.projectId)}/personal-state`;
-  const authorization = storedAuthorization() ?? '';
-  const current = personalStateSnapshotSchema.parse(
-    await api(url, { cache: 'no-store', headers: { Authorization: authorization } }),
-  );
-  // An old successful PUT may be confirmed after DB/archive changes. Never resend on that path.
-  if (
-    current.version === pending.expectedVersion + 1 &&
-    requestFingerprint(current.state) === requestFingerprint(pending.state)
-  ) {
-    if (pending.editorDraft)
-      discardNativeEditorDraft(pending.userId, pending.projectId, pending.editorDraft, storage);
-    discardNativeCanvasPersonalPending(pending, storage);
-    return current;
-  }
-  if (!allowReplay || snapshot.project.status !== 'active') throw new Error('project.read-only');
-  if (
-    snapshot.project.databaseRevision !== pending.databaseRevision ||
-    snapshot.project.version !== pending.projectVersion ||
-    snapshot.sequence !== pending.sequence ||
-    current.projectVersion !== pending.projectVersion ||
-    current.syncSequence !== pending.sequence
-  )
-    throw new Error('database.context-changed');
-  if (
-    current.version !== pending.expectedVersion ||
-    requestFingerprint(current.state) !== requestFingerprint(pending.before)
-  )
-    throw new Error('native.personal-conflict');
-  const result = personalStateSnapshotSchema.parse(
-    await api(url, {
-      ...body('PUT', {
-        expectedVersion: pending.expectedVersion,
-        expectedDatabaseRevision: pending.databaseRevision,
-        state: pending.state,
-      }),
-      headers: { Authorization: authorization },
-    }),
-  );
-  if (
-    result.version !== pending.expectedVersion + 1 ||
-    requestFingerprint(result.state) !== requestFingerprint(pending.state)
-  )
-    throw new Error('native.ack-mismatch');
-  if (pending.editorDraft)
-    discardNativeEditorDraft(pending.userId, pending.projectId, pending.editorDraft, storage);
-  discardNativeCanvasPersonalPending(pending, storage);
-  return result;
+) {
+  return recoverNativePrivateCanvas(pending, snapshot, allowReplay, { storage }, api);
 }
-
 /** Preview nodes can be reader-generated. Persist a real reference before moving an absent raw node. */
 export function nativeCanvasMoveCommand(
   source: NativeDesignDocument,
@@ -442,10 +363,6 @@ export function nativeCanvasScene(
     })
     .map((node) => {
       const table = document.tables?.find((table) => table.id === node.objectId);
-      const columns = (document.columns ?? []).filter(
-        (column) =>
-          column.tableId === table?.id && isVisibleInView(column.scope, mode, table!.scope),
-      );
       const kind = table
         ? 'table'
         : document.domains.some((domain) => domain.id === node.objectId)
@@ -458,7 +375,16 @@ export function nativeCanvasScene(
         width: size.width,
         height: Math.min(
           nodeLayoutSchema.shape.height.maxValue!,
-          Math.max(size.height, table ? 78 + columns.length * 34 : size.height),
+          Math.max(
+            size.height,
+            table
+              ? 78 +
+                  nativeTableCanvasRows(document, table, mode).reduce(
+                    (height, row) => height + row.height,
+                    0,
+                  )
+              : size.height,
+          ),
         ),
       };
     });
@@ -488,9 +414,22 @@ export function nativeCanvasScene(
           column.tableId === node.objectId && isVisibleInView(column.scope, mode, table.scope),
       );
       const index = columns.findIndex((column) => column.id === columnId);
+      const rows = nativeTableCanvasRows(document, table, mode);
       return index < 0
         ? undefined
-        : { side, ratio: Math.max(0, Math.min(1, (78 + index * 34 + 17) / node.height)) };
+        : {
+            side,
+            ratio: Math.max(
+              0,
+              Math.min(
+                1,
+                (78 +
+                  rows.slice(0, index).reduce((height, row) => height + row.height, 0) +
+                  rows[index]!.height / 2) /
+                  node.height,
+              ),
+            ),
+          };
     };
     const towardRight = target.x >= source.x;
     const sourceAnchor =
@@ -550,7 +489,9 @@ export function NativeERDCanvas({
   snapshot,
   userId,
   editable,
+  personalEditable = editable,
   busy,
+  recoveryBusy = busy,
   onSave,
   onReload,
   mode,
@@ -558,12 +499,17 @@ export function NativeERDCanvas({
   selectedDomainId,
   onSelect,
   onSelectDomain,
+  recoverySelection,
 }: {
   document: NativeDesignDocument;
   snapshot: ProjectDocumentState;
   userId?: string;
   editable: boolean;
+  /** Main can pass the workspace's own-personal permission separately from shared editing. */
+  personalEditable?: boolean;
   busy: boolean;
+  /** External operations may block recovery; the pending row itself must not. */
+  recoveryBusy?: boolean;
   onSave: NativeEditorSave;
   onReload: () => void;
   mode: 'physical' | 'logical';
@@ -571,12 +517,25 @@ export function NativeERDCanvas({
   selectedDomainId?: string;
   onSelect: (tableId: string, columnId?: string) => void;
   onSelectDomain?: (domainId: string) => void;
+  recoverySelection?: NativeCanvasRecoverySelection;
 }) {
   const { t } = useI18n();
-  const [viewId, setViewId] = useState(selectedDomainId ? 'overview' : TABLES_VIEW_ID);
+  const [viewId, setViewId] = useState(
+    recoverySelection?.viewId ?? (selectedDomainId ? 'overview' : TABLES_VIEW_ID),
+  );
   const [personal, setPersonal] = useState<PersonalStateSnapshot | null>(null);
   const [personalPending, setPersonalPending] = useState<NativeCanvasPersonalPending | null>(null);
   const [personalBusy, setPersonalBusy] = useState(false);
+  const [privateQueueState, setPrivateQueueState] = useState<NativeDurableState>('unknown');
+  const privateIdentity = JSON.stringify([
+    userId,
+    snapshot.project.id,
+    snapshot.project.databaseRevision,
+    snapshot.project.version,
+    snapshot.sequence,
+  ]);
+  const activeIdentity = useRef(privateIdentity);
+  activeIdentity.current = privateIdentity;
   const [error, setError] = useState('');
   const [storageError, setStorageError] = useState('');
   const [sharedStorageFailure, setSharedStorageFailure] = useState(false);
@@ -586,6 +545,7 @@ export function NativeERDCanvas({
     if (selectedDomainId && !draftRef.current && !gesture.current) setViewId('overview');
   }, [selectedDomainId]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
   const gesture = useRef<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>(
     null,
@@ -606,28 +566,83 @@ export function NativeERDCanvas({
     return () => element.removeEventListener('wheel', prevent);
   }, []);
   useEffect(() => {
+    setPersonal(null);
+    setPersonalPending(null);
+    setPersonalBusy(false);
+    setPrivateQueueState('unknown');
     if (!userId) return;
     let active = true;
-    setPersonal(null);
+    const current = () => active && activeIdentity.current === privateIdentity;
+    let unsubscribe = () => {};
     try {
-      setPersonalPending(loadNativeCanvasPersonalPending(userId, snapshot.project.id));
-    } catch (error) {
-      setError(message(error));
-      setStorageError(message(error));
-    }
-    request(`/api/projects/${encodeURIComponent(snapshot.project.id)}/personal-state`, {
-      cache: 'no-store',
-    })
-      .then((raw) => {
-        if (active) setPersonal(personalStateSnapshotSchema.parse(raw));
-      })
-      .catch((error) => {
-        if (active) setError(message(error));
+      const actorApi = captureNativeActorApi(userId);
+      const queue = getNativeDurableQueue();
+      let refreshing = false;
+      let lastQueueState: NativeDurableState = 'unknown';
+      let queueInitialized = false;
+      const fetchPersonal = async () => {
+        const raw = await actorApi(
+          `/api/projects/${encodeURIComponent(snapshot.project.id)}/personal-state`,
+          { cache: 'no-store' },
+        );
+        const parsed =
+          raw && typeof raw === 'object' && 'databaseRevision' in raw
+            ? nativePrivateSnapshotSchema.parse(raw)
+            : personalStateSnapshotSchema.parse(raw);
+        if (!current()) return;
+        if (
+          parsed.projectVersion !== snapshot.project.version ||
+          parsed.syncSequence !== snapshot.sequence ||
+          ('databaseRevision' in parsed &&
+            parsed.databaseRevision !== snapshot.project.databaseRevision)
+        ) {
+          onReload();
+          return;
+        }
+        setPersonal(parsed);
+      };
+      const refresh = async () => {
+        if (refreshing || !current()) return;
+        refreshing = true;
+        try {
+          const pending = await loadNativeCanvasPersonalPending(userId, snapshot.project.id);
+          if (current()) {
+            setPersonalPending(pending);
+            const state = queue.state(userId, snapshot.project.id);
+            setPrivateQueueState(state);
+            const finished = queueInitialized && state === 'empty' && lastQueueState !== 'empty';
+            queueInitialized = true;
+            lastQueueState = state;
+            if (finished) await fetchPersonal();
+          }
+        } catch (error) {
+          if (current()) {
+            setError(message(error));
+            setStorageError(message(error));
+            setPrivateQueueState('unknown');
+          }
+        } finally {
+          refreshing = false;
+        }
+      };
+      unsubscribe = queue.subscribe(userId, snapshot.project.id, () => {
+        void refresh();
       });
+      void refresh();
+      void fetchPersonal().catch((error) => {
+        if (current()) setError(message(error));
+      });
+    } catch (error) {
+      if (current()) {
+        setError(message(error));
+        setStorageError(message(error));
+      }
+    }
     return () => {
       active = false;
+      unsubscribe();
     };
-  }, [userId, snapshot.project.id, snapshot.project.version, snapshot.sequence]);
+  }, [userId, privateIdentity, snapshot.project.id]);
   const sharedSource =
     snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document;
   const base = personal
@@ -649,8 +664,18 @@ export function NativeERDCanvas({
       ? viewId
       : TABLES_VIEW_ID;
   const isPrivate = privateView(base, effectiveView);
-  const personalReady = personalGuardAvailable();
-  const allBusy = busy || personalBusy || !!personalPending || (isPrivate && !personalReady);
+  const recoveryWaiting =
+    !!recoverySelection?.viewId && viewId === recoverySelection.viewId && effectiveView !== viewId;
+  const placementEditable = isPrivate ? personalEditable : editable;
+  const personalReady = personalGuardAvailable() && !!personal && 'databaseRevision' in personal;
+  const allBusy =
+    busy ||
+    recoveryWaiting ||
+    personalBusy ||
+    !!personalPending ||
+    privateQueueState === 'pending' ||
+    privateQueueState === 'sending' ||
+    (isPrivate && (!personalReady || privateQueueState !== 'empty'));
   const inputKey = `canvas:placement:${effectiveView}`;
   const savedCamera = personal?.state.viewports.find(
     (viewport) => viewport.viewId === effectiveView,
@@ -676,6 +701,7 @@ export function NativeERDCanvas({
       draftRef.current = null;
       return;
     }
+    if (recoveryWaiting) return;
     try {
       const loaded = loadNativeEditorDraft(userId, snapshot.project.id, inputKey);
       setDraft(loaded);
@@ -690,6 +716,7 @@ export function NativeERDCanvas({
     );
     setCamera(viewport ?? { viewId: effectiveView, x: 24, y: 24, zoom: 1 });
   }, [
+    recoveryWaiting,
     inputKey,
     userId,
     snapshot.project.id,
@@ -715,7 +742,7 @@ export function NativeERDCanvas({
   };
   const drawn = nativeCanvasScene(displayDoc, effectiveView, mode);
   function preserve(node: NodeLayout, x: number, y: number) {
-    if (!userId || !editable || allBusy || stale) return;
+    if (!userId || !placementEditable || allBusy || stale) return;
     if (
       base.domains.some((domain) => domain.id === node.objectId) &&
       !sharedSource.layout.nodes.some((raw) => raw.id === node.id)
@@ -770,7 +797,8 @@ export function NativeERDCanvas({
     command: NativePersonalCanvasCommand,
     editorDraft?: DraftRef,
   ): Promise<boolean> {
-    if (!userId || !editable || allBusy || !personal) return false;
+    if (!userId || !personalEditable || allBusy || !personal || privateQueueState !== 'empty')
+      return false;
     if (!personalReady) {
       setError(
         t(
@@ -780,12 +808,19 @@ export function NativeERDCanvas({
       return false;
     }
     setPersonalBusy(true);
+    const identity = privateIdentity;
+    const current = () => alive.current && activeIdentity.current === identity;
     setError('');
     try {
-      const candidate = nativeCanvasPersonalCandidate(base, command);
+      // A reader preview may contain generated shared layout; only original native source is persisted.
+      const personalSource = mergeStoredPersonalState(
+        sharedSource,
+        reconcilePersonalState(sharedSource, personal.state),
+      );
+      const candidate = nativeCanvasPersonalCandidate(personalSource, command);
       let staged: NativeCanvasPersonalPending;
       try {
-        staged = stageNativeCanvasPersonal(
+        staged = await stageNativeCanvasPersonal(
           userId,
           snapshot,
           personal,
@@ -794,27 +829,29 @@ export function NativeERDCanvas({
           editorDraft,
         );
       } catch (error) {
-        setStorageError(message(error));
+        if (current()) setStorageError(message(error));
         throw error;
       }
-      setStorageError('');
-      setPersonalPending(staged);
-      const result = await recoverNativeCanvasPersonal(staged, snapshot, editable);
-      if (!alive.current) return true;
-      setPersonalPending(null);
+      if (current()) {
+        setStorageError('');
+        setPersonalPending(staged);
+      }
+      const result = await recoverNativeCanvasPersonal(staged, snapshot, personalEditable);
+      if (!current()) return true;
+      setPersonalPending((value) => (value?.revision === staged.revision ? null : value));
       setPersonal(result);
       onReload();
       return true;
     } catch (error) {
-      if (alive.current) setError(message(error));
+      if (current()) setError(message(error));
       return false;
     } finally {
-      if (alive.current) setPersonalBusy(false);
+      if (current()) setPersonalBusy(false);
     }
   }
   async function savePlacement() {
     const current = draftRef.current;
-    if (!userId || !current || !editable || allBusy || stale || storageError) return;
+    if (!userId || !current || !placementEditable || allBusy || stale || storageError) return;
     try {
       const commands = (JSON.parse(current.values.commands!) as unknown[]).map((command) =>
         nativeEditorCommandSchema.parse(command),
@@ -859,7 +896,7 @@ export function NativeERDCanvas({
   function begin(event: PointerEvent<HTMLElement>, node: NodeLayout) {
     if (
       event.button !== 0 ||
-      !editable ||
+      !placementEditable ||
       allBusy ||
       stale ||
       (event.target instanceof Element && event.target.closest('button,input,select,textarea'))
@@ -910,7 +947,7 @@ export function NativeERDCanvas({
         </Button>
         <Button onClick={() => setCamera(savedCamera)}>{t('카메라 초기화')}</Button>
         <span>{Math.round(camera.zoom * 100)}%</span>
-        {editable && (
+        {personalEditable && (
           <Button
             disabled={allBusy || !personal || !personalReady}
             onClick={() =>
@@ -925,7 +962,7 @@ export function NativeERDCanvas({
         )}
       </div>
       {error && <p role="alert">{error}</p>}
-      {editable && !personalReady && (
+      {personalEditable && !personalReady && (
         <p role="status">
           {t(
             '개인 화면 저장은 아직 지원하지 않습니다. 이 프로젝트에서는 공유 캔버스를 사용해 주세요.',
@@ -961,7 +998,7 @@ export function NativeERDCanvas({
               </dl>
               <Button
                 disabled={
-                  !editable ||
+                  !placementEditable ||
                   allBusy ||
                   draft.expected.databaseRevision !== snapshot.project.databaseRevision ||
                   !scene.nodes.some((node) => node.objectId === draft.values.objectId) ||
@@ -1012,7 +1049,7 @@ export function NativeERDCanvas({
             </>
           )}
           <Button
-            disabled={!editable || allBusy || stale || !!storageError}
+            disabled={!placementEditable || allBusy || stale || !!storageError}
             onClick={() => void savePlacement()}
           >
             {t('배치 저장')}
@@ -1036,34 +1073,89 @@ export function NativeERDCanvas({
           <Button
             disabled={personalBusy}
             onClick={() => {
+              const identity = privateIdentity;
+              const current = () => alive.current && activeIdentity.current === identity;
               setPersonalBusy(true);
-              void recoverNativeCanvasPersonal(personalPending, snapshot, editable)
+              void recoverNativeCanvasPersonal(personalPending, snapshot, personalEditable)
                 .then((result) => {
-                  if (alive.current) {
-                    setPersonalPending(null);
+                  if (current()) {
+                    setPersonalPending((value) =>
+                      value?.revision === personalPending.revision ? null : value,
+                    );
                     setPersonal(result);
                     onReload();
                   }
                 })
                 .catch((error) => {
-                  if (alive.current) setError(message(error));
+                  if (current()) setError(message(error));
                 })
                 .finally(() => {
-                  if (alive.current) setPersonalBusy(false);
+                  if (current()) setPersonalBusy(false);
                 });
             }}
           >
             {t('개인 저장 결과 확인')}
           </Button>
           <Button
-            disabled={personalBusy}
+            disabled={
+              personalBusy || privateQueueState === 'unknown' || privateQueueState === 'sending'
+            }
             onClick={() => {
-              discardNativeCanvasPersonalPending(personalPending);
-              setPersonalPending(null);
+              const identity = privateIdentity;
+              const current = () => alive.current && activeIdentity.current === identity;
+              setPersonalBusy(true);
+              void discardNativeCanvasPersonalPending(personalPending)
+                .then(() => {
+                  if (current())
+                    setPersonalPending((value) =>
+                      value?.revision === personalPending.revision ? null : value,
+                    );
+                })
+                .catch((error) => {
+                  if (current()) setError(message(error));
+                })
+                .finally(() => {
+                  if (current()) setPersonalBusy(false);
+                });
             }}
           >
             {t('개인 요청 초기화')}
           </Button>
+          {!!userId && (
+            <NativePrivateCASRecovery
+              userId={userId}
+              snapshot={snapshot}
+              pending={personalPending}
+              disabled={recoveryBusy || personalBusy || privateQueueState === 'sending'}
+              options={{
+                assertCurrent: () => {
+                  if (!alive.current || activeIdentity.current !== privateIdentity)
+                    throw Error('native.private-proof-scope-mismatch');
+                },
+              }}
+              onDiscard={(archive) => {
+                if (
+                  !alive.current ||
+                  activeIdentity.current !== privateIdentity ||
+                  archive.pending.revision !== personalPending.revision
+                )
+                  return;
+                setPersonalPending((value) =>
+                  value?.revision === archive.pending.revision ? null : value,
+                );
+                setError('');
+                void getNativeDurableQueue()
+                  .read(userId, snapshot.project.id)
+                  .then(() => {
+                    if (alive.current && activeIdentity.current === privateIdentity) onReload();
+                  })
+                  .catch((error) => {
+                    if (alive.current && activeIdentity.current === privateIdentity)
+                      setError(message(error));
+                  });
+              }}
+            />
+          )}
         </div>
       )}
       <div
@@ -1104,15 +1196,21 @@ export function NativeERDCanvas({
             {drawn.relations.map(({ relation, geometry, label }) => (
               <g key={relation.id} data-relation-id={relation.id}>
                 <path d={geometry.path} markerEnd="url(#native-fk-arrow)" />
-                <text x={geometry.labelX} y={geometry.labelY}>
+                <text x={geometry.labelX} y={geometry.labelY} textAnchor="middle">
                   {label}
                 </text>
-                <title>
-                  {label}: {relation.sourceTableId} → {relation.targetTableId}
-                </title>
+                <title>{`${label}: ${relation.sourceTableId} → ${relation.targetTableId}`}</title>
               </g>
             ))}
           </svg>
+          {effectiveView === 'overview' && (
+            <NativeDomainLines
+              document={base}
+              nodes={drawn.nodes}
+              {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
+              onSelect={setSelectedDomainRelation}
+            />
+          )}
           {drawn.nodes.map((node) => {
             const table = base.tables?.find((table) => table.id === node.objectId);
             const note = base.notes.find((note) => note.id === node.objectId);
@@ -1143,9 +1241,7 @@ export function NativeERDCanvas({
                   top: node.y,
                   width: node.width,
                   height: node.height,
-                  ...(note?.color || domain?.color
-                    ? { borderColor: note?.color ?? domain?.color }
-                    : {}),
+                  borderColor: nativeCardColor(base, node.objectId),
                 }}
                 onFocus={() => setSelectedNode(node.id)}
                 onClick={(event) => {
@@ -1220,47 +1316,12 @@ export function NativeERDCanvas({
                       <small>{table.physical.namespace.name || 'public'}</small>
                     )}
                     <table>
-                      <tbody>
-                        {(base.columns ?? [])
-                          .filter(
-                            (column) =>
-                              column.tableId === table.id &&
-                              isVisibleInView(column.scope, mode, table.scope),
-                          )
-                          .map((column) => (
-                            <tr key={column.id} data-column-id={column.id}>
-                              <td>
-                                {(base.keys ?? [])
-                                  .filter(
-                                    (key) =>
-                                      key.tableId === table.id &&
-                                      key.columnIds.includes(column.id) &&
-                                      isVisibleInView(key.scope, mode, table.scope),
-                                  )
-                                  .map((key) => (key.kind === 'primary' ? 'PK' : 'UQ'))
-                                  .join(' ')}
-                              </td>
-                              <th>
-                                <button type="button" onClick={() => onSelect(table.id, column.id)}>
-                                  {mode === 'physical'
-                                    ? column.physical.name || column.logical.name
-                                    : column.logical.name || column.physical.name}
-                                </button>
-                              </th>
-                              <td
-                                title={
-                                  mode === 'physical'
-                                    ? `${nativeDefaultDisplay(column.physical.defaultValue, base)} · ${nativeGenerationDisplay(column.physical.generation, base)}`
-                                    : column.logical.definition
-                                }
-                              >
-                                {mode === 'physical'
-                                  ? nativeColumnTypeDisplay(column.physical.type, base.enums)
-                                  : column.logical.semanticType}
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
+                      <NativeCanvasTableRows
+                        document={base}
+                        table={table}
+                        mode={mode}
+                        onSelect={onSelect}
+                      />
                     </table>
                   </>
                 )}
@@ -1283,6 +1344,39 @@ export function NativeERDCanvas({
           <p className="native-erd-empty">{t('이 화면에 표시할 노드가 없습니다.')}</p>
         )}
       </div>
+      <NativeCanvasPngExport
+        snapshot={snapshot}
+        {...(userId ? { userId } : {})}
+        viewId={effectiveView}
+        mode={mode}
+        sceneFor={nativeCanvasScene}
+        {...(personal ? { personal } : {})}
+        personalBusy={personalBusy}
+        writerState={privateQueueState}
+      />
+      <NativeDomainRelationEditor
+        document={sharedSource}
+        editable={editable}
+        {...(recoverySelection?.domainRelation
+          ? {
+              initialAction: recoverySelection.domainRelation.action,
+              ...(recoverySelection.domainRelation.id
+                ? { selectedId: recoverySelection.domainRelation.id }
+                : {}),
+            }
+          : selectedDomainRelation
+            ? { selectedId: selectedDomainRelation }
+            : {})}
+        {...(userId ? { context: { userId, snapshot, busy: allBusy || !!draft, onSave } } : {})}
+      />
+      <NativeCanvasStyleEditor
+        document={sharedSource}
+        editable={editable}
+        {...(selectedTableId ? { selectedTableId } : {})}
+        {...(selectedDomainId ? { selectedDomainId } : {})}
+        {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
+        {...(userId ? { context: { userId, snapshot, busy: allBusy || !!draft, onSave } } : {})}
+      />
       <NativeClipboardMenu
         key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
         snapshot={snapshot}
@@ -1295,7 +1389,12 @@ export function NativeERDCanvas({
           base.domains.some((domain) => domain.id === effectiveView) ? effectiveView : null
         }
       />
-      {userId && editable && (
+      {recoveryWaiting && (
+        <p role="status">
+          {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
+        </p>
+      )}
+      {userId && (editable || personalEditable) && !recoveryWaiting && (
         <NativeCanvasActions
           key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}
           document={base}
@@ -1306,6 +1405,8 @@ export function NativeERDCanvas({
           busy={allBusy || !!draft || (isPrivate && !personal)}
           onSave={saveCanvasCommand}
           onSharedSave={onSave}
+          sharedEditable={editable}
+          {...(recoverySelection?.action ? { initialSelection: recoverySelection.action } : {})}
         />
       )}
     </section>
@@ -1321,6 +1422,8 @@ function NativeCanvasActions({
   busy,
   onSave,
   onSharedSave,
+  sharedEditable,
+  initialSelection,
 }: {
   document: NativeDesignDocument;
   source: NativeDesignDocument;
@@ -1330,10 +1433,12 @@ function NativeCanvasActions({
   busy: boolean;
   onSave: (command: NativePersonalCanvasCommand, editorDraft?: DraftRef) => Promise<boolean>;
   onSharedSave: NativeEditorSave;
+  sharedEditable: boolean;
+  initialSelection?: { action: string; target: string };
 }) {
   const { t } = useI18n();
-  const [action, setAction] = useState('note');
-  const [target, setTarget] = useState('');
+  const [action, setAction] = useState(initialSelection?.action ?? 'note');
+  const [target, setTarget] = useState(initialSelection?.target ?? '');
   const [id] = useState(() => nativeDurableId());
   const isPrivate = privateView(document, viewId),
     placementView = viewFor(document, viewId);
@@ -1346,18 +1451,20 @@ function NativeCanvasActions({
     affectsSharedDocument: !isPrivate && !['view', 'view-edit', 'view-delete'].includes(action),
     onSave: async (commands: CanvasCommand[], exp: ReturnType<typeof expected>, ref?: DraftRef) => {
       if (!commands.length) return false;
-      if (!isPrivate && !['view', 'view-edit', 'view-delete'].includes(action))
+      if (!isPrivate && !['view', 'view-edit', 'view-delete'].includes(action)) {
+        if (!sharedEditable) return false;
         return onSharedSave(
           commands.map((command) => nativeEditorCommandSchema.parse(command)),
           exp,
           ref,
         );
+      }
       const command = nativePersonalCanvasCommandSchema.parse(commands[0]);
       return onSave(command, ref);
     },
   };
   return (
-    <details className="native-erd-actions">
+    <details className="native-erd-actions" open={initialSelection ? true : undefined}>
       <summary>
         {t('공유 캔버스')} / {t('개인 화면')}
       </summary>
@@ -1426,7 +1533,8 @@ function NativeCanvasActions({
         }}
         disabled={
           (['view', 'view-edit'].includes(action) && !document.domains.length) ||
-          (action.startsWith('view') && !personalGuardAvailable())
+          (action.startsWith('view') && !personalGuardAvailable()) ||
+          (!isPrivate && !sharedEditable && !action.startsWith('view'))
         }
         build={(values) => {
           let command: unknown;

@@ -1,0 +1,801 @@
+{
+  "result": "PASS",
+  "before": [
+    {
+      "id": "2bafc83a-0ec6-4c04-b021-2f5223d6dd9d",
+      "name": "Final MySQL QA",
+      "version": 6,
+      "sync_sequence": 6,
+      "database_kind": "mysql",
+      "database_revision": 0,
+      "document": {
+        "keys": [
+          {
+            "id": "ac431689-33f6-4117-b534-e0ebee594ba2",
+            "kind": "primary",
+            "name": "items_pk",
+            "scope": "physical",
+            "tableId": "def950c5-5f0e-4e2a-9896-4b423ac2776e",
+            "columnIds": [
+              "90e84af8-6b96-4e58-af11-fb87f7a3b6e5"
+            ]
+          }
+        ],
+        "enums": [],
+        "notes": [],
+        "checks": [],
+        "layout": {
+          "nodes": [],
+          "relations": [],
+          "viewports": []
+        },
+        "tables": [
+          {
+            "id": "def950c5-5f0e-4e2a-9896-4b423ac2776e",
+            "scope": "physical",
+            "logical": {
+              "name": "",
+              "definition": ""
+            },
+            "domainId": null,
+            "physical": {
+              "name": "items",
+              "comment": "",
+              "options": {
+                "engine": "InnoDB",
+                "charset": "utf8mb4",
+                "database": "mysql"
+              },
+              "namespace": {
+                "kind": "mysqlCurrentDatabase"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "columns": [
+          {
+            "id": "90e84af8-6b96-4e58-af11-fb87f7a3b6e5",
+            "scope": "physical",
+            "logical": {
+              "name": "",
+              "required": false,
+              "definition": "",
+              "semanticType": ""
+            },
+            "tableId": "def950c5-5f0e-4e2a-9896-4b423ac2776e",
+            "physical": {
+              "name": "item_id",
+              "type": {
+                "kind": "builtin",
+                "typeId": "mysql:int",
+                "database": "mysql",
+                "parameters": {
+                  "unsigned": true
+                }
+              },
+              "comment": "",
+              "options": {
+                "database": "mysql"
+              },
+              "nullable": false,
+              "generation": {
+                "kind": "none"
+              },
+              "defaultValue": {
+                "kind": "literal",
+                "value": "7",
+                "literalType": "number"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "domains": [],
+        "indexes": [
+          {
+            "id": "c942354f-27ea-453d-8807-993e60206058",
+            "name": "items_hidden_ix",
+            "parts": [
+              {
+                "direction": "asc",
+                "expression": {
+                  "kind": "column",
+                  "columnId": "90e84af8-6b96-4e58-af11-fb87f7a3b6e5"
+                }
+              }
+            ],
+            "scope": "physical",
+            "unique": false,
+            "options": {
+              "kind": "btree",
+              "database": "mysql",
+              "invisible": true
+            },
+            "tableId": "def950c5-5f0e-4e2a-9896-4b423ac2776e"
+          }
+        ],
+        "database": {
+          "kind": "mysql",
+          "profileId": "mysql-8.4-innodb-v1"
+        },
+        "schemaVersion": 2,
+        "tableRelations": [],
+        "domainRelations": []
+      }
+    },
+    {
+      "id": "f14b9527-1577-4117-bcca-4814398745e2",
+      "name": "Final SQLite QA",
+      "version": 5,
+      "sync_sequence": 5,
+      "database_kind": "sqlite",
+      "database_revision": 0,
+      "document": {
+        "keys": [
+          {
+            "id": "e2a9c236-7172-4bd6-bf81-0694fcbec49c",
+            "kind": "primary",
+            "name": "strict_items_pk",
+            "scope": "physical",
+            "tableId": "ab267299-ad0f-46a3-9f18-19e44f9e1b07",
+            "columnIds": [
+              "26cafbc5-15be-482a-8052-e475646b1a78"
+            ]
+          }
+        ],
+        "enums": [],
+        "notes": [],
+        "checks": [],
+        "layout": {
+          "nodes": [],
+          "relations": [],
+          "viewports": []
+        },
+        "tables": [
+          {
+            "id": "ab267299-ad0f-46a3-9f18-19e44f9e1b07",
+            "scope": "physical",
+            "logical": {
+              "name": "",
+              "definition": ""
+            },
+            "domainId": null,
+            "physical": {
+              "name": "strict_items",
+              "comment": "",
+              "options": {
+                "strict": true,
+                "database": "sqlite",
+                "withoutRowid": true
+              },
+              "namespace": {
+                "kind": "sqliteMain"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "columns": [
+          {
+            "id": "26cafbc5-15be-482a-8052-e475646b1a78",
+            "scope": "physical",
+            "logical": {
+              "name": "",
+              "required": false,
+              "definition": "",
+              "semanticType": ""
+            },
+            "tableId": "ab267299-ad0f-46a3-9f18-19e44f9e1b07",
+            "physical": {
+              "name": "id",
+              "type": {
+                "kind": "builtin",
+                "typeId": "sqlite:integer",
+                "database": "sqlite",
+                "parameters": {}
+              },
+              "comment": "",
+              "options": {
+                "database": "sqlite"
+              },
+              "nullable": false,
+              "generation": {
+                "kind": "none"
+              },
+              "defaultValue": {
+                "kind": "none"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "domains": [],
+        "indexes": [],
+        "database": {
+          "kind": "sqlite",
+          "profileId": "sqlite-3.45-v1"
+        },
+        "schemaVersion": 2,
+        "tableRelations": [],
+        "domainRelations": []
+      }
+    },
+    {
+      "id": "0161ac12-2562-4c93-8b57-898c7cbbf891",
+      "name": "Final Empty Change QA",
+      "version": 0,
+      "sync_sequence": 0,
+      "database_kind": "postgresql",
+      "database_revision": 0,
+      "document": {
+        "keys": [],
+        "enums": [],
+        "notes": [],
+        "checks": [],
+        "layout": {
+          "nodes": [],
+          "relations": [],
+          "viewports": []
+        },
+        "tables": [],
+        "columns": [],
+        "domains": [],
+        "indexes": [],
+        "database": {
+          "kind": "postgresql",
+          "profileId": "postgresql-18-v1"
+        },
+        "schemaVersion": 2,
+        "tableRelations": [],
+        "domainRelations": []
+      }
+    },
+    {
+      "id": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+      "name": "Final Legacy Upgrade QA",
+      "version": 4,
+      "sync_sequence": 4,
+      "database_kind": "postgresql",
+      "database_revision": 1,
+      "document": {
+        "notes": [],
+        "layout": {
+          "nodes": [
+            {
+              "x": 320,
+              "y": 183.125,
+              "id": "node:cbb6a6e7-e6c0-47cd-950c-99bf7e7df505:__tables__",
+              "width": 320,
+              "height": 260,
+              "viewId": "__tables__",
+              "objectId": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505"
+            }
+          ],
+          "viewports": [
+            {
+              "x": 0,
+              "y": 0,
+              "zoom": 1,
+              "viewId": "overview"
+            }
+          ]
+        },
+        "tables": [
+          {
+            "id": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505",
+            "scope": "physical",
+            "logical": {
+              "name": "새 테이블",
+              "definition": ""
+            },
+            "domainId": null,
+            "physical": {
+              "name": "legacy_items",
+              "comment": "",
+              "options": {
+                "database": "postgresql"
+              },
+              "namespace": {
+                "kind": "postgresSchema",
+                "name": "public"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "columns": [
+          {
+            "id": "ab4bfe65-67d8-439d-8b92-e9082794d232",
+            "scope": "physical",
+            "logical": {
+              "name": "",
+              "required": false,
+              "definition": "",
+              "semanticType": ""
+            },
+            "tableId": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505",
+            "physical": {
+              "name": "signed_id",
+              "type": {
+                "kind": "builtin",
+                "typeId": "postgresql:integer",
+                "database": "postgresql",
+                "parameters": {}
+              },
+              "comment": "",
+              "options": {
+                "database": "postgresql"
+              },
+              "nullable": false,
+              "generation": {
+                "kind": "none"
+              },
+              "defaultValue": {
+                "kind": "none"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "domains": [],
+        "database": {
+          "kind": "postgresql",
+          "profileId": "postgresql-18-v1"
+        },
+        "schemaVersion": 2,
+        "domainRelations": []
+      }
+    }
+  ],
+  "socketRetry": {
+    "project": {
+      "id": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+      "name": "Final Converted QA",
+      "version": 6,
+      "sync_sequence": 5,
+      "database_kind": "mysql",
+      "database_revision": 2,
+      "document": {
+        "notes": [],
+        "layout": {
+          "nodes": [
+            {
+              "x": 320,
+              "y": 183.125,
+              "id": "node:cbb6a6e7-e6c0-47cd-950c-99bf7e7df505:__tables__",
+              "width": 320,
+              "height": 260,
+              "viewId": "__tables__",
+              "objectId": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505"
+            }
+          ],
+          "viewports": [
+            {
+              "x": 0,
+              "y": 0,
+              "zoom": 1,
+              "viewId": "overview"
+            }
+          ]
+        },
+        "tables": [
+          {
+            "id": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505",
+            "scope": "physical",
+            "logical": {
+              "name": "새 테이블",
+              "definition": ""
+            },
+            "domainId": null,
+            "physical": {
+              "name": "legacy_items",
+              "comment": "",
+              "options": {
+                "engine": "InnoDB",
+                "database": "mysql"
+              },
+              "namespace": {
+                "kind": "mysqlCurrentDatabase"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "columns": [
+          {
+            "id": "ab4bfe65-67d8-439d-8b92-e9082794d232",
+            "scope": "physical",
+            "logical": {
+              "name": "",
+              "required": false,
+              "definition": "",
+              "semanticType": ""
+            },
+            "tableId": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505",
+            "physical": {
+              "name": "signed_id",
+              "type": {
+                "kind": "builtin",
+                "typeId": "mysql:int",
+                "database": "mysql",
+                "parameters": {}
+              },
+              "comment": "",
+              "options": {
+                "database": "mysql"
+              },
+              "nullable": false,
+              "generation": {
+                "kind": "none"
+              },
+              "defaultValue": {
+                "kind": "none"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "domains": [],
+        "database": {
+          "kind": "mysql",
+          "profileId": "mysql-8.4-innodb-v1"
+        },
+        "schemaVersion": 2,
+        "domainRelations": []
+      }
+    },
+    "operations": [
+      {
+        "operation_id": "eb3ed60d-2a9d-4951-a054-b0f64044d415",
+        "result": {
+          "changed": true,
+          "version": 5,
+          "database": {
+            "kind": "mysql",
+            "revision": 2,
+            "profileId": "mysql-8.4-innodb-v1"
+          },
+          "sequence": 5,
+          "projectId": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+          "operationId": "eb3ed60d-2a9d-4951-a054-b0f64044d415"
+        }
+      }
+    ]
+  },
+  "ackLost": {
+    "project": {
+      "id": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+      "name": "Final Converted QA",
+      "version": 7,
+      "sync_sequence": 6,
+      "database_kind": "postgresql",
+      "database_revision": 3,
+      "document": {
+        "notes": [],
+        "layout": {
+          "nodes": [
+            {
+              "x": 320,
+              "y": 183.125,
+              "id": "node:cbb6a6e7-e6c0-47cd-950c-99bf7e7df505:__tables__",
+              "width": 320,
+              "height": 260,
+              "viewId": "__tables__",
+              "objectId": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505"
+            }
+          ],
+          "viewports": [
+            {
+              "x": 0,
+              "y": 0,
+              "zoom": 1,
+              "viewId": "overview"
+            }
+          ]
+        },
+        "tables": [
+          {
+            "id": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505",
+            "scope": "physical",
+            "logical": {
+              "name": "새 테이블",
+              "definition": ""
+            },
+            "domainId": null,
+            "physical": {
+              "name": "legacy_items",
+              "comment": "",
+              "options": {
+                "database": "postgresql"
+              },
+              "namespace": {
+                "kind": "postgresSchema",
+                "name": "public"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "columns": [
+          {
+            "id": "ab4bfe65-67d8-439d-8b92-e9082794d232",
+            "scope": "physical",
+            "logical": {
+              "name": "",
+              "required": false,
+              "definition": "",
+              "semanticType": ""
+            },
+            "tableId": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505",
+            "physical": {
+              "name": "signed_id",
+              "type": {
+                "kind": "builtin",
+                "typeId": "postgresql:integer",
+                "database": "postgresql",
+                "parameters": {}
+              },
+              "comment": "",
+              "options": {
+                "database": "postgresql"
+              },
+              "nullable": false,
+              "generation": {
+                "kind": "none"
+              },
+              "defaultValue": {
+                "kind": "none"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "domains": [],
+        "database": {
+          "kind": "postgresql",
+          "profileId": "postgresql-18-v1"
+        },
+        "schemaVersion": 2,
+        "domainRelations": []
+      }
+    },
+    "operations": [
+      {
+        "operation_id": "eb3ed60d-2a9d-4951-a054-b0f64044d415",
+        "result": {
+          "changed": true,
+          "version": 5,
+          "database": {
+            "kind": "mysql",
+            "revision": 2,
+            "profileId": "mysql-8.4-innodb-v1"
+          },
+          "sequence": 5,
+          "projectId": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+          "operationId": "eb3ed60d-2a9d-4951-a054-b0f64044d415"
+        }
+      },
+      {
+        "operation_id": "b2c2c6f3-8896-4dee-93ab-987331aa1c64",
+        "result": {
+          "changed": true,
+          "version": 7,
+          "database": {
+            "kind": "postgresql",
+            "revision": 3,
+            "profileId": "postgresql-18-v1"
+          },
+          "sequence": 6,
+          "projectId": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+          "operationId": "b2c2c6f3-8896-4dee-93ab-987331aa1c64"
+        }
+      }
+    ]
+  },
+  "recovered": {
+    "project": {
+      "id": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+      "name": "Final Recovery QA",
+      "version": 8,
+      "sync_sequence": 6,
+      "database_kind": "postgresql",
+      "database_revision": 3,
+      "document": {
+        "notes": [],
+        "layout": {
+          "nodes": [
+            {
+              "x": 320,
+              "y": 183.125,
+              "id": "node:cbb6a6e7-e6c0-47cd-950c-99bf7e7df505:__tables__",
+              "width": 320,
+              "height": 260,
+              "viewId": "__tables__",
+              "objectId": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505"
+            }
+          ],
+          "viewports": [
+            {
+              "x": 0,
+              "y": 0,
+              "zoom": 1,
+              "viewId": "overview"
+            }
+          ]
+        },
+        "tables": [
+          {
+            "id": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505",
+            "scope": "physical",
+            "logical": {
+              "name": "새 테이블",
+              "definition": ""
+            },
+            "domainId": null,
+            "physical": {
+              "name": "legacy_items",
+              "comment": "",
+              "options": {
+                "database": "postgresql"
+              },
+              "namespace": {
+                "kind": "postgresSchema",
+                "name": "public"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "columns": [
+          {
+            "id": "ab4bfe65-67d8-439d-8b92-e9082794d232",
+            "scope": "physical",
+            "logical": {
+              "name": "",
+              "required": false,
+              "definition": "",
+              "semanticType": ""
+            },
+            "tableId": "cbb6a6e7-e6c0-47cd-950c-99bf7e7df505",
+            "physical": {
+              "name": "signed_id",
+              "type": {
+                "kind": "builtin",
+                "typeId": "postgresql:integer",
+                "database": "postgresql",
+                "parameters": {}
+              },
+              "comment": "",
+              "options": {
+                "database": "postgresql"
+              },
+              "nullable": false,
+              "generation": {
+                "kind": "none"
+              },
+              "defaultValue": {
+                "kind": "none"
+              }
+            },
+            "customProperties": {
+              "common": {},
+              "logical": {},
+              "physical": {}
+            }
+          }
+        ],
+        "domains": [],
+        "database": {
+          "kind": "postgresql",
+          "profileId": "postgresql-18-v1"
+        },
+        "schemaVersion": 2,
+        "domainRelations": []
+      }
+    },
+    "operations": [
+      {
+        "operation_id": "eb3ed60d-2a9d-4951-a054-b0f64044d415",
+        "result": {
+          "changed": true,
+          "version": 5,
+          "database": {
+            "kind": "mysql",
+            "revision": 2,
+            "profileId": "mysql-8.4-innodb-v1"
+          },
+          "sequence": 5,
+          "projectId": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+          "operationId": "eb3ed60d-2a9d-4951-a054-b0f64044d415"
+        }
+      },
+      {
+        "operation_id": "b2c2c6f3-8896-4dee-93ab-987331aa1c64",
+        "result": {
+          "changed": true,
+          "version": 7,
+          "database": {
+            "kind": "postgresql",
+            "revision": 3,
+            "profileId": "postgresql-18-v1"
+          },
+          "sequence": 6,
+          "projectId": "4a98d9a7-4511-44f1-a28c-84d0ac529639",
+          "operationId": "b2c2c6f3-8896-4dee-93ab-987331aa1c64"
+        }
+      }
+    ],
+    "sameIds": true,
+    "exactPlannedDocument": true
+  },
+  "downloadedSQL": {
+    "result": "PASS",
+    "source": "actual converted browser download without substitution",
+    "sha256": "bf5b641942829b944e311aef440ca3b304e9a552ebce2ac61baf1d0d4c89f10b",
+    "bytes": 189,
+    "version": "PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+    "value": 7,
+    "metadata": [
+      {
+        "data_type": "integer",
+        "is_nullable": "NO"
+      }
+    ],
+    "cleanup": "finally DROP exact owned database"
+  },
+  "browser": {
+    "unsupportedPhysicalSQLiteBlocked": true,
+    "exactInputAndNameAfterReload": true,
+    "emptyChange": "PG to SQLite accepted",
+    "socketLoss": "browser transparently retried; counted only as idempotent socket retry, not manual unknown recovery",
+    "pendingRecoveryButtonAbsentAfterAck": true,
+    "readonlyViewerOpened": true,
+    "bundle": "index-CzPIIWOA.js",
+    "acknowledgementLoss": "first successful upstream ACK drained and replaced by HTTP502; same original request manually confirmed after reload"
+  }
+}

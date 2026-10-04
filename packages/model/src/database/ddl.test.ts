@@ -7,6 +7,38 @@ import { databaseTypeCatalog } from './catalog.js';
 import type { NativeColumnType } from './native-document.js';
 
 describe('native whole-design DDL compiler', () => {
+  it('executes saved SQLite column collations instead of losing them in DDL', () => {
+    for (const [collation, expected] of [
+      ['BINARY', 0],
+      ['NOCASE', 1],
+      ['RTRIM', 1],
+    ] as const) {
+      const doc = nativeDDLFixture('sqlite');
+      doc.tables = [doc.tables![0]!];
+      doc.columns = doc.columns!.filter((column) => column.tableId === 'parent');
+      for (const column of doc.columns) column.physical.generation = { kind: 'none' };
+      doc.keys = [];
+      doc.indexes = [];
+      doc.checks = [];
+      doc.tableRelations = [];
+      const label = doc.columns!.find((column) => column.physical.name === 'label')!;
+      label.physical.options = { database: 'sqlite', collation };
+      const result = compileNativeDatabaseDDL(doc);
+      expect(result.canExport, JSON.stringify(result.issues)).toBe(true);
+      expect(result.sql).toContain('COLLATE "' + collation + '"');
+      const db = new DatabaseSync(':memory:');
+      try {
+        db.exec(result.sql);
+        db.exec("INSERT INTO parent(id,label) VALUES(1,'a');");
+        const value = collation === 'RTRIM' ? 'a ' : 'A';
+        expect(db.prepare('SELECT label=? AS matches FROM parent').get(value)).toEqual({
+          matches: expected,
+        });
+      } finally {
+        db.close();
+      }
+    }
+  });
   it('pins MySQL collation-only table charset and independent column charset default', () => {
     const doc = nativeDDLFixture('mysql');
     doc.tables![0]!.physical.options = {
@@ -119,8 +151,8 @@ describe('native whole-design DDL compiler', () => {
         );
       else expect(result.sql).not.toContain('ALTER TABLE');
       const gated = exportNativeDatabaseDDL(doc);
-      expect(gated).toMatchObject({ sql: '', canExport: false });
-      expect(gated.issues.some((issue) => issue.code === 'type.not-implemented')).toBe(true);
+      expect(gated).toMatchObject({ sql: result.sql, canExport: true });
+      expect(gated.issues.some((issue) => issue.code === 'feature.not-implemented')).toBe(false);
     },
   );
   it('executes SQLite generation/defaults/checks/FK cascades and safely preserves comments', () => {

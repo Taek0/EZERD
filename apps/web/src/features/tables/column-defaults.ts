@@ -1,7 +1,8 @@
 import { canonicalPostgresTypeName } from '@ezerd/model';
 import { translate } from '../../shared/i18n/index.js';
 import './translations.js';
-import type { Column, DesignDocument } from '@ezerd/model';
+import type { Column, DesignDocument, DatabaseKind } from '@ezerd/model';
+import { legacyDefaultChoice } from './legacy-database-editor-policy.js';
 
 type Physical = Column['physical'];
 export const autoIncrementDefault = '@auto';
@@ -18,7 +19,7 @@ const integerTypes: Record<string, string> = {
 export function isAutoIncrement(type: Physical['type']) {
   return !type.enumId && !type.isArray && !!integerTypes[canonicalPostgresTypeName(type.name)];
 }
-export function columnDefaultOptions(physical: Physical, enums: DesignDocument['enums'] = []) {
+function defaultChoices(physical: Physical, enums: DesignDocument['enums'] = []) {
   const { type, nullable } = physical;
   const name = canonicalPostgresTypeName(type.name);
   const choices = [{ value: '', label: translate('기본값 없음') }];
@@ -58,12 +59,23 @@ export function columnDefaultOptions(physical: Physical, enums: DesignDocument['
   }
   return choices;
 }
+export function columnDefaultOptions(
+  physical: Physical,
+  enums: DesignDocument['enums'] = [],
+  databaseKind?: DatabaseKind,
+) {
+  return defaultChoices(physical, enums).filter((choice) =>
+    legacyDefaultChoice(choice.value, databaseKind),
+  );
+}
 export function applyColumnDefault(
   physical: Physical,
   value: string,
   enums: DesignDocument['enums'] = [],
+  databaseKind?: DatabaseKind,
 ): Physical {
-  if (!columnDefaultOptions(physical, enums).some((item) => item.value === value)) return physical;
+  if (!columnDefaultOptions(physical, enums, databaseKind).some((item) => item.value === value))
+    return physical;
   if (value === autoIncrementDefault)
     return {
       ...physical,

@@ -115,20 +115,18 @@ describe('native structured forms and availability', () => {
       const f = fixture(kind),
         before = structuredClone(f.document);
       const policy = nativeEditorPolicy(f.document, f.table, f.column);
-      expect(policy.types.filter((type) => type.usable)).toEqual([]);
+      expect(policy.types.filter((type) => type.usable)).toHaveLength(
+        kind === 'postgresql' ? 64 : kind === 'mysql' ? 37 : 23,
+      );
       const html = renderToStaticMarkup(
         createElement(NativeFormatEditor, { ...f, context: f.context }),
       );
-      for (const label of [
-        kind === 'mysql' ? 'mysql:int' : `${kind}:integer`,
-        '미구현 또는 실행 검증 미완료',
-        '현재 값',
-      ])
+      for (const label of [kind === 'mysql' ? 'mysql:int' : `${kind}:integer`, '현재 값'])
         expect(html).toContain(label);
       for (const foreign of ['postgresql', 'mysql', 'sqlite'].filter((item) => item !== kind))
         expect(html).not.toContain(`<option value="${foreign}:`);
       expect(policy.types.every((item) => item.definition.databaseKind === kind)).toBe(true);
-      expect(html).toMatch(
+      expect(html).not.toMatch(
         new RegExp(`disabled=""[^>]*>${kind === 'mysql' ? 'mysql:int' : `${kind}:integer`}`),
       );
       expect(f.document).toEqual(before);
@@ -144,11 +142,11 @@ describe('native structured forms and availability', () => {
         f.document,
         f.table,
         f.column,
-        { ...initial, typeChoice: 'postgresql:integer', confirmTypeReset: 'true' },
+        { ...initial, typeChoice: 'postgresql:txid_snapshot', confirmTypeReset: 'true' },
         initial,
       ),
     ).toThrow('type.not-implemented');
-    expect(() =>
+    expect(
       nativeStructureCommands(f.document, f.table, 'key', {
         id: 'key',
         name: 'pk',
@@ -156,9 +154,9 @@ describe('native structured forms and availability', () => {
         scope: 'physical',
         columnIds: 'c',
       }),
-    ).toThrow('feature.not-implemented');
+    ).toMatchObject([{ type: 'add_key', value: { kind: 'primary', columnIds: ['c'] } }]);
   });
-  it('allows actual logical table/column drafts without activating physical coverage', () => {
+  it('preserves scopes for actual logical table and column drafts', () => {
     const f = fixture('postgresql');
     const [table] = nativeStructureCommands(f.document, undefined, 'table', {
       id: 'new',
@@ -191,10 +189,14 @@ describe('native structured forms and availability', () => {
     const html = renderToStaticMarkup(
       createElement(NativeStructureEditor, { ...f, context: f.context }),
     );
-    expect(html).toContain('논리 초안은 저장할 수 있습니다.');
-    expect(() =>
-      nativeStructureCommands(f.document, undefined, 'table', { id: 'blocked', scope: 'both' }),
-    ).toThrow('feature.not-implemented');
+    expect(html).toContain('물리·논리 범위를 선택하고 이름을 입력하세요.');
+    expect(
+      nativeStructureCommands(f.document, undefined, 'table', {
+        id: 'physical',
+        name: 'physical',
+        scope: 'both',
+      }),
+    ).toMatchObject([{ type: 'add_table', value: { scope: 'both' } }]);
   });
   it('preserves legacy/current type and independently removes default/generation for recovery', () => {
     const f = fixture('postgresql');
@@ -275,7 +277,7 @@ describe('native structured forms and availability', () => {
         before,
       ),
     ).toEqual([{ type: 'patch_index', id: 'idx', patch: { name: 'renamed' } }]);
-    expect(() =>
+    expect(
       nativeConstraintCommands(
         f.document,
         'indexes',
@@ -283,7 +285,17 @@ describe('native structured forms and availability', () => {
         { ...before, direction: 'desc' },
         before,
       ),
-    ).toThrow('feature.not-implemented');
+    ).toMatchObject([
+      {
+        type: 'patch_index',
+        patch: {
+          parts: [
+            { direction: 'desc', expression: f.document.indexes![0]!.parts[0]!.expression },
+            { direction: 'desc', expression: f.document.indexes![0]!.parts[1]!.expression },
+          ],
+        },
+      },
+    ]);
   });
   it('keeps decimal/integer tokens as strings in structured expressions', () => {
     expect(
@@ -309,11 +321,11 @@ describe('native structured forms and availability', () => {
       mode: 'write',
       previous: createEmptyNativeDocument(f.document.database),
     });
-    expect(issues.some((issue) => issue.code === 'type.not-implemented')).toBe(true);
+    expect(issues.some((issue) => issue.code === 'type.not-implemented')).toBe(false);
     expect(
-      nativeEditorPolicy(f.document, f.table).capabilities.features.some(
-        (feature) => feature.usable,
-      ),
-    ).toBe(false);
+      nativeEditorPolicy(f.document, f.table).capabilities.features.find(
+        (feature) => feature.id === 'check',
+      )?.usable,
+    ).toBe(true);
   });
 });

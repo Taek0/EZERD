@@ -69,6 +69,12 @@ export class PersonalStateService {
           ),
         );
       return personalStateSnapshotSchema.parse({
+        ...(document.schemaVersion === 2 && {
+          databaseRevision: resolveProjectDatabaseState({
+            ...project,
+            databaseKind: project.databaseKind ?? 'postgresql',
+          }).revision,
+        }),
         version: row?.version ?? 0,
         projectVersion: project.version,
         syncSequence: project.syncSequence,
@@ -77,9 +83,19 @@ export class PersonalStateService {
     });
   }
 
-  save(projectId: string, user: AuthenticatedUser, expectedVersion: number, state: PersonalState) {
+  save(
+    projectId: string,
+    user: AuthenticatedUser,
+    expectedVersion: number,
+    state: PersonalState,
+    context?: {
+      expectedDatabaseRevision?: number | undefined;
+      expectedProjectVersion?: number | undefined;
+      expectedSyncSequence?: number | undefined;
+    },
+  ) {
     const parsed = personalStateSchema.parse(state);
-    return this.mutate(projectId, user, expectedVersion, () => parsed);
+    return this.mutate(projectId, user, expectedVersion, () => parsed, undefined, context);
   }
 
   async mutate(
@@ -90,9 +106,14 @@ export class PersonalStateService {
       document: DesignDocument | NativeDesignDocument,
     ) => DesignDocument | NativeDesignDocument | PersonalState,
     operation?: { id: string; fingerprint: string },
+    context?: {
+      expectedDatabaseRevision?: number | undefined;
+      expectedProjectVersion?: number | undefined;
+      expectedSyncSequence?: number | undefined;
+    },
   ) {
     return this.database.db.transaction(async (tx) => {
-      await this.access.requireProject(user.id, projectId, 'personal', tx);
+      await this.access.requireProject(user.id, projectId, 'read', tx);
       if (operation) {
         const [replay] = await tx
           .select()
@@ -114,8 +135,6 @@ export class PersonalStateService {
         .where(eq(projects.id, projectId))
         .for('update');
       if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-      if (project.status !== 'active')
-        throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
       if (operation) {
         const [lockedReplay] = await tx
           .select()
@@ -131,6 +150,9 @@ export class PersonalStateService {
           return personalStateSnapshotSchema.parse(lockedReplay.result);
         }
       }
+      await this.access.requireProject(user.id, projectId, 'personal', tx);
+      if (project.status !== 'active')
+        throw new ConflictException('보관된 프로젝트는 편집할 수 없습니다.');
       const [row] = await tx
         .select()
         .from(projectPersonalStates)
@@ -151,6 +173,27 @@ export class PersonalStateService {
           databaseKind: project.databaseKind ?? 'postgresql',
         }),
       );
+      const database = resolveProjectDatabaseState({
+        ...project,
+        databaseKind: project.databaseKind ?? 'postgresql',
+      });
+      if (
+        document.schemaVersion === 2 &&
+        (context?.expectedDatabaseRevision === undefined ||
+          context.expectedProjectVersion === undefined ||
+          context.expectedSyncSequence === undefined)
+      )
+        throw new ConflictException({ code: 'personal-state.native-context-required' });
+      if (
+        context &&
+        (context.expectedDatabaseRevision !== undefined ||
+          context.expectedProjectVersion !== undefined ||
+          context.expectedSyncSequence !== undefined) &&
+        (context.expectedDatabaseRevision !== database.revision ||
+          context.expectedProjectVersion !== project.version ||
+          context.expectedSyncSequence !== project.syncSequence)
+      )
+        throw new ConflictException({ code: 'personal-state.context-changed' });
       const current = reconcilePersonalState(document, row?.state ?? defaultState(document));
       const merged = mergeStoredPersonalState(document, current);
       const changed = change(structuredClone(merged));
@@ -183,6 +226,7 @@ export class PersonalStateService {
       )
         throw new BadRequestException('개인 화면의 객체 참조가 올바르지 않습니다.');
       const result = personalStateSnapshotSchema.parse({
+        ...(document.schemaVersion === 2 && { databaseRevision: database.revision }),
         version: version + 1,
         projectVersion: project.version,
         syncSequence: project.syncSequence,

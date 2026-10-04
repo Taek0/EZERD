@@ -43,7 +43,24 @@ import '../styles/responsive-shell.css';
 import { McpConnectionPanel } from '../features/mcp/McpConnectionPanel.js';
 import { exportProjectFile } from '../features/projects/ProjectTransfer.js';
 import { ProjectGallery, type GalleryHandle } from '../features/projects/ProjectGallery.js';
+import {
+  galleryProjectCreationInput,
+  type GalleryProjectCreationOptions,
+} from '../features/projects/project-create.js';
 import { previewDatabaseChange } from '../features/projects/database-preview.js';
+import {
+  NativeGalleryConversion,
+  type NativeGalleryConversionHandle,
+} from '../features/projects/NativeGalleryConversion.js';
+import {
+  fetchGalleryDatabaseSnapshot,
+  loadGalleryDatabaseConversion,
+  loadGalleryProjectForOpen,
+  galleryConversionMatchesInput,
+  prepareGalleryDatabaseConversion,
+  saveNativeGalleryName,
+  type NativeGalleryConversionOptions,
+} from '../features/projects/native-gallery-conversion.js';
 import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
 import { NativeProjectView } from '../features/projects/NativeProjectView.js';
 import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
@@ -156,6 +173,8 @@ export function App() {
   const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
   const gallery = useRef<GalleryHandle>(null);
+  const galleryConversion = useRef<NativeGalleryConversionHandle>(null);
+  const nativeUpgradeEntryRef = useRef<HTMLDivElement>(null);
   const [draftTarget, setDraftTarget] = useState<CommentContext & { nonce: number }>();
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true);
@@ -214,6 +233,33 @@ export function App() {
   currentExportIdentity.current = { userId: user?.id, projectId: activeProject?.id };
   const projectWorkspace = workspaces.find((space) => space.id === activeProject?.workspaceId);
   const permissions = workspacePermissions(activeProject ? projectWorkspace : selectedWorkspace);
+  const galleryIdentity = useRef({
+    userId: user?.id,
+    workspaceId,
+    canEdit: workspacePermissions(selectedWorkspace).edit,
+  });
+  galleryIdentity.current = {
+    userId: user?.id,
+    workspaceId,
+    canEdit: workspacePermissions(selectedWorkspace).edit,
+  };
+  function galleryConversionOptions(projectId: string): NativeGalleryConversionOptions {
+    if (!user) throw Error('database.change-scope-invalid');
+    return {
+      control: {
+        scope: { userId: user.id, workspaceId, projectId },
+        currentScope: () =>
+          galleryIdentity.current.userId
+            ? {
+                userId: galleryIdentity.current.userId,
+                workspaceId: galleryIdentity.current.workspaceId,
+                projectId,
+              }
+            : null,
+      },
+      canEdit: () => galleryIdentity.current.canEdit,
+    };
+  }
   const designPermissionReadOnly = !permissions.edit || opened?.project.status === 'archived';
   const personalReadOnly = !permissions.personal || opened?.project.status === 'archived';
   const [sync, setSync] = useState<SyncSnapshot | null>(null);
@@ -633,7 +679,14 @@ export function App() {
     setBusy(true);
     setError('');
     try {
-      const value = await loadProjectEntry(id);
+      const result = user
+        ? await loadGalleryProjectForOpen(id, galleryConversionOptions(id))
+        : { kind: 'open' as const, entry: await loadProjectEntry(id) };
+      if (result.kind === 'recover') {
+        if (navigation.current.isCurrent(ticket)) await galleryConversion.current?.recover(id);
+        return;
+      }
+      const value = result.entry;
       if (!navigation.current.isCurrent(ticket)) return;
       resetReview();
       await flushAutosave();
@@ -649,10 +702,14 @@ export function App() {
   async function createGalleryProject(
     name: string,
     databaseKind: 'postgresql' | 'mysql' | 'sqlite',
+    options: GalleryProjectCreationOptions = { formatVersion: 2 },
   ) {
     if (!permissions.edit || !workspaceId) throw new Error(t('프로젝트를 만들 수 없습니다.'));
     const project = projectSchema.parse(
-      await request('/api/projects', body('POST', { name, databaseKind, workspaceId })),
+      await request(
+        '/api/projects',
+        body('POST', galleryProjectCreationInput(workspaceId, name, databaseKind, options)),
+      ),
     );
     setProjects((items) => [project, ...items]);
     setRefresh((value) => value + 1);
@@ -669,7 +726,31 @@ export function App() {
     setBusy(true);
     setError('');
     try {
-      if (patch.databaseKind) await previewDatabaseChange(project, patch.databaseKind);
+      if (patch.databaseKind) {
+        const options = galleryConversionOptions(project.id);
+        const snapshot = await fetchGalleryDatabaseSnapshot(options);
+        if (snapshot.sourceDocument.schemaVersion === 2) {
+          const pending = await loadGalleryDatabaseConversion(options);
+          if (pending) {
+            const confirmed = await galleryConversion.current?.recover(project.id);
+            return confirmed === true && galleryConversionMatchesInput(pending, patch);
+          }
+          if (patch.databaseKind !== snapshot.project.databaseKind) {
+            const plan = await prepareGalleryDatabaseConversion(
+              snapshot,
+              patch.databaseKind,
+              patch.name,
+              options,
+            );
+            return (await galleryConversion.current?.review(plan)) ?? false;
+          }
+          const renamed = await saveNativeGalleryName(snapshot, patch.name, options);
+          setProjects((items) => items.map((item) => (item.id === renamed.id ? renamed : item)));
+          setRefresh((v) => v + 1);
+          return true;
+        }
+        await previewDatabaseChange(project, patch.databaseKind);
+      }
       await request(
         `/api/projects/${project.id}`,
         body('PATCH', { expectedVersion: project.version, ...patch }),
@@ -1130,6 +1211,7 @@ export function App() {
           busy={busy}
           userId={user.id}
           canEdit={permissions.edit}
+          canPersonalEdit={permissions.personal}
           projectActions={(focus) => (
             <NativeProjectActions
               userId={user.id}
@@ -1211,29 +1293,31 @@ export function App() {
             </div>
           </div>
           {user && (
-            <NativeUpgradeButton
-              key={`upgrade:${user.id}:${opened.project.id}`}
-              userId={user.id}
-              projectId={opened.project.id}
-              workspaceId={opened.project.workspaceId}
-              canUpgrade={!designReadOnly}
-              busy={busy}
-              prepare={async () => {
-                await prepareProjectExport(opened.project.id);
-                return (
-                  currentExportIdentity.current.userId === user.id &&
-                  currentExportIdentity.current.projectId === opened.project.id
-                );
-              }}
-              onUpgraded={async (snapshot) => {
-                if (
-                  currentExportIdentity.current.userId !== user.id ||
-                  currentExportIdentity.current.projectId !== snapshot.project.id
-                )
-                  return;
-                await open(snapshot.project.id);
-              }}
-            />
+            <div ref={nativeUpgradeEntryRef}>
+              <NativeUpgradeButton
+                key={`upgrade:${user.id}:${opened.project.id}`}
+                userId={user.id}
+                projectId={opened.project.id}
+                workspaceId={opened.project.workspaceId}
+                canUpgrade={!designReadOnly}
+                busy={busy}
+                prepare={async () => {
+                  await prepareProjectExport(opened.project.id);
+                  return (
+                    currentExportIdentity.current.userId === user.id &&
+                    currentExportIdentity.current.projectId === opened.project.id
+                  );
+                }}
+                onUpgraded={async (snapshot) => {
+                  if (
+                    currentExportIdentity.current.userId !== user.id ||
+                    currentExportIdentity.current.projectId !== snapshot.project.id
+                  )
+                    return;
+                  await open(snapshot.project.id);
+                }}
+              />
+            </div>
           )}
           {projectWorkspace?.status === 'archived' && (
             <div className="notice">
@@ -1274,6 +1358,13 @@ export function App() {
             <Canvas
               key={opened.project.id}
               document={opened.document}
+              databaseKind={opened.project.databaseKind ?? 'postgresql'}
+              onRequestNativeUpgrade={() => {
+                if (designReadOnly) return;
+                const entry = nativeUpgradeEntryRef.current;
+                entry?.scrollIntoView({ block: 'center' });
+                entry?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus();
+              }}
               onExportProject={async () => {
                 await flushAutosave();
                 await runtime.current?.prepareToLeave();
@@ -1440,6 +1531,20 @@ export function App() {
             setStatus('active');
             setSearch('');
             setError('');
+            setRefresh((value) => value + 1);
+          }}
+        />
+      )}
+      {user && session && workspaceId && (
+        <NativeGalleryConversion
+          key={`database-change:${user.id}:${workspaceId}`}
+          ref={galleryConversion}
+          userId={user.id}
+          workspaceId={workspaceId}
+          projects={projects}
+          canEdit={workspacePermissions(selectedWorkspace).edit}
+          onSaved={(project) => {
+            setProjects((items) => items.map((item) => (item.id === project.id ? project : item)));
             setRefresh((value) => value + 1);
           }}
         />

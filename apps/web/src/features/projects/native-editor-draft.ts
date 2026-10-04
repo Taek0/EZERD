@@ -5,7 +5,6 @@ import {
 } from '@ezerd/contracts';
 export type { NativeEditorDraft, NativeEditorDraftRef } from '@ezerd/contracts';
 import {
-  nativeDraftStorage,
   getNativeMemoryDraft,
   retainNativeMemoryDraft,
   forgetNativeMemoryDraft,
@@ -14,6 +13,7 @@ import {
   markNativeDraftStorageFailure,
 } from './native-durable-drafts.js';
 import { nativeDurableId } from './native-durable-queue.js';
+import { nativeDraftArchive } from './native-draft-archive.js';
 const storageKey = (userId: string, projectId: string, key: string) =>
   `ezerd.native.editor:${JSON.stringify([userId, projectId, key])}`;
 function persisted(
@@ -22,12 +22,11 @@ function persisted(
   key: string,
   storage?: NativeDraftStorage,
 ): NativeEditorDraft | null {
-  const raw = nativeDraftStorage(storage).getItem(storageKey(userId, projectId, key));
-  if (raw === null) return null;
-  const draft = nativeEditorDraftSchema.parse(JSON.parse(raw));
-  if (draft.userId !== userId || draft.projectId !== projectId || draft.key !== key)
-    throw new Error('native.draft-invalid');
-  return draft;
+  const archive = nativeDraftArchive(storage);
+  const legacy = archive.legacy(userId, projectId, 'editor', key);
+  const entry = archive.read(userId, projectId, 'editor', key);
+  if (!entry && legacy) throw Error('native.draft-recovery-required');
+  return entry ? nativeEditorDraftSchema.parse(entry.draft) : null;
 }
 export function loadNativeEditorDraft(
   userId: string,
@@ -57,11 +56,9 @@ export function storeNativeEditorDraft(
   const key = storageKey(draft.userId, draft.projectId, draft.key);
   // Keep the input before storage access or schema parsing can fail.
   retainNativeMemoryDraft(key, draft, true, storage);
-  persisted(draft.userId, draft.projectId, draft.key, storage);
-  const value = JSON.stringify(nativeEditorDraftSchema.parse(draft)),
-    target = nativeDraftStorage(storage);
-  target.setItem(key, value);
-  if (target.getItem(key) !== value) throw new Error('native.draft-storage-failed');
+  const archive = nativeDraftArchive(storage);
+  archive.legacy(draft.userId, draft.projectId, 'editor', draft.key);
+  archive.store('editor', draft.key, nativeEditorDraftSchema.parse(draft));
   retainNativeMemoryDraft(key, draft, false, storage);
 }
 export function discardNativeEditorDraft(
@@ -72,8 +69,9 @@ export function discardNativeEditorDraft(
 ): void {
   const key = storageKey(userId, projectId, ref.key),
     memory = getNativeMemoryDraft<NativeEditorDraft>(key, storage);
-  const draft = persisted(userId, projectId, ref.key, storage);
-  if (draft?.revision === ref.revision) nativeDraftStorage(storage).removeItem(key);
+  const archive = nativeDraftArchive(storage),
+    entry = archive.read(userId, projectId, 'editor', ref.key);
+  if (entry?.revision === ref.revision) archive.discard(userId, projectId, entry);
   if (memory?.revision === ref.revision) {
     forgetNativeMemoryDraft(key, storage);
   }
@@ -85,10 +83,8 @@ export function resetNativeEditorDraft(
   key: string,
   storage?: NativeDraftStorage,
 ): void {
-  const target = nativeDraftStorage(storage),
-    identity = storageKey(userId, projectId, key);
-  target.removeItem(identity);
-  if (target.getItem(identity) !== null) throw Error('native.draft-storage-failed');
+  const identity = storageKey(userId, projectId, key);
+  nativeDraftArchive(storage).reset(userId, projectId, 'editor', key);
   forgetNativeMemoryDraft(identity, storage);
 }
 export function rebaseNativeEditorDraft(

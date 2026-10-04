@@ -21,6 +21,11 @@ import {
   type NativePropertyDraft,
 } from './native-save.js';
 import { createNativeTestIndexedDB } from './native-durable-test-environment.js';
+import {
+  nativeDraftArchive,
+  NativeDraftArchive,
+  nativePropertyArchiveKey,
+} from './native-draft-archive.js';
 import { getNativeDurableQueue, NativeDurableQueue } from './native-durable-queue.js';
 beforeEach(() => {
   vi.stubGlobal('indexedDB', createNativeTestIndexedDB());
@@ -91,6 +96,50 @@ function ack(operationId: string, status = 'accepted') {
   };
 }
 describe('native pending save and property draft durability', () => {
+  it('actual staged ACK removes only origin and preserves identical recovered property input plus another writer', async () => {
+    const store = storage(),
+      archive = nativeDraftArchive(store);
+    const before = { physicalName: 'id', comment: '', logicalName: 'ID', definition: '' };
+    const draft: NativePropertyDraft = {
+      userId,
+      projectId,
+      objectId: 'c',
+      kind: 'column',
+      expected: { version: 7, sequence: 10, databaseRevision: 3 },
+      before,
+      values: { ...before, comment: 'Input preserved' },
+    };
+    storeNativeDraft(draft, store);
+    const origin = archive.read(
+      userId,
+      projectId,
+      'property',
+      nativePropertyArchiveKey('column', 'c'),
+    )!;
+    const pending = await stageNativeSave(userId, snapshot(), [command], store);
+    const foreign = new NativeDraftArchive(store, 'other-tab').store(
+      'property',
+      nativePropertyArchiveKey('column', 'c'),
+      { ...draft, values: { ...draft.values, comment: 'foreign input' } },
+    );
+    const record = archive
+      .records(userId, projectId)
+      .find((value) => value.entry?.entryId === origin.entryId)!;
+    const copy = archive.recoverRecord(userId, projectId, record);
+    await sendNativePending(
+      pending,
+      store,
+      vi.fn().mockResolvedValue(ack(pending.request.operationId)) as typeof request,
+    );
+    expect(loadNativeDraft(userId, projectId, 'column', 'c', store)).toEqual(draft);
+    expect(
+      archive
+        .entries(userId, projectId)
+        .map((entry) => entry.entryId)
+        .sort(),
+    ).toEqual([foreign.entryId, copy.entryId].sort());
+    expect(await loadNativePending(userId, projectId, store)).toBeNull();
+  });
   it('default transport refuses a different session actor before any API mutation', async () => {
     const store = storage(),
       pending = await stageNativeSave(userId, snapshot(), [command], store),

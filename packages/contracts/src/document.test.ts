@@ -14,6 +14,24 @@ const empty = () => ({
   layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] },
 });
 describe('API input boundaries', () => {
+  it('keeps omitted creation format unchanged and accepts only explicit v1/v2 formats', () => {
+    const workspaceId = '00000000-0000-4000-8000-000000000001';
+    expect(createProjectSchema.parse({ workspaceId })).toEqual({ workspaceId });
+    for (const formatVersion of [1, 2])
+      expect(
+        createProjectSchema.parse({ workspaceId, databaseKind: 'mysql', formatVersion }),
+      ).toEqual({ workspaceId, databaseKind: 'mysql', formatVersion });
+    for (const input of [
+      { workspaceId, formatVersion: 3 },
+      { workspaceId, formatVersion: '2' },
+      { workspaceId, native: true },
+      { workspaceId, formatVersion: 2, document: empty() },
+      { workspaceId, formatVersion: 2, databaseRevision: 12 },
+      { workspaceId, formatVersion: 2, ownerId: workspaceId },
+      { workspaceId, formatVersion: 2, databaseProfileId: 'mysql-8.4-innodb-v1' },
+    ])
+      expect(createProjectSchema.safeParse(input).success).toBe(false);
+  });
   it('normalizes names and rejects blanks, oversized input and empty updates', () => {
     expect(usernameInputSchema.parse({ username: '  태경  ', pin: '0012' })).toEqual({
       username: '태경',

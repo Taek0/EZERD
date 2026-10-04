@@ -2,6 +2,7 @@ import {
   inspectNativeLiteralToken,
   keyEligibility,
   literalDecision,
+  effectiveMysqlCharacters,
   nativeBuiltinFunctionIds,
   nativeBuiltinDefaultDecision,
   nativeOnUpdateDecision,
@@ -68,6 +69,11 @@ export function nativeLiteralPolicy(
 ): NativeOptionDecision {
   const type = column.physical.type;
   const decision = literalDecision(document.database, type, value, {
+    ...(document.database.kind === 'mysql' && {
+      charset:
+        effectiveMysqlCharacters(table.physical.options, column.physical.options).charset ??
+        '__unverified__',
+    }),
     nullable,
     primary: (document.keys ?? []).some(
       (key) =>
@@ -100,6 +106,14 @@ function literalProbe(
   kind: NativeLiteral['literalType'],
 ): string {
   const type = column.physical.type;
+  if (
+    kind === 'typedText' &&
+    type.kind !== 'legacy' &&
+    type.database === 'postgresql' &&
+    'array' in type &&
+    type.array
+  )
+    return '{}';
   if (kind === 'boolean') return 'false';
   if (kind === 'number') return '0';
   if (kind === 'binary') return '';
@@ -123,6 +137,11 @@ function literalProbe(
   if (type.kind !== 'builtin') return '';
   const name = type.typeId.split(':')[1]!;
   const hints: Record<string, string> = {
+    tsvector: 'alpha',
+    tsquery: 'alpha',
+    pg_snapshot: '1:2:',
+    xml: '<root/>',
+    jsonpath: '$.items[0].value',
     uuid: '00000000-0000-4000-8000-000000000001',
     date: '2024-01-01',
     time: '00:00:00',
@@ -146,7 +165,11 @@ function literalProbe(
     oid: '0',
     pg_lsn: '0/0',
   };
-  return name.endsWith('range') ? 'empty' : (hints[name] ?? '');
+  return name.endsWith('multirange')
+    ? '{}'
+    : name.endsWith('range')
+      ? 'empty'
+      : (hints[name] ?? '');
 }
 export function nativeDefaultChoices(
   document: NativeDesignDocument,
@@ -223,9 +246,11 @@ export function nativeKeyColumnPolicies(
       const options = column.physical.options;
       const tableOptions = table.physical.options;
       const eligibility = keyEligibility(document.database, column.physical.type, {
+        kind,
+        strict: tableOptions.database === 'sqlite' && tableOptions.strict,
         generation: column.physical.generation,
         ...(options.database === 'mysql' && tableOptions.database === 'mysql'
-          ? { charset: options.charset ?? tableOptions.charset ?? 'utf8mb4' }
+          ? { charset: effectiveMysqlCharacters(tableOptions, options).charset ?? '__unverified__' }
           : {}),
       });
       const visible = table.scope !== 'logical' && column.scope !== 'logical';
@@ -240,7 +265,9 @@ export function nativeKeyColumnPolicies(
           ? 'document.scope-mismatch'
           : !engineAllowed
             ? (eligibility.code ?? 'key.type-not-supported')
-            : 'key.not-ready',
+            : !eligibility.usable
+              ? (eligibility.readinessCode ?? 'key.not-ready')
+              : undefined,
         preserved: preservedIds.includes(column.id),
       };
     });

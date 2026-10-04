@@ -8,6 +8,7 @@ import {
 } from './definitions.js';
 import { getDatabaseType } from './catalog.js';
 import { getDatabaseProfile } from './profiles.js';
+import { nativeFeatureCoverage } from './readiness.js';
 
 export const databaseFeatureIds = [
   'table',
@@ -102,7 +103,7 @@ export const databaseFeatureCatalog: readonly DatabaseFeatureDefinition[] = Obje
     Object.freeze({
       id,
       databases: Object.freeze([...(only[id] ?? all)]),
-      coverage: specifiedDatabaseCoverage,
+      coverage: nativeFeatureCoverage(id),
     }),
   ),
 );

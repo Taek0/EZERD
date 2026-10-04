@@ -1,9 +1,17 @@
 # DB별 타입·기능 구현 진행 상태
 
-- 최종 갱신: 2026-10-02
+- 최종 갱신: 2026-10-04 (사용자가 지정한 자동 이어가기 참조 경로를 유지)
 - 구현 승인: Worker 1 최종 완료 후 계획 기반 구현을 진행하라는 사용자 지시.
 - 착수 조건 충족: `Worker 1 - Sol`의 대상 turn `01a0f314-cc8d-7a32-b308-145ee97c80c2` 최종 완료를 확인하고 `e07e178`의 깨끗한 작업 트리에서 시작했다. 이후 그 대상 turn을 반복 대기할 필요가 없다.
 - 기준: [구현 명세](../planning/2026-10-01-Database-CapabilitySpecification.md), [타입·기능 지원표](../planning/2026-10-01-Database-TypeFeatureMatrix.md).
+
+## 현재 완료 상태 (2026-10-04)
+
+- 승인한 C1~C8의 검증된 타입·기능 및 프로젝트 전체 물리 DDL 구현을 완료했다. 마지막 갤러리 native DB변경/원문 durable 복구1241d98, stale precondition fence b35674c, 환경 안내 fd794d3, 실제 브라우저/원장/SQL08f2a90를 완료했다. [최종 검증·한계·보존 데이터](2026-10-04-Database-NativeFinalVerification.md)를 현재 기준으로 사용한다.
+- 최신 전체 check2562 PASS/497 조건부 SKIP, 실제 전체 API498 PASS/skip0, 최종 빌드 후 HTTP/DB-change/WS43 PASS/skip0, feature SQL154개3엔진 PASS다. 세 DB 실제 물리 편집과 공유 SQL, 갤러리 빈/signed DB변경·응답 유실→reload→동일ACK/name 복구, viewer 및 미지원 변환 차단을 확인했다.
+- 브라우저 JSON 업로드는 권한 거부로 미검증이며 우회하지 않았다. 미지원 SQL/문법/타입·설치 의존 및 자동 변환 범위는 명세대로 예약/차단한다. 이를 지원 완료라고 표시하지 않는다.
+- 다른 작업이 추가된 DC QA DB(test workspace/프로젝트2)는 전체 보존하고 .data에 비공개 백업했다. 자신의 나머지 listener/container/CLI/harness 및 비어 있는 DAC QA DB는 정리했다. docs/EZERD.txt와 다른 작업 데이터·커밋을 보존했다.
+- 아래는 당시 단위별 역사다. 과거 미연결/false gate/미완료 설명은 현재 상태가 아니다. 자동 이어가기는 완료에 따라 종료한다.
 
 ## 완료한 단위
 
@@ -34,7 +42,23 @@
 | C3/C4 native shared sync 저장·MCP 소비 | 완료(실제 REST/MCP 저장/ACK) | [결과](2026-10-02-Database-NativeSharedSync.md). native baseline/row lock/current 후보·ledger/field versions/deletion·ACK/WS/polling·MCP native patch/delete/FK 명령. 전체 check 840개 통과/62개 건너뜀, 최종 격리 API/MCP/versioned/autosync 45개 통과. 새 native 타입 gate는 아직 비활성 |
 | C2/C3 명시 native 업그레이드 | 완료(실제 REST/MCP 소비) | [결과](2026-10-02-Database-NativeUpgrade.md). locked source migration·원문 audit·revision/baseline/format boundary·재생/구문맥 보호. 전체 check 840개 통과/66개 건너뜀, 최종 격리 전체 API/MCP/versioned/autosync 49개 통과 |
 
-## 다음 작업
+## 2026-10-03 당시 이어가기 기록 (과거)
+
+- 최신 완료: basic/advanced124 타입·33개 DB별 feature registry와 제한 default/ON UPDATE `64bd831`; v1 DB UI 경계 `e7bf89b`; exact ENUM/value-list 및 nullable deferrable UI `12be19b`; 실제 키/옵션 안내 수정 `4909c38`/`893d42d`; private CAS pending의 recovery busy 차단 수정 `ece44b4`; PG bounded typed helper `ee5bad8` 및 XML/jsonpath/array/search/multirange/snapshot 실제 소비 `073dea0`.
+- 현재 source는 UI·REST/MCP·native sync/history/import/clipboard·DDL 경로를 실제 연결했다. source/profile/revision·구문맥·trusted legacy/current·ID/원문·ACK 재생 및 개인 writer/lease/actor 보호를 유지한다. 이전 단계의 미연결/false gate 설명은 아래 당시 결과다.
+- 실제 검증: native feature77개 REST/MCP 저장/조회/export와154 SQL 3엔진 실행, 최종27 API 파일498개(pass498/fail0/skip0, WebSocket4개 포함), PG typed62 product경로 및141 cast/default 관찰, XML/jsonpath23 product경로와22 SQL. 전체 pnpm check2298개/조건부412개 건너뜀은 typed family와 CAS 최종 변경 전 결과이며 새 전체 검증은 남았다.
+- 실제 browser: MySQL native선택/UNSIGNED INT/default7/PK/INVISIBLE index/SQL451바이트 및 JSON4017바이트 다운로드; SQLite INTEGER/PK/STRICT·WITHOUT ROWID/SQL 다운로드; PG exact 빈/LF/Unicode ENUM·deferred PK→NONE clear/다운로드 원문 PG 실행·rollback. private response loss→동시 CAS 증가→fresh GET proof→archive→명시 release→두 탭 pending 제거·원문 보존도 수정 bundle에서 통과했다. [PG](2026-10-03-Database-PostgresNativeBrowserQA.md), [CAS](2026-10-03-Database-NativePrivateCASBrowserQA.md), [전체 actual](2026-10-03-Database-NativeActualRegression.md) 참조.
+- 다음 미완료: MySQL/SQLite 다운로드 원문 실행·metadata와 명시 legacy upgrade 브라우저 검증은 abe9303에 완료했다. 최종 actual498/SQL154 결과는0f53559다. JSON 파일 업로드는 사용자의 브라우저 권한 거부로 미검증이며 우회하지 않는다. DB변경 브라우저에서 native 카드의 구형 preview/metadata 호출을 발견했다. durable databaseChange single-row/lease 보호는 f34a07f에 완료했고 C8 gallery consumer/App·검토·복구 UI/helper는 Aristotle가 구현 중이다. 부모 QA는 DC 소유 DB(소유자21c72a1e-57af-4c3a-b4f9-680c4f6b74d6)의3139 서버와3150 응답1회유실 proxy를 준비했으며 임시 scripts/native-gallery-loss-qa.tmp.mjs는 최종 정리 대상이다. 변경 전 원문은 .data/native-gallery-browser-before.json에 보존했다. 수정 번들 empty/signed/blocked 변경 브라우저, 최신 전체 check, 자체 QA 자원/원문/문서 링크 정리가 다음 미완료다. 가용성은 arbitrary SQL/전체 parser 문법 또는 모든 DB 자동 변환을 뜻하지 않는다. 검증된 subset과 설치 의존/예약 타입·signed PG↔MySQL 변환 한계를 최종 기록한다.
+- 전체 구현·필수 검증·정리가 끝나기 전 전체 완료로 보고하거나 자동 이어가기를 비활성화하지 않는다. 중단된 exec/session을 성공으로 계산하지 않고 기록된 상태에서 이어간다.
+
+## 과거 단위별 이어가기 기록
+- 2026-10-02 최신 단위: 명시 native 프로젝트 생성 `e2cb08e`, legacy import `af299a8`, 개인 상태 문맥 guard `a99259c`/웹 durable CAS `b86be29`, SQLite3.45.0 실제 하한 QA `af57d79`, 고급 인덱스·식 tree UI `2d92d85`, 공통 native 관계·스타일·PNG `fa7cf7f`, writer별 원문 archive/root 복구 `cc43f84`를 완료했다. 세부 근거는 각 최신 결과 문서다.
+- 기본124 타입과10개 기본 feature의 [활성화/검증](2026-10-02-Database-NativeReadinessActivation.md)을 준비했다. native API/MCP 전체 타입 저장·전체 SQL 및3엔진 실행, signed3폭 PG/MySQL6방향 nonempty 변환·rollback, 실제PG 물리 편집·SQL/JSON 다운로드를 확인했다. 최신 전체 check2111개/skip312, 후속 unit2124개/skip312다. default/ON UPDATE와23개 advanced feature는 아직 별도 검증/활성화가 남았다.
+- 다음 미완료는 advanced default/generation/key/array/ENUM/index/check/AST 정책 usable 연결 및 실제 DB/API/브라우저 QA, 다른DB 물리 편집/download/변경/복구, private CAS proof·개인 PNG 실제 browser, two-tab 원문 보존·offline/actor/permission 검증, v1 DB UI 경계와 전체 최종 QA다. 준비 helper/encoder mock 결과만으로 완료를 계산하지 않는다. automation prompt는 이 진행 기록을 참조하는 짧은 형태를 유지한다.
+
+- 최신 통합: clipboard 실제 리뷰/paste `5357d35`, PG index method/JSON subtype 정책 `2596fb4`, MySQL character/행·index byte 중앙 정책과 compiler pin `0a6f76f`, signed integer 변환 registry/locked planner `5b8f785`를 완료했다. 연결된 해당 결과 문서를 기준으로 이어간다. 같은 actor의 staging 중 session 교체를 root에서 차단했다.
+- 현재 다음 미완료: native legacy import 소비/새 프로젝트 native 생성, 고급 index·AST tree UI, 개인 canvas DB revision/웹 저장, draft orphan·cross-tab 보존, [제품 활성화/전체 QA](../planning/2026-10-02-Database-NativeReadinessActivation.md). coverage는 여전히 false이며 실제 native v2 전체 물리 SQL 성공·브라우저/하한 DB 검증 전에 전체 완료로 계산하지 않는다.
+- 최신 전체 점검의 format/typecheck는 통과했다. unit1846개 통과/280개 건너뜀 외 병렬 legacy-import 신규 테스트1개가 중앙 MySQL legacy byte-budget 원인 때문에 실패하여 담당자가 수정 중이다. 이는 최종 전체 check 성공으로 기록하지 않는다. 본문 아래 과거 단위의 당시 미연결 설명은 역사이며 현재 상태는 이 항목과 최신 결과를 우선한다.
 
 - native 미확인 요청의 MCP 도구/웹 취소 버튼을 전용 marker에 연결했다. [결과](2026-10-02-Database-NativeCancellationConsumers.md). 실제 versioned/MCP 48개와 helper 40개, web typecheck 통과. 단순 lookup 404/transport 오류로 row를 지우지 않으며 late 요청은 같은 rejected ACK로 확정한다. 브라우저/개인 상태는 후속이다.
 
@@ -85,4 +109,4 @@
 5. C6/C7 고급 기본 타입·ERD 기능 및 C8 검증된 DB 변환/전체 QA를 이어서 수행한다.
 6. FK 대체 후보(non-deferrable key/non-partial unique index 등)는 C3 검증기·planner·sync·DDL에서 공통화하고 실제 DB로 확인한다. 현재 전체 API/MCP/versioned/autosync 49개는 통과했으며 다음 기능 추가 후 관련 통합 QA를 유지한다.
 
-전체 작업은 미완료다. 웹은 v1 편집/native 조회를 구분하고 shared 저장은 v1 및 native 전용 REST/MCP로 병존한다. 신규 native 기능은 사용 가능으로 활성화하지 않았다. 기존 데이터/공유 캔버스/사용자 관리 파일을 보존하고 단위별 planning/work-log/검증/커밋 뒤에도 전체 완료까지 같은 턴에서 이어간다. 사용자 수정 지시나 실제 턴 종료 사유가 있을 때만 예외를 둔다.
+이하 과거 기록의 미완료 설명은 당시 상태다. 현재 완료 여부·검증·범위와 데이터 보존 상태는 최상단 2026-10-04 완료 기록 및 최종 결과 문서를 따른다.

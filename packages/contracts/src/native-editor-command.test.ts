@@ -5,6 +5,8 @@ import {
   nativeSharedCanvasCommandSchema,
   nativePersonalCanvasCommandSchema,
   nativeDomainCommandSchema,
+  nativeKeyPatchSchema,
+  nativeForeignKeyPatchSchema,
 } from './native-editor-command.js';
 import {
   clipboardCommand,
@@ -18,6 +20,82 @@ import {
 import { createEmptyNativeDocument } from '@ezerd/model';
 
 describe('native structured editor commands', () => {
+  it.each(['patch_key', 'patch_foreign_key'] as const)(
+    '%s preserves omission and accepts root null only as an explicit removal token',
+    (type) => {
+      const schema = type === 'patch_key' ? nativeKeyPatchSchema : nativeForeignKeyPatchSchema;
+      const omitted = schema.parse({});
+      expect(Object.hasOwn(omitted, 'deferrable')).toBe(false);
+      for (const deferrable of [null, { initially: 'immediate' }, { initially: 'deferred' }]) {
+        const command = { type, id: 'constraint', patch: { deferrable } };
+        expect(nativeEditorCommandSchema.parse(command)).toEqual(command);
+        expect(schema.parse(command.patch)).toEqual(command.patch);
+      }
+      for (const deferrable of [
+        undefined,
+        false,
+        true,
+        '',
+        {},
+        { initially: 'later' },
+        { initially: undefined },
+        { initially: 'deferred', extra: true },
+      ])
+        expect(schema.safeParse({ deferrable }).success).toBe(false);
+      expect(schema.safeParse({ id: 'replacement', deferrable: null }).success).toBe(false);
+      expect(
+        nativeForeignKeyPatchSchema.safeParse({ physical: { deferrable: null } }).success,
+      ).toBe(false);
+      expect(nativeForeignKeyPatchSchema.safeParse({ logical: { deferrable: null } }).success).toBe(
+        false,
+      );
+    },
+  );
+  it('keeps null removal out of add/stored constraint contracts and retains valid operation tokens through pending JSON', () => {
+    const key = {
+      id: 'k',
+      tableId: 't',
+      scope: 'physical',
+      kind: 'primary',
+      name: 'pk',
+      columnIds: ['c'],
+      deferrable: null,
+    };
+    expect(nativeEditorCommandSchema.safeParse({ type: 'add_key', value: key }).success).toBe(
+      false,
+    );
+    const relation = {
+      id: 'r',
+      sourceTableId: 's',
+      targetTableId: 't',
+      scope: 'logical',
+      logical: { name: 'FK', cardinality: 'one-to-many', required: false },
+      physical: null,
+      deferrable: null,
+    };
+    expect(
+      nativeEditorCommandSchema.safeParse({ type: 'add_foreign_key', value: relation }).success,
+    ).toBe(false);
+    const uuid = '00000000-0000-4000-8000-000000000001';
+    const pending = {
+      userId: uuid,
+      projectId: uuid,
+      request: {
+        operationId: uuid,
+        groupId: uuid,
+        clientId: uuid,
+        expectedVersion: 7,
+        expectedSequence: 11,
+        expectedDatabaseRevision: 3,
+        includeDocument: true as const,
+        commands: [
+          { type: 'patch_key', id: 'k', patch: { deferrable: null } },
+          { type: 'patch_foreign_key', id: 'r', patch: { deferrable: null } },
+        ],
+      },
+    };
+    expect(nativePendingSaveSchema.parse(JSON.parse(JSON.stringify(pending)))).toEqual(pending);
+  });
   it('accepts only strict self-contained format2 clipboard commands with complete fresh UUID remaps', () => {
     const command = clipboardCommand();
     expect(nativeEditorCommandSchema.parse(command)).toEqual(command);

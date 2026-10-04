@@ -34,7 +34,13 @@ import type { AuthenticatedUser } from '../identity/session.js';
 import {
   applyNativeDomainEditorCommand,
   nativeDomainCandidateClaims,
+  patchNativeConstraintKey,
+  patchNativeConstraintForeignKey,
 } from './native-editor-candidate.js';
+import {
+  applyNativeCanvasStyle,
+  applyNativeDomainRelation,
+} from './native-canvas-decoration-candidate.js';
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const applyNativeProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -56,6 +62,10 @@ export const applyNativeProjectChangesMetadataSchema = z.strictObject({
         .object({
           type: z.enum([
             ...nativeDomainCommandTypes,
+            'patch_canvas_style',
+            'add_domain_relation',
+            'patch_domain_relation',
+            'delete_domain_relation',
             'paste_native_clipboard',
             'patch_column',
             'patch_table',
@@ -135,6 +145,14 @@ export function nativeEditorCandidate(
       command.columnIds.forEach(claim);
     }
     switch (command.type) {
+      case 'patch_canvas_style':
+        candidate = applyNativeCanvasStyle(candidate, command);
+        break;
+      case 'add_domain_relation':
+      case 'patch_domain_relation':
+      case 'delete_domain_relation':
+        candidate = applyNativeDomainRelation(candidate, command);
+        break;
       case 'paste_native_clipboard': {
         const plan = planNativeClipboardCommand(candidate, command);
         if (!plan.canApply)
@@ -239,7 +257,7 @@ export function nativeEditorCandidate(
         candidate.keys = [...(candidate.keys ?? []), command.value];
         break;
       case 'patch_key':
-        candidate.keys = patchObject(candidate.keys, command.id, command.patch);
+        candidate = patchNativeConstraintKey(candidate, command.id, command.patch);
         break;
       case 'add_index':
         candidate.indexes = [...(candidate.indexes ?? []), command.value];
@@ -263,17 +281,7 @@ export function nativeEditorCandidate(
         candidate.tableRelations = [...(candidate.tableRelations ?? []), command.value];
         break;
       case 'patch_foreign_key': {
-        const current = candidate.tableRelations?.find((item) => item.id === command.id);
-        if (!current) throw new Error('document.object-not-found');
-        if (command.patch.physical && !current.physical)
-          throw new Error('foreign-key.physical-key-required');
-        candidate.tableRelations = patchObject(candidate.tableRelations, command.id, {
-          ...command.patch,
-          logical: { ...current.logical, ...command.patch.logical },
-          physical: command.patch.physical
-            ? { ...current.physical!, ...command.patch.physical }
-            : current.physical,
-        });
+        candidate = patchNativeConstraintForeignKey(candidate, command.id, command.patch);
         break;
       }
       case 'create_foreign_key':

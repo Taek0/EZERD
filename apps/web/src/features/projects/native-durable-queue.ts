@@ -1,6 +1,7 @@
 import { requestFingerprint } from '@ezerd/model';
 
-export type NativeDurableKind = 'commands' | 'history' | 'privateCanvas' | 'upgrade';
+export type NativeDurableKind =
+  'commands' | 'history' | 'privateCanvas' | 'upgrade' | 'databaseChange';
 export interface NativeDurablePending {
   userId: string;
   projectId: string;
@@ -38,7 +39,7 @@ export function nativeDurableId(): string {
   ].join('-');
 }
 
-/** One durable row per actor/project for command, history and private-canvas writers. */
+/** One durable row per actor/project for every native writer, including database changes. */
 export class NativeDurableQueue {
   private database: Promise<IDBDatabase> | undefined;
   private states = new Map<string, NativeDurableState>();
@@ -149,7 +150,7 @@ export class NativeDurableQueue {
       !row.projectId ||
       typeof row.operationId !== 'string' ||
       !row.operationId ||
-      !['commands', 'history', 'privateCanvas', 'upgrade'].includes(row.kind) ||
+      !['commands', 'history', 'privateCanvas', 'upgrade', 'databaseChange'].includes(row.kind) ||
       !(
         row.transmission === null ||
         typeof row.transmission === 'string' ||
@@ -325,6 +326,56 @@ export class NativeDurableQueue {
         },
         result: true,
       };
+    });
+  }
+  /** Personal PUT has no ledger. The caller proves its monotonic CAS precondition is consumed. */
+  confirmPrivateCASPreconditionConsumed(
+    pending: NativeDurablePending,
+    token: string,
+    guard?: () => void,
+  ): Promise<boolean> {
+    return this.transaction(pending.userId, pending.projectId, true, (row) => {
+      if (
+        pending.kind !== 'privateCanvas' ||
+        !this.matches(row, pending) ||
+        !this.leaseActive(row) ||
+        !this.tokenMatches(row, token) ||
+        !row.transmission ||
+        typeof row.transmission === 'string' ||
+        row.transmission.owner !== this.ownerId
+      )
+        return { row, result: false };
+      guard?.();
+      return { row: { ...row, uncertain: false }, result: true };
+    });
+  }
+  /**
+   * No-new-mutation proof, not a terminal ledger rejection or proof nothing was applied earlier.
+   * The required synchronous guard checks fresh remote/actor context and durably archives the
+   * exact original request. Keep the row and live lease; callers end transmission then explicitly
+   * discard. A subsequent transmission makes the row uncertain again and requires fresh proof.
+   */
+  confirmDatabaseChangePreconditionConsumed(
+    pending: NativeDurablePending,
+    token: string,
+    guard: () => void,
+  ): Promise<boolean> {
+    return this.transaction(pending.userId, pending.projectId, true, (row) => {
+      if (
+        pending.kind !== 'databaseChange' ||
+        !this.matches(row, pending) ||
+        !row.uncertain ||
+        !this.leaseActive(row) ||
+        !this.tokenMatches(row, token) ||
+        !row.transmission ||
+        typeof row.transmission === 'string' ||
+        row.transmission.owner !== this.ownerId
+      )
+        return { row, result: false };
+      const result: unknown = guard();
+      if (result && typeof (result as { then?: unknown }).then === 'function')
+        throw Error('native.database-change-proof-guard-async');
+      return { row: { ...row, uncertain: false }, result: true };
     });
   }
   /** Only a validated terminal ledger rejection establishes that no mutation was applied. */

@@ -48,7 +48,7 @@ describe('native edit contract boundary', () => {
           mode: 'write',
           previous: createEmptyNativeDocument(database),
         }).some((issue) => issue.code === 'type.not-implemented'),
-      ).toBe(true);
+      ).toBe(false);
     },
   );
   it('rejects identity/owner/database injection and unknown nested fields without stripping them', () => {

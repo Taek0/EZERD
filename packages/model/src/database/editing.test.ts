@@ -109,7 +109,7 @@ describe('native editor drafts', () => {
         validateDatabaseDocument(candidate, database, { mode: 'write', previous: document }).map(
           (issue) => issue.code,
         ),
-      ).toContain('type.not-implemented');
+      ).not.toContain('type.not-implemented');
       column.customProperties.common.changed = 'source';
       expect(candidate.columns![0]!.customProperties.common).toEqual({});
     },

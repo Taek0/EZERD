@@ -9,10 +9,12 @@ export function EnumManager({
   document: doc,
   onChange,
   readOnly,
+  allowCreate = true,
 }: {
   document: DesignDocument;
   onChange: (d: DesignDocument) => void;
   readOnly: boolean;
+  allowCreate?: boolean;
 }) {
   useI18n();
   const [editing, setEditing] = useState<string | null>(null),
@@ -105,37 +107,40 @@ export function EnumManager({
           </p>
         )}
       </div>
-      <fieldset key={editing ?? 'new'} disabled={readOnly} className="table-enum-form">
-        <label>
-          {translate('ENUM 이름')}
-          <Input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <label>
-          {translate('ENUM 값 (한 줄에 하나, 빈 줄은 빈 문자열)')}
-          <Textarea value={values} onChange={(e) => setValues(e.target.value)} />
-        </label>
-        <Button
-          disabled={!name.trim() || !schema.trim()}
-          onClick={() => {
-            try {
-              onChange(
-                upsertEnum(doc, {
-                  id: editing ?? newId(),
-                  name: name.trim(),
-                  schema: schema.trim(),
-                  values: values.split('\n'),
-                }),
-              );
-              reset();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : translate('ENUM을 확인하세요.'));
-            }
-          }}
-        >
-          {editing ? translate('ENUM 변경 적용') : translate('ENUM 생성')}
-        </Button>
-        {editing && <Button onClick={reset}>{translate('편집 취소')}</Button>}
-      </fieldset>
+      {(editing || allowCreate) && (
+        <fieldset key={editing ?? 'new'} disabled={readOnly} className="table-enum-form">
+          <label>
+            {translate('ENUM 이름')}
+            <Input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label>
+            {translate('ENUM 값 (한 줄에 하나, 빈 줄은 빈 문자열)')}
+            <Textarea value={values} onChange={(e) => setValues(e.target.value)} />
+          </label>
+          <Button
+            disabled={!name.trim() || !schema.trim()}
+            onClick={() => {
+              if (readOnly || (!editing && !allowCreate)) return;
+              try {
+                onChange(
+                  upsertEnum(doc, {
+                    id: editing ?? newId(),
+                    name: name.trim(),
+                    schema: schema.trim(),
+                    values: values.split('\n'),
+                  }),
+                );
+                reset();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : translate('ENUM을 확인하세요.'));
+              }
+            }}
+          >
+            {editing ? translate('ENUM 변경 적용') : translate('ENUM 생성')}
+          </Button>
+          {editing && <Button onClick={reset}>{translate('편집 취소')}</Button>}
+        </fieldset>
+      )}
       {error && (
         <p role="alert" className="table-error">
           {translate(error)}
