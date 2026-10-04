@@ -496,7 +496,7 @@ describe('generation, defaults and FK conditions use the full candidate', () => 
       validateDatabaseDocument(enumDoc, pg, { mode: 'export' }).some(
         (issue) => issue.params.feature === 'array',
       ),
-      ).toBe(false);
+    ).toBe(false);
   });
   it('checks MySQL generation index/count/default and integer signedness', () => {
     const doc = fixture('mysql');
