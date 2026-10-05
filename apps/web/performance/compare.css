@@ -52,3 +52,14 @@ textarea[aria-label='Comparison JSON'] {
   filter: none !important;
   backdrop-filter: none !important;
 }
+
+.comparison-editor.inline-composited .native-erd-world {
+  will-change: transform;
+}
+.comparison-editor.inline-no-clip .native-erd-world .table-inline {
+  overflow: visible !important;
+  border-radius: 0 !important;
+}
+.comparison-editor.inline-content-visibility .native-erd-node {
+  content-visibility: auto;
+}

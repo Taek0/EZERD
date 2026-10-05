@@ -313,6 +313,9 @@ function Compare() {
             'inline-no-tooltip',
             'inline-static',
             'inline-flat-style',
+            'inline-composited',
+            'inline-no-clip',
+            'inline-content-visibility',
           ].map((v) => (
             <option key={v}>{v}</option>
           ))}
