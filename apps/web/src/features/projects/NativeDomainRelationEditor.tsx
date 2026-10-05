@@ -13,11 +13,13 @@ import {
 import { nativeDurableId } from './native-durable-queue.js';
 import { loadNativeEditorDraft } from './native-editor-draft.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
+import { Checkbox } from '../../components/ui/index.js';
 registerTranslations({
   '도메인 연결': 'Domain relationships',
   '연결 추가': 'Add relationship',
   '연결 수정': 'Edit relationship',
   '연결 삭제': 'Delete relationship',
+  '도메인 관계 수정': 'Edit domain relationship',
   '출발 도메인': 'Source domain',
   '도착 도메인': 'Target domain',
   방향: 'Direction',
@@ -105,7 +107,13 @@ export function NativeDomainRelationEditor({
   return (
     <PanelSection
       className="native-property-editor"
-      title={t('새 도메인 관계')}
+      title={t(
+        action === 'create'
+          ? '새 도메인 관계'
+          : action === 'edit'
+            ? '도메인 관계 수정'
+            : '연결 삭제',
+      )}
       open={open}
       onOpenChange={setOpen}
     >
@@ -113,13 +121,16 @@ export function NativeDomainRelationEditor({
         <>
           <p>{t('조회 전용')}</p>
           <ul>
-            {document.domainRelations.map((relation) => (
-              <li key={relation.id}>
-                {relation.name}:{' '}
-                {document.domains.find((domain) => domain.id === relation.sourceDomainId)?.name} →{' '}
-                {document.domains.find((domain) => domain.id === relation.targetDomainId)?.name}
-              </li>
-            ))}
+            {document.domainRelations
+              .filter((relation) => !selectedId || relation.id === selectedId)
+              .map((relation) => (
+                <li key={relation.id}>
+                  {relation.name}:{' '}
+                  {document.domains.find((domain) => domain.id === relation.sourceDomainId)?.name}{' '}
+                  {relation.direction === 'both' ? '↔' : '→'}{' '}
+                  {document.domains.find((domain) => domain.id === relation.targetDomainId)?.name}
+                </li>
+              ))}
           </ul>
         </>
       ) : (
@@ -239,8 +250,7 @@ function NativeDomainRelationForm({
           <>
             <p>{relation?.name}</p>
             <label>
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={values.review === review}
                 onChange={(event) => change('review', event.target.checked ? review : '')}
               />

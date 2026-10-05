@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   NativeEditorCommand,
   NativePersonalCanvasCommand,
@@ -18,6 +18,7 @@ import {
 import { nativeDurableId } from './native-durable-queue.js';
 import { useNativeExportBlocker } from './native-export-state.js';
 type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
+export type NativeCanvasSubmit = () => Promise<void>;
 const expected = (snapshot: ProjectDocumentState) => ({
   version: snapshot.project.version,
   sequence: snapshot.sequence,
@@ -32,6 +33,7 @@ export function NativeCanvasInputForm({
   disabled,
   build,
   children,
+  onSubmitReady,
 }: {
   context: {
     userId: string;
@@ -53,6 +55,7 @@ export function NativeCanvasInputForm({
     values: Record<string, string>,
     change: (field: string, value: string) => void,
   ) => ReactNode;
+  onSubmitReady?: (submit: NativeCanvasSubmit) => void;
 }) {
   const { t } = useI18n();
   const currentExpected = expected(context.snapshot);
@@ -83,6 +86,8 @@ export function NativeCanvasInputForm({
   const latest = useRef(loaded.draft);
   const [error, setError] = useState(loaded.error);
   const [storageError, setStorageError] = useState(loaded.error);
+  const submitting = useRef(false);
+  const submitLatest = useRef<NativeCanvasSubmit>(async () => {});
   const dirty = [...new Set([...Object.keys(draft.values), ...Object.keys(draft.before)])].some(
     (key) => draft.values[key] !== draft.before[key],
   );
@@ -107,9 +112,11 @@ export function NativeCanvasInputForm({
       setStorageError(message(error));
     }
   }
-  async function save() {
-    if (context.busy || stale || disabled || storageError) return;
+  async function handleSubmit() {
+    if (context.busy || stale || disabled || storageError || submitting.current) return;
+    submitting.current = true;
     const captured = latest.current;
+    setError('');
     try {
       const commands = build(captured.values);
       try {
@@ -128,14 +135,26 @@ export function NativeCanvasInputForm({
       }
     } catch (error) {
       setError(message(error));
+    } finally {
+      submitting.current = false;
     }
   }
+  useLayoutEffect(() => {
+    submitLatest.current = handleSubmit;
+  });
+  useLayoutEffect(() => {
+    let active = true;
+    onSubmitReady?.(() => (active ? submitLatest.current() : Promise.resolve()));
+    return () => {
+      active = false;
+    };
+  }, [onSubmitReady]);
   return (
     <form
       className="native-property-editor"
       onSubmit={(event) => {
         event.preventDefault();
-        void save();
+        void handleSubmit();
       }}
     >
       <fieldset disabled={context.busy}>

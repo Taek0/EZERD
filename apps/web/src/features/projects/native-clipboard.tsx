@@ -9,7 +9,8 @@ import {
   NativeEditorField,
   type NativeEditorSave,
 } from './native-editor-form.js';
-import { Button } from '../../components/ui/index.js';
+import { AnimatedDetails, Button, Checkbox, Textarea } from '../../components/ui/index.js';
+import { PanelSection } from '../../shared/editor/panel.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import type { DatabaseIssue } from '@ezerd/model';
 import {
@@ -157,14 +158,12 @@ export function NativeClipboardMenu({
   };
   const counts = copied ? nativeClipboardCounts(copied.file) : null;
   return (
-    <details className="native-property-editor" aria-label={t('테이블 복사·붙여넣기')}>
-      <summary>{t('테이블 복사·붙여넣기')}</summary>
+    <PanelSection className="native-property-editor" title={t('테이블 복사·붙여넣기')}>
       <fieldset>
         <legend>{t('복사할 테이블')}</legend>
         {(source.tables ?? []).map((table) => (
           <label key={table.id}>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={selected.includes(table.id)}
               onChange={(event) => {
                 setSelected((ids) =>
@@ -211,7 +210,7 @@ export function NativeClipboardMenu({
           )}
           <label>
             {t('복사할 내용')}
-            <textarea
+            <Textarea
               readOnly
               value={copied.text}
               onFocus={(event) => event.currentTarget.select()}
@@ -249,7 +248,7 @@ export function NativeClipboardMenu({
       ) : (
         <p>{t('조회 전용')}</p>
       )}
-    </details>
+    </PanelSection>
   );
 }
 
@@ -351,7 +350,7 @@ function NativeClipboardPasteForm({
           <>
             <label>
               {t('붙여넣을 내용')}
-              <textarea value={text} onChange={(event) => input(event.target.value)} />
+              <Textarea value={text} onChange={(event) => input(event.target.value)} />
             </label>
             <Button
               onClick={() => {
@@ -508,7 +507,7 @@ function NativeClipboardPasteForm({
                     );
                   })}
                 </ul>
-                <details>
+                <AnimatedDetails>
                   <summary>{t('객체 ID 변경')}</summary>
                   <table>
                     <thead>
@@ -526,7 +525,7 @@ function NativeClipboardPasteForm({
                       ))}
                     </tbody>
                   </table>
-                </details>
+                </AnimatedDetails>
               </>
             )}
           </>

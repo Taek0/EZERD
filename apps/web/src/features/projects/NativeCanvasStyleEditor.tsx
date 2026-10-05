@@ -8,6 +8,9 @@ import {
 } from './native-editor-form.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import type { NativeCanvasStyleCommand } from '@ezerd/contracts';
+import { Checkbox } from '../../components/ui/index.js';
+import { PanelSection } from '../../shared/editor/panel.js';
+import { DomainColorPicker } from '../domains/DomainColorPicker.js';
 registerTranslations({
   '카드 표시': 'Card appearance',
   '색상 초기화': 'Reset color',
@@ -21,6 +24,7 @@ export function NativeCanvasStyleEditor({
   editable,
   selectedTableId,
   selectedDomainId,
+  selectedNoteId,
   initialSelection,
 }: {
   document: NativeDesignDocument;
@@ -28,6 +32,7 @@ export function NativeCanvasStyleEditor({
   editable: boolean;
   selectedTableId?: string;
   selectedDomainId?: string;
+  selectedNoteId?: string;
   initialSelection?: string;
 }) {
   const { t } = useI18n();
@@ -60,24 +65,35 @@ export function NativeCanvasStyleEditor({
   ];
   const [selection, setSelection] = useState(
     initialSelection ??
-      (selectedDomainId
-        ? `domain:${selectedDomainId}`
-        : selectedTableId
-          ? `table:${selectedTableId}`
-          : (targets[0]?.value ?? '')),
+      (selectedNoteId
+        ? `note:${selectedNoteId}`
+        : selectedDomainId
+          ? `domain:${selectedDomainId}`
+          : selectedTableId
+            ? `table:${selectedTableId}`
+            : (targets[0]?.value ?? '')),
   );
   useEffect(() => {
     if (initialSelection) return;
-    if (selectedDomainId) setSelection(`domain:${selectedDomainId}`);
+    if (selectedNoteId) setSelection(`note:${selectedNoteId}`);
+    else if (selectedDomainId) setSelection(`domain:${selectedDomainId}`);
     else if (selectedTableId) setSelection(`table:${selectedTableId}`);
-  }, [selectedDomainId, selectedTableId, initialSelection]);
+  }, [selectedDomainId, selectedTableId, selectedNoteId, initialSelection]);
   const selected = targets.find((target) => target.value === selection),
     table = document.tables?.find(
       (table) => selected?.target.kind === 'table' && table.id === selected.target.id,
     );
+  const fallbackColor = table
+    ? (document.domains.find((domain) => domain.id === table.domainId)?.color ?? '#8993a3')
+    : selected?.target.kind === 'note'
+      ? '#fff3c4'
+      : '#8993a3';
   return (
-    <details className="native-property-editor" open={initialSelection ? true : undefined}>
-      <summary>{t('카드 표시')}</summary>
+    <PanelSection
+      className="native-property-editor"
+      title={t('카드 표시')}
+      defaultOpen={!!initialSelection}
+    >
       {!editable || !context ? (
         <p>{t('조회 전용')}</p>
       ) : (
@@ -110,27 +126,39 @@ export function NativeCanvasStyleEditor({
             >
               {(values, change) => (
                 <>
-                  <NativeEditorField
-                    label="색상"
-                    value={values.color ?? ''}
+                  <DomainColorPicker
+                    label={t(
+                      selected.target.kind === 'note'
+                        ? '메모 색상'
+                        : table
+                          ? '테이블 색상'
+                          : '도메인 색상',
+                    )}
+                    value={
+                      /^#[0-9a-f]{6}$/i.test(values.color ?? '') ? values.color! : fallbackColor
+                    }
+                    disabled={context.busy}
                     onChange={(value) => change('color', value)}
+                    onReset={() => change('color', '')}
                   />
-                  <button type="button" onClick={() => change('color', '')}>
-                    {t('색상 초기화')}
-                  </button>
+                  {!!values.color && !/^#[0-9a-f]{6}$/i.test(values.color) && (
+                    <NativeEditorField
+                      label="색상"
+                      value={values.color}
+                      onChange={(value) => change('color', value)}
+                    />
+                  )}
                   {table && (
                     <>
                       <label>
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={values.showNullable === 'true'}
                           onChange={(event) => change('showNullable', String(event.target.checked))}
                         />
                         {t('NULL·필수 표시')}
                       </label>
                       <label>
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={values.showComment === 'true'}
                           onChange={(event) => change('showComment', String(event.target.checked))}
                         />
@@ -144,6 +172,6 @@ export function NativeCanvasStyleEditor({
           )}
         </>
       )}
-    </details>
+    </PanelSection>
   );
 }
