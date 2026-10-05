@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { NativeColumn, NativeTable } from '@ezerd/model';
-import { Button, Input } from '../../components/ui/index.js';
+import { Button, Input, Textarea } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import {
   loadNativeDraft,
@@ -219,7 +219,7 @@ export function NativePropertyEditor({
           </label>
           <label>
             {t('물리 설명')}
-            <textarea
+            <Textarea
               value={comment}
               maxLength={10000}
               onChange={(event) => change('comment', event.target.value)}
@@ -235,7 +235,7 @@ export function NativePropertyEditor({
           </label>
           <label>
             {t('논리 정의')}
-            <textarea
+            <Textarea
               value={definition}
               maxLength={10000}
               onChange={(event) => change('definition', event.target.value)}
