@@ -3,7 +3,8 @@ import type { NativeDesignDocument, NodeLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { NativeDomainLines } from './native-domain-lines.js';
 import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
-import { nativeCardColor } from './native-canvas-style.js';
+import { NativeTableLines } from './NativeTableLines.js';
+import { nativeCardColor, nativeTableHeaderColor } from './native-canvas-style.js';
 import { useI18n } from '../../shared/i18n/index.js';
 
 export interface NativeSceneActions {
@@ -52,29 +53,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   const { t } = useI18n();
   return (
     <>
-      <svg className="native-erd-lines" aria-label={t('외래 키')}>
-        <defs>
-          <marker
-            id="native-fk-arrow"
-            markerWidth="8"
-            markerHeight="8"
-            refX="7"
-            refY="4"
-            orient="auto"
-          >
-            <path d="M 0 0 L 8 4 L 0 8 Z" />
-          </marker>
-        </defs>
-        {drawn.relations.map(({ relation, geometry, label }) => (
-          <g key={relation.id} data-relation-id={relation.id}>
-            <path d={geometry.path} markerEnd="url(#native-fk-arrow)" />
-            <text x={geometry.labelX} y={geometry.labelY} textAnchor="middle">
-              {label}
-            </text>
-            <title>{`${label}: ${relation.sourceTableId} → ${relation.targetTableId}`}</title>
-          </g>
-        ))}
-      </svg>
+      <NativeTableLines relations={drawn.relations} mode={mode} />
       {effectiveView === 'overview' && (
         <NativeDomainLines
           document={base}
@@ -170,7 +149,14 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               }
             }}
           >
-            <header>
+            <header
+              className={table ? 'native-table-header' : undefined}
+              style={
+                table
+                  ? { background: nativeTableHeaderColor(base, table), color: '#ffffff' }
+                  : undefined
+              }
+            >
               {table ? (
                 <button type="button" onClick={() => onSelect(table.id)}>
                   {title || t('이름 없는 테이블')}
@@ -182,12 +168,25 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               ) : (
                 <strong>{title}</strong>
               )}
+              {table && (
+                <span
+                  className="native-table-owner"
+                  title={base.domains.find((d) => d.id === table.domainId)?.name ?? t('미지정')}
+                >
+                  {base.domains.find((d) => d.id === table.domainId)?.name ?? t('미지정')}
+                  {mode === 'physical' && table.physical.namespace.kind === 'postgresSchema' && (
+                    <span
+                      className="native-table-schema"
+                      title={table.physical.namespace.name || 'public'}
+                    >
+                      {table.physical.namespace.name || 'public'}
+                    </span>
+                  )}
+                </span>
+              )}
             </header>
             {table && (
               <>
-                {mode === 'physical' && table.physical.namespace.kind === 'postgresSchema' && (
-                  <small>{table.physical.namespace.name || 'public'}</small>
-                )}
                 <table>
                   <NativeCanvasTableRows
                     document={base}

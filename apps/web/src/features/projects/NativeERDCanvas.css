@@ -101,3 +101,135 @@
 .native-erd-actions {
   margin-top: 12px;
 }
+
+/* Match the original card language without moving camera state into the scene. */
+.native-erd-node.table {
+  border-radius: 8px;
+}
+.native-erd-node.table .native-table-header {
+  height: 50px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 0;
+}
+.native-table-header > button {
+  min-width: 0;
+  flex: 1;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.native-table-owner {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+}
+.native-erd-node.table table {
+  table-layout: fixed;
+  font-size: 13px;
+}
+.native-erd-node.table thead {
+  height: 28px;
+  background: var(--canvas-bg, #f6f8fb);
+  color: var(--muted, #617087);
+}
+.native-erd-node.table thead th {
+  padding: 0 6px;
+  height: 28px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.native-erd-node.table td,
+.native-erd-node.table th {
+  box-sizing: border-box;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.native-erd-node.table tbody button,
+.native-type-cell > span,
+.native-comment-cell > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.native-erd-node.table tbody button {
+  width: 100%;
+  padding: 6px 0;
+  font: inherit;
+  text-align: left;
+}
+.native-key-marker {
+  color: var(--accent, #4169e1);
+  font-size: 11px;
+}
+.native-null-cell {
+  color: var(--muted, #617087);
+  font-size: 10px;
+}
+.native-comment-cell {
+  color: var(--muted, #617087);
+  font-size: 12px;
+}
+.native-erd-node.table tbody tr[data-pk='true'] {
+  background: #fff7df;
+}
+.native-erd-node.table tbody tr[data-fk='true'] {
+  background: #edf5ff;
+}
+.native-erd-node.table tbody tr[data-pk='true'][data-fk='true'] {
+  background: #f1f0ff;
+}
+.native-erd-node.table tbody tr:hover {
+  box-shadow: inset 0 0 0 1px var(--accent, #4169e1);
+}
+.native-erd-node button:focus-visible {
+  outline: 2px solid var(--accent, #4169e1);
+  outline-offset: -2px;
+  border-radius: 3px;
+}
+.native-table-lines {
+  color: var(--accent, #4169e1);
+}
+.native-table-lines.logical {
+  color: var(--muted, #617087);
+}
+.native-table-lines path {
+  stroke: currentColor;
+}
+.native-table-lines marker path {
+  fill: none;
+}
+.native-table-lines .native-relation-stroke {
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.native-table-relation rect {
+  fill: var(--panel, #fafbfc);
+  stroke: var(--line, #bdc8d8);
+  stroke-width: 1;
+}
+.native-table-lines text {
+  fill: var(--text, #26344a);
+  stroke: none;
+  font-size: 12px;
+}
+
+.native-table-schema {
+  display: block;
+  font-size: 10px;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

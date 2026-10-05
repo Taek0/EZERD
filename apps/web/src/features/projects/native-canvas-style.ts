@@ -35,6 +35,13 @@ export function nativeTableCanvasRows(
   table: NativeTable,
   mode: 'physical' | 'logical',
 ) {
+  const foreignColumns = new Set(
+    (document.tableRelations ?? [])
+      .filter(
+        (relation) => relation.sourceTableId === table.id && isVisibleInView(relation.scope, mode),
+      )
+      .flatMap((relation) => relation.physical?.sourceColumnIds ?? []),
+  );
   return (document.columns ?? [])
     .filter(
       (column) => column.tableId === table.id && isVisibleInView(column.scope, mode, table.scope),
@@ -56,7 +63,8 @@ export function nativeTableCanvasRows(
             key.columnIds.includes(column.id) &&
             isVisibleInView(key.scope, mode, table.scope),
         )
-        .map((key) => (key.kind === 'primary' ? 'PK' : 'UQ'))
+        .map<string>((key) => (key.kind === 'primary' ? 'PK' : 'UQ'))
+        .concat(foreignColumns.has(column.id) ? ['FK'] : [])
         .join(' '),
       nullable:
         table.canvasDisplay?.showNullable === false
@@ -87,5 +95,13 @@ export function nativeCardColor(document: NativeDesignDocument, objectId: string
     document.domains.find((item) => item.id === objectId)?.color ??
     document.notes.find((item) => item.id === objectId)?.color ??
     '#c9d0dd'
+  );
+}
+
+export function nativeTableHeaderColor(document: NativeDesignDocument, table: NativeTable) {
+  return (
+    table.color ??
+    document.domains.find((domain) => domain.id === table.domainId)?.color ??
+    '#8993a3'
   );
 }
