@@ -121,6 +121,35 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           domains: [{ id: 'd', name: 'D', description: '' }],
           tables: [a, b, c],
           columns,
+          keys: [a, b, c].map((table) => ({
+            id: table.id + '-pk',
+            tableId: table.id,
+            kind: 'primary' as const,
+            scope: 'physical' as const,
+            name: table.id + '_pk',
+            columnIds: [table.id + '-id'],
+          })),
+          tableRelations: [
+            {
+              id: 'relationship',
+              sourceTableId: 'a',
+              targetTableId: 'b',
+              scope: 'both',
+              logical: {
+                name: 'Original meaning',
+                description: 'Keep this',
+                cardinality: 'one-to-many',
+                required: false,
+              },
+              physical: {
+                name: 'fk_original',
+                sourceColumnIds: ['a-id'],
+                targetColumnIds: ['b-id'],
+                onDelete: 'NO ACTION',
+                onUpdate: 'NO ACTION',
+              },
+            },
+          ],
         };
         for (const [table, x] of [
           ['a', 40],
@@ -225,6 +254,72 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             .map((n: any) => [n.x, n.y]),
         ).toEqual(privateMoved.map((n) => [n.x, n.y]));
         expect(await state(id)).toEqual(head);
+        const relation = head.sourceDocument.tableRelations[0];
+        const invalidEndpoint = await api(
+          `/projects/${id}/native-sync/commands`,
+          'POST',
+          packet([
+            { type: 'patch_foreign_key', id: relation.id, patch: { targetTableId: 'hidden' } },
+          ]),
+        );
+        expect(invalidEndpoint.status).toBe(201);
+        expect(invalidEndpoint.data.status).toBe('rejected');
+        const rejectedHead = await state(id);
+        expect(rejectedHead.sourceDocument).toEqual(head.sourceDocument);
+        expect(rejectedHead.project.version).toBe(head.project.version);
+        expect(rejectedHead.sequence).toBe(head.sequence + 1);
+        head = rejectedHead;
+        const endpointRequest = packet([
+          {
+            type: 'patch_foreign_key',
+            id: relation.id,
+            patch: { targetTableId: 'hidden', physical: { targetColumnIds: ['hidden-id'] } },
+          },
+        ]);
+        const endpoint = await api(`/projects/${id}/native-sync/commands`, 'POST', endpointRequest);
+        expect(endpoint.status, JSON.stringify(endpoint.data)).toBe(201);
+        expect(endpoint.data.status).toBe('accepted');
+        head = await state(id);
+        expect(head.sourceDocument.tableRelations[0]).toEqual({
+          ...relation,
+          targetTableId: 'hidden',
+          physical: { ...relation.physical, targetColumnIds: ['hidden-id'] },
+        });
+        const endpointReplay = await api(
+          `/projects/${id}/native-sync/commands`,
+          'POST',
+          endpointRequest,
+        );
+        expect(endpointReplay.status).toBe(201);
+        expect(await state(id)).toEqual(head);
+        const removeDefinition = await api(
+          `/projects/${id}/native-sync/commands`,
+          'POST',
+          packet([{ type: 'patch_foreign_key', id: relation.id, patch: { physical: null } }]),
+        );
+        expect(removeDefinition.status, JSON.stringify(removeDefinition.data)).toBe(201);
+        expect(removeDefinition.data.status).toBe('accepted');
+        head = await state(id);
+        expect(head.sourceDocument.tableRelations[0]).toEqual({
+          ...relation,
+          targetTableId: 'hidden',
+          physical: null,
+        });
+        expect(head.sourceDocument.columns).toEqual(columns);
+        const restoreDefinition = await api(
+          `/projects/${id}/native-sync/commands`,
+          'POST',
+          packet([
+            {
+              type: 'patch_foreign_key',
+              id: relation.id,
+              patch: { physical: { ...relation.physical, targetColumnIds: ['hidden-id'] } },
+            },
+          ]),
+        );
+        expect(restoreDefinition.status, JSON.stringify(restoreDefinition.data)).toBe(201);
+        expect(restoreDefinition.data.status).toBe('accepted');
+        head = await state(id);
         const deletion = await api(
           `/projects/${id}/native-sync/commands`,
           'POST',

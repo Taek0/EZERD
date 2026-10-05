@@ -233,19 +233,31 @@ export const nativeEnumPatchSchema = enumeration
   .strict()
   .transform((value) => value as Partial<Omit<ProjectEnum, 'id'>>);
 export interface NativeForeignKeyPatch {
+  sourceTableId?: string;
+  targetTableId?: string;
   scope?: NativeTableRelation['scope'];
   logical?: Partial<NativeTableRelation['logical']>;
-  physical?: Partial<NonNullable<NativeTableRelation['physical']>>;
+  physical?: Partial<NonNullable<NativeTableRelation['physical']>> | null;
   deferrable?: NonNullable<NativeTableRelation['deferrable']> | null;
 }
 export const nativeForeignKeyPatchSchema = z
   .strictObject({
+    sourceTableId: id.optional(),
+    targetTableId: id.optional(),
     scope: relation.shape.scope.optional(),
     logical: relation.shape.logical.partial().strict().optional(),
-    physical: relation.shape.physical.unwrap().partial().strict().optional(),
+    physical: relation.shape.physical.unwrap().partial().strict().nullable().optional(),
     deferrable: relation.shape.deferrable.unwrap().nullable().optional(),
   })
   .superRefine(rejectExplicitDeferrableUndefined)
+  .superRefine((value, ctx) => {
+    if (Object.hasOwn(value, 'physical') && value.physical === undefined)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['physical'],
+        message: 'foreign-key.physical-explicit-undefined',
+      });
+  })
   .transform((value) => value as NativeForeignKeyPatch);
 
 /** Shape only. Current-project policy, legacy provenance and retired IDs are checked at commit. */

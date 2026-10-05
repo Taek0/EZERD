@@ -20,6 +20,24 @@ import {
 import { createEmptyNativeDocument } from '@ezerd/model';
 
 describe('native structured editor commands', () => {
+  it('distinguishes omitted FK definitions from explicit removal and allows endpoint patches', () => {
+    expect(
+      nativeForeignKeyPatchSchema.parse({
+        sourceTableId: 'child',
+        targetTableId: 'parent',
+        physical: null,
+      }),
+    ).toEqual({ sourceTableId: 'child', targetTableId: 'parent', physical: null });
+    expect(
+      Object.hasOwn(nativeForeignKeyPatchSchema.parse({ logical: { name: 'new' } }), 'physical'),
+    ).toBe(false);
+    expect(nativeForeignKeyPatchSchema.safeParse({ physical: undefined }).success).toBe(false);
+    expect(
+      nativeForeignKeyPatchSchema.safeParse({ physical: { name: 'partial' }, id: 'replacement' })
+        .success,
+    ).toBe(false);
+    expect(nativeForeignKeyPatchSchema.safeParse({ sourceTableId: '' }).success).toBe(false);
+  });
   it.each(['patch_key', 'patch_foreign_key'] as const)(
     '%s preserves omission and accepts root null only as an explicit removal token',
     (type) => {
@@ -278,7 +296,7 @@ describe('native structured editor commands', () => {
       for (const patch of [
         { id: 'other' },
         { tableId: 'other' },
-        { sourceTableId: 'other' },
+        ...(type === 'patch_foreign_key' ? [] : [{ sourceTableId: 'other' }]),
         { database: 'mysql' },
       ])
         expect(nativeEditorCommandSchema.safeParse({ type, id: 'object', patch }).success).toBe(
