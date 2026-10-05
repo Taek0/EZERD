@@ -44,3 +44,11 @@ textarea[aria-label='Comparison JSON'] {
   height: 520px;
   min-height: 520px;
 }
+
+/* Diagnostic only: retain motion and DOM while removing expensive visual effects. */
+.comparison-editor.inline-flat-style .native-erd-world * {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+}

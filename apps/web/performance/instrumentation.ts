@@ -55,6 +55,9 @@ export function measurementPlugin(
     'layoutDomainRelations',
     'Canvas',
     'NativeERDCanvas',
+    'NativeCanvasWorkspace',
+    'EditableNativeCanvasInlineCell',
+    'NativeCanvasTableRows',
     'nativeCanvasScene',
   ]);
   const seen = new Set<string>();
@@ -77,7 +80,16 @@ export function measurementPlugin(
       if (path.endsWith('/features/canvas/Canvas.tsx'))
         names = ['Canvas', 'moveViewport', 'applyCameraFrame', 'preview', 'move', 'finish'];
       if (path.endsWith('/features/projects/NativeERDCanvas.tsx'))
-        names = ['NativeERDCanvas', 'nativeCanvasScene', 'nativeCanvasWheel'];
+        names = [
+          'NativeERDCanvas',
+          'NativeCanvasWorkspace',
+          'nativeCanvasScene',
+          'nativeCanvasWheel',
+        ];
+      if (path.endsWith('/features/projects/NativeCanvasInlineCell.tsx'))
+        names = ['EditableNativeCanvasInlineCell'];
+      if (path.endsWith('/features/projects/NativeCanvasTableRows.tsx'))
+        names = ['NativeCanvasTableRows'];
       if (/\/packages\/model\/(dist|src)\/database\/display\.(js|ts)$/.test(path))
         names = ['nativeColumnTypeDisplay'];
       if (!names.length) return;

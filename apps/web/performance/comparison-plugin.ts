@@ -18,18 +18,40 @@ export function comparisonPlugin(controlPath: string): Plugin {
         const native = source
           .replace(
             marker,
-            "onEdit={__nativeComparison.variant === 'editable-presentation' ? openInline : userId && editable ? openInline : undefined}",
+            "onEdit={(__nativeComparison.variant === 'editable-presentation' || __nativeComparison.variant.startsWith('inline-')) ? openInline : userId && editable ? openInline : undefined}",
           )
           .replace(
             contextMarker,
-            "userId && editable || __nativeComparison.variant === 'editable-presentation' ? { editorContext: inlineContext } : {}",
+            "userId && editable || (__nativeComparison.variant === 'editable-presentation' || __nativeComparison.variant.startsWith('inline-')) ? { editorContext: inlineContext } : {}",
           )
           .replace(
             contextValue,
-            "userId: userId ?? '90000000-0000-4000-8000-000000000090', snapshot, busy: __nativeComparison.variant === 'editable-presentation' ? false : allBusy || !!draft || !editable, onSave",
+            "userId: userId ?? '90000000-0000-4000-8000-000000000090', snapshot, busy: (__nativeComparison.variant === 'editable-presentation' || __nativeComparison.variant.startsWith('inline-')) ? false : allBusy || !!draft || !editable, onSave",
           );
         return {
           code: `import { comparisonControl as __nativeComparison } from ${JSON.stringify(controlPath)};\n${native}`,
+          map: null,
+        };
+      }
+      if (path.endsWith('/features/projects/NativeCanvasInlineCell.tsx')) {
+        let native = source
+          .replace('<Tooltip content=', '<__DiagnosticTooltip content=')
+          .replace('</Tooltip>', '</__DiagnosticTooltip>');
+        const marker = '  const input = nativeInlineInput(document, target);';
+        const functionStart = native.indexOf('function EditableNativeCanvasInlineCell(');
+        const insert = native.indexOf(marker, functionStart);
+        if (insert < 0 || !native.includes('<__DiagnosticTooltip'))
+          this.error('Missing inline diagnostic target');
+        native =
+          native.slice(0, insert) +
+          `
+  if (__inlineComparison.variant === 'inline-static') return <span className={[title ? 'table-inline table-title-inline' : 'table-inline', target.field === 'format' ? 'table-type-trigger' : '', className].filter(Boolean).join(' ')} data-inline-cell aria-label={label} title={display} tabIndex={0}>{display || '—'}</span>;
+` +
+          native.slice(insert);
+        return {
+          code: `import { comparisonControl as __inlineComparison } from ${JSON.stringify(controlPath)};
+const __DiagnosticTooltip = ({children, content}: Parameters<typeof Tooltip>[0]) => __inlineComparison.variant === 'inline-no-tooltip' ? children : <Tooltip content={content}>{children}</Tooltip>;
+${native}`,
           map: null,
         };
       }
