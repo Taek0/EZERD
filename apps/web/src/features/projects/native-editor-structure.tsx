@@ -7,9 +7,11 @@ import {
   nativeExpressionDisplay,
   planNativeDeletion,
   createNativeForeignKeyFromPrimaryKey,
+  requestFingerprint,
   type NativeDesignDocument,
   type NativeTable,
   type NativeDeletionCollection,
+  type NativeTableRelation,
 } from '@ezerd/model';
 import { AnimatedDetails, Button, Checkbox, IconButton } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
@@ -76,6 +78,10 @@ registerTranslations({
     'This design format does not support removing only the physical foreign key.',
   'PK / UNIQUE와 FK 컬럼을 같은 수로 선택하세요.':
     'Select the same number of PK / UNIQUE and FK columns.',
+  'FK 정의 추가': 'Add foreign key definition',
+  '변경한 테이블과 컬럼 대응을 확인했습니다.': 'I reviewed the changed tables and column mapping.',
+  '변경한 테이블과 컬럼 대응을 확인한 뒤 저장하세요.':
+    'Review the changed tables and column mapping before saving.',
   'PK에서 컬럼 자동 생성': 'Generate columns from primary key',
   '직접 컬럼 연결': 'Map existing columns',
   '참조 테이블': 'Referenced table',
@@ -777,6 +783,7 @@ export function nativeConstraintInitial(
     result.targetTableId = relation.targetTableId;
     result.physicalMode = relation.physical ? 'present' : 'none';
     result.mappingCount = String(relation.physical?.sourceColumnIds.length ?? 0);
+    result.mappingReview = '';
     result.columnIds = relation.physical?.sourceColumnIds.join('\n') ?? '';
     result.targetColumnIds = relation.physical?.targetColumnIds.join('\n') ?? '';
     result.onDelete = relation.physical?.onDelete ?? 'NO ACTION';
@@ -785,6 +792,82 @@ export function nativeConstraintInitial(
   }
   return result;
 }
+
+function nativeRelationMappingColumns(
+  document: NativeDesignDocument,
+  relation: NativeTableRelation,
+  values: Record<string, string>,
+  sources: string[],
+  targets: string[],
+) {
+  const source = values.sourceTableId ?? relation.sourceTableId,
+    target = values.targetTableId ?? relation.targetTableId;
+  if (
+    !document.tables?.some((table) => table.id === source && table.scope !== 'logical') ||
+    !document.tables?.some((table) => table.id === target && table.scope !== 'logical')
+  )
+    throw Error('foreign-key.table-not-found');
+  if (
+    !sources.length ||
+    sources.length !== targets.length ||
+    sources.some((id) => !id) ||
+    targets.some((id) => !id) ||
+    new Set(sources).size !== sources.length ||
+    new Set(targets).size !== targets.length
+  )
+    throw Error('foreign-key.columns-invalid');
+  if (
+    sources.some(
+      (id) =>
+        !document.columns?.some(
+          (column) => column.id === id && column.tableId === source && column.scope !== 'logical',
+        ),
+    ) ||
+    targets.some(
+      (id) =>
+        !document.columns?.some(
+          (column) => column.id === id && column.tableId === target && column.scope !== 'logical',
+        ),
+    )
+  )
+    throw Error('foreign-key.columns-invalid');
+}
+
+/** A review belongs to exact endpoints/pairs and the saved definition, never to a checkbox alone. */
+export function nativeRelationMappingReviewToken(
+  document: NativeDesignDocument,
+  id: string,
+  values: Record<string, string>,
+) {
+  const relation = document.tableRelations?.find((relation) => relation.id === id);
+  if (!relation) throw Error('document.object-not-found');
+  return requestFingerprint({
+    id,
+    original: relation,
+    sourceTableId: values.sourceTableId ?? relation.sourceTableId,
+    targetTableId: values.targetTableId ?? relation.targetTableId,
+    columnIds: list(values.columnIds),
+    targetColumnIds: list(values.targetColumnIds),
+    physicalMode: values.physicalMode ?? (relation.physical ? 'present' : 'none'),
+  });
+}
+
+export function nativeRelationEndpointChange(
+  values: Record<string, string>,
+  side: 'sourceTableId' | 'targetTableId',
+  id: string,
+) {
+  if (values[side] === id) return values;
+  return {
+    ...values,
+    [side]: id,
+    columnIds: '',
+    targetColumnIds: '',
+    mappingCount: '0',
+    mappingReview: '',
+  };
+}
+
 export function nativeConstraintCommands(
   document: NativeDesignDocument,
   collection: NativeDeletionCollection,
@@ -831,74 +914,95 @@ export function nativeConstraintCommands(
         if (!table) throw Error('foreign-key.table-not-found');
         patch[side] = values[side];
       }
-    const physical: Record<string, unknown> = {};
-    if (changed('name')) physical.name = values.name;
-    for (const [field, input] of [
-      ['sourceColumnIds', 'columnIds'],
-      ['targetColumnIds', 'targetColumnIds'],
-      ['onDelete', 'onDelete'],
-      ['onUpdate', 'onUpdate'],
-    ] as const)
-      if (changed(input)) {
-        requireFeature('foreignKey');
-        physical[field] =
-          input.endsWith('ColumnIds') || input === 'columnIds'
-            ? list(values[input])
-            : values[input];
-      }
     const relation = document.tableRelations!.find((r) => r.id === id)!;
-    if (changed('physicalMode') && values.physicalMode === 'none') patch.physical = null;
-    else if (Object.keys(physical).length) {
-      if (!relation.physical) throw Error('foreign-key.physical-key-required');
-      const sources =
-        (physical.sourceColumnIds as string[] | undefined) ?? relation.physical.sourceColumnIds;
-      const targets =
-        (physical.targetColumnIds as string[] | undefined) ?? relation.physical.targetColumnIds;
-      if (
-        !sources.length ||
-        sources.length !== targets.length ||
-        new Set(sources).size !== sources.length ||
-        new Set(targets).size !== targets.length
-      )
-        throw Error('foreign-key.columns-invalid');
-      if (
-        sources.some(
-          (id) =>
-            !document.columns?.some(
-              (column) =>
-                column.id === id &&
-                column.tableId === (values.sourceTableId ?? relation.sourceTableId) &&
-                column.scope !== 'logical',
-            ),
-        ) ||
-        targets.some(
-          (id) =>
-            !document.columns?.some(
-              (column) =>
-                column.id === id &&
-                column.tableId === (values.targetTableId ?? relation.targetTableId) &&
-                column.scope !== 'logical',
-            ),
+    const previousMode = before.physicalMode ?? (relation.physical ? 'present' : 'none');
+    const mode = values.physicalMode ?? previousMode;
+    if (mode !== 'none' && mode !== 'present') throw Error('native.input-invalid');
+    const adding = mode === 'present' && (previousMode === 'none' || !relation.physical);
+    const endpointsChanged = changed('sourceTableId') || changed('targetTableId');
+    const physical: Record<string, unknown> = {};
+    let candidatePhysical = relation.physical;
+    if (mode === 'none') {
+      if (previousMode !== 'none' || relation.physical) {
+        requireFeature('foreignKey');
+        patch.physical = null;
+        candidatePhysical = null;
+      }
+    } else {
+      if (adding) {
+        // A partial patch cannot create a missing definition. Preserve any saved variant while
+        // supplying every mandatory field, including unchanged NO ACTION defaults.
+        Object.assign(physical, relation.physical ?? {}, {
+          name: values.name ?? relation.physical?.name ?? '',
+          sourceColumnIds: list(values.columnIds ?? relation.physical?.sourceColumnIds.join('\n')),
+          targetColumnIds: list(
+            values.targetColumnIds ?? relation.physical?.targetColumnIds.join('\n'),
+          ),
+          onDelete: values.onDelete ?? relation.physical?.onDelete ?? 'NO ACTION',
+          onUpdate: values.onUpdate ?? relation.physical?.onUpdate ?? 'NO ACTION',
+        });
+        if (relation.scope === 'logical') patch.scope = 'both';
+      } else {
+        if (changed('name')) physical.name = values.name;
+        for (const [field, input] of [
+          ['sourceColumnIds', 'columnIds'],
+          ['targetColumnIds', 'targetColumnIds'],
+          ['onDelete', 'onDelete'],
+          ['onUpdate', 'onUpdate'],
+        ] as const)
+          if (changed(input))
+            physical[field] =
+              input.endsWith('ColumnIds') || input === 'columnIds'
+                ? list(values[input])
+                : values[input];
+      }
+      if (Object.keys(physical).length || endpointsChanged) {
+        requireFeature('foreignKey');
+        const sources =
+          (physical.sourceColumnIds as string[] | undefined) ??
+          relation.physical?.sourceColumnIds ??
+          [];
+        const targets =
+          (physical.targetColumnIds as string[] | undefined) ??
+          relation.physical?.targetColumnIds ??
+          [];
+        nativeRelationMappingColumns(document, relation, values, sources, targets);
+        if (
+          (adding || endpointsChanged) &&
+          values.mappingReview !== nativeRelationMappingReviewToken(document, id, values)
         )
-      )
-        throw Error('foreign-key.columns-invalid');
-      patch.physical = physical;
+          throw Error('foreign-key.mapping-review-required');
+        if (Object.keys(physical).length) {
+          patch.physical = physical;
+          candidatePhysical = { ...relation.physical, ...physical } as NonNullable<
+            NativeTableRelation['physical']
+          >;
+        }
+      }
     }
+    const candidateRelation: NativeTableRelation = {
+      ...relation,
+      sourceTableId: values.sourceTableId ?? relation.sourceTableId,
+      targetTableId: values.targetTableId ?? relation.targetTableId,
+      scope: adding && relation.scope === 'logical' ? 'both' : relation.scope,
+      physical: candidatePhysical,
+    };
     const options = nativeConstraintOptionsPatch('foreignKey', values, before, relation);
     if (Object.keys(options).length) {
       requireFeature('foreignKey');
       if (options.deferrable) requireFeature('deferrableForeignKey');
-      const decision = nativeConstraintOptionsDecision(
-        document,
-        'foreignKey',
-        {
-          ...relation,
-          ...(relation.physical ? { physical: { ...relation.physical, ...physical } } : {}),
-        },
-        options,
-      );
-      if (!decision.allowed || !decision.usable)
-        throw Error(decision.code ?? 'feature.not-implemented');
+      if (!candidateRelation.physical) {
+        if (options.deferrable) throw Error('native.advanced-physical-object-required');
+      } else {
+        const decision = nativeConstraintOptionsDecision(
+          document,
+          'foreignKey',
+          candidateRelation,
+          options,
+        );
+        if (!decision.allowed || !decision.usable)
+          throw Error(decision.code ?? 'feature.not-implemented');
+      }
       Object.assign(patch, options);
     }
   } else {
@@ -1022,7 +1126,14 @@ function NativeRelationMappingFields({
 }) {
   const { t } = useI18n();
   const relation = document.tableRelations!.find((item) => item.id === id)!;
-  const physical = values.physicalMode !== 'none' && !!relation.physical;
+  const physical =
+    values.physicalMode === 'present' || (values.physicalMode === undefined && !!relation.physical);
+  const reviewRequired =
+    physical &&
+    (!relation.physical ||
+      values.sourceTableId !== relation.sourceTableId ||
+      values.targetTableId !== relation.targetTableId);
+  const reviewToken = nativeRelationMappingReviewToken(document, id, values);
   const supported = (patch: Record<string, unknown>) =>
     nativeEditorCommandSchema.safeParse({ type: 'patch_foreign_key', id, patch }).success;
   const sources = list(values.columnIds),
@@ -1058,6 +1169,7 @@ function NativeRelationMappingFields({
       side,
       Array.from({ length: count }, (_, at) => (at === index ? value : (ids[at] ?? ''))).join('\n'),
     );
+    change('mappingReview', '');
   }
   return (
     <>
@@ -1074,11 +1186,15 @@ function NativeRelationMappingFields({
               label: `${document.domains.find((domain) => domain.id === table.domainId)?.name ?? t('미지정')} / ${table.physical.name || table.logical.name}`,
             }))}
           onChange={(value) => {
-            change(side, value);
-            if (physical) {
-              change('columnIds', '');
-              change('targetColumnIds', '');
-            }
+            const next = nativeRelationEndpointChange(values, side, value);
+            for (const key of [
+              side,
+              'columnIds',
+              'targetColumnIds',
+              'mappingCount',
+              'mappingReview',
+            ])
+              change(key, next[key]!);
           }}
         />
       ))}
@@ -1091,7 +1207,10 @@ function NativeRelationMappingFields({
         <>
           <Button
             disabled={disabled || !supported({ physical: null })}
-            onClick={() => change('physicalMode', 'none')}
+            onClick={() => {
+              change('physicalMode', 'none');
+              change('mappingReview', '');
+            }}
           >
             {t('FK 정의 제거')}
           </Button>
@@ -1136,6 +1255,7 @@ function NativeRelationMappingFields({
                   change('columnIds', sources.filter((_, at) => at !== index).join('\n'));
                   change('targetColumnIds', targets.filter((_, at) => at !== index).join('\n'));
                   change('mappingCount', String(count - 1));
+                  change('mappingReview', '');
                 }}
               >
                 ×
@@ -1146,6 +1266,7 @@ function NativeRelationMappingFields({
             disabled={disabled || count >= maximum}
             onClick={() => {
               change('mappingCount', String(count + 1));
+              change('mappingReview', '');
             }}
           >
             {t('+ 컬럼 매핑')}
@@ -1158,9 +1279,40 @@ function NativeRelationMappingFields({
               {t('PK / UNIQUE와 FK 컬럼을 같은 수로 선택하세요.')}
             </p>
           )}
+          {reviewRequired && (
+            <label className="table-check">
+              <Checkbox
+                aria-label={t('변경한 테이블과 컬럼 대응을 확인했습니다.')}
+                checked={values.mappingReview === reviewToken}
+                disabled={
+                  disabled ||
+                  !sources.length ||
+                  sources.length !== targets.length ||
+                  sources.some((id) => !id) ||
+                  targets.some((id) => !id)
+                }
+                onChange={(event) =>
+                  change('mappingReview', event.target.checked ? reviewToken : '')
+                }
+              />
+              {t('변경한 테이블과 컬럼 대응을 확인했습니다.')}
+            </label>
+          )}
         </>
       ) : (
-        <p>{t('물리 FK 없음')}</p>
+        <>
+          <p>{t('물리 FK 없음')}</p>
+          <Button
+            disabled={disabled}
+            onClick={() => {
+              change('physicalMode', 'present');
+              change('mappingReview', '');
+              if (!sources.length && !targets.length) change('mappingCount', '1');
+            }}
+          >
+            {t('FK 정의 추가')}
+          </Button>
+        </>
       )}
     </>
   );
@@ -1214,6 +1366,8 @@ export function NativeConstraintForm({
         try {
           return nativeConstraintCommands(document, collection, id, values, before);
         } catch (error) {
+          if (nativeEditorErrorCode(error) === 'foreign-key.mapping-review-required')
+            throw Error(t('변경한 테이블과 컬럼 대응을 확인한 뒤 저장하세요.'));
           throw Error(nativeEditorConditionText(nativeEditorErrorCode(error)));
         }
       }}

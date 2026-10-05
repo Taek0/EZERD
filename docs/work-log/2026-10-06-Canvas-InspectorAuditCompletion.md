@@ -2,6 +2,8 @@
 
 계획: [후속 복원 계획](../planning/2026-10-06-Canvas-InspectorAuditCompletion.md). 기준: [전체 감사의 항목·근거](2026-10-06-Canvas-ParityAudit.md), 원본 Canvas/TableEditor/EnumManager/inspector-state/canvas-viewport/App shell. 첫 단위 6453eda 이후의 독립 작업이다.
 
+후속 상태: 아래 R04 제한은 이 단위 작성 당시의 기록이다. 부모 backend 207016e와 [FK 인스펙터 후속 결과](2026-10-06-Canvas-ForeignKeyInspectorResult.md)에서 끝점 변경·명시적 null 제거·전체 physical 추가/복원을 연결했으며 부모가 세 DB actual HTTP 통과를 보고했다.
+
 ## 항목별 결과
 
 | ID | 구현·검증 결과 |
