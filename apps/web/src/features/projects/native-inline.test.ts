@@ -62,7 +62,7 @@ describe('native inline edits', () => {
     const entry = {
       category: 'editor',
       logicalKey: key,
-      draft: { key },
+      draft: { key, values: {} },
     } as NativeDraftArchiveEntry;
     expect(nativeDraftRecoveryTarget(doc, entry)).toEqual({
       kind: 'canvas',

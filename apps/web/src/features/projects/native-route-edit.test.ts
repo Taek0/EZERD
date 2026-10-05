@@ -24,10 +24,11 @@ describe('native relation path editing', () => {
       route,
       item.geometry.points,
       'source',
-      { x: source.x + source.width / 2, y: source.y },
+      { x: source.x + source.width / 4, y: source.y + source.height },
       item.geometry.points[0]!,
     );
-    expect(moved.sourceAnchor).toEqual({ side: 'top', ratio: 0.5 });
+    expect(moved.sourceAnchor?.side).toBe('bottom');
+    expect(moved.sourceAnchor?.ratio).toBeCloseTo(0.25);
     const command = nativeRouteCommand(
       document,
       '__tables__',

@@ -2,6 +2,9 @@ import { nativeRelationEnds, nativeRelationEndPath } from './native-relation-pre
 import { useId } from 'react';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { useI18n } from '../../shared/i18n/index.js';
+import { nativeRelationLabelWidth } from './native-canvas-style.js';
+import { nativeTableCanvasTitle } from './native-canvas-style.js';
+import type { NativeDesignDocument } from '@ezerd/model';
 
 /** Presentational cardinalities follow the existing canvas' logical endpoint metadata. */
 export function NativeTableLines({
@@ -9,11 +12,13 @@ export function NativeTableLines({
   mode,
   selectedId,
   onSelect,
+  document,
 }: {
   relations: ReturnType<typeof nativeCanvasScene>['relations'];
   mode: 'physical' | 'logical';
   selectedId?: string | null | undefined;
   onSelect?: ((id: string | null) => void) | undefined;
+  document?: NativeDesignDocument;
 }) {
   const id = useId().replaceAll(':', '');
   const { t } = useI18n();
@@ -48,7 +53,29 @@ export function NativeTableLines({
       </defs>
       {relations.map(({ relation, geometry, label }) => {
         const [source, target] = nativeRelationEnds(relation);
-        const width = Math.max(90, label.length * 8 + 24);
+        const width = nativeRelationLabelWidth(label);
+        const endpoint = (tableId: string, ids: string[]) => {
+          const table = document?.tables?.find((table) => table.id === tableId);
+          const name = table ? nativeTableCanvasTitle(table, mode) : tableId;
+          const columns = ids.map((id) => {
+            const column = document?.columns?.find(
+              (column) => column.id === id && column.tableId === tableId,
+            );
+            return column
+              ? mode === 'physical'
+                ? column.physical.name || column.logical.name
+                : column.logical.name || column.physical.name
+              : id;
+          });
+          return `${name}${columns.length ? ` (${columns.join(', ')})` : ''}`;
+        };
+        const description = [
+          relation.logical.name || label,
+          `${endpoint(relation.targetTableId, relation.physical?.targetColumnIds ?? [])} → ${endpoint(relation.sourceTableId, relation.physical?.sourceColumnIds ?? [])}`,
+          relation.logical.description,
+        ]
+          .filter(Boolean)
+          .join('\n');
         return (
           <g
             key={relation.id}
@@ -57,6 +84,8 @@ export function NativeTableLines({
             role={onSelect ? 'button' : undefined}
             tabIndex={onSelect ? 0 : undefined}
             aria-label={`${t('테이블 관계')} ${label}`}
+            aria-pressed={onSelect ? selectedId === relation.id : undefined}
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               onSelect?.(relation.id);
@@ -64,12 +93,16 @@ export function NativeTableLines({
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
+                event.stopPropagation();
                 onSelect?.(relation.id);
               }
-              if (event.key === 'Escape') onSelect?.(null);
+              if (event.key === 'Escape') {
+                event.stopPropagation();
+                onSelect?.(null);
+              }
             }}
           >
-            <title>{`${label}: ${relation.sourceTableId} → ${relation.targetTableId}`}</title>
+            <title>{description}</title>
             {onSelect && <path className="native-relation-hit" d={geometry.path} />}
             <path
               className="native-relation-stroke"
@@ -79,6 +112,7 @@ export function NativeTableLines({
               strokeDasharray={mode === 'logical' ? '6 4' : undefined}
             />
             <rect
+              className="native-relation-label"
               x={geometry.labelX - width / 2}
               y={geometry.labelY - 13}
               width={width}

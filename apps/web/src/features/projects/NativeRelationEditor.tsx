@@ -32,6 +32,7 @@ function RouteHandles({
   world,
   change,
   disabled,
+  onComplete,
 }: {
   scene: NativeRouteScene;
   relationId: string;
@@ -39,6 +40,7 @@ function RouteHandles({
   world: HTMLDivElement;
   change: (route: RelationLayout) => void;
   disabled: boolean;
+  onComplete: () => void;
 }) {
   const { t } = useI18n();
   const drag = useRef<{
@@ -111,6 +113,7 @@ function RouteHandles({
               drag.current = null;
               if (event.currentTarget.hasPointerCapture(event.pointerId))
                 event.currentTarget.releasePointerCapture(event.pointerId);
+              onComplete();
             }
           }}
           onPointerCancel={() => {
@@ -144,6 +147,7 @@ function RouteHandles({
                 handle.point,
               ),
             );
+            onComplete();
           }}
         />
       ))}
@@ -183,11 +187,17 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
       ...context,
       onSave: async (...args: Parameters<Context['onSave']>) => {
         const saved = await context.onSave(...args);
-        if (saved && active.current) onClose();
         return saved;
       },
     }),
     [context, onClose],
+  );
+  const submit = useRef<() => Promise<void>>(async () => {});
+  const registerSubmit = useMemo(
+    () => (save: () => Promise<void>) => {
+      submit.current = save;
+    },
+    [],
   );
 
   const existing = document.layout.relations?.find(
@@ -211,7 +221,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
         <strong>{t('관계선 경로 편집')}</strong>
         <Button onClick={onClose}>{t('닫기')}</Button>
       </div>
-      <p>{t('드래그 또는 방향키로 이동한 뒤 저장하세요.')}</p>
+      <p>{t('드래그를 놓거나 방향키로 이동하면 저장됩니다.')}</p>
       <NativeCanvasInputForm
         key={nativeRouteKey(viewId, relationId)}
         context={saveContext}
@@ -223,6 +233,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
           personalVersion: String(personalVersion ?? ''),
         }}
         disabled={false}
+        onSubmitReady={registerSubmit}
         build={(values) => {
           if (values.personalVersion !== String(personalVersion ?? ''))
             throw Error(t('개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.'));
@@ -282,6 +293,9 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
                   route={values.reset === 'true' ? { viewId, relationId, offset: 0 } : route}
                   world={world}
                   disabled={context.busy || mismatch}
+                  onComplete={() => {
+                    void submit.current();
+                  }}
                   change={(next) => {
                     change('reset', 'false');
                     change('route', JSON.stringify(next));

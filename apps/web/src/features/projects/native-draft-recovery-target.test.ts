@@ -58,6 +58,43 @@ function editor(key: string): NativeDraftArchiveEntry {
   };
 }
 describe('native recovery source routing', () => {
+  it('routes note/domain inspector and text drafts only to their actual view', () => {
+    const doc = fixture();
+    const shared = editor('canvas:description:__tables__:n');
+    if ('values' in shared.draft) shared.draft.values = { objectId: 'n', text: 'preserved' };
+    expect(nativeDraftRecoveryTarget(doc, shared)).toMatchObject({
+      kind: 'canvas',
+      personal: false,
+      selection: { viewId: '__tables__', descriptionId: 'n' },
+    });
+    const privateDraft = editor('canvas:description:v:pn');
+    if ('values' in privateDraft.draft)
+      privateDraft.draft.values = { objectId: 'pn', text: 'preserved private' };
+    expect(nativeDraftRecoveryTarget(doc, privateDraft)).toMatchObject({
+      kind: 'canvas',
+      personal: true,
+      selection: { viewId: 'v', descriptionId: 'pn' },
+    });
+    const wrongView = editor('canvas:description:__tables__:pn');
+    if ('values' in wrongView.draft) wrongView.draft.values = { objectId: 'pn', text: 'private' };
+    expect(nativeDraftRecoveryTarget(doc, wrongView)).toBeNull();
+    doc.layout.nodes.push({
+      id: 'memo-node',
+      objectId: 'n',
+      viewId: '__tables__',
+      x: 0,
+      y: 0,
+      width: 240,
+      height: 160,
+    });
+    const inspector = editor('canvas:object:__tables__:n');
+    if ('values' in inspector.draft) inspector.draft.values = { objectId: 'n' };
+    expect(nativeDraftRecoveryTarget(doc, inspector)).toMatchObject({
+      kind: 'canvas',
+      personal: false,
+      selection: { objectId: 'n' },
+    });
+  });
   it.each([
     ['format:table:a', { kind: 'format', tableId: 'a', personal: false }],
     ['format:column:ca', { kind: 'format', tableId: 'a', columnId: 'ca', personal: false }],

@@ -7,11 +7,13 @@ import {
   nativeExpressionDisplay,
   planNativeDeletion,
   createNativeForeignKeyFromPrimaryKey,
+  requestFingerprint,
   type NativeDesignDocument,
   type NativeTable,
   type NativeDeletionCollection,
+  type NativeTableRelation,
 } from '@ezerd/model';
-import { Button } from '../../components/ui/index.js';
+import { AnimatedDetails, Button, Checkbox, IconButton } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import {
   NativeEditorField,
@@ -39,7 +41,7 @@ import {
 } from './native-constraint-option-fields.js';
 import { NativeLabelFields } from './NativeLabelFields.js';
 import { serializeNativeLabels, nativeLabelsForCommand } from './native-label-draft.js';
-import { nativeEditorConditionText } from './native-editor-diagnostic.js';
+import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 
 registerTranslations({
   '물리·논리 범위를 선택하고 이름을 입력하세요.':
@@ -70,6 +72,16 @@ registerTranslations({
   '기존 식 유지': 'Preserve existing expression',
   '구조화 식으로 변경': 'Change to a structured expression',
   '원본 속성': 'Original properties',
+  '현재 설계 형식에서는 관계의 테이블 변경을 지원하지 않습니다.':
+    'This design format does not support changing the relationship tables.',
+  '현재 설계 형식에서는 물리 FK만 제거할 수 없습니다.':
+    'This design format does not support removing only the physical foreign key.',
+  'PK / UNIQUE와 FK 컬럼을 같은 수로 선택하세요.':
+    'Select the same number of PK / UNIQUE and FK columns.',
+  'FK 정의 추가': 'Add foreign key definition',
+  '변경한 테이블과 컬럼 대응을 확인했습니다.': 'I reviewed the changed tables and column mapping.',
+  '변경한 테이블과 컬럼 대응을 확인한 뒤 저장하세요.':
+    'Review the changed tables and column mapping before saving.',
   'PK에서 컬럼 자동 생성': 'Generate columns from primary key',
   '직접 컬럼 연결': 'Map existing columns',
   '참조 테이블': 'Referenced table',
@@ -411,18 +423,19 @@ function NativeCreateForm({
   document,
   table,
   action,
+  initialValues,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table?: NativeTable;
   action: NativeStructureAction;
+  initialValues?: Record<string, string>;
 }) {
   const { t } = useI18n();
   const policy = nativeEditorPolicy(document, table);
   // IDs belong to the durable input; retries do not regenerate objects.
   const [id] = useState(() => crypto.randomUUID());
   const initial = {
-    id,
     scope:
       action === 'table'
         ? 'logical'
@@ -449,6 +462,9 @@ function NativeCreateForm({
     onUpdate: 'NO ACTION',
     ...nativeConstraintOptionsInitial(),
     ...nativeExpressionInputs(),
+    ...initialValues,
+    // Contextual defaults never replace this form's durable identity.
+    id,
   };
   const title = {
     table: '새 테이블',
@@ -756,6 +772,18 @@ export function nativeConstraintInitial(
     const relation = document.tableRelations!.find((item) => item.id === id)!;
     result.name = relation.physical?.name ?? '';
     result.logicalName = relation.logical.name;
+    result.logicalDescription = relation.logical.description ?? '';
+    result.cardinality = relation.logical.cardinality;
+    result.required = String(relation.logical.required);
+    for (const side of ['sourceCardinality', 'targetCardinality'] as const) {
+      const value = relation.logical[side];
+      result[side] = value ? `${value.min}:${value.max}` : 'fallback';
+    }
+    result.sourceTableId = relation.sourceTableId;
+    result.targetTableId = relation.targetTableId;
+    result.physicalMode = relation.physical ? 'present' : 'none';
+    result.mappingCount = String(relation.physical?.sourceColumnIds.length ?? 0);
+    result.mappingReview = '';
     result.columnIds = relation.physical?.sourceColumnIds.join('\n') ?? '';
     result.targetColumnIds = relation.physical?.targetColumnIds.join('\n') ?? '';
     result.onDelete = relation.physical?.onDelete ?? 'NO ACTION';
@@ -764,6 +792,82 @@ export function nativeConstraintInitial(
   }
   return result;
 }
+
+function nativeRelationMappingColumns(
+  document: NativeDesignDocument,
+  relation: NativeTableRelation,
+  values: Record<string, string>,
+  sources: string[],
+  targets: string[],
+) {
+  const source = values.sourceTableId ?? relation.sourceTableId,
+    target = values.targetTableId ?? relation.targetTableId;
+  if (
+    !document.tables?.some((table) => table.id === source && table.scope !== 'logical') ||
+    !document.tables?.some((table) => table.id === target && table.scope !== 'logical')
+  )
+    throw Error('foreign-key.table-not-found');
+  if (
+    !sources.length ||
+    sources.length !== targets.length ||
+    sources.some((id) => !id) ||
+    targets.some((id) => !id) ||
+    new Set(sources).size !== sources.length ||
+    new Set(targets).size !== targets.length
+  )
+    throw Error('foreign-key.columns-invalid');
+  if (
+    sources.some(
+      (id) =>
+        !document.columns?.some(
+          (column) => column.id === id && column.tableId === source && column.scope !== 'logical',
+        ),
+    ) ||
+    targets.some(
+      (id) =>
+        !document.columns?.some(
+          (column) => column.id === id && column.tableId === target && column.scope !== 'logical',
+        ),
+    )
+  )
+    throw Error('foreign-key.columns-invalid');
+}
+
+/** A review belongs to exact endpoints/pairs and the saved definition, never to a checkbox alone. */
+export function nativeRelationMappingReviewToken(
+  document: NativeDesignDocument,
+  id: string,
+  values: Record<string, string>,
+) {
+  const relation = document.tableRelations?.find((relation) => relation.id === id);
+  if (!relation) throw Error('document.object-not-found');
+  return requestFingerprint({
+    id,
+    original: relation,
+    sourceTableId: values.sourceTableId ?? relation.sourceTableId,
+    targetTableId: values.targetTableId ?? relation.targetTableId,
+    columnIds: list(values.columnIds),
+    targetColumnIds: list(values.targetColumnIds),
+    physicalMode: values.physicalMode ?? (relation.physical ? 'present' : 'none'),
+  });
+}
+
+export function nativeRelationEndpointChange(
+  values: Record<string, string>,
+  side: 'sourceTableId' | 'targetTableId',
+  id: string,
+) {
+  if (values[side] === id) return values;
+  return {
+    ...values,
+    [side]: id,
+    columnIds: '',
+    targetColumnIds: '',
+    mappingCount: '0',
+    mappingReview: '',
+  };
+}
+
 export function nativeConstraintCommands(
   document: NativeDesignDocument,
   collection: NativeDeletionCollection,
@@ -788,39 +892,117 @@ export function nativeConstraintCommands(
     if (!decision.usable) throw new Error(decision.code ?? 'feature.not-implemented');
   };
   if (collection === 'tableRelations') {
-    if (changed('logicalName')) patch.logical = { name: values.logicalName };
-    const physical: Record<string, unknown> = {};
-    if (changed('name')) physical.name = values.name;
-    for (const [field, input] of [
-      ['sourceColumnIds', 'columnIds'],
-      ['targetColumnIds', 'targetColumnIds'],
-      ['onDelete', 'onDelete'],
-      ['onUpdate', 'onUpdate'],
-    ] as const)
-      if (changed(input)) {
-        requireFeature('foreignKey');
-        physical[field] =
-          input.endsWith('ColumnIds') || input === 'columnIds'
-            ? list(values[input])
-            : values[input];
+    const logical: Record<string, unknown> = {};
+    if (changed('logicalName')) logical.name = values.logicalName;
+    if (changed('logicalDescription')) logical.description = values.logicalDescription;
+    if (changed('cardinality')) logical.cardinality = values.cardinality;
+    if (changed('required')) {
+      if (!['true', 'false'].includes(values.required ?? '')) throw Error('native.input-invalid');
+      logical.required = values.required === 'true';
+    }
+    for (const side of ['sourceCardinality', 'targetCardinality'] as const) {
+      if (!changed(side)) continue;
+      const [min, max] = (values[side] ?? '').split(':');
+      if (!['0', '1'].includes(min ?? '') || !['1', 'many'].includes(max ?? ''))
+        throw Error('relation.cardinality-invalid');
+      logical[side] = { min: Number(min), max: max === 'many' ? 'many' : 1 };
+    }
+    if (Object.keys(logical).length) patch.logical = logical;
+    for (const side of ['sourceTableId', 'targetTableId'] as const)
+      if (changed(side)) {
+        const table = document.tables?.find((table) => table.id === values[side]);
+        if (!table) throw Error('foreign-key.table-not-found');
+        patch[side] = values[side];
       }
-    if (Object.keys(physical).length) patch.physical = physical;
     const relation = document.tableRelations!.find((r) => r.id === id)!;
+    const previousMode = before.physicalMode ?? (relation.physical ? 'present' : 'none');
+    const mode = values.physicalMode ?? previousMode;
+    if (mode !== 'none' && mode !== 'present') throw Error('native.input-invalid');
+    const adding = mode === 'present' && (previousMode === 'none' || !relation.physical);
+    const endpointsChanged = changed('sourceTableId') || changed('targetTableId');
+    const physical: Record<string, unknown> = {};
+    let candidatePhysical = relation.physical;
+    if (mode === 'none') {
+      if (previousMode !== 'none' || relation.physical) {
+        requireFeature('foreignKey');
+        patch.physical = null;
+        candidatePhysical = null;
+      }
+    } else {
+      if (adding) {
+        // A partial patch cannot create a missing definition. Preserve any saved variant while
+        // supplying every mandatory field, including unchanged NO ACTION defaults.
+        Object.assign(physical, relation.physical ?? {}, {
+          name: values.name ?? relation.physical?.name ?? '',
+          sourceColumnIds: list(values.columnIds ?? relation.physical?.sourceColumnIds.join('\n')),
+          targetColumnIds: list(
+            values.targetColumnIds ?? relation.physical?.targetColumnIds.join('\n'),
+          ),
+          onDelete: values.onDelete ?? relation.physical?.onDelete ?? 'NO ACTION',
+          onUpdate: values.onUpdate ?? relation.physical?.onUpdate ?? 'NO ACTION',
+        });
+        if (relation.scope === 'logical') patch.scope = 'both';
+      } else {
+        if (changed('name')) physical.name = values.name;
+        for (const [field, input] of [
+          ['sourceColumnIds', 'columnIds'],
+          ['targetColumnIds', 'targetColumnIds'],
+          ['onDelete', 'onDelete'],
+          ['onUpdate', 'onUpdate'],
+        ] as const)
+          if (changed(input))
+            physical[field] =
+              input.endsWith('ColumnIds') || input === 'columnIds'
+                ? list(values[input])
+                : values[input];
+      }
+      if (Object.keys(physical).length || endpointsChanged) {
+        requireFeature('foreignKey');
+        const sources =
+          (physical.sourceColumnIds as string[] | undefined) ??
+          relation.physical?.sourceColumnIds ??
+          [];
+        const targets =
+          (physical.targetColumnIds as string[] | undefined) ??
+          relation.physical?.targetColumnIds ??
+          [];
+        nativeRelationMappingColumns(document, relation, values, sources, targets);
+        if (
+          (adding || endpointsChanged) &&
+          values.mappingReview !== nativeRelationMappingReviewToken(document, id, values)
+        )
+          throw Error('foreign-key.mapping-review-required');
+        if (Object.keys(physical).length) {
+          patch.physical = physical;
+          candidatePhysical = { ...relation.physical, ...physical } as NonNullable<
+            NativeTableRelation['physical']
+          >;
+        }
+      }
+    }
+    const candidateRelation: NativeTableRelation = {
+      ...relation,
+      sourceTableId: values.sourceTableId ?? relation.sourceTableId,
+      targetTableId: values.targetTableId ?? relation.targetTableId,
+      scope: adding && relation.scope === 'logical' ? 'both' : relation.scope,
+      physical: candidatePhysical,
+    };
     const options = nativeConstraintOptionsPatch('foreignKey', values, before, relation);
     if (Object.keys(options).length) {
       requireFeature('foreignKey');
       if (options.deferrable) requireFeature('deferrableForeignKey');
-      const decision = nativeConstraintOptionsDecision(
-        document,
-        'foreignKey',
-        {
-          ...relation,
-          ...(relation.physical ? { physical: { ...relation.physical, ...physical } } : {}),
-        },
-        options,
-      );
-      if (!decision.allowed || !decision.usable)
-        throw Error(decision.code ?? 'feature.not-implemented');
+      if (!candidateRelation.physical) {
+        if (options.deferrable) throw Error('native.advanced-physical-object-required');
+      } else {
+        const decision = nativeConstraintOptionsDecision(
+          document,
+          'foreignKey',
+          candidateRelation,
+          options,
+        );
+        if (!decision.allowed || !decision.usable)
+          throw Error(decision.code ?? 'feature.not-implemented');
+      }
       Object.assign(patch, options);
     }
   } else {
@@ -929,7 +1111,214 @@ export function nativeConstraintCommands(
   return [nativeEditorCommandSchema.parse({ type, id, patch })];
 }
 
-function NativeConstraintForm({
+function NativeRelationMappingFields({
+  document,
+  id,
+  values,
+  change,
+  disabled,
+}: {
+  document: NativeDesignDocument;
+  id: string;
+  values: Record<string, string>;
+  change: (key: string, value: string) => void;
+  disabled: boolean;
+}) {
+  const { t } = useI18n();
+  const relation = document.tableRelations!.find((item) => item.id === id)!;
+  const physical =
+    values.physicalMode === 'present' || (values.physicalMode === undefined && !!relation.physical);
+  const reviewRequired =
+    physical &&
+    (!relation.physical ||
+      values.sourceTableId !== relation.sourceTableId ||
+      values.targetTableId !== relation.targetTableId);
+  const reviewToken = nativeRelationMappingReviewToken(document, id, values);
+  const supported = (patch: Record<string, unknown>) =>
+    nativeEditorCommandSchema.safeParse({ type: 'patch_foreign_key', id, patch }).success;
+  const sources = list(values.columnIds),
+    targets = list(values.targetColumnIds);
+  const requestedCount = Number(values.mappingCount ?? '0');
+  const maximum = Math.max(
+    sources.length,
+    targets.length,
+    Math.min(
+      (document.columns ?? []).filter(
+        (column) =>
+          column.tableId === (values.sourceTableId ?? relation.sourceTableId) &&
+          column.scope !== 'logical',
+      ).length,
+      (document.columns ?? []).filter(
+        (column) =>
+          column.tableId === (values.targetTableId ?? relation.targetTableId) &&
+          column.scope !== 'logical',
+      ).length,
+    ),
+  );
+  const count = Math.min(
+    maximum,
+    Math.max(
+      sources.length,
+      targets.length,
+      Number.isSafeInteger(requestedCount) && requestedCount >= 0 ? requestedCount : 0,
+    ),
+  );
+  function pair(index: number, side: 'columnIds' | 'targetColumnIds', value: string) {
+    const ids = side === 'columnIds' ? sources : targets;
+    change(
+      side,
+      Array.from({ length: count }, (_, at) => (at === index ? value : (ids[at] ?? ''))).join('\n'),
+    );
+    change('mappingReview', '');
+  }
+  return (
+    <>
+      {(['targetTableId', 'sourceTableId'] as const).map((side) => (
+        <NativeEditorField
+          key={side}
+          label={side === 'targetTableId' ? '출발 테이블 (PK)' : '대상 테이블 (FK)'}
+          value={values[side] ?? relation[side]}
+          disabled={disabled || !supported({ [side]: relation[side] })}
+          choices={(document.tables ?? [])
+            .filter((table) => !physical || table.scope !== 'logical')
+            .map((table) => ({
+              value: table.id,
+              label: `${document.domains.find((domain) => domain.id === table.domainId)?.name ?? t('미지정')} / ${table.physical.name || table.logical.name}`,
+            }))}
+          onChange={(value) => {
+            const next = nativeRelationEndpointChange(values, side, value);
+            for (const key of [
+              side,
+              'columnIds',
+              'targetColumnIds',
+              'mappingCount',
+              'mappingReview',
+            ])
+              change(key, next[key]!);
+          }}
+        />
+      ))}
+      {!supported({ sourceTableId: relation.sourceTableId }) && (
+        <p className="panel-note">
+          {t('현재 설계 형식에서는 관계의 테이블 변경을 지원하지 않습니다.')}
+        </p>
+      )}
+      {physical ? (
+        <>
+          <Button
+            disabled={disabled || !supported({ physical: null })}
+            onClick={() => {
+              change('physicalMode', 'none');
+              change('mappingReview', '');
+            }}
+          >
+            {t('FK 정의 제거')}
+          </Button>
+          {!supported({ physical: null }) && (
+            <p className="panel-note">{t('현재 설계 형식에서는 물리 FK만 제거할 수 없습니다.')}</p>
+          )}
+          <p className="panel-note">
+            {t('출발 PK / UNIQUE 컬럼 → 대상 FK 컬럼 순서로 대응합니다.')}
+          </p>
+          {Array.from({ length: count }, (_, index) => (
+            <div className="table-mapping" key={index}>
+              <span>{index + 1}</span>
+              {(['targetColumnIds', 'columnIds'] as const).map((side) => (
+                <NativeEditorField
+                  key={side}
+                  label={`${side === 'columnIds' ? 'FK' : 'PK / UNIQUE'} ${t('컬럼')} ${index + 1}`}
+                  value={(side === 'columnIds' ? sources : targets)[index] ?? ''}
+                  disabled={disabled}
+                  choices={[
+                    { value: '', label: t('선택') },
+                    ...(document.columns ?? [])
+                      .filter(
+                        (column) =>
+                          column.tableId ===
+                            (side === 'columnIds'
+                              ? (values.sourceTableId ?? relation.sourceTableId)
+                              : (values.targetTableId ?? relation.targetTableId)) &&
+                          column.scope !== 'logical',
+                      )
+                      .map((column) => ({
+                        value: column.id,
+                        label: column.physical.name || column.logical.name,
+                      })),
+                  ]}
+                  onChange={(value) => pair(index, side, value)}
+                />
+              ))}
+              <IconButton
+                aria-label={t('매핑 {x0} 삭제', { x0: index + 1 })}
+                disabled={disabled}
+                onClick={() => {
+                  change('columnIds', sources.filter((_, at) => at !== index).join('\n'));
+                  change('targetColumnIds', targets.filter((_, at) => at !== index).join('\n'));
+                  change('mappingCount', String(count - 1));
+                  change('mappingReview', '');
+                }}
+              >
+                ×
+              </IconButton>
+            </div>
+          ))}
+          <Button
+            disabled={disabled || count >= maximum}
+            onClick={() => {
+              change('mappingCount', String(count + 1));
+              change('mappingReview', '');
+            }}
+          >
+            {t('+ 컬럼 매핑')}
+          </Button>
+          {(sources.length !== targets.length ||
+            !sources.length ||
+            sources.some((id) => !id) ||
+            targets.some((id) => !id)) && (
+            <p role="status" className="field-help">
+              {t('PK / UNIQUE와 FK 컬럼을 같은 수로 선택하세요.')}
+            </p>
+          )}
+          {reviewRequired && (
+            <label className="table-check">
+              <Checkbox
+                aria-label={t('변경한 테이블과 컬럼 대응을 확인했습니다.')}
+                checked={values.mappingReview === reviewToken}
+                disabled={
+                  disabled ||
+                  !sources.length ||
+                  sources.length !== targets.length ||
+                  sources.some((id) => !id) ||
+                  targets.some((id) => !id)
+                }
+                onChange={(event) =>
+                  change('mappingReview', event.target.checked ? reviewToken : '')
+                }
+              />
+              {t('변경한 테이블과 컬럼 대응을 확인했습니다.')}
+            </label>
+          )}
+        </>
+      ) : (
+        <>
+          <p>{t('물리 FK 없음')}</p>
+          <Button
+            disabled={disabled}
+            onClick={() => {
+              change('physicalMode', 'present');
+              change('mappingReview', '');
+              if (!sources.length && !targets.length) change('mappingCount', '1');
+            }}
+          >
+            {t('FK 정의 추가')}
+          </Button>
+        </>
+      )}
+    </>
+  );
+}
+
+export function NativeConstraintForm({
   context,
   document,
   collection,
@@ -967,9 +1356,27 @@ function NativeConstraintForm({
       draftKey={`constraint:${collection}:${id}`}
       title={t('기존 객체 수정')}
       initial={nativeConstraintInitial(document, collection, id)}
-      build={(values, before) => nativeConstraintCommands(document, collection, id, values, before)}
+      disabled={(values) =>
+        collection === 'tableRelations' &&
+        values.physicalMode === 'present' &&
+        Number(values.mappingCount ?? '0') >
+          Math.min(list(values.columnIds).length, list(values.targetColumnIds).length)
+      }
+      build={(values, before) => {
+        try {
+          return nativeConstraintCommands(document, collection, id, values, before);
+        } catch (error) {
+          if (nativeEditorErrorCode(error) === 'foreign-key.mapping-review-required')
+            throw Error(t('변경한 테이블과 컬럼 대응을 확인한 뒤 저장하세요.'));
+          throw Error(nativeEditorConditionText(nativeEditorErrorCode(error)));
+        }
+      }}
     >
       {(values, change) => {
+        const relationValues =
+          collection === 'tableRelations'
+            ? { ...nativeConstraintInitial(document, collection, id), ...values }
+            : values;
         const field = (
           key: string,
           label: string,
@@ -979,7 +1386,7 @@ function NativeConstraintForm({
         ) => (
           <NativeEditorField
             label={label}
-            value={values[key] ?? ''}
+            value={relationValues[key] ?? ''}
             disabled={blocked}
             onChange={(value) => change(key, value)}
             {...(choices ? { choices } : {})}
@@ -988,11 +1395,11 @@ function NativeConstraintForm({
         );
         return (
           <>
-            {field('name', '이름', false)}
-            <details>
+            {collection !== 'tableRelations' && field('name', '이름', false)}
+            <AnimatedDetails>
               <summary>{t('원본 속성')}</summary>
               <pre>{JSON.stringify(item, null, 2)}</pre>
-            </details>
+            </AnimatedDetails>
             {disabled && (
               <p>
                 {t('미구현 또는 실행 검증 미완료')} ({policy.feature(feature).code})
@@ -1016,7 +1423,7 @@ function NativeConstraintForm({
                 disabled={disabled || context.busy}
               />
             )}
-            {['keys', 'indexes', 'tableRelations'].includes(collection) && (
+            {['keys', 'indexes'].includes(collection) && (
               <NativeOrderedColumns
                 value={values.columnIds ?? ''}
                 change={(value) => change('columnIds', value)}
@@ -1092,25 +1499,78 @@ function NativeConstraintForm({
             )}
             {collection === 'tableRelations' && 'targetTableId' in item && (
               <>
-                <NativeConstraintOptionFields
-                  document={document}
-                  kind="foreignKey"
-                  values={values}
-                  change={change}
-                  current={document.tableRelations!.find((r) => r.id === id)!}
-                  disabled={disabled || context.busy}
-                />
-                {field('logicalName', '논리 이름', false)}
-                <NativeOrderedColumns
-                  value={values.targetColumnIds ?? ''}
-                  change={(value) => change('targetColumnIds', value)}
-                  document={document}
-                  tableId={item.targetTableId}
-                  disabled={disabled}
-                  label="참조 컬럼 순서"
-                />
-                {field('onDelete', 'ON DELETE', disabled, actions(document))}
-                {field('onUpdate', 'ON UPDATE', disabled, actions(document))}
+                {field('logicalName', '관계명', false)}
+                {field('logicalDescription', '관계 설명', false, undefined, true)}
+                {relationValues.sourceCardinality === 'fallback' &&
+                  relationValues.targetCardinality === 'fallback' &&
+                  field('cardinality', '카디널리티', false, [
+                    { value: 'one-to-one', label: '1 : 1' },
+                    { value: 'one-to-many', label: '1 : N' },
+                    { value: 'many-to-many', label: 'N : M' },
+                  ])}
+                {(['targetCardinality', 'sourceCardinality'] as const).map((side) => {
+                  const fallback =
+                    side === 'sourceCardinality'
+                      ? { min: 0, max: relationValues.cardinality === 'one-to-one' ? 1 : 'many' }
+                      : {
+                          min: relationValues.required === 'true' ? 1 : 0,
+                          max: relationValues.cardinality === 'many-to-many' ? 'many' : 1,
+                        };
+                  return field(
+                    side,
+                    side === 'targetCardinality' ? '출발 끝점 (PK)' : '대상 끝점 (FK)',
+                    false,
+                    [
+                      ...(values[side] === 'fallback'
+                        ? [
+                            {
+                              value: 'fallback',
+                              label: `${t('기본값')} · ${fallback.min}..${fallback.max === 'many' ? 'N' : '1'}`,
+                            },
+                          ]
+                        : []),
+                      { value: '0:1', label: '0..1' },
+                      { value: '1:1', label: '1' },
+                      { value: '0:many', label: '0..N' },
+                      { value: '1:many', label: '1..N' },
+                    ],
+                  );
+                })}
+                {relationValues.targetCardinality === 'fallback' && (
+                  <label className="table-check">
+                    <Checkbox
+                      checked={relationValues.required === 'true'}
+                      aria-label={t('관계 필수')}
+                      onChange={(event) => change('required', String(event.target.checked))}
+                    />
+                    {t('관계 필수')}
+                  </label>
+                )}
+                <AnimatedDetails className="table-relation-advanced">
+                  <summary>{t('고급 설정 · 테이블, FK 매핑')}</summary>
+                  <NativeRelationMappingFields
+                    document={document}
+                    id={id}
+                    values={relationValues}
+                    change={change}
+                    disabled={disabled || context.busy}
+                  />
+                </AnimatedDetails>
+                {relationValues.physicalMode !== 'none' && (
+                  <>
+                    {field('name', 'FK 이름', false)}
+                    <NativeConstraintOptionFields
+                      document={document}
+                      kind="foreignKey"
+                      values={relationValues}
+                      change={change}
+                      current={document.tableRelations!.find((r) => r.id === id)!}
+                      disabled={disabled || context.busy}
+                    />
+                    {field('onDelete', 'ON DELETE', disabled, actions(document))}
+                    {field('onUpdate', 'ON UPDATE', disabled, actions(document))}
+                  </>
+                )}
               </>
             )}
           </>
@@ -1120,7 +1580,7 @@ function NativeConstraintForm({
   );
 }
 
-function NativeDeleteForm({
+export function NativeDeleteForm({
   context,
   document,
   collection,
@@ -1214,11 +1674,16 @@ export function NativeStructureEditor({
   document,
   table,
   initialSelection,
+  focused = false,
+  initialValues,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table?: NativeTable;
   initialSelection?: { action: NativeStructureAction | 'patch' | 'delete'; target: string };
+  /** A contextual inspector action; keeps the same durable form and command policy. */
+  focused?: boolean;
+  initialValues?: Record<string, string>;
 }) {
   const { t } = useI18n();
   const [action, setAction] = useState<NativeStructureAction | 'patch' | 'delete'>(
@@ -1256,35 +1721,53 @@ export function NativeStructureEditor({
   return (
     <PanelSection
       className="native-property-editor"
-      title={t('구조 편집')}
+      title={t(
+        focused
+          ? (
+              {
+                table: '새 테이블 만들기',
+                column: '컬럼 추가',
+                key: '키 · PK / UNIQUE',
+                index: '인덱스',
+                check: 'CHECK',
+                enum: 'ENUM',
+                foreignKey: '테이블 관계',
+                patch: '속성 편집',
+                delete: '삭제 영향 확인',
+              } as const
+            )[action]
+          : '구조 편집',
+      )}
       defaultOpen={!!initialSelection}
     >
-      <NativeEditorField
-        label="구조 편집"
-        value={action}
-        onChange={(value) => setAction(value as typeof action)}
-        choices={(
-          [
-            ['table', '새 테이블'],
-            ['column', '새 컬럼'],
-            ['key', '새 키'],
-            ['index', '새 인덱스'],
-            ['check', '새 CHECK'],
-            ['enum', '새 ENUM'],
-            ['foreignKey', '새 외래 키'],
-            ['patch', '기존 객체 수정'],
-            ['delete', '객체 삭제'],
-          ] as const
-        ).map(([value, label]) => ({
-          value,
-          label: t(label),
-          disabled:
-            (!table && !['table', 'enum', 'delete', 'patch'].includes(value)) ||
-            (value === 'enum' &&
-              !nativeEditorPolicy(document, table).feature('enumType').supported),
-        }))}
-        disabled={context.busy}
-      />
+      {!focused && (
+        <NativeEditorField
+          label="구조 편집"
+          value={action}
+          onChange={(value) => setAction(value as typeof action)}
+          choices={(
+            [
+              ['table', '새 테이블'],
+              ['column', '새 컬럼'],
+              ['key', '새 키'],
+              ['index', '새 인덱스'],
+              ['check', '새 CHECK'],
+              ['enum', '새 ENUM'],
+              ['foreignKey', '새 외래 키'],
+              ['patch', '기존 객체 수정'],
+              ['delete', '객체 삭제'],
+            ] as const
+          ).map(([value, label]) => ({
+            value,
+            label: t(label),
+            disabled:
+              (!table && !['table', 'enum', 'delete', 'patch'].includes(value)) ||
+              (value === 'enum' &&
+                !nativeEditorPolicy(document, table).feature('enumType').supported),
+          }))}
+          disabled={context.busy}
+        />
+      )}
       {create ? (
         <NativeCreateForm
           key={`${mountingKey}:${action}:${table?.id ?? ''}`}
@@ -1292,26 +1775,30 @@ export function NativeStructureEditor({
           document={document}
           {...(table ? { table } : {})}
           action={action as NativeStructureAction}
+          {...(initialValues ? { initialValues } : {})}
         />
       ) : (
         <>
-          <NativeEditorField
-            label="대상"
-            value={target}
-            onChange={setTarget}
-            choices={[
-              { value: '', label: '—' },
-              ...objects
-                .filter(
-                  (item) => action === 'delete' || !['tables', 'columns'].includes(item.collection),
-                )
-                .map((item) => ({
-                  value: JSON.stringify([item.collection, item.id]),
-                  label: `${item.collection}: ${item.label || item.id}`,
-                })),
-            ]}
-            disabled={context.busy}
-          />
+          {!focused && (
+            <NativeEditorField
+              label="대상"
+              value={target}
+              onChange={setTarget}
+              choices={[
+                { value: '', label: '—' },
+                ...objects
+                  .filter(
+                    (item) =>
+                      action === 'delete' || !['tables', 'columns'].includes(item.collection),
+                  )
+                  .map((item) => ({
+                    value: JSON.stringify([item.collection, item.id]),
+                    label: `${item.collection}: ${item.label || item.id}`,
+                  })),
+              ]}
+              disabled={context.busy}
+            />
+          )}
           {selected &&
             (action === 'delete' ? (
               <NativeDeleteForm
@@ -1332,7 +1819,7 @@ export function NativeStructureEditor({
             ))}
         </>
       )}
-      {table && (
+      {table && !focused && (
         <NativeAdvancedEditor
           key={`${context.userId}:${context.snapshot.project.id}:${table.id}`}
           context={context}

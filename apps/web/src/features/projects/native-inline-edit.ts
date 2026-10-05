@@ -1,5 +1,14 @@
 import { nativeEditorCommandSchema } from '@ezerd/contracts';
-import type { NativeDesignDocument } from '@ezerd/model';
+import {
+  validateDatabaseDocument,
+  validateDatabaseTypeParameters,
+  type NativeDesignDocument,
+} from '@ezerd/model';
+import {
+  nativeEditorPolicy,
+  nativeTypeChoice,
+  nativeTypeCurrentLabel,
+} from './native-editor-policy.js';
 export interface NativeInlineTarget {
   tableId: string;
   columnId?: string;
@@ -26,8 +35,79 @@ export function nativeInlineInput(document: NativeDesignDocument, target: Native
           ? (column?.logical.semanticType ?? '')
           : target.field === 'required'
             ? String(column?.logical.required ?? false)
-            : '';
+            : column
+              ? nativeTypeChoice(column.physical.type)
+              : '';
   return { table, column, value };
+}
+
+/** Search choices come from the source database and product capabilities, never v1 aliases. */
+export function nativeInlineTypeOptions(
+  document: NativeDesignDocument,
+  target: NativeInlineTarget,
+) {
+  const { table, column } = nativeInlineInput(document, target);
+  if (!column || target.mode !== 'physical' || target.field !== 'format') return [];
+  const options: { value: string; label: string }[] = nativeEditorPolicy(document, table, column)
+    .types.filter((item) => item.usable)
+    .map(({ definition }) => ({ value: definition.id, label: definition.sqlName }));
+  const current = nativeTypeChoice(column.physical.type);
+  if (!options.some((option) => option.value === current))
+    options.unshift({ value: current, label: nativeTypeCurrentLabel(column, document) });
+  return options;
+}
+
+/** A direct type selection changes only type; defaults, generation and DB options survive. */
+export function nativeInlineTypeCommand(
+  document: NativeDesignDocument,
+  target: NativeInlineTarget,
+  value: string,
+) {
+  const { table, column } = nativeInlineInput(document, target);
+  if (!column || target.mode !== 'physical' || target.field !== 'format')
+    throw Error('native.inline-field-invalid');
+  const previous = column.physical.type;
+  if (value === nativeTypeChoice(previous)) return null;
+  const entry = nativeEditorPolicy(document, table, column).types.find(
+    (item) => item.definition.id === value,
+  );
+  if (!entry?.usable) throw Error('type.not-implemented');
+  if (value === 'mysql:enum' || value === 'mysql:set')
+    throw Error('native.inline-advanced-format-required');
+  // Parameterized/array variants are retained when compatible. No silent parameter removal.
+  const parameters = previous.kind === 'builtin' ? { ...previous.parameters } : {};
+  if (validateDatabaseTypeParameters(entry.definition, parameters).length)
+    throw Error('native.inline-advanced-format-required');
+  const command = nativeEditorCommandSchema.parse({
+    type: 'patch_column',
+    id: column.id,
+    patch: {
+      physical: {
+        type: {
+          kind: 'builtin',
+          database: document.database.kind,
+          typeId: entry.definition.id,
+          parameters,
+          ...('array' in previous && previous.array ? { array: previous.array } : {}),
+        },
+      },
+    },
+  });
+  if (command.type !== 'patch_column' || !command.patch.physical?.type)
+    throw Error('native.inline-field-invalid');
+  const type = command.patch.physical.type;
+  const candidate: NativeDesignDocument = {
+    ...document,
+    columns: document.columns?.map((item) =>
+      item.id === column.id ? { ...item, physical: { ...item.physical, type } } : item,
+    ),
+  };
+  const issue = validateDatabaseDocument(candidate, document.database, {
+    mode: 'write',
+    previous: document,
+  }).find((item) => item.severity === 'error');
+  if (issue) throw Error(issue.code);
+  return command;
 }
 export function nativeInlineCommand(
   document: NativeDesignDocument,

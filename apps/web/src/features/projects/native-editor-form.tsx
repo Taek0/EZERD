@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type ComponentProps } from 'react';
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { Button, Input, Select, Textarea } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
@@ -145,7 +145,7 @@ export function NativeEditorForm({
   }
   return (
     <form
-      className="native-property-editor"
+      className="native-property-editor inspector-fields"
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -212,6 +212,7 @@ export function NativeEditorForm({
         })}
         {blocked && <p>{t('미검증 기능은 새로 사용할 수 없습니다. 현재 값은 보존됩니다.')}</p>}
         <Button
+          variant="primary"
           type="submit"
           disabled={!dirty || context.busy || stale || blocked || !!storageError}
         >
@@ -268,7 +269,7 @@ export function NativeEditorField({
           ))}
         </Select>
       ) : multiline ? (
-        <Textarea
+        <NativeAutoTextarea
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
@@ -282,5 +283,36 @@ export function NativeEditorField({
         />
       )}
     </label>
+  );
+}
+
+/** Original TableEditor description behavior, including wrapping after inspector resizing. */
+export function NativeAutoTextarea(props: ComponentProps<typeof Textarea>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const resize = () => {
+      element.style.height = 'auto';
+      element.style.height = `${element.scrollHeight + element.offsetHeight - element.clientHeight}px`;
+    };
+    resize();
+    let width = element.getBoundingClientRect().width;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry && entry.contentRect.width !== width) {
+        width = entry.contentRect.width;
+        resize();
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [props.value]);
+  return (
+    <Textarea
+      {...props}
+      ref={ref}
+      rows={2}
+      className={['table-description-input', props.className].filter(Boolean).join(' ')}
+    />
   );
 }

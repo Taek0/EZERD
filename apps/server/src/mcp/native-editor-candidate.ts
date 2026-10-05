@@ -53,13 +53,19 @@ export function patchNativeConstraintForeignKey(
   const patch = nativeForeignKeyPatchSchema.parse(raw),
     current = document.tableRelations?.find((value) => value.id === id);
   if (!current) throw new Error('document.object-not-found');
-  if (patch.physical && !current.physical) throw new Error('foreign-key.physical-key-required');
-  const { deferrable: _deferrable, ...otherFields } = patch;
+  const { deferrable: _deferrable, physical, ...otherFields } = patch;
   const result = patchDeferrable<NativeTableRelation>(current, patch, {
     ...otherFields,
     logical: { ...current.logical, ...patch.logical },
-    physical: patch.physical ? { ...current.physical!, ...patch.physical } : current.physical,
   });
+  if (Object.hasOwn(patch, 'physical')) {
+    if (physical === null) result.physical = null;
+    else if (physical)
+      result.physical = nativeStoredDesignDocumentSchema.in.shape.tableRelations
+        .unwrap()
+        .element.shape.physical.unwrap()
+        .parse({ ...current.physical, ...physical });
+  }
   return {
     ...document,
     tableRelations: document.tableRelations!.map((value) => (value.id === id ? result : value)),

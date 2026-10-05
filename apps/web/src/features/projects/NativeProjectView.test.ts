@@ -125,6 +125,8 @@ describe('native readonly project view', () => {
     expect(html).not.toContain('<script>literal');
     expect(html).toContain('&lt;script&gt;literal&lt;/script&gt;');
     expect(html).not.toContain('contenteditable');
+    expect(html).not.toContain('○ 오프라인');
+    expect(html).not.toContain('동기화됨');
     expect(input).toEqual(before);
   });
   it('renders an unavailable preview as an explicit state instead of using a v1 editor', () => {
@@ -136,5 +138,6 @@ describe('native readonly project view', () => {
     );
     expect(html).toContain('DB 설정과 저장된 설계의 종류가 다릅니다.');
     expect(html).not.toContain('DECIMAL');
+    expect(html).toContain('! 확인 필요');
   });
 });

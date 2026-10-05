@@ -1,12 +1,25 @@
 import type { NativeInlineTarget } from './NativeCanvasInlineEditor.js';
-import { memo, useRef, type PointerEvent, type RefObject } from 'react';
+import { memo, useRef, type PointerEvent, type MouseEvent, type RefObject } from 'react';
 import type { NativeDesignDocument, NodeLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { NativeDomainLines } from './native-domain-lines.js';
 import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
 import { NativeTableLines } from './NativeTableLines.js';
-import { nativeCardColor, nativeTableHeaderColor } from './native-canvas-style.js';
+import {
+  nativeCardColor,
+  nativeTableHeaderColor,
+  nativeTableCanvasTitle,
+  nativeTableCanvasNamespace,
+} from './native-canvas-style.js';
 import { useI18n } from '../../shared/i18n/index.js';
+import { DomainDescription } from '../domains/DomainDescription.js';
+import { Button, IconButton } from '../../components/ui/index.js';
+import { NativeCanvasInlineCell } from './NativeCanvasInlineCell.js';
+import type { NativeEditorContext } from './native-editor-form.js';
+import type {
+  NativeCanvasStructureRequest,
+  NativeCanvasActionRequest,
+} from './NativeCanvasTableRows.js';
 
 export interface NativeSceneActions {
   zoom: number;
@@ -26,6 +39,21 @@ export interface NativeCanvasSceneProps {
   effectiveView: string;
   mode: 'physical' | 'logical';
   selectedNode: string | null;
+  selectedObjectIds?: string[] | undefined;
+  selectedColumnId?: string | undefined;
+  onNodeSelect?:
+    | ((node: NodeLayout, event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) => void)
+    | undefined;
+  onNodeContextMenu?: ((node: NodeLayout, event: MouseEvent<HTMLElement>) => void) | undefined;
+  onConnectFromColumn?: ((columnId: string) => void) | undefined;
+  onDescriptionCommit?: ((objectId: string, value: string) => void) | undefined;
+  editorContext?: NativeEditorContext | undefined;
+  onRequestStructure?: NativeCanvasStructureRequest | undefined;
+  onRequestAction?: NativeCanvasActionRequest | undefined;
+  /** Physical values mean NULL allowed; logical values mean required. */
+  onToggleNullable?:
+    | ((tableId: string, columnId: string, value: boolean, mode: 'physical' | 'logical') => void)
+    | undefined;
   selectedTableId: string | undefined;
   selectedDomainId: string | undefined;
   selectedDomainRelation: string | null;
@@ -41,7 +69,7 @@ export interface NativeCanvasSceneProps {
   onOpenDomain?: ((domainId: string) => void) | undefined;
   gesture: RefObject<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>;
   actions: RefObject<NativeSceneActions>;
-  onEdit?: ((target: NativeInlineTarget) => void) | undefined;
+  onEdit?: ((target: NativeInlineTarget, focusTarget?: HTMLElement) => void) | undefined;
 }
 /** Camera state lives outside this subtree. Refs are read only by event handlers. */
 export const NativeCanvasScene = memo(function NativeCanvasScene({
@@ -51,6 +79,16 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   effectiveView,
   mode,
   selectedNode,
+  selectedObjectIds,
+  selectedColumnId,
+  onNodeSelect,
+  onNodeContextMenu,
+  onConnectFromColumn,
+  onDescriptionCommit,
+  editorContext,
+  onRequestStructure,
+  onRequestAction,
+  onToggleNullable,
   selectedTableId,
   selectedDomainId,
   selectedDomainRelation,
@@ -72,6 +110,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   return (
     <>
       <NativeTableLines
+        document={base}
         relations={drawn.relations}
         mode={mode}
         selectedId={selectedRelationId}
@@ -89,43 +128,101 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
         const table = base.tables?.find((table) => table.id === node.objectId);
         const note = base.notes.find((note) => note.id === node.objectId);
         const domain = base.domains.find((domain) => domain.id === node.objectId);
+        if (!table && !note && !domain) return null;
         const unsavedDomain =
           !!domain && !sharedSource.layout.nodes.some((raw) => raw.id === node.id);
         const title = table
-          ? (mode === 'physical' ? table.physical.name : table.logical.name) ||
-            table.physical.name ||
-            table.logical.name
+          ? nativeTableCanvasTitle(table, mode) || t('이름 없는 테이블')
           : (domain?.name ?? t('메모'));
+        const namespace = table ? nativeTableCanvasNamespace(table, mode) : '';
+        const selected = selectedObjectIds?.length
+          ? selectedObjectIds.includes(node.objectId)
+          : selectedNode === node.id ||
+            (!!table && table.id === selectedTableId) ||
+            (!!domain && domain.id === selectedDomainId);
         return (
           <article
             key={node.id}
-            className={`native-erd-node ${table ? 'table' : note ? 'note' : 'domain'}`}
+            className={`native-erd-node canvas-node ${table ? 'table table-node' : note ? 'note note-node' : 'domain domain-node'}${selected ? ' selected' : ''}`}
             data-node-id={node.id}
             data-object-id={node.objectId}
             aria-label={title}
+            role="group"
             tabIndex={0}
-            data-selected={
-              selectedNode === node.id ||
-              (!!table && table.id === selectedTableId) ||
-              (!!domain && domain.id === selectedDomainId)
-            }
+            data-selected={selected}
             data-preview={unsavedDomain || undefined}
             style={{
               left: node.x,
               top: node.y,
               width: node.width,
               height: node.height,
-              borderColor: nativeCardColor(base, node.objectId),
-              ...(domain ? { '--native-domain-color': nativeCardColor(base, node.objectId) } : {}),
-              ...(note ? { '--native-note-color': note.color ?? '#fff9d9' } : {}),
+              borderColor: selected ? 'var(--accent)' : nativeCardColor(base, node.objectId),
+              ...(domain
+                ? {
+                    '--native-domain-color': domain.color ?? '#8993a3',
+                    borderTopColor: domain.color ?? '#8993a3',
+                  }
+                : {}),
+              ...(note
+                ? {
+                    '--native-note-color': note.color ?? '#fff3c4',
+                    borderTopColor: note.color ?? '#fff3c4',
+                  }
+                : {}),
             }}
-            onFocus={() => setSelectedNode(node.id)}
+            onFocus={(event) => {
+              if (event.target !== event.currentTarget || selectedObjectIds?.length) return;
+              if (!onNodeSelect) setSelectedNode(node.id);
+            }}
+            onContextMenu={(event) => {
+              if (
+                event.target instanceof Element &&
+                event.target.closest('input,textarea,[contenteditable="true"]')
+              )
+                return;
+              onNodeContextMenu?.(node, event);
+            }}
+            onDoubleClick={(event) => {
+              if (
+                domain &&
+                !(
+                  event.target instanceof Element &&
+                  event.target.closest('[data-inline-edit],textarea,input')
+                )
+              )
+                onOpenDomain?.(domain.id);
+            }}
             onClick={(event) => {
+              if (event.target instanceof Element && event.target.closest('input,textarea')) return;
+              if (onNodeSelect) {
+                onNodeSelect(node, event);
+                return;
+              }
               setSelectedNode(node.id);
               if (table && !(event.target instanceof Element && event.target.closest('button')))
                 onSelect(table.id);
               if (domain && !(event.target instanceof Element && event.target.closest('button')))
                 onSelectDomain?.(domain.id);
+            }}
+            onPointerDownCapture={(event) => {
+              if (
+                onNodeSelect &&
+                (event.shiftKey || event.ctrlKey || event.metaKey) &&
+                event.target instanceof Element &&
+                event.target.closest('[data-inline-cell]')
+              )
+                event.preventDefault();
+            }}
+            onClickCapture={(event) => {
+              if (
+                onNodeSelect &&
+                (event.shiftKey || event.ctrlKey || event.metaKey) &&
+                event.target instanceof Element &&
+                event.target.closest('[data-inline-cell]')
+              ) {
+                event.stopPropagation();
+                onNodeSelect(node, event);
+              }
             }}
             onPointerDown={(event) => {
               if (!unsavedDomain) actions.current.begin(event, node);
@@ -157,9 +254,9 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                 ArrowUp: [0, -1],
                 ArrowDown: [0, 1],
               }[event.key];
-              if (delta) {
+              if (delta && !unsavedDomain) {
                 event.preventDefault();
-                const step = event.shiftKey ? 40 : 10;
+                const step = event.shiftKey ? 10 : 1;
                 actions.current.preserve(
                   node,
                   node.x + delta[0]! * step,
@@ -174,100 +271,138 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                 event.preventDefault();
                 if (draftObjectId === node.objectId) void actions.current.savePlacement();
                 else if (table) onSelect(table.id);
-                else if (domain) onSelectDomain?.(domain.id);
+                else if (domain) (onOpenDomain ?? onSelectDomain)?.(domain.id);
               }
             }}
           >
-            <header
-              className={table ? 'native-table-header' : undefined}
-              style={
-                table
-                  ? { background: nativeTableHeaderColor(base, table), color: '#ffffff' }
-                  : undefined
-              }
-            >
-              {domain && <span className="native-domain-overline">DOMAIN</span>}
-              {table ? (
-                <button
-                  type="button"
-                  onClick={() => onSelect(table.id)}
-                  onDoubleClick={() => onEdit?.({ tableId: table.id, mode, field: 'name' })}
-                  onKeyDown={(event) => {
-                    if (event.key === 'F2' && onEdit) {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onEdit({ tableId: table.id, mode, field: 'name' });
-                    }
-                  }}
-                  title={onEdit ? t('더블클릭 또는 F2로 편집') : undefined}
-                >
-                  {title || t('이름 없는 테이블')}
-                </button>
-              ) : domain ? (
-                <button type="button" onClick={() => onSelectDomain?.(domain.id)}>
-                  {title}
-                </button>
-              ) : (
-                <strong>{title}</strong>
-              )}
-              {table && (
-                <span
-                  className="native-table-owner"
-                  title={base.domains.find((d) => d.id === table.domainId)?.name ?? t('미지정')}
-                >
-                  {base.domains.find((d) => d.id === table.domainId)?.name ?? t('미지정')}
-                  {mode === 'physical' && table.physical.namespace.kind === 'postgresSchema' && (
-                    <span
-                      className="native-table-schema"
-                      title={table.physical.namespace.name || 'public'}
+            {!note && (
+              <header
+                className={table ? 'native-table-header' : undefined}
+                title={
+                  table
+                    ? `${effectiveView !== '__tables__' && effectiveView !== table.domainId ? t('외부 참조 · ') : ''}${t('소유 도메인 · {domain}', { domain: base.domains.find((d) => d.id === table.domainId)?.name ?? t('미지정') })}`
+                    : undefined
+                }
+                style={
+                  table
+                    ? { background: nativeTableHeaderColor(base, table), color: '#ffffff' }
+                    : undefined
+                }
+              >
+                {domain && <span className="native-domain-overline">DOMAIN</span>}
+                {table ? (
+                  editorContext ? (
+                    <NativeCanvasInlineCell
+                      document={base}
+                      target={{ tableId: table.id, mode, field: 'name' }}
+                      context={editorContext}
+                      title
+                      display={title}
+                      label={t('테이블명')}
+                      className="native-table-title"
+                      onSelect={() => onSelect(table.id)}
+                      {...(onEdit ? { onAdvancedFormat: onEdit } : {})}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!onNodeSelect) onSelect(table.id);
+                      }}
+                      onDoubleClick={() => onEdit?.({ tableId: table.id, mode, field: 'name' })}
+                      onKeyDown={(event) => {
+                        if (event.key === 'F2' && onEdit) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onEdit({ tableId: table.id, mode, field: 'name' });
+                        }
+                      }}
+                      title={onEdit ? t('더블클릭 또는 F2로 편집') : undefined}
                     >
-                      {table.physical.namespace.name || 'public'}
-                    </span>
-                  )}
-                </span>
-              )}
-            </header>
+                      {title || t('이름 없는 테이블')}
+                    </button>
+                  )
+                ) : domain ? (
+                  <h2>{title}</h2>
+                ) : (
+                  <strong>{title}</strong>
+                )}
+                {table && effectiveView === '__tables__' && (
+                  <span
+                    className="native-table-owner"
+                    title={base.domains.find((d) => d.id === table.domainId)?.name ?? t('미지정')}
+                  >
+                    {base.domains.find((d) => d.id === table.domainId)?.name ?? t('미지정')}
+                    {!!namespace && (
+                      <span className="native-table-schema" title={namespace}>
+                        {namespace}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </header>
+            )}
             {table && (
               <>
-                <table>
-                  <NativeCanvasTableRows
-                    document={base}
-                    table={table}
-                    mode={mode}
-                    onSelect={onSelect}
-                    onEdit={onEdit}
-                  />
-                </table>
+                <NativeCanvasTableRows
+                  document={base}
+                  table={table}
+                  mode={mode}
+                  onSelect={onSelect}
+                  onEdit={onEdit}
+                  selectedColumnId={selectedColumnId}
+                  onToggleNullable={onToggleNullable}
+                  onConnectFromColumn={onConnectFromColumn}
+                  editorContext={editorContext}
+                  onRequestStructure={onRequestStructure}
+                  onRequestAction={onRequestAction}
+                  onSelectRelation={onSelectRelation}
+                />
                 <footer className="native-table-footer">
-                  <button
+                  <IconButton
                     type="button"
                     aria-label={t('컬럼 추가')}
                     disabled={!onAddColumn}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={() => onAddColumn?.(table.id)}
                   >
-                    ＋
-                  </button>
+                    +
+                  </IconButton>
                 </footer>
               </>
             )}
-            {note && <p>{note.text}</p>}
+            {note && (
+              <DomainDescription
+                memo
+                name={t('메모')}
+                value={note.text}
+                readOnly={!onDescriptionCommit}
+                onCommit={(value) => onDescriptionCommit?.(note.id, value)}
+              />
+            )}
             {domain && (
               <>
-                <p>{domain.description}</p>
-                <small>
-                  {t('테이블')}:{' '}
-                  {(base.tables ?? []).filter((table) => table.domainId === domain.id).length}
-                </small>
-                {unsavedDomain && <p>{t('저장된 배치가 없는 도메인입니다.')}</p>}
+                <DomainDescription
+                  name={domain.name}
+                  value={domain.description}
+                  readOnly={!onDescriptionCommit || unsavedDomain}
+                  onCommit={(value) => onDescriptionCommit?.(domain.id, value)}
+                />
+                {unsavedDomain && (
+                  <small className="native-domain-preview">
+                    {t('저장된 배치가 없는 도메인입니다.')}
+                  </small>
+                )}
                 {onOpenDomain && (
-                  <button
+                  <Button
                     className="native-enter-domain"
                     type="button"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    aria-label={t('{name} 도메인 열기', { name: domain.name })}
                     onClick={() => onOpenDomain(domain.id)}
                   >
                     {t('도메인 열기 ↗')}
-                  </button>
+                  </Button>
                 )}
               </>
             )}

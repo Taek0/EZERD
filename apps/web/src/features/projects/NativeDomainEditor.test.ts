@@ -39,6 +39,7 @@ import {
 vi.mock('./native-export-state.js', () => ({
   useNativeExportBlocker: vi.fn(),
   useNativeDurableState: () => 'empty',
+  useNativeExportBlocked: () => false,
 }));
 const userId = '00000000-0000-4000-8000-000000000001';
 const projectId = '00000000-0000-4000-8000-000000000002';
@@ -471,7 +472,9 @@ describe('domain forms and overview static UI', () => {
       }),
     );
     expect(html).toContain('새 도메인 만들기');
-    expect(html).toContain('Main actions');
+    // The shared menu now belongs to the toolbar portal, whose host is not mounted in SSR.
+    expect(html).toContain('editor-toolbar-host');
+    expect(html).not.toContain('Main actions');
     expect(html).not.toContain('도메인 관리와 테이블 소속 변경은 아직 지원하지');
   });
   it('selects raw and unplaced domains in overview without saving synthetic nodes or projecting v1 data', () => {

@@ -1212,10 +1212,14 @@ export function App() {
           userId={user.id}
           canEdit={permissions.edit}
           canPersonalEdit={permissions.personal}
-          projectActions={(focus) => (
+          {...(projectWorkspace
+            ? { workspaceStatus: projectWorkspace.status, workspaceRole: projectWorkspace.role }
+            : {})}
+          projectActions={(focus, png) => (
             <NativeProjectActions
               userId={user.id}
               projectId={nativeOpened.snapshot.project.id}
+              png={png}
               onExportProject={async () => {
                 await prepareProjectExport(nativeOpened.snapshot.project.id);
                 await exportVersionedProjectFile(

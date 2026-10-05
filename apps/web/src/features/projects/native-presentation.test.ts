@@ -34,19 +34,18 @@ describe('native canvas presentation', () => {
     expect(row.height).toBe(before.height);
     expect(nativeTableCanvasRows(doc, table, 'logical')[0]!.keys).not.toContain('FK');
     const html = renderToStaticMarkup(
-      createElement(
-        'table',
-        null,
-        createElement(NativeCanvasTableRows, {
-          document: doc,
-          table,
-          mode: 'physical',
-          onSelect: () => {},
-        }),
-      ),
+      createElement(NativeCanvasTableRows, {
+        document: doc,
+        table,
+        mode: 'physical',
+        onSelect: () => {},
+      }),
     );
     expect(html).toContain('data-fk="true"');
-    expect(html).toContain('scope="col"');
+    expect(html).toContain('role="table"');
+    expect(html.match(/role="columnheader"/g)).toHaveLength(5);
+    expect(html.match(/role="row"/g)).toHaveLength(2);
+    expect(html).not.toContain('<table');
     expect(html).toContain('ORIGINAL_TYPE');
     expect(html).toContain('&lt;script&gt;comment&lt;/script&gt;');
     expect(doc).toEqual(original);
@@ -58,19 +57,16 @@ describe('native canvas presentation', () => {
     expect(nativeTableHeaderColor(doc, { ...table, color: undefined })).toBe('#654321');
     table.canvasDisplay = { showNullable: false, showComment: false };
     const html = renderToStaticMarkup(
-      createElement(
-        'table',
-        null,
-        createElement(NativeCanvasTableRows, {
-          document: doc,
-          table,
-          mode: 'physical',
-          onSelect: () => {},
-        }),
-      ),
+      createElement(NativeCanvasTableRows, {
+        document: doc,
+        table,
+        mode: 'physical',
+        onSelect: () => {},
+      }),
     );
     expect(html).not.toContain('native-null-cell');
     expect(html).not.toContain('native-comment-cell');
+    expect(html.match(/role="columnheader"/g)).toHaveLength(3);
   });
   it('renders both cardinality ends and logical dash without changing path geometry', () => {
     const doc = decorationFixture(),

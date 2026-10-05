@@ -8,6 +8,7 @@ import {
   clipboardCommand,
 } from './native-clipboard-test-fixtures.js';
 import { loadNativeEditorDraft } from './native-editor-draft.js';
+import { Textarea } from '../../components/ui/index.js';
 
 const hooks = vi.hoisted(() => ({
   active: null as null | {
@@ -128,7 +129,7 @@ const click = (tree: unknown, text: string) => {
   (button.props.onClick as () => void)();
 };
 const text = (tree: unknown, value: string) => {
-  const textarea = nodes(tree).find((node) => node.type === 'textarea')!;
+  const textarea = nodes(tree).find((node) => node.type === Textarea)!;
   (textarea.props.onChange as (event: unknown) => void)({ target: { value } });
 };
 const flush = async () => {
@@ -149,7 +150,7 @@ describe('native clipboard menu real callback consumption without DOM', () => {
   it('copies a reviewed shared fragment to the manual textarea when device clipboard is unavailable', async () => {
     const ui = menu();
     click(ui.renderMenu(), '테이블 복사');
-    const copied = nodes(ui.renderMenu()).find((node) => node.type === 'textarea')!;
+    const copied = nodes(ui.renderMenu()).find((node) => node.type === Textarea)!;
     const envelope = JSON.parse(copied.props.value as string);
     expect(envelope.formatVersion).toBe(2);
     expect(envelope.document.tables).toHaveLength(1);
@@ -228,7 +229,7 @@ describe('native clipboard menu real callback consumption without DOM', () => {
     text(ui.renderForm(), 'manual draft');
     resolve('late clipboard');
     await flush();
-    expect(nodes(ui.renderForm()).find((node) => node.type === 'textarea')!.props.value).toBe(
+    expect(nodes(ui.renderForm()).find((node) => node.type === Textarea)!.props.value).toBe(
       'manual draft',
     );
     click(ui.renderForm(), '기기 클립보드에서 읽기');
