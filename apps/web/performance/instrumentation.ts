@@ -56,6 +56,7 @@ export function measurementPlugin(
     'Canvas',
     'NativeERDCanvas',
     'NativeCanvasWorkspace',
+    'NativeProjectView',
     'EditableNativeCanvasInlineCell',
     'NativeCanvasTableRows',
     'nativeCanvasScene',
@@ -86,6 +87,7 @@ export function measurementPlugin(
           'nativeCanvasScene',
           'nativeCanvasWheel',
         ];
+      if (path.endsWith('/features/projects/NativeProjectView.tsx')) names = ['NativeProjectView'];
       if (path.endsWith('/features/projects/NativeCanvasInlineCell.tsx'))
         names = ['EditableNativeCanvasInlineCell'];
       if (path.endsWith('/features/projects/NativeCanvasTableRows.tsx'))
