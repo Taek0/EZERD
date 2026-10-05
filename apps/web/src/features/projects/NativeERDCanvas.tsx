@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import {
   nativeEditorCommandSchema,
   nativeSharedCanvasCommandSchema,
@@ -469,6 +469,41 @@ export function nativeCanvasScene(
   return { nodes, relations, viewId: view };
 }
 
+/** Reuse the base scene unless a persisted node in this view has a changed draft position. */
+export function nativeCanvasDraftScene(
+  document: NativeDesignDocument,
+  scene: ReturnType<typeof nativeCanvasScene>,
+  viewId: string,
+  mode: 'physical' | 'logical',
+  objectId?: string,
+  x?: string,
+  y?: string,
+) {
+  const moved = scene.nodes.find((node) => node.objectId === objectId);
+  if (
+    !moved ||
+    !document.layout.nodes.some((node) => node.id === moved.id) ||
+    (moved.x === Number(x) && moved.y === Number(y))
+  )
+    return scene;
+  const displayed = new Map(
+    scene.nodes.map((node) => [
+      node.id,
+      node.objectId === objectId ? { ...node, x: Number(x), y: Number(y) } : node,
+    ]),
+  );
+  return nativeCanvasScene(
+    {
+      ...document,
+      layout: {
+        ...document.layout,
+        nodes: document.layout.nodes.map((node) => displayed.get(node.id) ?? node),
+      },
+    },
+    viewId,
+    mode,
+  );
+}
 /** Only shared source-document inputs block export; personal cameras/views do not change it. */
 export function nativeCanvasExportBlocker(
   source: NativeDesignDocument,
@@ -645,17 +680,21 @@ export function NativeERDCanvas({
   }, [userId, privateIdentity, snapshot.project.id]);
   const sharedSource =
     snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document;
-  const base = personal
-    ? mergeStoredPersonalState(document, reconcilePersonalState(sharedSource, personal.state))
-    : {
-        ...document,
-        views: [],
-        layout: {
-          ...document.layout,
-          nodes: document.layout.nodes.filter((node) => !privateView(document, node.viewId)),
-          viewports: [],
-        },
-      };
+  const base = useMemo(
+    () =>
+      personal
+        ? mergeStoredPersonalState(document, reconcilePersonalState(sharedSource, personal.state))
+        : {
+            ...document,
+            views: [],
+            layout: {
+              ...document.layout,
+              nodes: document.layout.nodes.filter((node) => !privateView(document, node.viewId)),
+              viewports: [],
+            },
+          },
+    [document, sharedSource, personal?.state],
+  );
   const effectiveView =
     viewId === TABLES_VIEW_ID ||
     viewId === 'overview' ||
@@ -725,22 +764,17 @@ export function NativeERDCanvas({
     snapshot.project.databaseRevision,
     personal?.version,
   ]);
-  const scene = nativeCanvasScene(base, effectiveView, mode);
-  const displayedNodes = scene.nodes.map((node) =>
-    draft?.values.objectId === node.objectId
-      ? { ...node, x: Number(draft.values.x), y: Number(draft.values.y) }
-      : node,
+  const scene = useMemo(
+    () => nativeCanvasScene(base, effectiveView, mode),
+    [base, effectiveView, mode],
   );
-  const displayDoc = {
-    ...base,
-    layout: {
-      ...base.layout,
-      nodes: base.layout.nodes.map(
-        (node) => displayedNodes.find((shown) => shown.id === node.id) ?? node,
-      ),
-    },
-  };
-  const drawn = nativeCanvasScene(displayDoc, effectiveView, mode);
+  const draftObjectId = draft?.values.objectId;
+  const draftX = draft?.values.x;
+  const draftY = draft?.values.y;
+  const drawn = useMemo(
+    () => nativeCanvasDraftScene(base, scene, effectiveView, mode, draftObjectId, draftX, draftY),
+    [base, scene, effectiveView, mode, draftObjectId, draftX, draftY],
+  );
   function preserve(node: NodeLayout, x: number, y: number) {
     if (!userId || !placementEditable || allBusy || stale) return;
     if (
