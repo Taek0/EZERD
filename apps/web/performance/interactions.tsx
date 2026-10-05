@@ -48,6 +48,7 @@ function Demo() {
     [inline, setInline] = useState<NativeInlineTarget | null>(null),
     [relation, setRelation] = useState<string | null>(null),
     [selected, setSelected] = useState<string | null>(null);
+  const [pngResult, setPngResult] = useState('');
   const [candidate, setCandidate] = useState(false),
     [report, setReport] = useState('');
   const [placement, setPlacement] = useState<NodeLayout | null>(null);
@@ -331,6 +332,8 @@ function Demo() {
         <button
           onClick={() =>
             void exportNativeCanvasPng(document, exportScene, 'physical', 'native-interaction-test')
+              .then((result) => setPngResult(JSON.stringify(result)))
+              .catch((error) => setPngResult(JSON.stringify({ error: String(error) })))
           }
         >
           Download PNG
@@ -426,6 +429,7 @@ function Demo() {
           />
         )}
       </div>
+      <textarea aria-label="PNG result" readOnly value={pngResult} />
       <textarea aria-label="UI validation JSON" readOnly value={report} />
       <output aria-label="Demo revision">{version}</output>
       <textarea aria-label="Save ledger" readOnly value={ledger} />
