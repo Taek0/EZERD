@@ -1,22 +1,18 @@
-/* Lab candidate only. Product CSS is unchanged. NodeLayout provides explicit size. */
-@supports (content-visibility: auto) {
-  :is(.cv-candidate, .comparison-editor.inline-candidate) .native-erd-node.table {
-    content-visibility: auto;
-  }
-  :is(.cv-candidate, .comparison-editor.inline-candidate)
-    .native-erd-node.table:is(
-      [data-selected='true'],
-      [data-preview='true'],
-      :focus-within,
-      :active
-    ),
-  :is(.cv-candidate, .comparison-editor.inline-candidate)
-    .native-erd-node.table:has(
-      input:not([type='checkbox']),
-      textarea,
-      [contenteditable='true'],
-      [data-dirty='true']
-    ) {
-    content-visibility: visible;
-  }
+/* Lab-only opt-out. Enabled cases exercise the product stylesheet directly. */
+.native-validation:not(.cv-candidate) .native-erd-node.table,
+.app-shell.editor-shell:not(.cv-candidate) .native-erd-node.table,
+.comparison-editor:is(
+    .baseline,
+    .editable-presentation,
+    .inline-product-before,
+    .inline-no-tooltip,
+    .inline-static,
+    .inline-flat-style,
+    .inline-composited,
+    .inline-no-clip,
+    .inline-contain-only,
+    .inline-paint-only
+  )
+  .native-erd-node.table {
+  content-visibility: visible;
 }

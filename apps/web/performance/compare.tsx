@@ -320,6 +320,8 @@ function Compare() {
             'inline-contain-only',
             'inline-paint-only',
             'inline-candidate',
+            'inline-product',
+            'inline-product-before',
           ].map((v) => (
             <option key={v}>{v}</option>
           ))}
@@ -341,6 +343,8 @@ function Compare() {
       <p>
         Diagnostic production profiling build. Synthetic paced wheel; no API, persistence or
         collaboration. Leaf memo ignores callbacks only for this immutable read-only experiment.
+        Native inline-product uses the product visibility rule; inline-product-before and
+        editable-presentation disable it for comparison.
       </p>
       <div ref={area} onWheelCapture={captureRealWheel} className={`comparison-editor ${variant}`}>
         <Profiler id="canvas" onRender={profile}>
