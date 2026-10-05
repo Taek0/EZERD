@@ -1273,6 +1273,21 @@ export function NativeERDCanvas({
       </div>
     </>
   );
+  const exportControl = useMemo(
+    () => (
+      <MemoNativeCanvasPngExport
+        snapshot={snapshot}
+        {...(userId ? { userId } : {})}
+        viewId={effectiveView}
+        mode={mode}
+        sceneFor={nativeCanvasScene}
+        {...(personal ? { personal } : {})}
+        personalBusy={personalBusy}
+        writerState={privateQueueState}
+      />
+    ),
+    [snapshot, userId, effectiveView, mode, personal, personalBusy, privateQueueState],
+  );
   const reviewCallback = useRef(onReviewContext);
   reviewCallback.current = onReviewContext;
   useEffect(() => {
@@ -1299,18 +1314,7 @@ export function NativeERDCanvas({
   return (
     <section className="native-erd" aria-label={t('Native ERD')}>
       <NativeCanvasToolbar
-        exportControl={
-          <MemoNativeCanvasPngExport
-            snapshot={snapshot}
-            {...(userId ? { userId } : {})}
-            viewId={effectiveView}
-            mode={mode}
-            sceneFor={nativeCanvasScene}
-            {...(personal ? { personal } : {})}
-            personalBusy={personalBusy}
-            writerState={privateQueueState}
-          />
-        }
+        exportControl={exportControl}
         viewId={effectiveView}
         views={toolbarViews}
         onView={navigateView}
