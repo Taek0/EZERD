@@ -63,3 +63,8 @@ textarea[aria-label='Comparison JSON'] {
 .comparison-editor.inline-content-visibility .native-erd-node {
   content-visibility: auto;
 }
+
+/* Keep the measured canvas width invariant when the JSON result becomes scrollable. */
+html {
+  scrollbar-width: none;
+}
