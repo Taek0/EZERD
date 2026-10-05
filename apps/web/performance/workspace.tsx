@@ -14,6 +14,7 @@ import '../src/styles/editor-topbar.css';
 import '../src/styles/canvas-viewport.css';
 import '../src/styles/navigation-controls.css';
 import './workspace.css';
+import './content-visibility-candidate.css';
 const fixture = createNativePerformanceFixture(10, 5);
 fixture.snapshot.project.id = '90000000-0000-4000-8000-000000000021';
 fixture.snapshot.project.name = '원본 UI 복원 · 로컬 예제';
@@ -138,10 +139,24 @@ if (interactive) {
 }
 function MotionProbe() {
   const [report, setReport] = useState(''),
-    [recording, setRecording] = useState(false);
+    [recording, setRecording] = useState(false),
+    [candidate, setCandidate] = useState(false);
   return (
     <details className="preview-motion-probe">
       <summary>로컬 예제 · 서버 저장 없음 · QA</summary>
+      <label>
+        <input
+          type="checkbox"
+          checked={candidate}
+          onChange={(event) => {
+            setCandidate(event.target.checked);
+            document
+              .querySelector('.app-shell')
+              ?.classList.toggle('cv-candidate', event.target.checked);
+          }}
+        />
+        Content visibility candidate
+      </label>
       <Button
         disabled={recording}
         onClick={() => {

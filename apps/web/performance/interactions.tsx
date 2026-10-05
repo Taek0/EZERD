@@ -262,9 +262,14 @@ function Demo() {
                     contain: style.contain,
                   },
                   cards: cards.length,
-                  visible: cards.filter((card) =>
+                  visibleBoxes: cards.filter((card) =>
                     card.checkVisibility({ contentVisibilityAuto: true }),
                   ).length,
+                  visibleContents: cards.filter((card) =>
+                    card.firstElementChild?.checkVisibility({ contentVisibilityAuto: true }),
+                  ).length,
+                  saveLedger: ledger,
+                  reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
                   active: window.document.activeElement?.getAttribute('aria-label'),
                   png: fixtureFingerprint(nativeCanvasSvg(document, exportScene, 'physical').svg),
                   alerts: Array.from(root.querySelectorAll('[role=alert]')).map(
