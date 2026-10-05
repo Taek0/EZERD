@@ -1,9 +1,12 @@
 import { createElement, isValidElement, type ReactNode, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeCanvasScene, type NativeCanvasSceneProps } from './NativeCanvasScene.js';
 import { nativeCanvasScene } from './NativeERDCanvas.js';
 import { decorationFixture } from './native-canvas-decoration-test-fixtures.js';
+import { DomainDescription } from '../domains/DomainDescription.js';
+import { nativeCanvasSvg } from './native-canvas-png.js';
+afterEach(() => vi.unstubAllGlobals());
 vi.mock('../../shared/i18n/index.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   useI18n: () => ({ t: (text: string) => text }),
@@ -31,10 +34,13 @@ function props(): NativeCanvasSceneProps {
     },
   };
 }
-function article(p: NativeCanvasSceneProps) {
+function scene(p: NativeCanvasSceneProps) {
   const component = (
     NativeCanvasScene as unknown as { type: (p: NativeCanvasSceneProps) => ReactNode }
   ).type;
+  return component(p);
+}
+function article(p: NativeCanvasSceneProps, objectId = 't') {
   const visit = (node: ReactNode): ReactElement<Record<string, unknown>> | undefined => {
     if (Array.isArray(node)) {
       for (const child of node) {
@@ -43,12 +49,17 @@ function article(p: NativeCanvasSceneProps) {
       }
     }
     if (isValidElement<Record<string, unknown>>(node)) {
-      if (node.type === 'article' && node.props['data-object-id'] === 't') return node;
+      if (node.type === 'article' && node.props['data-object-id'] === objectId) return node;
       return visit(node.props.children as ReactNode);
     }
     return undefined;
   };
-  return visit(component(p))!.props as Record<string, (event: unknown) => void>;
+  return visit(scene(p))!.props as Record<string, (event: unknown) => void>;
+}
+function descendants(node: ReactNode): ReactElement<Record<string, unknown>>[] {
+  if (Array.isArray(node)) return node.flatMap(descendants);
+  if (!isValidElement<Record<string, unknown>>(node)) return [];
+  return [node, ...descendants(node.props.children as ReactNode)];
 }
 describe('native scene render boundary', () => {
   it('keeps event handlers on the latest committed actions and zoom without rebuilding the scene', () => {
@@ -104,5 +115,169 @@ describe('native scene render boundary', () => {
     p.draftObjectId = undefined;
     article(p).onKeyDown!({ target, currentTarget: target, key: 'Enter', preventDefault: vi.fn() });
     expect(p.onSelect).toHaveBeenCalledWith('t');
+  });
+  it('delegates modifier clicks without focus or title buttons collapsing multi selection', () => {
+    vi.stubGlobal('Element', class {});
+    const p = props();
+    p.selectedObjectIds = ['t', 'n'];
+    p.onNodeSelect = vi.fn();
+    const target = {},
+      event = { target, currentTarget: target, ctrlKey: true, shiftKey: false, metaKey: false };
+    const handlers = article(p);
+    handlers.onFocus!(event);
+    handlers.onClick!(event);
+    expect(p.setSelectedNode).not.toHaveBeenCalled();
+    expect(p.onSelect).not.toHaveBeenCalled();
+    expect(p.onNodeSelect).toHaveBeenCalledWith(
+      p.drawn.nodes.find((node) => node.objectId === 't'),
+      event,
+    );
+    const title = descendants(scene(p)).find(
+      (node) => node.type === 'button' && node.props.children === 'records',
+    )!;
+    (title.props.onClick as (event: unknown) => void)(event);
+    expect(p.onSelect).not.toHaveBeenCalled();
+    expect(
+      renderToStaticMarkup(createElement(NativeCanvasScene, p)).match(/data-selected="true"/g),
+    ).toHaveLength(2);
+  });
+  it('does not select child focus and uses original note body without a synthetic title header', () => {
+    const p = props();
+    article(p).onFocus!({ target: {}, currentTarget: {} });
+    expect(p.setSelectedNode).not.toHaveBeenCalled();
+    const html = renderToStaticMarkup(createElement(NativeCanvasScene, p));
+    const note = html.split('data-object-id="n"')[1]!;
+    expect(note).toContain('class="note-content"');
+    expect(note).not.toContain('<header');
+  });
+  it('reuses original domain/note editor and disables edits and movement on an unsaved domain preview', () => {
+    const p = props();
+    p.onDescriptionCommit = vi.fn();
+    let editor = descendants(scene(p)).find(
+      (node) => node.type === DomainDescription && node.props.memo,
+    )!;
+    expect(editor.props.readOnly).toBe(false);
+    (editor.props.onCommit as (value: string) => void)('Revised note');
+    expect(p.onDescriptionCommit).toHaveBeenCalledWith('n', 'Revised note');
+    p.effectiveView = 'overview';
+    p.drawn = nativeCanvasScene(p.base, 'overview', 'physical');
+    p.sharedSource = { ...p.base, layout: { ...p.base.layout, nodes: [] } };
+    editor = descendants(scene(p)).find(
+      (node) => node.type === DomainDescription && node.props.name === 'Orders',
+    )!;
+    expect(editor.props.readOnly).toBe(true);
+    article(p, 'a').onPointerDown!({});
+    expect(p.actions.current.begin).not.toHaveBeenCalled();
+    const target = {};
+    article(p, 'a').onKeyDown!({
+      target,
+      currentTarget: target,
+      key: 'ArrowRight',
+      preventDefault: vi.fn(),
+    });
+    expect(p.actions.current.preserve).not.toHaveBeenCalled();
+    const html = renderToStaticMarkup(createElement(NativeCanvasScene, p));
+    expect(html).toContain('업무 영역을 설명해 주세요');
+    expect(html).toContain('data-preview="true"');
+    expect(html).not.toContain('native-card-resize');
+  });
+  it('delegates the object context menu and domain Enter navigation while preserving child text menus', () => {
+    class FakeElement {
+      constructor(private readonly editable: boolean) {}
+      closest() {
+        return this.editable ? this : null;
+      }
+    }
+    vi.stubGlobal('Element', FakeElement);
+    const p = props();
+    p.onNodeContextMenu = vi.fn();
+    const event = { target: new FakeElement(false) };
+    article(p).onContextMenu!(event);
+    expect(p.onNodeContextMenu).toHaveBeenCalledWith(
+      p.drawn.nodes.find((node) => node.objectId === 't'),
+      event,
+    );
+    article(p).onContextMenu!({ target: new FakeElement(true) });
+    expect(p.onNodeContextMenu).toHaveBeenCalledOnce();
+    p.effectiveView = 'overview';
+    p.drawn = nativeCanvasScene(p.base, 'overview', 'physical');
+    p.onOpenDomain = vi.fn();
+    const target = {};
+    article(p, 'a').onKeyDown!({
+      target,
+      currentTarget: target,
+      key: 'Enter',
+      preventDefault: vi.fn(),
+    });
+    expect(p.onOpenDomain).toHaveBeenCalledWith('a');
+  });
+  it('keeps original 1px and shift 10px movement against the current actions ref', () => {
+    const p = props(),
+      target = {};
+    const node = p.drawn.nodes.find((value) => value.objectId === 't')!;
+    const handlers = article(p);
+    handlers.onKeyDown!({
+      target,
+      currentTarget: target,
+      key: 'ArrowRight',
+      shiftKey: false,
+      preventDefault: vi.fn(),
+    });
+    expect(p.actions.current.preserve).toHaveBeenLastCalledWith(node, node.x + 1, node.y);
+    handlers.onKeyDown!({
+      target,
+      currentTarget: target,
+      key: 'ArrowDown',
+      shiftKey: true,
+      preventDefault: vi.fn(),
+    });
+    expect(p.actions.current.preserve).toHaveBeenLastCalledWith(node, node.x, node.y + 10);
+  });
+  it.each([
+    ['postgresSchema', '', 'physical', 'records', 'public'],
+    ['postgresSchema', 'BusinessSchema', 'physical', 'records', 'BusinessSchema'],
+    ['postgresSchema', 'BusinessSchema', 'logical', 'Records', ''],
+    ['mysqlCurrentDatabase', '', 'physical', 'records', ''],
+    ['sqliteMain', '', 'physical', 'records', ''],
+    ['legacyNamespace', 'OriginalSchema', 'physical', 'records', ''],
+  ] as const)(
+    'keeps %s / %s namespace and %s names identical in header and PNG',
+    (kind, name, mode, title, badge) => {
+      const p = props();
+      const namespace =
+        kind === 'postgresSchema'
+          ? { kind, name }
+          : kind === 'legacyNamespace'
+            ? { kind, source: 'document-v1' as const, original: name }
+            : { kind };
+      p.base.tables![0]!.physical.namespace = namespace;
+      p.mode = mode;
+      p.drawn = nativeCanvasScene(p.base, '__tables__', mode);
+      const html = renderToStaticMarkup(createElement(NativeCanvasScene, p));
+      const { svg } = nativeCanvasSvg(p.base, p.drawn, mode);
+      expect(html).toContain(`>${title}</button>`);
+      expect(svg).toContain(`>${title}</text>`);
+      if (badge) {
+        expect(html).toContain(`class="native-table-schema" title="${badge}"`);
+        expect(svg).toContain(`>${badge}</text>`);
+      } else {
+        expect(html).not.toContain('class="native-table-schema"');
+        expect(svg).not.toContain('>public</text>');
+        expect(svg).not.toContain('>BusinessSchema</text>');
+      }
+    },
+  );
+  it('uses matching physical/logical fallback and unnamed title in header and export', () => {
+    const p = props();
+    p.base.tables![0]!.physical.name = '';
+    let html = renderToStaticMarkup(createElement(NativeCanvasScene, p));
+    let svg = nativeCanvasSvg(p.base, p.drawn, p.mode).svg;
+    expect(html).toContain('>Records</button>');
+    expect(svg).toContain('>Records</text>');
+    p.base.tables![0]!.logical.name = '';
+    html = renderToStaticMarkup(createElement(NativeCanvasScene, p));
+    svg = nativeCanvasSvg(p.base, p.drawn, p.mode).svg;
+    expect(html).toContain('>이름 없는 테이블</button>');
+    expect(svg).toContain('>이름 없는 테이블</text>');
   });
 });

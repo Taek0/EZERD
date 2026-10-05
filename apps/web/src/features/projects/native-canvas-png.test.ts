@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { decorationFixture } from './native-canvas-decoration-test-fixtures.js';
 import { nativeCanvasScene } from './NativeERDCanvas.js';
 import { nativeCanvasSvg, nativePngBounds, exportNativeCanvasPng } from './native-canvas-png.js';
+import { nativeTableCanvasHeaderHeight, nativeTableCanvasMetrics } from './native-canvas-style.js';
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -15,7 +16,7 @@ describe('native PNG uses semantic source and common geometry', () => {
     expect(output.svg).toContain('ORIGINAL_TYPE');
     expect(output.svg).toContain('&lt;script&gt;comment&lt;/script&gt;');
     expect(output.svg).not.toContain('<script>');
-    expect(output.svg).toContain('stroke="#123456"');
+    expect(output.svg).toContain('stroke="#c8d0de"');
     expect(output.svg).toContain('NOT NULL');
     expect(output.svg).toContain('native-png-header');
     expect(output.svg).toContain('height="50" fill="#123456"');
@@ -42,6 +43,54 @@ describe('native PNG uses semantic source and common geometry', () => {
     expect(() => nativePngBounds(source, { ...scene, nodes: [] })).toThrow('canvas.export-empty');
     scene.nodes[1]!.x = 1e7;
     expect(() => nativePngBounds(source, scene)).toThrow('canvas.export-size-limit');
+  });
+  it('exports source row typography, line breaks, NULL checkbox and footer without altering native payloads', () => {
+    const source = decorationFixture(),
+      before = structuredClone(source);
+    source.columns![0]!.physical.comment = 'First line\nSecond line';
+    const scene = nativeCanvasScene(source, '__tables__', 'physical');
+    const { svg } = nativeCanvasSvg(source, scene, 'physical');
+    const metrics = nativeTableCanvasMetrics(source, source.tables![0]!, 'physical');
+    expect(svg).toContain('font-size="26"');
+    expect(svg).toContain('font-size="20"');
+    expect(svg).toContain('native-png-null');
+    expect(svg).toContain('native-png-footer');
+    expect(svg).toContain(`height="${metrics.rows[0]!.height}"`);
+    expect(svg).toContain(
+      `y="${scene.nodes.find((node) => node.objectId === 't')!.y + nativeTableCanvasHeaderHeight}"`,
+    );
+    expect(svg).toMatch(/>First line<\/text>.*>Second line<\/text>/);
+    expect(source.columns![0]!.physical.type).toEqual(before.columns![0]!.physical.type);
+    expect(source.columns![0]!.physical.defaultValue).toEqual(
+      before.columns![0]!.physical.defaultValue,
+    );
+  });
+  it('exports source note body without its artificial heading and domain overline/navigation', () => {
+    const source = decorationFixture();
+    let { svg } = nativeCanvasSvg(
+      source,
+      nativeCanvasScene(source, '__tables__', 'physical'),
+      'physical',
+    );
+    expect(svg).toContain('color-mix(in srgb, #abcdef 24%, white)');
+    expect(svg).not.toContain('>메모</text>');
+    ({ svg } = nativeCanvasSvg(
+      source,
+      nativeCanvasScene(source, 'overview', 'physical'),
+      'physical',
+    ));
+    expect(svg).toContain('>DOMAIN</text>');
+    expect(svg).toContain('native-png-domain-accent');
+    expect(svg.replace(/<[^>]*>/g, '')).toContain('업무 영역을 설명해 주세요');
+    expect(svg).toContain('>도메인 열기 ↗</text>');
+  });
+  it('respects the effective domain view while retaining the shared table placement identity', () => {
+    const source = decorationFixture();
+    const scene = { ...nativeCanvasScene(source, 'a', 'physical'), effectiveView: 'a' };
+    expect(scene.nodes.find((node) => node.objectId === 't')!.viewId).toBe('__tables__');
+    const { svg } = nativeCanvasSvg(source, scene, 'physical');
+    expect(svg).toContain('>records</text>');
+    expect(svg).not.toContain('>Orders</text>');
   });
   it('encodes image/png at the bounded common 2x scale and downloads only in the captured context', async () => {
     vi.useFakeTimers();

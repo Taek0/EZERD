@@ -35,6 +35,33 @@ export function nativeTableCanvasRows(
   table: NativeTable,
   mode: 'physical' | 'logical',
 ) {
+  return nativeTableCanvasMetrics(document, table, mode).rows;
+}
+
+// Keep source card typography, displayed bounds, relation ports and PNG in one coordinate system.
+export const nativeTableCanvasHeaderHeight = 50 + 34;
+export const nativeTableCanvasFooterHeight = 40;
+const textWidth = (value: string) =>
+  [...value].reduce((width, character) => width + (character.charCodeAt(0) > 255 ? 20 : 12.4), 0);
+export const nativeRelationLabelWidth = (label: string) =>
+  Math.max(
+    90,
+    [...label].reduce((width, character) => width + (character.charCodeAt(0) > 255 ? 14 : 8), 24),
+  );
+export const nativeTableCanvasTitle = (table: NativeTable, mode: 'physical' | 'logical') =>
+  mode === 'physical'
+    ? table.physical.name || table.logical.name
+    : table.logical.name || table.physical.name;
+/** Only PostgreSQL owns a schema badge; other native namespace kinds never imply public. */
+export const nativeTableCanvasNamespace = (table: NativeTable, mode: 'physical' | 'logical') =>
+  mode === 'physical' && table.physical.namespace.kind === 'postgresSchema'
+    ? table.physical.namespace.name || 'public'
+    : '';
+export function nativeTableCanvasMetrics(
+  document: NativeDesignDocument,
+  table: NativeTable,
+  mode: 'physical' | 'logical',
+) {
   const foreignColumns = new Set(
     (document.tableRelations ?? [])
       .filter(
@@ -42,7 +69,7 @@ export function nativeTableCanvasRows(
       )
       .flatMap((relation) => relation.physical?.sourceColumnIds ?? []),
   );
-  return (document.columns ?? [])
+  const rows = (document.columns ?? [])
     .filter(
       (column) => column.tableId === table.id && isVisibleInView(column.scope, mode, table.scope),
     )
@@ -56,16 +83,21 @@ export function nativeTableCanvasRows(
         mode === 'physical'
           ? nativeColumnTypeDisplay(column.physical.type, document.enums)
           : column.logical.semanticType,
-      keys: (document.keys ?? [])
-        .filter(
+      keys: (() => {
+        const keys = (document.keys ?? []).filter(
           (key) =>
             key.tableId === table.id &&
             key.columnIds.includes(column.id) &&
             isVisibleInView(key.scope, mode, table.scope),
-        )
-        .map<string>((key) => (key.kind === 'primary' ? 'PK' : 'UQ'))
-        .concat(foreignColumns.has(column.id) ? ['FK'] : [])
-        .join(' '),
+        );
+        return [
+          keys.some((key) => key.kind === 'primary') ? 'PK' : '',
+          foreignColumns.has(column.id) ? 'FK' : '',
+          keys.some((key) => key.kind === 'unique') ? 'UQ' : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
+      })(),
       nullable:
         table.canvasDisplay?.showNullable === false
           ? ''
@@ -78,24 +110,62 @@ export function nativeTableCanvasRows(
               : '',
       comment:
         table.canvasDisplay?.showComment === false ? '' : nativeCanvasRowComment(column, mode),
-      height:
-        34 +
-        ((table.canvasDisplay?.showComment !== false && nativeCanvasRowComment(column, mode)) ||
-        (table.canvasDisplay?.showNullable !== false &&
-          (mode === 'physical' || column.logical.required))
-          ? 18
-          : 0),
     }));
+  const showNullable = table.canvasDisplay?.showNullable !== false;
+  const showComment = table.canvasDisplay?.showComment !== false;
+  const widths = [
+    54,
+    Math.max(100, ...rows.map((row) => Math.min(216, textWidth(row.name)))),
+    Math.max(108, ...rows.map((row) => Math.min(234, textWidth(row.type) + 16))),
+    40,
+    Math.max(96, ...rows.map((row) => Math.min(288, textWidth(row.comment)))),
+  ];
+  const lines = (value: string, width: number) =>
+    value
+      .split('\n')
+      .reduce((count, line) => count + Math.max(1, Math.ceil(textWidth(line) / width)), 0);
+  const measuredRows = rows.map((row) => ({
+    ...row,
+    height:
+      Math.max(
+        1,
+        lines(row.name, widths[1]!),
+        lines(row.type, widths[2]!),
+        showComment ? lines(row.comment, widths[4]!) : 1,
+      ) *
+        28 +
+      9,
+  }));
+  const visibleWidths = widths.filter(
+    (_, index) =>
+      (index !== 3 && index !== 4) || (index === 3 && showNullable) || (index === 4 && showComment),
+  );
+  const title = nativeTableCanvasTitle(table, mode);
+  return {
+    width: Math.max(
+      280,
+      visibleWidths.reduce((sum, width) => sum + width, 0) + 20 + (visibleWidths.length - 1) * 6,
+      (textWidth(title) * 26) / 20 + 24,
+    ),
+    height: Math.max(
+      180,
+      nativeTableCanvasHeaderHeight +
+        Math.max(
+          37,
+          measuredRows.reduce((sum, row) => sum + row.height, 0),
+        ) +
+        nativeTableCanvasFooterHeight,
+    ),
+    widths: visibleWidths,
+    grid: visibleWidths.map((width) => `minmax(${width}px, ${width}fr)`).join(' '),
+    rows: measuredRows,
+  };
 }
 export const nativeCanvasRowComment = (column: NativeColumn, mode: 'physical' | 'logical') =>
   mode === 'physical' ? column.physical.comment : column.logical.definition;
 export function nativeCardColor(document: NativeDesignDocument, objectId: string) {
-  return (
-    document.tables?.find((item) => item.id === objectId)?.color ??
-    document.domains.find((item) => item.id === objectId)?.color ??
-    document.notes.find((item) => item.id === objectId)?.color ??
-    '#c9d0dd'
-  );
+  // Source palettes tint headers/top accents; neutral side borders remain legible.
+  return document.notes.some((item) => item.id === objectId) ? '#ded9bf' : '#c8d0de';
 }
 
 export function nativeTableHeaderColor(document: NativeDesignDocument, table: NativeTable) {

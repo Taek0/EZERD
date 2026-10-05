@@ -2,6 +2,7 @@ import { nativeRelationEnds, nativeRelationEndPath } from './native-relation-pre
 import { useId } from 'react';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { useI18n } from '../../shared/i18n/index.js';
+import { nativeRelationLabelWidth } from './native-canvas-style.js';
 
 /** Presentational cardinalities follow the existing canvas' logical endpoint metadata. */
 export function NativeTableLines({
@@ -48,7 +49,7 @@ export function NativeTableLines({
       </defs>
       {relations.map(({ relation, geometry, label }) => {
         const [source, target] = nativeRelationEnds(relation);
-        const width = Math.max(90, label.length * 8 + 24);
+        const width = nativeRelationLabelWidth(label);
         return (
           <g
             key={relation.id}
@@ -57,6 +58,8 @@ export function NativeTableLines({
             role={onSelect ? 'button' : undefined}
             tabIndex={onSelect ? 0 : undefined}
             aria-label={`${t('테이블 관계')} ${label}`}
+            aria-pressed={onSelect ? selectedId === relation.id : undefined}
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               onSelect?.(relation.id);
@@ -64,9 +67,13 @@ export function NativeTableLines({
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
+                event.stopPropagation();
                 onSelect?.(relation.id);
               }
-              if (event.key === 'Escape') onSelect?.(null);
+              if (event.key === 'Escape') {
+                event.stopPropagation();
+                onSelect?.(null);
+              }
             }}
           >
             <title>{`${label}: ${relation.sourceTableId} → ${relation.targetTableId}`}</title>
@@ -79,6 +86,7 @@ export function NativeTableLines({
               strokeDasharray={mode === 'logical' ? '6 4' : undefined}
             />
             <rect
+              className="native-relation-label"
               x={geometry.labelX - width / 2}
               y={geometry.labelY - 13}
               width={width}

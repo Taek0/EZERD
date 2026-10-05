@@ -574,3 +574,358 @@
   opacity: 0.3;
   cursor: default;
 }
+
+/* Source Canvas / TableNodeContent / DomainDescription presentation, on native values. */
+.native-erd-node {
+  padding: 19px 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f2f4f7;
+  box-shadow:
+    5px 5px 18px #20232710,
+    -3px -3px 10px #ffffffa0;
+  cursor: grab;
+  transition:
+    opacity 160ms ease,
+    box-shadow 160ms ease;
+}
+.native-erd-node:active {
+  cursor: grabbing;
+}
+.native-erd-node[data-selected='true'] {
+  border-width: 2px;
+  padding: 18px 19px;
+  outline: none;
+  box-shadow: 0 0 0 4px #305be710;
+}
+.native-erd-node:focus-visible {
+  outline: 2px solid var(--accent, #305be7);
+  outline-offset: 2px;
+}
+.native-erd-node.table,
+.native-erd-node.table[data-selected='true'] {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 2px 7px #233d5a20;
+}
+.native-erd-node.table[data-selected='true'] {
+  box-shadow:
+    0 0 0 3px #305be71a,
+    0 2px 7px #233d5a20;
+}
+.native-erd-node.table .native-table-header {
+  flex: none;
+  min-height: 50px;
+}
+.native-table-header > button {
+  padding: 0;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 34px;
+}
+.native-table-owner {
+  flex: none;
+  margin-left: auto;
+  font-size: 13px;
+  line-height: 18px;
+}
+.native-table-columns {
+  flex: 1;
+  min-height: auto;
+  overflow: visible;
+}
+.native-table-column-row {
+  display: grid;
+  grid-template-columns: var(--native-table-grid);
+  gap: 6px;
+  padding: 4px 10px;
+  border-bottom: 1px solid #edf0f3;
+  box-sizing: border-box;
+  align-items: center;
+  font-size: 20px;
+  line-height: 28px;
+}
+.native-table-column-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.native-table-column-head {
+  height: 34px;
+  min-height: 34px;
+  padding-block: 3px;
+  font-size: 14px;
+  line-height: 26px;
+  font-weight: 600;
+  color: var(--muted, #617087);
+  background: #f3f5f7;
+}
+.native-erd-node .native-table-inline {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border-radius: 3px;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.native-table-inline:hover {
+  background: #6685ff12;
+}
+.native-table-inline:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.native-table-column-row .native-key-marker {
+  color: var(--accent, #305be7);
+  font-weight: 700;
+  font-size: 14px;
+}
+.native-key-marker button {
+  padding: 0;
+  font: inherit;
+}
+.native-type-cell {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: #737d87;
+}
+.native-table-column-row .native-comment-cell {
+  color: inherit;
+  font-size: inherit;
+}
+.native-table-column-row[data-pk='true'] {
+  background: #fff7df;
+}
+.native-table-column-row[data-fk='true'] {
+  background: #edf5ff;
+}
+.native-table-column-row[data-pk='true'][data-fk='true'] {
+  background: #f1f0ff;
+}
+.native-table-column-row[data-selected='true'] {
+  box-shadow: inset 0 0 0 1px var(--accent, #305be7);
+}
+.native-erd-node .native-table-empty {
+  margin: 12px;
+  padding: 0;
+  font-size: 15px;
+}
+.native-table-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  height: 40px;
+  min-height: 40px;
+  padding: 3px 44px 3px 10px;
+  border-top: 1px solid #e9edf1;
+  background: #f7f9fb;
+}
+.native-erd-node .native-table-footer button {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  font-size: 22px;
+  text-align: center;
+  background: var(--ui-control-bg, #fff);
+  border: 0;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 0 0 1px var(--ui-control-border),
+    var(--ui-shadow-skeuomorphic),
+    var(--ui-shadow-xs);
+}
+.native-erd-node.domain,
+.native-erd-node.domain[data-selected='true'] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 19px;
+  border-top: 5px solid var(--native-domain-color, #8993a3);
+  background: color-mix(in srgb, var(--native-domain-color, #8993a3) 8%, #f5f7fa);
+}
+.native-erd-node.domain header {
+  flex: none;
+  gap: 6px;
+  padding: 0;
+}
+.native-erd-node.domain h2 {
+  margin: 2px 0;
+  font-size: 28px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.native-domain-overline {
+  flex: none;
+  font-size: 13px;
+  letter-spacing: 1.7px;
+  color: #667995;
+}
+.native-erd-node.domain .domain-description {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  display: block;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--muted);
+  cursor: text;
+}
+.native-erd-node.domain .domain-description-editor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  height: 0;
+  resize: none;
+  font-size: 16px;
+  line-height: 1.55;
+}
+.native-erd-node.domain .native-enter-domain {
+  position: static;
+  flex: none;
+  align-self: flex-end;
+  margin: auto 0 -4px;
+  padding: 6px 14px;
+  min-height: 32px;
+  font-size: 14px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent);
+}
+.native-erd-node.domain .native-domain-preview {
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.native-erd-node.note,
+.native-erd-node.note[data-selected='true'] {
+  border-radius: 3px;
+  border-top: 4px solid var(--native-note-color, #fff3c4);
+  background: color-mix(in srgb, var(--native-note-color, #fff3c4) 24%, white);
+  color: #202b3a;
+}
+.native-erd-node.note .note-content {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 48px;
+  max-height: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #555447;
+  cursor: text;
+}
+.native-erd-node.note .note-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 60px;
+  resize: none;
+  font: inherit;
+  background: #ffffffdc;
+  color: #202b3a;
+  touch-action: auto;
+}
+.native-erd-node [data-inline-edit]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.native-erd-node .native-card-resize {
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, transparent 60%, #8c99ac 60%, #8c99ac 68%, transparent 68%);
+}
+.native-table-relation {
+  pointer-events: none;
+  cursor: pointer;
+}
+.native-table-lines .native-relation-hit {
+  stroke-width: 14px;
+}
+.native-table-relation rect,
+.native-table-relation text {
+  pointer-events: visiblePainted;
+}
+.native-table-relation .native-relation-stroke {
+  transition: stroke-width 140ms ease;
+  pointer-events: none;
+}
+.native-table-relation.selected .native-relation-stroke,
+.native-table-relation:focus .native-relation-stroke {
+  stroke-width: 3.5;
+}
+.native-table-relation.selected .native-relation-label {
+  fill: #edf2ff;
+  stroke: var(--accent);
+}
+.native-domain-relation {
+  color: #74829a;
+  pointer-events: none;
+  cursor: pointer;
+  outline: none;
+}
+.native-domain-relation.selected,
+.native-domain-relation:focus-visible {
+  color: var(--accent);
+}
+.native-domain-lines .native-domain-relation-stroke {
+  stroke: currentColor;
+  stroke-width: 1.7;
+  pointer-events: stroke;
+}
+.native-domain-lines marker path {
+  fill: currentColor;
+  stroke: none;
+}
+.native-domain-lines .native-domain-label-leader {
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.native-domain-lines text {
+  font-size: 14px;
+  fill: #526582;
+  stroke: var(--erd-background, var(--canvas-bg, #f6f8fb));
+  stroke-width: 5px;
+  pointer-events: visiblePainted;
+}
+@media (prefers-reduced-motion: reduce) {
+  .native-erd-node,
+  .native-table-relation .native-relation-stroke {
+    transition: none;
+  }
+}
+
+.native-erd-world .connection-preview-layer {
+  pointer-events: none;
+  z-index: 2;
+}
+.native-erd-world .domain-connection-preview {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+  pointer-events: none;
+}

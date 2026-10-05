@@ -3,12 +3,16 @@ import { translate } from '../../shared/i18n/index.js';
 import { nativeDomainGeometry } from './native-domain-lines.js';
 import {
   nativeCardColor,
-  nativeTableCanvasRows,
+  nativeTableCanvasMetrics,
+  nativeTableCanvasHeaderHeight,
+  nativeRelationLabelWidth,
+  nativeTableCanvasTitle,
+  nativeTableCanvasNamespace,
   nativeTableHeaderColor,
 } from './native-canvas-style.js';
 import type { NativeDesignDocument, NodeLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
-type Scene = ReturnType<typeof nativeCanvasScene>;
+type Scene = ReturnType<typeof nativeCanvasScene> & { effectiveView?: string | undefined };
 const xml = (value: string) =>
   value.replace(
     /[&<>"']/g,
@@ -31,8 +35,8 @@ export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
     ]),
     ...scene.relations.flatMap(({ geometry, label }) => [
       ...geometry.points,
-      { x: geometry.labelX - Math.max(90, label.length * 14 + 24) / 2, y: geometry.labelY - 12 },
-      { x: geometry.labelX + Math.max(90, label.length * 14 + 24) / 2, y: geometry.labelY + 12 },
+      { x: geometry.labelX - nativeRelationLabelWidth(label) / 2, y: geometry.labelY - 13 },
+      { x: geometry.labelX + nativeRelationLabelWidth(label) / 2, y: geometry.labelY + 15 },
     ]),
     ...geometry.flatMap(({ geometry, relation }) => [
       ...pathPoints(geometry.path),
@@ -64,6 +68,32 @@ export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
 }
 const text = (x: number, y: number, value: string, size = 12, anchor = 'start') =>
   `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}">${xml(value)}</text>`;
+function wrappedText(
+  x: number,
+  y: number,
+  value: string,
+  width: number,
+  size: number,
+  lineHeight: number,
+) {
+  const lines: string[] = [];
+  for (const paragraph of value.split('\n')) {
+    let line = '',
+      length = 0;
+    for (const character of paragraph) {
+      const advance = ((character.charCodeAt(0) > 255 ? 20 : 12.4) * size) / 20;
+      if (line && length + advance > width) {
+        lines.push(line);
+        line = '';
+        length = 0;
+      }
+      line += character;
+      length += advance;
+    }
+    lines.push(line);
+  }
+  return lines.map((line, index) => text(x, y + index * lineHeight, line, size)).join('');
+}
 export function nativeCanvasSvg(
   document: NativeDesignDocument,
   scene: Scene,
@@ -71,35 +101,35 @@ export function nativeCanvasSvg(
 ) {
   const bounds = nativePngBounds(document, scene),
     domains = nativeDomainGeometry(document, scene.nodes);
+  const globalView = (scene.effectiveView ?? scene.viewId) === '__tables__';
   const cards = scene.nodes
     .map((node: NodeLayout, index: number) => {
       const table = document.tables?.find((table) => table.id === node.objectId),
         domain = document.domains.find((domain) => domain.id === node.objectId),
         note = document.notes.find((note) => note.id === node.objectId);
       const title = table
-        ? mode === 'physical'
-          ? table.physical.name || table.logical.name
-          : table.logical.name || table.physical.name
+        ? nativeTableCanvasTitle(table, mode) || translate('이름 없는 테이블')
         : (domain?.name ?? '메모');
-      let contents = text(node.x + 12, node.y + 26, title, 14);
+      const namespace = table ? nativeTableCanvasNamespace(table, mode) : '';
+      let contents = '';
       const cardClip = `native-card-${index}`;
       const clips: string[] = [
-        `<clipPath id="${cardClip}"><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="8"/></clipPath>`,
+        `<clipPath id="${cardClip}"><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${note ? 3 : table ? 5 : 12}"/></clipPath>`,
       ];
       if (table) {
         const showNullable = table.canvasDisplay?.showNullable !== false,
           showComment = table.canvasDisplay?.showComment !== false;
-        const remaining = (node.width - 2 - 48 - (showNullable ? 70 : 0)) / (showComment ? 3 : 2);
+        const metrics = nativeTableCanvasMetrics(document, table, mode);
         const columns = [
-          { key: 'keys', label: translate('키'), width: 48 },
-          { key: 'name', label: translate('컬럼'), width: remaining },
-          { key: 'type', label: translate('타입'), width: remaining },
+          { key: 'keys', label: translate('키'), width: 0 },
+          { key: 'name', label: translate('컬럼'), width: 0 },
+          { key: 'type', label: translate('타입'), width: 0 },
           ...(showNullable
             ? [
                 {
                   key: 'nullable',
                   label: mode === 'physical' ? 'NULL' : translate('필수'),
-                  width: 70,
+                  width: 0,
                 },
               ]
             : []),
@@ -108,62 +138,118 @@ export function nativeCanvasSvg(
                 {
                   key: 'comment',
                   label: mode === 'physical' ? 'comment' : translate('정의'),
-                  width: remaining,
+                  width: 0,
                 },
               ]
             : []),
         ];
+        const available = Math.max(
+          node.width - 2 - 20 - (columns.length - 1) * 6,
+          metrics.widths.reduce((sum, width) => sum + width, 0),
+        );
+        const minimum = metrics.widths.reduce((sum, width) => sum + width, 0);
+        columns.forEach((column, index) => {
+          column.width = (metrics.widths[index]! * available) / minimum;
+        });
         const owner =
           document.domains.find((domain) => domain.id === table.domainId)?.name ??
           translate('미지정');
         contents = `<rect x="${node.x}" y="${node.y}" width="${node.width}" height="50" fill="${xml(nativeTableHeaderColor(document, table))}"/>`;
         clips.push(
-          `<clipPath id="${cardClip}-title"><rect x="${node.x + 10}" y="${node.y}" width="${node.width * 0.58 - 20}" height="50"/></clipPath>`,
+          `<clipPath id="${cardClip}-title"><rect x="${node.x + 10}" y="${node.y}" width="${(globalView ? node.width * 0.58 : node.width) - 20}" height="50"/></clipPath>`,
         );
-        contents += `<g fill="#ffffff" class="native-png-header" clip-path="url(#${cardClip}-title)">${text(node.x + 10, node.y + 33, title, 22)}</g>`;
+        contents += `<g fill="#ffffff" class="native-png-header native-png-title" clip-path="url(#${cardClip}-title)">${text(node.x + 10, node.y + 34, title, 26)}</g>`;
         clips.push(
           `<clipPath id="${cardClip}-owner"><rect x="${node.x + node.width * 0.6}" y="${node.y}" width="${node.width * 0.4 - 10}" height="50"/></clipPath>`,
         );
-        contents += `<g class="native-png-header" clip-path="url(#${cardClip}-owner)">${text(node.x + node.width - 10, node.y + 21, owner, 12, 'end')}${mode === 'physical' && table.physical.namespace.kind === 'postgresSchema' ? text(node.x + node.width - 10, node.y + 36, table.physical.namespace.name || 'public', 10, 'end') : ''}</g>`;
-        contents += `<rect x="${node.x}" y="${node.y + 50}" width="${node.width}" height="28" fill="#f6f8fb"/>`;
-        let x = node.x + 1;
+        if (globalView)
+          contents += `<g class="native-png-header" clip-path="url(#${cardClip}-owner)">${text(node.x + node.width - 10, node.y + 27, owner, 13, 'end')}${namespace ? text(node.x + node.width - 10, node.y + 40, namespace, 10, 'end') : ''}</g>`;
+        contents += `<rect x="${node.x}" y="${node.y + 50}" width="${node.width}" height="34" fill="#f3f5f7"/>`;
+        let x = node.x + 11;
         for (const [i, col] of columns.entries()) {
           const clip = `${cardClip}-col-${i}`;
           clips.push(
-            `<clipPath id="${clip}"><rect x="${x + 6}" y="${node.y + 50}" width="${Math.max(0, col.width - 12)}" height="${Math.max(0, node.height - 50)}"/></clipPath>`,
+            `<clipPath id="${clip}"><rect x="${x}" y="${node.y + 50}" width="${Math.max(0, col.width)}" height="${Math.max(0, node.height - 50)}"/></clipPath>`,
           );
-          contents += `<g clip-path="url(#${clip})">${text(x + 6, node.y + 68, col.label, 11)}</g>`;
-          x += col.width;
+          contents += `<g class="native-png-column-head" clip-path="url(#${clip})">${text(x, node.y + 73, col.label, 14)}</g>`;
+          x += col.width + 6;
         }
-        let offset = 78;
-        for (const row of nativeTableCanvasRows(document, table, mode)) {
+        let offset = nativeTableCanvasHeaderHeight;
+        for (const row of metrics.rows) {
           const keys = row.keys.split(' '),
             pk = keys.includes('PK'),
             fk = keys.includes('FK');
           const fill = pk && fk ? '#f1f0ff' : pk ? '#fff7df' : fk ? '#edf5ff' : '#ffffff';
-          contents += `<rect x="${node.x}" y="${node.y + offset}" width="${node.width}" height="${row.height}" fill="${fill}"/><path d="M ${node.x} ${node.y + offset + row.height} H ${node.x + node.width}" stroke="#d8dce4"/>`;
-          let x = node.x + 1;
+          contents += `<rect x="${node.x}" y="${node.y + offset}" width="${node.width}" height="${row.height}" fill="${fill}"/><path d="M ${node.x} ${node.y + offset + row.height} H ${node.x + node.width}" style="stroke:#edf0f3;stroke-width:1"/>`;
+          let x = node.x + 11;
           for (const [i, col] of columns.entries()) {
             const value = String(
               row[col.key as 'keys' | 'name' | 'type' | 'nullable' | 'comment'] ||
                 (col.key === 'comment' ? '—' : ''),
             );
-            contents += `<g clip-path="url(#${cardClip}-col-${i})"><title>${xml(value)}</title>${text(x + 6, node.y + offset + row.height / 2 + 4, value.replaceAll('\n', ' '), col.key === 'keys' ? 11 : col.key === 'nullable' ? 10 : 13)}</g>`;
-            x += col.width;
+            if (col.key === 'nullable') {
+              const checked =
+                mode === 'physical' ? row.column.physical.nullable : row.column.logical.required;
+              contents += `<g class="native-png-null" clip-path="url(#${cardClip}-col-${i})"><title>${xml(translate(row.nullable))}</title><rect x="${x}" y="${node.y + offset + row.height / 2 - 8}" width="16" height="16" rx="4" fill="${checked ? '#4169e1' : '#fff'}" stroke="#d0d5dd"/>${checked ? `<path d="M ${x + 3} ${node.y + offset + row.height / 2} l 3 3 l 7 -7" stroke="#fff" stroke-width="2"/>` : ''}</g>`;
+            } else
+              contents += `<g class="native-png-${col.key}" clip-path="url(#${cardClip}-col-${i})"><title>${xml(value)}</title>${wrappedText(x, node.y + offset + 25, value, col.width, col.key === 'keys' ? 14 : 20, 28)}</g>`;
+            x += col.width + 6;
           }
           offset += row.height;
         }
-      } else
-        for (const [index, line] of (note?.text ?? domain?.description ?? '').split('\n').entries())
-          contents += text(node.x + 12, node.y + 54 + index * 18, line);
-      return `<g data-object-id="${xml(node.objectId)}"><defs>${clips.join('')}</defs><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="8" fill="${note ? xml(note.color ?? '#fff9d9') : '#ffffff'}" stroke="${xml(nativeCardColor(document, node.objectId))}"/><g clip-path="url(#${cardClip})">${contents}</g></g>`;
+        if (!metrics.rows.length)
+          contents += text(
+            node.x + 12,
+            node.y + nativeTableCanvasHeaderHeight + 26,
+            translate('컬럼을 추가해 설계를 시작하세요.'),
+            15,
+          );
+        contents += `<rect x="${node.x}" y="${node.y + node.height - 40}" width="${node.width}" height="40" fill="#f7f9fb"/><g class="native-png-footer">${text(node.x + 26, node.y + node.height - 12, '+', 22, 'middle')}</g>`;
+      } else if (domain) {
+        const domainTitle = wrappedText(node.x + 20, node.y + 73, title, node.width - 40, 28, 36.4);
+        const titleRows = Math.min(2, (domainTitle.match(/<text /g) ?? []).length);
+        const descriptionY = node.y + 103 + (titleRows - 1) * 36.4;
+        clips.push(
+          `<clipPath id="${cardClip}-domain-title"><rect x="${node.x + 20}" y="${node.y + 45}" width="${node.width - 40}" height="73"/></clipPath>`,
+          `<clipPath id="${cardClip}-domain-body"><rect x="${node.x + 20}" y="${descriptionY - 16}" width="${node.width - 40}" height="${Math.max(0, node.y + node.height - 52 - descriptionY + 16)}"/></clipPath>`,
+        );
+        contents = `<path class="native-png-domain-accent" d="M ${node.x} ${node.y + 2.5} H ${node.x + node.width}" style="stroke:${xml(domain.color ?? '#8993a3')};stroke-width:5"/>`;
+        contents += `<g class="native-png-domain-overline">${text(node.x + 20, node.y + 36, 'DOMAIN', 13)}</g>`;
+        contents += `<g class="native-png-title" clip-path="url(#${cardClip}-domain-title)">${domainTitle}</g>`;
+        contents += `<g class="native-png-domain-body" clip-path="url(#${cardClip}-domain-body)">${wrappedText(
+          node.x + 20,
+          descriptionY,
+          domain.description || translate('업무 영역을 설명해 주세요'),
+          node.width - 40,
+          16,
+          24.8,
+        )}</g>`;
+        contents += text(
+          node.x + node.width - 20,
+          node.y + node.height - 20,
+          translate('도메인 열기 ↗'),
+          14,
+          'end',
+        );
+      } else if (note) {
+        contents = `<path d="M ${node.x} ${node.y + 2} H ${node.x + node.width}" style="stroke:${xml(note.color ?? '#fff3c4')};stroke-width:4"/>`;
+        contents += `<g class="native-png-note-body">${wrappedText(
+          node.x + 20,
+          node.y + 38,
+          note.text || translate('더블클릭하여 메모를 작성하세요'),
+          node.width - 40,
+          15,
+          25.5,
+        )}</g>`;
+      }
+      return `<g data-object-id="${xml(node.objectId)}"><defs>${clips.join('')}</defs><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${note ? 3 : table ? 5 : 12}" fill="${note ? `color-mix(in srgb, ${xml(note.color ?? '#fff3c4')} 24%, white)` : domain ? `color-mix(in srgb, ${xml(domain.color ?? '#8993a3')} 8%, #f5f7fa)` : '#ffffff'}" stroke="${xml(nativeCardColor(document, node.objectId))}"/><g clip-path="url(#${cardClip})">${contents}</g></g>`;
     })
     .join('');
   const paths =
     scene.relations
       .map(({ relation, geometry, label }) => {
         const [source, target] = nativeRelationEnds(relation),
-          width = Math.max(90, label.length * 8 + 24);
+          width = nativeRelationLabelWidth(label);
         const marker = (end: typeof source) => `native-png-crow-${end.min}-${end.max}`;
         return `<g class="native-png-relation"><path d="${xml(geometry.path)}" marker-start="url(#${marker(source)})" marker-end="url(#${marker(target)})"${mode === 'logical' ? ' stroke-dasharray="6 4"' : ''}/><rect x="${geometry.labelX - width / 2}" y="${geometry.labelY - 13}" width="${width}" height="28" rx="9" fill="#fafbfc" stroke="#bdc8d8"/>${text(geometry.labelX, geometry.labelY + 5, label, 12, 'middle')}</g>`;
       })
@@ -171,7 +257,7 @@ export function nativeCanvasSvg(
     domains
       .map(
         ({ relation, geometry }) =>
-          `<g><path d="${xml(geometry.path)}" marker-end="url(#native-png-arrow)"${relation.direction === 'both' ? ' marker-start="url(#native-png-arrow)"' : ''}/>${text(geometry.label.x, geometry.label.y, relation.name, 12, 'middle')}</g>`,
+          `<g class="native-png-domain-relation"><path d="${xml(geometry.path)}" marker-end="url(#native-png-arrow)"${relation.direction === 'both' ? ' marker-start="url(#native-png-arrow)"' : ''}/>${geometry.labelAnchor ? `<path class="native-png-domain-leader" d="M ${geometry.labelAnchor.x} ${geometry.labelAnchor.y} L ${geometry.label.x} ${geometry.label.y + 4}"/>` : ''}${text(geometry.label.x, geometry.label.y, relation.name, 14, 'middle')}</g>`,
       )
       .join('');
   const relationColor = mode === 'physical' ? '#4169e1' : '#617087';
@@ -183,7 +269,7 @@ export function nativeCanvasSvg(
       ),
     )
     .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}"><style>text{fill:#26344a;font-family:system-ui,sans-serif}path{stroke:#617087;stroke-width:1.5;fill:none}.native-png-header text{fill:#ffffff}.native-png-relation>path{stroke:${relationColor};stroke-width:2}marker[id^="native-png-crow"] path{stroke:${relationColor};stroke-width:1.7}marker path{fill:none}#native-png-arrow path{fill:#617087}</style><defs>${crowDefs}<marker id="native-png-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M 0 0 L 8 4 L 0 8 Z"/></marker></defs><rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#f6f8fb"/>${paths}${cards}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}"><style>text{fill:#26344a;font-family:system-ui,sans-serif}path{stroke:#617087;stroke-width:1.5;fill:none}.native-png-header text{fill:#ffffff}.native-png-title text{font-weight:700}.native-png-column-head text{font-weight:600;fill:#617087}.native-png-domain-overline text{fill:#667995;letter-spacing:1.7px}.native-png-domain-body text{fill:#617087}.native-png-note-body text{fill:#555447}.native-png-relation>path{stroke:${relationColor};stroke-width:2}marker[id^="native-png-crow"] path{stroke:${relationColor};stroke-width:1.7}marker path{fill:none}.native-png-keys text{fill:#4169e1;font-weight:700}.native-png-type text{fill:#737d87;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.native-png-footer text{fill:#4169e1;font-weight:600}.native-png-null path{stroke:#fff;stroke-width:2}.native-png-domain-relation>path{stroke:#74829a;stroke-width:1.7}.native-png-domain-relation .native-png-domain-leader{stroke-width:1;stroke-dasharray:3 3;opacity:.55}.native-png-domain-relation text{fill:#526582;stroke:#f6f8fb;stroke-width:5;paint-order:stroke}#native-png-arrow path{fill:#74829a;stroke:none}</style><defs>${crowDefs}<marker id="native-png-arrow" viewBox="0 0 10 10" markerWidth="7" markerHeight="7" refX="9" refY="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#f6f8fb"/>${paths}${cards}</svg>`;
   return { svg, bounds };
 }
 export async function exportNativeCanvasPng(
