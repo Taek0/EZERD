@@ -116,12 +116,26 @@ function Demo() {
     };
   };
   async function settle() {
-    await Promise.all(
-      root
-        .current!.getAnimations({ subtree: true })
-        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
-        .map((a) => a.finished.catch(() => {})),
-    );
+    // Off-screen descendants may have suspended animations; do not await them.
+    const elements = [
+      ...root.current!.querySelectorAll<HTMLElement>(
+        '.native-editor-workspace,.native-editor-inspector,.comments-container,.native-scene-entry',
+      ),
+    ];
+    const deadline = performance.now() + 1500;
+    while (
+      performance.now() < deadline &&
+      elements.some((element) =>
+        element
+          .getAnimations()
+          .some(
+            (animation) =>
+              animation.playState === 'running' &&
+              animation.effect?.getComputedTiming().iterations !== Infinity,
+          ),
+      )
+    )
+      await frame();
     await frame();
     await frame();
   }
