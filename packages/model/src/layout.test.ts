@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { autoLayoutView } from './layout.js';
 import { createEmptyDocument, type DesignDocument, type NodeLayout } from './document.js';
+import {
+  createEmptyNativeDocument,
+  defaultDatabaseContext,
+  createNativeTable,
+  type NativeDesignDocument,
+} from './index.js';
 
 function fixture(ids: string[], edges: [string, string][]): DesignDocument {
   return {
@@ -42,6 +48,35 @@ function noOverlap(nodes: NodeLayout[]) {
 }
 
 describe('manual relationship flow layout', () => {
+  it('lays out native nodes without projecting types or changing another view', () => {
+    const database = defaultDatabaseContext('mysql');
+    const table = createNativeTable(database, 't', null);
+    const native: NativeDesignDocument = {
+      ...createEmptyNativeDocument(database),
+      tables: [table],
+      layout: {
+        nodes: [
+          { id: 'n', objectId: 't', viewId: '__tables__', x: 40, y: 20, width: 300, height: 220 },
+          {
+            id: 'private',
+            objectId: 't',
+            viewId: 'other',
+            x: 600,
+            y: 400,
+            width: 300,
+            height: 220,
+          },
+        ],
+        viewports: [],
+      },
+    };
+    const next: NativeDesignDocument = autoLayoutView(native, '__tables__');
+    expect(next.schemaVersion).toBe(2);
+    expect(next.database).toBe(native.database);
+    expect(next.tables).toBe(native.tables);
+    expect(next.layout.nodes[1]).toBe(native.layout.nodes[1]);
+    expect(native.layout.nodes[0]).toMatchObject({ x: 40, y: 20 });
+  });
   it('places branched flow left to right using real card dimensions, without mutating the snapshot', () => {
     const before = fixture(
       ['a', 'b', 'c', 'd'],

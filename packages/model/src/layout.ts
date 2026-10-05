@@ -6,7 +6,14 @@ const VERTICAL_GAP = 64;
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Manual, deterministic flow layout; only placements in the requested view change. */
-export function autoLayoutView(document: DesignDocument, viewId: string): DesignDocument {
+type LayoutDocument = Pick<
+  DesignDocument,
+  'domains' | 'views' | 'domainRelations' | 'notes' | 'layout'
+> & {
+  tables?: { id: string }[];
+  tableRelations?: { sourceTableId: string; targetTableId: string }[];
+};
+export function autoLayoutView<T extends LayoutDocument>(document: T, viewId: string): T {
   if (
     viewId !== 'overview' &&
     viewId !== TABLES_VIEW_ID &&
