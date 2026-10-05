@@ -16,6 +16,7 @@ import type { ProjectDocumentState } from '@ezerd/contracts';
 import {
   NativeERDCanvas,
   nativeCanvasScene,
+  nativeCanvasDraftScene,
   nativeCanvasMoveCommand,
   nativeCanvasPersonalCandidate,
   nativeCanvasWheel,
@@ -614,7 +615,13 @@ describe('native input registers export blockers even without a durable storage 
         onSelect() {},
       }),
     );
-    expect(exportBlocker.mock.calls).toContainEqual([userId, projectId, false, true]);
+    expect(exportBlocker.mock.calls).toContainEqual([
+      userId,
+      projectId,
+      false,
+      true,
+      'canvas:canvas:action:__tables__:note:',
+    ]);
     const privateF = personalFixture();
     await expect(
       stageNativeCanvasPersonal(
@@ -625,5 +632,160 @@ describe('native input registers export blockers even without a durable storage 
         store,
       ),
     ).rejects.toThrow('Storage denied');
+  });
+});
+
+describe('native scene reuse', () => {
+  function previousDraw(
+    document: NativeDesignDocument,
+    view: string,
+    mode: 'physical' | 'logical',
+    objectId?: string,
+    x?: string,
+    y?: string,
+  ) {
+    const scene = nativeCanvasScene(document, view, mode);
+    const displayed = scene.nodes.map((node) =>
+      node.objectId === objectId ? { ...node, x: Number(x), y: Number(y) } : node,
+    );
+    return nativeCanvasScene(
+      {
+        ...document,
+        layout: {
+          ...document.layout,
+          nodes: document.layout.nodes.map(
+            (node) => displayed.find((shown) => shown.id === node.id) ?? node,
+          ),
+        },
+      },
+      view,
+      mode,
+    );
+  }
+  it.each(['physical', 'logical'] as const)(
+    'preserves existing geometry with and without placement drafts in %s mode',
+    (mode) => {
+      const { document } = fixture();
+      const original = structuredClone(document);
+      for (const view of ['__tables__', 'd', 'overview']) {
+        const scene = nativeCanvasScene(document, view, mode);
+        for (const [id, x, y] of [
+          [undefined, undefined, undefined],
+          ['a', '140', '220'],
+          ['missing', '1', '2'],
+          ['d', '100', '300'],
+        ] as const) {
+          expect(nativeCanvasDraftScene(document, scene, view, mode, id, x, y)).toEqual(
+            previousDraw(document, view, mode, id, x, y),
+          );
+        }
+      }
+      expect(document).toEqual(original);
+    },
+  );
+  it('returns the same scene for absent, hidden, generated or unchanged placement targets', () => {
+    const { document } = fixture();
+    const scene = nativeCanvasScene(document, '__tables__', 'physical');
+    expect(nativeCanvasDraftScene(document, scene, '__tables__', 'physical')).toBe(scene);
+    expect(
+      nativeCanvasDraftScene(document, scene, '__tables__', 'physical', 'missing', '0', '0'),
+    ).toBe(scene);
+    const node = scene.nodes.find((node) => node.objectId === 'a')!;
+    expect(
+      nativeCanvasDraftScene(
+        document,
+        scene,
+        '__tables__',
+        'physical',
+        'a',
+        String(node.x),
+        String(node.y),
+      ),
+    ).toBe(scene);
+    const overview = nativeCanvasScene(document, 'overview', 'physical');
+    expect(nativeCanvasDraftScene(document, overview, 'overview', 'physical', 'a', '5', '6')).toBe(
+      overview,
+    );
+    expect(nativeCanvasDraftScene(document, overview, 'overview', 'physical', 'd', '5', '6')).toBe(
+      overview,
+    );
+  });
+  it('moves the draft node and recomputes its FK without changing the original scene', () => {
+    const { document } = fixture();
+    const scene = nativeCanvasScene(document, '__tables__', 'physical');
+    const before = structuredClone(scene);
+    const drawn = nativeCanvasDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      'a',
+      '140',
+      '220',
+    );
+    expect(drawn.nodes.find((node) => node.objectId === 'a')).toMatchObject({ x: 140, y: 220 });
+    expect(drawn.relations[0]!.geometry.path).not.toEqual(scene.relations[0]!.geometry.path);
+    expect(scene).toEqual(before);
+    expect(nativeCanvasDraftScene(document, scene, '__tables__', 'physical')).toBe(scene);
+  });
+});
+
+describe('native display-only domain filtering', () => {
+  it('filters shared nodes and routes without altering the source, including draft preview', () => {
+    const { document } = fixture();
+    document.domains.push({ id: 'second', name: 'Second', description: '' });
+    document.tables![1]!.domainId = 'second';
+    const before = structuredClone(document),
+      filter = { domainIds: ['d'], unassigned: false };
+    const scene = nativeCanvasScene(document, '__tables__', 'physical', filter);
+    expect(scene.nodes.map((node) => node.objectId)).toEqual(['a']);
+    expect(scene.relations).toEqual([]);
+    const drawn = nativeCanvasDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      'a',
+      '200',
+      '100',
+      filter,
+    );
+    expect(drawn.nodes.map((node) => node.objectId)).toEqual(['a']);
+    expect(drawn.nodes[0]).toMatchObject({ x: 200, y: 100 });
+    expect(
+      nativeCanvasScene(document, '__tables__', 'physical', { domainIds: [], unassigned: false })
+        .nodes,
+    ).toEqual([]);
+    expect(nativeCanvasScene(document, '__tables__', 'physical', null).nodes).toHaveLength(2);
+    expect(document).toEqual(before);
+  });
+});
+
+describe('native resize draft', () => {
+  it('previews size and reroutes edges without changing the saved document', () => {
+    const { document } = fixture();
+    const before = structuredClone(document),
+      scene = nativeCanvasScene(document, '__tables__', 'physical');
+    const node = scene.nodes.find((item) => item.objectId === 'a')!;
+    const width = node.width + 150,
+      height = node.height + 120;
+    const drawn = nativeCanvasDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      'a',
+      String(node.x),
+      String(node.y),
+      null,
+      String(width),
+      String(height),
+    );
+    expect(drawn.nodes.find((item) => item.objectId === 'a')).toMatchObject({ width, height });
+    expect(drawn.relations[0]!.geometry.path).not.toEqual(scene.relations[0]!.geometry.path);
+    expect(
+      nativeCanvasMoveCommand(document, node, { x: node.x, y: node.y, width, height }),
+    ).toMatchObject({ type: 'update_node_layout', patch: { width, height } });
+    expect(document).toEqual(before);
   });
 });

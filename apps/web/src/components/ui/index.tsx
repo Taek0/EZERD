@@ -276,6 +276,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
       {...(form === undefined ? {} : { form })}
       {...(autoComplete === undefined ? {} : { autoComplete })}
       isDisabled={disabled || fieldsetDisabled}
+      disabledKeys={options.filter((option) => option.disabled).map((option) => option.value)}
       isRequired={!!required}
       isInvalid={isInvalid}
       {...(value === undefined ? {} : { selectedKey: String(value) })}
@@ -285,7 +286,12 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
           ? { defaultSelectedKey: options[0].value }
           : {})}
       onSelectionChange={(key) => {
-        if (!blocked && key !== null) onValueChange?.(String(key));
+        if (
+          !blocked &&
+          key !== null &&
+          !options.find((option) => option.value === String(key))?.disabled
+        )
+          onValueChange?.(String(key));
       }}
       isOpen={open && !blocked}
       onOpenChange={(next) => {

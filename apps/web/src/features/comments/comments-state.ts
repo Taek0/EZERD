@@ -1,8 +1,9 @@
 import { TABLES_VIEW_ID, type DesignDocument } from '@ezerd/model';
+export type ReviewDocument = Pick<DesignDocument, 'domains' | 'views' | 'layout'>;
 export type ReviewTarget = { viewId: string; objectId: string | null; x: number; y: number };
 /** Resolve legacy domain/saved-view pins against their canonical shared placements. */
 export function reviewCanvasView(
-  document: DesignDocument,
+  document: ReviewDocument,
   target: Pick<ReviewTarget, 'viewId' | 'objectId'>,
 ): string {
   if (target.viewId === 'overview' || target.viewId === TABLES_VIEW_ID) return target.viewId;
@@ -13,7 +14,7 @@ export function reviewCanvasView(
 }
 
 export function pinVisibleInCanvas(
-  document: DesignDocument,
+  document: ReviewDocument,
   target: ReviewTarget,
   viewId: string,
   visibleObjectIds?: readonly string[],
@@ -24,7 +25,7 @@ export function pinVisibleInCanvas(
   );
 }
 
-export function pinPosition(document: DesignDocument, target: ReviewTarget) {
+export function pinPosition(document: ReviewDocument, target: ReviewTarget) {
   const viewId = reviewCanvasView(document, target);
   const node = target.objectId
     ? document.layout.nodes.find((n) => n.objectId === target.objectId && n.viewId === viewId)
@@ -41,7 +42,7 @@ export function pinPosition(document: DesignDocument, target: ReviewTarget) {
   };
 }
 export function pinAttachment(
-  document: DesignDocument,
+  document: ReviewDocument,
   viewId: string,
   objectId: string | null,
   point: { x: number; y: number },

@@ -1,6 +1,7 @@
+import { PanelSection } from '../../shared/editor/panel.js';
 import { useRef, useState } from 'react';
 import type { NativeColumn, NativeTable } from '@ezerd/model';
-import { Button, Input } from '../../components/ui/index.js';
+import { Button, Input, Textarea } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import {
   loadNativeDraft,
@@ -37,7 +38,9 @@ export function NativePropertyEditor({
   onSave,
   userId,
   snapshot,
+  mode,
 }: {
+  mode?: 'physical' | 'logical';
   table: NativeTable;
   column?: NativeColumn;
   busy: boolean;
@@ -209,23 +212,23 @@ export function NativePropertyEditor({
             </div>
           )}
           <legend>{t('속성 편집')}</legend>
-          <label>
-            {t('물리 이름')}
+          <label hidden={mode === 'logical'}>
+            {t(mode ? (column ? '컬럼명' : '테이블명') : '물리 이름')}
             <Input
               value={physicalName}
               maxLength={120}
               onChange={(event) => change('physicalName', event.target.value)}
             />
           </label>
-          <label>
-            {t('물리 설명')}
-            <textarea
+          <label hidden={mode === 'logical'}>
+            {t(mode ? '설명' : '물리 설명')}
+            <Textarea
               value={comment}
               maxLength={10000}
               onChange={(event) => change('comment', event.target.value)}
             />
           </label>
-          <label>
+          <label hidden={mode === 'physical'}>
             {t('논리 이름')}
             <Input
               value={logicalName}
@@ -233,9 +236,9 @@ export function NativePropertyEditor({
               onChange={(event) => change('logicalName', event.target.value)}
             />
           </label>
-          <label>
+          <label hidden={mode === 'physical'}>
             {t('논리 정의')}
-            <textarea
+            <Textarea
               value={definition}
               maxLength={10000}
               onChange={(event) => change('definition', event.target.value)}
@@ -263,13 +266,15 @@ export function NativePropertyEditor({
         </fieldset>
       </form>
       {snapshot.native.status === 'available' && (
-        <NativeFormatEditor
-          key={`format:${userId}:${snapshot.project.id}:${kind}:${original.id}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}`}
-          context={{ userId, snapshot, busy, onSave }}
-          document={snapshot.native.document}
-          table={table}
-          {...(column ? { column } : {})}
-        />
+        <PanelSection title={t(column ? '타입 · NULL · 기본값' : 'DB 옵션')} defaultOpen={!!column}>
+          <NativeFormatEditor
+            key={`format:${userId}:${snapshot.project.id}:${kind}:${original.id}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}`}
+            context={{ userId, snapshot, busy, onSave }}
+            document={snapshot.native.document}
+            table={table}
+            {...(column ? { column } : {})}
+          />
+        </PanelSection>
       )}
     </>
   );

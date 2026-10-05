@@ -335,3 +335,33 @@ describe('native root explicit recovery connection', () => {
     panelRoot.unmount();
   });
 });
+
+describe('native original-editor toolbar wiring', () => {
+  it('opens existing creation forms and keeps them mounted while the inspector is hidden', () => {
+    const root = renderer(),
+      props = fixture();
+    const render = () => root.render(() => NativeProjectView(props));
+    const canvas = () => child(render(), NativeERDCanvas).props;
+    (canvas().onCreate as (kind: string) => void)('table');
+    expect(child(render(), NativeStructureEditor).props.initialSelection).toEqual({
+      action: 'table',
+      target: '',
+    });
+    (canvas().onToggleInspector as () => void)();
+    expect(
+      nodes(render()).find(
+        (node) => node.props.className === 'native-editor-inspector inspector-shell inspector',
+      )?.props.inert,
+    ).toBe(true);
+    expect(child(render(), NativeStructureEditor)).toBeDefined();
+    (canvas().onCreate as (kind: string) => void)('enum');
+    expect(child(render(), NativeStructureEditor).props.initialSelection).toEqual({
+      action: 'enum',
+      target: '',
+    });
+    (canvas().onCreate as (kind: string) => void)('domain');
+    expect(child(render(), NativeDomainEditor).props.initialAction).toBe('create');
+    expect(hooks.stage).not.toHaveBeenCalled();
+    root.unmount();
+  });
+});

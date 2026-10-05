@@ -470,7 +470,7 @@ describe('domain forms and overview static UI', () => {
         projectActions: () => createElement('span', null, 'Main actions'),
       }),
     );
-    expect(html).toContain('도메인 관리');
+    expect(html).toContain('새 도메인 만들기');
     expect(html).toContain('Main actions');
     expect(html).not.toContain('도메인 관리와 테이블 소속 변경은 아직 지원하지');
   });

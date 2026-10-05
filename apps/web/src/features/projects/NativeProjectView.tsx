@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
+import { NativeHistoryControls } from './NativeHistoryControls.js';
+import { CommentPins, CommentsPanel, type CommentContext } from '../comments/CommentsPanel.js';
+import { PinPanelResizer } from '../comments/PinPanelResizer.js';
+import type { CSSProperties } from 'react';
+import type { NativeDesignDocument } from '@ezerd/model';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProjectEntry } from './project-entry.js';
 import type { Thread } from '@ezerd/contracts';
 import {
@@ -8,15 +14,15 @@ import {
   nativeExpressionDisplay,
   nativeGenerationDisplay,
 } from '@ezerd/model';
-import { Button } from '../../components/ui/index.js';
+import { Button, IconButton, Input, Select, TabButton } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import './native-project-view.css';
+import { PanelSection, PanelList, PanelRow, PanelListDetail } from '../../shared/editor/panel.js';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
 import { NativeDomainEditor } from './NativeDomainEditor.js';
 import { useNativeDurableState } from './native-export-state.js';
-import { NativeHistoryDialog } from './NativeHistoryDialog.js';
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
@@ -38,6 +44,11 @@ import { NativeAdvancedEditor } from './NativeAdvancedEditor.js';
 
 registerTranslations({
   '설계 조회': 'Design overview',
+  속성: 'Properties',
+  도메인: 'Domains',
+  도구: 'Tools',
+  '속성 패널': 'Inspector',
+  '속성 패널 너비': 'Inspector width',
   '조회 전용': 'Read only',
   '전체 도메인': 'All domains',
   '이름 없는 테이블': 'Untitled table',
@@ -117,7 +128,7 @@ export function NativeProjectView({
   const [domain, setDomain] = useState('*');
   const [mode, setMode] = useState<'physical' | 'logical'>('physical');
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(doc?.tables?.[0]?.id ?? null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [pending, setPending] = useState<NativePendingSave | null>(null);
@@ -131,6 +142,53 @@ export function NativeProjectView({
     entry: NativeDraftArchiveEntry;
     generation: number;
   } | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorTab, setInspectorTab] = useState<'properties' | 'tables' | 'domains' | 'tools'>(
+    'properties',
+  );
+  const [inspectorWidth, setInspectorWidth] = useState(320);
+  const draggingColumn = useRef<string | null>(null);
+  const [canvasView, setCanvasView] = useState('__tables__');
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsWidth, setCommentsWidth] = useState(320);
+  const [commentsResizing, setCommentsResizing] = useState(false);
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [members, setMembers] = useState<{ id: string; color?: string }[]>([]);
+  const [pinMode, setPinMode] = useState(false);
+  const [reviewContext, setReviewContext] = useState<CommentContext>({
+    viewId: '__tables__',
+    selectedObjectId: null,
+    position: { x: 0, y: 0 },
+  });
+  const [reviewDocument, setReviewDocument] = useState<NativeDesignDocument | null>(doc);
+  const [reviewFocus, setReviewFocus] = useState<(Thread & { nonce: number }) | null>(null);
+  const [draftPin, setDraftPin] = useState<(CommentContext & { nonce: number }) | null>(null);
+  function focusThread(thread: Thread) {
+    setReviewFocus({ ...thread, nonce: Date.now() });
+    setDraftPin(null);
+    setPinMode(false);
+    setCommentsOpen(true);
+  }
+  const [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
+  const [createRequest, setCreateRequest] = useState<{
+    action: NonNullable<Parameters<typeof NativeStructureEditor>[0]['initialSelection']>['action'];
+    target?: string;
+    nonce: number;
+  } | null>(null);
+  const [domainCreation, setDomainCreation] = useState(0);
+  const resize = useRef<{ pointer: number; x: number; width: number } | null>(null);
+  function toolbarCreate(kind: 'table' | 'domain' | 'enum' | 'column') {
+    leaveRecoveredSelection();
+    setInspectorOpen(true);
+    if (kind === 'domain') {
+      setSelectedDomain(null);
+      setDomainCreation((value) => value + 1);
+      setInspectorTab('domains');
+    } else {
+      setCreateRequest((value) => ({ action: kind, nonce: (value?.nonce ?? 0) + 1 }));
+      setInspectorTab('properties');
+    }
+  }
   const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
   const queueBlocked = !!userId && durableState !== 'empty';
   const recoveryBusy = saving || busy || !!pending || pendingBlocked;
@@ -178,6 +236,12 @@ export function NativeProjectView({
     setSelected(tableId ?? null);
     setEditingColumn('columnId' in target ? (target.columnId ?? null) : null);
     setSelectedDomain(target.kind === 'domain' ? (target.domainId ?? null) : null);
+    setInspectorOpen(true);
+    setInspectorTab(
+      target.kind === 'canvas' ? 'tools' : target.kind === 'domain' ? 'domains' : 'properties',
+    );
+    setCreateRequest(null);
+    setDomainCreation(0);
   }
   function leaveRecoveredSelection() {
     if (!recoveredInput) return;
@@ -354,7 +418,7 @@ export function NativeProjectView({
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
   );
-  const selectedTable = tables.find((table) => table.id === selected) ?? tables[0];
+  const selectedTable = tables.find((table) => table.id === selected);
   const tableName = (id: string) => {
     const table = doc?.tables?.find((table) => table.id === id);
     return (
@@ -371,6 +435,8 @@ export function NativeProjectView({
   function focusIssue(id: string | null) {
     if (!doc || !id) return;
     leaveRecoveredSelection();
+    setInspectorOpen(true);
+    setInspectorTab(doc.domains.some((item) => item.id === id) ? 'domains' : 'properties');
     if (doc.domains.some((item) => item.id === id)) {
       setSelectedDomain(id);
       return;
@@ -390,9 +456,27 @@ export function NativeProjectView({
       setMode('physical');
     }
   }
+  function reorderColumns(sourceId: string, targetId: string) {
+    if (!editable || editorBusy || !selectedTable || sourceId === targetId) return;
+    const ids = (doc?.columns ?? [])
+      .filter((column) => column.tableId === selectedTable.id)
+      .map((column) => column.id);
+    const from = ids.indexOf(sourceId),
+      to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]!);
+    void save([{ type: 'reorder_columns', tableId: selectedTable.id, columnIds: ids }], {
+      version: snapshot.project.version,
+      sequence: snapshot.sequence,
+      databaseRevision: snapshot.project.databaseRevision,
+    });
+  }
   const options = selectedTable?.physical.options;
   useEffect(() => {
-    if (focusedReview) focusIssue(focusedReview.objectId);
+    if (focusedReview) {
+      focusIssue(focusedReview.objectId);
+      focusThread(focusedReview);
+    }
   }, [focusedReview?.id]);
   return (
     <main id="main" className="editor native-project-view">
@@ -401,7 +485,10 @@ export function NativeProjectView({
           <Button className="gallery-return" onClick={onLeave}>
             {t('← 갤러리')}
           </Button>
-          <h1>{snapshot.project.name}</h1>
+          <div className="project-name">
+            <small>PROJECT / DOMAIN WORKSPACE</small>
+            <h1>{snapshot.project.name}</h1>
+          </div>
         </div>
         <div className="native-project-status">
           <span>
@@ -417,9 +504,38 @@ export function NativeProjectView({
           <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
           {projectActions?.(focusIssue)}
           {userId && (
-            <Button onClick={() => setHistoryOpen(true)} disabled={saving || busy}>
-              {t('설계 이력')}
-            </Button>
+            <>
+              <Button
+                aria-pressed={commentsOpen}
+                onClick={() => {
+                  setCommentsOpen(!commentsOpen);
+                  setPinMode(false);
+                  setDraftPin(null);
+                }}
+              >
+                {t('핀')}
+              </Button>
+              <Button
+                disabled={!canPersonalEdit || snapshot.project.status !== 'active'}
+                aria-pressed={pinMode}
+                onClick={() => setPinMode(!pinMode)}
+              >
+                {t(pinMode ? '핀 추가 취소' : '핀 추가')}
+              </Button>
+            </>
+          )}
+
+          {userId && (
+            <NativeHistoryControls
+              key={`history-controls:${userId}:${snapshot.project.id}`}
+              userId={userId}
+              snapshot={snapshot}
+              disabled={!editable || editorBusy}
+              onReload={onReload}
+              onHistory={() => setHistoryOpen(true)}
+              historyOpen={historyOpen}
+              onCloseHistory={() => setHistoryOpen(false)}
+            />
           )}
           {userId && (
             <Button onClick={() => setDraftRecoveryOpen((value) => !value)}>
@@ -431,16 +547,6 @@ export function NativeProjectView({
           </Button>
         </div>
       </div>
-      {historyOpen && userId && (
-        <NativeHistoryDialog
-          key={`history:${userId}:${snapshot.project.id}`}
-          userId={userId}
-          snapshot={snapshot}
-          canEdit={editable}
-          onClose={() => setHistoryOpen(false)}
-          onReload={onReload}
-        />
-      )}
       {draftRecoveryOpen && userId && (
         <NativeDraftRecoveryPanel
           key={`draft-recovery:${userId}:${snapshot.project.id}:${generation}`}
@@ -494,418 +600,912 @@ export function NativeProjectView({
               {t('개인 화면을 불러오지 못했습니다. 저장된 공유 설계를 표시합니다.')}
             </p>
           )}
-          <NativeERDCanvas
-            key={`${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
-            document={doc}
-            snapshot={snapshot}
-            {...(userId ? { userId } : {})}
-            editable={editable}
-            personalEditable={!!userId && canPersonalEdit && snapshot.project.status === 'active'}
-            busy={editorBusy}
-            recoveryBusy={recoveryBusy}
-            onSave={save}
-            onReload={onReload}
-            mode={mode}
-            {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
-            {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
-            {...(recovered?.kind === 'canvas' ? { recoverySelection: recovered.selection } : {})}
-            onSelectDomain={(id) => {
-              leaveRecoveredSelection();
-              setSelectedDomain(id);
-            }}
-            onSelect={(tableId, columnId) => {
-              leaveRecoveredSelection();
-              setSelectedDomain(null);
-              setSelected(tableId);
-              setEditingColumn(columnId ?? null);
-              setDomain('*');
-              setSearch('');
-            }}
-          />
-          <NativeDomainEditor
-            key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
-            document={doc}
-            snapshot={snapshot}
-            {...(userId ? { userId } : {})}
-            editable={editable}
-            busy={editorBusy}
-            onSave={save}
-            {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
-            {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
-            {...(recovered?.kind === 'domain' ? { initialAction: recovered.action } : {})}
-            onSelectDomain={(id) => {
-              leaveRecoveredSelection();
-              setSelectedDomain(id);
-            }}
-          />
-          <div className="native-project-content" aria-label={t('설계 조회')}>
-            <aside className="native-table-nav">
-              <label>
-                {t('테이블 검색')}
-                <input value={search} onChange={(event) => setSearch(event.target.value)} />
-              </label>
-              <select
-                aria-label={t('전체 도메인')}
-                value={domain}
-                onChange={(event) => setDomain(event.target.value)}
+          <div className="review-workspace native-review-workspace">
+            <div
+              className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}`}
+              style={{
+                gridTemplateColumns: inspectorOpen
+                  ? `minmax(0,1fr) 6px ${inspectorWidth}px`
+                  : 'minmax(0,1fr) 0px 0px',
+              }}
+            >
+              <NativeERDCanvas
+                key={`${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
+                document={doc}
+                snapshot={snapshot}
+                {...(userId ? { userId } : {})}
+                editable={editable}
+                personalEditable={
+                  !!userId && canPersonalEdit && snapshot.project.status === 'active'
+                }
+                busy={editorBusy}
+                recoveryBusy={recoveryBusy}
+                onSave={save}
+                onReload={onReload}
+                pinMode={pinMode}
+                reviewFocus={reviewFocus}
+                onReviewContext={(context, source) => {
+                  setReviewContext(context);
+                  setReviewDocument(source);
+                }}
+                onCreatePin={(context) => {
+                  if (!canPersonalEdit || !userId || snapshot.project.status !== 'active') return;
+                  setReviewContext(context);
+                  setDraftPin({ ...context, nonce: Date.now() });
+                  setReviewFocus(null);
+                  setPinMode(false);
+                  setCommentsOpen(true);
+                }}
+                pins={
+                  userId && reviewDocument ? (
+                    <CommentPins
+                      threads={threads}
+                      document={reviewDocument}
+                      viewId={reviewContext.viewId}
+                      {...(reviewContext.visibleObjectIds
+                        ? { visibleObjectIds: reviewContext.visibleObjectIds }
+                        : {})}
+                      memberColors={Object.fromEntries(
+                        members.map((member) => [member.id, member.color ?? '#4169e1']),
+                      )}
+                      onOpen={focusThread}
+                    />
+                  ) : undefined
+                }
+
+                mode={mode}
+                inspectorHost={toolsHost}
+                inspectorOpen={inspectorOpen}
+                onToggleInspector={() => setInspectorOpen((value) => !value)}
+                onOpenTools={() => {
+                  setInspectorOpen(true);
+                  setInspectorTab('tools');
+                }}
+                onCreate={toolbarCreate}
+                onModeChange={setMode}
+                onViewChange={(id) => {
+                  setCanvasView(id);
+                  setSelected(null);
+                  setSelectedDomain(null);
+                  setInspectorTab(id === 'overview' ? 'domains' : 'properties');
+                }}
+                {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
+                {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
+                {...(recovered?.kind === 'canvas'
+                  ? { recoverySelection: recovered.selection }
+                  : {})}
+                onSelectDomain={(id) => {
+                  leaveRecoveredSelection();
+                  setSelectedDomain(id);
+                  setInspectorOpen(true);
+                  setInspectorTab('domains');
+                  setDomainCreation(0);
+                }}
+                onSelect={(tableId, columnId) => {
+                  leaveRecoveredSelection();
+                  setSelectedDomain(null);
+                  setSelected(tableId);
+                  setInspectorOpen(true);
+                  setInspectorTab('properties');
+                  setEditingColumn(columnId ?? null);
+                  setDomain('*');
+                  setSearch('');
+                }}
+              />
+              <div
+                className="native-inspector-resize"
+                role="separator"
+                aria-label={t('속성 패널 너비')}
+                aria-orientation="vertical"
+                aria-valuenow={inspectorWidth}
+                aria-valuemin={300}
+                aria-valuemax={600}
+                tabIndex={0}
+                hidden={!inspectorOpen}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  resize.current = {
+                    pointer: event.pointerId,
+                    x: event.clientX,
+                    width: inspectorWidth,
+                  };
+                }}
+                onPointerMove={(event) => {
+                  const active = resize.current;
+                  if (active?.pointer !== event.pointerId) return;
+                  setInspectorWidth(
+                    Math.max(300, Math.min(600, active.width + active.x - event.clientX)),
+                  );
+                }}
+                onPointerUp={() => {
+                  resize.current = null;
+                }}
+                onPointerCancel={() => {
+                  resize.current = null;
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    setInspectorWidth((width) =>
+                      Math.max(300, Math.min(600, width + (event.key === 'ArrowLeft' ? 10 : -10))),
+                    );
+                  }
+                }}
+              />
+              <aside
+                className="native-editor-inspector inspector-shell inspector"
+                aria-label={t('속성 패널')}
+                inert={!inspectorOpen}
+                aria-hidden={!inspectorOpen}
               >
-                <option value="*">{t('전체 도메인')}</option>
-                <option value="">{t('미소속')}</option>
-                {doc.domains.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <div className="native-mode">
-                <Button aria-pressed={mode === 'physical'} onClick={() => setMode('physical')}>
-                  {t('물리')}
-                </Button>
-                <Button aria-pressed={mode === 'logical'} onClick={() => setMode('logical')}>
-                  {t('논리')}
-                </Button>
-              </div>
-              <ul>
-                {tables.map((table) => (
-                  <li key={table.id}>
-                    <button
-                      type="button"
-                      data-object-id={table.id}
-                      aria-current={selectedTable?.id === table.id ? 'true' : undefined}
-                      onClick={() => {
-                        leaveRecoveredSelection();
-                        setSelected(table.id);
-                        setSelectedDomain(null);
-                      }}
-                    >
-                      {tableName(table.id)}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {!tables.length && <p>{t('선택한 범위에 테이블이 없습니다.')}</p>}
-            </aside>
-            <section className="native-table-detail" aria-live="polite">
-              {editable && recovered?.kind === 'advanced' && selectedTable && (
-                <NativeAdvancedEditor
-                  key={`advanced-recovery:${recoveryEpoch}`}
-                  context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
-                  document={doc}
-                  table={selectedTable}
-                  initialSelection={recovered.selection}
-                />
-              )}
-              {editable && recovered?.kind !== 'advanced' && (
-                <NativeStructureEditor
-                  key={`${userId}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
-                  context={{
-                    userId: userId!,
-                    snapshot,
-                    busy: editorBusy,
-                    onSave: save,
-                  }}
-                  document={doc}
-                  {...(recovered?.kind === 'structure'
-                    ? {
-                        initialSelection: recovered.selection,
-                        ...(recovered.tableId &&
-                        doc.tables?.find((table) => table.id === recovered.tableId)
-                          ? { table: doc.tables.find((table) => table.id === recovered.tableId)! }
-                          : {}),
+                <div className="inspector-topbar">
+                  <div className="inspector-place">
+                    <span>{canvasView === 'overview' ? 'VIEW' : 'DOMAIN'}</span>
+                    <strong>
+                      {canvasView === 'overview'
+                        ? t('도메인 맵')
+                        : (doc.views?.find((view) => view.id === canvasView)?.name ??
+                          t('도메인 뷰'))}
+                    </strong>
+                  </div>
+                  {(selectedTable || selectedDomain) && (
+                    <div className="inspector-selection">
+                      <span className="selection-kind">
+                        {t(selectedDomain ? '도메인' : '테이블')}
+                      </span>
+                      <strong>
+                        {selectedDomain
+                          ? doc.domains.find((item) => item.id === selectedDomain)?.name
+                          : tableName(selectedTable!.id)}
+                      </strong>
+                      <IconButton
+                        aria-label={t('선택 해제')}
+                        onClick={() => {
+                          leaveRecoveredSelection();
+                          setSelected(null);
+                          setSelectedDomain(null);
+                          setEditingColumn(null);
+                        }}
+                      >
+                        ×
+                      </IconButton>
+                    </div>
+                  )}
+                  <div className="inspector-tabs" role="group" aria-label={t('패널 보기 전환')}>
+                    <TabButton
+                      selected={inspectorTab !== 'tables'}
+                      onClick={() =>
+                        setInspectorTab(canvasView === 'overview' ? 'domains' : 'properties')
                       }
-                    : selectedTable
-                      ? { table: selectedTable }
-                      : {})}
+                    >
+                      {t('속성')}
+                    </TabButton>
+                    <TabButton
+                      selected={inspectorTab === 'tables'}
+                      onClick={() => setInspectorTab('tables')}
+                    >
+                      {t('목록')}{' '}
+                      <span className="panel-count">
+                        {canvasView === 'overview' ? doc.domains.length : tables.length}
+                      </span>
+                    </TabButton>
+                  </div>
+                </div>
+                <div
+                  className="native-inspector-panel"
+                  role="tabpanel"
+                  id={`${snapshot.project.id}-tools`}
+                  aria-label={t('도구')}
+                  hidden={inspectorTab !== 'tools'}
+                  ref={setToolsHost}
                 />
-              )}
-              {focusedReview && (
-                <section aria-label={t('리뷰')}>
-                  <h3>{t('리뷰')}</h3>
-                  {focusedReview.messages.map((item) => (
-                    <p key={item.id}>{item.body}</p>
-                  ))}
-                </section>
-              )}
-              {selectedTable && (
-                <>
-                  <h2>{tableName(selectedTable.id)}</h2>
-                  {editable && (
+                <div
+                  className="native-inspector-panel"
+                  role="tabpanel"
+                  id={`${snapshot.project.id}-domains`}
+                  aria-label={t('도메인')}
+                  hidden={inspectorTab !== 'domains'}
+                >
+                  {!selectedDomain && (
                     <>
-                      <label>
-                        {t('속성 편집')}
-                        <select
-                          value={editingColumn ?? ''}
-                          onChange={(event) => {
-                            leaveRecoveredSelection();
-                            setEditingColumn(event.target.value || null);
-                          }}
-                        >
-                          <option value="">{t('테이블')}</option>
-                          {(doc.columns ?? [])
-                            .filter((column) => column.tableId === selectedTable.id)
-                            .map((column) => (
-                              <option key={column.id} value={column.id}>
-                                {column.physical.name || column.logical.name || column.id}
-                              </option>
-                            ))}
-                        </select>
-                      </label>
-                      <NativePropertyEditor
-                        key={`${userId}:${snapshot.project.id}:${selectedTable.id}:${editingColumn ?? ''}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
-                        table={selectedTable}
-                        userId={userId!}
-                        snapshot={snapshot}
-                        {...(editingColumn &&
-                        doc.columns?.find(
-                          (column) =>
-                            column.id === editingColumn && column.tableId === selectedTable.id,
-                        )
-                          ? {
-                              column: doc.columns.find(
-                                (column) =>
-                                  column.id === editingColumn &&
-                                  column.tableId === selectedTable.id,
-                              )!,
-                            }
-                          : {})}
-                        busy={editorBusy}
-                        onSave={save}
-                      />
+                      <div className="panel-empty">
+                        <strong>{t('도메인 맵')}</strong>
+                        <p>
+                          {t('카드를 선택하면 이름·설명·색상과 연결된 관계를 여기에서 편집합니다.')}
+                        </p>
+                      </div>
+                      <div className="panel-summary">
+                        <span>
+                          {t('도메인')} {doc.domains.length}
+                        </span>
+                        <span>
+                          {t('관계')} {doc.domainRelations.length}
+                        </span>
+                      </div>
                     </>
                   )}
-                  <p>
-                    {mode === 'physical'
-                      ? selectedTable.physical.comment
-                      : selectedTable.logical.definition}
-                  </p>
-                  {mode === 'physical' && (
-                    <dl className="native-options">
-                      <dt>{t('DB 옵션')}</dt>
-                      <dd>
-                        {selectedTable.physical.namespace.kind === 'postgresSchema'
-                          ? selectedTable.physical.namespace.name || 'public'
-                          : selectedTable.physical.namespace.kind === 'legacyNamespace'
-                            ? selectedTable.physical.namespace.original
-                            : ''}
-                        {options?.database === 'mysql'
-                          ? ` InnoDB ${options.charset ?? ''} ${options.collation ?? ''}`
-                          : options?.database === 'sqlite'
-                            ? `${options.strict ? ' STRICT' : ''}${options.withoutRowid ? ' WITHOUT ROWID' : ''}`
-                            : ''}
-                      </dd>
-                    </dl>
-                  )}
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>{t('컬럼')}</th>
-                        <th>{mode === 'physical' ? t('타입') : t('의미 타입')}</th>
-                        <th>{mode === 'physical' ? 'NULL' : t('필수')}</th>
-                        {mode === 'physical' ? (
-                          <>
-                            <th>{t('기본값')}</th>
-                            <th>{t('생성')}</th>
-                            <th>{t('DB 옵션')}</th>
-                          </>
-                        ) : null}
-                        <th>{t('설명')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(doc.columns ?? [])
-                        .filter(
-                          (column) => column.tableId === selectedTable.id && visible(column.scope),
-                        )
-                        .map((column) => (
-                          <tr key={column.id} data-object-id={column.id}>
-                            <th scope="row">
-                              {mode === 'physical'
-                                ? column.physical.name || column.logical.name
-                                : column.logical.name || column.physical.name}
-                            </th>
-                            <td>
-                              {mode === 'physical'
-                                ? nativeColumnTypeDisplay(column.physical.type, doc.enums) ||
-                                  t('타입 없음')
-                                : column.logical.semanticType}
-                            </td>
-                            <td>
-                              {mode === 'physical'
-                                ? column.physical.nullable
-                                  ? 'NULL'
-                                  : 'NOT NULL'
-                                : column.logical.required
-                                  ? '✓'
-                                  : ''}
-                            </td>
-                            {mode === 'physical' ? (
-                              <>
-                                <td>{nativeDefaultDisplay(column.physical.defaultValue, doc)}</td>
-                                <td>{nativeGenerationDisplay(column.physical.generation, doc)}</td>
-                                <td>
-                                  {column.physical.options.database === 'mysql'
-                                    ? `${column.physical.options.charset ?? ''} ${column.physical.options.collation ?? ''}${column.physical.options.onUpdate ? ` ON UPDATE ${nativeExpressionDisplay(column.physical.options.onUpdate, doc)}` : ''}`
-                                    : (column.physical.options.collation ?? '')}
-                                </td>
-                              </>
-                            ) : null}
-                            <td>
-                              {mode === 'physical'
-                                ? column.physical.comment
-                                : column.logical.definition}
-                              <details>
-                                <summary>{t('추가 속성')}</summary>
-                                {Object.entries(column.customProperties.common).map(
-                                  ([key, value]) => (
-                                    <p key={`common-${key}`}>
-                                      {key}: {value}
-                                    </p>
-                                  ),
-                                )}
-                                {Object.entries(column.customProperties[mode]).map(
-                                  ([key, value]) => (
-                                    <p key={key}>
-                                      {key}: {value}
-                                    </p>
-                                  ),
-                                )}
-                              </details>
-                            </td>
-                          </tr>
+                  <NativeDomainEditor
+                    key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${domainCreation}`}
+                    document={doc}
+                    snapshot={snapshot}
+                    {...(userId ? { userId } : {})}
+                    editable={editable}
+                    busy={editorBusy}
+                    onSave={save}
+                    {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
+                    {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
+                    {...(recovered?.kind === 'domain'
+                      ? { initialAction: recovered.action }
+                      : domainCreation
+                        ? { initialAction: 'create' as const }
+                        : {})}
+                    onSelectDomain={(id) => {
+                      leaveRecoveredSelection();
+                      setSelectedDomain(id);
+                      setInspectorOpen(true);
+                      setInspectorTab('domains');
+                      setDomainCreation(0);
+                    }}
+                  />
+                  <NativeDomainRelationEditor
+                    document={doc}
+                    editable={editable}
+                    {...(userId
+                      ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
+                      : {})}
+                  />
+                </div>
+                <div className="native-project-content" aria-label={t('설계 조회')}>
+                  <aside
+                    className="native-table-nav native-inspector-panel"
+                    role="tabpanel"
+                    id={`${snapshot.project.id}-tables`}
+                    aria-label={t('테이블')}
+                    hidden={inspectorTab !== 'tables'}
+                  >
+                    <label>
+                      {t('테이블 검색')}
+                      <Input value={search} onChange={(event) => setSearch(event.target.value)} />
+                    </label>
+                    <Select aria-label={t('전체 도메인')} value={domain} onValueChange={setDomain}>
+                      <option value="*">{t('전체 도메인')}</option>
+                      <option value="">{t('미소속')}</option>
+                      {doc.domains.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <div className="native-mode">
+                      <Button
+                        aria-pressed={mode === 'physical'}
+                        onClick={() => setMode('physical')}
+                      >
+                        {t('물리')}
+                      </Button>
+                      <Button aria-pressed={mode === 'logical'} onClick={() => setMode('logical')}>
+                        {t('논리')}
+                      </Button>
+                    </div>
+                    <PanelSection
+                      title={t(canvasView === 'overview' ? '도메인' : '테이블')}
+                      defaultOpen
+                      count={canvasView === 'overview' ? doc.domains.length : tables.length}
+                    >
+                      <PanelList empty={t('선택한 범위에 테이블이 없습니다.')}>
+                        {canvasView === 'overview'
+                          ? doc.domains.map((item) => (
+                              <PanelRow
+                                key={item.id}
+                                title={item.name}
+                                accent={item.color ?? '#8993a3'}
+                                active={selectedDomain === item.id}
+                                onSelect={() => {
+                                  leaveRecoveredSelection();
+                                  setSelectedDomain(item.id);
+                                  setInspectorTab('domains');
+                                }}
+                              />
+                            ))
+                          : tables.map((table) => (
+                              <PanelRow
+                                key={table.id}
+                                title={tableName(table.id)}
+                                active={selectedTable?.id === table.id}
+                                onSelect={() => {
+                                  leaveRecoveredSelection();
+                                  setSelected(table.id);
+                                  setInspectorTab('properties');
+                                  setSelectedDomain(null);
+                                }}
+                              />
+                            ))}
+                      </PanelList>
+                    </PanelSection>
+                    {!tables.length && <p>{t('선택한 범위에 테이블이 없습니다.')}</p>}
+                  </aside>
+                  <section
+                    className="native-table-detail native-inspector-panel"
+                    role="tabpanel"
+                    id={`${snapshot.project.id}-properties`}
+                    aria-label={t('속성')}
+                    hidden={inspectorTab !== 'properties'}
+                    aria-live="polite"
+                  >
+                    {editable && recovered?.kind === 'advanced' && selectedTable && (
+                      <NativeAdvancedEditor
+                        key={`advanced-recovery:${recoveryEpoch}`}
+                        context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
+                        document={doc}
+                        table={selectedTable}
+                        initialSelection={recovered.selection}
+                      />
+                    )}
+                    {editable && recovered?.kind !== 'advanced' && (
+                      <PanelSection
+                        title={t(createRequest ? '새 객체 만들기' : '구조 편집')}
+                        defaultOpen={!!createRequest || recovered?.kind === 'structure'}
+                        key={`structure:${createRequest?.nonce ?? 0}:${recoveryEpoch}`}
+                      >
+                        <NativeStructureEditor
+                          key={`${userId}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${createRequest?.nonce ?? 0}`}
+                          context={{
+                            userId: userId!,
+                            snapshot,
+                            busy: editorBusy,
+                            onSave: save,
+                          }}
+                          document={doc}
+                          {...(recovered?.kind === 'structure'
+                            ? {
+                                initialSelection: recovered.selection,
+                                ...(recovered.tableId &&
+                                doc.tables?.find((table) => table.id === recovered.tableId)
+                                  ? {
+                                      table: doc.tables.find(
+                                        (table) => table.id === recovered.tableId,
+                                      )!,
+                                    }
+                                  : {}),
+                              }
+                            : createRequest
+                              ? {
+                                  initialSelection: {
+                                    action: createRequest.action,
+                                    target: createRequest.target ?? '',
+                                  },
+                                  ...(selectedTable ? { table: selectedTable } : {}),
+                                }
+                              : selectedTable
+                                ? { table: selectedTable }
+                                : {})}
+                        />
+                      </PanelSection>
+                    )}
+                    {focusedReview && (
+                      <section aria-label={t('리뷰')}>
+                        <h3>{t('리뷰')}</h3>
+                        {focusedReview.messages.map((item) => (
+                          <p key={item.id}>{item.body}</p>
                         ))}
-                    </tbody>
-                  </table>
-                  <details>
-                    <summary>{t('추가 속성')}</summary>
-                    {Object.entries(selectedTable.customProperties.common).map(([key, value]) => (
-                      <p key={`common-${key}`}>
-                        {key}: {value}
-                      </p>
-                    ))}
-                    {Object.entries(selectedTable.customProperties[mode]).map(([key, value]) => (
-                      <p key={key}>
-                        {key}: {value}
-                      </p>
-                    ))}
-                  </details>
-                  <h3>{t('키')}</h3>
-                  <ul>
-                    {(doc.keys ?? [])
-                      .filter((key) => key.tableId === selectedTable.id && visible(key.scope))
-                      .map((key) => (
-                        <li key={key.id}>
-                          {key.kind === 'primary' ? 'PK' : 'UNIQUE'} {key.name} (
-                          {key.columnIds.map(columnName).join(', ')})
-                          {key.deferrable ? ` DEFERRABLE ${key.deferrable.initially}` : ''}
-                          {key.nullsNotDistinct ? ' NULLS NOT DISTINCT' : ''}
-                        </li>
-                      ))}
-                  </ul>
-                  <h3>{t('외래 키')}</h3>
-                  <ul>
-                    {(doc.tableRelations ?? [])
-                      .filter(
-                        (relation) =>
-                          visible(relation.scope) &&
-                          (relation.sourceTableId === selectedTable.id ||
-                            relation.targetTableId === selectedTable.id),
-                      )
-                      .map((relation) => (
-                        <li key={relation.id}>
-                          {tableName(relation.sourceTableId)} → {tableName(relation.targetTableId)}
-                          {mode === 'physical' && relation.physical
-                            ? `: ${relation.physical.name} (${relation.physical.sourceColumnIds.map(columnName).join(', ')}) → (${relation.physical.targetColumnIds.map(columnName).join(', ')}) · DELETE ${relation.physical.onDelete} · UPDATE ${relation.physical.onUpdate}`
-                            : ` ${relation.logical.name}`}
-                          {relation.deferrable
-                            ? ` DEFERRABLE ${relation.deferrable.initially}`
-                            : ''}
-                        </li>
-                      ))}
-                  </ul>
-                  <h3>{t('인덱스')}</h3>
-                  <ul>
-                    {(doc.indexes ?? [])
-                      .filter((index) => index.tableId === selectedTable.id && visible(index.scope))
-                      .map((index) => (
-                        <li key={index.id}>
-                          {index.unique ? 'UNIQUE ' : ''}
-                          {index.name} (
-                          {index.parts
-                            .map(
-                              (part) =>
-                                `${nativeExpressionDisplay(part.expression, doc)} ${part.direction.toUpperCase()}${part.prefixLength !== undefined ? ` (${part.prefixLength})` : ''}`,
-                            )
-                            .join(', ')}
-                          ) ·{' '}
-                          {index.options.database === 'postgresql'
-                            ? index.options.method
-                            : index.options.database === 'mysql'
-                              ? index.options.kind
-                              : 'SQLite'}
-                          {'predicate' in index.options && index.options.predicate
-                            ? ` WHERE ${nativeExpressionDisplay(index.options.predicate, doc)}`
-                            : ''}
-                          {index.options.database === 'postgresql' &&
-                          index.options.includeColumnIds?.length
-                            ? ` INCLUDE (${index.options.includeColumnIds.map(columnName).join(', ')})`
-                            : ''}
-                          {index.options.database === 'postgresql' && index.options.nullsNotDistinct
-                            ? ' NULLS NOT DISTINCT'
-                            : ''}
-                          {index.options.database === 'mysql' && index.options.invisible
-                            ? ' INVISIBLE'
-                            : ''}
-                        </li>
-                      ))}
-                  </ul>
-                  <h3>CHECK</h3>
-                  <ul>
-                    {(doc.checks ?? [])
-                      .filter((check) => check.tableId === selectedTable.id && visible(check.scope))
-                      .map((check) => (
-                        <li key={check.id}>
-                          {check.name}: {nativeExpressionDisplay(check.expression, doc)}
-                        </li>
-                      ))}
-                  </ul>
-                  <h3>ENUM</h3>
-                  <ul>
-                    {(doc.enums ?? []).map((item) => (
-                      <li key={item.id}>
-                        {item.schema ? `${item.schema}.` : ''}
-                        {item.name}: {item.values.map((value) => JSON.stringify(value)).join(', ')}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              {snapshot.native.status === 'available' && snapshot.native.issues.length > 0 && (
-                <section className="native-issues" aria-label={t('설계 확인 항목')}>
-                  <h3>{t('설계 확인 항목')}</h3>
-                  <ul>
-                    {snapshot.native.issues.map((issue, index) => (
-                      <li key={`${issue.code}-${index}`}>
-                        <button type="button" onClick={() => focusIssue(issue.objectId)}>
-                          {issue.objectId &&
-                          doc.tables?.some((table) => table.id === issue.objectId)
-                            ? `${tableName(issue.objectId)}: `
-                            : ''}
-                          {t(
-                            issue.code.startsWith('legacy.')
-                              ? '기존 타입 또는 기본값을 확인해 주세요.'
-                              : issue.category === 'incomplete'
-                                ? '물리 설계를 완성해 주세요.'
-                                : issue.category === 'unsupported'
-                                  ? '지원하지 않는 설정입니다.'
-                                  : '설정이나 연결 대상을 확인해 주세요.',
+                      </section>
+                    )}
+                    {!selectedTable && !createRequest && (
+                      <>
+                        <div className="panel-empty">
+                          <strong>{t('도메인 뷰')}</strong>
+                          <p>
+                            {t('테이블을 선택하면 이름·컬럼·연결된 관계를 여기에서 편집합니다.')}
+                          </p>
+                        </div>
+                        <div className="panel-summary">
+                          <span>
+                            {t('테이블')} {tables.length}
+                          </span>
+                          <span>
+                            {t('관계')} {(doc.tableRelations ?? []).length}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                    {selectedTable && (
+                      <>
+                        <PanelSection title={t('기본 정보')} defaultOpen>
+                          {editable && !editingColumn ? (
+                            <>
+                              <NativePropertyEditor
+                                key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
+                                table={selectedTable}
+                                mode={mode}
+                                userId={userId!}
+                                snapshot={snapshot}
+                                busy={editorBusy}
+                                onSave={save}
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <strong>{tableName(selectedTable.id)}</strong>
+                              <p>
+                                {selectedTable.physical.comment || selectedTable.logical.definition}
+                              </p>
+                            </>
                           )}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </section>
+                        </PanelSection>
+                        <PanelSection
+                          title={t('컬럼')}
+                          count={
+                            (doc.columns ?? []).filter(
+                              (column) =>
+                                column.tableId === selectedTable.id && visible(column.scope),
+                            ).length
+                          }
+                          defaultOpen
+                        >
+                          <PanelList empty={t('컬럼이 없습니다.')}>
+                            {(doc.columns ?? [])
+                              .filter(
+                                (column) =>
+                                  column.tableId === selectedTable.id && visible(column.scope),
+                              )
+                              .map((column, index) => (
+                                <Fragment key={column.id}>
+                                  <PanelRow
+                                    drag={{
+                                      draggable: editable && !editorBusy,
+                                      onDragStart: (event) => {
+                                        draggingColumn.current = column.id;
+                                        event.dataTransfer.effectAllowed = 'move';
+                                        event.dataTransfer.setData('text/plain', column.id);
+                                      },
+                                      onDragOver: (event) => {
+                                        if (editable && !editorBusy && draggingColumn.current) {
+                                          event.preventDefault();
+                                          event.dataTransfer.dropEffect = 'move';
+                                        }
+                                      },
+                                      onDrop: (event) => {
+                                        event.preventDefault();
+                                        if (draggingColumn.current)
+                                          reorderColumns(draggingColumn.current, column.id);
+                                        draggingColumn.current = null;
+                                      },
+                                      onDragEnd: () => {
+                                        draggingColumn.current = null;
+                                      },
+                                    }}
+                                    action={
+                                      <button
+                                        type="button"
+                                        className="column-drag-handle"
+                                        aria-label={t('컬럼 순서 변경')}
+                                        title={t('드래그하거나 위/아래 방향키로 순서 변경')}
+                                        disabled={!editable || editorBusy}
+                                        onKeyDown={(event) => {
+                                          const step =
+                                            event.key === 'ArrowUp'
+                                              ? -1
+                                              : event.key === 'ArrowDown'
+                                                ? 1
+                                                : 0;
+                                          if (!step) return;
+                                          event.preventDefault();
+                                          const peers = (doc.columns ?? []).filter(
+                                            (item) => item.tableId === selectedTable.id,
+                                          );
+                                          const target =
+                                            peers[
+                                              peers.findIndex((item) => item.id === column.id) +
+                                                step
+                                            ];
+                                          if (target) reorderColumns(column.id, target.id);
+                                        }}
+                                      >
+                                        ⠿
+                                      </button>
+                                    }
+                                    title={`${index + 1}. ${columnName(column.id)}`}
+                                    meta={
+                                      mode === 'physical'
+                                        ? nativeColumnTypeDisplay(column.physical.type, doc.enums)
+                                        : column.logical.semanticType
+                                    }
+                                    badge={
+                                      (doc.keys ?? []).some(
+                                        (key) =>
+                                          key.kind === 'primary' &&
+                                          key.columnIds.includes(column.id),
+                                      )
+                                        ? 'PK'
+                                        : (doc.tableRelations ?? []).some((relation) =>
+                                              relation.physical?.sourceColumnIds.includes(
+                                                column.id,
+                                              ),
+                                            )
+                                          ? 'FK'
+                                          : undefined
+                                    }
+                                    active={editingColumn === column.id}
+                                    expanded={editingColumn === column.id}
+                                    controls={`native-column-${column.id}`}
+                                    onSelect={() => {
+                                      leaveRecoveredSelection();
+                                      setEditingColumn(
+                                        editingColumn === column.id ? null : column.id,
+                                      );
+                                    }}
+                                  />
+                                  <PanelListDetail
+                                    open={editingColumn === column.id}
+                                    id={`native-column-${column.id}`}
+                                  >
+                                    {editable ? (
+                                      <NativePropertyEditor
+                                        key={`${column.id}:${snapshot.sequence}:${recoveryEpoch}`}
+                                        table={selectedTable}
+                                        column={column}
+                                        mode={mode}
+                                        userId={userId!}
+                                        snapshot={snapshot}
+                                        busy={editorBusy}
+                                        onSave={save}
+                                      />
+                                    ) : (
+                                      <p>
+                                        {column.physical.comment ||
+                                          column.logical.definition ||
+                                          '—'}
+                                      </p>
+                                    )}
+                                  </PanelListDetail>
+                                </Fragment>
+                              ))}
+                          </PanelList>
+                          {editable && (
+                            <Button
+                              onClick={() =>
+                                setCreateRequest((previous) => ({
+                                  action: 'column',
+                                  nonce: (previous?.nonce ?? 0) + 1,
+                                }))
+                              }
+                            >
+                              {t('컬럼 추가')} ›
+                            </Button>
+                          )}
+                        </PanelSection>
+                        <PanelSection
+                          title={t('키 · PK / UNIQUE')}
+                          count={
+                            (doc.keys ?? []).filter((item) => item.tableId === selectedTable.id)
+                              .length
+                          }
+                        >
+                          <ul>
+                            {(doc.keys ?? [])
+                              .filter(
+                                (key) => key.tableId === selectedTable.id && visible(key.scope),
+                              )
+                              .map((key) => (
+                                <li key={key.id}>
+                                  {key.kind === 'primary' ? 'PK' : 'UNIQUE'} {key.name} (
+                                  {key.columnIds.map(columnName).join(', ')})
+                                  {key.deferrable ? ` DEFERRABLE ${key.deferrable.initially}` : ''}
+                                  {key.nullsNotDistinct ? ' NULLS NOT DISTINCT' : ''}
+                                </li>
+                              ))}
+                          </ul>
+                        </PanelSection>
+                        <PanelSection
+                          title={t('테이블 관계')}
+                          count={
+                            (doc.tableRelations ?? []).filter(
+                              (item) =>
+                                item.sourceTableId === selectedTable.id ||
+                                item.targetTableId === selectedTable.id,
+                            ).length
+                          }
+                        >
+                          <ul>
+                            {(doc.tableRelations ?? [])
+                              .filter(
+                                (relation) =>
+                                  visible(relation.scope) &&
+                                  (relation.sourceTableId === selectedTable.id ||
+                                    relation.targetTableId === selectedTable.id),
+                              )
+                              .map((relation) => (
+                                <li key={relation.id}>
+                                  {tableName(relation.sourceTableId)} →{' '}
+                                  {tableName(relation.targetTableId)}
+                                  {mode === 'physical' && relation.physical
+                                    ? `: ${relation.physical.name} (${relation.physical.sourceColumnIds.map(columnName).join(', ')}) → (${relation.physical.targetColumnIds.map(columnName).join(', ')}) · DELETE ${relation.physical.onDelete} · UPDATE ${relation.physical.onUpdate}`
+                                    : ` ${relation.logical.name}`}
+                                  {relation.deferrable
+                                    ? ` DEFERRABLE ${relation.deferrable.initially}`
+                                    : ''}
+                                </li>
+                              ))}
+                          </ul>
+                        </PanelSection>
+                        <PanelSection title={t('상세 설계 정보')}>
+                          <p>
+                            {mode === 'physical'
+                              ? selectedTable.physical.comment
+                              : selectedTable.logical.definition}
+                          </p>
+                          {mode === 'physical' && (
+                            <dl className="native-options">
+                              <dt>{t('DB 옵션')}</dt>
+                              <dd>
+                                {selectedTable.physical.namespace.kind === 'postgresSchema'
+                                  ? selectedTable.physical.namespace.name || 'public'
+                                  : selectedTable.physical.namespace.kind === 'legacyNamespace'
+                                    ? selectedTable.physical.namespace.original
+                                    : ''}
+                                {options?.database === 'mysql'
+                                  ? ` InnoDB ${options.charset ?? ''} ${options.collation ?? ''}`
+                                  : options?.database === 'sqlite'
+                                    ? `${options.strict ? ' STRICT' : ''}${options.withoutRowid ? ' WITHOUT ROWID' : ''}`
+                                    : ''}
+                              </dd>
+                            </dl>
+                          )}
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>{t('컬럼')}</th>
+                                <th>{mode === 'physical' ? t('타입') : t('의미 타입')}</th>
+                                <th>{mode === 'physical' ? 'NULL' : t('필수')}</th>
+                                {mode === 'physical' ? (
+                                  <>
+                                    <th>{t('기본값')}</th>
+                                    <th>{t('생성')}</th>
+                                    <th>{t('DB 옵션')}</th>
+                                  </>
+                                ) : null}
+                                <th>{t('설명')}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(doc.columns ?? [])
+                                .filter(
+                                  (column) =>
+                                    column.tableId === selectedTable.id && visible(column.scope),
+                                )
+                                .map((column) => (
+                                  <tr key={column.id} data-object-id={column.id}>
+                                    <th scope="row">
+                                      {mode === 'physical'
+                                        ? column.physical.name || column.logical.name
+                                        : column.logical.name || column.physical.name}
+                                    </th>
+                                    <td>
+                                      {mode === 'physical'
+                                        ? nativeColumnTypeDisplay(
+                                            column.physical.type,
+                                            doc.enums,
+                                          ) || t('타입 없음')
+                                        : column.logical.semanticType}
+                                    </td>
+                                    <td>
+                                      {mode === 'physical'
+                                        ? column.physical.nullable
+                                          ? 'NULL'
+                                          : 'NOT NULL'
+                                        : column.logical.required
+                                          ? '✓'
+                                          : ''}
+                                    </td>
+                                    {mode === 'physical' ? (
+                                      <>
+                                        <td>
+                                          {nativeDefaultDisplay(column.physical.defaultValue, doc)}
+                                        </td>
+                                        <td>
+                                          {nativeGenerationDisplay(column.physical.generation, doc)}
+                                        </td>
+                                        <td>
+                                          {column.physical.options.database === 'mysql'
+                                            ? `${column.physical.options.charset ?? ''} ${column.physical.options.collation ?? ''}${column.physical.options.onUpdate ? ` ON UPDATE ${nativeExpressionDisplay(column.physical.options.onUpdate, doc)}` : ''}`
+                                            : (column.physical.options.collation ?? '')}
+                                        </td>
+                                      </>
+                                    ) : null}
+                                    <td>
+                                      {mode === 'physical'
+                                        ? column.physical.comment
+                                        : column.logical.definition}
+                                      <details>
+                                        <summary>{t('추가 속성')}</summary>
+                                        {Object.entries(column.customProperties.common).map(
+                                          ([key, value]) => (
+                                            <p key={`common-${key}`}>
+                                              {key}: {value}
+                                            </p>
+                                          ),
+                                        )}
+                                        {Object.entries(column.customProperties[mode]).map(
+                                          ([key, value]) => (
+                                            <p key={key}>
+                                              {key}: {value}
+                                            </p>
+                                          ),
+                                        )}
+                                      </details>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                          <details>
+                            <summary>{t('추가 속성')}</summary>
+                            {Object.entries(selectedTable.customProperties.common).map(
+                              ([key, value]) => (
+                                <p key={`common-${key}`}>
+                                  {key}: {value}
+                                </p>
+                              ),
+                            )}
+                            {Object.entries(selectedTable.customProperties[mode]).map(
+                              ([key, value]) => (
+                                <p key={key}>
+                                  {key}: {value}
+                                </p>
+                              ),
+                            )}
+                          </details>
+
+                          <h3>{t('인덱스')}</h3>
+                          <ul>
+                            {(doc.indexes ?? [])
+                              .filter(
+                                (index) =>
+                                  index.tableId === selectedTable.id && visible(index.scope),
+                              )
+                              .map((index) => (
+                                <li key={index.id}>
+                                  {index.unique ? 'UNIQUE ' : ''}
+                                  {index.name} (
+                                  {index.parts
+                                    .map(
+                                      (part) =>
+                                        `${nativeExpressionDisplay(part.expression, doc)} ${part.direction.toUpperCase()}${part.prefixLength !== undefined ? ` (${part.prefixLength})` : ''}`,
+                                    )
+                                    .join(', ')}
+                                  ) ·{' '}
+                                  {index.options.database === 'postgresql'
+                                    ? index.options.method
+                                    : index.options.database === 'mysql'
+                                      ? index.options.kind
+                                      : 'SQLite'}
+                                  {'predicate' in index.options && index.options.predicate
+                                    ? ` WHERE ${nativeExpressionDisplay(index.options.predicate, doc)}`
+                                    : ''}
+                                  {index.options.database === 'postgresql' &&
+                                  index.options.includeColumnIds?.length
+                                    ? ` INCLUDE (${index.options.includeColumnIds.map(columnName).join(', ')})`
+                                    : ''}
+                                  {index.options.database === 'postgresql' &&
+                                  index.options.nullsNotDistinct
+                                    ? ' NULLS NOT DISTINCT'
+                                    : ''}
+                                  {index.options.database === 'mysql' && index.options.invisible
+                                    ? ' INVISIBLE'
+                                    : ''}
+                                </li>
+                              ))}
+                          </ul>
+                          <h3>CHECK</h3>
+                          <ul>
+                            {(doc.checks ?? [])
+                              .filter(
+                                (check) =>
+                                  check.tableId === selectedTable.id && visible(check.scope),
+                              )
+                              .map((check) => (
+                                <li key={check.id}>
+                                  {check.name}: {nativeExpressionDisplay(check.expression, doc)}
+                                </li>
+                              ))}
+                          </ul>
+                          <h3>ENUM</h3>
+                          <ul>
+                            {(doc.enums ?? []).map((item) => (
+                              <li key={item.id}>
+                                {item.schema ? `${item.schema}.` : ''}
+                                {item.name}:{' '}
+                                {item.values.map((value) => JSON.stringify(value)).join(', ')}
+                              </li>
+                            ))}
+                          </ul>
+                        </PanelSection>
+                      </>
+                    )}
+                    {editable && selectedTable && (
+                      <Button
+                        className="danger"
+                        onClick={() =>
+                          setCreateRequest((previous) => ({
+                            action: 'delete',
+                            target: JSON.stringify(['tables', selectedTable.id]),
+                            nonce: (previous?.nonce ?? 0) + 1,
+                          }))
+                        }
+                      >
+                        {t('테이블 삭제')}
+                      </Button>
+                    )}
+                    {snapshot.native.status === 'available' &&
+                      snapshot.native.issues.length > 0 && (
+                        <section className="native-issues" aria-label={t('설계 확인 항목')}>
+                          <h3>{t('설계 확인 항목')}</h3>
+                          <ul>
+                            {snapshot.native.issues.map((issue, index) => (
+                              <li key={`${issue.code}-${index}`}>
+                                <button type="button" onClick={() => focusIssue(issue.objectId)}>
+                                  {issue.objectId &&
+                                  doc.tables?.some((table) => table.id === issue.objectId)
+                                    ? `${tableName(issue.objectId)}: `
+                                    : ''}
+                                  {t(
+                                    issue.code.startsWith('legacy.')
+                                      ? '기존 타입 또는 기본값을 확인해 주세요.'
+                                      : issue.category === 'incomplete'
+                                        ? '물리 설계를 완성해 주세요.'
+                                        : issue.category === 'unsupported'
+                                          ? '지원하지 않는 설정입니다.'
+                                          : '설정이나 연결 대상을 확인해 주세요.',
+                                  )}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      )}
+                  </section>
+                </div>
+              </aside>
+            </div>
+            {userId && reviewDocument && (
+              <div
+                data-open={commentsOpen}
+                data-resizing={commentsResizing}
+                aria-hidden={!commentsOpen}
+                inert={!commentsOpen}
+                className="comments-container"
+                style={{ '--comments-panel-width': `${commentsWidth}px` } as CSSProperties}
+              >
+                {commentsOpen && (
+                  <PinPanelResizer
+                    width={commentsWidth}
+                    onWidthChange={setCommentsWidth}
+                    onResizingChange={setCommentsResizing}
+                  />
+                )}
+                <CommentsPanel
+                  key={`${userId}:${snapshot.project.id}`}
+                  readOnly={!canPersonalEdit || snapshot.project.status !== 'active'}
+                  workspaceId={snapshot.project.workspaceId}
+                  projectId={snapshot.project.id}
+                  userId={userId}
+                  document={reviewDocument}
+                  context={reviewContext}
+                  activeThreadId={reviewFocus?.id ?? null}
+                  onThreads={setThreads}
+                  onMembers={setMembers}
+                  onNavigate={focusThread}
+                  onClose={() => {
+                    setCommentsOpen(false);
+                    setDraftPin(null);
+                    setPinMode(false);
+                  }}
+                  onCancelPinDraft={() => setDraftPin(null)}
+                  {...(draftPin ? { draftTarget: draftPin } : {})}
+                />
+              </div>
+            )}
           </div>
         </>
       )}

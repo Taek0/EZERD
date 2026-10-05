@@ -1,4 +1,23 @@
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import type { CommentContext } from '../comments/CommentsPanel.js';
+import { pinPosition, reviewCanvasView, type ReviewTarget } from '../comments/comments-state.js';
+import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
+import { createPortal } from 'react-dom';
+import { NativeCanvasToolbar, NativeCameraControls } from './NativeCanvasToolbar.js';
+import { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
+export { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
+import { NativeRelationEditor } from './NativeRelationEditor.js';
+import { NativeCanvasInlineEditor, type NativeInlineTarget } from './NativeCanvasInlineEditor.js';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 import {
   nativeEditorCommandSchema,
   nativeSharedCanvasCommandSchema,
@@ -56,10 +75,9 @@ import { NativePrivateCASRecovery } from './NativePrivateCASRecovery.js';
 import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
 import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
 import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
-import { NativeDomainLines } from './native-domain-lines.js';
+import { NativeCanvasScene, type NativeSceneActions } from './NativeCanvasScene.js';
 import { NativeCanvasPngExport } from './NativeCanvasPngExport.js';
-import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
-import { nativeTableCanvasRows, nativeCardColor } from './native-canvas-style.js';
+import { nativeTableCanvasRows } from './native-canvas-style.js';
 import { captureNativeActorApi } from './native-actor-api.js';
 import { getNativeDurableQueue, type NativeDurableState } from './native-durable-queue.js';
 import {
@@ -73,6 +91,12 @@ import {
 type PersonalStateSnapshot = ReturnType<typeof personalStateSnapshotSchema.parse>;
 type DraftRef = { key: string; revision: string };
 type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
+
+const MemoNativeCanvasPngExport = memo(NativeCanvasPngExport);
+const MemoNativeDomainRelationEditor = memo(NativeDomainRelationEditor);
+const MemoNativeCanvasStyleEditor = memo(NativeCanvasStyleEditor);
+const MemoNativeClipboardMenu = memo(NativeClipboardMenu);
+const MemoNativeCanvasActions = memo(NativeCanvasActions);
 
 registerTranslations({
   '복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.':
@@ -293,7 +317,7 @@ export function recoverNativeCanvasPersonal(
 export function nativeCanvasMoveCommand(
   source: NativeDesignDocument,
   displayed: NodeLayout,
-  patch: Pick<NodeLayout, 'x' | 'y'>,
+  patch: Pick<NodeLayout, 'x' | 'y'> & Partial<Pick<NodeLayout, 'width' | 'height'>>,
 ): NativeEditorCommand {
   const raw = source.layout.nodes.find(
     (node) => node.objectId === displayed.objectId && node.viewId === displayed.viewId,
@@ -307,7 +331,7 @@ export function nativeCanvasMoveCommand(
     tableId: displayed.objectId,
     viewId: displayed.viewId,
     nodeId: nativeDurableId(),
-    placement: { ...patch, width: displayed.width, height: displayed.height },
+    placement: { width: displayed.width, height: displayed.height, ...patch },
   });
 }
 
@@ -315,6 +339,7 @@ export function nativeCanvasScene(
   document: NativeDesignDocument,
   viewId: string,
   mode: 'physical' | 'logical',
+  filter?: NativeDomainFilterValue | null,
 ) {
   const view = viewFor(document, viewId);
   const sceneNodes = [...document.layout.nodes];
@@ -353,6 +378,10 @@ export function nativeCanvasScene(
       if (table)
         return (
           view !== 'overview' &&
+          (!filter ||
+            (table.domainId === null
+              ? filter.unassigned
+              : filter.domainIds.includes(table.domainId))) &&
           isVisibleInView(table.scope, mode) &&
           (!document.domains.some((domain) => domain.id === viewId) || table.domainId === viewId)
         );
@@ -378,7 +407,7 @@ export function nativeCanvasScene(
           Math.max(
             size.height,
             table
-              ? 78 +
+              ? 112 +
                   nativeTableCanvasRows(document, table, mode).reduce(
                     (height, row) => height + row.height,
                     0,
@@ -469,6 +498,56 @@ export function nativeCanvasScene(
   return { nodes, relations, viewId: view };
 }
 
+/** Reuse the base scene unless a persisted node in this view has a changed draft position. */
+export function nativeCanvasDraftScene(
+  document: NativeDesignDocument,
+  scene: ReturnType<typeof nativeCanvasScene>,
+  viewId: string,
+  mode: 'physical' | 'logical',
+  objectId?: string,
+  x?: string,
+  y?: string,
+  filter?: NativeDomainFilterValue | null,
+  width?: string,
+  height?: string,
+) {
+  const moved = scene.nodes.find((node) => node.objectId === objectId);
+  if (
+    !moved ||
+    !document.layout.nodes.some((node) => node.id === moved.id) ||
+    (moved.x === Number(x) &&
+      moved.y === Number(y) &&
+      (width === undefined || moved.width === Number(width)) &&
+      (height === undefined || moved.height === Number(height)))
+  )
+    return scene;
+  const displayed = new Map(
+    scene.nodes.map((node) => [
+      node.id,
+      node.objectId === objectId
+        ? {
+            ...node,
+            x: Number(x),
+            y: Number(y),
+            ...(width === undefined ? {} : { width: Number(width) }),
+            ...(height === undefined ? {} : { height: Number(height) }),
+          }
+        : node,
+    ]),
+  );
+  return nativeCanvasScene(
+    {
+      ...document,
+      layout: {
+        ...document.layout,
+        nodes: document.layout.nodes.map((node) => displayed.get(node.id) ?? node),
+      },
+    },
+    viewId,
+    mode,
+    filter,
+  );
+}
 /** Only shared source-document inputs block export; personal cameras/views do not change it. */
 export function nativeCanvasExportBlocker(
   source: NativeDesignDocument,
@@ -500,6 +579,18 @@ export function NativeERDCanvas({
   onSelect,
   onSelectDomain,
   recoverySelection,
+  inspectorHost,
+  inspectorOpen,
+  onToggleInspector,
+  onOpenTools,
+  onCreate,
+  onModeChange,
+  onViewChange,
+  pins,
+  onReviewContext,
+  pinMode = false,
+  onCreatePin,
+  reviewFocus,
 }: {
   document: NativeDesignDocument;
   snapshot: ProjectDocumentState;
@@ -518,8 +609,20 @@ export function NativeERDCanvas({
   onSelect: (tableId: string, columnId?: string) => void;
   onSelectDomain?: (domainId: string) => void;
   recoverySelection?: NativeCanvasRecoverySelection;
+  inspectorHost?: HTMLElement | null;
+  inspectorOpen?: boolean;
+  onToggleInspector?: () => void;
+  onOpenTools?: () => void;
+  onCreate?: (kind: 'table' | 'domain' | 'enum' | 'column') => void;
+  onModeChange?: (mode: 'physical' | 'logical') => void;
+  onViewChange?: (id: string) => void;
+  pins?: ReactNode;
+  onReviewContext?: (context: CommentContext, document: NativeDesignDocument) => void;
+  pinMode?: boolean;
+  onCreatePin?: (context: CommentContext) => void;
+  reviewFocus?: (ReviewTarget & { nonce: number }) | null;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [viewId, setViewId] = useState(
     recoverySelection?.viewId ?? (selectedDomainId ? 'overview' : TABLES_VIEW_ID),
   );
@@ -544,6 +647,57 @@ export function NativeERDCanvas({
   useEffect(() => {
     if (selectedDomainId && !draftRef.current && !gesture.current) setViewId('overview');
   }, [selectedDomainId]);
+  const [inlineTarget, setInlineTarget] = useState<NativeInlineTarget | null>(null);
+  const closeInline = useCallback(() => setInlineTarget(null), []);
+  useEffect(
+    () => setInlineTarget(recoverySelection?.inline ?? null),
+    [userId, snapshot.project.id, recoverySelection?.inline],
+  );
+  const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
+  const [worldElement, setWorldElement] = useState<HTMLDivElement | null>(null);
+  const closeRoute = useCallback(() => setSelectedRelationId(null), []);
+  useEffect(
+    () => setSelectedRelationId(recoverySelection?.routeId ?? null),
+    [userId, snapshot.project.id, viewId, recoverySelection?.routeId],
+  );
+  const [domainFilter, setDomainFilter] = useState<NativeDomainFilterValue | null>(null);
+  const navigateView = useCallback(
+    (id: string) => {
+      setDomainFilter(null);
+      setViewId(id);
+      onViewChange?.(id);
+    },
+    [onViewChange],
+  );
+  const applyDomainFilter = useCallback(
+    (filter: NativeDomainFilterValue | null) => {
+      setViewId(TABLES_VIEW_ID);
+      setDomainFilter(filter);
+      onViewChange?.(TABLES_VIEW_ID);
+    },
+    [onViewChange],
+  );
+  const [tool, setTool] = useState<'select' | 'hand'>('select');
+  const [toolbarAction, setToolbarAction] = useState<{
+    action: string;
+    target: string;
+    nonce: number;
+  } | null>(null);
+  const spacePan = useRef(false);
+  const panGesture = useRef<{ pointerId: number; x: number; y: number; camera: Viewport } | null>(
+    null,
+  );
+  const addColumnFromCard = useCallback(
+    (tableId: string) => {
+      onSelect(tableId);
+      onCreate?.('column');
+    },
+    [onSelect, onCreate],
+  );
+  const addNoteFromToolbar = useCallback(() => {
+    setToolbarAction((value) => ({ action: 'note', target: '', nonce: (value?.nonce ?? 0) + 1 }));
+    onOpenTools?.();
+  }, [onOpenTools]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
@@ -561,7 +715,10 @@ export function NativeERDCanvas({
   useEffect(() => {
     const element = surface.current;
     if (!element) return;
-    const prevent = (event: WheelEvent) => event.preventDefault();
+    const prevent = (event: WheelEvent) => {
+      if (event.target instanceof Element && event.target.closest('.native-inline-editor')) return;
+      event.preventDefault();
+    };
     element.addEventListener('wheel', prevent, { passive: false });
     return () => element.removeEventListener('wheel', prevent);
   }, []);
@@ -645,17 +802,21 @@ export function NativeERDCanvas({
   }, [userId, privateIdentity, snapshot.project.id]);
   const sharedSource =
     snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document;
-  const base = personal
-    ? mergeStoredPersonalState(document, reconcilePersonalState(sharedSource, personal.state))
-    : {
-        ...document,
-        views: [],
-        layout: {
-          ...document.layout,
-          nodes: document.layout.nodes.filter((node) => !privateView(document, node.viewId)),
-          viewports: [],
-        },
-      };
+  const base = useMemo(
+    () =>
+      personal
+        ? mergeStoredPersonalState(document, reconcilePersonalState(sharedSource, personal.state))
+        : {
+            ...document,
+            views: [],
+            layout: {
+              ...document.layout,
+              nodes: document.layout.nodes.filter((node) => !privateView(document, node.viewId)),
+              viewports: [],
+            },
+          },
+    [document, sharedSource, personal?.state],
+  );
   const effectiveView =
     viewId === TABLES_VIEW_ID ||
     viewId === 'overview' ||
@@ -725,23 +886,48 @@ export function NativeERDCanvas({
     snapshot.project.databaseRevision,
     personal?.version,
   ]);
-  const scene = nativeCanvasScene(base, effectiveView, mode);
-  const displayedNodes = scene.nodes.map((node) =>
-    draft?.values.objectId === node.objectId
-      ? { ...node, x: Number(draft.values.x), y: Number(draft.values.y) }
-      : node,
+  const scene = useMemo(
+    () => nativeCanvasScene(base, effectiveView, mode, domainFilter),
+    [base, effectiveView, mode, domainFilter],
   );
-  const displayDoc = {
-    ...base,
-    layout: {
-      ...base.layout,
-      nodes: base.layout.nodes.map(
-        (node) => displayedNodes.find((shown) => shown.id === node.id) ?? node,
+  const draftObjectId = draft?.values.objectId;
+  const draftX = draft?.values.x;
+  const draftY = draft?.values.y;
+  const draftWidth = draft?.values.width,
+    draftHeight = draft?.values.height;
+  const drawn = useMemo(
+    () =>
+      nativeCanvasDraftScene(
+        base,
+        scene,
+        effectiveView,
+        mode,
+        draftObjectId,
+        draftX,
+        draftY,
+        domainFilter,
+        draftWidth,
+        draftHeight,
       ),
-    },
-  };
-  const drawn = nativeCanvasScene(displayDoc, effectiveView, mode);
-  function preserve(node: NodeLayout, x: number, y: number) {
+    [
+      base,
+      scene,
+      effectiveView,
+      mode,
+      draftObjectId,
+      draftX,
+      draftY,
+      domainFilter,
+      draftWidth,
+      draftHeight,
+    ],
+  );
+  function preserve(
+    node: NodeLayout,
+    x: number,
+    y: number,
+    size?: { width: number; height: number },
+  ) {
     if (!userId || !placementEditable || allBusy || stale) return;
     if (
       base.domains.some((domain) => domain.id === node.objectId) &&
@@ -751,6 +937,18 @@ export function NativeERDCanvas({
     const command = nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
       x: limit(x),
       y: limit(y),
+      ...(size
+        ? {
+            width: Math.max(
+              nodeLayoutSchema.shape.width.minValue!,
+              Math.min(nodeLayoutSchema.shape.width.maxValue!, size.width),
+            ),
+            height: Math.max(
+              nodeLayoutSchema.shape.height.minValue!,
+              Math.min(nodeLayoutSchema.shape.height.maxValue!, size.height),
+            ),
+          }
+        : {}),
     });
     const current = draftRef.current;
     if (current && current.values.objectId !== node.objectId) {
@@ -774,6 +972,7 @@ export function NativeERDCanvas({
         objectId: node.objectId,
         x: String(limit(x)),
         y: String(limit(y)),
+        ...(size ? { width: String(size.width), height: String(size.height) } : {}),
         nodeId: node.id,
         viewId: node.viewId,
         commands: JSON.stringify([command]),
@@ -906,47 +1105,98 @@ export function NativeERDCanvas({
     gesture.current = { node, x: event.clientX, y: event.clientY, pointerId: event.pointerId };
     setSelectedNode(node.id);
   }
-  return (
-    <section className="native-erd" aria-label={t('Native ERD')}>
-      <div className="native-erd-controls">
-        <label>
-          {t('화면')}
-          <select
-            value={effectiveView}
-            onChange={(event) => setViewId(event.target.value)}
-            disabled={personalBusy}
-          >
-            <option value={TABLES_VIEW_ID}>{t('공유 캔버스')}</option>
-            <option value="overview">{t('도메인 개요')}</option>
-            {base.domains.map((domain) => (
-              <option key={domain.id} value={domain.id}>
-                {domain.name}
-              </option>
-            ))}
-            {(base.views ?? []).map((view) => (
-              <option key={view.id} value={view.id}>
-                {t('개인 화면')}: {view.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button onClick={() => setCamera({ ...camera, zoom: zoomLimit(camera.zoom * 1.2) })}>
-          {t('확대')}
-        </Button>
-        <Button onClick={() => setCamera({ ...camera, zoom: zoomLimit(camera.zoom / 1.2) })}>
-          {t('축소')}
-        </Button>
-        <Button
-          onClick={() => {
-            const x = drawn.nodes.length ? Math.min(...drawn.nodes.map((node) => node.x)) : 0;
-            const y = drawn.nodes.length ? Math.min(...drawn.nodes.map((node) => node.y)) : 0;
-            setCamera({ viewId: effectiveView, x: limit(24 - x), y: limit(24 - y), zoom: 1 });
-          }}
-        >
-          {t('중앙으로')}
-        </Button>
-        <Button onClick={() => setCamera(savedCamera)}>{t('카메라 초기화')}</Button>
-        <span>{Math.round(camera.zoom * 100)}%</span>
+  const inlineContext = useMemo(
+    () => ({ userId: userId ?? '', snapshot, busy: allBusy || !!draft || !editable, onSave }),
+    [userId, snapshot, allBusy, draft, editable, onSave],
+  );
+  const routeSave = async (
+    commands: CanvasCommand[],
+    expectation: ReturnType<typeof expected>,
+    ref: DraftRef,
+  ) => {
+    if (
+      !userId ||
+      !placementEditable ||
+      allBusy ||
+      draft ||
+      expectation.version !== snapshot.project.version ||
+      expectation.sequence !== snapshot.sequence ||
+      expectation.databaseRevision !== snapshot.project.databaseRevision
+    )
+      return false;
+    if (isPrivate)
+      return commands.length === 1
+        ? savePersonalCommand(nativePersonalCanvasCommandSchema.parse(commands[0]), ref)
+        : false;
+    return onSave(
+      commands.map((command) => nativeEditorCommandSchema.parse(command)),
+      expectation,
+      ref,
+    );
+  };
+  const routeSaveRef = useRef(routeSave);
+  useLayoutEffect(() => {
+    routeSaveRef.current = routeSave;
+  });
+  const routeContext = useMemo(
+    () => ({
+      userId: userId ?? '',
+      snapshot,
+      busy: allBusy || !!draft || !placementEditable,
+      affectsSharedDocument: !isPrivate,
+      onSave: (
+        commands: CanvasCommand[],
+        expectation: ReturnType<typeof expected>,
+        ref: DraftRef,
+      ) => routeSaveRef.current(commands, expectation, ref),
+    }),
+    [userId, snapshot, allBusy, draft, placementEditable, isPrivate],
+  );
+  const openInline = useCallback((target: NativeInlineTarget) => {
+    setSelectedRelationId(null);
+    setInlineTarget(target);
+  }, []);
+  const selectRoute = useCallback((id: string | null) => {
+    setInlineTarget(null);
+    setSelectedRelationId(id);
+  }, []);
+  const sharedEditorContext = useMemo(
+    () => (userId ? { userId, snapshot, busy: allBusy || !!draft, onSave } : undefined),
+    [userId, snapshot, allBusy, draft, onSave],
+  );
+  const canvasSaveRef = useRef(saveCanvasCommand);
+  useLayoutEffect(() => {
+    canvasSaveRef.current = saveCanvasCommand;
+  });
+  const saveCanvasLatest = useCallback(
+    (command: NativePersonalCanvasCommand, ref?: DraftRef) => canvasSaveRef.current(command, ref),
+    [],
+  );
+  const sceneActions = useRef<NativeSceneActions>({
+    zoom: camera.zoom,
+    begin,
+    preserve,
+    savePlacement,
+  });
+  useLayoutEffect(() => {
+    sceneActions.current = { zoom: camera.zoom, begin, preserve, savePlacement };
+  });
+  const toolbarViews = useMemo(
+    () => [
+      { id: TABLES_VIEW_ID, name: t('전체 테이블') },
+      { id: 'overview', name: t('도메인 맵') },
+      ...base.domains.map((domain) => ({ id: domain.id, name: domain.name })),
+      ...(base.views ?? []).map((view) => ({
+        id: view.id,
+        name: `${t('개인 화면')}: ${view.name}`,
+      })),
+    ],
+    [base.domains, base.views, locale],
+  );
+  const auxiliary = (
+    <>
+      <div className="native-canvas-settings">
+        {' '}
         {personalEditable && (
           <Button
             disabled={allBusy || !personal || !personalReady}
@@ -960,7 +1210,128 @@ export function NativeERDCanvas({
             {t('카메라 저장')}
           </Button>
         )}
+        <Button onClick={() => setCamera(savedCamera)}>{t('카메라 초기화')}</Button>{' '}
+        <MemoNativeDomainRelationEditor
+          document={sharedSource}
+          editable={editable}
+          {...(recoverySelection?.domainRelation
+            ? {
+                initialAction: recoverySelection.domainRelation.action,
+                ...(recoverySelection.domainRelation.id
+                  ? { selectedId: recoverySelection.domainRelation.id }
+                  : {}),
+              }
+            : selectedDomainRelation
+              ? { selectedId: selectedDomainRelation }
+              : {})}
+          {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
+        />
+        <MemoNativeCanvasStyleEditor
+          document={sharedSource}
+          editable={editable}
+          {...(selectedTableId ? { selectedTableId } : {})}
+          {...(selectedDomainId ? { selectedDomainId } : {})}
+          {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
+          {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
+        />
+        <MemoNativeClipboardMenu
+          key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
+          snapshot={snapshot}
+          {...(userId ? { userId } : {})}
+          editable={editable}
+          busy={allBusy || !!draft}
+          onSave={onSave}
+          {...(selectedTableId ? { selectedTableId } : {})}
+          destinationDomainId={
+            base.domains.some((domain) => domain.id === effectiveView) ? effectiveView : null
+          }
+        />
+        {recoveryWaiting && (
+          <p role="status">
+            {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
+          </p>
+        )}
+        {userId && (editable || personalEditable) && !recoveryWaiting && (
+          <MemoNativeCanvasActions
+            key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}:${toolbarAction?.nonce ?? 0}`}
+            document={base}
+            source={sharedSource}
+            snapshot={snapshot}
+            userId={userId}
+            viewId={effectiveView}
+            busy={allBusy || !!draft || (isPrivate && !personal)}
+            onSave={saveCanvasLatest}
+            onSharedSave={onSave}
+            sharedEditable={editable}
+            {...(toolbarAction
+              ? { initialSelection: toolbarAction }
+              : recoverySelection?.action
+                ? { initialSelection: recoverySelection.action }
+                : {})}
+          />
+        )}
       </div>
+    </>
+  );
+  const exportControl = useMemo(
+    () => (
+      <MemoNativeCanvasPngExport
+        snapshot={snapshot}
+        {...(userId ? { userId } : {})}
+        viewId={effectiveView}
+        mode={mode}
+        sceneFor={nativeCanvasScene}
+        {...(personal ? { personal } : {})}
+        personalBusy={personalBusy}
+        writerState={privateQueueState}
+      />
+    ),
+    [snapshot, userId, effectiveView, mode, personal, personalBusy, privateQueueState],
+  );
+  const reviewCallback = useRef(onReviewContext);
+  reviewCallback.current = onReviewContext;
+  useEffect(() => {
+    reviewCallback.current?.(
+      {
+        viewId: effectiveView,
+        selectedObjectId: selectedDomainId ?? selectedTableId ?? null,
+        visibleObjectIds: scene.nodes.map((node) => node.objectId),
+        position: { x: 0, y: 0 },
+      },
+      base,
+    );
+  }, [base, scene, effectiveView, selectedDomainId, selectedTableId]);
+  useEffect(() => {
+    if (!reviewFocus) return;
+    const view = reviewCanvasView(base, reviewFocus);
+    const point = pinPosition(base, reviewFocus);
+    if (effectiveView !== view) {
+      navigateView(view);
+      return;
+    }
+    setCamera({ viewId: view, x: 120 - point.x, y: 120 - point.y, zoom: 1 });
+  }, [reviewFocus?.nonce, effectiveView]);
+  return (
+    <section className="native-erd" aria-label={t('Native ERD')}>
+      <NativeCanvasToolbar
+        exportControl={exportControl}
+        viewId={effectiveView}
+        views={toolbarViews}
+        onView={navigateView}
+        domains={base.domains}
+        filter={domainFilter}
+        onFilter={applyDomainFilter}
+        onCreate={onCreate}
+        onNote={addNoteFromToolbar}
+        onTools={onOpenTools}
+        editable={editable}
+        noteEditable={placementEditable}
+        disabled={personalBusy || !!draft}
+        mode={mode}
+        onMode={onModeChange}
+        inspectorOpen={inspectorOpen}
+        onToggleInspector={onToggleInspector}
+      />
       {error && <p role="alert">{error}</p>}
       {personalEditable && !personalReady && (
         <p role="status">
@@ -973,7 +1344,7 @@ export function NativeERDCanvas({
       {base.domains.some((domain) => domain.id === effectiveView) && (
         <p>{t('공유 도메인 화면은 공유 테이블 배치를 사용합니다.')}</p>
       )}
-      <p>{t('노드 선택 후 방향키로 이동하고 Enter로 저장합니다.')}</p>
+
       {draft && (
         <div role="status">
           <p>
@@ -1159,11 +1530,113 @@ export function NativeERDCanvas({
         </div>
       )}
       <div
-        className="native-erd-surface"
+        className={`native-erd-surface${tool === 'hand' ? ' hand-tool' : ''}${pinMode ? ' pin-mode' : ''}`}
+        onPointerDownCapture={(event) => {
+          if (
+            pinMode &&
+            event.button === 0 &&
+            onCreatePin &&
+            !(
+              event.target instanceof Element &&
+              event.target.closest('.native-camera-controls,.comment-pin,.native-inline-editor')
+            )
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            onCreatePin({
+              viewId: effectiveView,
+              selectedObjectId: null,
+              visibleObjectIds: scene.nodes.map((node) => node.objectId),
+              position: {
+                x: (event.clientX - rect.left - camera.x) / camera.zoom,
+                y: (event.clientY - rect.top - camera.y) / camera.zoom,
+              },
+            });
+            return;
+          }
+          if (
+            event.target instanceof Element &&
+            event.target.closest('.native-inline-editor,.native-camera-controls')
+          )
+            return;
+          if (!(tool === 'hand' || spacePan.current || event.button === 1)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          panGesture.current = {
+            pointerId: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            camera,
+          };
+        }}
+        onPointerMove={(event) => {
+          const pan = panGesture.current;
+          if (pan?.pointerId !== event.pointerId) return;
+          event.stopPropagation();
+          setCamera({
+            ...pan.camera,
+            x: limit(pan.camera.x + event.clientX - pan.x),
+            y: limit(pan.camera.y + event.clientY - pan.y),
+          });
+        }}
+        onPointerUp={(event) => {
+          if (panGesture.current?.pointerId !== event.pointerId) return;
+          event.stopPropagation();
+          panGesture.current = null;
+          if (event.currentTarget.hasPointerCapture(event.pointerId))
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+        onPointerCancel={() => {
+          panGesture.current = null;
+          spacePan.current = false;
+        }}
+        onLostPointerCapture={() => {
+          panGesture.current = null;
+        }}
+        onClickCapture={(event) => {
+          if (
+            tool === 'hand' &&
+            !(
+              event.target instanceof Element &&
+              event.target.closest('.native-inline-editor,.native-camera-controls')
+            )
+          )
+            event.stopPropagation();
+        }}
+        onKeyDownCapture={(event) => {
+          if (
+            event.target instanceof Element &&
+            event.target.closest(
+              '.native-inline-editor,input,textarea,select,[contenteditable=true]',
+            )
+          )
+            return;
+          if (event.ctrlKey || event.metaKey || event.altKey) return;
+          if (
+            event.code === 'Space' &&
+            !(event.target instanceof Element && event.target.closest('button,[role=button]'))
+          ) {
+            event.preventDefault();
+            spacePan.current = true;
+          }
+          if (event.key.toLowerCase() === 'h') setTool('hand');
+          if (event.key.toLowerCase() === 'v') setTool('select');
+        }}
+        onKeyUpCapture={(event) => {
+          if (event.code === 'Space') spacePan.current = false;
+        }}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            spacePan.current = false;
+            panGesture.current = null;
+          }
+        }}
         ref={surface}
         tabIndex={0}
         onWheel={(event) => {
-          if (gesture.current) return;
+          if (gesture.current || panGesture.current) return;
           if (event.target instanceof Element && event.target.closest('input,select,textarea'))
             return;
           const rect = event.currentTarget.getBoundingClientRect();
@@ -1178,237 +1651,83 @@ export function NativeERDCanvas({
       >
         <div
           className="native-erd-world"
+          ref={setWorldElement}
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
-          <svg className="native-erd-lines" aria-label={t('외래 키')}>
-            <defs>
-              <marker
-                id="native-fk-arrow"
-                markerWidth="8"
-                markerHeight="8"
-                refX="7"
-                refY="4"
-                orient="auto"
-              >
-                <path d="M 0 0 L 8 4 L 0 8 Z" />
-              </marker>
-            </defs>
-            {drawn.relations.map(({ relation, geometry, label }) => (
-              <g key={relation.id} data-relation-id={relation.id}>
-                <path d={geometry.path} markerEnd="url(#native-fk-arrow)" />
-                <text x={geometry.labelX} y={geometry.labelY} textAnchor="middle">
-                  {label}
-                </text>
-                <title>{`${label}: ${relation.sourceTableId} → ${relation.targetTableId}`}</title>
-              </g>
-            ))}
-          </svg>
-          {effectiveView === 'overview' && (
-            <NativeDomainLines
-              document={base}
-              nodes={drawn.nodes}
-              {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
-              onSelect={setSelectedDomainRelation}
+          {pins}
+          <div key={effectiveView} className="native-scene-entry">
+            <NativeCanvasScene
+              base={base}
+              sharedSource={sharedSource}
+              drawn={drawn}
+              effectiveView={effectiveView}
+              mode={mode}
+              selectedNode={selectedNode}
+              selectedTableId={selectedTableId}
+              selectedDomainId={selectedDomainId}
+              selectedDomainRelation={selectedDomainRelation}
+              selectedRelationId={selectedRelationId}
+              onSelectRelation={selectRoute}
+              draftObjectId={draftObjectId}
+              setSelectedNode={setSelectedNode}
+              setSelectedDomainRelation={setSelectedDomainRelation}
+              onSelect={onSelect}
+              onSelectDomain={onSelectDomain}
+              gesture={gesture}
+              actions={sceneActions}
+              onOpenDomain={navigateView}
+              onAddColumn={editable ? addColumnFromCard : undefined}
+              resizeEnabled={placementEditable && !allBusy && !stale}
+              onEdit={userId && editable ? openInline : undefined}
             />
-          )}
-          {drawn.nodes.map((node) => {
-            const table = base.tables?.find((table) => table.id === node.objectId);
-            const note = base.notes.find((note) => note.id === node.objectId);
-            const domain = base.domains.find((domain) => domain.id === node.objectId);
-            const unsavedDomain =
-              !!domain && !sharedSource.layout.nodes.some((raw) => raw.id === node.id);
-            const title = table
-              ? (mode === 'physical' ? table.physical.name : table.logical.name) ||
-                table.physical.name ||
-                table.logical.name
-              : (domain?.name ?? t('메모'));
-            return (
-              <article
-                key={node.id}
-                className={`native-erd-node ${table ? 'table' : note ? 'note' : 'domain'}`}
-                data-node-id={node.id}
-                data-object-id={node.objectId}
-                aria-label={title}
-                tabIndex={0}
-                data-selected={
-                  selectedNode === node.id ||
-                  (!!table && table.id === selectedTableId) ||
-                  (!!domain && domain.id === selectedDomainId)
-                }
-                data-preview={unsavedDomain || undefined}
-                style={{
-                  left: node.x,
-                  top: node.y,
-                  width: node.width,
-                  height: node.height,
-                  borderColor: nativeCardColor(base, node.objectId),
-                }}
-                onFocus={() => setSelectedNode(node.id)}
-                onClick={(event) => {
-                  setSelectedNode(node.id);
-                  if (table && !(event.target instanceof Element && event.target.closest('button')))
-                    onSelect(table.id);
-                  if (
-                    domain &&
-                    !(event.target instanceof Element && event.target.closest('button'))
-                  )
-                    onSelectDomain?.(domain.id);
-                }}
-                onPointerDown={(event) => {
-                  if (!unsavedDomain) begin(event, node);
-                }}
-                onPointerMove={(event) => {
-                  const active = gesture.current;
-                  if (active?.pointerId !== event.pointerId) return;
-                  preserve(
-                    active.node,
-                    active.node.x + (event.clientX - active.x) / camera.zoom,
-                    active.node.y + (event.clientY - active.y) / camera.zoom,
-                  );
-                }}
-                onPointerUp={(event) => {
-                  if (gesture.current?.pointerId !== event.pointerId) return;
-                  gesture.current = null;
-                  if (event.currentTarget.hasPointerCapture(event.pointerId))
-                    event.currentTarget.releasePointerCapture(event.pointerId);
-                  void savePlacement();
-                }}
-                onPointerCancel={() => {
-                  gesture.current = null;
-                }}
-                onKeyDown={(event) => {
-                  if (event.target !== event.currentTarget) return;
-                  const delta = {
-                    ArrowLeft: [-1, 0],
-                    ArrowRight: [1, 0],
-                    ArrowUp: [0, -1],
-                    ArrowDown: [0, 1],
-                  }[event.key];
-                  if (delta) {
-                    event.preventDefault();
-                    const step = event.shiftKey ? 40 : 10;
-                    preserve(node, node.x + delta[0]! * step, node.y + delta[1]! * step);
-                  }
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    if (draft && draft.values.objectId === node.objectId) void savePlacement();
-                    else if (table) onSelect(table.id);
-                    else if (domain) onSelectDomain?.(domain.id);
-                  }
-                }}
-              >
-                <header>
-                  {table ? (
-                    <button type="button" onClick={() => onSelect(table.id)}>
-                      {title || t('이름 없는 테이블')}
-                    </button>
-                  ) : domain ? (
-                    <button type="button" onClick={() => onSelectDomain?.(domain.id)}>
-                      {title}
-                    </button>
-                  ) : (
-                    <strong>{title}</strong>
-                  )}
-                </header>
-                {table && (
-                  <>
-                    {mode === 'physical' && table.physical.namespace.kind === 'postgresSchema' && (
-                      <small>{table.physical.namespace.name || 'public'}</small>
-                    )}
-                    <table>
-                      <NativeCanvasTableRows
-                        document={base}
-                        table={table}
-                        mode={mode}
-                        onSelect={onSelect}
-                      />
-                    </table>
-                  </>
-                )}
-                {note && <p>{note.text}</p>}
-                {domain && (
-                  <>
-                    <p>{domain.description}</p>
-                    <small>
-                      {t('테이블')}:{' '}
-                      {(base.tables ?? []).filter((table) => table.domainId === domain.id).length}
-                    </small>
-                    {unsavedDomain && <p>{t('저장된 배치가 없는 도메인입니다.')}</p>}
-                  </>
-                )}
-              </article>
-            );
-          })}
+          </div>
         </div>
+        {inlineTarget && userId && (
+          <NativeCanvasInlineEditor
+            key={`${userId}:${snapshot.project.id}`}
+            document={sharedSource}
+            target={inlineTarget}
+            context={inlineContext}
+            onClose={closeInline}
+          />
+        )}
+        {selectedRelationId && userId && (placementEditable || recoverySelection?.routeId) && (
+          <NativeRelationEditor
+            key={`${userId}:${snapshot.project.id}:${effectiveView}:${selectedRelationId}`}
+            document={base}
+            scene={drawn}
+            viewId={drawn.viewId}
+            relationId={selectedRelationId}
+            world={worldElement}
+            context={routeContext}
+            personalVersion={isPrivate ? personal?.version : undefined}
+            onClose={closeRoute}
+          />
+        )}
+        <div className="native-canvas-hint">
+          {t(tool === 'hand' ? '손 도구 · 드래그로 화면 이동' : '커서 도구 · 객체 선택과 이동')}
+        </div>
+        <NativeCameraControls
+          tool={tool}
+          onTool={setTool}
+          zoom={camera.zoom}
+          onZoom={(factor) => setCamera({ ...camera, zoom: zoomLimit(camera.zoom * factor) })}
+          onReset={() => setCamera({ ...camera, zoom: 1 })}
+          onFit={() => {
+            const x = drawn.nodes.length ? Math.min(...drawn.nodes.map((node) => node.x)) : 0;
+            const y = drawn.nodes.length ? Math.min(...drawn.nodes.map((node) => node.y)) : 0;
+            setCamera({ viewId: effectiveView, x: limit(24 - x), y: limit(24 - y), zoom: 1 });
+          }}
+        />
         {!drawn.nodes.length && (
           <p className="native-erd-empty">{t('이 화면에 표시할 노드가 없습니다.')}</p>
         )}
       </div>
-      <NativeCanvasPngExport
-        snapshot={snapshot}
-        {...(userId ? { userId } : {})}
-        viewId={effectiveView}
-        mode={mode}
-        sceneFor={nativeCanvasScene}
-        {...(personal ? { personal } : {})}
-        personalBusy={personalBusy}
-        writerState={privateQueueState}
-      />
-      <NativeDomainRelationEditor
-        document={sharedSource}
-        editable={editable}
-        {...(recoverySelection?.domainRelation
-          ? {
-              initialAction: recoverySelection.domainRelation.action,
-              ...(recoverySelection.domainRelation.id
-                ? { selectedId: recoverySelection.domainRelation.id }
-                : {}),
-            }
-          : selectedDomainRelation
-            ? { selectedId: selectedDomainRelation }
-            : {})}
-        {...(userId ? { context: { userId, snapshot, busy: allBusy || !!draft, onSave } } : {})}
-      />
-      <NativeCanvasStyleEditor
-        document={sharedSource}
-        editable={editable}
-        {...(selectedTableId ? { selectedTableId } : {})}
-        {...(selectedDomainId ? { selectedDomainId } : {})}
-        {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
-        {...(userId ? { context: { userId, snapshot, busy: allBusy || !!draft, onSave } } : {})}
-      />
-      <NativeClipboardMenu
-        key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
-        snapshot={snapshot}
-        {...(userId ? { userId } : {})}
-        editable={editable}
-        busy={allBusy || !!draft}
-        onSave={onSave}
-        {...(selectedTableId ? { selectedTableId } : {})}
-        destinationDomainId={
-          base.domains.some((domain) => domain.id === effectiveView) ? effectiveView : null
-        }
-      />
-      {recoveryWaiting && (
-        <p role="status">
-          {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
-        </p>
-      )}
-      {userId && (editable || personalEditable) && !recoveryWaiting && (
-        <NativeCanvasActions
-          key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}
-          document={base}
-          source={sharedSource}
-          snapshot={snapshot}
-          userId={userId}
-          viewId={effectiveView}
-          busy={allBusy || !!draft || (isPrivate && !personal)}
-          onSave={saveCanvasCommand}
-          onSharedSave={onSave}
-          sharedEditable={editable}
-          {...(recoverySelection?.action ? { initialSelection: recoverySelection.action } : {})}
-        />
-      )}
+      {inspectorHost === undefined
+        ? auxiliary
+        : inspectorHost
+          ? createPortal(auxiliary, inspectorHost)
+          : null}
     </section>
   );
 }
@@ -1656,182 +1975,5 @@ function NativeCanvasActions({
         )}
       </NativeCanvasInputForm>
     </details>
-  );
-}
-
-/** Canvas forms keep incomplete private/shared input without putting private commands in shared pending. */
-function NativeCanvasInputForm({
-  context,
-  title,
-  draftKey,
-  initial,
-  disabled,
-  build,
-  children,
-}: {
-  context: {
-    userId: string;
-    snapshot: ProjectDocumentState;
-    busy: boolean;
-    affectsSharedDocument: boolean;
-    onSave: (
-      commands: CanvasCommand[],
-      expectation: ReturnType<typeof expected>,
-      ref: DraftRef,
-    ) => Promise<boolean>;
-  };
-  title: string;
-  draftKey: string;
-  initial: Record<string, string>;
-  disabled: boolean;
-  build: (values: Record<string, string>) => CanvasCommand[];
-  children: (
-    values: Record<string, string>,
-    change: (field: string, value: string) => void,
-  ) => ReactNode;
-}) {
-  const { t } = useI18n();
-  const currentExpected = expected(context.snapshot);
-  const fresh = (): NativeEditorDraft => ({
-    userId: context.userId,
-    projectId: context.snapshot.project.id,
-    key: draftKey,
-    revision: nativeDurableId(),
-    expected: currentExpected,
-    before: { ...initial },
-    values: { ...initial },
-  });
-  const [loaded] = useState(() => {
-    try {
-      return {
-        draft:
-          typeof localStorage === 'undefined'
-            ? fresh()
-            : (loadNativeEditorDraft(context.userId, context.snapshot.project.id, draftKey) ??
-              fresh()),
-        error: '',
-      };
-    } catch (error) {
-      return { draft: fresh(), error: message(error) };
-    }
-  });
-  const [draft, setDraft] = useState(loaded.draft);
-  const latest = useRef(loaded.draft);
-  const [error, setError] = useState(loaded.error);
-  const [storageError, setStorageError] = useState(loaded.error);
-  const dirty = [...new Set([...Object.keys(draft.values), ...Object.keys(draft.before)])].some(
-    (key) => draft.values[key] !== draft.before[key],
-  );
-  useNativeExportBlocker(
-    context.userId,
-    context.snapshot.project.id,
-    context.affectsSharedDocument && dirty,
-    context.affectsSharedDocument && !!storageError,
-  );
-  const stale =
-    draft.expected.version !== currentExpected.version ||
-    draft.expected.sequence !== currentExpected.sequence ||
-    draft.expected.databaseRevision !== currentExpected.databaseRevision;
-  function preserve(next: NativeEditorDraft) {
-    latest.current = next;
-    setDraft(next);
-    try {
-      storeNativeEditorDraft(next);
-      setStorageError('');
-    } catch (error) {
-      setStorageError(message(error));
-    }
-  }
-  async function save() {
-    if (context.busy || stale || disabled || storageError) return;
-    const captured = latest.current;
-    try {
-      const commands = build(captured.values);
-      try {
-        storeNativeEditorDraft(captured);
-      } catch (error) {
-        setStorageError(message(error));
-        return;
-      }
-      if (await context.onSave(commands, captured.expected, captured)) {
-        discardNativeEditorDraft(context.userId, context.snapshot.project.id, captured);
-        if (latest.current.revision === captured.revision) {
-          const next = fresh();
-          latest.current = next;
-          setDraft(next);
-        }
-      }
-    } catch (error) {
-      setError(message(error));
-    }
-  }
-  return (
-    <form
-      className="native-property-editor"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-    >
-      <fieldset disabled={context.busy}>
-        <legend>{title}</legend>
-        {(error || storageError) && <p role="alert">{error || storageError}</p>}
-        {stale && (
-          <div role="status">
-            <p>{t('저장 기준이 변경되었습니다. 보관된 입력을 최신 내용과 비교해 주세요.')}</p>
-            <dl>
-              {Object.entries(initial)
-                .filter(([key]) => key !== 'id')
-                .map(([key, value]) => (
-                  <div key={key}>
-                    <dt>{key}</dt>
-                    <dd>{value}</dd>
-                  </div>
-                ))}
-            </dl>
-            <Button
-              disabled={draft.expected.databaseRevision !== currentExpected.databaseRevision}
-              onClick={() => {
-                try {
-                  preserve(
-                    rebaseNativeEditorDraft(draft, currentExpected, {
-                      ...initial,
-                      id: draft.before.id ?? initial.id!,
-                    }),
-                  );
-                } catch (error) {
-                  setError(message(error));
-                }
-              }}
-            >
-              {t('최신 저장 내용과 비교 후 수정')}
-            </Button>
-          </div>
-        )}
-        {children(draft.values, (field, value) => {
-          const current = latest.current;
-          preserve({
-            ...current,
-            revision: nativeDurableId(),
-            values: { ...current.values, [field]: value },
-          });
-        })}
-        <Button type="submit" disabled={context.busy || stale || disabled || !!storageError}>
-          {t('저장 요청')}
-        </Button>
-        <Button
-          disabled={!!storageError}
-          onClick={() => {
-            discardNativeEditorDraft(context.userId, context.snapshot.project.id, draft);
-            const next = fresh();
-            latest.current = next;
-            setDraft(next);
-            setError('');
-          }}
-        >
-          {t('입력 초기화')}
-        </Button>
-      </fieldset>
-    </form>
   );
 }

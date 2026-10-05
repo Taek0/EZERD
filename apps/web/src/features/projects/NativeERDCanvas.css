@@ -101,3 +101,476 @@
 .native-erd-actions {
   margin-top: 12px;
 }
+
+/* Match the original card language without moving camera state into the scene. */
+.native-erd-node.table {
+  border-radius: 8px;
+}
+.native-erd-node.table .native-table-header {
+  height: 50px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 0;
+}
+.native-table-header > button {
+  min-width: 0;
+  flex: 1;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.native-table-owner {
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+}
+.native-erd-node.table table {
+  table-layout: fixed;
+  font-size: 13px;
+}
+.native-erd-node.table thead {
+  height: 28px;
+  background: var(--canvas-bg, #f6f8fb);
+  color: var(--muted, #617087);
+}
+.native-erd-node.table thead th {
+  padding: 0 6px;
+  height: 28px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.native-erd-node.table td,
+.native-erd-node.table th {
+  box-sizing: border-box;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.native-erd-node.table tbody button,
+.native-type-cell > span,
+.native-comment-cell > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.native-erd-node.table tbody button {
+  width: 100%;
+  padding: 6px 0;
+  font: inherit;
+  text-align: left;
+}
+.native-key-marker {
+  color: var(--accent, #4169e1);
+  font-size: 11px;
+}
+.native-null-cell {
+  color: var(--muted, #617087);
+  font-size: 10px;
+}
+.native-comment-cell {
+  color: var(--muted, #617087);
+  font-size: 12px;
+}
+.native-erd-node.table tbody tr[data-pk='true'] {
+  background: #fff7df;
+}
+.native-erd-node.table tbody tr[data-fk='true'] {
+  background: #edf5ff;
+}
+.native-erd-node.table tbody tr[data-pk='true'][data-fk='true'] {
+  background: #f1f0ff;
+}
+.native-erd-node.table tbody tr:hover {
+  box-shadow: inset 0 0 0 1px var(--accent, #4169e1);
+}
+.native-erd-node button:focus-visible {
+  outline: 2px solid var(--accent, #4169e1);
+  outline-offset: -2px;
+  border-radius: 3px;
+}
+.native-table-lines {
+  color: var(--accent, #4169e1);
+}
+.native-table-lines.logical {
+  color: var(--muted, #617087);
+}
+.native-table-lines path {
+  stroke: currentColor;
+}
+.native-table-lines marker path {
+  fill: none;
+}
+.native-table-lines .native-relation-stroke {
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.native-table-relation rect {
+  fill: var(--panel, #fafbfc);
+  stroke: var(--line, #bdc8d8);
+  stroke-width: 1;
+}
+.native-table-lines text {
+  fill: var(--text, #26344a);
+  stroke: none;
+  font-size: 12px;
+}
+
+.native-table-schema {
+  display: block;
+  font-size: 10px;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.native-inline-editor {
+  position: absolute;
+  z-index: 6;
+  right: 12px;
+  top: 12px;
+  width: min(380px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel, white);
+  box-shadow: 0 8px 28px #0002;
+  touch-action: auto;
+}
+.native-inline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.native-inline-editor p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.native-inline-editor fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+}
+.native-inline-editor label {
+  display: grid;
+  gap: 4px;
+}
+.native-inline-editor input,
+.native-inline-editor select,
+.native-inline-editor textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+.native-table-lines .native-relation-hit {
+  stroke: transparent;
+  stroke-width: 16px;
+  fill: none;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.native-table-relation:hover .native-relation-stroke,
+.native-table-relation.selected .native-relation-stroke {
+  stroke-width: 3;
+}
+.native-table-relation:focus-visible {
+  outline: none;
+}
+.native-table-relation:focus-visible rect,
+.native-table-relation.selected rect {
+  stroke: var(--accent, #4169e1);
+  stroke-width: 2;
+}
+.native-route-controls {
+  position: absolute;
+  inset: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.native-route-controls .native-route-preview {
+  fill: none;
+  stroke: var(--accent, #4169e1);
+  stroke-width: 2;
+}
+.native-route-controls circle {
+  pointer-events: all;
+  cursor: move;
+  fill: var(--panel, white);
+  stroke: var(--accent, #4169e1);
+  stroke-width: 2;
+}
+.native-route-controls circle:focus-visible {
+  fill: #e0e7ff;
+  outline: none;
+  stroke-width: 3;
+}
+.native-route-controls circle[aria-disabled='true'] {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.native-editor-path {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.native-editor-path strong {
+  color: var(--text);
+}
+.native-canvas-toolbar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line, #d8dce4);
+  background: var(--canvas-bg, #f6f8fb);
+}
+.native-canvas-toolbar .actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.native-canvas-toolbar .toolbar-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.native-canvas-toolbar select {
+  max-width: 160px;
+  border: 1px solid var(--line, #d8dce4);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--panel, white);
+  color: inherit;
+}
+.native-canvas-toolbar [aria-pressed='true'] {
+  color: var(--accent, #4169e1);
+  background: var(--accent-soft, #eaf0ff);
+}
+.native-erd-surface {
+  background-color: var(--canvas-bg, #f6f8fb);
+  background-image: radial-gradient(var(--line, #c9d0dd) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.native-erd-surface.hand-tool {
+  cursor: grab;
+}
+.native-erd-surface.hand-tool:active {
+  cursor: grabbing;
+}
+.native-camera-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--line, #d8dce4);
+  border-radius: 12px;
+  background: var(--panel, #fff);
+  box-shadow: 0 4px 16px #0001;
+}
+.native-camera-controls .canvas-tool-picker {
+  display: flex;
+  gap: 2px;
+  padding-right: 4px;
+  border-right: 1px solid var(--line, #d8dce4);
+}
+.native-camera-controls [aria-pressed='true'] {
+  color: var(--accent, #4169e1);
+  background: var(--accent-soft, #eaf0ff);
+}
+.native-canvas-hint {
+  position: absolute;
+  left: 16px;
+  bottom: 20px;
+  z-index: 3;
+  pointer-events: none;
+  color: var(--muted, #617087);
+  font-size: 11px;
+}
+.native-canvas-settings {
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+@media (max-width: 600px) {
+  .native-canvas-hint {
+    display: none;
+  }
+  .native-camera-controls {
+    bottom: 8px;
+    right: 8px;
+  }
+}
+.native-erd-surface.hand-tool .native-erd-node,
+.native-erd-surface.hand-tool .native-erd-node button {
+  cursor: grab;
+}
+.native-domain-filter {
+  position: relative;
+  font-size: 12px;
+}
+.native-domain-filter summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px;
+  border: 1px solid var(--line, #d8dce4);
+  border-radius: 8px;
+  background: var(--panel, #fff);
+}
+.native-domain-filter summary.active {
+  color: var(--accent, #4169e1);
+}
+.native-domain-filter-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: 280px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--line, #d8dce4);
+  border-radius: 12px;
+  background: var(--panel, #fff);
+  box-shadow: 0 8px 24px #0002;
+}
+.native-domain-filter-popover label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+.native-domain-filter-popover p {
+  font-size: 11px;
+  color: var(--muted);
+}
+.native-erd-node.domain {
+  border-top: 5px solid var(--native-domain-color, var(--accent));
+  background: color-mix(in srgb, var(--native-domain-color, var(--accent)) 8%, #f5f7fa);
+}
+.native-erd-node.domain header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  border: 0;
+}
+.native-domain-overline {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.native-erd-node.domain header button {
+  font-size: 22px;
+  font-weight: 600;
+}
+.native-erd-node.domain .native-enter-domain {
+  display: block;
+  margin: 12px 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--accent);
+}
+.native-erd-node.note {
+  background: var(--native-note-color, var(--note-bg, #fff9d9));
+}
+
+.native-canvas-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.native-canvas-toolbar .native-editor-path {
+  border: 0;
+  padding: 0;
+  min-height: 0;
+  background: transparent;
+}
+.native-canvas-toolbar > .actions {
+  margin-left: auto;
+}
+
+.native-canvas-toolbar .ui-select-root {
+  width: 130px;
+  flex: 0 0 130px;
+}
+.native-canvas-toolbar .toolbar-group {
+  flex-wrap: nowrap;
+}
+.native-canvas-toolbar .ui-select {
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.native-table-footer {
+  min-height: 34px;
+  padding: 4px 8px;
+  background: var(--canvas-bg, #f6f8fb);
+}
+.native-table-footer button {
+  padding: 3px 6px;
+  box-shadow: var(--shadow-sm);
+  border-radius: 4px;
+}
+.native-table-footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.native-editor-inspector .column-drag-handle {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  font-size: 17px;
+  padding: 4px;
+}
+
+.native-erd-node .native-card-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 55%,
+    #94a3b8 56%,
+    #94a3b8 62%,
+    transparent 63%,
+    transparent 73%,
+    #94a3b8 74%,
+    #94a3b8 80%,
+    transparent 81%
+  );
+}
+.native-card-resize:disabled {
+  opacity: 0.3;
+  cursor: default;
+}

@@ -1,3 +1,5 @@
+import { nativeRouteKey } from './native-route-edit.js';
+import { nativeInlineKey } from './native-inline-edit.js';
 import type { NativeDesignDocument } from '@ezerd/model';
 import type { NativeDraftArchiveEntry } from './native-draft-archive.js';
 import type { NativeStructureAction } from './native-editor-structure.js';
@@ -76,6 +78,34 @@ export function nativeDraftRecoveryTarget(
     if (key === `format:column:${column.id}` && hasTable(column.tableId))
       return { kind: 'format', tableId: column.tableId, columnId: column.id, personal: false };
   }
+  for (const table of tables)
+    for (const column of [undefined, ...columns.filter((c) => c.tableId === table.id)])
+      for (const mode of ['physical', 'logical'] as const)
+        for (const field of ['name', 'comment', 'semanticType', 'required'] as const) {
+          if ((field === 'semanticType' || field === 'required') && (!column || mode !== 'logical'))
+            continue;
+          const target = {
+            tableId: table.id,
+            ...(column ? { columnId: column.id } : {}),
+            mode,
+            field,
+          };
+          if (key === nativeInlineKey(target))
+            return {
+              kind: 'canvas',
+              selection: { viewId: '__tables__', inline: target },
+              personal: false,
+            };
+        }
+  for (const viewId of views)
+    for (const relation of doc.tableRelations ?? []) {
+      if (key === nativeRouteKey(viewId, relation.id))
+        return {
+          kind: 'canvas',
+          selection: { viewId, routeId: relation.id },
+          personal: privateView(viewId),
+        };
+    }
   if (key === 'create:domain:project')
     return freshCreation() ? { kind: 'domain', action: 'create', personal: false } : null;
   for (const domain of doc.domains) {
