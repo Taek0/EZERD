@@ -45,6 +45,7 @@ import { nativeEditorPolicy } from './native-editor-policy.js';
 import {
   clampInspectorWidth,
   inspectorBounds,
+  inspectorLayoutWidth,
   readInspectorWidth,
   shouldStackInspector,
 } from '../canvas/inspector-state.js';
@@ -199,7 +200,7 @@ export function NativeProjectView({
     }
   });
   const workspaceRef = useRef<HTMLDivElement>(null);
-  const [workspaceWidth, setWorkspaceWidth] = useState(1100);
+  const [workspaceWidth, setWorkspaceWidth] = useState(inspectorLayoutWidth(1100));
   const [resizingInspector, setResizingInspector] = useState(false);
   const [canvasScope, setCanvasScope] = useState<NativeCanvasScope | null>(null);
   const [requestedView, setRequestedView] = useState<{ id: string; nonce: number } | null>(null);
@@ -214,7 +215,7 @@ export function NativeProjectView({
     const element = workspaceRef.current;
     if (!element || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setWorkspaceWidth(entry.contentRect.width);
+      if (entry) setWorkspaceWidth(inspectorLayoutWidth(entry.contentRect.width));
     });
     observer.observe(element);
     return () => observer.disconnect();

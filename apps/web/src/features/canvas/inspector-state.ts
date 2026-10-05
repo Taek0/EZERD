@@ -1,5 +1,13 @@
+const maxInspectorWidth = 520;
+const minCanvasWidth = 420;
+
+/** Larger widths produce the same bounds and stacking decision. */
+export function inspectorLayoutWidth(workspaceWidth: number) {
+  return Math.min(workspaceWidth, maxInspectorWidth + minCanvasWidth);
+}
+
 export function inspectorBounds(workspaceWidth: number) {
-  const max = Math.max(280, Math.min(520, workspaceWidth - 420));
+  const max = Math.max(280, Math.min(maxInspectorWidth, workspaceWidth - minCanvasWidth));
   return { min: 280, max };
 }
 export function shouldStackInspector(workspaceWidth: number) {
