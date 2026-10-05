@@ -1,3 +1,4 @@
+import type { NativeInlineTarget } from './NativeCanvasInlineEditor.js';
 import { nativeTableCanvasRows } from './native-canvas-style.js';
 import {
   nativeDefaultDisplay,
@@ -11,11 +12,13 @@ export function NativeCanvasTableRows({
   table,
   mode,
   onSelect,
+  onEdit,
 }: {
   document: NativeDesignDocument;
   table: NativeTable;
   mode: 'physical' | 'logical';
   onSelect: (tableId: string, columnId?: string) => void;
+  onEdit?: ((target: NativeInlineTarget) => void) | undefined;
 }) {
   const { t } = useI18n();
   const showNullable = table.canvasDisplay?.showNullable !== false;
@@ -53,6 +56,16 @@ export function NativeCanvasTableRows({
                 type="button"
                 title={row.name}
                 onClick={() => onSelect(table.id, row.column.id)}
+                onDoubleClick={() =>
+                  onEdit?.({ tableId: table.id, columnId: row.column.id, mode, field: 'name' })
+                }
+                onKeyDown={(event) => {
+                  if (event.key === 'F2' && onEdit) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onEdit({ tableId: table.id, columnId: row.column.id, mode, field: 'name' });
+                  }
+                }}
               >
                 {row.name}
               </button>
@@ -65,12 +78,62 @@ export function NativeCanvasTableRows({
                   : row.column.logical.definition
               }
             >
-              <span>{row.type}</span>
+              {onEdit ? (
+                <button
+                  type="button"
+                  aria-label={`${row.name} ${t('타입')}`}
+                  onClick={() =>
+                    onEdit({
+                      tableId: table.id,
+                      columnId: row.column.id,
+                      mode,
+                      field: mode === 'physical' ? 'format' : 'semanticType',
+                    })
+                  }
+                >
+                  {row.type || '—'}
+                </button>
+              ) : (
+                <span>{row.type}</span>
+              )}
             </td>
-            {showNullable && <td className="native-null-cell">{t(row.nullable)}</td>}
+            {showNullable && (
+              <td className="native-null-cell">
+                {onEdit ? (
+                  <button
+                    type="button"
+                    aria-label={`${row.name} ${mode === 'physical' ? 'NULL' : t('필수')}`}
+                    onClick={() =>
+                      onEdit({
+                        tableId: table.id,
+                        columnId: row.column.id,
+                        mode,
+                        field: mode === 'physical' ? 'format' : 'required',
+                      })
+                    }
+                  >
+                    {t(row.nullable) || '—'}
+                  </button>
+                ) : (
+                  t(row.nullable)
+                )}
+              </td>
+            )}
             {showComment && (
               <td className="native-comment-cell" title={row.comment}>
-                <span>{row.comment || '—'}</span>
+                {onEdit ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onEdit({ tableId: table.id, columnId: row.column.id, mode, field: 'comment' })
+                    }
+                    aria-label={`${row.name} ${t('설명')}`}
+                  >
+                    {row.comment || '—'}
+                  </button>
+                ) : (
+                  <span>{row.comment || '—'}</span>
+                )}
               </td>
             )}
           </tr>
