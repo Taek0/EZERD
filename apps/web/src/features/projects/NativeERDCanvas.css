@@ -497,3 +497,20 @@
 .native-erd-node.note {
   background: var(--native-note-color, var(--note-bg, #fff9d9));
 }
+
+.native-canvas-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.native-canvas-toolbar .native-editor-path {
+  border: 0;
+  padding: 0;
+  min-height: 0;
+  background: transparent;
+}
+.native-canvas-toolbar > .actions {
+  margin-left: auto;
+}

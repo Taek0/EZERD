@@ -335,3 +335,20 @@
       visibility 220ms ease;
   }
 }
+
+.native-review-workspace {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.native-review-workspace > .native-editor-workspace {
+  min-width: 0;
+}
+.native-erd-surface.pin-mode {
+  cursor: crosshair;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .native-scene-entry {
+    animation: domain-enter 240ms ease-out;
+  }
+}

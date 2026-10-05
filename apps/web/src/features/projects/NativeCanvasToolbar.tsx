@@ -1,8 +1,11 @@
 import { NativeDomainFilter, type NativeDomainFilterValue } from './NativeDomainFilter.js';
-import { memo } from 'react';
-import { Button, IconButton } from '../../components/ui/index.js';
+import { memo, type ReactNode } from 'react';
+import { Button, IconButton, Select } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 registerTranslations({
+  '← 도메인 맵으로': '← Domain map',
+  '＋ 텍스트': '＋ Text',
+  '더 보기': 'More',
   '전체 테이블': 'All tables',
   '도메인 맵': 'Domain map',
   '보기 선택': 'Choose view',
@@ -38,7 +41,9 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   onMode,
   inspectorOpen,
   onToggleInspector,
+  exportControl,
 }: {
+  exportControl?: ReactNode;
   viewId: string;
   views: { id: string; name: string }[];
   onView: (id: string) => void;
@@ -58,93 +63,77 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
 }) {
   const { t } = useI18n();
   return (
-    <>
+    <div className="canvas-toolbar native-canvas-toolbar" data-view-id={viewId}>
       <nav className="editor-path native-editor-path" aria-label={t('현재 위치')}>
-        <span aria-hidden="true">/</span>
+        {viewId !== 'overview' && (
+          <Button disabled={disabled} onClick={() => onView('overview')}>
+            {t('← 도메인 맵으로')}
+          </Button>
+        )}
         <strong>{views.find((view) => view.id === viewId)?.name ?? t('전체 테이블')}</strong>
       </nav>
-      <div className="canvas-toolbar native-canvas-toolbar">
-        <div className="actions">
-          {onCreate && (
-            <div className="toolbar-group" role="group" aria-label={t('편집 도구')}>
-              <Button
-                disabled={!editable || disabled}
-                onClick={() => onCreate(viewId === 'overview' ? 'domain' : 'table')}
-              >
-                {t(viewId === 'overview' ? '＋ 도메인' : '＋ 테이블')}
-              </Button>
-              <Button disabled={!noteEditable || disabled} onClick={onNote}>
-                {t('＋ 메모')}
-              </Button>
-            </div>
-          )}
-          <div className="toolbar-group" role="group" aria-label={t('보기와 내보내기')}>
+      <div className="actions">
+        {onCreate && (
+          <div className="toolbar-group" role="group" aria-label={t('편집 도구')}>
             <Button
-              aria-pressed={viewId === '__tables__'}
-              disabled={disabled}
-              onClick={() => onView('__tables__')}
+              disabled={!editable || disabled}
+              onClick={() => onCreate(viewId === 'overview' ? 'domain' : 'table')}
             >
-              {t('전체 테이블')}
+              {t(viewId === 'overview' ? '＋ 도메인' : '＋ 테이블')}
             </Button>
-            <Button
-              aria-pressed={viewId === 'overview'}
-              disabled={disabled}
-              onClick={() => onView('overview')}
-            >
-              {t('도메인 맵')}
+            <Button disabled={!noteEditable || disabled} onClick={onNote}>
+              {t('＋ 텍스트')}
             </Button>
-            {domains && onFilter && (
-              <NativeDomainFilter
-                domains={domains}
-                value={filter ?? null}
-                onChange={onFilter}
-                disabled={disabled}
-              />
-            )}
-            <select
-              aria-label={t('화면')}
-              value={viewId}
-              disabled={disabled}
-              onChange={(e) => onView(e.target.value)}
-            >
-              {views.map((view) => (
-                <option key={view.id} value={view.id}>
-                  {view.name}
-                </option>
-              ))}
-            </select>
-            {onCreate && (
-              <Button onClick={() => onCreate('enum')} disabled={!editable || disabled}>
-                ENUM
-              </Button>
-            )}
-            {onTools && <Button onClick={onTools}>{t('공유')} / PNG</Button>}
           </div>
-          {onMode && (
-            <div className="toolbar-group" role="group" aria-label={t('모델 보기')}>
-              <Button aria-pressed={mode === 'physical'} onClick={() => onMode('physical')}>
-                {t('물리')}
-              </Button>
-              <Button aria-pressed={mode === 'logical'} onClick={() => onMode('logical')}>
-                {t('논리')}
-              </Button>
-            </div>
+        )}
+        <div className="toolbar-group" role="group" aria-label={t('보기와 내보내기')}>
+          {domains && onFilter && (
+            <NativeDomainFilter
+              domains={domains}
+              value={filter ?? null}
+              onChange={onFilter}
+              disabled={disabled}
+            />
           )}
-          {onToggleInspector && (
-            <IconButton
-              aria-label={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
-              aria-pressed={inspectorOpen}
-              onClick={onToggleInspector}
-            >
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <rect x="2" y="3" width="16" height="14" rx="3" stroke="currentColor" />
-                <path d="M12 3v14" stroke="currentColor" />
-              </svg>
-            </IconButton>
+          <Select aria-label={t('화면')} value={viewId} disabled={disabled} onValueChange={onView}>
+            {views.map((view) => (
+              <option key={view.id} value={view.id}>
+                {view.name}
+              </option>
+            ))}
+          </Select>
+          {onCreate && (
+            <Button onClick={() => onCreate('enum')} disabled={!editable || disabled}>
+              ENUM
+            </Button>
           )}
+          {exportControl}
+          {onTools && <Button onClick={onTools}>{t('더 보기')}</Button>}
         </div>
+        {onMode && (
+          <div className="toolbar-group" role="group" aria-label={t('모델 보기')}>
+            <Button aria-pressed={mode === 'physical'} onClick={() => onMode('physical')}>
+              {t('물리')}
+            </Button>
+            <Button aria-pressed={mode === 'logical'} onClick={() => onMode('logical')}>
+              {t('논리')}
+            </Button>
+          </div>
+        )}
+        {onToggleInspector && (
+          <IconButton
+            aria-label={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
+            aria-pressed={inspectorOpen}
+            onClick={onToggleInspector}
+          >
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <rect x="2" y="3" width="16" height="14" rx="3" stroke="currentColor" />
+              <path d="M12 3v14" stroke="currentColor" />
+            </svg>
+          </IconButton>
+        )}
       </div>
-    </>
+    </div>
   );
 });
 export function NativeCameraControls({
