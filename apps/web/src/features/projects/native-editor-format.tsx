@@ -127,7 +127,7 @@ export function nativeFormatInitial(
       ...metadata,
       color: table.color ?? '',
       showNullable: yes(table.canvasDisplay?.showNullable ?? true),
-      showComment: yes(table.canvasDisplay?.showComment ?? false),
+      showComment: yes(table.canvasDisplay?.showComment ?? true),
       namespace:
         table.physical.namespace.kind === 'postgresSchema' ? table.physical.namespace.name : '',
       charset: options.database === 'mysql' ? (options.charset ?? '') : '',
@@ -651,7 +651,7 @@ export function NativeFormatEditor({
               value={
                 values.color ||
                 document.domains.find((domain) => domain.id === table.domainId)?.color ||
-                '#2f8cff'
+                '#8993a3'
               }
               disabled={context.busy}
               onChange={(next) => change('color', next)}

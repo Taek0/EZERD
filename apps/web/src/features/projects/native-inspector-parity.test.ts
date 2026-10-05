@@ -61,8 +61,9 @@ describe('native inspector metadata and contextual forms', () => {
     },
   );
   it('uses the canvas style command for color reset and merges only edited display flags', () => {
-    const f = advancedFixture(),
-      before = nativeFormatInitial(f.table);
+    const f = advancedFixture();
+    f.table.canvasDisplay = { showComment: false };
+    const before = nativeFormatInitial(f.table);
     before.color = '#123456';
     const commands = nativeFormatCommands(
       f.document,

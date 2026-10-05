@@ -32,6 +32,7 @@ vi.mock('react', async () => {
 vi.mock('./native-export-state.js', () => ({
   useNativeDurableState: () => harness.state,
   useNativeExportBlocker: () => undefined,
+  useNativeExportBlocked: () => false,
 }));
 vi.mock('./NativeERDCanvas.js', async () => {
   const actual =

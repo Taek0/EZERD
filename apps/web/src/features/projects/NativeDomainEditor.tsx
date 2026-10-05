@@ -509,7 +509,7 @@ function NativeDomainForm({
                 {field('name', '이름')}
                 {field('description', '설명', true)}
                 <DomainColorPicker
-                  value={values.color || '#2f8cff'}
+                  value={values.color || '#8993a3'}
                   onChange={(color) => change('color', color)}
                   disabled={context.busy}
                   onReset={() => change('color', '')}

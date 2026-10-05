@@ -31,12 +31,16 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
   const { t } = useI18n();
   const [draft, setDraft] = useState<NativeDomainFilterValue>({ domainIds: [], unassigned: true });
   const [open, setOpen] = useState(false);
+  const [selectAll, setSelectAll] = useState(value === null);
   return (
     <DialogTrigger
       isOpen={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) setDraft(value ?? { domainIds: domains.map((d) => d.id), unassigned: true });
+        if (next) {
+          setDraft(value ?? { domainIds: domains.map((d) => d.id), unassigned: true });
+          setSelectAll(value === null);
+        }
       }}
     >
       <Button
@@ -56,24 +60,30 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
         {t('도메인 필터')}
         {value ? ` · ${value.domainIds.length + Number(value.unassigned)}` : ''}
       </Button>
-      <UntitledPopover className="domain-view-popover" placement="bottom end" offset={8}>
+      <UntitledPopover
+        className="domain-view-popover"
+        placement="bottom start"
+        shouldFlip={false}
+        offset={8}
+      >
         <Dialog aria-label={t('도메인 필터')} className="combined-view-picker">
           <strong>{t('도메인 필터')}</strong>
           <p className="panel-note">
-            {t('필터는 표시만 바꿉니다. PNG는 저장된 화면을 내보냅니다.')}
+            {t('필터는 내 화면에만 적용됩니다. 테이블 위치와 편집 내용은 모두 공유됩니다.')}
           </p>
           <div className="combined-domain-options">
             <label className="combined-select-all">
               <Checkbox
                 disabled={disabled}
                 aria-label={t('전체 테이블 표시')}
-                checked={draft.domainIds.length === domains.length && draft.unassigned}
-                onChange={(e) =>
+                checked={selectAll}
+                onChange={(e) => {
+                  setSelectAll(e.target.checked);
                   setDraft({
                     domainIds: e.target.checked ? domains.map((d) => d.id) : [],
                     unassigned: e.target.checked,
-                  })
-                }
+                  });
+                }}
               />
               {t('전체 테이블 표시')}
             </label>
@@ -83,14 +93,15 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
                   disabled={disabled}
                   aria-label={d.name}
                   checked={draft.domainIds.includes(d.id)}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    setSelectAll(false);
                     setDraft((prev) => ({
                       ...prev,
                       domainIds: e.target.checked
                         ? [...prev.domainIds, d.id]
                         : prev.domainIds.filter((id) => id !== d.id),
-                    }))
-                  }
+                    }));
+                  }}
                 />
                 <span style={{ color: d.color ?? '#8993a3' }}>●</span>
                 {d.name}
@@ -101,7 +112,10 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
                 disabled={disabled}
                 aria-label={t('미지정')}
                 checked={draft.unassigned}
-                onChange={(e) => setDraft((prev) => ({ ...prev, unassigned: e.target.checked }))}
+                onChange={(e) => {
+                  setSelectAll(false);
+                  setDraft((prev) => ({ ...prev, unassigned: e.target.checked }));
+                }}
               />
               {t('미지정')}
             </label>
@@ -111,9 +125,7 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
               variant="primary"
               disabled={disabled}
               onClick={() => {
-                onChange(
-                  draft.domainIds.length === domains.length && draft.unassigned ? null : draft,
-                );
+                onChange(selectAll ? null : draft);
                 setOpen(false);
               }}
             >

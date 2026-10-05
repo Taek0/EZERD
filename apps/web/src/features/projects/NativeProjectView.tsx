@@ -22,7 +22,7 @@ import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
 import { NativeDomainEditor } from './NativeDomainEditor.js';
-import { useNativeDurableState } from './native-export-state.js';
+import { useNativeDurableState, useNativeExportBlocked } from './native-export-state.js';
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
@@ -42,8 +42,29 @@ import type { NativeDraftArchiveEntry } from './native-draft-archive.js';
 import { nativeDraftRecoveryTarget } from './native-draft-recovery-target.js';
 import { NativeAdvancedEditor } from './NativeAdvancedEditor.js';
 import { nativeEditorPolicy } from './native-editor-policy.js';
+import {
+  clampInspectorWidth,
+  inspectorBounds,
+  readInspectorWidth,
+  shouldStackInspector,
+} from '../canvas/inspector-state.js';
+import {
+  nativeInspectorMatches,
+  nativeInspectorOutline,
+  nativeInspectorLocation,
+  nativeInspectorSaveStatus,
+  type NativeCanvasScope,
+} from './native-inspector-state.js';
+import { nativeTableCanvasRows } from './native-canvas-style.js';
+import { NativeTableRelationInspector } from './NativeTableRelationInspector.js';
+import { NativeEnumDialog } from './NativeEnumDialog.js';
 
 registerTranslations({
+  '◌ 저장 확인 중…': '◌ Confirming save…',
+  '○ 오프라인': '○ Offline',
+  '! 확인 필요': '! Action needed',
+  '○ 보관된 입력': '○ Preserved input',
+  '✓ 저장 기준 확인됨': '✓ Saved baseline confirmed',
   '설계 조회': 'Design overview',
   속성: 'Properties',
   도메인: 'Domains',
@@ -109,6 +130,8 @@ export function NativeProjectView({
   canEdit = false,
   canPersonalEdit = canEdit,
   projectActions,
+  workspaceStatus,
+  workspaceRole,
 }: {
   entry: Extract<ProjectEntry, { kind: 'native' }>;
   onLeave: () => void;
@@ -118,7 +141,12 @@ export function NativeProjectView({
   userId?: string;
   canEdit?: boolean;
   canPersonalEdit?: boolean;
-  projectActions?: (focus: (id: string) => void) => ReactNode;
+  projectActions?: (
+    focus: (id: string) => void,
+    png?: { run: () => Promise<void>; disabled: boolean; busy: boolean },
+  ) => ReactNode;
+  workspaceStatus?: 'active' | 'archived';
+  workspaceRole?: 'owner' | 'admin' | 'editor' | 'reviewer' | 'viewer';
 }) {
   const { t } = useI18n();
   const { snapshot, document: doc } = entry;
@@ -132,6 +160,8 @@ export function NativeProjectView({
   const [selected, setSelected] = useState<string | null>(doc?.tables?.[0]?.id ?? null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
+  const [selectedTableRelation, setSelectedTableRelation] = useState<string | null>(null);
+  const [domainRelationCreation, setDomainRelationCreation] = useState<string | null>(null);
   const [enumOpen, setEnumOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [editingConstraint, setEditingConstraint] = useState<string | null>(null);
@@ -151,11 +181,70 @@ export function NativeProjectView({
     entry: NativeDraftArchiveEntry;
     generation: number;
   } | null>(null);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(() => {
+    try {
+      return localStorage.getItem('ezerd.inspector') !== 'hidden';
+    } catch {
+      return true;
+    }
+  });
   const [inspectorTab, setInspectorTab] = useState<'properties' | 'tables' | 'domains' | 'tools'>(
     'properties',
   );
-  const [inspectorWidth, setInspectorWidth] = useState(320);
+  const [inspectorWidth, setInspectorWidth] = useState(() => {
+    try {
+      return readInspectorWidth(localStorage.getItem('ezerd.inspectorWidth'));
+    } catch {
+      return 320;
+    }
+  });
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [workspaceWidth, setWorkspaceWidth] = useState(1100);
+  const [resizingInspector, setResizingInspector] = useState(false);
+  const [canvasScope, setCanvasScope] = useState<NativeCanvasScope | null>(null);
+  const [requestedView, setRequestedView] = useState<{ id: string; nonce: number } | null>(null);
+  const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
+  const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
+  const [noteSelectionHost, setNoteSelectionHost] = useState<HTMLDivElement | null>(null);
+  const [domainSelectionHost, setDomainSelectionHost] = useState<HTMLDivElement | null>(null);
+  const [offline, setOffline] = useState(
+    () => typeof navigator !== 'undefined' && navigator.onLine === false,
+  );
+  useEffect(() => {
+    const element = workspaceRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWorkspaceWidth(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [!!doc]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('ezerd.inspector', inspectorOpen ? 'visible' : 'hidden');
+    } catch {
+      /* Optional preference. */
+    }
+  }, [inspectorOpen]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('ezerd.inspectorWidth', String(inspectorWidth));
+    } catch {
+      /* Optional preference. */
+    }
+  }, [inspectorWidth]);
+  useEffect(() => {
+    const update = () => setOffline(navigator.onLine === false);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  const panelWidth = clampInspectorWidth(inspectorWidth, workspaceWidth),
+    panelBounds = inspectorBounds(workspaceWidth),
+    stackedInspector = shouldStackInspector(workspaceWidth);
   const draggingColumn = useRef<string | null>(null);
   const [columnDrag, setColumnDrag] = useState<string | null>(null);
   const [columnDrop, setColumnDrop] = useState<string | null>(null);
@@ -193,7 +282,10 @@ export function NativeProjectView({
     leaveRecoveredSelection();
     setInspectorOpen(true);
     setDomainAction(null);
-    if (kind === 'enum') setEnumOpen(true);
+    if (kind === 'enum') {
+      setEnumOpen(true);
+      return;
+    }
     if (kind === 'domain') {
       setSelectedDomain(null);
       setDomainCreation((value) => value + 1);
@@ -208,6 +300,17 @@ export function NativeProjectView({
     target: string,
     tableId?: string,
   ) {
+    if (action === 'patch') {
+      try {
+        const [collection, id] = JSON.parse(target) as [string, string];
+        if (collection === 'tableRelations') {
+          requestAction('tableRelation', id);
+          return;
+        }
+      } catch {
+        /* A malformed target remains subject to the form's object lookup. */
+      }
+    }
     leaveRecoveredSelection();
     setInspectorOpen(true);
     setInspectorTab('properties');
@@ -225,11 +328,37 @@ export function NativeProjectView({
       return;
     }
     if (action === 'domainRelation') {
+      if (!target && values?.sourceDomainId) {
+        requestAction('createDomainRelation', values.sourceDomainId);
+        return;
+      }
       leaveRecoveredSelection();
       setInspectorOpen(true);
       setSelectedDomain(null);
+      setSelected(null);
+      setSelectedTableRelation(null);
       setSelectedDomainRelation(target);
+      setDomainRelationCreation(null);
       setInspectorTab('domains');
+      return;
+    }
+    if (action === 'tableRelation') {
+      leaveRecoveredSelection();
+      setInspectorOpen(true);
+      setInspectorTab('properties');
+      setSelectedTableRelation(target);
+      setSelectedDomainRelation(null);
+      setSelected(null);
+      setSelectedDomain(null);
+      setCreateRequest(null);
+      return;
+    }
+    if (action === 'createDomainRelation') {
+      leaveRecoveredSelection();
+      setInspectorOpen(true);
+      setInspectorTab('domains');
+      setSelectedDomainRelation(null);
+      setDomainRelationCreation(target);
       return;
     }
     if (action === 'tools') {
@@ -270,6 +399,7 @@ export function NativeProjectView({
     }));
   }
   const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
+  const dirty = useNativeExportBlocked(userId ?? '', snapshot.project.id);
   const queueBlocked = !!userId && durableState !== 'empty';
   const recoveryBusy = saving || busy || !!pending || pendingBlocked;
   const editorBusy = recoveryBusy || queueBlocked;
@@ -490,16 +620,24 @@ export function NativeProjectView({
     }
   }
   const visible = (scope: string) => scope === 'both' || scope === mode;
-  const tables = (doc?.tables ?? []).filter(
+  const outline = doc
+    ? nativeInspectorOutline(doc, mode, canvasScope, canvasView)
+    : { tables: [], relations: [] };
+  const tables = outline.tables.filter(
     (table) =>
       visible(table.scope) &&
-      (!doc?.domains.some((item) => item.id === canvasView) || table.domainId === canvasView) &&
       (domain === '*' || (domain === '' ? table.domainId === null : table.domainId === domain)) &&
-      `${table.logical.name} ${table.physical.name}`
-        .toLocaleLowerCase()
-        .includes(search.toLocaleLowerCase()),
+      nativeInspectorMatches(search, table.logical.name, table.physical.name),
   );
   const selectedTable = doc?.tables?.find((table) => table.id === selected && visible(table.scope));
+  const selectedCanvasNode = canvasScope?.selectedNode ?? null;
+  const selectedNote = (reviewDocument ?? doc)?.notes.find(
+    (note) => note.id === canvasScope?.selectedObjectId,
+  );
+  const selectedRelation = doc?.tableRelations?.find(
+    (relation) => relation.id === selectedTableRelation,
+  );
+  const selectedRows = doc && selectedTable ? nativeTableCanvasRows(doc, selectedTable, mode) : [];
   const tableName = (id: string) => {
     const table = doc?.tables?.find((table) => table.id === id);
     return (
@@ -516,14 +654,152 @@ export function NativeProjectView({
     doc?.columns?.find((column) => column.id === id)?.physical.name ||
     doc?.columns?.find((column) => column.id === id)?.logical.name ||
     id;
-  const matches = (...values: (string | undefined)[]) =>
-    values.some((value) => value?.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
-  const currentViewName =
-    canvasView === 'overview'
-      ? t('도메인 맵')
-      : (doc?.domains.find((item) => item.id === canvasView)?.name ??
-        doc?.views?.find((view) => view.id === canvasView)?.name ??
-        t('전체 테이블'));
+  const matches = (...values: (string | undefined)[]) => nativeInspectorMatches(search, ...values);
+  const filteredDomainRelations = (doc?.domainRelations ?? []).filter((relation) =>
+    matches(
+      relation.name,
+      relation.description,
+      doc?.domains.find((item) => item.id === relation.sourceDomainId)?.name,
+      doc?.domains.find((item) => item.id === relation.targetDomainId)?.name,
+    ),
+  );
+  const filteredTableRelations = outline.relations.filter((relation) =>
+    matches(
+      relation.logical.name,
+      relation.logical.description,
+      relation.physical?.name,
+      tableName(relation.sourceTableId),
+      tableName(relation.targetTableId),
+    ),
+  );
+  const currentViewName = doc
+    ? nativeInspectorLocation(
+        doc,
+        canvasView,
+        canvasScope?.filter ?? null,
+        t('전체 테이블'),
+        t('도메인 맵'),
+        t('미지정'),
+        t('선택 없음'),
+      )
+    : t('전체 테이블');
+  function openDomain(id: string) {
+    leaveRecoveredSelection();
+    setSearch('');
+    setDomain('*');
+    setSelectedDomain(null);
+    setSelectedDomainRelation(null);
+    setSelectedTableRelation(null);
+    setSelected(null);
+    setRequestedView((previous) => ({ id, nonce: (previous?.nonce ?? 0) + 1 }));
+  }
+  function receiveCanvasScope(scope: NativeCanvasScope) {
+    setCanvasScope(scope);
+    setCanvasView(scope.viewId);
+    // Scope refreshes during saves/layout are not new picks; retain an explicitly opened relation.
+    if (
+      canvasScope &&
+      scope.selectedObjectId === canvasScope.selectedObjectId &&
+      scope.viewId === canvasScope.viewId &&
+      (!scope.selectedObjectId ||
+        scope.visibleObjectIds.includes(scope.selectedObjectId) ||
+        doc?.tableRelations?.some((relation) => relation.id === scope.selectedObjectId) ||
+        doc?.domainRelations.some((relation) => relation.id === scope.selectedObjectId))
+    )
+      return;
+    const id =
+      scope.selectedObjectId &&
+      (scope.visibleObjectIds.includes(scope.selectedObjectId) ||
+        doc?.tableRelations?.some((relation) => relation.id === scope.selectedObjectId) ||
+        doc?.domainRelations.some((relation) => relation.id === scope.selectedObjectId))
+        ? scope.selectedObjectId
+        : null;
+    if (id && (reviewDocument ?? doc)?.notes.some((note) => note.id === id)) {
+      setSelected(null);
+      setSelectedDomain(null);
+      setSelectedTableRelation(null);
+      setSelectedDomainRelation(null);
+      setEditingColumn(null);
+      setInspectorTab('properties');
+      setInspectorOpen(true);
+      return;
+    }
+    if (id && doc?.tableRelations?.some((relation) => relation.id === id)) {
+      setSelectedTableRelation(id);
+      setSelected(null);
+      setSelectedDomain(null);
+      setInspectorTab('properties');
+      setInspectorOpen(true);
+      return;
+    }
+    if (id && doc?.domainRelations.some((relation) => relation.id === id)) {
+      setSelectedDomainRelation(id);
+      setSelectedDomain(null);
+      setSelected(null);
+      setInspectorTab('domains');
+      setInspectorOpen(true);
+      return;
+    }
+    if (id && doc?.domains.some((domain) => domain.id === id)) {
+      setSelectedDomain(id);
+      setSelected(null);
+      setSelectedTableRelation(null);
+      setSelectedDomainRelation(null);
+      return;
+    }
+    if (id && doc?.tables?.some((table) => table.id === id)) {
+      setSelected(id);
+      setSelectedDomain(null);
+      setSelectedTableRelation(null);
+      setSelectedDomainRelation(null);
+      return;
+    }
+    if (!id) {
+      setSelected(null);
+      setSelectedDomain(null);
+      setSelectedTableRelation(null);
+      setSelectedDomainRelation(null);
+      setEditingColumn(null);
+    }
+  }
+  const saveStatus = nativeInspectorSaveStatus({
+    offline,
+    saving,
+    initializing: pendingBlocked || busy,
+    pending: !!pending,
+    durable: userId ? durableState : 'empty',
+    dirty,
+    error: !!saveError || !doc,
+  });
+  const panelToggle = userId ? (
+    <div className="toolbar-group panel-toggles" role="group" aria-label={t('협업과 속성 패널')}>
+      <IconButton
+        aria-label={t(commentsOpen ? '핀 패널 숨기기' : '핀 패널 열기')}
+        tooltip={t(commentsOpen ? '핀 패널 숨기기' : '핀 패널 열기')}
+        aria-pressed={commentsOpen}
+        aria-expanded={commentsOpen}
+        onClick={() => {
+          setCommentsOpen((value) => !value);
+          setPinMode(false);
+          setDraftPin(null);
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <rect x="3" y="4" width="14" height="9" rx="2.5" />
+          <path d="M7 13v3.2L10.6 13" />
+        </svg>
+      </IconButton>
+      <IconButton
+        aria-label={t(pinMode ? '핀 추가 취소' : '핀 추가')}
+        tooltip={t(pinMode ? '핀 추가 취소' : '핀 추가')}
+        disabled={!canPersonalEdit || snapshot.project.status !== 'active'}
+        aria-pressed={pinMode}
+        onClick={() => setPinMode((value) => !value)}
+      >
+        ＋
+      </IconButton>
+    </div>
+  ) : undefined;
   function focusIssue(id: string | null) {
     if (!doc || !id) return;
     leaveRecoveredSelection();
@@ -564,6 +840,11 @@ export function NativeProjectView({
     });
   }
   const options = selectedTable?.physical.options;
+  function moveInspectorColumn(id: string, step: number) {
+    const index = selectedRows.findIndex((row) => row.column.id === id),
+      target = selectedRows[index + step]?.column.id;
+    if (target) reorderColumns(id, target);
+  }
   useEffect(() => {
     if (focusedReview) {
       focusIssue(focusedReview.objectId);
@@ -572,51 +853,42 @@ export function NativeProjectView({
   }, [focusedReview?.id]);
   return (
     <main id="main" className="editor native-project-view">
+      {enumOpen && doc && (
+        <NativeEnumDialog
+          document={doc}
+          {...(editable
+            ? { context: { userId: userId!, snapshot, busy: editorBusy, onSave: save } }
+            : {})}
+          onClose={() => setEnumOpen(false)}
+        />
+      )}
       <div className="editor-heading">
-        <div className="project-title">
+        <div className="project-title" role="group" aria-label={t('프로젝트 이동')}>
           <Button className="gallery-return" onClick={onLeave}>
             {t('← 갤러리')}
           </Button>
-          <div className="project-name">
-            <small>PROJECT / DOMAIN WORKSPACE</small>
-            <h1>{snapshot.project.name}</h1>
-          </div>
+          <span className="navigation-divider" aria-hidden="true" />
+          <h1 title={snapshot.project.name}>{snapshot.project.name}</h1>
+          <div className="editor-path-host" ref={setPathHost} />
         </div>
-        <div className="native-project-status">
-          <span>
-            {snapshot.project.databaseKind === 'postgresql'
-              ? 'PostgreSQL'
-              : snapshot.project.databaseKind === 'mysql'
-                ? 'MySQL'
-                : 'SQLite'}
+        <div className="editor-toolbar-host" ref={setToolbarHost} />
+        <div className="save-controls" role="group" aria-label={t('변경 기록과 동기화')}>
+          <span
+            className={`save-state${saveStatus === 'attention' ? ' failed' : ''}`}
+            role="status"
+          >
+            {t(
+              saveStatus === 'saving'
+                ? '◌ 저장 확인 중…'
+                : saveStatus === 'offline'
+                  ? '○ 오프라인'
+                  : saveStatus === 'attention'
+                    ? '! 확인 필요'
+                    : saveStatus === 'draft'
+                      ? '○ 보관된 입력'
+                      : '✓ 저장 기준 확인됨',
+            )}
           </span>
-          <span>
-            {t('목표 DB 버전')}: {profile.targetVersion}
-          </span>
-          <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
-          {projectActions?.(focusIssue)}
-          {userId && (
-            <>
-              <Button
-                aria-pressed={commentsOpen}
-                onClick={() => {
-                  setCommentsOpen(!commentsOpen);
-                  setPinMode(false);
-                  setDraftPin(null);
-                }}
-              >
-                {t('핀')}
-              </Button>
-              <Button
-                disabled={!canPersonalEdit || snapshot.project.status !== 'active'}
-                aria-pressed={pinMode}
-                onClick={() => setPinMode(!pinMode)}
-              >
-                {t(pinMode ? '핀 추가 취소' : '핀 추가')}
-              </Button>
-            </>
-          )}
-
           {userId && (
             <NativeHistoryControls
               key={`history-controls:${userId}:${snapshot.project.id}`}
@@ -629,16 +901,43 @@ export function NativeProjectView({
               onCloseHistory={() => setHistoryOpen(false)}
             />
           )}
-          {userId && (
-            <Button onClick={() => setDraftRecoveryOpen((value) => !value)}>
-              {t('보관된 입력 복구')}
-            </Button>
-          )}
-          <Button onClick={onReload} disabled={busy}>
-            {t('다시 불러오기')}
-          </Button>
         </div>
       </div>
+      <div className="native-project-status native-project-context">
+        <span>
+          {snapshot.project.databaseKind === 'postgresql'
+            ? 'PostgreSQL'
+            : snapshot.project.databaseKind === 'mysql'
+              ? 'MySQL'
+              : 'SQLite'}{' '}
+          · {t('목표 DB 버전')}: {profile.targetVersion}
+        </span>
+        <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
+        {userId && (
+          <Button onClick={() => setDraftRecoveryOpen((value) => !value)}>
+            {t('보관된 입력 복구')}
+          </Button>
+        )}
+        <Button onClick={onReload} disabled={busy}>
+          {t('다시 불러오기')}
+        </Button>
+      </div>
+      {workspaceStatus === 'archived' && (
+        <div className="notice" role="status">
+          {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}
+        </div>
+      )}
+      {workspaceStatus !== 'archived' &&
+        (workspaceRole === 'viewer' || (!canEdit && canPersonalEdit)) && (
+          <div className="notice" role="status">
+            {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
+          </div>
+        )}
+      {snapshot.project.status === 'archived' && (
+        <div className="notice" role="status">
+          {t('보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.')}
+        </div>
+      )}
       {draftRecoveryOpen && userId && (
         <NativeDraftRecoveryPanel
           key={`draft-recovery:${userId}:${snapshot.project.id}:${generation}`}
@@ -694,11 +993,15 @@ export function NativeProjectView({
           )}
           <div className="review-workspace native-review-workspace">
             <div
-              className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}`}
+              className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}${stackedInspector ? ' inspector-stacked' : ''}`}
+              ref={workspaceRef}
+              data-resizing={resizingInspector}
               style={{
-                gridTemplateColumns: inspectorOpen
-                  ? `minmax(0,1fr) 6px ${inspectorWidth}px`
-                  : 'minmax(0,1fr) 0px 0px',
+                gridTemplateColumns: stackedInspector
+                  ? 'minmax(0,1fr)'
+                  : inspectorOpen
+                    ? `minmax(0,1fr) 6px ${panelWidth}px`
+                    : 'minmax(0,1fr) 0px 0px',
               }}
             >
               <NativeERDCanvas
@@ -714,6 +1017,24 @@ export function NativeProjectView({
                 recoveryBusy={recoveryBusy}
                 onSave={save}
                 onReload={onReload}
+                {...{
+                  onCanvasScopeChange: receiveCanvasScope,
+                  toolbarHost,
+                  pathHost,
+                  panelToggle,
+                  selectionHost: selectedNote ? noteSelectionHost : domainSelectionHost,
+                  ...(editingColumn ? { selectedColumnId: editingColumn } : {}),
+                  ...(requestedView ? { requestedView } : {}),
+                }}
+                {...(projectActions
+                  ? {
+                      renderExportActions: (png: {
+                        run: () => Promise<void>;
+                        disabled: boolean;
+                        busy: boolean;
+                      }) => projectActions(focusIssue, png),
+                    }
+                  : {})}
                 pinMode={pinMode}
                 reviewFocus={reviewFocus}
                 onReviewContext={(context, source) => {
@@ -799,39 +1120,57 @@ export function NativeProjectView({
                 role="separator"
                 aria-label={t('속성 패널 너비')}
                 aria-orientation="vertical"
-                aria-valuenow={inspectorWidth}
-                aria-valuemin={300}
-                aria-valuemax={600}
-                tabIndex={0}
-                hidden={!inspectorOpen}
+                aria-valuenow={Math.round(panelWidth)}
+                aria-valuemin={panelBounds.min}
+                aria-valuemax={panelBounds.max}
+                tabIndex={inspectorOpen && !stackedInspector ? 0 : -1}
+                hidden={!inspectorOpen || stackedInspector}
                 onPointerDown={(event) => {
+                  if (event.button !== 0) return;
                   event.preventDefault();
+                  setResizingInspector(true);
                   event.currentTarget.setPointerCapture(event.pointerId);
                   resize.current = {
                     pointer: event.pointerId,
                     x: event.clientX,
-                    width: inspectorWidth,
+                    width: panelWidth,
                   };
                 }}
                 onPointerMove={(event) => {
                   const active = resize.current;
                   if (active?.pointer !== event.pointerId) return;
                   setInspectorWidth(
-                    Math.max(300, Math.min(600, active.width + active.x - event.clientX)),
+                    clampInspectorWidth(active.width + active.x - event.clientX, workspaceWidth),
                   );
                 }}
-                onPointerUp={() => {
+                onPointerUp={(event) => {
                   resize.current = null;
+                  setResizingInspector(false);
+                  if (event.currentTarget.hasPointerCapture(event.pointerId))
+                    event.currentTarget.releasePointerCapture(event.pointerId);
                 }}
                 onPointerCancel={() => {
                   resize.current = null;
+                  setResizingInspector(false);
+                }}
+                onLostPointerCapture={() => {
+                  resize.current = null;
+                  setResizingInspector(false);
                 }}
                 onKeyDown={(event) => {
-                  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                  const next =
+                    event.key === 'Home'
+                      ? panelBounds.min
+                      : event.key === 'End'
+                        ? panelBounds.max
+                        : event.key === 'ArrowLeft'
+                          ? panelWidth + (event.shiftKey ? 40 : 10)
+                          : event.key === 'ArrowRight'
+                            ? panelWidth - (event.shiftKey ? 40 : 10)
+                            : null;
+                  if (next !== null) {
                     event.preventDefault();
-                    setInspectorWidth((width) =>
-                      Math.max(300, Math.min(600, width + (event.key === 'ArrowLeft' ? 10 : -10))),
-                    );
+                    setInspectorWidth(clampInspectorWidth(next, workspaceWidth));
                   }
                 }}
               />
@@ -849,15 +1188,37 @@ export function NativeProjectView({
                     </span>
                     <strong title={currentViewName}>{currentViewName}</strong>
                   </div>
-                  {(selectedTable || selectedDomain) && (
+                  {(selectedTable ||
+                    selectedDomain ||
+                    selectedNote ||
+                    selectedRelation ||
+                    selectedDomainRelation) && (
                     <div className="inspector-selection">
                       <span className="selection-kind">
-                        {t(selectedDomain ? '도메인' : '테이블')}
+                        {t(
+                          selectedNote
+                            ? '메모'
+                            : selectedRelation || selectedDomainRelation
+                              ? '관계'
+                              : selectedDomain
+                                ? '도메인'
+                                : '테이블',
+                        )}
                       </span>
                       <strong>
-                        {selectedDomain
-                          ? doc.domains.find((item) => item.id === selectedDomain)?.name
-                          : tableName(selectedTable!.id)}
+                        {selectedNote
+                          ? selectedNote.text.slice(0, 80) || t('메모')
+                          : selectedRelation
+                            ? selectedRelation.logical.name ||
+                              selectedRelation.physical?.name ||
+                              t('관계')
+                            : selectedDomainRelation
+                              ? doc.domainRelations.find(
+                                  (relation) => relation.id === selectedDomainRelation,
+                                )?.name
+                              : selectedDomain
+                                ? doc.domains.find((item) => item.id === selectedDomain)?.name
+                                : tableName(selectedTable!.id)}
                       </strong>
                       <IconButton
                         aria-label={t('선택 해제')}
@@ -866,6 +1227,8 @@ export function NativeProjectView({
                           setSelected(null);
                           setSelectedDomain(null);
                           setEditingColumn(null);
+                          setSelectedDomainRelation(null);
+                          setSelectedTableRelation(null);
                         }}
                       >
                         ×
@@ -957,13 +1320,66 @@ export function NativeProjectView({
                     }}
                   />
                   <NativeDomainRelationEditor
+                    key={`domain-relation:${selectedDomainRelation ?? ''}:create:${domainRelationCreation ?? ''}`}
                     document={doc}
                     editable={editable}
                     {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
+                    {...(domainRelationCreation
+                      ? { initialAction: 'create' as const, sourceDomainId: domainRelationCreation }
+                      : {})}
                     {...(userId
                       ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
                       : {})}
                   />
+                  <div
+                    ref={setDomainSelectionHost}
+                    className="native-selection-host"
+                    data-node-id={selectedCanvasNode?.id}
+                  />
+                  {selectedDomain && (
+                    <>
+                      <div className="actions">
+                        <Button onClick={() => openDomain(selectedDomain)}>
+                          {t('도메인 열기')}
+                        </Button>
+                        <Button
+                          disabled={!editable || editorBusy}
+                          onClick={() => requestAction('createDomainRelation', selectedDomain)}
+                        >
+                          {t('+ 도메인 관계')}
+                        </Button>
+                      </div>
+                      <PanelSection
+                        title={t('연결된 도메인 관계')}
+                        count={
+                          doc.domainRelations.filter(
+                            (relation) =>
+                              relation.sourceDomainId === selectedDomain ||
+                              relation.targetDomainId === selectedDomain,
+                          ).length
+                        }
+                        defaultOpen
+                      >
+                        <PanelList empty={t('표시할 관계가 없습니다.')}>
+                          {doc.domainRelations
+                            .filter(
+                              (relation) =>
+                                relation.sourceDomainId === selectedDomain ||
+                                relation.targetDomainId === selectedDomain,
+                            )
+                            .map((relation) => (
+                              <PanelRow
+                                key={relation.id}
+                                title={relation.name}
+                                meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
+                                active={selectedDomainRelation === relation.id}
+                                onSelect={() => requestAction('domainRelation', relation.id)}
+                              />
+                            ))}
+                        </PanelList>
+                      </PanelSection>
+                    </>
+                  )}
                 </div>
                 <div className="native-project-content" aria-label={t('설계 조회')}>
                   <aside
@@ -1037,6 +1453,14 @@ export function NativeProjectView({
                                     setSelectedDomain(item.id);
                                     setInspectorTab('domains');
                                   }}
+                                  action={
+                                    <Button
+                                      disabled={editorBusy}
+                                      onClick={() => openDomain(item.id)}
+                                    >
+                                      {t('열기')}
+                                    </Button>
+                                  }
                                 />
                               ))
                           : tables.map((table) => (
@@ -1055,8 +1479,12 @@ export function NativeProjectView({
                                   ).length,
                                 })}
                                 badge={
-                                  doc.domains.find((item) => item.id === table.domainId)?.name ??
-                                  t('미지정')
+                                  canvasView === '__tables__'
+                                    ? (doc.domains.find((item) => item.id === table.domainId)
+                                        ?.name ?? t('미지정'))
+                                    : table.domainId === canvasView
+                                      ? undefined
+                                      : t('참조')
                                 }
                                 onSelect={() => {
                                   leaveRecoveredSelection();
@@ -1074,49 +1502,36 @@ export function NativeProjectView({
                       title={t(canvasView === 'overview' ? '도메인 관계' : '테이블 관계')}
                       count={
                         canvasView === 'overview'
-                          ? doc.domainRelations.length
-                          : (doc.tableRelations ?? []).length
+                          ? filteredDomainRelations.length
+                          : filteredTableRelations.length
                       }
                       defaultOpen={canvasView === 'overview'}
                     >
                       <PanelList empty={t('표시할 관계가 없습니다.')}>
                         {canvasView === 'overview'
-                          ? doc.domainRelations
-                              .filter((item) => matches(item.name, item.description))
-                              .map((relation) => (
-                                <PanelRow
-                                  key={relation.id}
-                                  title={relation.name}
-                                  meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
-                                  onSelect={() => requestAction('domainRelation', relation.id)}
-                                />
-                              ))
-                          : (doc.tableRelations ?? [])
-                              .filter(
-                                (item) =>
-                                  visible(item.scope) &&
-                                  matches(
-                                    item.logical.name,
-                                    item.physical?.name,
-                                    tableName(item.sourceTableId),
-                                    tableName(item.targetTableId),
-                                  ),
-                              )
-                              .map((relation) => (
-                                <PanelRow
-                                  key={relation.id}
-                                  title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
-                                  meta={relation.physical?.name || relation.logical.name}
-                                  badge={relation.physical ? 'FK' : undefined}
-                                  onSelect={() =>
-                                    requestStructure(
-                                      'patch',
-                                      JSON.stringify(['tableRelations', relation.id]),
-                                      relation.sourceTableId,
-                                    )
-                                  }
-                                />
-                              ))}
+                          ? filteredDomainRelations.map((relation) => (
+                              <PanelRow
+                                key={relation.id}
+                                title={relation.name}
+                                meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
+                                onSelect={() => requestAction('domainRelation', relation.id)}
+                              />
+                            ))
+                          : filteredTableRelations.map((relation) => (
+                              <PanelRow
+                                key={relation.id}
+                                title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
+                                meta={relation.physical?.name || relation.logical.name}
+                                badge={relation.physical ? 'FK' : undefined}
+                                onSelect={() =>
+                                  requestStructure(
+                                    'patch',
+                                    JSON.stringify(['tableRelations', relation.id]),
+                                    relation.sourceTableId,
+                                  )
+                                }
+                              />
+                            ))}
                       </PanelList>
                     </PanelSection>
                   </aside>
@@ -1128,6 +1543,37 @@ export function NativeProjectView({
                     hidden={inspectorTab !== 'properties'}
                     aria-live="polite"
                   >
+                    {selectedNote && (
+                      <div
+                        ref={setNoteSelectionHost}
+                        className="native-selection-host"
+                        data-node-id={selectedCanvasNode?.id}
+                        data-selection-kind="note"
+                        data-object-id={selectedNote.id}
+                      />
+                    )}
+                    {selectedRelation && (
+                      <NativeTableRelationInspector
+                        document={doc}
+                        relation={selectedRelation}
+                        {...(editable
+                          ? {
+                              context: {
+                                userId: userId!,
+                                snapshot,
+                                busy: editorBusy,
+                                onSave: save,
+                              },
+                              onDelete: () =>
+                                requestStructure(
+                                  'delete',
+                                  JSON.stringify(['tableRelations', selectedRelation.id]),
+                                  selectedRelation.sourceTableId,
+                                ),
+                            }
+                          : {})}
+                      />
+                    )}
                     {editable && recovered?.kind === 'advanced' && selectedTable && (
                       <NativeAdvancedEditor
                         key={`advanced-recovery:${recoveryEpoch}`}
@@ -1199,7 +1645,7 @@ export function NativeProjectView({
                         ))}
                       </section>
                     )}
-                    {!selectedTable && !createRequest && (
+                    {!selectedTable && !createRequest && !selectedNote && !selectedRelation && (
                       <>
                         <div className="panel-empty">
                           <strong>{currentViewName}</strong>
@@ -1209,10 +1655,10 @@ export function NativeProjectView({
                         </div>
                         <div className="panel-summary">
                           <span>
-                            {t('테이블')} {tables.length}
+                            {t('테이블')} {outline.tables.length}
                           </span>
                           <span>
-                            {t('관계')} {(doc.tableRelations ?? []).length}
+                            {t('관계')} {outline.relations.length}
                           </span>
                           <span>ENUM {(doc.enums ?? []).length}</span>
                         </div>
@@ -1364,19 +1810,8 @@ export function NativeProjectView({
                                         : column.logical.semanticType
                                     }
                                     badge={
-                                      (doc.keys ?? []).some(
-                                        (key) =>
-                                          key.kind === 'primary' &&
-                                          key.columnIds.includes(column.id),
-                                      )
-                                        ? 'PK'
-                                        : (doc.tableRelations ?? []).some((relation) =>
-                                              relation.physical?.sourceColumnIds.includes(
-                                                column.id,
-                                              ),
-                                            )
-                                          ? 'FK'
-                                          : undefined
+                                      selectedRows.find((row) => row.column.id === column.id)
+                                        ?.keys || undefined
                                     }
                                     active={editingColumn === column.id}
                                     expanded={editingColumn === column.id}
@@ -1405,32 +1840,22 @@ export function NativeProjectView({
                                           onSave={save}
                                         />
                                         <div className="actions native-column-actions">
-                                          {mode === 'physical' && (
-                                            <Button
-                                              disabled={editorBusy}
-                                              onClick={() => {
-                                                const primary = doc.keys?.find(
-                                                  (key) =>
-                                                    key.tableId === selectedTable.id &&
-                                                    key.kind === 'primary',
-                                                );
-                                                if (primary)
-                                                  requestStructure(
-                                                    'patch',
-                                                    JSON.stringify(['keys', primary.id]),
-                                                    selectedTable.id,
-                                                  );
-                                                else
-                                                  requestAction('key', '', {
-                                                    tableId: selectedTable.id,
-                                                    keyKind: 'primary',
-                                                    columnIds: column.id,
-                                                  });
-                                              }}
-                                            >
-                                              {t('PK 설정')}
-                                            </Button>
-                                          )}
+                                          <IconButton
+                                            aria-label={t('컬럼 위로')}
+                                            disabled={editorBusy || index === 0}
+                                            onClick={() => moveInspectorColumn(column.id, -1)}
+                                          >
+                                            ↑
+                                          </IconButton>
+                                          <IconButton
+                                            aria-label={t('컬럼 아래로')}
+                                            disabled={
+                                              editorBusy || index === selectedRows.length - 1
+                                            }
+                                            onClick={() => moveInspectorColumn(column.id, 1)}
+                                          >
+                                            ↓
+                                          </IconButton>
                                           <Button
                                             variant="danger"
                                             disabled={editorBusy}
@@ -1566,7 +1991,7 @@ export function NativeProjectView({
                             ).length
                           }
                         >
-                          <ul>
+                          <PanelList empty={t('표시할 관계가 없습니다.')}>
                             {(doc.tableRelations ?? [])
                               .filter(
                                 (relation) =>
@@ -1575,18 +2000,48 @@ export function NativeProjectView({
                                     relation.targetTableId === selectedTable.id),
                               )
                               .map((relation) => (
-                                <li key={relation.id}>
-                                  {tableName(relation.sourceTableId)} →{' '}
-                                  {tableName(relation.targetTableId)}
-                                  {mode === 'physical' && relation.physical
-                                    ? `: ${relation.physical.name} (${relation.physical.sourceColumnIds.map(columnName).join(', ')}) → (${relation.physical.targetColumnIds.map(columnName).join(', ')}) · DELETE ${relation.physical.onDelete} · UPDATE ${relation.physical.onUpdate}`
-                                    : ` ${relation.logical.name}`}
-                                  {relation.deferrable
-                                    ? ` DEFERRABLE ${relation.deferrable.initially}`
-                                    : ''}
-                                </li>
+                                <Fragment key={relation.id}>
+                                  <PanelRow
+                                    title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
+                                    meta={`${relation.logical.name}${relation.physical ? ` · ${relation.physical.name}` : ''}`}
+                                    badge={relation.physical ? 'FK' : undefined}
+                                    active={editingConstraint === relation.id}
+                                    expanded={editingConstraint === relation.id}
+                                    controls={`native-related-${relation.id}`}
+                                    onSelect={() =>
+                                      setEditingConstraint(
+                                        editingConstraint === relation.id ? null : relation.id,
+                                      )
+                                    }
+                                  />
+                                  <PanelListDetail
+                                    id={`native-related-${relation.id}`}
+                                    open={editingConstraint === relation.id}
+                                  >
+                                    <NativeTableRelationInspector
+                                      document={doc}
+                                      relation={relation}
+                                      {...(editable
+                                        ? {
+                                            context: {
+                                              userId: userId!,
+                                              snapshot,
+                                              busy: editorBusy,
+                                              onSave: save,
+                                            },
+                                            onDelete: () =>
+                                              requestStructure(
+                                                'delete',
+                                                JSON.stringify(['tableRelations', relation.id]),
+                                                selectedTable.id,
+                                              ),
+                                          }
+                                        : {})}
+                                    />
+                                  </PanelListDetail>
+                                </Fragment>
                               ))}
-                          </ul>
+                          </PanelList>
                           {editable && (
                             <Button
                               disabled={editorBusy}
@@ -1814,72 +2269,6 @@ export function NativeProjectView({
                         {t('테이블 삭제')}
                       </Button>
                     )}
-                    <PanelSection
-                      title="ENUM"
-                      count={(doc.enums ?? []).length}
-                      open={enumOpen}
-                      onOpenChange={setEnumOpen}
-                    >
-                      <PanelList empty={t('ENUM이 없습니다.')}>
-                        {(doc.enums ?? []).map((item) => (
-                          <Fragment key={item.id}>
-                            <PanelRow
-                              title={`${item.schema ? `${item.schema}.` : ''}${item.name}`}
-                              meta={item.values.map((value) => JSON.stringify(value)).join(', ')}
-                              badge={String(item.values.length)}
-                              active={editingConstraint === item.id}
-                              expanded={editingConstraint === item.id}
-                              controls={`native-enum-${item.id}`}
-                              onSelect={() =>
-                                setEditingConstraint(editingConstraint === item.id ? null : item.id)
-                              }
-                            />
-                            <PanelListDetail
-                              id={`native-enum-${item.id}`}
-                              open={editingConstraint === item.id}
-                            >
-                              {editable && (
-                                <>
-                                  <NativeStructureEditor
-                                    focused
-                                    context={{
-                                      userId: userId!,
-                                      snapshot,
-                                      busy: editorBusy,
-                                      onSave: save,
-                                    }}
-                                    document={doc}
-                                    initialSelection={{
-                                      action: 'patch',
-                                      target: JSON.stringify(['enums', item.id]),
-                                    }}
-                                  />
-                                  <Button
-                                    variant="danger"
-                                    disabled={editorBusy}
-                                    onClick={() =>
-                                      requestStructure('delete', JSON.stringify(['enums', item.id]))
-                                    }
-                                  >
-                                    {t('ENUM 삭제')}
-                                  </Button>
-                                </>
-                              )}
-                            </PanelListDetail>
-                          </Fragment>
-                        ))}
-                      </PanelList>
-                      {editable && (
-                        <Button
-                          disabled={
-                            editorBusy || !nativeEditorPolicy(doc).feature('enumType').supported
-                          }
-                          onClick={() => toolbarCreate('enum')}
-                        >
-                          {t('ENUM 추가')}
-                        </Button>
-                      )}
-                    </PanelSection>
                     {snapshot.native.status === 'available' &&
                       snapshot.native.issues.length > 0 && (
                         <section className="native-issues" aria-label={t('설계 확인 항목')}>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { isValidElement, type ReactElement } from 'react';
+import { createElement, isValidElement, type ReactElement } from 'react';
 import { createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model';
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { NativeProjectView } from './NativeProjectView.js';
@@ -17,6 +17,7 @@ const queue = vi.hoisted(() => ({ state: 'empty' }));
 vi.mock('./native-export-state.js', () => ({
   useNativeDurableState: () => queue.state,
   useNativeExportBlocker() {},
+  useNativeExportBlocked: () => false,
 }));
 vi.mock('./native-save.js', async (original) => ({
   ...(await original<typeof import('./native-save.js')>()),
@@ -121,7 +122,11 @@ function elements(tree: unknown): ReactElement<Record<string, unknown>>[] {
   if (!isValidElement<Record<string, unknown>>(tree)) return [];
   return [tree, ...elements(tree.props.children)];
 }
-function mount(state = snapshot(), userId = 'actor-a') {
+function mount(
+  state = snapshot(),
+  userId = 'actor-a',
+  projectActions?: Parameters<typeof NativeProjectView>[0]['projectActions'],
+) {
   const reload = vi.fn();
   let current = state,
     actor = userId,
@@ -143,6 +148,7 @@ function mount(state = snapshot(), userId = 'actor-a') {
       canEdit,
       onLeave() {},
       onReload: reload,
+      ...(projectActions ? { projectActions } : {}),
     });
     driver.effects.splice(0).forEach((effect) => effect());
     return elements(tree);
@@ -163,6 +169,8 @@ async function flush() {
   await Promise.resolve();
 }
 beforeEach(() => {
+  vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+  vi.stubGlobal('navigator', { onLine: true });
   vi.stubGlobal('sessionStorage', {
     getItem: () =>
       JSON.stringify({
@@ -181,6 +189,14 @@ beforeEach(() => {
 });
 
 describe('native project asynchronous pending calls', () => {
+  it('passes the PNG control to the shared toolbar renderer without rendering a second header menu', () => {
+    const actions = vi.fn(() => createElement('span', null, 'Main actions'));
+    const ui = mount(undefined, undefined, actions),
+      png = { run: vi.fn(async () => {}), disabled: false, busy: false };
+    const renderer = ui.canvas().props.renderExportActions as (control: typeof png) => ReactElement;
+    expect(renderer(png)).toMatchObject({ props: { children: 'Main actions' } });
+    expect(actions).toHaveBeenCalledWith(expect.any(Function), png);
+  });
   it.each(['unknown', 'pending', 'sending'])(
     'blocks writers when another durable queue consumer reports %s',
     async (state) => {

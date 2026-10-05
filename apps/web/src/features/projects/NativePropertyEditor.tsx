@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import type { NativeColumn, NativeTable } from '@ezerd/model';
 import { Button, Input } from '../../components/ui/index.js';
 import { NativeAutoTextarea } from './native-editor-form.js';
+import { NativePrimaryKeyControl } from './NativePrimaryKeyControl.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import {
   loadNativeDraft,
@@ -290,6 +291,13 @@ export function NativePropertyEditor({
             {...(mode ? { mode } : {})}
             {...(column ? { column } : {})}
           />
+          {column && mode !== 'logical' && (
+            <NativePrimaryKeyControl
+              document={snapshot.native.document}
+              column={column}
+              context={{ userId, snapshot, busy, onSave }}
+            />
+          )}
         </PanelSection>
       )}
     </>

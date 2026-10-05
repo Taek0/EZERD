@@ -1,5 +1,5 @@
 import { PanelSection } from '../../shared/editor/panel.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   nativeDomainRelationCommandSchema,
   type NativeDomainRelationCommand,
@@ -13,7 +13,7 @@ import {
 import { nativeDurableId } from './native-durable-queue.js';
 import { loadNativeEditorDraft } from './native-editor-draft.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
-import { Checkbox } from '../../components/ui/index.js';
+import { Button, Checkbox } from '../../components/ui/index.js';
 registerTranslations({
   '도메인 연결': 'Domain relationships',
   '연결 추가': 'Add relationship',
@@ -51,7 +51,8 @@ export function nativeDomainRelationCommands(
   }
   if (
     !document.domains.some((domain) => domain.id === values.sourceDomainId) ||
-    !document.domains.some((domain) => domain.id === values.targetDomainId)
+    !document.domains.some((domain) => domain.id === values.targetDomainId) ||
+    values.sourceDomainId === values.targetDomainId
   )
     throw Error('canvas.domain-relation-endpoint-missing');
   const fields = {
@@ -81,17 +82,24 @@ export function NativeDomainRelationEditor({
   editable,
   selectedId,
   initialAction,
+  sourceDomainId,
 }: {
   document: NativeDesignDocument;
   context?: NativeEditorContext;
   editable: boolean;
   selectedId?: string;
   initialAction?: 'create' | 'edit' | 'delete';
+  sourceDomainId?: string;
 }) {
   const { t } = useI18n(),
     [action, setAction] = useState(initialAction ?? (selectedId ? 'edit' : 'create')),
     [target, setTarget] = useState(selectedId ?? document.domainRelations[0]?.id ?? '');
   const [open, setOpen] = useState(!!selectedId || !!initialAction);
+  const formHost = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (open && (selectedId || initialAction === 'create'))
+      formHost.current?.querySelector<HTMLInputElement>('input:not([type="checkbox"])')?.focus();
+  }, [open, selectedId, initialAction]);
   useEffect(() => {
     if (selectedId) {
       setTarget(selectedId);
@@ -129,30 +137,54 @@ export function NativeDomainRelationEditor({
                   {document.domains.find((domain) => domain.id === relation.sourceDomainId)?.name}{' '}
                   {relation.direction === 'both' ? '↔' : '→'}{' '}
                   {document.domains.find((domain) => domain.id === relation.targetDomainId)?.name}
+                  <p className="native-domain-description">{relation.description || '—'}</p>
                 </li>
               ))}
           </ul>
         </>
       ) : (
         <>
-          <NativeEditorField
-            label="작업"
-            value={action}
-            disabled={context.busy}
-            choices={[
-              { value: 'create', label: t('연결 추가'), disabled: !document.domains.length },
-              { value: 'edit', label: t('연결 수정'), disabled: !document.domainRelations.length },
-              {
-                value: 'delete',
-                label: t('연결 삭제'),
-                disabled: !document.domainRelations.length,
-              },
-            ]}
-            onChange={(value) => {
-              if (value === 'create' || value === 'edit' || value === 'delete') setAction(value);
-            }}
-          />
-          {action !== 'create' && (
+          {selectedId || initialAction ? (
+            <div className="actions">
+              {selectedId && (
+                <>
+                  <Button disabled={context.busy} onClick={() => setAction('edit')}>
+                    {t('연결 수정')}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    disabled={context.busy}
+                    onClick={() => setAction('delete')}
+                  >
+                    {t('연결 삭제')}
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : (
+            <NativeEditorField
+              label="작업"
+              value={action}
+              disabled={context.busy}
+              choices={[
+                { value: 'create', label: t('연결 추가'), disabled: !document.domains.length },
+                {
+                  value: 'edit',
+                  label: t('연결 수정'),
+                  disabled: !document.domainRelations.length,
+                },
+                {
+                  value: 'delete',
+                  label: t('연결 삭제'),
+                  disabled: !document.domainRelations.length,
+                },
+              ]}
+              onChange={(value) => {
+                if (value === 'create' || value === 'edit' || value === 'delete') setAction(value);
+              }}
+            />
+          )}
+          {action !== 'create' && !selectedId && (
             <NativeEditorField
               label="대상"
               value={target}
@@ -165,14 +197,17 @@ export function NativeDomainRelationEditor({
             />
           )}
           {(action === 'create' ? document.domains.length > 0 : !!relation) && (
-            <NativeDomainRelationForm
-              key={`${action}:${target}:${context.snapshot.project.version}:${context.snapshot.sequence}:${context.snapshot.project.databaseRevision}`}
-              document={document}
-              context={context}
-              action={action}
-              id={target}
-              choices={choices}
-            />
+            <div ref={formHost}>
+              <NativeDomainRelationForm
+                key={`${action}:${target}:${context.snapshot.project.version}:${context.snapshot.sequence}:${context.snapshot.project.databaseRevision}`}
+                document={document}
+                context={context}
+                action={action}
+                id={target}
+                choices={choices}
+                {...(sourceDomainId ? { sourceDomainId } : {})}
+              />
+            </div>
           )}
         </>
       )}
@@ -185,12 +220,14 @@ function NativeDomainRelationForm({
   action,
   id,
   choices,
+  sourceDomainId,
 }: {
   document: NativeDesignDocument;
   context: NativeEditorContext;
   action: string;
   id: string;
   choices: { value: string; label: string }[];
+  sourceDomainId?: string;
 }) {
   const { t } = useI18n(),
     key =
@@ -227,8 +264,11 @@ function NativeDomainRelationForm({
         name: relation?.name ?? '',
         description: relation?.description ?? '',
         direction: relation?.direction ?? 'forward',
-        sourceDomainId: relation?.sourceDomainId ?? choices[0]?.value ?? '',
-        targetDomainId: relation?.targetDomainId ?? choices[1]?.value ?? choices[0]?.value ?? '',
+        sourceDomainId: relation?.sourceDomainId ?? sourceDomainId ?? choices[0]?.value ?? '',
+        targetDomainId:
+          relation?.targetDomainId ??
+          choices.find((item) => item.value !== (sourceDomainId ?? choices[0]?.value))?.value ??
+          '',
         review: '',
       }}
       build={(values, before) => {

@@ -1,5 +1,6 @@
 import { NativeDomainFilter, type NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { memo, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, Dropdown, IconButton } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 
@@ -29,6 +30,8 @@ registerTranslations({
 });
 
 export interface NativeCanvasToolbarProps {
+  pathHost?: HTMLElement | null | undefined;
+  panelToggle?: ReactNode;
   exportControl?: ReactNode;
   viewId: string;
   views: { id: string; name: string }[];
@@ -82,6 +85,8 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   inspectorOpen,
   onToggleInspector,
   exportControl,
+  pathHost,
+  panelToggle,
 }: NativeCanvasToolbarProps) {
   const { t } = useI18n();
   const filteredNames = filter
@@ -103,6 +108,16 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
       ? `${viewName} · ${filteredNames.join(' · ') || t('선택 없음')}`
       : viewName;
   const writeBlocked = !editable || disabled;
+  const path = (
+    <nav className="editor-path native-editor-path" aria-label={t('현재 위치')}>
+      <span className="path-sep" aria-hidden="true">
+        /
+      </span>
+      <strong className="path-current" title={currentPath}>
+        {currentPath}
+      </strong>
+    </nav>
+  );
   const exports = [
     {
       id: 'project-export',
@@ -125,14 +140,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   ];
   return (
     <div className="canvas-toolbar native-canvas-toolbar" data-view-id={viewId}>
-      <nav className="editor-path native-editor-path" aria-label={t('현재 위치')}>
-        <span className="path-sep" aria-hidden="true">
-          /
-        </span>
-        <strong className="path-current" title={currentPath}>
-          {currentPath}
-        </strong>
-      </nav>
+      {pathHost === undefined ? path : pathHost ? createPortal(path, pathHost) : null}
       <div className="actions">
         <div className="toolbar-group toolbar-create" role="group" aria-label={t('편집 도구')}>
           {onCreate && (
@@ -331,22 +339,29 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
             </Button>
           </div>
         )}
-        {onToggleInspector && (
-          <IconButton
-            className="inspector-toggle panel-toggle"
-            aria-label={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
-            title={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
-            aria-pressed={inspectorOpen}
-            aria-expanded={inspectorOpen}
-            aria-controls="native-canvas-inspector"
-            onClick={onToggleInspector}
-          >
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <rect x="2" y="3" width="16" height="14" rx="3" stroke="currentColor" />
-              <path d="M12 3v14" stroke="currentColor" />
-            </svg>
-          </IconButton>
-        )}
+        <div
+          className="toolbar-group panel-toggles"
+          role="group"
+          aria-label={t('협업과 속성 패널')}
+        >
+          {panelToggle}
+          {onToggleInspector && (
+            <IconButton
+              className="inspector-toggle panel-toggle"
+              aria-label={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
+              title={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
+              aria-pressed={inspectorOpen}
+              aria-expanded={inspectorOpen}
+              aria-controls="native-canvas-inspector"
+              onClick={onToggleInspector}
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <rect x="2" y="3" width="16" height="14" rx="3" stroke="currentColor" />
+                <path d="M12 3v14" stroke="currentColor" />
+              </svg>
+            </IconButton>
+          )}
+        </div>
       </div>
     </div>
   );
