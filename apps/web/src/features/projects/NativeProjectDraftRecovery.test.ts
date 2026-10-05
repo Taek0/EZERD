@@ -1,6 +1,7 @@
 import { isValidElement, type ReactElement } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeProjectView } from './NativeProjectView.js';
+import { NativeEnumDialog } from './NativeEnumDialog.js';
 import {
   NativeDraftRecoveryPanel,
   type NativeDraftRecoveryPanelProps,
@@ -30,6 +31,10 @@ const hooks = vi.hoisted(() => ({
   stage: vi.fn(),
   send: vi.fn(),
 }));
+beforeEach(() => {
+  vi.stubGlobal('window', new EventTarget());
+  vi.stubGlobal('navigator', { onLine: true });
+});
 vi.mock('../../shared/i18n/index.js', () => ({
   registerTranslations() {},
   useI18n: () => ({ t: (s: string) => s }),
@@ -41,7 +46,10 @@ vi.mock('./native-save.js', async (original) => ({
   stageNativeSave: hooks.stage,
   sendNativePending: hooks.send,
 }));
-vi.mock('./native-export-state.js', () => ({ useNativeDurableState: () => 'empty' }));
+vi.mock('./native-export-state.js', () => ({
+  useNativeDurableState: () => 'empty',
+  useNativeExportBlocked: () => false,
+}));
 vi.mock('react', async (original) => ({
   ...(await original<typeof import('react')>()),
   useState(initial: unknown) {
@@ -201,7 +209,14 @@ describe('native root explicit recovery connection', () => {
         expect(form.props.initialSelection).toEqual(selection);
       if (component === NativeDomainEditor) expect(form.props.initialAction).toBe(selection);
       if (component === NativeERDCanvas) expect(form.props.recoverySelection).toEqual(selection);
-      if (component === NativePropertyEditor) expect(form.props.column).toMatchObject({ id: 'ca' });
+      if (component === NativePropertyEditor)
+        expect(
+          nodes(render()).find(
+            (node) =>
+              node.type === NativePropertyEditor &&
+              (node.props.column as { id: string } | undefined)?.id === 'ca',
+          )?.props.column,
+        ).toMatchObject({ id: 'ca' });
       expect(entry.draft).toEqual(before);
       expect(hooks.stage).not.toHaveBeenCalled();
       expect(hooks.send).not.toHaveBeenCalled();
@@ -295,7 +310,13 @@ describe('native root explicit recovery connection', () => {
     expect(current.recoveredFrom).toBe(original.entryId);
     expect(current.draft.expected).toEqual(entry.draft.expected);
     expect(nativeDraftArchive(store).entries(clipboardActor, clipboardProject)).toHaveLength(2);
-    expect(child(render(), NativePropertyEditor).props.column).toMatchObject({ id: 'ca' });
+    expect(
+      nodes(render()).find(
+        (node) =>
+          node.type === NativePropertyEditor &&
+          (node.props.column as { id: string } | undefined)?.id === 'ca',
+      )?.props.column,
+    ).toMatchObject({ id: 'ca' });
     expect(hooks.stage).not.toHaveBeenCalled();
     root.unmount();
     panelRoot.unmount();
@@ -355,10 +376,8 @@ describe('native original-editor toolbar wiring', () => {
     ).toBe(true);
     expect(child(render(), NativeStructureEditor)).toBeDefined();
     (canvas().onCreate as (kind: string) => void)('enum');
-    expect(child(render(), NativeStructureEditor).props.initialSelection).toEqual({
-      action: 'enum',
-      target: '',
-    });
+    expect(child(render(), NativeEnumDialog)).toBeDefined();
+    expect(child(render(), NativeEnumDialog).props.document).toBe(props.entry.document);
     (canvas().onCreate as (kind: string) => void)('domain');
     expect(child(render(), NativeDomainEditor).props.initialAction).toBe('create');
     expect(hooks.stage).not.toHaveBeenCalled();
