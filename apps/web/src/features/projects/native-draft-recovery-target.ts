@@ -1,5 +1,5 @@
 import { nativeRouteKey } from './native-route-edit.js';
-import { nativeInlineKey } from './NativeCanvasInlineEditor.js';
+import { nativeInlineKey } from './native-inline-edit.js';
 import type { NativeDesignDocument } from '@ezerd/model';
 import type { NativeDraftArchiveEntry } from './native-draft-archive.js';
 import type { NativeStructureAction } from './native-editor-structure.js';

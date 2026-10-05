@@ -1,8 +1,8 @@
-import { memo, useRef, type PointerEvent, type ComponentProps } from 'react';
+import { memo, useEffect, useMemo, useRef, type PointerEvent, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { relationLayoutSchema } from '@ezerd/contracts';
 import type { NativeDesignDocument, RelationLayout } from '@ezerd/model';
-import { NativeCanvasInputForm } from './NativeERDCanvas.js';
+import { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
 import { NativeEditorField } from './native-editor-form.js';
 import {
   nativeRouteKey,
@@ -80,6 +80,9 @@ function RouteHandles({
           role="slider"
           aria-label={handle.label}
           aria-valuetext={`${Math.round(handle.point.x)}, ${Math.round(handle.point.y)}`}
+          aria-valuenow={Math.round(handle.point.x)}
+          aria-valuemin={-10000000}
+          aria-valuemax={10000000}
           aria-disabled={disabled}
           onPointerDown={(event) => {
             if (disabled || event.button !== 0) return;
@@ -168,6 +171,25 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  const saveContext = useMemo(
+    () => ({
+      ...context,
+      onSave: async (...args: Parameters<Context['onSave']>) => {
+        const saved = await context.onSave(...args);
+        if (saved && active.current) onClose();
+        return saved;
+      },
+    }),
+    [context, onClose],
+  );
+
   const existing = document.layout.relations?.find(
     (r) => r.viewId === viewId && r.relationId === relationId,
   ) ?? { viewId, relationId, offset: 0 };
@@ -175,6 +197,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
   return (
     <aside
       className="native-inline-editor native-route-editor"
+      onWheel={(event) => event.stopPropagation()}
       role="dialog"
       aria-label={t('관계선 경로 편집')}
       onKeyDown={(event) => {
@@ -191,7 +214,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
       <p>{t('드래그 또는 방향키로 이동한 뒤 저장하세요.')}</p>
       <NativeCanvasInputForm
         key={nativeRouteKey(viewId, relationId)}
-        context={context}
+        context={saveContext}
         title={t('관계선 경로 편집')}
         draftKey={nativeRouteKey(viewId, relationId)}
         initial={{
@@ -222,7 +245,27 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
               return null;
             }
           })();
-          const route = parsed?.success ? parsed.data : null;
+          const raw = (() => {
+            try {
+              return JSON.parse(values.route ?? '');
+            } catch {
+              return null;
+            }
+          })();
+          const editableAnchor = (key: 'sourceAnchor' | 'targetAnchor') => {
+            const anchor = raw?.[key];
+            return anchor && ['left', 'right', 'top', 'bottom'].includes(anchor.side)
+              ? { side: anchor.side, ratio: typeof anchor.ratio === 'number' ? anchor.ratio : 0.5 }
+              : existing[key];
+          };
+          const route: RelationLayout = parsed?.success
+            ? parsed.data
+            : {
+                ...existing,
+                offset: typeof raw?.offset === 'number' ? raw.offset : existing.offset,
+                sourceAnchor: editableAnchor('sourceAnchor'),
+                targetAnchor: editableAnchor('targetAnchor'),
+              };
           const mismatch = values.personalVersion !== String(personalVersion ?? '');
           return (
             <>
@@ -231,7 +274,8 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
                   {t('개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.')}
                 </p>
               )}
-              {route && world && (
+              {!parsed?.success && <p role="alert">{t('경로 입력을 확인해 주세요.')}</p>}
+              {parsed?.success && route && world && (
                 <RouteHandles
                   scene={scene}
                   relationId={relationId}
