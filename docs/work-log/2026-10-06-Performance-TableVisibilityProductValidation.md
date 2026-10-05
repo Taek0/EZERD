@@ -40,3 +40,7 @@ synthetic pan과 메모리 저장 예제의 결과이며 실제 협업/API 지�
 
 원시 JSON·UI 상태·스크린샷·집계·pixel 비교: `artifacts/performance/2026-10-06-table-visibility-product/` (Git 제외).
 계획: [TableVisibilityImplementation](../planning/2026-10-06-Performance-TableVisibilityImplementation.md).
+
+## 제품 PR 브랜치 독립 검증
+
+origin/main 1ac4d6d에서 생성한 codex/native-table-content-visibility에 제품 CSS와 관련 문서만 선별했다. 이 브랜치의 pnpm check는 포맷·전체 타입·215개 파일/2,742개 테스트·서버/웹 빌드를 통과했다. 환경 조건부 27개 파일/500개 테스트는 skip이며 실제 DB 검사를 추가 실행했다고 주장하지 않는다. 기존 bundle 경고는 남아 있다. 측정 도구/원시는 포함하지 않았고 상대 문서 링크도 확인했다.
