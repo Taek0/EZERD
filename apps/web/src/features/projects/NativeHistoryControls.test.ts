@@ -15,7 +15,10 @@ describe('native toolbar undo selection', () => {
   it('excludes another actor, upgrades and compensated work, without treating undo as new forward work', () => {
     const other = {
       ...entry('other', 4),
-      result: { ...entry('other', 4).result, actor: { id: 'other', username: 'Other' } },
+      result: {
+        ...entry('other', 4).result,
+        actor: { id: 'other', username: 'Other', color: '#4169e1' },
+      },
     };
     expect(
       nativeUndoCandidates(

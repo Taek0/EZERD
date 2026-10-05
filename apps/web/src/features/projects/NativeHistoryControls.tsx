@@ -1,3 +1,6 @@
+import { DialogTrigger, Dialog } from 'react-aria-components';
+import { UntitledPopover } from '../../components/ui/untitled.js';
+import { NativeHistoryDialog } from './NativeHistoryDialog.js';
 import { useEffect, useRef, useState } from 'react';
 import type { NativeHistoryPage, ProjectDocumentState } from '@ezerd/contracts';
 import { Button, IconButton } from '../../components/ui/index.js';
@@ -49,7 +52,11 @@ export function NativeHistoryControls({
   disabled,
   onReload,
   onHistory,
+  historyOpen,
+  onCloseHistory,
 }: {
+  historyOpen: boolean;
+  onCloseHistory: () => void;
   userId: string;
   snapshot: ProjectDocumentState;
   disabled: boolean;
@@ -172,9 +179,24 @@ export function NativeHistoryControls({
         >
           ↷
         </IconButton>
-        <Button onClick={onHistory} disabled={busy}>
-          {t('히스토리')}
-        </Button>
+        <DialogTrigger
+          isOpen={historyOpen}
+          onOpenChange={(open) => (open ? onHistory() : onCloseHistory())}
+        >
+          <Button disabled={busy}>{t('히스토리')}</Button>
+          <UntitledPopover className="native-history-popover" placement="bottom end" offset={8}>
+            <Dialog aria-label={t('히스토리')}>
+              <NativeHistoryDialog
+                embedded
+                userId={userId}
+                snapshot={snapshot}
+                canEdit={!disabled}
+                onReload={onReload}
+                onClose={onCloseHistory}
+              />
+            </Dialog>
+          </UntitledPopover>
+        </DialogTrigger>
       </div>
       {error && <span role="alert">{error}</span>}
     </>

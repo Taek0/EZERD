@@ -549,3 +549,28 @@
   font-size: 17px;
   padding: 4px;
 }
+
+.native-erd-node .native-card-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 55%,
+    #94a3b8 56%,
+    #94a3b8 62%,
+    transparent 63%,
+    transparent 73%,
+    #94a3b8 74%,
+    #94a3b8 80%,
+    transparent 81%
+  );
+}
+.native-card-resize:disabled {
+  opacity: 0.3;
+  cursor: default;
+}

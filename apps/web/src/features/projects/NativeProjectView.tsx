@@ -23,7 +23,6 @@ import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
 import { NativeDomainEditor } from './NativeDomainEditor.js';
 import { useNativeDurableState } from './native-export-state.js';
-import { NativeHistoryDialog } from './NativeHistoryDialog.js';
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
@@ -534,6 +533,8 @@ export function NativeProjectView({
               disabled={!editable || editorBusy}
               onReload={onReload}
               onHistory={() => setHistoryOpen(true)}
+              historyOpen={historyOpen}
+              onCloseHistory={() => setHistoryOpen(false)}
             />
           )}
           {userId && (
@@ -546,16 +547,6 @@ export function NativeProjectView({
           </Button>
         </div>
       </div>
-      {historyOpen && userId && (
-        <NativeHistoryDialog
-          key={`history:${userId}:${snapshot.project.id}`}
-          userId={userId}
-          snapshot={snapshot}
-          canEdit={editable}
-          onClose={() => setHistoryOpen(false)}
-          onReload={onReload}
-        />
-      )}
       {draftRecoveryOpen && userId && (
         <NativeDraftRecoveryPanel
           key={`draft-recovery:${userId}:${snapshot.project.id}:${generation}`}
