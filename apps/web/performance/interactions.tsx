@@ -17,6 +17,7 @@ import {
   nativeCanvasSvg,
   exportNativeCanvasPng,
 } from '../src/features/projects/native-canvas-png.js';
+import { fixtureFingerprint } from '../src/shared/performance/fixture.js';
 import { createNativePerformanceFixture } from '../src/shared/performance/native-fixture.js';
 import { ConfirmProvider } from '../src/components/ui/ConfirmProvider.js';
 import '../src/components/ui/tailwind.css';
@@ -157,6 +158,18 @@ function Demo() {
     () => nativeCanvasScene(displayDocument, '__tables__', 'physical'),
     [displayDocument],
   );
+  const exportScene = useMemo(() => {
+    const source = nativeCanvasScene(document, '__tables__', 'physical');
+    const nodes = source.nodes.slice(0, 10),
+      ids = new Set(nodes.map((node) => node.objectId));
+    return {
+      ...source,
+      nodes,
+      relations: source.relations.filter(
+        ({ relation }) => ids.has(relation.sourceTableId) && ids.has(relation.targetTableId),
+      ),
+    };
+  }, [document]);
   const gesture = useRef<Parameters<typeof NativeCanvasScene>[0]['gesture']['current']>(null);
   const actions = useRef<NativeSceneActions>({
     zoom: camera.zoom,
@@ -253,11 +266,7 @@ function Demo() {
                     card.checkVisibility({ contentVisibilityAuto: true }),
                   ).length,
                   active: window.document.activeElement?.getAttribute('aria-label'),
-                  png: nativeCanvasSvg(
-                    document,
-                    nativeCanvasScene(document, '__tables__', 'physical'),
-                    'physical',
-                  ).svg.length,
+                  png: fixtureFingerprint(nativeCanvasSvg(document, exportScene, 'physical').svg),
                   alerts: Array.from(root.querySelectorAll('[role=alert]')).map(
                     (n) => n.textContent,
                   ),
@@ -308,7 +317,7 @@ function Demo() {
         <button
           onClick={() =>
             setPreview(
-              `data:image/svg+xml;charset=utf-8,${encodeURIComponent(nativeCanvasSvg(document, scene, 'physical').svg)}`,
+              `data:image/svg+xml;charset=utf-8,${encodeURIComponent(nativeCanvasSvg(document, exportScene, 'physical').svg)}`,
             )
           }
         >
@@ -316,7 +325,7 @@ function Demo() {
         </button>
         <button
           onClick={() =>
-            void exportNativeCanvasPng(document, scene, 'physical', 'native-interaction-test')
+            void exportNativeCanvasPng(document, exportScene, 'physical', 'native-interaction-test')
           }
         >
           Download PNG
@@ -324,7 +333,8 @@ function Demo() {
       </header>
       <p>
         Double-click a name or press F2. Click a relation to edit its path. Drafts use dedicated
-        local test identities. Saves update this page's memory only.
+        local test identities. Saves update this page's memory only. PNG is limited to the first 10
+        tables.
       </p>
       <div
         ref={surface}
