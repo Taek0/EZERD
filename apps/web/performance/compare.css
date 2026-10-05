@@ -68,3 +68,11 @@ textarea[aria-label='Comparison JSON'] {
 html {
   scrollbar-width: none;
 }
+
+/* Separate containment itself from auto-skipping off-screen descendants. */
+.comparison-editor.inline-contain-only .native-erd-node {
+  contain: layout style paint;
+}
+.comparison-editor.inline-paint-only .native-erd-node {
+  contain: paint;
+}
