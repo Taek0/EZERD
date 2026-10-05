@@ -44,6 +44,19 @@ function relationFixture() {
   return document;
 }
 describe('source relationship presentation on native routes', () => {
+  it('describes named endpoints, paired columns and logical meaning without exposing only IDs', () => {
+    const document = relationFixture();
+    document.tables![0]!.physical.name = 'orders';
+    document.tables![1]!.physical.name = 'customers';
+    document.tableRelations![0]!.logical.description = 'Keep <script>description</script>';
+    const scene = nativeCanvasScene(document, '__tables__', 'physical');
+    const html = renderToStaticMarkup(
+      createElement(NativeTableLines, { document, relations: scene.relations, mode: 'physical' }),
+    );
+    expect(html).toContain('customers → orders (opaque)');
+    expect(html).toContain('Keep &lt;script&gt;description&lt;/script&gt;');
+    expect(html).not.toContain(': t → target');
+  });
   it('keeps explicit native cardinalities and source logical dashes and Unicode label bounds', () => {
     const document = relationFixture(),
       before = structuredClone(document);

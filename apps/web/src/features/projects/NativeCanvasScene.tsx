@@ -110,6 +110,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   return (
     <>
       <NativeTableLines
+        document={base}
         relations={drawn.relations}
         mode={mode}
         selectedId={selectedRelationId}
