@@ -1,3 +1,7 @@
+vi.mock('../comments/CommentsPanel.js', () => ({
+  CommentsPanel: () => null,
+  CommentPins: () => null,
+}));
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';

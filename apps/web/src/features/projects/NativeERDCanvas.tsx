@@ -1,3 +1,5 @@
+import type { CommentContext } from '../comments/CommentsPanel.js';
+import { pinPosition, reviewCanvasView, type ReviewTarget } from '../comments/comments-state.js';
 import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { createPortal } from 'react-dom';
 import { NativeCanvasToolbar, NativeCameraControls } from './NativeCanvasToolbar.js';
@@ -571,6 +573,11 @@ export function NativeERDCanvas({
   onCreate,
   onModeChange,
   onViewChange,
+  pins,
+  onReviewContext,
+  pinMode = false,
+  onCreatePin,
+  reviewFocus,
 }: {
   document: NativeDesignDocument;
   snapshot: ProjectDocumentState;
@@ -596,6 +603,11 @@ export function NativeERDCanvas({
   onCreate?: (kind: 'table' | 'domain' | 'enum') => void;
   onModeChange?: (mode: 'physical' | 'logical') => void;
   onViewChange?: (id: string) => void;
+  pins?: ReactNode;
+  onReviewContext?: (context: CommentContext, document: NativeDesignDocument) => void;
+  pinMode?: boolean;
+  onCreatePin?: (context: CommentContext) => void;
+  reviewFocus?: (ReviewTarget & { nonce: number }) | null;
 }) {
   const { t, locale } = useI18n();
   const [viewId, setViewId] = useState(
@@ -1142,16 +1154,6 @@ export function NativeERDCanvas({
           </Button>
         )}
         <Button onClick={() => setCamera(savedCamera)}>{t('카메라 초기화')}</Button>{' '}
-        <MemoNativeCanvasPngExport
-          snapshot={snapshot}
-          {...(userId ? { userId } : {})}
-          viewId={effectiveView}
-          mode={mode}
-          sceneFor={nativeCanvasScene}
-          {...(personal ? { personal } : {})}
-          personalBusy={personalBusy}
-          writerState={privateQueueState}
-        />
         <MemoNativeDomainRelationEditor
           document={sharedSource}
           editable={editable}
@@ -1214,9 +1216,44 @@ export function NativeERDCanvas({
       </div>
     </>
   );
+  const reviewCallback = useRef(onReviewContext);
+  reviewCallback.current = onReviewContext;
+  useEffect(() => {
+    reviewCallback.current?.(
+      {
+        viewId: effectiveView,
+        selectedObjectId: selectedDomainId ?? selectedTableId ?? null,
+        visibleObjectIds: scene.nodes.map((node) => node.objectId),
+        position: { x: 0, y: 0 },
+      },
+      base,
+    );
+  }, [base, scene, effectiveView, selectedDomainId, selectedTableId]);
+  useEffect(() => {
+    if (!reviewFocus) return;
+    const view = reviewCanvasView(base, reviewFocus);
+    const point = pinPosition(base, reviewFocus);
+    if (effectiveView !== view) {
+      navigateView(view);
+      return;
+    }
+    setCamera({ viewId: view, x: 120 - point.x, y: 120 - point.y, zoom: 1 });
+  }, [reviewFocus?.nonce, effectiveView]);
   return (
     <section className="native-erd" aria-label={t('Native ERD')}>
       <NativeCanvasToolbar
+        exportControl={
+          <MemoNativeCanvasPngExport
+            snapshot={snapshot}
+            {...(userId ? { userId } : {})}
+            viewId={effectiveView}
+            mode={mode}
+            sceneFor={nativeCanvasScene}
+            {...(personal ? { personal } : {})}
+            personalBusy={personalBusy}
+            writerState={privateQueueState}
+          />
+        }
         viewId={effectiveView}
         views={toolbarViews}
         onView={navigateView}
@@ -1432,8 +1469,31 @@ export function NativeERDCanvas({
         </div>
       )}
       <div
-        className={`native-erd-surface${tool === 'hand' ? ' hand-tool' : ''}`}
+        className={`native-erd-surface${tool === 'hand' ? ' hand-tool' : ''}${pinMode ? ' pin-mode' : ''}`}
         onPointerDownCapture={(event) => {
+          if (
+            pinMode &&
+            event.button === 0 &&
+            onCreatePin &&
+            !(
+              event.target instanceof Element &&
+              event.target.closest('.native-camera-controls,.comment-pin,.native-inline-editor')
+            )
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            onCreatePin({
+              viewId: effectiveView,
+              selectedObjectId: null,
+              visibleObjectIds: scene.nodes.map((node) => node.objectId),
+              position: {
+                x: (event.clientX - rect.left - camera.x) / camera.zoom,
+                y: (event.clientY - rect.top - camera.y) / camera.zoom,
+              },
+            });
+            return;
+          }
           if (
             event.target instanceof Element &&
             event.target.closest('.native-inline-editor,.native-camera-controls')
@@ -1533,28 +1593,31 @@ export function NativeERDCanvas({
           ref={setWorldElement}
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
-          <NativeCanvasScene
-            base={base}
-            sharedSource={sharedSource}
-            drawn={drawn}
-            effectiveView={effectiveView}
-            mode={mode}
-            selectedNode={selectedNode}
-            selectedTableId={selectedTableId}
-            selectedDomainId={selectedDomainId}
-            selectedDomainRelation={selectedDomainRelation}
-            selectedRelationId={selectedRelationId}
-            onSelectRelation={selectRoute}
-            draftObjectId={draftObjectId}
-            setSelectedNode={setSelectedNode}
-            setSelectedDomainRelation={setSelectedDomainRelation}
-            onSelect={onSelect}
-            onSelectDomain={onSelectDomain}
-            gesture={gesture}
-            actions={sceneActions}
-            onOpenDomain={navigateView}
-            onEdit={userId && editable ? openInline : undefined}
-          />
+          {pins}
+          <div key={effectiveView} className="native-scene-entry">
+            <NativeCanvasScene
+              base={base}
+              sharedSource={sharedSource}
+              drawn={drawn}
+              effectiveView={effectiveView}
+              mode={mode}
+              selectedNode={selectedNode}
+              selectedTableId={selectedTableId}
+              selectedDomainId={selectedDomainId}
+              selectedDomainRelation={selectedDomainRelation}
+              selectedRelationId={selectedRelationId}
+              onSelectRelation={selectRoute}
+              draftObjectId={draftObjectId}
+              setSelectedNode={setSelectedNode}
+              setSelectedDomainRelation={setSelectedDomainRelation}
+              onSelect={onSelect}
+              onSelectDomain={onSelectDomain}
+              gesture={gesture}
+              actions={sceneActions}
+              onOpenDomain={navigateView}
+              onEdit={userId && editable ? openInline : undefined}
+            />
+          </div>
         </div>
         {inlineTarget && userId && (
           <NativeCanvasInlineEditor

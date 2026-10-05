@@ -2,7 +2,7 @@ import { translate as t, useI18n, getLocale } from '../../shared/i18n/index.js';
 import '../collaboration/translations.js';
 import { userColorStyle } from '../identity/user-color-style.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { DesignDocument } from '@ezerd/model';
+import type { ReviewDocument } from './comments-state.js';
 import {
   notificationSchema,
   threadSchema,
@@ -56,7 +56,7 @@ export function CommentPins({
   threads: Thread[];
   visibleObjectIds?: readonly string[];
   memberColors?: Record<string, string>;
-  document: DesignDocument;
+  document: ReviewDocument;
   viewId: string;
   onOpen: (thread: Thread) => void;
 }) {
@@ -249,7 +249,7 @@ export function CommentsPanel({
   draftTarget?: CommentContext & { nonce: number };
   projectId: string;
   userId: string;
-  document: DesignDocument;
+  document: ReviewDocument;
   context: CommentContext;
   activeThreadId: string | null;
   onThreads: (threads: Thread[]) => void;
