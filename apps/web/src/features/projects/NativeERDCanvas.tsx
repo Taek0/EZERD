@@ -2619,6 +2619,8 @@ function NativeCanvasWorkspace({
             return;
           }
           if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            // The original column menu owns its capture phase and selected column context.
+            if (event.target instanceof Element && event.target.closest('[data-column-id]')) return;
             event.preventDefault();
             const node = scene.nodes.find((node) => node.id === selectedNode),
               rect =
