@@ -1,3 +1,5 @@
+import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
+import { NativeHistoryControls } from './NativeHistoryControls.js';
 import { CommentPins, CommentsPanel, type CommentContext } from '../comments/CommentsPanel.js';
 import { PinPanelResizer } from '../comments/PinPanelResizer.js';
 import type { CSSProperties } from 'react';
@@ -21,7 +23,6 @@ import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
 import { NativeDomainEditor } from './NativeDomainEditor.js';
 import { useNativeDurableState } from './native-export-state.js';
-import { NativeHistoryDialog } from './NativeHistoryDialog.js';
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
@@ -146,6 +147,7 @@ export function NativeProjectView({
     'properties',
   );
   const [inspectorWidth, setInspectorWidth] = useState(320);
+  const draggingColumn = useRef<string | null>(null);
   const [canvasView, setCanvasView] = useState('__tables__');
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsWidth, setCommentsWidth] = useState(320);
@@ -169,12 +171,13 @@ export function NativeProjectView({
   }
   const [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
   const [createRequest, setCreateRequest] = useState<{
-    action: 'table' | 'enum';
+    action: NonNullable<Parameters<typeof NativeStructureEditor>[0]['initialSelection']>['action'];
+    target?: string;
     nonce: number;
   } | null>(null);
   const [domainCreation, setDomainCreation] = useState(0);
   const resize = useRef<{ pointer: number; x: number; width: number } | null>(null);
-  function toolbarCreate(kind: 'table' | 'domain' | 'enum') {
+  function toolbarCreate(kind: 'table' | 'domain' | 'enum' | 'column') {
     leaveRecoveredSelection();
     setInspectorOpen(true);
     if (kind === 'domain') {
@@ -453,6 +456,21 @@ export function NativeProjectView({
       setMode('physical');
     }
   }
+  function reorderColumns(sourceId: string, targetId: string) {
+    if (!editable || editorBusy || !selectedTable || sourceId === targetId) return;
+    const ids = (doc?.columns ?? [])
+      .filter((column) => column.tableId === selectedTable.id)
+      .map((column) => column.id);
+    const from = ids.indexOf(sourceId),
+      to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]!);
+    void save([{ type: 'reorder_columns', tableId: selectedTable.id, columnIds: ids }], {
+      version: snapshot.project.version,
+      sequence: snapshot.sequence,
+      databaseRevision: snapshot.project.databaseRevision,
+    });
+  }
   const options = selectedTable?.physical.options;
   useEffect(() => {
     if (focusedReview) {
@@ -508,9 +526,16 @@ export function NativeProjectView({
           )}
 
           {userId && (
-            <Button onClick={() => setHistoryOpen(true)} disabled={saving || busy}>
-              {t('설계 이력')}
-            </Button>
+            <NativeHistoryControls
+              key={`history-controls:${userId}:${snapshot.project.id}`}
+              userId={userId}
+              snapshot={snapshot}
+              disabled={!editable || editorBusy}
+              onReload={onReload}
+              onHistory={() => setHistoryOpen(true)}
+              historyOpen={historyOpen}
+              onCloseHistory={() => setHistoryOpen(false)}
+            />
           )}
           {userId && (
             <Button onClick={() => setDraftRecoveryOpen((value) => !value)}>
@@ -522,16 +547,6 @@ export function NativeProjectView({
           </Button>
         </div>
       </div>
-      {historyOpen && userId && (
-        <NativeHistoryDialog
-          key={`history:${userId}:${snapshot.project.id}`}
-          userId={userId}
-          snapshot={snapshot}
-          canEdit={editable}
-          onClose={() => setHistoryOpen(false)}
-          onReload={onReload}
-        />
-      )}
       {draftRecoveryOpen && userId && (
         <NativeDraftRecoveryPanel
           key={`draft-recovery:${userId}:${snapshot.project.id}:${generation}`}
@@ -833,6 +848,13 @@ export function NativeProjectView({
                       setDomainCreation(0);
                     }}
                   />
+                  <NativeDomainRelationEditor
+                    document={doc}
+                    editable={editable}
+                    {...(userId
+                      ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
+                      : {})}
+                  />
                 </div>
                 <div className="native-project-content" aria-label={t('설계 조회')}>
                   <aside
@@ -948,7 +970,13 @@ export function NativeProjectView({
                                   : {}),
                               }
                             : createRequest
-                              ? { initialSelection: { action: createRequest.action, target: '' } }
+                              ? {
+                                  initialSelection: {
+                                    action: createRequest.action,
+                                    target: createRequest.target ?? '',
+                                  },
+                                  ...(selectedTable ? { table: selectedTable } : {}),
+                                }
                               : selectedTable
                                 ? { table: selectedTable }
                                 : {})}
@@ -989,6 +1017,7 @@ export function NativeProjectView({
                               <NativePropertyEditor
                                 key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
                                 table={selectedTable}
+                                mode={mode}
                                 userId={userId!}
                                 snapshot={snapshot}
                                 busy={editorBusy}
@@ -1023,6 +1052,59 @@ export function NativeProjectView({
                               .map((column, index) => (
                                 <Fragment key={column.id}>
                                   <PanelRow
+                                    drag={{
+                                      draggable: editable && !editorBusy,
+                                      onDragStart: (event) => {
+                                        draggingColumn.current = column.id;
+                                        event.dataTransfer.effectAllowed = 'move';
+                                        event.dataTransfer.setData('text/plain', column.id);
+                                      },
+                                      onDragOver: (event) => {
+                                        if (editable && !editorBusy && draggingColumn.current) {
+                                          event.preventDefault();
+                                          event.dataTransfer.dropEffect = 'move';
+                                        }
+                                      },
+                                      onDrop: (event) => {
+                                        event.preventDefault();
+                                        if (draggingColumn.current)
+                                          reorderColumns(draggingColumn.current, column.id);
+                                        draggingColumn.current = null;
+                                      },
+                                      onDragEnd: () => {
+                                        draggingColumn.current = null;
+                                      },
+                                    }}
+                                    action={
+                                      <button
+                                        type="button"
+                                        className="column-drag-handle"
+                                        aria-label={t('컬럼 순서 변경')}
+                                        title={t('드래그하거나 위/아래 방향키로 순서 변경')}
+                                        disabled={!editable || editorBusy}
+                                        onKeyDown={(event) => {
+                                          const step =
+                                            event.key === 'ArrowUp'
+                                              ? -1
+                                              : event.key === 'ArrowDown'
+                                                ? 1
+                                                : 0;
+                                          if (!step) return;
+                                          event.preventDefault();
+                                          const peers = (doc.columns ?? []).filter(
+                                            (item) => item.tableId === selectedTable.id,
+                                          );
+                                          const target =
+                                            peers[
+                                              peers.findIndex((item) => item.id === column.id) +
+                                                step
+                                            ];
+                                          if (target) reorderColumns(column.id, target.id);
+                                        }}
+                                      >
+                                        ⠿
+                                      </button>
+                                    }
                                     title={`${index + 1}. ${columnName(column.id)}`}
                                     meta={
                                       mode === 'physical'
@@ -1063,6 +1145,7 @@ export function NativeProjectView({
                                         key={`${column.id}:${snapshot.sequence}:${recoveryEpoch}`}
                                         table={selectedTable}
                                         column={column}
+                                        mode={mode}
                                         userId={userId!}
                                         snapshot={snapshot}
                                         busy={editorBusy}
@@ -1079,6 +1162,72 @@ export function NativeProjectView({
                                 </Fragment>
                               ))}
                           </PanelList>
+                          {editable && (
+                            <Button
+                              onClick={() =>
+                                setCreateRequest((previous) => ({
+                                  action: 'column',
+                                  nonce: (previous?.nonce ?? 0) + 1,
+                                }))
+                              }
+                            >
+                              {t('컬럼 추가')} ›
+                            </Button>
+                          )}
+                        </PanelSection>
+                        <PanelSection
+                          title={t('키 · PK / UNIQUE')}
+                          count={
+                            (doc.keys ?? []).filter((item) => item.tableId === selectedTable.id)
+                              .length
+                          }
+                        >
+                          <ul>
+                            {(doc.keys ?? [])
+                              .filter(
+                                (key) => key.tableId === selectedTable.id && visible(key.scope),
+                              )
+                              .map((key) => (
+                                <li key={key.id}>
+                                  {key.kind === 'primary' ? 'PK' : 'UNIQUE'} {key.name} (
+                                  {key.columnIds.map(columnName).join(', ')})
+                                  {key.deferrable ? ` DEFERRABLE ${key.deferrable.initially}` : ''}
+                                  {key.nullsNotDistinct ? ' NULLS NOT DISTINCT' : ''}
+                                </li>
+                              ))}
+                          </ul>
+                        </PanelSection>
+                        <PanelSection
+                          title={t('테이블 관계')}
+                          count={
+                            (doc.tableRelations ?? []).filter(
+                              (item) =>
+                                item.sourceTableId === selectedTable.id ||
+                                item.targetTableId === selectedTable.id,
+                            ).length
+                          }
+                        >
+                          <ul>
+                            {(doc.tableRelations ?? [])
+                              .filter(
+                                (relation) =>
+                                  visible(relation.scope) &&
+                                  (relation.sourceTableId === selectedTable.id ||
+                                    relation.targetTableId === selectedTable.id),
+                              )
+                              .map((relation) => (
+                                <li key={relation.id}>
+                                  {tableName(relation.sourceTableId)} →{' '}
+                                  {tableName(relation.targetTableId)}
+                                  {mode === 'physical' && relation.physical
+                                    ? `: ${relation.physical.name} (${relation.physical.sourceColumnIds.map(columnName).join(', ')}) → (${relation.physical.targetColumnIds.map(columnName).join(', ')}) · DELETE ${relation.physical.onDelete} · UPDATE ${relation.physical.onUpdate}`
+                                    : ` ${relation.logical.name}`}
+                                  {relation.deferrable
+                                    ? ` DEFERRABLE ${relation.deferrable.initially}`
+                                    : ''}
+                                </li>
+                              ))}
+                          </ul>
                         </PanelSection>
                         <PanelSection title={t('상세 설계 정보')}>
                           <p>
@@ -1207,43 +1356,7 @@ export function NativeProjectView({
                               ),
                             )}
                           </details>
-                          <h3>{t('키')}</h3>
-                          <ul>
-                            {(doc.keys ?? [])
-                              .filter(
-                                (key) => key.tableId === selectedTable.id && visible(key.scope),
-                              )
-                              .map((key) => (
-                                <li key={key.id}>
-                                  {key.kind === 'primary' ? 'PK' : 'UNIQUE'} {key.name} (
-                                  {key.columnIds.map(columnName).join(', ')})
-                                  {key.deferrable ? ` DEFERRABLE ${key.deferrable.initially}` : ''}
-                                  {key.nullsNotDistinct ? ' NULLS NOT DISTINCT' : ''}
-                                </li>
-                              ))}
-                          </ul>
-                          <h3>{t('외래 키')}</h3>
-                          <ul>
-                            {(doc.tableRelations ?? [])
-                              .filter(
-                                (relation) =>
-                                  visible(relation.scope) &&
-                                  (relation.sourceTableId === selectedTable.id ||
-                                    relation.targetTableId === selectedTable.id),
-                              )
-                              .map((relation) => (
-                                <li key={relation.id}>
-                                  {tableName(relation.sourceTableId)} →{' '}
-                                  {tableName(relation.targetTableId)}
-                                  {mode === 'physical' && relation.physical
-                                    ? `: ${relation.physical.name} (${relation.physical.sourceColumnIds.map(columnName).join(', ')}) → (${relation.physical.targetColumnIds.map(columnName).join(', ')}) · DELETE ${relation.physical.onDelete} · UPDATE ${relation.physical.onUpdate}`
-                                    : ` ${relation.logical.name}`}
-                                  {relation.deferrable
-                                    ? ` DEFERRABLE ${relation.deferrable.initially}`
-                                    : ''}
-                                </li>
-                              ))}
-                          </ul>
+
                           <h3>{t('인덱스')}</h3>
                           <ul>
                             {(doc.indexes ?? [])
@@ -1309,6 +1422,20 @@ export function NativeProjectView({
                           </ul>
                         </PanelSection>
                       </>
+                    )}
+                    {editable && selectedTable && (
+                      <Button
+                        className="danger"
+                        onClick={() =>
+                          setCreateRequest((previous) => ({
+                            action: 'delete',
+                            target: JSON.stringify(['tables', selectedTable.id]),
+                            nonce: (previous?.nonce ?? 0) + 1,
+                          }))
+                        }
+                      >
+                        {t('테이블 삭제')}
+                      </Button>
                     )}
                     {snapshot.native.status === 'available' &&
                       snapshot.native.issues.length > 0 && (

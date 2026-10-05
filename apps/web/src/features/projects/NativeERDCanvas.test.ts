@@ -760,3 +760,32 @@ describe('native display-only domain filtering', () => {
     expect(document).toEqual(before);
   });
 });
+
+describe('native resize draft', () => {
+  it('previews size and reroutes edges without changing the saved document', () => {
+    const { document } = fixture();
+    const before = structuredClone(document),
+      scene = nativeCanvasScene(document, '__tables__', 'physical');
+    const node = scene.nodes.find((item) => item.objectId === 'a')!;
+    const width = node.width + 150,
+      height = node.height + 120;
+    const drawn = nativeCanvasDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      'a',
+      String(node.x),
+      String(node.y),
+      null,
+      String(width),
+      String(height),
+    );
+    expect(drawn.nodes.find((item) => item.objectId === 'a')).toMatchObject({ width, height });
+    expect(drawn.relations[0]!.geometry.path).not.toEqual(scene.relations[0]!.geometry.path);
+    expect(
+      nativeCanvasMoveCommand(document, node, { x: node.x, y: node.y, width, height }),
+    ).toMatchObject({ type: 'update_node_layout', patch: { width, height } });
+    expect(document).toEqual(before);
+  });
+});

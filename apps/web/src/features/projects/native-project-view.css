@@ -352,3 +352,25 @@
     animation: domain-enter 240ms ease-out;
   }
 }
+
+.native-history-popover {
+  width: min(440px, calc(100vw - 24px));
+  max-height: min(620px, 75vh);
+  overflow: auto;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.native-history-content h2 {
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+.native-history-content ol {
+  padding-left: 20px;
+}
+.native-history-content li {
+  margin-block: 12px;
+  font-size: 12px;
+}

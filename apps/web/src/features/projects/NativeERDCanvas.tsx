@@ -317,7 +317,7 @@ export function recoverNativeCanvasPersonal(
 export function nativeCanvasMoveCommand(
   source: NativeDesignDocument,
   displayed: NodeLayout,
-  patch: Pick<NodeLayout, 'x' | 'y'>,
+  patch: Pick<NodeLayout, 'x' | 'y'> & Partial<Pick<NodeLayout, 'width' | 'height'>>,
 ): NativeEditorCommand {
   const raw = source.layout.nodes.find(
     (node) => node.objectId === displayed.objectId && node.viewId === displayed.viewId,
@@ -331,7 +331,7 @@ export function nativeCanvasMoveCommand(
     tableId: displayed.objectId,
     viewId: displayed.viewId,
     nodeId: nativeDurableId(),
-    placement: { ...patch, width: displayed.width, height: displayed.height },
+    placement: { width: displayed.width, height: displayed.height, ...patch },
   });
 }
 
@@ -407,7 +407,7 @@ export function nativeCanvasScene(
           Math.max(
             size.height,
             table
-              ? 78 +
+              ? 112 +
                   nativeTableCanvasRows(document, table, mode).reduce(
                     (height, row) => height + row.height,
                     0,
@@ -508,18 +508,31 @@ export function nativeCanvasDraftScene(
   x?: string,
   y?: string,
   filter?: NativeDomainFilterValue | null,
+  width?: string,
+  height?: string,
 ) {
   const moved = scene.nodes.find((node) => node.objectId === objectId);
   if (
     !moved ||
     !document.layout.nodes.some((node) => node.id === moved.id) ||
-    (moved.x === Number(x) && moved.y === Number(y))
+    (moved.x === Number(x) &&
+      moved.y === Number(y) &&
+      (width === undefined || moved.width === Number(width)) &&
+      (height === undefined || moved.height === Number(height)))
   )
     return scene;
   const displayed = new Map(
     scene.nodes.map((node) => [
       node.id,
-      node.objectId === objectId ? { ...node, x: Number(x), y: Number(y) } : node,
+      node.objectId === objectId
+        ? {
+            ...node,
+            x: Number(x),
+            y: Number(y),
+            ...(width === undefined ? {} : { width: Number(width) }),
+            ...(height === undefined ? {} : { height: Number(height) }),
+          }
+        : node,
     ]),
   );
   return nativeCanvasScene(
@@ -600,7 +613,7 @@ export function NativeERDCanvas({
   inspectorOpen?: boolean;
   onToggleInspector?: () => void;
   onOpenTools?: () => void;
-  onCreate?: (kind: 'table' | 'domain' | 'enum') => void;
+  onCreate?: (kind: 'table' | 'domain' | 'enum' | 'column') => void;
   onModeChange?: (mode: 'physical' | 'logical') => void;
   onViewChange?: (id: string) => void;
   pins?: ReactNode;
@@ -656,10 +669,14 @@ export function NativeERDCanvas({
     },
     [onViewChange],
   );
-  const applyDomainFilter = useCallback((filter: NativeDomainFilterValue | null) => {
-    setViewId(TABLES_VIEW_ID);
-    setDomainFilter(filter);
-  }, []);
+  const applyDomainFilter = useCallback(
+    (filter: NativeDomainFilterValue | null) => {
+      setViewId(TABLES_VIEW_ID);
+      setDomainFilter(filter);
+      onViewChange?.(TABLES_VIEW_ID);
+    },
+    [onViewChange],
+  );
   const [tool, setTool] = useState<'select' | 'hand'>('select');
   const [toolbarAction, setToolbarAction] = useState<{
     action: string;
@@ -669,6 +686,13 @@ export function NativeERDCanvas({
   const spacePan = useRef(false);
   const panGesture = useRef<{ pointerId: number; x: number; y: number; camera: Viewport } | null>(
     null,
+  );
+  const addColumnFromCard = useCallback(
+    (tableId: string) => {
+      onSelect(tableId);
+      onCreate?.('column');
+    },
+    [onSelect, onCreate],
   );
   const addNoteFromToolbar = useCallback(() => {
     setToolbarAction((value) => ({ action: 'note', target: '', nonce: (value?.nonce ?? 0) + 1 }));
@@ -869,6 +893,8 @@ export function NativeERDCanvas({
   const draftObjectId = draft?.values.objectId;
   const draftX = draft?.values.x;
   const draftY = draft?.values.y;
+  const draftWidth = draft?.values.width,
+    draftHeight = draft?.values.height;
   const drawn = useMemo(
     () =>
       nativeCanvasDraftScene(
@@ -880,10 +906,28 @@ export function NativeERDCanvas({
         draftX,
         draftY,
         domainFilter,
+        draftWidth,
+        draftHeight,
       ),
-    [base, scene, effectiveView, mode, draftObjectId, draftX, draftY, domainFilter],
+    [
+      base,
+      scene,
+      effectiveView,
+      mode,
+      draftObjectId,
+      draftX,
+      draftY,
+      domainFilter,
+      draftWidth,
+      draftHeight,
+    ],
   );
-  function preserve(node: NodeLayout, x: number, y: number) {
+  function preserve(
+    node: NodeLayout,
+    x: number,
+    y: number,
+    size?: { width: number; height: number },
+  ) {
     if (!userId || !placementEditable || allBusy || stale) return;
     if (
       base.domains.some((domain) => domain.id === node.objectId) &&
@@ -893,6 +937,18 @@ export function NativeERDCanvas({
     const command = nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
       x: limit(x),
       y: limit(y),
+      ...(size
+        ? {
+            width: Math.max(
+              nodeLayoutSchema.shape.width.minValue!,
+              Math.min(nodeLayoutSchema.shape.width.maxValue!, size.width),
+            ),
+            height: Math.max(
+              nodeLayoutSchema.shape.height.minValue!,
+              Math.min(nodeLayoutSchema.shape.height.maxValue!, size.height),
+            ),
+          }
+        : {}),
     });
     const current = draftRef.current;
     if (current && current.values.objectId !== node.objectId) {
@@ -916,6 +972,7 @@ export function NativeERDCanvas({
         objectId: node.objectId,
         x: String(limit(x)),
         y: String(limit(y)),
+        ...(size ? { width: String(size.width), height: String(size.height) } : {}),
         nodeId: node.id,
         viewId: node.viewId,
         commands: JSON.stringify([command]),
@@ -1615,6 +1672,8 @@ export function NativeERDCanvas({
               gesture={gesture}
               actions={sceneActions}
               onOpenDomain={navigateView}
+              onAddColumn={editable ? addColumnFromCard : undefined}
+              resizeEnabled={placementEditable && !allBusy && !stale}
               onEdit={userId && editable ? openInline : undefined}
             />
           </div>

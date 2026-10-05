@@ -1,3 +1,4 @@
+import { PanelSection } from '../../shared/editor/panel.js';
 import { useState } from 'react';
 import { nativeEditorCommandSchema } from '@ezerd/contracts';
 import {
@@ -1253,8 +1254,11 @@ export function NativeStructureEditor({
   const create = !['patch', 'delete'].includes(action);
   const mountingKey = `${context.userId}:${context.snapshot.project.id}:${context.snapshot.project.version}:${context.snapshot.sequence}:${context.snapshot.project.databaseRevision}`;
   return (
-    <details className="native-property-editor" open={initialSelection ? true : undefined}>
-      <summary>{t('구조 편집')}</summary>
+    <PanelSection
+      className="native-property-editor"
+      title={t('구조 편집')}
+      defaultOpen={!!initialSelection}
+    >
       <NativeEditorField
         label="구조 편집"
         value={action}
@@ -1336,6 +1340,6 @@ export function NativeStructureEditor({
           table={table}
         />
       )}
-    </details>
+    </PanelSection>
   );
 }

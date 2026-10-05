@@ -36,7 +36,9 @@ export function NativeHistoryDialog({
   canEdit,
   onClose,
   onReload,
+  embedded = false,
 }: {
+  embedded?: boolean;
   userId: string;
   snapshot: ProjectDocumentState;
   canEdit: boolean;
@@ -82,7 +84,7 @@ export function NativeHistoryDialog({
     }
   }
   useEffect(() => {
-    dialog.current?.showModal();
+    if (!embedded) dialog.current?.showModal();
     active.current = true;
     let alive = true;
     void loadNativeHistoryPending(userId, snapshot.project.id)
@@ -105,16 +107,8 @@ export function NativeHistoryDialog({
       dialog.current?.close();
     };
   }, [userId, snapshot.project.id]);
-  return (
-    <dialog
-      ref={dialog}
-      className="project-ddl-dialog"
-      aria-labelledby="native-history-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) onClose();
-      }}
-    >
+  const content = (
+    <>
       <h2 id="native-history-title">{t('설계 이력')}</h2>
       <p>{t('내 작업만 현재 설계의 충돌을 확인한 뒤 되돌릴 수 있습니다.')}</p>
       {error && <p role="alert">{error}</p>}
@@ -204,6 +198,21 @@ export function NativeHistoryDialog({
       <Button disabled={busy} onClick={onClose}>
         {t('닫기')}
       </Button>
+    </>
+  );
+  return embedded ? (
+    <div className="native-history-content">{content}</div>
+  ) : (
+    <dialog
+      ref={dialog}
+      className="project-ddl-dialog"
+      aria-labelledby="native-history-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+    >
+      {content}
     </dialog>
   );
 }

@@ -17,7 +17,7 @@ describe('native canvas chrome', () => {
         mode: 'physical',
       }),
     );
-    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('data-view-id="__tables__"');
     expect(html).toContain('disabled=""');
     expect(html).toContain('value="__tables__"');
   });

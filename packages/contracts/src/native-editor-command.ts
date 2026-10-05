@@ -322,6 +322,15 @@ export const nativeEditorCommandSchema = z.discriminatedUnion('type', [
   nativeClipboardPasteCommandSchema,
   ...nativeDomainCommandSchema.options,
   ...nativeSharedCanvasCommandSchema.options,
+  z.strictObject({
+    type: z.literal('reorder_columns'),
+    tableId: id,
+    columnIds: z
+      .array(id)
+      .min(1)
+      .max(20000)
+      .refine((ids) => new Set(ids).size === ids.length, 'Duplicate column IDs'),
+  }),
   z.strictObject({ type: z.literal('patch_column'), id, patch: nativeColumnPatchSchema }),
   z.strictObject({ type: z.literal('patch_table'), id, patch: nativeTablePatchSchema }),
   z.strictObject({

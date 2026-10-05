@@ -513,3 +513,21 @@ describe('native missing constraint option consumers', () => {
     expect(html).toMatch(/<option value="enum" disabled=""/);
   });
 });
+
+// These policy tests inspect option props. RAC's SSR hidden select omits disabled
+// attributes; the actual common Select is exercised by browser/UI tests.
+vi.mock('../../components/ui/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../components/ui/index.js')>();
+  return {
+    ...actual,
+    Select: ({
+      children,
+      value,
+      disabled,
+    }: {
+      children: import('react').ReactNode;
+      value?: string;
+      disabled?: boolean;
+    }) => createElement('select', { value, disabled, onChange() {} }, children),
+  };
+});
