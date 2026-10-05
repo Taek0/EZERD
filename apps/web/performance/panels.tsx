@@ -135,6 +135,9 @@ function Demo() {
     try {
       await document.fonts.ready;
       await settle();
+      // Keep the other panel in the same state for every direction and repetition.
+      button(kind === 'pins' ? '속성 패널 열기' : '핀 패널 숨기기')?.click();
+      await settle();
       if (!button(wanted)) {
         button(labels[open ? 1 : 0]!)?.click();
         await settle();
@@ -177,6 +180,8 @@ function Demo() {
         commit: __PERF_COMMIT__,
         dirty: __PERF_DIRTY__,
         viewport: [innerWidth, innerHeight],
+        userAgent: navigator.userAgent,
+        dpr: devicePixelRatio,
         collectSpans: true,
       });
       let last = await frame();
