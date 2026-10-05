@@ -4,6 +4,7 @@ export interface NativeCanvasRecoverySelection {
   viewId?: string;
   routeId?: string;
   inline?: NativeInlineTarget;
+  descriptionId?: string;
   action?: { action: string; target: string };
   style?: string;
   domainRelation?: { action: 'create' | 'edit' | 'delete'; id?: string };

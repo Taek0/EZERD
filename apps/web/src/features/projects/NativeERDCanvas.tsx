@@ -1,6 +1,28 @@
 import type { CommentContext } from '../comments/CommentsPanel.js';
 import { pinPosition, reviewCanvasView, type ReviewTarget } from '../comments/comments-state.js';
 import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
+import { selectionRect, intersectingObjects } from '../canvas/canvas-selection.js';
+import {
+  toolShortcutInputSelector,
+  toolShortcutOverlaySelector,
+} from '../canvas/canvas-tool-shortcuts.js';
+import {
+  nativeCanvasMoveCommand,
+  nativeSelectionPlacements,
+  nativeAutoLayoutPlacements,
+  nativeCanvasDraftPlacements,
+  nativeZoomAt,
+} from './native-canvas-selection.js';
+export { nativeCanvasMoveCommand } from './native-canvas-selection.js';
+import {
+  copyNativeClipboard,
+  prepareNativeClipboardPaste,
+  readNativeClipboard,
+} from './native-clipboard-helpers.js';
+import { nativeClipboardMessage } from './native-clipboard.js';
+import { rememberTableClipboard, readLocalTableClipboard } from '../canvas/table-clipboard.js';
+import { ConfirmProvider, useConfirm } from '../../components/ui/ConfirmProvider.js';
+import { nativeCanvasDeleteCommands } from './native-canvas-delete.js';
 import { createPortal } from 'react-dom';
 import { NativeCanvasToolbar, NativeCameraControls } from './NativeCanvasToolbar.js';
 import { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
@@ -17,6 +39,7 @@ import {
   useState,
   type PointerEvent,
   type ReactNode,
+  type ComponentProps,
 } from 'react';
 import {
   nativeEditorCommandSchema,
@@ -50,13 +73,14 @@ import {
   nativeColumnTypeDisplay,
   nativeDefaultDisplay,
   nativeGenerationDisplay,
+  createNativeTable,
   type NativeDesignDocument,
   type NodeLayout,
   type Viewport,
 } from '@ezerd/model';
 import { relationGeometry } from '../relations/relation-routing.js';
 import { wheelCamera } from '../canvas/canvas-wheel.js';
-import { Button } from '../../components/ui/index.js';
+import { Button, ContextMenu, Checkbox, AnimatedDetails } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { message, request } from '../../shared/api/client.js';
 import { NativeEditorField, type NativeEditorSave } from './native-editor-form.js';
@@ -314,27 +338,6 @@ export function recoverNativeCanvasPersonal(
   return recoverNativePrivateCanvas(pending, snapshot, allowReplay, { storage }, api);
 }
 /** Preview nodes can be reader-generated. Persist a real reference before moving an absent raw node. */
-export function nativeCanvasMoveCommand(
-  source: NativeDesignDocument,
-  displayed: NodeLayout,
-  patch: Pick<NodeLayout, 'x' | 'y'> & Partial<Pick<NodeLayout, 'width' | 'height'>>,
-): NativeEditorCommand {
-  const raw = source.layout.nodes.find(
-    (node) => node.objectId === displayed.objectId && node.viewId === displayed.viewId,
-  );
-  if (raw)
-    return nativeEditorCommandSchema.parse({ type: 'update_node_layout', nodeId: raw.id, patch });
-  if (!source.tables?.some((table) => table.id === displayed.objectId))
-    throw new Error('canvas.node-not-found');
-  return nativeEditorCommandSchema.parse({
-    type: 'add_table_reference',
-    tableId: displayed.objectId,
-    viewId: displayed.viewId,
-    nodeId: nativeDurableId(),
-    placement: { width: displayed.width, height: displayed.height, ...patch },
-  });
-}
-
 export function nativeCanvasScene(
   document: NativeDesignDocument,
   viewId: string,
@@ -563,7 +566,14 @@ export function nativeCanvasExportBlocker(
   return { dirty, storageFailure: sharedStorageFailure };
 }
 
-export function NativeERDCanvas({
+export function NativeERDCanvas(props: ComponentProps<typeof NativeCanvasWorkspace>) {
+  return (
+    <ConfirmProvider>
+      <NativeCanvasWorkspace {...props} />
+    </ConfirmProvider>
+  );
+}
+function NativeCanvasWorkspace({
   document,
   snapshot,
   userId,
@@ -623,6 +633,45 @@ export function NativeERDCanvas({
   reviewFocus?: (ReviewTarget & { nonce: number }) | null;
 }) {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
+  const [descriptionId, setDescriptionId] = useState<string | null>(
+    recoverySelection?.descriptionId ?? null,
+  );
+  useEffect(
+    () => setDescriptionId(recoverySelection?.descriptionId ?? null),
+    [recoverySelection?.descriptionId, userId, snapshot.project.id],
+  );
+  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
+  const selectedObjectsRef = useRef(selectedObjectIds);
+  selectedObjectsRef.current = selectedObjectIds;
+  const groupOrigins = useRef<NodeLayout[] | null>(null);
+  const [marquee, setMarquee] = useState<ReturnType<typeof selectionRect> | null>(null);
+  const marqueeGesture = useRef<{
+    pointerId: number;
+    start: { x: number; y: number };
+    initial: string[];
+  } | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    source: string | null;
+    columnId?: string;
+    point: { x: number; y: number };
+  } | null>(null);
+  const deletionBusy = useRef(false);
+  const operationScope = useRef('');
+  operationScope.current = JSON.stringify([
+    userId,
+    snapshot.project.id,
+    snapshot.project.version,
+    snapshot.sequence,
+    snapshot.project.databaseRevision,
+  ]);
+  const [connection, setConnection] = useState<{
+    kind: 'domain' | 'foreignKey';
+    source: string;
+  } | null>(null);
+  const [connectPointer, setConnectPointer] = useState<{ x: number; y: number } | null>(null);
   const [viewId, setViewId] = useState(
     recoverySelection?.viewId ?? (selectedDomainId ? 'overview' : TABLES_VIEW_ID),
   );
@@ -895,7 +944,7 @@ export function NativeERDCanvas({
   const draftY = draft?.values.y;
   const draftWidth = draft?.values.width,
     draftHeight = draft?.values.height;
-  const drawn = useMemo(
+  const singleDrawn = useMemo(
     () =>
       nativeCanvasDraftScene(
         base,
@@ -922,6 +971,123 @@ export function NativeERDCanvas({
       draftHeight,
     ],
   );
+  const drawn = useMemo(() => {
+    if (!draft?.values.nodesJSON) return singleDrawn;
+    try {
+      const placements = new Map(
+        nativeCanvasDraftPlacements(draft.values).map((node) => [node.id, node]),
+      );
+      const originals = [
+        ...base.layout.nodes,
+        ...scene.nodes.filter((node) => !base.layout.nodes.some((raw) => raw.id === node.id)),
+      ];
+      const display = {
+        ...base,
+        layout: { ...base.layout, nodes: originals.map((node) => placements.get(node.id) ?? node) },
+      };
+      const result = nativeCanvasScene(display, effectiveView, mode, domainFilter);
+      return { ...result, nodes: result.nodes.map((node) => placements.get(node.id) ?? node) };
+    } catch {
+      return singleDrawn;
+    }
+  }, [base, scene, singleDrawn, draft?.values.nodesJSON, effectiveView, mode, domainFilter]);
+  const visibleSelection = selectedObjectIds.filter((id) =>
+    scene.nodes.some((node) => node.objectId === id),
+  );
+  const selectionIds = visibleSelection.length
+    ? visibleSelection
+    : selectedNode
+      ? scene.nodes.filter((node) => node.id === selectedNode).map((node) => node.objectId)
+      : selectedTableId
+        ? [selectedTableId]
+        : selectedDomainId
+          ? [selectedDomainId]
+          : [];
+  useEffect(() => {
+    setSelectedObjectIds((ids) => {
+      const visible = ids.filter((id) => scene.nodes.some((node) => node.objectId === id));
+      return ids.length === visible.length ? ids : visible;
+    });
+  }, [scene]);
+  useEffect(() => {
+    setMenu(null);
+    setConnection(null);
+    setConnectPointer(null);
+    setSelectedObjectIds([]);
+    setMarquee(null);
+    marqueeGesture.current = null;
+    groupOrigins.current = null;
+  }, [effectiveView, userId, snapshot.project.id]);
+  function preservePlacements(placements: NodeLayout[]) {
+    if (!userId || !placementEditable || allBusy || stale || !placements.length) return;
+    if (placements.length > 100) {
+      setError(t('한 번에 저장할 객체가 너무 많습니다. 나누어서 이동해 주세요.'));
+      return;
+    }
+    try {
+      const retained = draftRef.current;
+      const retainedIds = retained
+        ? nativeCanvasDraftPlacements(retained.values).map((node) => node.objectId)
+        : [];
+      if (
+        retained &&
+        (retainedIds.length
+          ? retainedIds.some((id) => !placements.some((node) => node.objectId === id))
+          : !placements.some((node) => node.objectId === retained.values.objectId))
+      ) {
+        setError(t('미저장 배치가 있습니다.'));
+        return;
+      }
+      const commands = placements.map((node) =>
+        nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
+          x: node.x,
+          y: node.y,
+          width: node.width,
+          height: node.height,
+        }),
+      );
+      const node = placements[0]!;
+      const current = draftRef.current;
+      const origins = placements.map(
+        (node) => scene.nodes.find((raw) => raw.id === node.id) ?? node,
+      );
+      const next: NativeEditorDraft = {
+        userId,
+        projectId: snapshot.project.id,
+        key: inputKey,
+        revision: nativeDurableId(),
+        expected: current?.expected ?? expected(snapshot),
+        before: current?.before ?? {
+          nodesJSON: JSON.stringify(origins),
+          objectId: node.objectId,
+          x: String(origins[0]!.x),
+          y: String(origins[0]!.y),
+          nodeId: node.id,
+          viewId: node.viewId,
+        },
+        values: {
+          nodesJSON: JSON.stringify(placements),
+          objectId: node.objectId,
+          x: String(node.x),
+          y: String(node.y),
+          nodeId: node.id,
+          viewId: node.viewId,
+          commands: JSON.stringify(commands),
+          personalVersion: String(personal?.version ?? ''),
+        },
+      };
+      draftRef.current = next;
+      setDraft(next);
+      storeNativeEditorDraft(next);
+      setError('');
+      setStorageError('');
+      if (!isPrivate) setSharedStorageFailure(false);
+    } catch (error) {
+      setError(message(error));
+      setStorageError(message(error));
+      if (!isPrivate) setSharedStorageFailure(true);
+    }
+  }
   function preserve(
     node: NodeLayout,
     x: number,
@@ -929,6 +1095,14 @@ export function NativeERDCanvas({
     size?: { width: number; height: number },
   ) {
     if (!userId || !placementEditable || allBusy || stale) return;
+    if (!size && groupOrigins.current && groupOrigins.current.length > 1) {
+      const origin = groupOrigins.current.find((item) => item.id === node.id);
+      if (origin)
+        preservePlacements(
+          nativeSelectionPlacements(groupOrigins.current, x - origin.x, y - origin.y),
+        );
+      return;
+    }
     if (
       base.domains.some((domain) => domain.id === node.objectId) &&
       !sharedSource.layout.nodes.some((raw) => raw.id === node.id)
@@ -992,8 +1166,8 @@ export function NativeERDCanvas({
       if (!isPrivate) setSharedStorageFailure(true);
     }
   }
-  async function savePersonalCommand(
-    command: NativePersonalCanvasCommand,
+  async function savePersonalCommands(
+    commands: NativePersonalCanvasCommand[],
     editorDraft?: DraftRef,
   ): Promise<boolean> {
     if (!userId || !personalEditable || allBusy || !personal || privateQueueState !== 'empty')
@@ -1016,7 +1190,7 @@ export function NativeERDCanvas({
         sharedSource,
         reconcilePersonalState(sharedSource, personal.state),
       );
-      const candidate = nativeCanvasPersonalCandidate(personalSource, command);
+      const candidate = commands.reduce(nativeCanvasPersonalCandidate, personalSource);
       let staged: NativeCanvasPersonalPending;
       try {
         staged = await stageNativeCanvasPersonal(
@@ -1048,7 +1222,11 @@ export function NativeERDCanvas({
       if (current()) setPersonalBusy(false);
     }
   }
+  function savePersonalCommand(command: NativePersonalCanvasCommand, editorDraft?: DraftRef) {
+    return savePersonalCommands([command], editorDraft);
+  }
   async function savePlacement() {
+    groupOrigins.current = null;
     const current = draftRef.current;
     if (!userId || !current || !placementEditable || allBusy || stale || storageError) return;
     try {
@@ -1059,10 +1237,13 @@ export function NativeERDCanvas({
       if (isPrivate) {
         if (String(personal?.version ?? '') !== current.values.personalVersion)
           throw new Error('native.personal-conflict');
-        saved = await savePersonalCommand(nativePersonalCanvasCommandSchema.parse(commands[0]), {
-          key: current.key,
-          revision: current.revision,
-        });
+        saved = await savePersonalCommands(
+          commands.map((command) => nativePersonalCanvasCommandSchema.parse(command)),
+          {
+            key: current.key,
+            revision: current.revision,
+          },
+        );
       } else
         saved = await onSave(commands, current.expected, {
           key: current.key,
@@ -1098,12 +1279,319 @@ export function NativeERDCanvas({
       !placementEditable ||
       allBusy ||
       stale ||
-      (event.target instanceof Element && event.target.closest('button,input,select,textarea'))
+      (event.target instanceof Element &&
+        event.target.closest('button,input,select,textarea,[contenteditable=true]'))
     )
       return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    groupOrigins.current =
+      selectedObjectsRef.current.includes(node.objectId) && selectedObjectsRef.current.length > 1
+        ? scene.nodes.filter((item) => selectedObjectsRef.current.includes(item.objectId))
+        : null;
     gesture.current = { node, x: event.clientX, y: event.clientY, pointerId: event.pointerId };
     setSelectedNode(node.id);
+  }
+  function canvasPoint(clientX: number, clientY: number) {
+    const rect = surface.current?.getBoundingClientRect();
+    return {
+      x: limit((clientX - (rect?.left ?? 0) - camera.x) / camera.zoom),
+      y: limit((clientY - (rect?.top ?? 0) - camera.y) / camera.zoom),
+    };
+  }
+  function contextMenu(
+    node: NodeLayout | null,
+    event: {
+      clientX: number;
+      clientY: number;
+      preventDefault: () => void;
+      stopPropagation: () => void;
+    },
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (node && !selectedObjectsRef.current.includes(node.objectId)) {
+      setSelectedObjectIds([node.objectId]);
+      setSelectedNode(node.id);
+    }
+    setMenu({
+      source: node?.objectId ?? null,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 290)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 320)),
+      point: canvasPoint(event.clientX, event.clientY),
+    });
+  }
+  function selectNode(
+    node: NodeLayout,
+    event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  ) {
+    if (connection) {
+      void completeConnection(node.objectId);
+      return;
+    }
+    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+      setSelectedObjectIds((ids) =>
+        ids.includes(node.objectId)
+          ? ids.filter((id) => id !== node.objectId)
+          : [...ids, node.objectId],
+      );
+    } else if (!selectedObjectsRef.current.includes(node.objectId))
+      setSelectedObjectIds([node.objectId]);
+    setSelectedNode(node.id);
+    if (!(event.shiftKey || event.ctrlKey || event.metaKey)) {
+      if (base.tables?.some((table) => table.id === node.objectId)) onSelect(node.objectId);
+      else if (base.domains.some((domain) => domain.id === node.objectId))
+        onSelectDomain?.(node.objectId);
+    }
+  }
+  async function saveCommands(commands: CanvasCommand[], ref?: DraftRef): Promise<boolean> {
+    if (!userId || allBusy || draft || stale || storageError || !commands.length) return false;
+    if (isPrivate)
+      return (
+        placementEditable &&
+        savePersonalCommands(
+          commands.map((command) => nativePersonalCanvasCommandSchema.parse(command)),
+          ref,
+        )
+      );
+    if (!editable) return false;
+    return onSave(
+      commands.map((command) => nativeEditorCommandSchema.parse(command)),
+      expected(snapshot),
+      ref,
+    );
+  }
+  async function commitDescription(id: string, value: string) {
+    if (!userId || !placementEditable || allBusy || draft) return;
+    const domain = sharedSource.domains.find((item) => item.id === id);
+    const note = base.notes.find((item) => item.id === id);
+    if (!domain && !note) return;
+    const key = `canvas:description:${effectiveView}:${id}`;
+    const input: NativeEditorDraft = {
+      userId,
+      projectId: snapshot.project.id,
+      key,
+      revision: nativeDurableId(),
+      expected: expected(snapshot),
+      before: {
+        objectId: id,
+        text: domain?.description ?? note?.text ?? '',
+        personalVersion: String(personal?.version ?? ''),
+      },
+      values: { objectId: id, text: value, personalVersion: String(personal?.version ?? '') },
+    };
+    try {
+      storeNativeEditorDraft(input);
+      const command = nativeEditorCommandSchema.parse(
+        domain
+          ? { type: 'patch_domain', id, patch: { description: value } }
+          : { type: 'patch_note', id, patch: { text: value } },
+      );
+      const saved = await saveCommands([command], { key, revision: input.revision });
+      if (saved) discardNativeEditorDraft(userId, snapshot.project.id, input);
+      else setDescriptionId(id);
+    } catch (error) {
+      setError(message(error));
+      setDescriptionId(id);
+    }
+  }
+  async function createObject(kind: 'table' | 'domain' | 'note', point?: { x: number; y: number }) {
+    if (!placementEditable || allBusy || draft) return;
+    const rect = surface.current?.getBoundingClientRect();
+    const at = point ?? {
+      x: limit(((rect?.width ?? 800) / 2 - camera.x) / camera.zoom - 120),
+      y: limit(((rect?.height ?? 600) / 2 - camera.y) / camera.zoom - 70),
+    };
+    const id = nativeDurableId();
+    try {
+      let commands: CanvasCommand[];
+      if (kind === 'note')
+        commands = [
+          {
+            type: 'upsert_note',
+            value: { id, viewId: drawn.viewId, text: t('업무 설명을 입력하세요.') },
+            placement: at,
+          },
+        ];
+      else if (kind === 'domain')
+        commands = [
+          {
+            type: 'add_domain',
+            value: { id, name: t('새 도메인'), description: '', color: '#8993a3' },
+            placement: at,
+            nodeId: nativeDurableId(),
+          },
+        ];
+      else {
+        if (isPrivate) {
+          onCreate?.('table');
+          return;
+        }
+        const owner = base.domains.some((d) => d.id === effectiveView)
+          ? effectiveView
+          : domainFilter?.domainIds.length === 1 && !domainFilter.unassigned
+            ? domainFilter.domainIds[0]!
+            : null;
+        const table = createNativeTable(sharedSource.database, id, owner);
+        table.scope = mode;
+        table.logical.name = t('새 테이블');
+        commands = [
+          { type: 'add_table', value: table },
+          {
+            type: 'add_table_reference',
+            tableId: id,
+            viewId: TABLES_VIEW_ID,
+            nodeId: nativeDurableId(),
+            placement: at,
+          },
+        ];
+      }
+      if (await saveCommands(commands)) {
+        setSelectedObjectIds([id]);
+        if (kind === 'table') onSelect(id);
+        else if (kind === 'domain') onSelectDomain?.(id);
+      }
+    } catch (error) {
+      setError(message(error));
+    }
+  }
+  async function arrangeVisibleNodes() {
+    if (!placementEditable || allBusy || draft) return;
+    try {
+      const placements = nativeAutoLayoutPlacements(base, scene.nodes, effectiveView);
+      if (placements.length > 100) {
+        setError(t('한 번에 저장할 객체가 너무 많습니다. 나누어서 이동해 주세요.'));
+        return;
+      }
+      await saveCommands(
+        placements.map((node) =>
+          nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, { x: node.x, y: node.y }),
+        ),
+      );
+    } catch (error) {
+      setError(message(error));
+    }
+  }
+  async function deleteSelection(ids = selectionIds) {
+    if (!placementEditable || allBusy || draft || deletionBusy.current || !ids.length) return;
+    deletionBusy.current = true;
+    const scope = operationScope.current;
+    try {
+      const commands = nativeCanvasDeleteCommands(
+        isPrivate ? base : sharedSource,
+        ids,
+        effectiveView,
+        isPrivate,
+      );
+      if (!commands.length) return;
+      if (
+        !(await confirm({
+          title:
+            ids.length > 1
+              ? t('선택한 객체 {count}개 삭제', { count: ids.length })
+              : t('객체 삭제'),
+          description: t(
+            isPrivate
+              ? '이 화면의 참조와 메모를 삭제할까요? 원본 테이블은 유지됩니다.'
+              : '선택한 객체와 소유 데이터·연결 관계를 삭제할까요?',
+          ),
+          confirmLabel: t('삭제'),
+          destructive: true,
+        }))
+      )
+        return;
+      if (!alive.current || operationScope.current !== scope) return;
+      if (await saveCommands(commands)) {
+        setSelectedObjectIds([]);
+        setSelectedNode(null);
+      }
+    } catch (error) {
+      setError(message(error));
+    } finally {
+      deletionBusy.current = false;
+    }
+  }
+  function copySelection(transfer?: DataTransfer, cut = false) {
+    const ids = selectionIds.filter((id) => sharedSource.tables?.some((table) => table.id === id));
+    if (!ids.length || (cut && !editable)) return;
+    try {
+      const copied = copyNativeClipboard(snapshot, ids);
+      rememberTableClipboard(copied.text, true);
+      if (transfer) transfer.setData('text/plain', copied.text);
+      else void navigator.clipboard?.writeText(copied.text).catch(() => {});
+      if (cut) void deleteSelection(ids);
+      setError('');
+    } catch (error) {
+      setError(t(nativeClipboardMessage(error instanceof Error ? error.message : '')));
+    }
+  }
+  async function pasteSelection(text: string, point?: { x: number; y: number }) {
+    if (!editable || allBusy || draft || effectiveView === 'overview') return;
+    try {
+      const domainId = base.domains.some((d) => d.id === effectiveView) ? effectiveView : null;
+      const paste = prepareNativeClipboardPaste(
+        snapshot,
+        text,
+        domainId,
+        point ?? { x: limit(-camera.x / camera.zoom + 32), y: limit(-camera.y / camera.zoom + 32) },
+      );
+      if (!paste.plan.canApply) throw Error('clipboard.policy-blocked');
+      await onSave([paste.command], expected(snapshot));
+    } catch (error) {
+      setError(t(nativeClipboardMessage(error instanceof Error ? error.message : '')));
+    }
+  }
+  async function pasteFromMenu() {
+    const scope = operationScope.current,
+      point = menu?.point;
+    let text = readLocalTableClipboard();
+    try {
+      if (navigator.clipboard?.readText) text = await navigator.clipboard.readText();
+    } catch {}
+    if (alive.current && scope === operationScope.current) await pasteSelection(text, point);
+  }
+  async function completeConnection(target: string) {
+    if (!connection || !editable || allBusy || draft) return;
+    try {
+      let command: CanvasCommand;
+      if (connection.kind === 'domain') {
+        if (!base.domains.some((d) => d.id === target) || target === connection.source) return;
+        command = {
+          type: 'add_domain_relation',
+          value: {
+            id: nativeDurableId(),
+            sourceDomainId: connection.source,
+            targetDomainId: target,
+            name: '',
+            description: '',
+            direction: 'forward',
+          },
+        };
+      } else {
+        const column = base.columns?.find((c) => c.id === connection.source);
+        const key = base.keys?.find(
+          (k) =>
+            k.tableId === column?.tableId &&
+            k.kind === 'primary' &&
+            k.columnIds.includes(connection.source),
+        );
+        if (!column || !key || !base.tables?.some((table) => table.id === target))
+          throw Error('foreign-key.primary-key-not-found');
+        command = {
+          type: 'create_foreign_key',
+          primaryTableId: column.tableId,
+          foreignTableId: target,
+          primaryKeyId: key.id,
+          relationId: nativeDurableId(),
+          columnIds: key.columnIds.map(() => nativeDurableId()),
+        };
+      }
+      if (await saveCommands([command])) {
+        setConnection(null);
+        setConnectPointer(null);
+      }
+    } catch (error) {
+      setError(message(error));
+    }
   }
   const inlineContext = useMemo(
     () => ({ userId: userId ?? '', snapshot, busy: allBusy || !!draft || !editable, onSave }),
@@ -1322,7 +1810,8 @@ export function NativeERDCanvas({
         filter={domainFilter}
         onFilter={applyDomainFilter}
         onCreate={onCreate}
-        onNote={addNoteFromToolbar}
+        onNote={() => void createObject('note')}
+        onAutoLayout={() => void arrangeVisibleNodes()}
         onTools={onOpenTools}
         editable={editable}
         noteEditable={placementEditable}
@@ -1379,6 +1868,57 @@ export function NativeERDCanvas({
                   const node = scene.nodes.find((node) => node.objectId === draft.values.objectId);
                   if (!node || !userId) return;
                   try {
+                    const placements = nativeCanvasDraftPlacements(draft.values);
+                    if (placements.length) {
+                      const currentNodes = placements.map((saved) => {
+                        const current = scene.nodes.find(
+                          (raw) => raw.objectId === saved.objectId && raw.viewId === saved.viewId,
+                        );
+                        if (!current) throw Error('canvas.node-not-found');
+                        return {
+                          ...current,
+                          x: saved.x,
+                          y: saved.y,
+                          width: saved.width,
+                          height: saved.height,
+                        };
+                      });
+                      const next = {
+                        ...draft,
+                        revision: nativeDurableId(),
+                        expected: expected(snapshot),
+                        before: {
+                          ...draft.before,
+                          nodesJSON: JSON.stringify(
+                            scene.nodes.filter((raw) =>
+                              placements.some((saved) => saved.objectId === raw.objectId),
+                            ),
+                          ),
+                        },
+                        values: {
+                          ...draft.values,
+                          nodesJSON: JSON.stringify(currentNodes),
+                          commands: JSON.stringify(
+                            currentNodes.map((current) =>
+                              nativeCanvasMoveCommand(isPrivate ? base : sharedSource, current, {
+                                x: current.x,
+                                y: current.y,
+                                width: current.width,
+                                height: current.height,
+                              }),
+                            ),
+                          ),
+                          personalVersion: String(personal?.version ?? ''),
+                        },
+                      };
+                      draftRef.current = next;
+                      setDraft(next);
+                      storeNativeEditorDraft(next);
+                      setError('');
+                      setStorageError('');
+                      if (!isPrivate) setSharedStorageFailure(false);
+                      return;
+                    }
                     const command = nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
                       x: Number(draft.values.x),
                       y: Number(draft.values.y),
@@ -1530,8 +2070,68 @@ export function NativeERDCanvas({
         </div>
       )}
       <div
-        className={`native-erd-surface${tool === 'hand' ? ' hand-tool' : ''}${pinMode ? ' pin-mode' : ''}`}
+        className={`native-erd-surface canvas-surface${tool === 'hand' ? ' hand-tool' : ''}${pinMode ? ' pin-mode' : ''}`}
+        onContextMenu={(event) => {
+          if (event.target instanceof Element && event.target.closest(toolShortcutInputSelector))
+            return;
+          const element =
+            event.target instanceof Element ? event.target.closest('[data-node-id]') : null;
+          contextMenu(
+            element
+              ? (scene.nodes.find((node) => node.id === element.getAttribute('data-node-id')) ??
+                  null)
+              : null,
+            event,
+          );
+        }}
+        onCopy={(event) => {
+          if (
+            tool === 'hand' ||
+            (event.target instanceof Element && event.target.closest(toolShortcutInputSelector))
+          )
+            return;
+          if (!selectionIds.some((id) => sharedSource.tables?.some((table) => table.id === id)))
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          copySelection(event.clipboardData);
+        }}
+        onCut={(event) => {
+          if (
+            !editable ||
+            allBusy ||
+            draft ||
+            tool === 'hand' ||
+            (event.target instanceof Element && event.target.closest(toolShortcutInputSelector))
+          )
+            return;
+          if (!selectionIds.some((id) => sharedSource.tables?.some((table) => table.id === id)))
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          copySelection(event.clipboardData, true);
+        }}
+        onPaste={(event) => {
+          if (
+            !editable ||
+            allBusy ||
+            draft ||
+            tool === 'hand' ||
+            (event.target instanceof Element && event.target.closest(toolShortcutInputSelector))
+          )
+            return;
+          const text = event.clipboardData.getData('text/plain');
+          try {
+            readNativeClipboard(text);
+          } catch {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          void pasteSelection(text);
+        }}
         onPointerDownCapture={(event) => {
+          setMenu(null);
           if (
             pinMode &&
             event.button === 0 &&
@@ -1560,7 +2160,26 @@ export function NativeERDCanvas({
             event.target.closest('.native-inline-editor,.native-camera-controls')
           )
             return;
-          if (!(tool === 'hand' || spacePan.current || event.button === 1)) return;
+          if (!(tool === 'hand' || spacePan.current || event.button === 1)) {
+            if (
+              event.button === 0 &&
+              event.target instanceof Element &&
+              !event.target.closest(
+                '[data-node-id],button,.native-inline-editor,.relations,.native-table-lines,.comment-pin',
+              )
+            ) {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              const start = canvasPoint(event.clientX, event.clientY);
+              marqueeGesture.current = {
+                pointerId: event.pointerId,
+                start,
+                initial: event.shiftKey ? selectedObjectsRef.current : [],
+              };
+              setMarquee(selectionRect(start, start));
+              if (!event.shiftKey) setSelectedObjectIds([]);
+            }
+            return;
+          }
           event.preventDefault();
           event.stopPropagation();
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -1572,6 +2191,16 @@ export function NativeERDCanvas({
           };
         }}
         onPointerMove={(event) => {
+          if (connection) setConnectPointer(canvasPoint(event.clientX, event.clientY));
+          const box = marqueeGesture.current;
+          if (box?.pointerId === event.pointerId) {
+            const rect = selectionRect(box.start, canvasPoint(event.clientX, event.clientY));
+            setMarquee(rect);
+            setSelectedObjectIds([
+              ...new Set([...box.initial, ...intersectingObjects(rect, drawn.nodes)]),
+            ]);
+            return;
+          }
           const pan = panGesture.current;
           if (pan?.pointerId !== event.pointerId) return;
           event.stopPropagation();
@@ -1582,6 +2211,13 @@ export function NativeERDCanvas({
           });
         }}
         onPointerUp={(event) => {
+          if (marqueeGesture.current?.pointerId === event.pointerId) {
+            marqueeGesture.current = null;
+            setMarquee(null);
+            if (event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            return;
+          }
           if (panGesture.current?.pointerId !== event.pointerId) return;
           event.stopPropagation();
           panGesture.current = null;
@@ -1590,12 +2226,23 @@ export function NativeERDCanvas({
         }}
         onPointerCancel={() => {
           panGesture.current = null;
+          marqueeGesture.current = null;
+          setMarquee(null);
+          groupOrigins.current = null;
           spacePan.current = false;
         }}
         onLostPointerCapture={() => {
           panGesture.current = null;
         }}
         onClickCapture={(event) => {
+          if (connection && event.target instanceof Element) {
+            const node = event.target.closest('[data-object-id]');
+            if (node) {
+              event.stopPropagation();
+              void completeConnection(node.getAttribute('data-object-id')!);
+              return;
+            }
+          }
           if (
             tool === 'hand' &&
             !(
@@ -1613,6 +2260,94 @@ export function NativeERDCanvas({
             )
           )
             return;
+          if (
+            event.nativeEvent.isComposing ||
+            event.repeat ||
+            globalThis.document?.querySelector(toolShortcutOverlaySelector)
+          )
+            return;
+          if (event.key === 'Escape') {
+            setConnection(null);
+            setConnectPointer(null);
+            setMenu(null);
+            setMarquee(null);
+            marqueeGesture.current = null;
+            setSelectedObjectIds([]);
+            return;
+          }
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault();
+            const node = scene.nodes.find((node) => node.id === selectedNode),
+              rect =
+                event.target instanceof Element
+                  ? event.target.getBoundingClientRect()
+                  : event.currentTarget.getBoundingClientRect();
+            contextMenu(node ?? null, {
+              clientX: rect.left + 20,
+              clientY: rect.top + 30,
+              preventDefault: () => {},
+              stopPropagation: () => {},
+            });
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+            event.preventDefault();
+            setSelectedObjectIds(scene.nodes.map((node) => node.objectId));
+            return;
+          }
+          if (
+            (event.ctrlKey || event.metaKey) &&
+            event.key.toLowerCase() === 'v' &&
+            readLocalTableClipboard()
+          ) {
+            event.preventDefault();
+            void pasteSelection(readLocalTableClipboard());
+            return;
+          }
+          if (
+            event.key === 'Delete' &&
+            tool === 'select' &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            !event.shiftKey
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            void deleteSelection();
+            return;
+          }
+          if (
+            visibleSelection.length > 1 &&
+            event.target instanceof Element &&
+            event.target.matches('[data-node-id]')
+          ) {
+            const delta = {
+              ArrowLeft: [-1, 0],
+              ArrowRight: [1, 0],
+              ArrowUp: [0, -1],
+              ArrowDown: [0, 1],
+            }[event.key];
+            if (delta && placementEditable && !allBusy && !stale) {
+              event.preventDefault();
+              event.stopPropagation();
+              const step = event.shiftKey ? 10 : 1;
+              preservePlacements(
+                nativeSelectionPlacements(
+                  drawn.nodes.filter((node) => visibleSelection.includes(node.objectId)),
+                  delta[0]! * step,
+                  delta[1]! * step,
+                ),
+              );
+              return;
+            }
+            if (event.key === 'Enter' && draft) {
+              event.preventDefault();
+              event.stopPropagation();
+              void savePlacement();
+              return;
+            }
+          }
           if (event.ctrlKey || event.metaKey || event.altKey) return;
           if (
             event.code === 'Space' &&
@@ -1650,7 +2385,7 @@ export function NativeERDCanvas({
         }}
       >
         <div
-          className="native-erd-world"
+          className="native-erd-world canvas-world"
           ref={setWorldElement}
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
@@ -1663,6 +2398,20 @@ export function NativeERDCanvas({
               effectiveView={effectiveView}
               mode={mode}
               selectedNode={selectedNode}
+              selectedObjectIds={visibleSelection}
+              onNodeSelect={selectNode}
+              onNodeContextMenu={contextMenu}
+              onConnectFromColumn={(source) => {
+                setConnection({ kind: 'foreignKey', source });
+                setConnectPointer(null);
+              }}
+              onDescriptionCommit={
+                placementEditable && !allBusy && !draft
+                  ? (id, value) => {
+                      void commitDescription(id, value);
+                    }
+                  : undefined
+              }
               selectedTableId={selectedTableId}
               selectedDomainId={selectedDomainId}
               selectedDomainRelation={selectedDomainRelation}
@@ -1681,6 +2430,35 @@ export function NativeERDCanvas({
               onEdit={userId && editable ? openInline : undefined}
             />
           </div>
+          {marquee && (
+            <div
+              className="canvas-selection-box"
+              data-export-hidden="true"
+              style={{
+                left: marquee.x,
+                top: marquee.y,
+                width: marquee.width,
+                height: marquee.height,
+                borderWidth: 1 / camera.zoom,
+              }}
+            />
+          )}
+          {connection &&
+            connectPointer &&
+            (() => {
+              const column = base.columns?.find((c) => c.id === connection.source);
+              const node = drawn.nodes.find(
+                (node) => node.objectId === (column?.tableId ?? connection.source),
+              );
+              return node ? (
+                <svg className="relations connection-preview-layer" aria-hidden="true">
+                  <path
+                    className="domain-connection-preview"
+                    d={`M ${node.x + node.width / 2} ${node.y + node.height / 2} L ${connectPointer.x} ${connectPointer.y}`}
+                  />
+                </svg>
+              ) : null;
+            })()}
         </div>
         {inlineTarget && userId && (
           <NativeCanvasInlineEditor
@@ -1691,6 +2469,68 @@ export function NativeERDCanvas({
             onClose={closeInline}
           />
         )}
+        {descriptionId &&
+          userId &&
+          (() => {
+            const domain = base.domains.find((item) => item.id === descriptionId),
+              note = base.notes.find((item) => item.id === descriptionId);
+            if (!domain && !note) return null;
+            return (
+              <aside
+                className="native-inline-editor"
+                role="dialog"
+                aria-label={t(domain ? '업무 설명' : '메모 내용')}
+                onWheel={(event) => event.stopPropagation()}
+              >
+                <Button onClick={() => setDescriptionId(null)}>{t('닫기')}</Button>
+                <NativeCanvasInputForm
+                  context={{
+                    userId,
+                    snapshot,
+                    busy: allBusy || !!draft || !placementEditable,
+                    affectsSharedDocument: !isPrivate,
+                    onSave: async (commands, exp, ref) => {
+                      const saved = await routeSave(commands, exp, ref);
+                      if (saved) setDescriptionId(null);
+                      return saved;
+                    },
+                  }}
+                  title={t(domain ? '업무 설명' : '메모 내용')}
+                  draftKey={`canvas:description:${effectiveView}:${descriptionId}`}
+                  initial={{
+                    objectId: descriptionId,
+                    text: domain?.description ?? note?.text ?? '',
+                    personalVersion: String(personal?.version ?? ''),
+                  }}
+                  disabled={!placementEditable}
+                  build={(values) => {
+                    if (isPrivate && values.personalVersion !== String(personal?.version ?? ''))
+                      throw Error('native.personal-conflict');
+                    return [
+                      nativeEditorCommandSchema.parse(
+                        domain
+                          ? {
+                              type: 'patch_domain',
+                              id: descriptionId,
+                              patch: { description: values.text },
+                            }
+                          : { type: 'patch_note', id: descriptionId, patch: { text: values.text } },
+                      ),
+                    ];
+                  }}
+                >
+                  {(values, change) => (
+                    <NativeEditorField
+                      label={domain ? '업무 설명' : '메모 내용'}
+                      multiline
+                      value={values.text ?? ''}
+                      onChange={(value) => change('text', value)}
+                    />
+                  )}
+                </NativeCanvasInputForm>
+              </aside>
+            );
+          })()}
         {selectedRelationId && userId && (placementEditable || recoverySelection?.routeId) && (
           <NativeRelationEditor
             key={`${userId}:${snapshot.project.id}:${effectiveView}:${selectedRelationId}`}
@@ -1704,15 +2544,43 @@ export function NativeERDCanvas({
             onClose={closeRoute}
           />
         )}
-        <div className="native-canvas-hint">
-          {t(tool === 'hand' ? '손 도구 · 드래그로 화면 이동' : '커서 도구 · 객체 선택과 이동')}
+        <div className="native-canvas-hint canvas-hint" role={connection ? 'status' : undefined}>
+          {connection
+            ? t(
+                connection.kind === 'domain'
+                  ? '연결할 도메인을 클릭하세요 · Escape 취소'
+                  : 'PK를 받을 테이블을 클릭하세요 · FK 컬럼 자동 추가 · Escape 취소',
+              )
+            : visibleSelection.length > 1
+              ? t('{count}개 선택됨 · 함께 드래그하여 이동', { count: visibleSelection.length })
+              : t(
+                  tool === 'hand'
+                    ? '손 도구 · 드래그로 화면 이동'
+                    : '커서 도구 · 빈 공간 드래그로 여러 객체 선택',
+                )}
         </div>
         <NativeCameraControls
           tool={tool}
           onTool={setTool}
           zoom={camera.zoom}
-          onZoom={(factor) => setCamera({ ...camera, zoom: zoomLimit(camera.zoom * factor) })}
-          onReset={() => setCamera({ ...camera, zoom: 1 })}
+          onZoom={(factor) => {
+            const rect = surface.current?.getBoundingClientRect();
+            setCamera(
+              nativeZoomAt(camera, zoomLimit(camera.zoom * factor), {
+                x: (rect?.width ?? 800) / 2,
+                y: (rect?.height ?? 600) / 2,
+              }),
+            );
+          }}
+          onReset={() => {
+            const rect = surface.current?.getBoundingClientRect();
+            setCamera(
+              nativeZoomAt(camera, 1, {
+                x: (rect?.width ?? 800) / 2,
+                y: (rect?.height ?? 600) / 2,
+              }),
+            );
+          }}
           onFit={() => {
             const x = drawn.nodes.length ? Math.min(...drawn.nodes.map((node) => node.x)) : 0;
             const y = drawn.nodes.length ? Math.min(...drawn.nodes.map((node) => node.y)) : 0;
@@ -1720,9 +2588,140 @@ export function NativeERDCanvas({
           }}
         />
         {!drawn.nodes.length && (
-          <p className="native-erd-empty">{t('이 화면에 표시할 노드가 없습니다.')}</p>
+          <div className="canvas-empty">
+            <span className="empty-symbol" aria-hidden="true">
+              {effectiveView === 'overview' ? '◇' : '▦'}
+            </span>
+            <h2>
+              {t(
+                effectiveView === 'overview'
+                  ? '큰 그림부터 시작하세요'
+                  : domainFilter
+                    ? '필터에 해당하는 테이블이 없습니다'
+                    : '테이블부터 시작하세요',
+              )}
+            </h2>
+            <p>
+              {t(
+                effectiveView === 'overview'
+                  ? '도메인을 만들고 업무의 흐름을 연결해 보세요.'
+                  : '테이블을 추가하고 컬럼과 관계를 설계하세요.',
+              )}
+            </p>
+            <Button
+              variant="primary"
+              disabled={!editable || allBusy || !!draft}
+              onClick={() => void createObject(effectiveView === 'overview' ? 'domain' : 'table')}
+            >
+              {t(effectiveView === 'overview' ? '첫 도메인 만들기' : '첫 테이블 만들기')}
+            </Button>
+          </div>
         )}
       </div>
+      <ContextMenu
+        position={menu ? { x: menu.x, y: menu.y } : null}
+        label={t(menu?.source ? '객체 메뉴' : '캔버스 메뉴')}
+        onClose={() => setMenu(null)}
+        items={
+          menu
+            ? [
+                ...(menu.source && sharedSource.tables?.some((table) => table.id === menu.source)
+                  ? [
+                      {
+                        id: 'cut-tables',
+                        label: t('오려두기'),
+                        disabled: !editable || allBusy || !!draft,
+                        onAction: () => copySelection(undefined, true),
+                      },
+                      { id: 'copy-tables', label: t('복사하기'), onAction: () => copySelection() },
+                    ]
+                  : []),
+                ...(!menu.source && effectiveView !== 'overview'
+                  ? [
+                      {
+                        id: 'paste-tables',
+                        label: t('붙여넣기'),
+                        disabled: !editable || allBusy || !!draft,
+                        onAction: () => void pasteFromMenu(),
+                      },
+                    ]
+                  : []),
+                ...(onCreatePin
+                  ? [
+                      {
+                        id: 'create-pin',
+                        label: t('이 위치에 핀 남기기'),
+                        onAction: () =>
+                          onCreatePin({
+                            viewId: effectiveView,
+                            selectedObjectId: menu.source,
+                            visibleObjectIds: scene.nodes.map((n) => n.objectId),
+                            position: menu.point,
+                          }),
+                      },
+                    ]
+                  : []),
+                ...(menu.source && base.domains.some((d) => d.id === menu.source)
+                  ? [
+                      {
+                        id: 'direct-relation',
+                        label: t('도메인 직접 연결'),
+                        disabled: !editable || allBusy || !!draft || base.domains.length < 2,
+                        onAction: () => {
+                          setConnection({ kind: 'domain', source: menu.source! });
+                          setConnectPointer(null);
+                        },
+                      },
+                      {
+                        id: 'panel-relation',
+                        label: t('새 도메인 관계'),
+                        disabled: !editable,
+                        onAction: () => onOpenTools?.(),
+                      },
+                    ]
+                  : []),
+                ...(!menu.source
+                  ? [
+                      {
+                        id: effectiveView === 'overview' ? 'new-domain' : 'new-table',
+                        label: t(
+                          effectiveView === 'overview' ? '새 도메인 생성' : '새 테이블 생성',
+                        ),
+                        disabled: !editable || allBusy || !!draft,
+                        onAction: () =>
+                          void createObject(
+                            effectiveView === 'overview' ? 'domain' : 'table',
+                            menu.point,
+                          ),
+                      },
+                      {
+                        id: 'new-note',
+                        label: t('메모 추가'),
+                        disabled: !placementEditable || allBusy || !!draft,
+                        onAction: () => void createObject('note', menu.point),
+                      },
+                      {
+                        id: 'auto-layout',
+                        label: t('자동 배치'),
+                        disabled: !placementEditable || allBusy || !!draft || !scene.nodes.length,
+                        onAction: () => void arrangeVisibleNodes(),
+                      },
+                    ]
+                  : []),
+                ...(menu.source
+                  ? [
+                      {
+                        id: 'delete-selected',
+                        label: t('삭제'),
+                        disabled: !placementEditable || allBusy || !!draft,
+                        onAction: () => void deleteSelection(),
+                      },
+                    ]
+                  : []),
+              ]
+            : []
+        }
+      />
       {inspectorHost === undefined
         ? auxiliary
         : inspectorHost

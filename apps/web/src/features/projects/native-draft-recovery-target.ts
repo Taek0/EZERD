@@ -215,6 +215,23 @@ export function nativeDraftRecoveryTarget(
     }
   }
   for (const viewId of views) {
+    const descriptionId = draft.values.objectId;
+    if (
+      descriptionId &&
+      key === `canvas:description:${viewId}:${descriptionId}` &&
+      ((viewId === 'overview' && doc.domains.some((domain) => domain.id === descriptionId)) ||
+        doc.notes.some(
+          (note) =>
+            note.id === descriptionId &&
+            note.viewId ===
+              (doc.domains.some((domain) => domain.id === viewId) ? '__tables__' : viewId),
+        ))
+    )
+      return {
+        kind: 'canvas',
+        selection: { viewId, descriptionId },
+        personal: privateView(viewId),
+      };
     if (key === `canvas:placement:${viewId}`) {
       const node = doc.layout.nodes.find(
         (item) =>

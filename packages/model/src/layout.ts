@@ -10,8 +10,8 @@ type LayoutDocument = Pick<
   DesignDocument,
   'domains' | 'views' | 'domainRelations' | 'notes' | 'layout'
 > & {
-  tables?: { id: string }[];
-  tableRelations?: { sourceTableId: string; targetTableId: string }[];
+  tables?: { id: string }[] | undefined;
+  tableRelations?: { sourceTableId: string; targetTableId: string }[] | undefined;
 };
 export function autoLayoutView<T extends LayoutDocument>(document: T, viewId: string): T {
   if (
