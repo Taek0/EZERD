@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { measurementPlugin } from './performance/instrumentation.js';
+import { panelProfilingPlugin } from './performance/panel-profiling-plugin.js';
 import { comparisonPlugin } from './performance/comparison-plugin.js';
 
 export default defineConfig(() => {
@@ -18,6 +19,13 @@ export default defineConfig(() => {
         : [],
     },
     plugins: [
+      ...(process.env.EZERD_PANEL_DETAIL === '1'
+        ? [
+            panelProfilingPlugin(
+              fileURLToPath(new URL('./performance/panel-profiles.ts', import.meta.url)),
+            ),
+          ]
+        : []),
       ...(comparison
         ? [
             comparisonPlugin(

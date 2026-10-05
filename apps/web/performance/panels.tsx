@@ -4,6 +4,7 @@ import { NativeProjectView } from '../src/features/projects/NativeProjectView.js
 import { ConfirmProvider } from '../src/components/ui/ConfirmProvider.js';
 import { createNativePerformanceFixture } from '../src/shared/performance/native-fixture.js';
 import { fixtureFingerprint } from '../src/shared/performance/fixture.js';
+import { panelProfiles } from './panel-profiles.js';
 import { collector } from '../src/shared/performance/collector.js';
 import '../src/components/ui/tailwind.css';
 import '../src/styles/tokens.css';
@@ -184,6 +185,8 @@ function Demo() {
       for (const name of ['transitionrun', 'transitionend', 'transitioncancel'])
         root.current!.addEventListener(name, transition);
       commits.current = [];
+      panelProfiles.samples = [];
+      panelProfiles.active = true;
       active.current = true;
       collector.start({
         scenario: 'panel-transition',
@@ -213,6 +216,7 @@ function Demo() {
       await frame();
       await frame();
       active.current = false;
+      panelProfiles.active = false;
       const { samples: _samples, ...measurement } = collector.stop();
       for (const name of ['transitionrun', 'transitionend', 'transitioncancel'])
         root.current!.removeEventListener(name, transition);
@@ -228,6 +232,12 @@ function Demo() {
             frames: stats(intervals),
             intervals,
             react: stats(commits.current),
+            subtrees: Object.fromEntries(
+              [...new Set(panelProfiles.samples.map((s) => s.id))].map((id) => [
+                id,
+                stats(panelProfiles.samples.filter((s) => s.id === id).map((s) => s.actual)),
+              ]),
+            ),
             over25: intervals.filter((t) => t > 25).length,
             documentUnchanged: fingerprint === fixtureFingerprint(fixture.document),
             targetReached: expected?.hidden === String(!open),
