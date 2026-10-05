@@ -38,7 +38,7 @@ function NativeFixture() {
     cameraTransform: area.current?.querySelector<HTMLElement>('.native-erd-world')?.style.transform,
     cards: area.current?.querySelectorAll('.native-erd-node.table').length ?? 0,
     canvasViewId:
-      area.current?.querySelector<HTMLSelectElement>('.native-canvas-toolbar select')?.value ??
+      area.current?.querySelector<HTMLElement>('.native-canvas-toolbar')?.dataset.viewId ??
       TABLES_VIEW_ID,
   });
   useEffect(() => {
