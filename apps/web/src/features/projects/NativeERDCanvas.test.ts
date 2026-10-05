@@ -729,3 +729,34 @@ describe('native scene reuse', () => {
     expect(nativeCanvasDraftScene(document, scene, '__tables__', 'physical')).toBe(scene);
   });
 });
+
+describe('native display-only domain filtering', () => {
+  it('filters shared nodes and routes without altering the source, including draft preview', () => {
+    const { document } = fixture();
+    document.domains.push({ id: 'second', name: 'Second', description: '' });
+    document.tables![1]!.domainId = 'second';
+    const before = structuredClone(document),
+      filter = { domainIds: ['d'], unassigned: false };
+    const scene = nativeCanvasScene(document, '__tables__', 'physical', filter);
+    expect(scene.nodes.map((node) => node.objectId)).toEqual(['a']);
+    expect(scene.relations).toEqual([]);
+    const drawn = nativeCanvasDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      'a',
+      '200',
+      '100',
+      filter,
+    );
+    expect(drawn.nodes.map((node) => node.objectId)).toEqual(['a']);
+    expect(drawn.nodes[0]).toMatchObject({ x: 200, y: 100 });
+    expect(
+      nativeCanvasScene(document, '__tables__', 'physical', { domainIds: [], unassigned: false })
+        .nodes,
+    ).toEqual([]);
+    expect(nativeCanvasScene(document, '__tables__', 'physical', null).nodes).toHaveLength(2);
+    expect(document).toEqual(before);
+  });
+});
