@@ -1,3 +1,4 @@
+import { nativeRelationEnds, nativeRelationEndPath } from './native-relation-presentation.js';
 import { useId } from 'react';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { useI18n } from '../../shared/i18n/index.js';
@@ -34,13 +35,7 @@ export function NativeTableLines({
               markerUnits="userSpaceOnUse"
             >
               <g fill="none" stroke="currentColor" strokeWidth="1.7">
-                <path
-                  d={
-                    max === 'many'
-                      ? 'M 18 12 L 30 3 M 18 12 L 30 21 M 18 12 L 30 12'
-                      : 'M 27 4 L 27 20'
-                  }
-                />
+                <path d={nativeRelationEndPath(max)} />
                 {min === 0 ? (
                   <circle cx="10" cy="12" r="5" fill="var(--panel, #fafbfc)" />
                 ) : (
@@ -52,14 +47,7 @@ export function NativeTableLines({
         )}
       </defs>
       {relations.map(({ relation, geometry, label }) => {
-        const source = relation.logical.sourceCardinality ?? {
-          min: 0,
-          max: relation.logical.cardinality === 'one-to-one' ? 1 : 'many',
-        };
-        const target = relation.logical.targetCardinality ?? {
-          min: relation.logical.required ? 1 : 0,
-          max: relation.logical.cardinality === 'many-to-many' ? 'many' : 1,
-        };
+        const [source, target] = nativeRelationEnds(relation);
         const width = Math.max(90, label.length * 8 + 24);
         return (
           <g
