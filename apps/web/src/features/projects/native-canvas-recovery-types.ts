@@ -5,6 +5,7 @@ export interface NativeCanvasRecoverySelection {
   routeId?: string;
   inline?: NativeInlineTarget;
   descriptionId?: string;
+  objectId?: string;
   action?: { action: string; target: string };
   style?: string;
   domainRelation?: { action: 'create' | 'edit' | 'delete'; id?: string };

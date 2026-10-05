@@ -8,11 +8,13 @@ export function NativeProjectActions({
   onExportDDL,
   userId,
   projectId,
+  png,
 }: {
   onExportProject: () => Promise<void>;
   onExportDDL: () => Promise<void>;
   userId: string;
   projectId: string;
+  png?: { run: () => Promise<void>; disabled: boolean; busy: boolean } | undefined;
 }) {
   const { t } = useI18n(),
     [busy, setBusy] = useState(false),
@@ -36,8 +38,8 @@ export function NativeProjectActions({
         trigger={
           <IconButton
             aria-label={t('공유')}
-            disabled={busy || blocked}
-            aria-busy={busy}
+            disabled={busy || blocked || png?.busy}
+            aria-busy={busy || png?.busy}
             title={blocked ? t('변경 내용이 저장된 뒤 다시 내보내 주세요.') : t('공유')}
           >
             <svg
@@ -69,6 +71,16 @@ export function NativeProjectActions({
             disabled: busy,
             onAction: () => void run(onExportDDL),
           },
+          ...(png
+            ? [
+                {
+                  id: 'png-export',
+                  label: t('고화질 PNG'),
+                  disabled: busy || png.disabled,
+                  onAction: () => void run(png.run),
+                },
+              ]
+            : []),
         ]}
       />
       {error && <span role="alert">{error}</span>}

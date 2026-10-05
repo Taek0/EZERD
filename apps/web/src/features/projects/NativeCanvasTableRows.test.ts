@@ -224,8 +224,14 @@ describe('source card rows rendered from native values', () => {
       before = structuredClone(p.document),
       onRequestStructure = vi.fn(),
       onRequestAction = vi.fn();
+    const context = {
+      userId: decorationUserId,
+      snapshot: decorationSnapshot(p.document),
+      busy: false,
+      onSave: vi.fn().mockResolvedValue(true),
+    };
     let items = nativeCanvasColumnMenuItems(
-      { ...p, onRequestStructure, onRequestAction },
+      { ...p, editorContext: context, onRequestStructure, onRequestAction },
       'c',
       (value) => value,
     );
@@ -253,7 +259,11 @@ describe('source card rows rendered from native values', () => {
     p.document.keys = [
       { id: 'pk', tableId: 't', name: 'pk', kind: 'primary', scope: 'physical', columnIds: ['c'] },
     ];
-    items = nativeCanvasColumnMenuItems({ ...p, onRequestStructure }, 'c', (value) => value);
+    items = nativeCanvasColumnMenuItems(
+      { ...p, editorContext: context, onRequestStructure },
+      'c',
+      (value) => value,
+    );
     items.find((item) => item.id === 'primary-key')!.onAction();
     expect(onRequestStructure).toHaveBeenLastCalledWith(
       'patch',
@@ -262,6 +272,20 @@ describe('source card rows rendered from native values', () => {
     );
   });
   it('guards stale, hidden and busy column menu actions even when invoked directly', () => {
+    const readOnly = fixture(),
+      readonlyCallback = vi.fn();
+    const readonlyItems = nativeCanvasColumnMenuItems(
+      { ...readOnly, onRequestStructure: readonlyCallback },
+      'c',
+      (value) => value,
+    );
+    expect(
+      readonlyItems
+        .filter((item) => ['delete-column', 'add-column', 'primary-key'].includes(item.id))
+        .every((item) => item.disabled),
+    ).toBe(true);
+    readonlyItems.find((item) => item.id === 'delete-column')!.onAction();
+    expect(readonlyCallback).not.toHaveBeenCalled();
     const p = fixture(),
       onRequestStructure = vi.fn(),
       onRequestAction = vi.fn(),

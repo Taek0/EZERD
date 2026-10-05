@@ -26,6 +26,7 @@ import { nativeCanvasDeleteCommands } from './native-canvas-delete.js';
 import { createPortal } from 'react-dom';
 import { NativeCanvasToolbar, NativeCameraControls } from './NativeCanvasToolbar.js';
 import { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
+import { NativeSelectedObjectInspector } from './NativeSelectedObjectInspector.js';
 export { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
 import { NativeRelationEditor } from './NativeRelationEditor.js';
 import { NativeCanvasInlineEditor, type NativeInlineTarget } from './NativeCanvasInlineEditor.js';
@@ -101,7 +102,12 @@ import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-typ
 import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
 import { NativeCanvasScene, type NativeSceneActions } from './NativeCanvasScene.js';
 import { NativeCanvasPngExport } from './NativeCanvasPngExport.js';
-import { nativeTableCanvasRows } from './native-canvas-style.js';
+import {
+  nativeTableCanvasRows,
+  nativeTableCanvasMetrics,
+  nativeTableCanvasHeaderHeight,
+  nativeRelationLabelWidth,
+} from './native-canvas-style.js';
 import { captureNativeActorApi } from './native-actor-api.js';
 import { getNativeDurableQueue, type NativeDurableState } from './native-durable-queue.js';
 import {
@@ -401,22 +407,17 @@ export function nativeCanvasScene(
           ? 'domain'
           : 'note';
       const size = basicCardSize(kind, node.width, node.height);
+      const metrics = table ? nativeTableCanvasMetrics(document, table, mode) : null;
       // Native labels drive rows; no v1 type/DDL/metrics adapter is involved.
       return {
         ...node,
-        width: size.width,
+        width: Math.min(
+          nodeLayoutSchema.shape.width.maxValue!,
+          Math.max(size.width, metrics?.width ?? size.width),
+        ),
         height: Math.min(
           nodeLayoutSchema.shape.height.maxValue!,
-          Math.max(
-            size.height,
-            table
-              ? 112 +
-                  nativeTableCanvasRows(document, table, mode).reduce(
-                    (height, row) => height + row.height,
-                    0,
-                  )
-              : size.height,
-          ),
+          Math.max(size.height, metrics?.height ?? size.height),
         ),
       };
     });
@@ -455,7 +456,7 @@ export function nativeCanvasScene(
               0,
               Math.min(
                 1,
-                (78 +
+                (nativeTableCanvasHeaderHeight +
                   rows.slice(0, index).reduce((height, row) => height + row.height, 0) +
                   rows[index]!.height / 2) /
                   node.height,
@@ -485,7 +486,7 @@ export function nativeCanvasScene(
     const geometry = relationGeometry(
       source,
       target,
-      Math.max(90, label.length * 8 + 24),
+      nativeRelationLabelWidth(label),
       lane,
       route?.offset ?? 0,
       route?.bend,
@@ -601,6 +602,16 @@ function NativeCanvasWorkspace({
   pinMode = false,
   onCreatePin,
   reviewFocus,
+  onRequestStructure,
+  onRequestAction,
+  selectedColumnId,
+  requestedView,
+  onCanvasScopeChange,
+  renderExportActions,
+  toolbarHost,
+  pathHost,
+  panelToggle,
+  selectionHost,
 }: {
   document: NativeDesignDocument;
   snapshot: ProjectDocumentState;
@@ -631,6 +642,30 @@ function NativeCanvasWorkspace({
   pinMode?: boolean;
   onCreatePin?: (context: CommentContext) => void;
   reviewFocus?: (ReviewTarget & { nonce: number }) | null;
+  onRequestStructure?: (
+    action: 'patch' | 'delete' | 'foreignKey' | 'column' | 'key' | 'enum',
+    target: string,
+    tableId?: string,
+  ) => void;
+  onRequestAction?: (action: string, target: string, values?: Record<string, string>) => void;
+  selectedColumnId?: string | undefined;
+  requestedView?: { id: string; nonce: number };
+  onCanvasScopeChange?: (scope: {
+    viewId: string;
+    filter: NativeDomainFilterValue | null;
+    visibleObjectIds: string[];
+    selectedObjectId: string | null;
+    selectedNode: NodeLayout | null;
+  }) => void;
+  renderExportActions?: (png: {
+    run: () => Promise<void>;
+    disabled: boolean;
+    busy: boolean;
+  }) => ReactNode;
+  toolbarHost?: HTMLElement | null;
+  pathHost?: HTMLElement | null;
+  panelToggle?: ReactNode;
+  selectionHost?: HTMLElement | null;
 }) {
   const { t, locale } = useI18n();
   const confirm = useConfirm();
@@ -642,6 +677,10 @@ function NativeCanvasWorkspace({
     [recoverySelection?.descriptionId, userId, snapshot.project.id],
   );
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
+  const [blankSelection, setBlankSelection] = useState(false);
+  useEffect(() => {
+    if (selectedTableId || selectedDomainId) setBlankSelection(false);
+  }, [selectedTableId, selectedDomainId]);
   const selectedObjectsRef = useRef(selectedObjectIds);
   selectedObjectsRef.current = selectedObjectIds;
   const groupOrigins = useRef<NodeLayout[] | null>(null);
@@ -657,6 +696,12 @@ function NativeCanvasWorkspace({
     source: string | null;
     columnId?: string;
     point: { x: number; y: number };
+  } | null>(null);
+  const [relationMenu, setRelationMenu] = useState<{
+    id: string;
+    kind: 'domain' | 'table';
+    x: number;
+    y: number;
   } | null>(null);
   const deletionBusy = useRef(false);
   const operationScope = useRef('');
@@ -697,6 +742,7 @@ function NativeCanvasWorkspace({
     if (selectedDomainId && !draftRef.current && !gesture.current) setViewId('overview');
   }, [selectedDomainId]);
   const [inlineTarget, setInlineTarget] = useState<NativeInlineTarget | null>(null);
+  const inlineFocusReturn = useRef<HTMLElement | null>(null);
   const closeInline = useCallback(() => setInlineTarget(null), []);
   useEffect(
     () => setInlineTarget(recoverySelection?.inline ?? null),
@@ -712,12 +758,16 @@ function NativeCanvasWorkspace({
   const [domainFilter, setDomainFilter] = useState<NativeDomainFilterValue | null>(null);
   const navigateView = useCallback(
     (id: string) => {
-      setDomainFilter(null);
-      setViewId(id);
-      onViewChange?.(id);
+      const domain = document.domains.find((domain) => domain.id === id);
+      setDomainFilter(domain ? { domainIds: [domain.id], unassigned: false } : null);
+      setViewId(domain ? TABLES_VIEW_ID : id);
+      onViewChange?.(domain ? TABLES_VIEW_ID : id);
     },
-    [onViewChange],
+    [onViewChange, document.domains],
   );
+  useEffect(() => {
+    if (requestedView) navigateView(requestedView.id);
+  }, [requestedView?.nonce]);
   const applyDomainFilter = useCallback(
     (filter: NativeDomainFilterValue | null) => {
       setViewId(TABLES_VIEW_ID);
@@ -750,9 +800,13 @@ function NativeCanvasWorkspace({
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
-  const gesture = useRef<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>(
-    null,
-  );
+  const gesture = useRef<{
+    node: NodeLayout;
+    x: number;
+    y: number;
+    pointerId: number;
+    pending?: boolean;
+  } | null>(null);
   const surface = useRef<HTMLDivElement | null>(null);
   const alive = useRef(true);
   useEffect(() => {
@@ -905,7 +959,6 @@ function NativeCanvasWorkspace({
       (isPrivate && String(personal?.version ?? '') !== draft.values.personalVersion));
   useEffect(() => {
     gesture.current = null;
-    setSelectedNode(null);
     if (!userId) {
       setDraft(null);
       draftRef.current = null;
@@ -939,6 +992,14 @@ function NativeCanvasWorkspace({
     () => nativeCanvasScene(base, effectiveView, mode, domainFilter),
     [base, effectiveView, mode, domainFilter],
   );
+  useEffect(() => {
+    const node = scene.nodes.find((node) => node.objectId === recoverySelection?.objectId);
+    if (node) {
+      setBlankSelection(false);
+      setSelectedNode(node.id);
+      setSelectedObjectIds([node.objectId]);
+    }
+  }, [scene, recoverySelection?.objectId]);
   const draftObjectId = draft?.values.objectId;
   const draftX = draft?.values.x;
   const draftY = draft?.values.y;
@@ -991,8 +1052,39 @@ function NativeCanvasWorkspace({
       return singleDrawn;
     }
   }, [base, scene, singleDrawn, draft?.values.nodesJSON, effectiveView, mode, domainFilter]);
-  const visibleSelection = selectedObjectIds.filter((id) =>
-    scene.nodes.some((node) => node.objectId === id),
+  const visibleSelection = useMemo(
+    () => selectedObjectIds.filter((id) => scene.nodes.some((node) => node.objectId === id)),
+    [selectedObjectIds, scene],
+  );
+  const scopeCallback = useRef(onCanvasScopeChange);
+  scopeCallback.current = onCanvasScopeChange;
+  useEffect(
+    () =>
+      scopeCallback.current?.({
+        viewId: effectiveView,
+        filter: domainFilter,
+        visibleObjectIds: scene.nodes.map((node) => node.objectId),
+        selectedObjectId: blankSelection
+          ? null
+          : (selectedRelationId ??
+            selectedDomainRelation ??
+            scene.nodes.find((node) => node.id === selectedNode)?.objectId ??
+            selectedTableId ??
+            selectedDomainId ??
+            null),
+        selectedNode: scene.nodes.find((node) => node.id === selectedNode) ?? null,
+      }),
+    [
+      scene,
+      effectiveView,
+      domainFilter,
+      selectedNode,
+      selectedTableId,
+      selectedDomainId,
+      selectedRelationId,
+      selectedDomainRelation,
+      blankSelection,
+    ],
   );
   const selectionIds = visibleSelection.length
     ? visibleSelection
@@ -1004,16 +1096,34 @@ function NativeCanvasWorkspace({
           ? [selectedDomainId]
           : [];
   useEffect(() => {
+    setSelectedNode((id) =>
+      id && scene.nodes.some((node) => node.id === id)
+        ? id
+        : selectedObjectsRef.current.length === 1
+          ? (scene.nodes.find((node) => node.objectId === selectedObjectsRef.current[0])?.id ??
+            null)
+          : null,
+    );
     setSelectedObjectIds((ids) => {
       const visible = ids.filter((id) => scene.nodes.some((node) => node.objectId === id));
       return ids.length === visible.length ? ids : visible;
     });
   }, [scene]);
   useEffect(() => {
+    const id = selectedDomainId ?? selectedTableId;
+    if (!id || blankSelection || selectedObjectsRef.current.length > 1) return;
+    const node = scene.nodes.find((node) => node.objectId === id);
+    if (node) {
+      setSelectedNode(node.id);
+      setSelectedObjectIds((ids) => (ids.length === 1 && ids[0] === id ? ids : [id]));
+    }
+  }, [scene, selectedTableId, selectedDomainId]);
+  useEffect(() => {
     setMenu(null);
     setConnection(null);
     setConnectPointer(null);
     setSelectedObjectIds([]);
+    setSelectedNode(null);
     setMarquee(null);
     marqueeGesture.current = null;
     groupOrigins.current = null;
@@ -1042,8 +1152,6 @@ function NativeCanvasWorkspace({
         nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
           x: node.x,
           y: node.y,
-          width: node.width,
-          height: node.height,
         }),
       );
       const node = placements[0]!;
@@ -1095,6 +1203,10 @@ function NativeCanvasWorkspace({
     size?: { width: number; height: number },
   ) {
     if (!userId || !placementEditable || allBusy || stale) return;
+    if (!size && gesture.current?.pending) {
+      if (Math.abs(x - gesture.current.node.x) + Math.abs(y - gesture.current.node.y) < 4) return;
+      gesture.current.pending = false;
+    }
     if (!size && groupOrigins.current && groupOrigins.current.length > 1) {
       const origin = groupOrigins.current.find((item) => item.id === node.id);
       if (origin)
@@ -1288,7 +1400,13 @@ function NativeCanvasWorkspace({
       selectedObjectsRef.current.includes(node.objectId) && selectedObjectsRef.current.length > 1
         ? scene.nodes.filter((item) => selectedObjectsRef.current.includes(item.objectId))
         : null;
-    gesture.current = { node, x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    gesture.current = {
+      node,
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+      pending: event.target instanceof Element && !!event.target.closest('.table-inline'),
+    };
     setSelectedNode(node.id);
   }
   function canvasPoint(clientX: number, clientY: number) {
@@ -1309,6 +1427,8 @@ function NativeCanvasWorkspace({
   ) {
     event.preventDefault();
     event.stopPropagation();
+    setRelationMenu(null);
+    if (node) setBlankSelection(false);
     if (node && !selectedObjectsRef.current.includes(node.objectId)) {
       setSelectedObjectIds([node.objectId]);
       setSelectedNode(node.id);
@@ -1324,6 +1444,9 @@ function NativeCanvasWorkspace({
     node: NodeLayout,
     event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
   ) {
+    setBlankSelection(false);
+    setSelectedRelationId(null);
+    setSelectedDomainRelation(null);
     if (connection) {
       void completeConnection(node.objectId);
       return;
@@ -1345,7 +1468,10 @@ function NativeCanvasWorkspace({
   }
   async function saveCommands(commands: CanvasCommand[], ref?: DraftRef): Promise<boolean> {
     if (!userId || allBusy || draft || stale || storageError || !commands.length) return false;
-    if (isPrivate)
+    if (
+      isPrivate &&
+      commands.every((command) => nativePersonalCanvasCommandSchema.safeParse(command).success)
+    )
       return (
         placementEditable &&
         savePersonalCommands(
@@ -1446,6 +1572,7 @@ function NativeCanvasWorkspace({
         ];
       }
       if (await saveCommands(commands)) {
+        setBlankSelection(false);
         setSelectedObjectIds([id]);
         if (kind === 'table') onSelect(id);
         else if (kind === 'domain') onSelectDomain?.(id);
@@ -1613,9 +1740,10 @@ function NativeCanvasWorkspace({
     )
       return false;
     if (isPrivate)
-      return commands.length === 1
-        ? savePersonalCommand(nativePersonalCanvasCommandSchema.parse(commands[0]), ref)
-        : false;
+      return savePersonalCommands(
+        commands.map((command) => nativePersonalCanvasCommandSchema.parse(command)),
+        ref,
+      );
     return onSave(
       commands.map((command) => nativeEditorCommandSchema.parse(command)),
       expectation,
@@ -1640,14 +1768,34 @@ function NativeCanvasWorkspace({
     }),
     [userId, snapshot, allBusy, draft, placementEditable, isPrivate],
   );
-  const openInline = useCallback((target: NativeInlineTarget) => {
+  const openInline = useCallback((target: NativeInlineTarget, focusTarget?: HTMLElement) => {
+    inlineFocusReturn.current = focusTarget ?? null;
     setSelectedRelationId(null);
     setInlineTarget(target);
   }, []);
-  const selectRoute = useCallback((id: string | null) => {
-    setInlineTarget(null);
-    setSelectedRelationId(id);
-  }, []);
+  const selectRoute = useCallback(
+    (id: string | null) => {
+      setInlineTarget(null);
+      setSelectedRelationId(id);
+      setBlankSelection(false);
+      setSelectedNode(null);
+      setSelectedObjectIds([]);
+      setSelectedDomainRelation(null);
+      if (id) onRequestStructure?.('patch', JSON.stringify(['tableRelations', id]));
+    },
+    [onRequestStructure],
+  );
+  const selectDomainRelation = useCallback(
+    (id: string) => {
+      setSelectedDomainRelation(id);
+      setBlankSelection(false);
+      setSelectedNode(null);
+      setSelectedObjectIds([]);
+      setSelectedRelationId(null);
+      onRequestAction?.('domainRelation', id);
+    },
+    [onRequestAction],
+  );
   const sharedEditorContext = useMemo(
     () => (userId ? { userId, snapshot, busy: allBusy || !!draft, onSave } : undefined),
     [userId, snapshot, allBusy, draft, onSave],
@@ -1669,6 +1817,84 @@ function NativeCanvasWorkspace({
   useLayoutEffect(() => {
     sceneActions.current = { zoom: camera.zoom, begin, preserve, savePlacement };
   });
+  const sceneCallbacks = useRef({
+    selectNode,
+    contextMenu,
+    commitDescription,
+    toggleNullable: (
+      tableId: string,
+      columnId: string,
+      value: boolean,
+      viewMode: 'logical' | 'physical',
+    ) => {
+      const primary = (sharedSource.keys ?? []).some(
+        (key) =>
+          key.tableId === tableId &&
+          key.kind === 'primary' &&
+          key.scope !== 'logical' &&
+          key.columnIds.includes(columnId),
+      );
+      if (viewMode === 'physical' && value && primary) return;
+      void saveCommands([
+        nativeEditorCommandSchema.parse({
+          type: 'patch_column',
+          id: columnId,
+          patch:
+            viewMode === 'physical'
+              ? { physical: { nullable: value } }
+              : { logical: { required: value } },
+        }),
+      ]);
+    },
+  });
+  useLayoutEffect(() => {
+    sceneCallbacks.current = {
+      ...sceneCallbacks.current,
+      selectNode,
+      contextMenu,
+      commitDescription,
+      toggleNullable: (tableId, columnId, value, viewMode) => {
+        const primary = (sharedSource.keys ?? []).some(
+          (key) =>
+            key.tableId === tableId &&
+            key.kind === 'primary' &&
+            key.scope !== 'logical' &&
+            key.columnIds.includes(columnId),
+        );
+        if (viewMode === 'physical' && value && primary) return;
+        void saveCommands([
+          nativeEditorCommandSchema.parse({
+            type: 'patch_column',
+            id: columnId,
+            patch:
+              viewMode === 'physical'
+                ? { physical: { nullable: value } }
+                : { logical: { required: value } },
+          }),
+        ]);
+      },
+    };
+  });
+  const selectNodeLatest = useCallback(
+    (...args: Parameters<typeof selectNode>) => sceneCallbacks.current.selectNode(...args),
+    [],
+  );
+  const nodeMenuLatest = useCallback(
+    (...args: Parameters<typeof contextMenu>) => sceneCallbacks.current.contextMenu(...args),
+    [],
+  );
+  const commitDescriptionLatest = useCallback((id: string, value: string) => {
+    void sceneCallbacks.current.commitDescription(id, value);
+  }, []);
+  const toggleNullableLatest = useCallback(
+    (tableId: string, columnId: string, value: boolean, viewMode: 'logical' | 'physical') =>
+      sceneCallbacks.current.toggleNullable(tableId, columnId, value, viewMode),
+    [],
+  );
+  const connectFromColumn = useCallback((source: string) => {
+    setConnection({ kind: 'foreignKey', source });
+    setConnectPointer(null);
+  }, []);
   const toolbarViews = useMemo(
     () => [
       { id: TABLES_VIEW_ID, name: t('전체 테이블') },
@@ -1772,9 +1998,21 @@ function NativeCanvasWorkspace({
         {...(personal ? { personal } : {})}
         personalBusy={personalBusy}
         writerState={privateQueueState}
+        filter={domainFilter}
+        {...(renderExportActions ? { renderControl: renderExportActions } : {})}
       />
     ),
-    [snapshot, userId, effectiveView, mode, personal, personalBusy, privateQueueState],
+    [
+      snapshot,
+      userId,
+      effectiveView,
+      mode,
+      personal,
+      personalBusy,
+      privateQueueState,
+      domainFilter,
+      renderExportActions,
+    ],
   );
   const reviewCallback = useRef(onReviewContext);
   reviewCallback.current = onReviewContext;
@@ -1782,13 +2020,37 @@ function NativeCanvasWorkspace({
     reviewCallback.current?.(
       {
         viewId: effectiveView,
-        selectedObjectId: selectedDomainId ?? selectedTableId ?? null,
+        selectedObjectId:
+          scene.nodes.find((node) => node.id === selectedNode)?.objectId ??
+          selectedRelationId ??
+          selectedDomainRelation ??
+          selectedDomainId ??
+          selectedTableId ??
+          null,
         visibleObjectIds: scene.nodes.map((node) => node.objectId),
-        position: { x: 0, y: 0 },
+        position: (() => {
+          const node = scene.nodes.find((node) => node.id === selectedNode);
+          const rect = surface.current?.getBoundingClientRect();
+          return node
+            ? { x: node.x + node.width / 2, y: node.y + node.height / 2 }
+            : {
+                x: ((rect?.width ?? 800) / 2 - camera.x) / camera.zoom,
+                y: ((rect?.height ?? 600) / 2 - camera.y) / camera.zoom,
+              };
+        })(),
       },
       base,
     );
-  }, [base, scene, effectiveView, selectedDomainId, selectedTableId]);
+  }, [
+    base,
+    scene,
+    effectiveView,
+    selectedDomainId,
+    selectedTableId,
+    selectedNode,
+    selectedRelationId,
+    selectedDomainRelation,
+  ]);
   useEffect(() => {
     if (!reviewFocus) return;
     const view = reviewCanvasView(base, reviewFocus);
@@ -1797,30 +2059,83 @@ function NativeCanvasWorkspace({
       navigateView(view);
       return;
     }
-    setCamera({ viewId: view, x: 120 - point.x, y: 120 - point.y, zoom: 1 });
+    const rect = surface.current?.getBoundingClientRect();
+    setCamera({
+      viewId: view,
+      x: (rect?.width ?? 800) / 2 - point.x,
+      y: (rect?.height ?? 600) / 2 - point.y,
+      zoom: 1,
+    });
   }, [reviewFocus?.nonce, effectiveView]);
+  const toolbar = (
+    <NativeCanvasToolbar
+      {...{ panelToggle }}
+      {...(pathHost !== undefined ? { pathHost } : {})}
+      exportControl={exportControl}
+      viewId={effectiveView}
+      views={toolbarViews}
+      onView={navigateView}
+      domains={base.domains}
+      filter={domainFilter}
+      onFilter={applyDomainFilter}
+      onCreate={(kind) => {
+        if (kind === 'enum') {
+          if (onRequestAction) onRequestAction('enums', '');
+          else onCreate?.('enum');
+        } else void createObject(kind);
+      }}
+      onNote={() => void createObject('note')}
+      onAutoLayout={() => void arrangeVisibleNodes()}
+      onPaste={() => void pasteFromMenu()}
+      onResetRoutes={() =>
+        void saveCommands(
+          (base.layout.relations ?? [])
+            .filter(
+              (route) =>
+                route.viewId === drawn.viewId &&
+                scene.relations.some((item) => item.relation.id === route.relationId),
+            )
+            .map((route) => ({
+              type: 'delete_relation_layout' as const,
+              relationId: route.relationId,
+              viewId: route.viewId,
+            })),
+        )
+      }
+      onOpenEnums={() => onRequestAction?.('enums', '')}
+      onTools={onOpenTools}
+      editable={editable}
+      noteEditable={placementEditable}
+      disabled={personalBusy || !!draft}
+      mode={mode}
+      onMode={onModeChange}
+      inspectorOpen={inspectorOpen}
+      onToggleInspector={onToggleInspector}
+    />
+  );
+  const selectedObjectNode = scene.nodes.find((node) => node.id === selectedNode);
+  const selectionInspector = selectedObjectNode && userId && (
+    <NativeSelectedObjectInspector
+      document={isPrivate ? base : sharedSource}
+      node={selectedObjectNode}
+      viewId={effectiveView}
+      personalVersion={isPrivate ? personal?.version : undefined}
+      context={{
+        userId,
+        snapshot,
+        busy: allBusy || !!draft || !placementEditable,
+        affectsSharedDocument: !isPrivate,
+        onSave: (commands, exp, ref) => routeSave(commands, exp, ref),
+      }}
+    />
+  );
   return (
     <section className="native-erd" aria-label={t('Native ERD')}>
-      <NativeCanvasToolbar
-        exportControl={exportControl}
-        viewId={effectiveView}
-        views={toolbarViews}
-        onView={navigateView}
-        domains={base.domains}
-        filter={domainFilter}
-        onFilter={applyDomainFilter}
-        onCreate={onCreate}
-        onNote={() => void createObject('note')}
-        onAutoLayout={() => void arrangeVisibleNodes()}
-        onTools={onOpenTools}
-        editable={editable}
-        noteEditable={placementEditable}
-        disabled={personalBusy || !!draft}
-        mode={mode}
-        onMode={onModeChange}
-        inspectorOpen={inspectorOpen}
-        onToggleInspector={onToggleInspector}
-      />
+      {toolbarHost === undefined
+        ? toolbar
+        : toolbarHost
+          ? createPortal(toolbar, toolbarHost)
+          : null}
       {error && <p role="alert">{error}</p>}
       {personalEditable && !personalReady && (
         <p role="status">
@@ -1903,8 +2218,6 @@ function NativeCanvasWorkspace({
                               nativeCanvasMoveCommand(isPrivate ? base : sharedSource, current, {
                                 x: current.x,
                                 y: current.y,
-                                width: current.width,
-                                height: current.height,
                               }),
                             ),
                           ),
@@ -2071,9 +2384,31 @@ function NativeCanvasWorkspace({
       )}
       <div
         className={`native-erd-surface canvas-surface${tool === 'hand' ? ' hand-tool' : ''}${pinMode ? ' pin-mode' : ''}`}
+        style={{
+          backgroundSize: `${24 * camera.zoom}px ${24 * camera.zoom}px`,
+          backgroundPosition: `${camera.x}px ${camera.y}px`,
+          backgroundImage: `radial-gradient(circle, var(--erd-grid-dot-color) ${1.05 * camera.zoom}px, transparent ${1.15 * camera.zoom}px)`,
+        }}
         onContextMenu={(event) => {
           if (event.target instanceof Element && event.target.closest(toolShortcutInputSelector))
             return;
+          const relationElement =
+            event.target instanceof Element ? event.target.closest('[data-relation-id]') : null;
+          if (relationElement) {
+            event.preventDefault();
+            event.stopPropagation();
+            const id = relationElement.getAttribute('data-relation-id')!;
+            setMenu(null);
+            setRelationMenu({
+              id,
+              kind: base.domainRelations.some((relation) => relation.id === id)
+                ? 'domain'
+                : 'table',
+              x: Math.max(8, Math.min(event.clientX, window.innerWidth - 290)),
+              y: Math.max(8, Math.min(event.clientY, window.innerHeight - 240)),
+            });
+            return;
+          }
           const element =
             event.target instanceof Element ? event.target.closest('[data-node-id]') : null;
           contextMenu(
@@ -2132,6 +2467,7 @@ function NativeCanvasWorkspace({
         }}
         onPointerDownCapture={(event) => {
           setMenu(null);
+          setRelationMenu(null);
           if (
             pinMode &&
             event.button === 0 &&
@@ -2176,7 +2512,13 @@ function NativeCanvasWorkspace({
                 initial: event.shiftKey ? selectedObjectsRef.current : [],
               };
               setMarquee(selectionRect(start, start));
-              if (!event.shiftKey) setSelectedObjectIds([]);
+              if (!event.shiftKey) {
+                setSelectedObjectIds([]);
+                setSelectedNode(null);
+                setBlankSelection(true);
+                setSelectedRelationId(null);
+                setSelectedDomainRelation(null);
+              }
             }
             return;
           }
@@ -2196,6 +2538,7 @@ function NativeCanvasWorkspace({
           if (box?.pointerId === event.pointerId) {
             const rect = selectionRect(box.start, canvasPoint(event.clientX, event.clientY));
             setMarquee(rect);
+            if (rect.width || rect.height) setBlankSelection(false);
             setSelectedObjectIds([
               ...new Set([...box.initial, ...intersectingObjects(rect, drawn.nodes)]),
             ]);
@@ -2399,27 +2742,23 @@ function NativeCanvasWorkspace({
               mode={mode}
               selectedNode={selectedNode}
               selectedObjectIds={visibleSelection}
-              onNodeSelect={selectNode}
-              onNodeContextMenu={contextMenu}
-              onConnectFromColumn={(source) => {
-                setConnection({ kind: 'foreignKey', source });
-                setConnectPointer(null);
-              }}
+              onNodeSelect={selectNodeLatest}
+              onNodeContextMenu={nodeMenuLatest}
+              onConnectFromColumn={
+                userId && editable && !allBusy && !draft ? connectFromColumn : undefined
+              }
               onDescriptionCommit={
-                placementEditable && !allBusy && !draft
-                  ? (id, value) => {
-                      void commitDescription(id, value);
-                    }
-                  : undefined
+                placementEditable && !allBusy && !draft ? commitDescriptionLatest : undefined
               }
               selectedTableId={selectedTableId}
+              selectedColumnId={selectedColumnId}
               selectedDomainId={selectedDomainId}
               selectedDomainRelation={selectedDomainRelation}
               selectedRelationId={selectedRelationId}
               onSelectRelation={selectRoute}
               draftObjectId={draftObjectId}
               setSelectedNode={setSelectedNode}
-              setSelectedDomainRelation={setSelectedDomainRelation}
+              setSelectedDomainRelation={selectDomainRelation}
               onSelect={onSelect}
               onSelectDomain={onSelectDomain}
               gesture={gesture}
@@ -2428,6 +2767,12 @@ function NativeCanvasWorkspace({
               onAddColumn={editable ? addColumnFromCard : undefined}
               resizeEnabled={placementEditable && !allBusy && !stale}
               onEdit={userId && editable ? openInline : undefined}
+              {...(userId && editable ? { editorContext: inlineContext } : {})}
+              onRequestStructure={onRequestStructure}
+              onRequestAction={onRequestAction}
+              onToggleNullable={
+                userId && editable && !allBusy && !draft ? toggleNullableLatest : undefined
+              }
             />
           </div>
           {marquee && (
@@ -2466,6 +2811,7 @@ function NativeCanvasWorkspace({
             document={sharedSource}
             target={inlineTarget}
             context={inlineContext}
+            focusTarget={inlineFocusReturn.current}
             onClose={closeInline}
           />
         )}
@@ -2676,7 +3022,8 @@ function NativeCanvasWorkspace({
                         id: 'panel-relation',
                         label: t('새 도메인 관계'),
                         disabled: !editable,
-                        onAction: () => onOpenTools?.(),
+                        onAction: () =>
+                          onRequestAction?.('domainRelation', '', { sourceDomainId: menu.source! }),
                       },
                     ]
                   : []),
@@ -2722,10 +3069,89 @@ function NativeCanvasWorkspace({
             : []
         }
       />
+      <ContextMenu
+        position={relationMenu ? { x: relationMenu.x, y: relationMenu.y } : null}
+        label={t('관계 메뉴')}
+        onClose={() => setRelationMenu(null)}
+        items={
+          relationMenu
+            ? [
+                {
+                  id: 'edit-relation',
+                  label: t('관계 속성'),
+                  onAction: () =>
+                    relationMenu.kind === 'domain'
+                      ? onRequestAction?.('domainRelation', relationMenu.id)
+                      : onRequestStructure?.(
+                          'patch',
+                          JSON.stringify(['tableRelations', relationMenu.id]),
+                        ),
+                },
+                ...(relationMenu.kind === 'table'
+                  ? [
+                      {
+                        id: 'reset-route',
+                        label: t('자동 경로로 복원'),
+                        disabled: !placementEditable || allBusy || !!draft,
+                        onAction: () =>
+                          void saveCommands([
+                            {
+                              type: 'delete_relation_layout',
+                              relationId: relationMenu.id,
+                              viewId: drawn.viewId,
+                            },
+                          ]),
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'delete-relation',
+                  label: t('관계 삭제'),
+                  disabled: !editable || allBusy || !!draft,
+                  onAction: () => {
+                    const scope = operationScope.current,
+                      id = relationMenu.id,
+                      kind = relationMenu.kind;
+                    void (async () => {
+                      if (
+                        !(await confirm({
+                          title: t('관계 삭제'),
+                          description: t('선택한 관계를 삭제할까요?'),
+                          destructive: true,
+                          confirmLabel: t('삭제'),
+                        }))
+                      )
+                        return;
+                      if (!alive.current || scope !== operationScope.current) return;
+                      await onSave(
+                        [
+                          nativeEditorCommandSchema.parse(
+                            kind === 'domain'
+                              ? { type: 'delete_domain_relation', id }
+                              : {
+                                  type: 'delete_objects',
+                                  targets: [{ collection: 'tableRelations', id }],
+                                },
+                          ),
+                        ],
+                        expected(snapshot),
+                      );
+                    })().catch((error) => setError(message(error)));
+                  },
+                },
+              ]
+            : []
+        }
+      />
       {inspectorHost === undefined
         ? auxiliary
         : inspectorHost
           ? createPortal(auxiliary, inspectorHost)
+          : null}
+      {selectionHost === undefined
+        ? selectionInspector
+        : selectionHost
+          ? createPortal(selectionInspector, selectionHost)
           : null}
     </section>
   );

@@ -215,6 +215,24 @@ export function nativeDraftRecoveryTarget(
     }
   }
   for (const viewId of views) {
+    const objectId = draft.values.objectId;
+    if (objectId && key === `canvas:object:${viewId}:${objectId}`) {
+      const placementView = doc.domains.some((domain) => domain.id === viewId)
+        ? '__tables__'
+        : viewId;
+      if (
+        !doc.layout.nodes.some(
+          (node) => node.objectId === objectId && node.viewId === placementView,
+        )
+      )
+        return null;
+      if (
+        !doc.notes.some((note) => note.id === objectId && note.viewId === placementView) &&
+        !(viewId === 'overview' && doc.domains.some((domain) => domain.id === objectId))
+      )
+        return null;
+      return { kind: 'canvas', selection: { viewId, objectId }, personal: privateView(viewId) };
+    }
     const descriptionId = draft.values.objectId;
     if (
       descriptionId &&

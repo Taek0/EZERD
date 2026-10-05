@@ -5,6 +5,7 @@ import {
 } from '@ezerd/contracts';
 import type { NativeDesignDocument, RelationLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
+import { nativeRelationLabelWidth } from './native-canvas-style.js';
 import {
   moveRelationSegment,
   relationAnchorAtPoint,
@@ -47,7 +48,7 @@ export function nativeRouteGeometry(
   return relationGeometry(
     source,
     target,
-    Math.max(90, item.label.length * 8 + 24),
+    nativeRelationLabelWidth(item.label),
     scene.relations.indexOf(item),
     route.offset,
     route.bend,

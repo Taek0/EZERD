@@ -333,7 +333,7 @@ export function nativeCanvasColumnMenuItems(
       isVisibleInView(item.scope, mode, table.scope),
   );
   if (!column) return [];
-  const writable = !editorContext?.busy;
+  const writable = !!editorContext && !editorContext.busy;
   const primary = document.keys?.find(
     (key) =>
       key.tableId === table.id &&

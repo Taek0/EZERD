@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { requestFingerprint, sharedDocument } from '@ezerd/model';
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
@@ -38,6 +39,8 @@ export function NativeCanvasPngExport({
   personal,
   personalBusy = false,
   writerState = 'unknown',
+  filter = null,
+  renderControl,
 }: {
   snapshot: ProjectDocumentState;
   userId?: string;
@@ -47,6 +50,12 @@ export function NativeCanvasPngExport({
   personal?: NativePngPersonalSnapshot;
   personalBusy?: boolean;
   writerState?: NativeDurableState;
+  filter?: NativeDomainFilterValue | null;
+  renderControl?: (png: {
+    run: () => Promise<void>;
+    disabled: boolean;
+    busy: boolean;
+  }) => ReactNode;
 }) {
   const { t } = useI18n(),
     [busy, setBusy] = useState(false),
@@ -64,6 +73,7 @@ export function NativeCanvasPngExport({
       snapshot.project.databaseRevision,
       viewId,
       mode,
+      filter,
       requestFingerprint(sharedDocument(snapshot.sourceDocument)),
       shared ? null : personal?.version,
       !shared && personal ? requestFingerprint(personal.state) : null,
@@ -101,15 +111,15 @@ export function NativeCanvasPngExport({
   }
   return (
     <>
-      <Button
-        disabled={busy || (!shared && !privateReady)}
-        onClick={() => {
+      {(() => {
+        const disabled = busy || (!shared && !privateReady);
+        const run = async () => {
           if (snapshot.sourceDocument.schemaVersion !== 2 || (!shared && !privateReady)) return;
           const nativeSource = snapshot.sourceDocument;
           const current = () => alive.current && active.current.generation === generation;
           setBusy(true);
           setError('');
-          void (async () => {
+          await (async () => {
             if (!shared && userId && personal)
               return exportNativePrivateCanvasPng(
                 userId,
@@ -117,13 +127,13 @@ export function NativeCanvasPngExport({
                 personal,
                 viewId,
                 mode,
-                sceneFor,
+                (source, view, displayMode) => sceneFor(source, view, displayMode, filter),
                 current,
               );
             const source = sharedDocument(nativeSource);
             return exportNativeCanvasPng(
               source,
-              sceneFor(source, viewId, mode),
+              sceneFor(source, viewId, mode, filter),
               mode,
               snapshot.project.name,
               current,
@@ -150,10 +160,15 @@ export function NativeCanvasPngExport({
             .finally(() => {
               if (current()) setBusy(false);
             });
-        }}
-      >
-        {t(busy ? 'PNG 만드는 중…' : 'PNG 내보내기')}
-      </Button>
+        };
+        return renderControl ? (
+          renderControl({ run, disabled, busy })
+        ) : (
+          <Button disabled={disabled} onClick={() => void run().catch(() => {})}>
+            {t(busy ? 'PNG 만드는 중…' : 'PNG 내보내기')}
+          </Button>
+        );
+      })()}
       {!shared && (
         <small>
           {t(
