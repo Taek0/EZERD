@@ -14,6 +14,12 @@ import {
 import { useI18n } from '../../shared/i18n/index.js';
 import { DomainDescription } from '../domains/DomainDescription.js';
 import { Button, IconButton } from '../../components/ui/index.js';
+import { NativeCanvasInlineCell } from './NativeCanvasInlineCell.js';
+import type { NativeEditorContext } from './native-editor-form.js';
+import type {
+  NativeCanvasStructureRequest,
+  NativeCanvasActionRequest,
+} from './NativeCanvasTableRows.js';
 
 export interface NativeSceneActions {
   zoom: number;
@@ -41,6 +47,9 @@ export interface NativeCanvasSceneProps {
   onNodeContextMenu?: ((node: NodeLayout, event: MouseEvent<HTMLElement>) => void) | undefined;
   onConnectFromColumn?: ((columnId: string) => void) | undefined;
   onDescriptionCommit?: ((objectId: string, value: string) => void) | undefined;
+  editorContext?: NativeEditorContext | undefined;
+  onRequestStructure?: NativeCanvasStructureRequest | undefined;
+  onRequestAction?: NativeCanvasActionRequest | undefined;
   /** Physical values mean NULL allowed; logical values mean required. */
   onToggleNullable?:
     | ((tableId: string, columnId: string, value: boolean, mode: 'physical' | 'logical') => void)
@@ -60,7 +69,7 @@ export interface NativeCanvasSceneProps {
   onOpenDomain?: ((domainId: string) => void) | undefined;
   gesture: RefObject<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>;
   actions: RefObject<NativeSceneActions>;
-  onEdit?: ((target: NativeInlineTarget) => void) | undefined;
+  onEdit?: ((target: NativeInlineTarget, focusTarget?: HTMLElement) => void) | undefined;
 }
 /** Camera state lives outside this subtree. Refs are read only by event handlers. */
 export const NativeCanvasScene = memo(function NativeCanvasScene({
@@ -76,6 +85,9 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   onNodeContextMenu,
   onConnectFromColumn,
   onDescriptionCommit,
+  editorContext,
+  onRequestStructure,
+  onRequestAction,
   onToggleNullable,
   selectedTableId,
   selectedDomainId,
@@ -191,6 +203,26 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               if (domain && !(event.target instanceof Element && event.target.closest('button')))
                 onSelectDomain?.(domain.id);
             }}
+            onPointerDownCapture={(event) => {
+              if (
+                onNodeSelect &&
+                (event.shiftKey || event.ctrlKey || event.metaKey) &&
+                event.target instanceof Element &&
+                event.target.closest('[data-inline-cell]')
+              )
+                event.preventDefault();
+            }}
+            onClickCapture={(event) => {
+              if (
+                onNodeSelect &&
+                (event.shiftKey || event.ctrlKey || event.metaKey) &&
+                event.target instanceof Element &&
+                event.target.closest('[data-inline-cell]')
+              ) {
+                event.stopPropagation();
+                onNodeSelect(node, event);
+              }
+            }}
             onPointerDown={(event) => {
               if (!unsavedDomain) actions.current.begin(event, node);
             }}
@@ -258,23 +290,37 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               >
                 {domain && <span className="native-domain-overline">DOMAIN</span>}
                 {table ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!onNodeSelect) onSelect(table.id);
-                    }}
-                    onDoubleClick={() => onEdit?.({ tableId: table.id, mode, field: 'name' })}
-                    onKeyDown={(event) => {
-                      if (event.key === 'F2' && onEdit) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onEdit({ tableId: table.id, mode, field: 'name' });
-                      }
-                    }}
-                    title={onEdit ? t('더블클릭 또는 F2로 편집') : undefined}
-                  >
-                    {title || t('이름 없는 테이블')}
-                  </button>
+                  editorContext ? (
+                    <NativeCanvasInlineCell
+                      document={base}
+                      target={{ tableId: table.id, mode, field: 'name' }}
+                      context={editorContext}
+                      title
+                      display={title}
+                      label={t('테이블명')}
+                      className="native-table-title"
+                      onSelect={() => onSelect(table.id)}
+                      {...(onEdit ? { onAdvancedFormat: onEdit } : {})}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!onNodeSelect) onSelect(table.id);
+                      }}
+                      onDoubleClick={() => onEdit?.({ tableId: table.id, mode, field: 'name' })}
+                      onKeyDown={(event) => {
+                        if (event.key === 'F2' && onEdit) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onEdit({ tableId: table.id, mode, field: 'name' });
+                        }
+                      }}
+                      title={onEdit ? t('더블클릭 또는 F2로 편집') : undefined}
+                    >
+                      {title || t('이름 없는 테이블')}
+                    </button>
+                  )
                 ) : domain ? (
                   <h2>{title}</h2>
                 ) : (
@@ -306,6 +352,10 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                   selectedColumnId={selectedColumnId}
                   onToggleNullable={onToggleNullable}
                   onConnectFromColumn={onConnectFromColumn}
+                  editorContext={editorContext}
+                  onRequestStructure={onRequestStructure}
+                  onRequestAction={onRequestAction}
+                  onSelectRelation={onSelectRelation}
                 />
                 <footer className="native-table-footer">
                   <IconButton

@@ -6,6 +6,7 @@ import {
   nativeTableCanvasMetrics,
   nativeTableCanvasHeaderHeight,
   nativeRelationLabelWidth,
+  nativeCanvasFontFamily,
   nativeTableCanvasTitle,
   nativeTableCanvasNamespace,
   nativeTableHeaderColor,
@@ -204,7 +205,8 @@ export function nativeCanvasSvg(
             translate('컬럼을 추가해 설계를 시작하세요.'),
             15,
           );
-        contents += `<rect x="${node.x}" y="${node.y + node.height - 40}" width="${node.width}" height="40" fill="#f7f9fb"/><g class="native-png-footer">${text(node.x + 26, node.y + node.height - 12, '+', 22, 'middle')}</g>`;
+        // Original prepareExportContent strips action buttons, preserving their card chrome.
+        contents += `<rect x="${node.x}" y="${node.y + node.height - 40}" width="${node.width}" height="40" fill="#f7f9fb"/>`;
       } else if (domain) {
         const domainTitle = wrappedText(node.x + 20, node.y + 73, title, node.width - 40, 28, 36.4);
         const titleRows = Math.min(2, (domainTitle.match(/<text /g) ?? []).length);
@@ -224,13 +226,6 @@ export function nativeCanvasSvg(
           16,
           24.8,
         )}</g>`;
-        contents += text(
-          node.x + node.width - 20,
-          node.y + node.height - 20,
-          translate('도메인 열기 ↗'),
-          14,
-          'end',
-        );
       } else if (note) {
         contents = `<path d="M ${node.x} ${node.y + 2} H ${node.x + node.width}" style="stroke:${xml(note.color ?? '#fff3c4')};stroke-width:4"/>`;
         contents += `<g class="native-png-note-body">${wrappedText(
@@ -269,7 +264,7 @@ export function nativeCanvasSvg(
       ),
     )
     .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}"><style>text{fill:#26344a;font-family:system-ui,sans-serif}path{stroke:#617087;stroke-width:1.5;fill:none}.native-png-header text{fill:#ffffff}.native-png-title text{font-weight:700}.native-png-column-head text{font-weight:600;fill:#617087}.native-png-domain-overline text{fill:#667995;letter-spacing:1.7px}.native-png-domain-body text{fill:#617087}.native-png-note-body text{fill:#555447}.native-png-relation>path{stroke:${relationColor};stroke-width:2}marker[id^="native-png-crow"] path{stroke:${relationColor};stroke-width:1.7}marker path{fill:none}.native-png-keys text{fill:#4169e1;font-weight:700}.native-png-type text{fill:#737d87;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.native-png-footer text{fill:#4169e1;font-weight:600}.native-png-null path{stroke:#fff;stroke-width:2}.native-png-domain-relation>path{stroke:#74829a;stroke-width:1.7}.native-png-domain-relation .native-png-domain-leader{stroke-width:1;stroke-dasharray:3 3;opacity:.55}.native-png-domain-relation text{fill:#526582;stroke:#f6f8fb;stroke-width:5;paint-order:stroke}#native-png-arrow path{fill:#74829a;stroke:none}</style><defs>${crowDefs}<marker id="native-png-arrow" viewBox="0 0 10 10" markerWidth="7" markerHeight="7" refX="9" refY="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#f6f8fb"/>${paths}${cards}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}"><style>text{fill:#26344a;font-family:${nativeCanvasFontFamily}}path{stroke:#617087;stroke-width:1.5;fill:none}.native-png-header text{fill:#ffffff}.native-png-title text{font-weight:700}.native-png-column-head text{font-weight:600;fill:#617087}.native-png-domain-overline text{fill:#667995;letter-spacing:1.7px}.native-png-domain-body text{fill:#617087}.native-png-note-body text{fill:#555447}.native-png-relation>path{stroke:${relationColor};stroke-width:2}marker[id^="native-png-crow"] path{stroke:${relationColor};stroke-width:1.7}marker path{fill:none}.native-png-keys text{fill:#4169e1;font-weight:700}.native-png-type text{fill:#737d87;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.native-png-null path{stroke:#fff;stroke-width:2}.native-png-domain-relation>path{stroke:#74829a;stroke-width:1.7}.native-png-domain-relation .native-png-domain-leader{stroke-width:1;stroke-dasharray:3 3;opacity:.55}.native-png-domain-relation text{fill:#526582;stroke:#f6f8fb;stroke-width:5;paint-order:stroke}#native-png-arrow path{fill:#74829a;stroke:none}</style><defs>${crowDefs}<marker id="native-png-arrow" viewBox="0 0 10 10" markerWidth="7" markerHeight="7" refX="9" refY="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#f6f8fb"/>${paths}${cards}</svg>`;
   return { svg, bounds };
 }
 export async function exportNativeCanvasPng(

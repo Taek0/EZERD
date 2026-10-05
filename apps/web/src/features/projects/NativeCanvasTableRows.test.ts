@@ -2,10 +2,15 @@ import { createElement, isValidElement, type ReactElement, type ReactNode } from
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, tableCardMetrics } from '@ezerd/model';
-import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
+import { NativeCanvasTableRows, nativeCanvasColumnMenuItems } from './NativeCanvasTableRows.js';
 import { nativeTableCanvasMetrics, nativeRelationLabelWidth } from './native-canvas-style.js';
-import { decorationFixture } from './native-canvas-decoration-test-fixtures.js';
+import {
+  decorationFixture,
+  decorationSnapshot,
+  decorationUserId,
+} from './native-canvas-decoration-test-fixtures.js';
 import { Checkbox } from '../../components/ui/index.js';
+import { NativeCanvasInlineCell } from './NativeCanvasInlineCell.js';
 
 vi.mock('../../shared/i18n/index.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -175,5 +180,161 @@ describe('source card rows rendered from native values', () => {
   it('reserves the source label width for Korean and mixed Unicode text', () => {
     expect(nativeRelationLabelWidth('한글관계설명입니다')).toBe(24 + 9 * 14);
     expect(nativeRelationLabelWidth('ABCDEFGHIJ')).toBe(24 + 10 * 8);
+  });
+  it.each(['physical', 'logical'] as const)(
+    'forwards native inline context and the %s field targets to cells',
+    (mode) => {
+      const p = fixture(),
+        onAdvancedFormat = vi.fn();
+      const context = {
+        userId: decorationUserId,
+        snapshot: decorationSnapshot(p.document),
+        busy: false,
+        onSave: vi.fn(async () => true),
+      };
+      const tree = elements(
+        NativeCanvasTableRows({ ...p, mode, editorContext: context, onEdit: onAdvancedFormat }),
+      );
+      const cells = tree.filter((node) => node.type === NativeCanvasInlineCell);
+      expect(cells).toHaveLength(3);
+      expect(cells.map((node) => node.props.target)).toEqual([
+        { tableId: 't', columnId: 'c', mode, field: 'name' },
+        {
+          tableId: 't',
+          columnId: 'c',
+          mode,
+          field: mode === 'physical' ? 'format' : 'semanticType',
+        },
+        { tableId: 't', columnId: 'c', mode, field: 'comment' },
+      ]);
+      for (const cell of cells) {
+        expect(cell.props.context).toBe(context);
+        expect(cell.props.onAdvancedFormat).toBe(onAdvancedFormat);
+      }
+      (cells[0]!.props.onSelect as (target: unknown) => void)(cells[0]!.props.target);
+      expect(p.onSelect).toHaveBeenCalledWith('t', 'c');
+      const html = renderToStaticMarkup(createElement(NativeCanvasTableRows, p));
+      expect(html).not.toContain('data-inline-cell');
+      expect(html).not.toContain('고급 형식 편집');
+      expect(context.onSave).not.toHaveBeenCalled();
+    },
+  );
+  it('requests contextual column/PK review and deletion through parent callbacks without mutating data', () => {
+    const p = fixture(),
+      before = structuredClone(p.document),
+      onRequestStructure = vi.fn(),
+      onRequestAction = vi.fn();
+    let items = nativeCanvasColumnMenuItems(
+      { ...p, onRequestStructure, onRequestAction },
+      'c',
+      (value) => value,
+    );
+    items.find((item) => item.id === 'edit-column')!.onAction();
+    expect(onRequestStructure).toHaveBeenLastCalledWith(
+      'patch',
+      JSON.stringify(['columns', 'c']),
+      't',
+    );
+    items.find((item) => item.id === 'delete-column')!.onAction();
+    expect(onRequestStructure).toHaveBeenLastCalledWith(
+      'delete',
+      JSON.stringify(['columns', 'c']),
+      't',
+    );
+    items.find((item) => item.id === 'add-column')!.onAction();
+    expect(onRequestStructure).toHaveBeenLastCalledWith('column', '', 't');
+    items.find((item) => item.id === 'primary-key')!.onAction();
+    expect(onRequestAction).toHaveBeenLastCalledWith('key', '', {
+      tableId: 't',
+      keyKind: 'primary',
+      columnIds: 'c',
+    });
+    expect(p.document).toEqual(before);
+    p.document.keys = [
+      { id: 'pk', tableId: 't', name: 'pk', kind: 'primary', scope: 'physical', columnIds: ['c'] },
+    ];
+    items = nativeCanvasColumnMenuItems({ ...p, onRequestStructure }, 'c', (value) => value);
+    items.find((item) => item.id === 'primary-key')!.onAction();
+    expect(onRequestStructure).toHaveBeenLastCalledWith(
+      'patch',
+      JSON.stringify(['keys', 'pk']),
+      't',
+    );
+  });
+  it('guards stale, hidden and busy column menu actions even when invoked directly', () => {
+    const p = fixture(),
+      onRequestStructure = vi.fn(),
+      onRequestAction = vi.fn(),
+      onConnectFromColumn = vi.fn();
+    expect(
+      nativeCanvasColumnMenuItems({ ...p, onRequestStructure }, 'missing', (value) => value),
+    ).toEqual([]);
+    p.document.columns![0]!.scope = 'logical';
+    expect(
+      nativeCanvasColumnMenuItems({ ...p, onRequestStructure }, 'c', (value) => value),
+    ).toEqual([]);
+    p.document.columns![0]!.scope = 'both';
+    p.document.keys = [
+      { id: 'pk', tableId: 't', name: 'pk', kind: 'primary', scope: 'physical', columnIds: ['c'] },
+    ];
+    const context = {
+      userId: decorationUserId,
+      snapshot: decorationSnapshot(p.document),
+      busy: true,
+      onSave: vi.fn(async () => true),
+    };
+    const items = nativeCanvasColumnMenuItems(
+      { ...p, onRequestStructure, onRequestAction, onConnectFromColumn, editorContext: context },
+      'c',
+      (value) => value,
+    );
+    for (const item of items) {
+      expect(item.disabled).toBe(true);
+      item.onAction();
+    }
+    expect(onRequestStructure).not.toHaveBeenCalled();
+    expect(onRequestAction).not.toHaveBeenCalled();
+    expect(onConnectFromColumn).not.toHaveBeenCalled();
+    const onToggleNullable = vi.fn();
+    p.document.keys = [];
+    const checkbox = elements(
+      NativeCanvasTableRows({ ...p, editorContext: context, onToggleNullable }),
+    ).find((element) => element.type === Checkbox)!;
+    expect(checkbox.props.disabled).toBe(true);
+    (checkbox.props.onChange as (event: unknown) => void)({ target: { checked: true } });
+    expect(onToggleNullable).not.toHaveBeenCalled();
+  });
+  it('opens incoming and outgoing relationship selections while retaining physical-only scope', () => {
+    const p = fixture(),
+      onSelectRelation = vi.fn();
+    p.document.tableRelations = [
+      {
+        id: 'incoming',
+        sourceTableId: 't',
+        targetTableId: 't',
+        scope: 'physical',
+        logical: { name: 'Logical link', required: true, cardinality: 'one-to-many' },
+        physical: {
+          name: 'records_fk',
+          sourceColumnIds: ['c'],
+          targetColumnIds: ['c'],
+          onDelete: 'NO ACTION',
+          onUpdate: 'NO ACTION',
+        },
+      },
+    ];
+    const items = nativeCanvasColumnMenuItems({ ...p, onSelectRelation }, 'c', (value) => value);
+    const incoming = items.find((item) => item.id === 'relation:incoming')!;
+    expect(incoming.label).toContain('들어오는 관계 · records_fk · records');
+    expect(incoming.disabled).toBe(false);
+    incoming.onAction();
+    expect(onSelectRelation).toHaveBeenCalledWith('incoming');
+    expect(
+      nativeCanvasColumnMenuItems(
+        { ...p, mode: 'logical', onSelectRelation },
+        'c',
+        (value) => value,
+      ).some((item) => item.id.startsWith('relation:')),
+    ).toBe(false);
   });
 });

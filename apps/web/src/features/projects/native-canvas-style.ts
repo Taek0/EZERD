@@ -41,6 +41,8 @@ export function nativeTableCanvasRows(
 // Keep source card typography, displayed bounds, relation ports and PNG in one coordinate system.
 export const nativeTableCanvasHeaderHeight = 50 + 34;
 export const nativeTableCanvasFooterHeight = 40;
+/** Matches styles/tokens.css --font-sans; SVG images cannot inherit the page token. */
+export const nativeCanvasFontFamily = "'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
 const textWidth = (value: string) =>
   [...value].reduce((width, character) => width + (character.charCodeAt(0) > 255 ? 20 : 12.4), 0);
 export const nativeRelationLabelWidth = (label: string) =>

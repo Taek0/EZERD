@@ -24,7 +24,7 @@
 | 여러 캔버스 | 관계선 marker 참조 | `useId`로 table/domain SVG marker 충돌 방지 |
 | PNG | Native SVG 내보내기 | 공통 title/namespace/grid/row/label 치수, 실제 개행, 키/타입 서체·색상, NULL checkbox·footer, 도메인/메모 tint·상단 색상·설명, domain leader. XML escaping·2x raster budget·actor/project/download guards 유지 |
 
-원본 `TableNodeContent`의 타입 편집은 PostgreSQL v1 구조를 전제로 한다. 따라서 Native 카드의 이름/comment/F2/타입 trigger는 기존 `onEdit`를 통해 DB별 Native 편집기로 연결하며, Native 타입을 원본 PostgreSQL 목록으로 축소하지 않는다. 공통 `DomainDescription`, `Checkbox`, `Button`, `IconButton`은 직접 재사용했다.
+원본 `TableNodeContent`의 타입 편집은 PostgreSQL v1 구조를 전제로 한다. 첫 복원에서는 Native 카드의 이름/comment/F2/타입 trigger를 기존 `onEdit` 편집기로 연결했다. 아래 감사 후속에서는 Native inline cell과 DB별 타입 검색을 직접 연결했으며, 고급 형식 fallback만 `onEdit`를 사용한다. Native 타입을 원본 PostgreSQL 목록으로 축소하지 않는다. 공통 `DomainDescription`, `Checkbox`, `Button`, `IconButton`은 직접 재사용했다.
 
 ## 부모 통합 계약
 
@@ -48,3 +48,17 @@
 - 웹 패키지 전체 타입검사에서는 당시 병렬 작업 중인 `native-canvas-selection.test.ts` 오류가 남았다. 담당 파일의 타입 오류는 없었으며 이 파일은 수정하지 않았다. 통합 검증은 부모가 수행한다.
 
 브라우저/pixel QA는 사용자가 선택한 코드·서버 검증 범위에 따라 수행하지 않았다. PNG는 DOM 화면 캡처가 아닌 기존 SVG serializer를 유지하며 폰트별 실제 글자 폭 대신 원본 metrics 기준으로 줄을 나눈다. 실제 브라우저의 폰트·색 혼합·그림자 픽셀까지 동일하다고 주장하지 않는다. 저장 ACK·권한·그룹 조작·패널·메뉴의 통합 완료 여부는 부모 작업의 결과 기록에서 확인해야 한다.
+
+## 2026-10-06 감사 후속: S07/S08·인라인 셀·컬럼 메뉴
+
+- [후속 계획](../planning/2026-10-06-Canvas-CardAuditFollowup.md)에 따라 원본 `prepareExportContent()`와 같이 PNG의 컬럼 추가 '+' 및 도메인 열기 버튼 문구를 제거했다. footer 배경·키·NULL·모델 텍스트는 유지하며 모델 메모에 실제 '+'가 있으면 내보낸다. resize·pin·route·connection preview 등의 조작 요소는 SVG 생성 대상이 아니다.
+- SVG 본문 font-family를 원본 `tokens.css`의 `--font-sans`인 Apple SD Gothic Neo/Malgun Gothic/sans-serif와 맞췄다. 타입의 원본 monospace, 26px 제목·20px 행, shared metrics와 card/column clip을 코드 회귀로 비교한다. 폰트에 따른 픽셀 비교는 실행하지 않았다.
+- keyed `.native-scene-entry`에 원본 `domain-enter`를 240ms/ease-out으로 연결했다. source keyframe의 opacity 0.55→1 및 scale 0.985→1을 재사용한다. reduced motion에는 animation:none이며 원본 source와 Native media rule을 함께 검사했다.
+- 인라인 에이전트의 `a2d856b`에 있는 `NativeCanvasInlineCell`을 통합했다. Scene의 `editorContext?: NativeEditorContext`를 title과 rows에 전달한다. table name, column name/comment, physical format, logical semanticType을 같은 document/target/context로 연결하고 onSelect와 onAdvancedFormat(target, focusTarget)을 전달한다. 해당 에이전트 파일은 수정하지 않았다. context 미제공 호출자는 기존 읽기/편집 callback과 호환된다.
+- header의 source 제목 input·focus/투명 스타일과 row Input/SearchType의 20px/28px 치수를 맞췄다. Ctrl/Shift/Meta 클릭은 inline cell의 focus/편집보다 먼저 처리해 기존 그룹 선택을 유지한다. parent editorContext.busy이면 NULL/required 변경을 disabled 처리하고 synthetic change도 차단한다.
+- 원본 공통 `ContextMenu`를 컬럼 행에 연결했다. column properties/add/delete, PK 설정, 물리 PK에서 연결, 들어오는/나가는 관계 접근을 지원한다. 속성·삭제·PK는 부모의 review/Native command 경로를 요청한다. 부모 table header/node/blank 메뉴와 별도이며 input/textarea/select의 native menu는 유지한다.
+- 구조 요청은 부모와 같은 `onRequestStructure(action, target, tableId?)` API다. patch/delete target은 `JSON.stringify(['columns'|'keys'|'tableRelations', id])`; 생성 target은 빈 문자열이다. 선택적 `onRequestAction(action, target, values?)`가 있으면 새 PK에 tableId/keyKind/columnIds를 미리 채운다. 없으면 기존 key 생성 요청을 사용한다. 기존 PK가 있으면 해당 key 수정·확인 경로를 연다.
+- unknown/다른 테이블/현재 mode에서 숨긴 column은 빈 메뉴이며 callback을 호출하지 않는다. busy·callback 부재·물리/논리 scope·PK/FK capability로 동작을 제한한다. incoming/outgoing 관계 항목은 읽기 선택 callback이 있으면 편집 권한과 독립적으로 열 수 있다. ContextMenu/Shift+F10은 컬럼 wrapper의 capture에서 처리하므로 부모의 일반 canvas capture는 `[data-column-id]`를 해당 단축키 대상에서 제외해야 한다.
+- `native-presentation.test.ts`의 과거 `<table>` 래퍼와 `scope=col` 검사를 source grid의 `role=table/row/columnheader` 계약으로 갱신했다. NULL/comment를 숨길 때 columnheader 5→3개와 native source payload 불변성을 계속 확인한다.
+- 후속 집중 Vitest: **6개 파일 / 54개 테스트 통과**. 인라인 context/target/고급 형식 연결·읽기 전용 표시·modifier 선행 처리·문맥 메뉴 요청/guard·S07/S08·원본 font token/clip 검증을 추가했다. `pnpm --filter @ezerd/web typecheck` 통과. 부모가 node metrics/84px header/label width 및 selectedColumnId/nullable 연결을 완료한 상태에서 검사했다.
+- 사용자 결정에 따라 후속에도 브라우저 QA와 전체 check는 실행하지 않았다. durable 저장·ACK와 컬럼 삭제/PK 확인 UI는 부모/인라인/인스펙터의 소유권을 유지한다.

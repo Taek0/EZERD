@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { decorationFixture } from './native-canvas-decoration-test-fixtures.js';
 import { nativeCanvasScene } from './NativeERDCanvas.js';
 import { nativeCanvasSvg, nativePngBounds, exportNativeCanvasPng } from './native-canvas-png.js';
-import { nativeTableCanvasHeaderHeight, nativeTableCanvasMetrics } from './native-canvas-style.js';
+import {
+  nativeTableCanvasHeaderHeight,
+  nativeTableCanvasMetrics,
+  nativeCanvasFontFamily,
+} from './native-canvas-style.js';
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -54,7 +59,8 @@ describe('native PNG uses semantic source and common geometry', () => {
     expect(svg).toContain('font-size="26"');
     expect(svg).toContain('font-size="20"');
     expect(svg).toContain('native-png-null');
-    expect(svg).toContain('native-png-footer');
+    expect(svg).toContain('fill="#f7f9fb"');
+    expect(svg).not.toContain('>+</text>');
     expect(svg).toContain(`height="${metrics.rows[0]!.height}"`);
     expect(svg).toContain(
       `y="${scene.nodes.find((node) => node.objectId === 't')!.y + nativeTableCanvasHeaderHeight}"`,
@@ -82,7 +88,7 @@ describe('native PNG uses semantic source and common geometry', () => {
     expect(svg).toContain('>DOMAIN</text>');
     expect(svg).toContain('native-png-domain-accent');
     expect(svg.replace(/<[^>]*>/g, '')).toContain('업무 영역을 설명해 주세요');
-    expect(svg).toContain('>도메인 열기 ↗</text>');
+    expect(svg).not.toContain('>도메인 열기 ↗</text>');
   });
   it('respects the effective domain view while retaining the shared table placement identity', () => {
     const source = decorationFixture();
@@ -91,6 +97,49 @@ describe('native PNG uses semantic source and common geometry', () => {
     const { svg } = nativeCanvasSvg(source, scene, 'physical');
     expect(svg).toContain('>records</text>');
     expect(svg).not.toContain('>Orders</text>');
+  });
+  it('removes action glyphs from export without stripping equal model-backed text', () => {
+    const source = decorationFixture();
+    let svg = nativeCanvasSvg(
+      source,
+      nativeCanvasScene(source, '__tables__', 'physical'),
+      'physical',
+    ).svg;
+    expect(svg).not.toContain('>+</text>');
+    expect(svg).not.toContain('class="native-png-footer"');
+    source.notes[0]!.text = '+';
+    svg = nativeCanvasSvg(
+      source,
+      nativeCanvasScene(source, '__tables__', 'physical'),
+      'physical',
+    ).svg;
+    expect(svg).toContain('>+</text>');
+    source.domains[0]!.description = 'Open data';
+    svg = nativeCanvasSvg(
+      source,
+      nativeCanvasScene(source, 'overview', 'physical'),
+      'physical',
+    ).svg;
+    expect(svg).toContain('>Open data</text>');
+    expect(svg).not.toContain('>도메인 열기 ↗</text>');
+  });
+  it('matches the source font token and exports the same card/column clipping and text metrics', () => {
+    const tokens = readFileSync(new URL('../../styles/tokens.css', import.meta.url), 'utf8');
+    const font = tokens.match(/--font-sans:\s*([^;]+);/)![1]!;
+    expect(nativeCanvasFontFamily).toBe(font);
+    const source = decorationFixture(),
+      scene = nativeCanvasScene(source, '__tables__', 'physical');
+    const { svg } = nativeCanvasSvg(source, scene, 'physical');
+    expect(svg).toContain(`font-family:${nativeCanvasFontFamily}`);
+    expect(svg).toContain('font-family:ui-monospace,SFMono-Regular,Consolas,monospace');
+    for (const node of scene.nodes) {
+      expect(svg).toContain(
+        `width="${node.width}" height="${node.height}" rx="${node.objectId === 'n' ? 3 : 5}"`,
+      );
+    }
+    expect(svg).toContain('clip-path="url(#native-card-0-col-1)"');
+    expect(svg).toContain('font-size="26"');
+    expect(svg).toContain('font-size="20"');
   });
   it('encodes image/png at the bounded common 2x scale and downloads only in the captured context', async () => {
     vi.useFakeTimers();

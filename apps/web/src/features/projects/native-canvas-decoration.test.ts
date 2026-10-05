@@ -146,6 +146,7 @@ describe('native common style/domain relation UI and geometry', () => {
     expect(html).not.toContain('type="submit"');
     expect(html).toContain('border-color:#c8d0de');
     expect(html).toContain('background:#123456');
+    expect(html).toMatch(/class="[^"]*native-scene-entry/);
     expect(source).toEqual(before);
   });
   it('keeps common editors pending-disabled and clean saves unavailable', () => {

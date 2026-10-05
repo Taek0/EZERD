@@ -1,4 +1,5 @@
 import { createElement, isValidElement, type ReactNode, type ReactElement } from 'react';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeCanvasScene, type NativeCanvasSceneProps } from './NativeCanvasScene.js';
@@ -6,6 +7,9 @@ import { nativeCanvasScene } from './NativeERDCanvas.js';
 import { decorationFixture } from './native-canvas-decoration-test-fixtures.js';
 import { DomainDescription } from '../domains/DomainDescription.js';
 import { nativeCanvasSvg } from './native-canvas-png.js';
+import { NativeCanvasInlineCell } from './NativeCanvasInlineCell.js';
+import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
+import { decorationSnapshot, decorationUserId } from './native-canvas-decoration-test-fixtures.js';
 afterEach(() => vi.unstubAllGlobals());
 vi.mock('../../shared/i18n/index.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -62,6 +66,20 @@ function descendants(node: ReactNode): ReactElement<Record<string, unknown>>[] {
   return [node, ...descendants(node.props.children as ReactNode)];
 }
 describe('native scene render boundary', () => {
+  it('binds the original 240ms domain entry animation to the native keyed wrapper with reduced motion disabled', () => {
+    const originalCss = readFileSync(new URL('../../styles/styles.css', import.meta.url), 'utf8');
+    const nativeCss = readFileSync(new URL('./NativeERDCanvas.css', import.meta.url), 'utf8');
+    expect(originalCss).toContain('animation: domain-enter 0.24s ease-out;');
+    expect(originalCss).toMatch(
+      /@keyframes domain-enter[\s\S]*?opacity: 0\.55;[\s\S]*?scale\(0\.985\)/,
+    );
+    expect(nativeCss).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\)\s*\{\s*\.native-scene-entry\s*\{\s*animation: domain-enter 240ms ease-out;/,
+    );
+    expect(nativeCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.native-scene-entry\s*\{\s*animation: none;/,
+    );
+  });
   it('keeps event handlers on the latest committed actions and zoom without rebuilding the scene', () => {
     const p = props(),
       handlers = article(p),
@@ -279,5 +297,60 @@ describe('native scene render boundary', () => {
     svg = nativeCanvasSvg(p.base, p.drawn, p.mode).svg;
     expect(html).toContain('>이름 없는 테이블</button>');
     expect(svg).toContain('>이름 없는 테이블</text>');
+  });
+  it('forwards the parent inline policy and structure requests to title and column cells', () => {
+    const p = props();
+    p.editorContext = {
+      userId: decorationUserId,
+      snapshot: decorationSnapshot(p.base),
+      busy: false,
+      onSave: vi.fn(async () => true),
+    };
+    p.onEdit = vi.fn();
+    p.onRequestStructure = vi.fn();
+    p.onRequestAction = vi.fn();
+    const tree = descendants(scene(p));
+    const title = tree.find((node) => node.type === NativeCanvasInlineCell)!;
+    expect(title.props.context).toBe(p.editorContext);
+    expect(title.props.target).toEqual({ tableId: 't', mode: 'physical', field: 'name' });
+    expect(title.props.title).toBe(true);
+    expect(title.props.onAdvancedFormat).toBe(p.onEdit);
+    const rows = tree.find((node) => node.type === NativeCanvasTableRows)!;
+    expect(rows.props.editorContext).toBe(p.editorContext);
+    expect(rows.props.onRequestStructure).toBe(p.onRequestStructure);
+    expect(rows.props.onRequestAction).toBe(p.onRequestAction);
+    p.editorContext = undefined;
+    expect(descendants(scene(p)).some((node) => node.type === NativeCanvasInlineCell)).toBe(false);
+  });
+  it('captures modifier clicks before an inline cell starts editing or replaces group selection', () => {
+    class InlineElement {
+      closest() {
+        return this;
+      }
+    }
+    vi.stubGlobal('Element', InlineElement);
+    const p = props();
+    p.onNodeSelect = vi.fn();
+    const target = new InlineElement(),
+      preventDefault = vi.fn(),
+      stopPropagation = vi.fn();
+    const event = {
+      target,
+      ctrlKey: true,
+      shiftKey: false,
+      metaKey: false,
+      preventDefault,
+      stopPropagation,
+    };
+    const handlers = article(p);
+    handlers.onPointerDownCapture!(event);
+    handlers.onClickCapture!(event);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(stopPropagation).toHaveBeenCalledOnce();
+    expect(p.onNodeSelect).toHaveBeenCalledWith(
+      p.drawn.nodes.find((node) => node.objectId === 't'),
+      event,
+    );
+    expect(p.onSelect).not.toHaveBeenCalled();
   });
 });
