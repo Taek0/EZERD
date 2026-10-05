@@ -6,9 +6,13 @@ import { useI18n } from '../../shared/i18n/index.js';
 export function NativeTableLines({
   relations,
   mode,
+  selectedId,
+  onSelect,
 }: {
   relations: ReturnType<typeof nativeCanvasScene>['relations'];
   mode: 'physical' | 'logical';
+  selectedId?: string | null | undefined;
+  onSelect?: ((id: string | null) => void) | undefined;
 }) {
   const id = useId().replaceAll(':', '');
   const { t } = useI18n();
@@ -58,8 +62,27 @@ export function NativeTableLines({
         };
         const width = Math.max(90, label.length * 8 + 24);
         return (
-          <g key={relation.id} data-relation-id={relation.id} className="native-table-relation">
+          <g
+            key={relation.id}
+            data-relation-id={relation.id}
+            className={`native-table-relation${selectedId === relation.id ? ' selected' : ''}`}
+            role={onSelect ? 'button' : undefined}
+            tabIndex={onSelect ? 0 : undefined}
+            aria-label={`${t('테이블 관계')} ${label}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect?.(relation.id);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onSelect?.(relation.id);
+              }
+              if (event.key === 'Escape') onSelect?.(null);
+            }}
+          >
             <title>{`${label}: ${relation.sourceTableId} → ${relation.targetTableId}`}</title>
+            {onSelect && <path className="native-relation-hit" d={geometry.path} />}
             <path
               className="native-relation-stroke"
               d={geometry.path}

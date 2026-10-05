@@ -276,3 +276,51 @@
   max-width: 100%;
   min-width: 0;
 }
+.native-table-lines .native-relation-hit {
+  stroke: transparent;
+  stroke-width: 16px;
+  fill: none;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.native-table-relation:hover .native-relation-stroke,
+.native-table-relation.selected .native-relation-stroke {
+  stroke-width: 3;
+}
+.native-table-relation:focus-visible {
+  outline: none;
+}
+.native-table-relation:focus-visible rect,
+.native-table-relation.selected rect {
+  stroke: var(--accent, #4169e1);
+  stroke-width: 2;
+}
+.native-route-controls {
+  position: absolute;
+  inset: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.native-route-controls .native-route-preview {
+  fill: none;
+  stroke: var(--accent, #4169e1);
+  stroke-width: 2;
+}
+.native-route-controls circle {
+  pointer-events: all;
+  cursor: move;
+  fill: var(--panel, white);
+  stroke: var(--accent, #4169e1);
+  stroke-width: 2;
+}
+.native-route-controls circle:focus-visible {
+  fill: #e0e7ff;
+  outline: none;
+  stroke-width: 3;
+}
+.native-route-controls circle[aria-disabled='true'] {
+  pointer-events: none;
+  opacity: 0.5;
+}

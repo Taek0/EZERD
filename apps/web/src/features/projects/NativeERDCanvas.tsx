@@ -1,3 +1,4 @@
+import { NativeRelationEditor } from './NativeRelationEditor.js';
 import { NativeCanvasInlineEditor, type NativeInlineTarget } from './NativeCanvasInlineEditor.js';
 import {
   useCallback,
@@ -594,6 +595,13 @@ export function NativeERDCanvas({
     () => setInlineTarget(recoverySelection?.inline ?? null),
     [userId, snapshot.project.id, recoverySelection?.inline],
   );
+  const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
+  const [worldElement, setWorldElement] = useState<HTMLDivElement | null>(null);
+  const closeRoute = useCallback(() => setSelectedRelationId(null), []);
+  useEffect(
+    () => setSelectedRelationId(recoverySelection?.routeId ?? null),
+    [userId, snapshot.project.id, viewId, recoverySelection?.routeId],
+  );
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
@@ -959,6 +967,57 @@ export function NativeERDCanvas({
     () => ({ userId: userId ?? '', snapshot, busy: allBusy || !!draft || !editable, onSave }),
     [userId, snapshot, allBusy, draft, editable, onSave],
   );
+  const routeSave = async (
+    commands: CanvasCommand[],
+    expectation: ReturnType<typeof expected>,
+    ref: DraftRef,
+  ) => {
+    if (
+      !userId ||
+      !placementEditable ||
+      allBusy ||
+      draft ||
+      expectation.version !== snapshot.project.version ||
+      expectation.sequence !== snapshot.sequence ||
+      expectation.databaseRevision !== snapshot.project.databaseRevision
+    )
+      return false;
+    if (isPrivate)
+      return commands.length === 1
+        ? savePersonalCommand(nativePersonalCanvasCommandSchema.parse(commands[0]), ref)
+        : false;
+    return onSave(
+      commands.map((command) => nativeEditorCommandSchema.parse(command)),
+      expectation,
+      ref,
+    );
+  };
+  const routeSaveRef = useRef(routeSave);
+  useLayoutEffect(() => {
+    routeSaveRef.current = routeSave;
+  });
+  const routeContext = useMemo(
+    () => ({
+      userId: userId ?? '',
+      snapshot,
+      busy: allBusy || !!draft || !placementEditable,
+      affectsSharedDocument: !isPrivate,
+      onSave: (
+        commands: CanvasCommand[],
+        expectation: ReturnType<typeof expected>,
+        ref: DraftRef,
+      ) => routeSaveRef.current(commands, expectation, ref),
+    }),
+    [userId, snapshot, allBusy, draft, placementEditable, isPrivate],
+  );
+  const openInline = useCallback((target: NativeInlineTarget) => {
+    setSelectedRelationId(null);
+    setInlineTarget(target);
+  }, []);
+  const selectRoute = useCallback((id: string | null) => {
+    setInlineTarget(null);
+    setSelectedRelationId(id);
+  }, []);
   const sceneActions = useRef<NativeSceneActions>({
     zoom: camera.zoom,
     begin,
@@ -1240,6 +1299,7 @@ export function NativeERDCanvas({
       >
         <div
           className="native-erd-world"
+          ref={setWorldElement}
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
           <NativeCanvasScene
@@ -1252,6 +1312,8 @@ export function NativeERDCanvas({
             selectedTableId={selectedTableId}
             selectedDomainId={selectedDomainId}
             selectedDomainRelation={selectedDomainRelation}
+            selectedRelationId={selectedRelationId}
+            onSelectRelation={selectRoute}
             draftObjectId={draftObjectId}
             setSelectedNode={setSelectedNode}
             setSelectedDomainRelation={setSelectedDomainRelation}
@@ -1259,7 +1321,7 @@ export function NativeERDCanvas({
             onSelectDomain={onSelectDomain}
             gesture={gesture}
             actions={sceneActions}
-            onEdit={userId && editable ? setInlineTarget : undefined}
+            onEdit={userId && editable ? openInline : undefined}
           />
         </div>
         {inlineTarget && userId && (
@@ -1269,6 +1331,19 @@ export function NativeERDCanvas({
             target={inlineTarget}
             context={inlineContext}
             onClose={closeInline}
+          />
+        )}
+        {selectedRelationId && userId && (placementEditable || recoverySelection?.routeId) && (
+          <NativeRelationEditor
+            key={`${userId}:${snapshot.project.id}:${effectiveView}:${selectedRelationId}`}
+            document={base}
+            scene={drawn}
+            viewId={drawn.viewId}
+            relationId={selectedRelationId}
+            world={worldElement}
+            context={routeContext}
+            personalVersion={isPrivate ? personal?.version : undefined}
+            onClose={closeRoute}
           />
         )}
         {!drawn.nodes.length && (
@@ -1591,7 +1666,7 @@ function NativeCanvasActions({
 }
 
 /** Canvas forms keep incomplete private/shared input without putting private commands in shared pending. */
-function NativeCanvasInputForm({
+export function NativeCanvasInputForm({
   context,
   title,
   draftKey,
@@ -1658,6 +1733,7 @@ function NativeCanvasInputForm({
     context.snapshot.project.id,
     context.affectsSharedDocument && dirty,
     context.affectsSharedDocument && !!storageError,
+    `canvas:${draftKey}`,
   );
   const stale =
     draft.expected.version !== currentExpected.version ||
