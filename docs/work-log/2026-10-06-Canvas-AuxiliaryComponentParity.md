@@ -30,3 +30,11 @@ The parent can retain this submit function and call it after a route gesture com
 ## Commit isolation
 
 NativeDomainRelationEditor received concurrent contextual-form/source-domain/focus edits from another worker during this unit. Those edits remain in the shared working tree and are excluded from this unit's staged domain-relation blob. Only this unit's shared Checkbox import/use, contextual title and read-only relationship filtering/direction belong to this commit. All other unrelated edits remain outside the commit. The audit document is left unchanged for parent reconciliation.
+
+## Follow-up: repeated route edits after ACK
+
+The selected route editor can retain its registered submit callback after an accepted save. NativeCanvasInputForm now follows changed shared `version`, `sequence` or `databaseRevision` only for a clean local form with no in-flight submission, storage error or recovered input. It installs current initial values and the new expected baseline without persisting or silently rebasing a real draft. The effect runs again after ACK clears the captured revision, covering both snapshot-before-ACK and snapshot-after-ACK arrival order.
+
+Loaded recovery input remains reviewable even if its values equal its original baseline. Accepted consumption of that exact revision or explicit reset clears its recovery marker. Input typed during ACK wait retains its old baseline/version review. A changed `personalVersion` or `privateVersion` blocks clean refresh to preserve private CAS mismatch evidence. The submission API is unchanged; this follow-up adds no exported helper or prop and leaves the parent's route editor/integration code untouched.
+
+Follow-up verification: **33 tests passed** across NativeCanvasInputForm and recovered-form tests; web TypeScript and scoped Prettier checks passed. Tests cover successive route submissions, both ACK/snapshot arrival orders, clean in-flight suppression, dirty input/recovery/storage/private-version evidence, and explicit recovery reset. Browser, rendered motion and server verification remain outside this unit.

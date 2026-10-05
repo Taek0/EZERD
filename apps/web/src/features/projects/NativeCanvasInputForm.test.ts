@@ -2,7 +2,7 @@ import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeCanvasInputForm, type NativeCanvasSubmit } from './NativeCanvasInputForm.js';
 import { decorationSnapshot, decorationUserId } from './native-canvas-decoration-test-fixtures.js';
-import { loadNativeEditorDraft } from './native-editor-draft.js';
+import { loadNativeEditorDraft, storeNativeEditorDraft } from './native-editor-draft.js';
 
 // Exercise the actual submit registration, field callback and native storage in Node;
 // this driver models committed effects without claiming DOM or browser interaction coverage.
@@ -103,7 +103,9 @@ function fixture(
     children: () => null,
   };
   let change!: (field: string, value: string) => void;
-  props.children = (_values, update) => {
+  let values!: Record<string, string>;
+  props.children = (currentValues, update) => {
+    values = currentValues;
     change = update;
     return null;
   };
@@ -128,6 +130,7 @@ function fixture(
     },
     submit: () => submit!(),
     callback: () => submit!,
+    values: () => values,
     draft: () => loadNativeEditorDraft(decorationUserId, snapshot.project.id, props.draftKey),
     unmount: () => state.slots.forEach((slot) => slot.cleanup?.()),
   };
@@ -267,6 +270,231 @@ describe('native canvas form gesture-submit registration', () => {
     await ui.submit();
     expect(save).not.toHaveBeenCalled();
     expect(ui.draft()?.values.route).toBe('8');
+    ui.unmount();
+  });
+
+  it('keeps the selected form reusable for successive ACKs with current route values and baselines', async () => {
+    const save = vi.fn(async () => true);
+    const ui = fixture(save);
+    ui.render();
+    ui.change('route', '10');
+    await ui.submit();
+    expect(ui.draft()).toBeNull();
+    ui.snapshot.sequence++;
+    ui.snapshot.project.version++;
+    ui.props.initial = { ...ui.props.initial, route: '10' };
+    ui.render();
+    ui.render(); // Model the state update queued by the committed clean-refresh effect.
+    expect(ui.values().route).toBe('10');
+    ui.change('route', '20');
+    const second = ui.draft()!;
+    await ui.submit();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1]).toEqual([
+      [
+        {
+          type: 'upsert_relation_layout',
+          value: { viewId: '__tables__', relationId: 'r', offset: 20 },
+        },
+      ],
+      { version: 8, sequence: 11, databaseRevision: 3 },
+      second,
+    ]);
+    ui.snapshot.sequence++;
+    ui.props.initial = { ...ui.props.initial, route: '20' };
+    ui.render();
+    ui.render();
+    expect(ui.values().route).toBe('20');
+    expect(ui.draft()).toBeNull();
+    ui.unmount();
+  });
+
+  it('waits for an in-flight ACK then refreshes the clean form when the newer snapshot arrived first', async () => {
+    let acknowledge!: (accepted: boolean) => void;
+    const save = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const ui = fixture(save);
+    ui.render();
+    ui.change('route', '14');
+    const pending = ui.submit();
+    const sent = ui.draft();
+    ui.snapshot.sequence++;
+    ui.props.initial = { ...ui.props.initial, route: '14' };
+    ui.render();
+    expect(ui.draft()).toEqual(sent);
+    await ui.submit();
+    expect(save).toHaveBeenCalledTimes(1);
+    acknowledge(true);
+    await pending;
+    ui.render();
+    ui.render();
+    expect(ui.values().route).toBe('14');
+    ui.change('route', '15');
+    expect(ui.draft()!.expected.sequence).toBe(11);
+    ui.unmount();
+  });
+
+  it('preserves newer input typed while waiting for ACK and keeps version review visible', async () => {
+    let acknowledge!: (accepted: boolean) => void;
+    const save = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const ui = fixture(save);
+    ui.render();
+    ui.change('route', '16');
+    const pending = ui.submit();
+    ui.change('route', '17');
+    const newer = ui.draft();
+    ui.snapshot.sequence++;
+    ui.props.initial = { ...ui.props.initial, route: '16' };
+    ui.render();
+    acknowledge(true);
+    await pending;
+    ui.render();
+    const tree = ui.render();
+    expect(ui.draft()).toEqual(newer);
+    expect(ui.values().route).toBe('17');
+    expect(
+      nodes(tree).some(
+        (node) =>
+          node.props.children ===
+          '저장 기준이 변경되었습니다. 보관된 입력을 최신 내용과 비교해 주세요.',
+      ),
+    ).toBe(true);
+    await ui.submit();
+    expect(save).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
+  it('does not refresh even clean input until its in-flight submission settles', async () => {
+    let acknowledge!: (accepted: boolean) => void;
+    const save = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const ui = fixture(save);
+    ui.props.initial = { ...ui.props.initial, route: '0' };
+    ui.render();
+    const pending = ui.submit();
+    const captured = ui.draft();
+    ui.snapshot.sequence++;
+    ui.props.initial = { ...ui.props.initial, route: '5' };
+    ui.render();
+    ui.render();
+    expect(ui.values().route).toBe('0');
+    expect(ui.draft()).toEqual(captured);
+    acknowledge(true);
+    await pending;
+    ui.render();
+    ui.render();
+    expect(ui.values().route).toBe('5');
+    expect(ui.draft()).toBeNull();
+    ui.unmount();
+  });
+
+  it.each(['version', 'sequence', 'databaseRevision'] as const)(
+    'refreshes only fresh clean input after %s changes',
+    (field) => {
+      const ui = fixture();
+      ui.render();
+      if (field === 'sequence') ui.snapshot.sequence++;
+      else ui.snapshot.project[field]++;
+      ui.props.initial = { ...ui.props.initial, route: '30' };
+      ui.render();
+      const tree = ui.render();
+      expect(ui.values().route).toBe('30');
+      expect(
+        nodes(tree).some(
+          (node) =>
+            node.props.children ===
+            '저장 기준이 변경되었습니다. 보관된 입력을 최신 내용과 비교해 주세요.',
+        ),
+      ).toBe(false);
+      expect(ui.draft()).toBeNull();
+      ui.change('route', '31');
+      expect(ui.draft()!.expected).toEqual({
+        version: ui.snapshot.project.version,
+        sequence: ui.snapshot.sequence,
+        databaseRevision: ui.snapshot.project.databaseRevision,
+      });
+      ui.unmount();
+    },
+  );
+
+  it('does not silently refresh a recovered clean draft until explicit reset', () => {
+    const ui = fixture();
+    const recovered = {
+      userId: decorationUserId,
+      projectId: ui.snapshot.project.id,
+      key: ui.props.draftKey,
+      revision: decorationUserId,
+      expected: { version: 7, sequence: 10, databaseRevision: 3 },
+      before: { ...ui.props.initial },
+      values: { ...ui.props.initial },
+    };
+    storeNativeEditorDraft(recovered);
+    ui.snapshot.sequence++;
+    ui.props.initial = { ...ui.props.initial, route: 'current' };
+    ui.render();
+    const tree = ui.render();
+    expect(ui.values().route).toBe('saved');
+    expect(ui.draft()).toEqual(recovered);
+    const reset = nodes(tree).find((node) => node.props.children === '입력 초기화')!;
+    (reset.props.onClick as () => void)();
+    ui.render();
+    expect(ui.values().route).toBe('current');
+    expect(ui.draft()).toBeNull();
+    ui.snapshot.sequence++;
+    ui.props.initial = { ...ui.props.initial, route: 'newer clean' };
+    ui.render();
+    ui.render();
+    expect(ui.values().route).toBe('newer clean');
+    ui.unmount();
+  });
+
+  it.each(['personalVersion', 'privateVersion'])(
+    'preserves clean %s mismatch evidence when the shared baseline also advances',
+    (field) => {
+      const ui = fixture();
+      ui.props.initial = { ...ui.props.initial, [field]: '5' };
+      ui.render();
+      ui.snapshot.sequence++;
+      ui.props.initial = { ...ui.props.initial, route: 'new route', [field]: '6' };
+      ui.render();
+      ui.render();
+      expect(ui.values()[field]).toBe('5');
+      expect(ui.values().route).toBe('saved');
+      expect(ui.draft()).toBeNull();
+      ui.change('route', '32');
+      expect(ui.draft()!.expected.sequence).toBe(10);
+      ui.unmount();
+    },
+  );
+
+  it('retains clean-but-unarchived storage failure evidence across a new baseline', () => {
+    const ui = fixture();
+    ui.render();
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw Error('storage.failed');
+    });
+    ui.change('route', 'temporary');
+    ui.change('route', 'saved');
+    const evidence = ui.draft();
+    ui.snapshot.sequence++;
+    ui.props.initial = { ...ui.props.initial, route: 'server changed' };
+    ui.render();
+    ui.render();
+    expect(ui.values().route).toBe('saved');
+    expect(ui.draft()).toEqual(evidence);
     ui.unmount();
   });
 });

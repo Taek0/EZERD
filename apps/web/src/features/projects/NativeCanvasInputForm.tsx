@@ -70,20 +70,22 @@ export function NativeCanvasInputForm({
   });
   const [loaded] = useState(() => {
     try {
+      const recovered =
+        typeof localStorage === 'undefined'
+          ? null
+          : loadNativeEditorDraft(context.userId, context.snapshot.project.id, draftKey);
       return {
-        draft:
-          typeof localStorage === 'undefined'
-            ? fresh()
-            : (loadNativeEditorDraft(context.userId, context.snapshot.project.id, draftKey) ??
-              fresh()),
+        draft: recovered ?? fresh(),
+        recovery: !!recovered,
         error: '',
       };
     } catch (error) {
-      return { draft: fresh(), error: message(error) };
+      return { draft: fresh(), recovery: true, error: message(error) };
     }
   });
   const [draft, setDraft] = useState(loaded.draft);
   const latest = useRef(loaded.draft);
+  const recoveryInput = useRef(loaded.recovery);
   const [error, setError] = useState(loaded.error);
   const [storageError, setStorageError] = useState(loaded.error);
   const submitting = useRef(false);
@@ -128,6 +130,7 @@ export function NativeCanvasInputForm({
       if (await context.onSave(commands, captured.expected, captured)) {
         discardNativeEditorDraft(context.userId, context.snapshot.project.id, captured);
         if (latest.current.revision === captured.revision) {
+          recoveryInput.current = false;
           const next = fresh();
           latest.current = next;
           setDraft(next);
@@ -139,6 +142,38 @@ export function NativeCanvasInputForm({
       submitting.current = false;
     }
   }
+  useLayoutEffect(() => {
+    const current = latest.current;
+    const baselineChanged =
+      current.expected.version !== currentExpected.version ||
+      current.expected.sequence !== currentExpected.sequence ||
+      current.expected.databaseRevision !== currentExpected.databaseRevision;
+    const inputChanged = [
+      ...new Set([...Object.keys(current.values), ...Object.keys(current.before)]),
+    ].some((key) => current.values[key] !== current.before[key]);
+    // Clean local forms can follow a new shared baseline. Recovery and private CAS
+    // evidence still require an explicit review/reset, even when their values are clean.
+    if (
+      !baselineChanged ||
+      inputChanged ||
+      submitting.current ||
+      storageError ||
+      recoveryInput.current ||
+      current.before.personalVersion !== initial.personalVersion ||
+      current.before.privateVersion !== initial.privateVersion
+    )
+      return;
+    const next = fresh();
+    latest.current = next;
+    setDraft(next);
+  }, [
+    currentExpected.version,
+    currentExpected.sequence,
+    currentExpected.databaseRevision,
+    draft.revision,
+    storageError,
+    initial,
+  ]);
   useLayoutEffect(() => {
     submitLatest.current = handleSubmit;
   });
@@ -207,6 +242,7 @@ export function NativeCanvasInputForm({
           disabled={!!storageError}
           onClick={() => {
             discardNativeEditorDraft(context.userId, context.snapshot.project.id, draft);
+            recoveryInput.current = false;
             const next = fresh();
             latest.current = next;
             setDraft(next);
