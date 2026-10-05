@@ -3,6 +3,7 @@ export { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
 import { NativeRelationEditor } from './NativeRelationEditor.js';
 import { NativeCanvasInlineEditor, type NativeInlineTarget } from './NativeCanvasInlineEditor.js';
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -85,6 +86,12 @@ import {
 type PersonalStateSnapshot = ReturnType<typeof personalStateSnapshotSchema.parse>;
 type DraftRef = { key: string; revision: string };
 type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
+
+const MemoNativeCanvasPngExport = memo(NativeCanvasPngExport);
+const MemoNativeDomainRelationEditor = memo(NativeDomainRelationEditor);
+const MemoNativeCanvasStyleEditor = memo(NativeCanvasStyleEditor);
+const MemoNativeClipboardMenu = memo(NativeClipboardMenu);
+const MemoNativeCanvasActions = memo(NativeCanvasActions);
 
 registerTranslations({
   '복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.':
@@ -1023,6 +1030,18 @@ export function NativeERDCanvas({
     setInlineTarget(null);
     setSelectedRelationId(id);
   }, []);
+  const sharedEditorContext = useMemo(
+    () => (userId ? { userId, snapshot, busy: allBusy || !!draft, onSave } : undefined),
+    [userId, snapshot, allBusy, draft, onSave],
+  );
+  const canvasSaveRef = useRef(saveCanvasCommand);
+  useLayoutEffect(() => {
+    canvasSaveRef.current = saveCanvasCommand;
+  });
+  const saveCanvasLatest = useCallback(
+    (command: NativePersonalCanvasCommand, ref?: DraftRef) => canvasSaveRef.current(command, ref),
+    [],
+  );
   const sceneActions = useRef<NativeSceneActions>({
     zoom: camera.zoom,
     begin,
@@ -1355,7 +1374,7 @@ export function NativeERDCanvas({
           <p className="native-erd-empty">{t('이 화면에 표시할 노드가 없습니다.')}</p>
         )}
       </div>
-      <NativeCanvasPngExport
+      <MemoNativeCanvasPngExport
         snapshot={snapshot}
         {...(userId ? { userId } : {})}
         viewId={effectiveView}
@@ -1365,7 +1384,7 @@ export function NativeERDCanvas({
         personalBusy={personalBusy}
         writerState={privateQueueState}
       />
-      <NativeDomainRelationEditor
+      <MemoNativeDomainRelationEditor
         document={sharedSource}
         editable={editable}
         {...(recoverySelection?.domainRelation
@@ -1378,17 +1397,17 @@ export function NativeERDCanvas({
           : selectedDomainRelation
             ? { selectedId: selectedDomainRelation }
             : {})}
-        {...(userId ? { context: { userId, snapshot, busy: allBusy || !!draft, onSave } } : {})}
+        {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
       />
-      <NativeCanvasStyleEditor
+      <MemoNativeCanvasStyleEditor
         document={sharedSource}
         editable={editable}
         {...(selectedTableId ? { selectedTableId } : {})}
         {...(selectedDomainId ? { selectedDomainId } : {})}
         {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
-        {...(userId ? { context: { userId, snapshot, busy: allBusy || !!draft, onSave } } : {})}
+        {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
       />
-      <NativeClipboardMenu
+      <MemoNativeClipboardMenu
         key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
         snapshot={snapshot}
         {...(userId ? { userId } : {})}
@@ -1406,7 +1425,7 @@ export function NativeERDCanvas({
         </p>
       )}
       {userId && (editable || personalEditable) && !recoveryWaiting && (
-        <NativeCanvasActions
+        <MemoNativeCanvasActions
           key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}
           document={base}
           source={sharedSource}
@@ -1414,7 +1433,7 @@ export function NativeERDCanvas({
           userId={userId}
           viewId={effectiveView}
           busy={allBusy || !!draft || (isPrivate && !personal)}
-          onSave={saveCanvasCommand}
+          onSave={saveCanvasLatest}
           onSharedSave={onSave}
           sharedEditable={editable}
           {...(recoverySelection?.action ? { initialSelection: recoverySelection.action } : {})}
