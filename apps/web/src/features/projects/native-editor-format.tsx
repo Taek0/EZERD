@@ -2,6 +2,7 @@ import {
   nativeColumnTypeSchema,
   nativeColumnPatchSchema,
   nativeTablePatchSchema,
+  nativeCanvasStyleCommandSchema,
 } from '@ezerd/contracts';
 import {
   nativeDefaultDisplay,
@@ -40,6 +41,9 @@ import {
 } from './native-constraint-options.js';
 import { NativeSridParameterField } from './native-constraint-option-fields.js';
 import { NativeLabelFields } from './NativeLabelFields.js';
+import { PanelSection } from '../../shared/editor/panel.js';
+import { DomainColorPicker } from '../domains/DomainColorPicker.js';
+import { Button, Checkbox, Input, Textarea } from '../../components/ui/index.js';
 import { serializeNativeLabels, nativeLabelsForCommand } from './native-label-draft.js';
 import {
   nativeBoundedInteger,
@@ -94,6 +98,14 @@ registerTranslations({
     'Enter array dimensions from 1 to 6. Leave blank to remove the array.',
   'SET 값은 최대 64개이며 쉼표를 포함할 수 없습니다.':
     'SET supports at most 64 values, and values cannot contain commas.',
+  '논리 속성 · 추가 속성': 'Logical and custom properties',
+  '속성 이름': 'Property name',
+  '속성 값': 'Property value',
+  '속성 삭제': 'Delete property',
+  '속성 추가': 'Add property',
+  '추가 속성 입력을 확인해 주세요.': 'Review the custom property input.',
+  '추가 속성의 이름은 비어 있거나 중복될 수 없습니다.':
+    'Custom property names must be nonempty and unique.',
 });
 const json = (value: unknown) => JSON.stringify(value);
 const yes = (value: boolean | undefined) => (value ? 'true' : 'false');
@@ -102,9 +114,20 @@ export function nativeFormatInitial(
   table: NativeTable,
   column?: NativeColumn,
 ): Record<string, string> {
+  const object = column ?? table;
+  const metadata = Object.fromEntries(
+    (['common', 'logical', 'physical'] as const).map((scope) => [
+      `metadata:${scope}`,
+      JSON.stringify(Object.entries(object.customProperties[scope])),
+    ]),
+  );
   if (!column) {
     const options = table.physical.options;
     return {
+      ...metadata,
+      color: table.color ?? '',
+      showNullable: yes(table.canvasDisplay?.showNullable ?? true),
+      showComment: yes(table.canvasDisplay?.showComment ?? false),
       namespace:
         table.physical.namespace.kind === 'postgresSchema' ? table.physical.namespace.name : '',
       charset: options.database === 'mysql' ? (options.charset ?? '') : '',
@@ -126,6 +149,9 @@ export function nativeFormatInitial(
         )
       : {};
   return {
+    ...metadata,
+    semanticType: column.logical.semanticType,
+    required: yes(column.logical.required),
     typeChoice: nativeTypeChoice(type),
     typeJSON: json(type),
     ...parameters,
@@ -200,6 +226,38 @@ export function nativeFormatCommands(
   before: Record<string, string>,
 ): NativeWebCommand[] {
   const policy = nativeEditorPolicy(document, table, column);
+  const inspectorPatch: Record<string, unknown> = {};
+  const original = column ?? table;
+  const properties = { ...original.customProperties };
+  let metadataChanged = false;
+  for (const scope of ['common', 'logical', 'physical'] as const) {
+    const field = `metadata:${scope}`;
+    if (!changed(values, before, [field])) continue;
+    const entries: unknown = JSON.parse(values[field] ?? '[]');
+    if (
+      !Array.isArray(entries) ||
+      entries.some(
+        (entry) =>
+          !Array.isArray(entry) ||
+          entry.length !== 2 ||
+          typeof entry[0] !== 'string' ||
+          !entry[0].trim() ||
+          typeof entry[1] !== 'string',
+      ) ||
+      new Set(entries.map((entry) => entry[0])).size !== entries.length
+    )
+      throw new Error('추가 속성의 이름은 비어 있거나 중복될 수 없습니다.');
+    properties[scope] = Object.fromEntries(entries);
+    metadataChanged = true;
+  }
+  if (metadataChanged) inspectorPatch.customProperties = properties;
+  if (column) {
+    const logical: Record<string, unknown> = {};
+    if (changed(values, before, ['semanticType'])) logical.semanticType = values.semanticType;
+    if (changed(values, before, ['required']))
+      logical.required = nativeExactBoolean(values.required ?? 'false');
+    if (Object.keys(logical).length) inspectorPatch.logical = logical;
+  }
   const requireFeature = (id: Parameters<typeof policy.feature>[0]) => {
     const decision = policy.feature(id);
     if (!decision.usable) throw new Error(decision.code ?? 'feature.not-implemented');
@@ -235,9 +293,30 @@ export function nativeFormatCommands(
       }
       physical.options = options;
     }
-    return Object.keys(physical).length
-      ? [{ type: 'patch_table', id: table.id, patch: nativeTablePatchSchema.parse({ physical }) }]
+    const patch = { ...inspectorPatch, ...(Object.keys(physical).length ? { physical } : {}) };
+    const commands: NativeWebCommand[] = Object.keys(patch).length
+      ? [{ type: 'patch_table', id: table.id, patch: nativeTablePatchSchema.parse(patch) }]
       : [];
+    const display = {
+      ...(changed(values, before, ['showNullable'])
+        ? { showNullable: nativeExactBoolean(values.showNullable ?? 'true') }
+        : {}),
+      ...(changed(values, before, ['showComment'])
+        ? { showComment: nativeExactBoolean(values.showComment ?? 'false') }
+        : {}),
+    };
+    if (changed(values, before, ['color']) || Object.keys(display).length)
+      commands.push(
+        nativeCanvasStyleCommandSchema.parse({
+          type: 'patch_canvas_style',
+          target: { kind: 'table', id: table.id },
+          patch: {
+            ...(changed(values, before, ['color']) ? { color: values.color || null } : {}),
+            ...(Object.keys(display).length ? { canvasDisplay: display } : {}),
+          },
+        }),
+      );
+    return commands;
   }
   const physical: Record<string, unknown> = {};
   const parameterKeys = [...new Set([...Object.keys(values), ...Object.keys(before)])].filter(
@@ -495,8 +574,9 @@ export function nativeFormatCommands(
     }
     physical.options = options;
   }
-  return Object.keys(physical).length
-    ? [{ type: 'patch_column', id: column.id, patch: nativeColumnPatchSchema.parse({ physical }) }]
+  const patch = { ...inspectorPatch, ...(Object.keys(physical).length ? { physical } : {}) };
+  return Object.keys(patch).length
+    ? [{ type: 'patch_column', id: column.id, patch: nativeColumnPatchSchema.parse(patch) }]
     : [];
 }
 export function nativeFormatDraftIssue(
@@ -518,11 +598,13 @@ export function NativeFormatEditor({
   document,
   table,
   column,
+  mode,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table: NativeTable;
   column?: NativeColumn;
+  mode?: 'physical' | 'logical';
 }) {
   const { t } = useI18n();
   const policy = nativeEditorPolicy(document, table, column);
@@ -538,7 +620,7 @@ export function NativeFormatEditor({
   return (
     <NativeEditorForm
       context={context}
-      title={t('형식·DB 옵션 편집')}
+      title={t(mode === 'logical' ? '논리 속성 · 추가 속성' : '형식·DB 옵션 편집')}
       draftKey={`format:${column ? 'column' : 'table'}:${column?.id ?? table.id}`}
       initial={nativeFormatInitial(table, column)}
       disabled={(values) => !!nativeFormatDraftIssue(document, table, column, values)}
@@ -561,9 +643,55 @@ export function NativeFormatEditor({
             multiline={multiline}
           />
         );
+        const metadata = <NativeMetadataFields values={values} change={change} mode={mode} />;
+        const color = !column && (
+          <>
+            <DomainColorPicker
+              label={t('테이블 색상')}
+              value={
+                values.color ||
+                document.domains.find((domain) => domain.id === table.domainId)?.color ||
+                '#2f8cff'
+              }
+              disabled={context.busy}
+              onChange={(next) => change('color', next)}
+              onReset={() => change('color', '')}
+            />
+            {(['showNullable', 'showComment'] as const).map((key) => (
+              <label className="native-check-field" key={key}>
+                <Checkbox
+                  checked={values[key] === 'true'}
+                  onChange={(event) => change(key, String(event.target.checked))}
+                />
+                {t(key === 'showNullable' ? 'NULL 표시' : '컬럼 설명 표시')}
+              </label>
+            ))}
+          </>
+        );
+        if (mode === 'logical')
+          return (
+            <>
+              {column && (
+                <>
+                  {field('semanticType', '의미 타입')}
+                  <label className="native-check-field">
+                    <Checkbox
+                      checked={values.required === 'true'}
+                      onChange={(event) => change('required', String(event.target.checked))}
+                    />
+                    {t('필수')}
+                  </label>
+                </>
+              )}
+              {color}
+              {metadata}
+            </>
+          );
         if (!column)
           return (
             <>
+              {color}
+              {metadata}
               <p>
                 {t('현재 값')}: {t('스키마')}:{' '}
                 {table.physical.namespace.kind === 'postgresSchema'
@@ -954,10 +1082,101 @@ export function NativeFormatEditor({
                   ])}
               </>
             )}
+            {metadata}
             <p>{t('미검증 기능은 새로 사용할 수 없습니다. 현재 값은 보존됩니다.')}</p>
           </>
         );
       }}
     </NativeEditorForm>
+  );
+}
+
+/** Rows keep names and values as durable input, including incomplete or duplicate names. */
+function NativeMetadataFields({
+  values,
+  change,
+  mode,
+}: {
+  values: Record<string, string>;
+  change: (field: string, value: string) => void;
+  mode?: 'physical' | 'logical' | undefined;
+}) {
+  const { t } = useI18n();
+  return (
+    <PanelSection title={t('추가 속성')}>
+      {(['common', ...(mode ? [mode] : ['logical', 'physical'])] as const).map((scope) => {
+        const field = `metadata:${scope}`;
+        let rows: [string, string][];
+        try {
+          const parsed: unknown = JSON.parse(values[field] ?? '[]');
+          if (
+            !Array.isArray(parsed) ||
+            parsed.some(
+              (row) =>
+                !Array.isArray(row) ||
+                row.length !== 2 ||
+                typeof row[0] !== 'string' ||
+                typeof row[1] !== 'string',
+            )
+          )
+            throw Error();
+          rows = parsed;
+        } catch {
+          return (
+            <p role="alert" key={scope}>
+              {t('추가 속성 입력을 확인해 주세요.')}
+            </p>
+          );
+        }
+        const update = (next: [string, string][]) => change(field, JSON.stringify(next));
+        return (
+          <div className="native-metadata-group" key={scope}>
+            <strong>
+              {t(scope === 'common' ? '공통' : scope === 'logical' ? '논리' : '물리')}
+            </strong>
+            {(rows.some(([name]) => !name.trim()) ||
+              new Set(rows.map(([name]) => name)).size !== rows.length) && (
+              <p className="field-help" role="alert">
+                {t('추가 속성의 이름은 비어 있거나 중복될 수 없습니다.')}
+              </p>
+            )}
+            {rows.map(([name, value], index) => (
+              <div className="native-metadata-row" key={index}>
+                <Input
+                  aria-label={`${t('속성 이름')} ${index + 1}`}
+                  value={name}
+                  maxLength={120}
+                  onChange={(event) =>
+                    update(
+                      rows.map((row, at) => (at === index ? [event.target.value, row[1]] : row)),
+                    )
+                  }
+                />
+                <Textarea
+                  aria-label={`${t('속성 값')} ${index + 1}`}
+                  value={value}
+                  maxLength={10000}
+                  onChange={(event) =>
+                    update(
+                      rows.map((row, at) => (at === index ? [row[0], event.target.value] : row)),
+                    )
+                  }
+                />
+                <Button
+                  variant="danger"
+                  aria-label={`${t('속성 삭제')} ${index + 1}`}
+                  onClick={() => update(rows.filter((_, at) => at !== index))}
+                >
+                  ×
+                </Button>
+              </div>
+            ))}
+            <Button disabled={rows.length >= 100} onClick={() => update([...rows, ['', '']])}>
+              {t('속성 추가')}
+            </Button>
+          </div>
+        );
+      })}
+    </PanelSection>
   );
 }

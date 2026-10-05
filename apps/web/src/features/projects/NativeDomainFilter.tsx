@@ -23,7 +23,7 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
   onChange,
   disabled = false,
 }: {
-  domains: { id: string; name: string; color?: string | null }[];
+  domains: { id: string; name: string; color?: string | null | undefined }[];
   value: NativeDomainFilterValue | null;
   onChange: (value: NativeDomainFilterValue | null) => void;
   disabled?: boolean;
@@ -39,73 +39,97 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
         if (next) setDraft(value ?? { domainIds: domains.map((d) => d.id), unassigned: true });
       }}
     >
-      <Button disabled={disabled} className={`domain-view-trigger${value ? ' is-active' : ''}`}>
-        {t('도메인 뷰')}
-        {value ? ` · ${value.domainIds.length}` : ''}
+      <Button
+        disabled={disabled}
+        title={
+          value
+            ? [
+                ...domains
+                  .filter((domain) => value.domainIds.includes(domain.id))
+                  .map((domain) => domain.name),
+                ...(value.unassigned ? [t('미지정')] : []),
+              ].join(' · ') || t('선택 없음')
+            : t('전체 테이블 표시')
+        }
+        className={`domain-view-trigger${value ? ' is-active' : ''}`}
+      >
+        {t('도메인 필터')}
+        {value ? ` · ${value.domainIds.length + Number(value.unassigned)}` : ''}
       </Button>
       <UntitledPopover className="domain-view-popover" placement="bottom end" offset={8}>
         <Dialog aria-label={t('도메인 필터')} className="combined-view-picker">
           <strong>{t('도메인 필터')}</strong>
-          <p>{t('필터는 표시만 바꿉니다. PNG는 저장된 화면을 내보냅니다.')}</p>
-          <label>
-            <Checkbox
-              disabled={disabled}
-              checked={draft.domainIds.length === domains.length && draft.unassigned}
-              onChange={(e) =>
-                setDraft({
-                  domainIds: e.target.checked ? domains.map((d) => d.id) : [],
-                  unassigned: e.target.checked,
-                })
-              }
-            />
-            {t('전체 테이블 표시')}
-          </label>
-          {domains.map((d) => (
-            <label key={d.id}>
+          <p className="panel-note">
+            {t('필터는 표시만 바꿉니다. PNG는 저장된 화면을 내보냅니다.')}
+          </p>
+          <div className="combined-domain-options">
+            <label className="combined-select-all">
               <Checkbox
                 disabled={disabled}
-                checked={draft.domainIds.includes(d.id)}
+                aria-label={t('전체 테이블 표시')}
+                checked={draft.domainIds.length === domains.length && draft.unassigned}
                 onChange={(e) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    domainIds: e.target.checked
-                      ? [...prev.domainIds, d.id]
-                      : prev.domainIds.filter((id) => id !== d.id),
-                  }))
+                  setDraft({
+                    domainIds: e.target.checked ? domains.map((d) => d.id) : [],
+                    unassigned: e.target.checked,
+                  })
                 }
               />
-              <span style={{ color: d.color ?? '#8993a3' }}>●</span>
-              {d.name}
+              {t('전체 테이블 표시')}
             </label>
-          ))}
-          <label>
-            <Checkbox
+            {domains.map((d) => (
+              <label key={d.id}>
+                <Checkbox
+                  disabled={disabled}
+                  aria-label={d.name}
+                  checked={draft.domainIds.includes(d.id)}
+                  onChange={(e) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      domainIds: e.target.checked
+                        ? [...prev.domainIds, d.id]
+                        : prev.domainIds.filter((id) => id !== d.id),
+                    }))
+                  }
+                />
+                <span style={{ color: d.color ?? '#8993a3' }}>●</span>
+                {d.name}
+              </label>
+            ))}
+            <label>
+              <Checkbox
+                disabled={disabled}
+                aria-label={t('미지정')}
+                checked={draft.unassigned}
+                onChange={(e) => setDraft((prev) => ({ ...prev, unassigned: e.target.checked }))}
+              />
+              {t('미지정')}
+            </label>
+          </div>
+          <div className="actions">
+            <Button
+              variant="primary"
               disabled={disabled}
-              checked={draft.unassigned}
-              onChange={(e) => setDraft((prev) => ({ ...prev, unassigned: e.target.checked }))}
-            />
-            {t('미지정')}
-          </label>
-          <Button
-            disabled={disabled}
-            onClick={() => {
-              onChange(
-                draft.domainIds.length === domains.length && draft.unassigned ? null : draft,
-              );
-              setOpen(false);
-            }}
-          >
-            {t('적용')}
-          </Button>
-          <Button
-            disabled={disabled}
-            onClick={() => {
-              onChange(null);
-              setOpen(false);
-            }}
-          >
-            {t('필터 해제')}
-          </Button>
+              onClick={() => {
+                onChange(
+                  draft.domainIds.length === domains.length && draft.unassigned ? null : draft,
+                );
+                setOpen(false);
+              }}
+            >
+              {t('적용')}
+            </Button>
+            <Button
+              disabled={disabled}
+              onClick={() => {
+                onChange(null);
+                setOpen(false);
+              }}
+            >
+              {t('필터 해제')}
+            </Button>
+            <Button onClick={() => setOpen(false)}>{t('닫기')}</Button>
+          </div>
         </Dialog>
       </UntitledPopover>
     </DialogTrigger>

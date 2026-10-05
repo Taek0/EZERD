@@ -1,162 +1,44 @@
+/* Reuse the original editor shell, inspector recipes and animated panel primitives. */
+.app-shell.editor-shell:has(> .native-project-view) {
+  display: flex;
+  flex-direction: column;
+}
+.app-shell.editor-shell:has(> .native-project-view) > .app-header {
+  flex-shrink: 0;
+}
 .app-shell.editor-shell > .editor.native-project-view {
+  flex: 1 1 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
-}
-.native-project-status {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 12px;
-}
-.native-project-status > span {
-  color: var(--text-muted, #64748b);
-}
-.native-project-content {
-  display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
-  flex: 0 0 auto;
-  min-height: 420px;
-  overflow: hidden;
-  border-top: 1px solid var(--border, #dfe4eb);
-}
-.native-table-nav {
-  padding: 20px;
-  overflow: auto;
-  border-right: 1px solid var(--border, #dfe4eb);
-}
-.native-table-nav label {
-  display: grid;
-  gap: 8px;
-  font-size: 12px;
-}
-.native-table-nav input,
-.native-table-nav select {
-  width: 100%;
-  padding: 9px;
-  margin-bottom: 12px;
-  border: 1px solid var(--border, #dfe4eb);
-  border-radius: 6px;
-  background: var(--surface, white);
-  color: inherit;
-}
-.native-mode {
-  display: flex;
-  gap: 8px;
-}
-.native-table-nav ul {
-  list-style: none;
-  padding: 0;
-}
-.native-table-nav li button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 12px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-.native-table-nav li button[aria-current='true'] {
-  background: #eef2ff;
-  color: #4338ca;
-}
-.native-table-detail {
-  padding: 24px;
-  overflow: auto;
-  min-width: 0;
-}
-.native-table-detail table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 13px;
-}
-.native-table-detail th,
-.native-table-detail td {
-  text-align: left;
-  vertical-align: top;
-  padding: 10px;
-  border-bottom: 1px solid var(--border, #dfe4eb);
-  overflow-wrap: anywhere;
-}
-.native-table-detail h3 {
-  font-size: 14px;
-  margin-top: 24px;
-}
-.native-table-detail li {
-  margin: 8px 0;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.native-options {
-  display: flex;
-  gap: 12px;
-  font-size: 13px;
-}
-.native-options dd {
-  margin: 0;
-}
-.native-property-editor fieldset {
-  border: 1px solid var(--border, #dfe4eb);
-  border-radius: 8px;
-  padding: 16px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 16px 0;
-}
-.native-property-editor label {
-  display: grid;
-  gap: 6px;
-}
-.native-property-editor textarea {
-  width: 100%;
-  min-height: 72px;
-  resize: vertical;
-}
-.native-property-editor p {
-  grid-column: 1 / -1;
-}
-.native-pending {
-  padding: 12px 20px;
-}
-.native-issues {
-  margin-top: 28px;
-  border-top: 1px solid var(--border, #dfe4eb);
-}
-.native-issues button {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-@media (max-width: 720px) {
-  .native-project-content {
-    grid-template-columns: 160px minmax(0, 1fr);
-  }
-  .native-table-nav,
-  .native-table-detail {
-    padding: 12px;
-  }
-  .native-project-status {
-    padding: 0 12px;
-    gap: 8px;
-  }
-}
-
-/* Native uses the same canvas-first workspace and docked inspector as the original editor. */
-.app-shell.editor-shell > .editor.native-project-view {
-  overflow: hidden;
 }
 .native-project-view {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+.native-project-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.native-project-status > span {
+  color: var(--muted);
+}
+.native-project-view .project-name small {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.native-review-workspace {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.native-review-workspace > .native-editor-workspace {
+  min-width: 0;
 }
 .native-editor-workspace {
   display: grid;
@@ -175,38 +57,39 @@
   border-radius: 0;
   overflow: hidden;
 }
+.native-editor-workspace > .native-erd > :not(.native-erd-surface) {
+  flex-shrink: 0;
+}
 .native-editor-workspace .native-erd-surface {
   flex: 1;
   height: auto;
   min-height: 260px;
   border-radius: 0;
 }
-.native-editor-inspector {
+.native-editor-inspector.inspector {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--panel, #fff);
-  border-left: 1px solid var(--line, #dfe4eb);
-}
-.native-inspector-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px;
-  border-bottom: 1px solid var(--line, #dfe4eb);
-  flex: none;
-}
-.native-inspector-tabs [aria-selected='true'] {
-  color: var(--accent, #4169e1);
-  background: var(--accent-soft, #eef2ff);
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  padding: 0;
+  container-type: inline-size;
 }
 .native-inspector-panel {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 16px;
+  display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 10px;
+  padding: 12px 14px 24px;
   overscroll-behavior: contain;
+}
+.native-inspector-panel > * {
+  min-width: 0;
 }
 .native-editor-inspector .native-project-content {
   display: contents;
@@ -216,89 +99,69 @@
   display: none !important;
 }
 .native-editor-inspector .native-property-editor fieldset {
+  display: grid;
   grid-template-columns: minmax(0, 1fr);
-  padding: 12px;
-}
-.native-editor-inspector .native-table-detail {
-  padding: 16px;
-}
-.native-editor-inspector .native-table-nav {
+  gap: 10px;
   border: 0;
-}
-.native-inspector-resize {
-  cursor: col-resize;
-  background: var(--canvas-bg, #f6f8fb);
-  touch-action: none;
-}
-.native-inspector-resize:hover,
-.native-inspector-resize:focus-visible {
-  background: var(--accent, #4169e1);
-  outline: none;
-}
-.native-editor-inspector table {
-  display: block;
-  overflow: auto;
-}
-@media (max-width: 900px) {
-  .native-editor-workspace {
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: minmax(380px, 1fr) minmax(220px, 40vh);
-    overflow: auto;
-  }
-  .native-editor-workspace.inspector-closed {
-    grid-template-rows: minmax(380px, 1fr);
-  }
-  .native-inspector-resize {
-    display: none;
-  }
-  .native-editor-inspector {
-    border-left: 0;
-    border-top: 1px solid var(--line, #dfe4eb);
-  }
-  .native-project-status {
-    gap: 6px;
-  }
-}
-.app-shell.editor-shell:has(> .native-project-view) {
-  display: flex;
-  flex-direction: column;
-}
-.app-shell.editor-shell:has(> .native-project-view) > .app-header {
-  flex-shrink: 0;
-}
-.app-shell.editor-shell > .native-project-view {
-  flex: 1 1 0;
-  min-height: 0;
-}
-.native-editor-inspector .native-table-detail table {
-  display: table;
-  width: max-content;
-  min-width: 100%;
-}
-.native-editor-inspector .native-table-detail th,
-.native-editor-inspector .native-table-detail td {
-  white-space: nowrap;
-  overflow-wrap: normal;
-}
-.native-editor-workspace > .native-erd > :not(.native-erd-surface) {
-  flex-shrink: 0;
-}
-@media (max-width: 600px) {
-  .native-editor-workspace {
-    grid-template-rows: minmax(520px, 1fr) minmax(240px, 42dvh);
-  }
-  .native-editor-workspace.inspector-closed {
-    grid-template-rows: minmax(520px, 1fr);
-  }
-}
-
-/* Keep the original inspector motion alive during both opening and closing. */
-.native-editor-inspector.inspector {
-  background: var(--bg);
+  margin: 0;
   padding: 0;
+  min-width: 0;
 }
-.native-editor-inspector .native-inspector-panel {
-  padding: 12px;
+.native-property-editor label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.native-property-editor textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+}
+.native-editor-inspector .native-property-editor legend {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.native-property-editor label.native-check-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.native-domain-actions {
+  margin-bottom: 12px;
+}
+.native-domain-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.native-metadata-group {
+  display: grid;
+  gap: 8px;
+}
+.native-metadata-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+.native-metadata-row textarea {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.native-contextual-editor {
+  display: grid;
+  gap: 8px;
+}
+.native-column-actions {
+  margin-top: 10px;
+}
+.native-table-nav > label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.native-mode {
+  display: flex;
+  gap: 6px;
 }
 .native-editor-inspector .panel-list > .panel-row {
   margin: 0;
@@ -306,53 +169,72 @@
 .native-editor-inspector .panel-section .panel-section {
   margin-top: 8px;
 }
-.native-editor-inspector .native-property-editor fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
+.native-table-detail table {
+  display: block;
+  overflow: auto;
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
 }
-.native-editor-inspector .native-property-editor legend {
-  font-size: 11px;
-  color: var(--muted);
-  margin-bottom: 8px;
+.native-table-detail th,
+.native-table-detail td {
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.native-options {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  font-size: 12px;
+}
+.native-options dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.native-pending {
+  padding: 12px 20px;
+}
+.native-issues {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.native-issues button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.native-inspector-resize {
+  cursor: col-resize;
+  background: var(--canvas-bg);
+  touch-action: none;
+}
+.native-inspector-resize:hover,
+.native-inspector-resize:focus-visible {
+  background: var(--accent);
+  outline: none;
 }
 .native-editor-workspace.inspector-closed .native-editor-inspector {
   opacity: 0;
   visibility: hidden;
 }
-.native-project-view .project-name small {
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  color: var(--muted);
+.native-canvas-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
 }
-@media (prefers-reduced-motion: no-preference) {
-  .native-editor-workspace {
-    transition: grid-template-columns 220ms ease;
-  }
-  .native-editor-inspector {
-    transition:
-      opacity 180ms ease,
-      visibility 220ms ease;
-  }
-}
-
-.native-review-workspace {
-  flex: 1;
-  min-height: 0;
+.native-canvas-toolbar .actions {
+  flex-wrap: wrap;
+  gap: 6px;
   min-width: 0;
 }
-.native-review-workspace > .native-editor-workspace {
+.native-canvas-toolbar .native-editor-path {
   min-width: 0;
+  max-width: 100%;
 }
-.native-erd-surface.pin-mode {
-  cursor: crosshair;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .native-scene-entry {
-    animation: domain-enter 240ms ease-out;
-  }
-}
-
 .native-history-popover {
   width: min(440px, calc(100vw - 24px));
   max-height: min(620px, 75vh);
@@ -373,4 +255,42 @@
 .native-history-content li {
   margin-block: 12px;
   font-size: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .native-editor-workspace {
+    transition: grid-template-columns 220ms ease;
+  }
+  .native-editor-inspector {
+    transition:
+      opacity 180ms ease,
+      visibility 220ms ease;
+  }
+}
+@media (max-width: 900px) {
+  .native-editor-workspace {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(360px, 1fr) minmax(0, 36dvh);
+    overflow: auto;
+  }
+  .native-editor-workspace.inspector-closed {
+    grid-template-rows: minmax(360px, 1fr) 0;
+  }
+  .native-inspector-resize {
+    display: none;
+  }
+  .native-editor-inspector.inspector {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+@media (max-width: 600px) {
+  .native-canvas-toolbar .toolbar-divider {
+    display: none;
+  }
+  .native-canvas-toolbar .toolbar-group {
+    flex-wrap: wrap;
+  }
+  .native-project-status {
+    gap: 6px;
+  }
 }

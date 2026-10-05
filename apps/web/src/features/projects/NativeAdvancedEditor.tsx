@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PanelSection, PanelList, PanelRow } from '../../shared/editor/panel.js';
 import type { NativeDesignDocument, NativeTable, NativeIndex } from '@ezerd/model';
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
@@ -488,21 +489,29 @@ export function NativeAdvancedEditor({
   }
   const mountingKey = `${context.userId}:${context.snapshot.project.id}:${table.id}:${selected}:${context.snapshot.project.databaseRevision}:${context.snapshot.project.version}:${context.snapshot.sequence}:${recoveryRevision ?? ''}`;
   return (
-    <details className="native-property-editor" open={initialSelection ? true : undefined}>
-      <summary>{t('고급 인덱스·식 편집')}</summary>
+    <PanelSection
+      className="native-property-editor"
+      title={t('고급 인덱스·식 편집')}
+      defaultOpen={!!initialSelection}
+    >
       {readonly && <p role="status">{t('고급 편집은 현재 DB의 물리 테이블에서만 가능합니다.')}</p>}
       {!selectionValid && (
         <p role="alert">
           {t('현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.')}
         </p>
       )}
-      <NativeEditorField
-        label="고급 편집 대상"
-        value={selected}
-        onChange={setSelected}
-        disabled={context.busy}
-        choices={choices}
-      />
+      <PanelList empty={t('편집할 항목이 없습니다.')}>
+        {choices.map((choice) => (
+          <PanelRow
+            key={choice.value}
+            title={choice.label}
+            active={selected === choice.value}
+            onSelect={() => {
+              if (!context.busy) setSelected(choice.value);
+            }}
+          />
+        ))}
+      </PanelList>
       {isIndex && selectionValid && (
         <NativeAdvancedIndexForm
           key={mountingKey}
@@ -523,6 +532,6 @@ export function NativeAdvancedEditor({
           readOnly={readonly}
         />
       )}
-    </details>
+    </PanelSection>
   );
 }

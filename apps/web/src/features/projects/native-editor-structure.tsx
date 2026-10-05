@@ -411,18 +411,19 @@ function NativeCreateForm({
   document,
   table,
   action,
+  initialValues,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table?: NativeTable;
   action: NativeStructureAction;
+  initialValues?: Record<string, string>;
 }) {
   const { t } = useI18n();
   const policy = nativeEditorPolicy(document, table);
   // IDs belong to the durable input; retries do not regenerate objects.
   const [id] = useState(() => crypto.randomUUID());
   const initial = {
-    id,
     scope:
       action === 'table'
         ? 'logical'
@@ -449,6 +450,9 @@ function NativeCreateForm({
     onUpdate: 'NO ACTION',
     ...nativeConstraintOptionsInitial(),
     ...nativeExpressionInputs(),
+    ...initialValues,
+    // Contextual defaults never replace this form's durable identity.
+    id,
   };
   const title = {
     table: '새 테이블',
@@ -1214,11 +1218,16 @@ export function NativeStructureEditor({
   document,
   table,
   initialSelection,
+  focused = false,
+  initialValues,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table?: NativeTable;
   initialSelection?: { action: NativeStructureAction | 'patch' | 'delete'; target: string };
+  /** A contextual inspector action; keeps the same durable form and command policy. */
+  focused?: boolean;
+  initialValues?: Record<string, string>;
 }) {
   const { t } = useI18n();
   const [action, setAction] = useState<NativeStructureAction | 'patch' | 'delete'>(
@@ -1256,35 +1265,53 @@ export function NativeStructureEditor({
   return (
     <PanelSection
       className="native-property-editor"
-      title={t('구조 편집')}
+      title={t(
+        focused
+          ? (
+              {
+                table: '새 테이블 만들기',
+                column: '컬럼 추가',
+                key: '키 · PK / UNIQUE',
+                index: '인덱스',
+                check: 'CHECK',
+                enum: 'ENUM',
+                foreignKey: '테이블 관계',
+                patch: '속성 편집',
+                delete: '삭제 영향 확인',
+              } as const
+            )[action]
+          : '구조 편집',
+      )}
       defaultOpen={!!initialSelection}
     >
-      <NativeEditorField
-        label="구조 편집"
-        value={action}
-        onChange={(value) => setAction(value as typeof action)}
-        choices={(
-          [
-            ['table', '새 테이블'],
-            ['column', '새 컬럼'],
-            ['key', '새 키'],
-            ['index', '새 인덱스'],
-            ['check', '새 CHECK'],
-            ['enum', '새 ENUM'],
-            ['foreignKey', '새 외래 키'],
-            ['patch', '기존 객체 수정'],
-            ['delete', '객체 삭제'],
-          ] as const
-        ).map(([value, label]) => ({
-          value,
-          label: t(label),
-          disabled:
-            (!table && !['table', 'enum', 'delete', 'patch'].includes(value)) ||
-            (value === 'enum' &&
-              !nativeEditorPolicy(document, table).feature('enumType').supported),
-        }))}
-        disabled={context.busy}
-      />
+      {!focused && (
+        <NativeEditorField
+          label="구조 편집"
+          value={action}
+          onChange={(value) => setAction(value as typeof action)}
+          choices={(
+            [
+              ['table', '새 테이블'],
+              ['column', '새 컬럼'],
+              ['key', '새 키'],
+              ['index', '새 인덱스'],
+              ['check', '새 CHECK'],
+              ['enum', '새 ENUM'],
+              ['foreignKey', '새 외래 키'],
+              ['patch', '기존 객체 수정'],
+              ['delete', '객체 삭제'],
+            ] as const
+          ).map(([value, label]) => ({
+            value,
+            label: t(label),
+            disabled:
+              (!table && !['table', 'enum', 'delete', 'patch'].includes(value)) ||
+              (value === 'enum' &&
+                !nativeEditorPolicy(document, table).feature('enumType').supported),
+          }))}
+          disabled={context.busy}
+        />
+      )}
       {create ? (
         <NativeCreateForm
           key={`${mountingKey}:${action}:${table?.id ?? ''}`}
@@ -1292,26 +1319,30 @@ export function NativeStructureEditor({
           document={document}
           {...(table ? { table } : {})}
           action={action as NativeStructureAction}
+          {...(initialValues ? { initialValues } : {})}
         />
       ) : (
         <>
-          <NativeEditorField
-            label="대상"
-            value={target}
-            onChange={setTarget}
-            choices={[
-              { value: '', label: '—' },
-              ...objects
-                .filter(
-                  (item) => action === 'delete' || !['tables', 'columns'].includes(item.collection),
-                )
-                .map((item) => ({
-                  value: JSON.stringify([item.collection, item.id]),
-                  label: `${item.collection}: ${item.label || item.id}`,
-                })),
-            ]}
-            disabled={context.busy}
-          />
+          {!focused && (
+            <NativeEditorField
+              label="대상"
+              value={target}
+              onChange={setTarget}
+              choices={[
+                { value: '', label: '—' },
+                ...objects
+                  .filter(
+                    (item) =>
+                      action === 'delete' || !['tables', 'columns'].includes(item.collection),
+                  )
+                  .map((item) => ({
+                    value: JSON.stringify([item.collection, item.id]),
+                    label: `${item.collection}: ${item.label || item.id}`,
+                  })),
+              ]}
+              disabled={context.busy}
+            />
+          )}
           {selected &&
             (action === 'delete' ? (
               <NativeDeleteForm
@@ -1332,7 +1363,7 @@ export function NativeStructureEditor({
             ))}
         </>
       )}
-      {table && (
+      {table && !focused && (
         <NativeAdvancedEditor
           key={`${context.userId}:${context.snapshot.project.id}:${table.id}`}
           context={context}

@@ -1,7 +1,8 @@
 import { PanelSection } from '../../shared/editor/panel.js';
 import { useRef, useState } from 'react';
 import type { NativeColumn, NativeTable } from '@ezerd/model';
-import { Button, Input, Textarea } from '../../components/ui/index.js';
+import { Button, Input } from '../../components/ui/index.js';
+import { NativeAutoTextarea } from './native-editor-form.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import {
   loadNativeDraft,
@@ -20,6 +21,7 @@ import { nativeDraftMemoryState } from './native-durable-drafts.js';
 import { message } from '../../shared/api/client.js';
 registerTranslations({
   '속성 편집': 'Edit properties',
+  'DB 옵션 · 표시': 'Database options and appearance',
   '물리 이름': 'Physical name',
   '물리 설명': 'Physical comment',
   '논리 이름': 'Logical name',
@@ -161,7 +163,7 @@ export function NativePropertyEditor({
   return (
     <>
       <form
-        className="native-property-editor"
+        className="native-property-editor inspector-fields"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -222,7 +224,7 @@ export function NativePropertyEditor({
           </label>
           <label hidden={mode === 'logical'}>
             {t(mode ? '설명' : '물리 설명')}
-            <Textarea
+            <NativeAutoTextarea
               value={comment}
               maxLength={10000}
               onChange={(event) => change('comment', event.target.value)}
@@ -238,14 +240,18 @@ export function NativePropertyEditor({
           </label>
           <label hidden={mode === 'physical'}>
             {t('논리 정의')}
-            <Textarea
+            <NativeAutoTextarea
               value={definition}
               maxLength={10000}
               onChange={(event) => change('definition', event.target.value)}
             />
           </label>
           <p>{t('형식 정보와 기존 타입·기본값·생성 규칙은 유지됩니다.')}</p>
-          <Button type="submit" disabled={!dirty || busy || !!storageError || stale}>
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={!dirty || busy || !!storageError || stale}
+          >
             {t('저장 요청')}
           </Button>
           <Button
@@ -266,12 +272,22 @@ export function NativePropertyEditor({
         </fieldset>
       </form>
       {snapshot.native.status === 'available' && (
-        <PanelSection title={t(column ? '타입 · NULL · 기본값' : 'DB 옵션')} defaultOpen={!!column}>
+        <PanelSection
+          title={t(
+            mode === 'logical'
+              ? '논리 속성 · 추가 속성'
+              : column
+                ? '타입 · NULL · 기본값'
+                : 'DB 옵션 · 표시',
+          )}
+          defaultOpen={!!column}
+        >
           <NativeFormatEditor
             key={`format:${userId}:${snapshot.project.id}:${kind}:${original.id}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}`}
             context={{ userId, snapshot, busy, onSave }}
             document={snapshot.native.document}
             table={table}
+            {...(mode ? { mode } : {})}
             {...(column ? { column } : {})}
           />
         </PanelSection>

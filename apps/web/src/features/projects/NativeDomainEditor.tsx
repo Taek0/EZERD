@@ -1,5 +1,6 @@
 import { PanelSection } from '../../shared/editor/panel.js';
 import { DomainColorPicker } from '../domains/DomainColorPicker.js';
+import { Button } from '../../components/ui/index.js';
 import { useEffect, useState } from 'react';
 import {
   nativeDomainCommandSchema,
@@ -285,7 +286,15 @@ export function NativeDomainEditor({
   return (
     <PanelSection
       className="native-property-editor"
-      title={t(selectedDomainId ? '기본 정보' : '새 도메인 만들기')}
+      title={t(
+        action === 'move'
+          ? '테이블 소속 이동'
+          : action === 'delete'
+            ? '도메인 삭제'
+            : selectedDomainId && action === 'edit'
+              ? '기본 정보'
+              : '새 도메인 만들기',
+      )}
       open={open}
       onOpenChange={setOpen}
     >
@@ -294,27 +303,55 @@ export function NativeDomainEditor({
           <p>{t('조회 전용')}</p>
           {!document.domains.length && <p>{t('도메인이 없습니다.')}</p>}
           <ul>
-            {document.domains.map((domain) => (
-              <li key={domain.id}>
-                {domain.name}: {domain.description}
-              </li>
-            ))}
+            {document.domains
+              .filter((domain) => !selectedDomainId || domain.id === selectedDomainId)
+              .map((domain) => (
+                <li key={domain.id}>
+                  <strong>{domain.name}</strong>
+                  <p className="native-domain-description">{domain.description || '—'}</p>
+                  <span
+                    className="panel-row-dot"
+                    style={{ background: domain.color ?? '#8993a3' }}
+                    aria-hidden="true"
+                  />
+                  {domain.color ?? t('색상 없음')}
+                </li>
+              ))}
           </ul>
         </>
       ) : (
         <>
-          <NativeEditorField
-            label="작업"
-            value={action}
-            disabled={busy}
-            onChange={(value) => setAction(value as NativeDomainAction)}
-            choices={[
-              { value: 'create', label: t('도메인 생성') },
-              { value: 'edit', label: t('도메인 수정'), disabled: !document.domains.length },
-              { value: 'delete', label: t('도메인 삭제'), disabled: !document.domains.length },
-              { value: 'move', label: t('테이블 소속 이동'), disabled: !document.tables?.length },
-            ]}
-          />
+          <div className="native-domain-actions actions" role="group" aria-label={t('도메인 관리')}>
+            <Button
+              aria-pressed={action === 'create'}
+              disabled={busy}
+              onClick={() => setAction('create')}
+            >
+              {t('도메인 생성')}
+            </Button>
+            <Button
+              aria-pressed={action === 'edit'}
+              disabled={busy || !document.domains.length}
+              onClick={() => setAction('edit')}
+            >
+              {t('도메인 수정')}
+            </Button>
+            <Button
+              aria-pressed={action === 'move'}
+              disabled={busy || !document.tables?.length}
+              onClick={() => setAction('move')}
+            >
+              {t('테이블 소속 이동')}
+            </Button>
+            <Button
+              variant="danger"
+              aria-pressed={action === 'delete'}
+              disabled={busy || !document.domains.length}
+              onClick={() => setAction('delete')}
+            >
+              {t('도메인 삭제')}
+            </Button>
+          </div>
           {['edit', 'delete'].includes(action) && (
             <NativeEditorField
               label="선택한 도메인"

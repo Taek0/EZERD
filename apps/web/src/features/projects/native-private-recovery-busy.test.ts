@@ -11,7 +11,6 @@ import { projectEntry } from './project-entry.js';
 
 const harness = vi.hoisted(() => ({
   state: 'unknown',
-  slot: 0,
   initializing: false,
   saving: false,
   canvas: null as Record<string, unknown> | null,
@@ -21,9 +20,11 @@ vi.mock('react', async () => {
   return {
     ...actual,
     useState: (initial: unknown) => {
-      const slot = harness.slot++;
-      // Root state slots: shared saving=7, pending initialization=8.
-      const value = slot === 7 ? harness.saving : slot === 8 ? harness.initializing : initial;
+      // Identify the operation state by its meaning; inspector state can grow or reorder.
+      const value =
+        initial && typeof initial === 'object' && 'saving' in initial && 'pendingBlocked' in initial
+          ? { ...initial, saving: harness.saving, pendingBlocked: harness.initializing }
+          : initial;
       return actual.useState(value);
     },
   };
@@ -44,13 +45,11 @@ vi.mock('./NativeERDCanvas.js', async () => {
   };
 });
 afterEach(() => {
-  harness.slot = 0;
   harness.initializing = false;
   harness.saving = false;
   harness.canvas = null;
 });
 function render(busy = false) {
-  harness.slot = 0;
   const database = defaultDatabaseContext('postgresql'),
     document = createEmptyNativeDocument(database);
   const entry = projectEntry({

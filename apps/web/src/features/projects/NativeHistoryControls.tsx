@@ -162,11 +162,55 @@ export function NativeHistoryControls({
       if (mounted.current) setBusy(false);
     }
   }
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.altKey ||
+        !(event.ctrlKey || event.metaKey) ||
+        disabled ||
+        busy ||
+        !ready ||
+        historyOpen
+      )
+        return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          'input, textarea, select, [contenteditable="true"], [role="textbox"], [role="combobox"], dialog, [role="dialog"]',
+        )
+      )
+        return;
+      const key = event.key.toLowerCase();
+      const kind =
+        key === 'z'
+          ? event.shiftKey
+            ? 'redo'
+            : 'undo'
+          : key === 'y' && !event.shiftKey
+            ? 'redo'
+            : null;
+      if (
+        !kind ||
+        !(kind === 'undo' ? undo : redo).length ||
+        nativeEditorExportBlocked(userId, snapshot.project.id)
+      )
+        return;
+      event.preventDefault();
+      void act(kind);
+    }
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, [disabled, busy, ready, historyOpen, undo, redo, userId, snapshot]);
   return (
     <>
       <div className="undo-controls" role="group" aria-label={t('변경 이력')}>
         <IconButton
           aria-label={t('실행 취소')}
+          title={`${t('실행 취소')} (Ctrl/⌘ Z)`}
+          tooltip={`${t('실행 취소')} (Ctrl/⌘ Z)`}
+          aria-keyshortcuts="Control+Z Meta+Z"
           disabled={disabled || busy || !ready || !undo.length}
           onClick={() => void act('undo')}
         >
@@ -174,6 +218,9 @@ export function NativeHistoryControls({
         </IconButton>
         <IconButton
           aria-label={t('다시 실행')}
+          title={`${t('다시 실행')} (Ctrl/⌘ Shift Z)`}
+          tooltip={`${t('다시 실행')} (Ctrl/⌘ Shift Z)`}
+          aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
           disabled={disabled || busy || !ready || !redo.length}
           onClick={() => void act('redo')}
         >

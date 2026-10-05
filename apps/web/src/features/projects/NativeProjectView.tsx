@@ -41,6 +41,7 @@ import { NativeDraftRecoveryPanel } from './NativeDraftRecoveryPanel.js';
 import type { NativeDraftArchiveEntry } from './native-draft-archive.js';
 import { nativeDraftRecoveryTarget } from './native-draft-recovery-target.js';
 import { NativeAdvancedEditor } from './NativeAdvancedEditor.js';
+import { nativeEditorPolicy } from './native-editor-policy.js';
 
 registerTranslations({
   '설계 조회': 'Design overview',
@@ -130,10 +131,18 @@ export function NativeProjectView({
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(doc?.tables?.[0]?.id ?? null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
+  const [enumOpen, setEnumOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
+  const [editingConstraint, setEditingConstraint] = useState<string | null>(null);
+  const [domainAction, setDomainAction] = useState<'move' | null>(null);
   const [pending, setPending] = useState<NativePendingSave | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [pendingBlocked, setPendingBlocked] = useState(!!userId);
+  const [operationState, setOperationState] = useState({ saving: false, pendingBlocked: !!userId });
+  const { saving, pendingBlocked } = operationState;
+  const setSaving = (value: boolean) =>
+    setOperationState((current) => ({ ...current, saving: value }));
+  const setPendingBlocked = (value: boolean) =>
+    setOperationState((current) => ({ ...current, pendingBlocked: value }));
   const [saveError, setSaveError] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
@@ -148,6 +157,8 @@ export function NativeProjectView({
   );
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const draggingColumn = useRef<string | null>(null);
+  const [columnDrag, setColumnDrag] = useState<string | null>(null);
+  const [columnDrop, setColumnDrop] = useState<string | null>(null);
   const [canvasView, setCanvasView] = useState('__tables__');
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsWidth, setCommentsWidth] = useState(320);
@@ -174,12 +185,15 @@ export function NativeProjectView({
     action: NonNullable<Parameters<typeof NativeStructureEditor>[0]['initialSelection']>['action'];
     target?: string;
     nonce: number;
+    values?: Record<string, string>;
   } | null>(null);
   const [domainCreation, setDomainCreation] = useState(0);
   const resize = useRef<{ pointer: number; x: number; width: number } | null>(null);
   function toolbarCreate(kind: 'table' | 'domain' | 'enum' | 'column') {
     leaveRecoveredSelection();
     setInspectorOpen(true);
+    setDomainAction(null);
+    if (kind === 'enum') setEnumOpen(true);
     if (kind === 'domain') {
       setSelectedDomain(null);
       setDomainCreation((value) => value + 1);
@@ -188,6 +202,72 @@ export function NativeProjectView({
       setCreateRequest((value) => ({ action: kind, nonce: (value?.nonce ?? 0) + 1 }));
       setInspectorTab('properties');
     }
+  }
+  function requestStructure(
+    action: 'patch' | 'delete' | 'foreignKey' | 'column' | 'key' | 'enum',
+    target: string,
+    tableId?: string,
+  ) {
+    leaveRecoveredSelection();
+    setInspectorOpen(true);
+    setInspectorTab('properties');
+    setSelectedDomain(null);
+    setDomain('*');
+    setSearch('');
+    if (tableId) setSelected(tableId);
+    setCreateRequest((previous) => ({ action, target, nonce: (previous?.nonce ?? 0) + 1 }));
+  }
+  function requestAction(action: string, target: string, values?: Record<string, string>) {
+    if (action === 'enums') {
+      setInspectorOpen(true);
+      setInspectorTab('properties');
+      setEnumOpen(true);
+      return;
+    }
+    if (action === 'domainRelation') {
+      leaveRecoveredSelection();
+      setInspectorOpen(true);
+      setSelectedDomain(null);
+      setSelectedDomainRelation(target);
+      setInspectorTab('domains');
+      return;
+    }
+    if (action === 'tools') {
+      setInspectorOpen(true);
+      setInspectorTab('tools');
+      return;
+    }
+    if (action === 'domain') {
+      toolbarCreate('domain');
+      return;
+    }
+    if (
+      ![
+        'table',
+        'column',
+        'key',
+        'index',
+        'check',
+        'enum',
+        'foreignKey',
+        'patch',
+        'delete',
+      ].includes(action)
+    )
+      return;
+    leaveRecoveredSelection();
+    setInspectorOpen(true);
+    setInspectorTab('properties');
+    setSelectedDomain(null);
+    if (values?.tableId) setSelected(values.tableId);
+    setDomain('*');
+    setSearch('');
+    setCreateRequest((previous) => ({
+      action: action as NonNullable<typeof createRequest>['action'],
+      target,
+      ...(values ? { values } : {}),
+      nonce: (previous?.nonce ?? 0) + 1,
+    }));
   }
   const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
   const queueBlocked = !!userId && durableState !== 'empty';
@@ -413,12 +493,13 @@ export function NativeProjectView({
   const tables = (doc?.tables ?? []).filter(
     (table) =>
       visible(table.scope) &&
+      (!doc?.domains.some((item) => item.id === canvasView) || table.domainId === canvasView) &&
       (domain === '*' || (domain === '' ? table.domainId === null : table.domainId === domain)) &&
       `${table.logical.name} ${table.physical.name}`
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
   );
-  const selectedTable = tables.find((table) => table.id === selected);
+  const selectedTable = doc?.tables?.find((table) => table.id === selected && visible(table.scope));
   const tableName = (id: string) => {
     const table = doc?.tables?.find((table) => table.id === id);
     return (
@@ -429,9 +510,20 @@ export function NativeProjectView({
     );
   };
   const columnName = (id: string) =>
+    (mode === 'physical'
+      ? doc?.columns?.find((column) => column.id === id)?.physical.name
+      : doc?.columns?.find((column) => column.id === id)?.logical.name) ||
     doc?.columns?.find((column) => column.id === id)?.physical.name ||
     doc?.columns?.find((column) => column.id === id)?.logical.name ||
     id;
+  const matches = (...values: (string | undefined)[]) =>
+    values.some((value) => value?.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  const currentViewName =
+    canvasView === 'overview'
+      ? t('도메인 맵')
+      : (doc?.domains.find((item) => item.id === canvasView)?.name ??
+        doc?.views?.find((view) => view.id === canvasView)?.name ??
+        t('전체 테이블'));
   function focusIssue(id: string | null) {
     if (!doc || !id) return;
     leaveRecoveredSelection();
@@ -662,11 +754,17 @@ export function NativeProjectView({
                   setInspectorTab('tools');
                 }}
                 onCreate={toolbarCreate}
+                {...{ onRequestStructure: requestStructure, onRequestAction: requestAction }}
                 onModeChange={setMode}
                 onViewChange={(id) => {
                   setCanvasView(id);
                   setSelected(null);
                   setSelectedDomain(null);
+                  setEditingColumn(null);
+                  setEditingConstraint(null);
+                  setCreateRequest(null);
+                  setSearch('');
+                  setDomain('*');
                   setInspectorTab(id === 'overview' ? 'domains' : 'properties');
                 }}
                 {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
@@ -680,11 +778,15 @@ export function NativeProjectView({
                   setInspectorOpen(true);
                   setInspectorTab('domains');
                   setDomainCreation(0);
+                  setDomainAction(null);
+                  setSelectedDomainRelation(null);
                 }}
                 onSelect={(tableId, columnId) => {
                   leaveRecoveredSelection();
                   setSelectedDomain(null);
                   setSelected(tableId);
+                  setCreateRequest(null);
+                  setEditingConstraint(null);
                   setInspectorOpen(true);
                   setInspectorTab('properties');
                   setEditingColumn(columnId ?? null);
@@ -736,18 +838,16 @@ export function NativeProjectView({
               <aside
                 className="native-editor-inspector inspector-shell inspector"
                 aria-label={t('속성 패널')}
+                id="native-canvas-inspector"
                 inert={!inspectorOpen}
                 aria-hidden={!inspectorOpen}
               >
                 <div className="inspector-topbar">
                   <div className="inspector-place">
-                    <span>{canvasView === 'overview' ? 'VIEW' : 'DOMAIN'}</span>
-                    <strong>
-                      {canvasView === 'overview'
-                        ? t('도메인 맵')
-                        : (doc.views?.find((view) => view.id === canvasView)?.name ??
-                          t('도메인 뷰'))}
-                    </strong>
+                    <span>
+                      {canvasView === 'overview' || canvasView === '__tables__' ? 'VIEW' : 'DOMAIN'}
+                    </span>
+                    <strong title={currentViewName}>{currentViewName}</strong>
                   </div>
                   {(selectedTable || selectedDomain) && (
                     <div className="inspector-selection">
@@ -774,12 +874,18 @@ export function NativeProjectView({
                   )}
                   <div className="inspector-tabs" role="group" aria-label={t('패널 보기 전환')}>
                     <TabButton
-                      selected={inspectorTab !== 'tables'}
+                      selected={inspectorTab === 'properties' || inspectorTab === 'domains'}
                       onClick={() =>
                         setInspectorTab(canvasView === 'overview' ? 'domains' : 'properties')
                       }
                     >
                       {t('속성')}
+                    </TabButton>
+                    <TabButton
+                      selected={inspectorTab === 'tools'}
+                      onClick={() => setInspectorTab('tools')}
+                    >
+                      {t('도구')}
                     </TabButton>
                     <TabButton
                       selected={inspectorTab === 'tables'}
@@ -826,7 +932,7 @@ export function NativeProjectView({
                     </>
                   )}
                   <NativeDomainEditor
-                    key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${domainCreation}`}
+                    key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${domainCreation}:action:${domainAction ?? ''}`}
                     document={doc}
                     snapshot={snapshot}
                     {...(userId ? { userId } : {})}
@@ -839,7 +945,9 @@ export function NativeProjectView({
                       ? { initialAction: recovered.action }
                       : domainCreation
                         ? { initialAction: 'create' as const }
-                        : {})}
+                        : domainAction
+                          ? { initialAction: domainAction }
+                          : {})}
                     onSelectDomain={(id) => {
                       leaveRecoveredSelection();
                       setSelectedDomain(id);
@@ -851,6 +959,7 @@ export function NativeProjectView({
                   <NativeDomainRelationEditor
                     document={doc}
                     editable={editable}
+                    {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
                     {...(userId
                       ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
                       : {})}
@@ -865,8 +974,15 @@ export function NativeProjectView({
                     hidden={inspectorTab !== 'tables'}
                   >
                     <label>
-                      {t('테이블 검색')}
-                      <Input value={search} onChange={(event) => setSearch(event.target.value)} />
+                      {t('현재 화면 검색')}
+                      <Input
+                        aria-label={t('현재 화면 검색')}
+                        placeholder={t(
+                          canvasView === 'overview' ? '도메인·관계 검색' : '테이블·관계 검색',
+                        )}
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                      />
                     </label>
                     <Select aria-label={t('전체 도메인')} value={domain} onValueChange={setDomain}>
                       <option value="*">{t('전체 도메인')}</option>
@@ -893,29 +1009,60 @@ export function NativeProjectView({
                       defaultOpen
                       count={canvasView === 'overview' ? doc.domains.length : tables.length}
                     >
-                      <PanelList empty={t('선택한 범위에 테이블이 없습니다.')}>
+                      <PanelList
+                        empty={t(
+                          canvasView === 'overview'
+                            ? '표시할 도메인이 없습니다.'
+                            : '선택한 범위에 테이블이 없습니다.',
+                        )}
+                      >
                         {canvasView === 'overview'
-                          ? doc.domains.map((item) => (
-                              <PanelRow
-                                key={item.id}
-                                title={item.name}
-                                accent={item.color ?? '#8993a3'}
-                                active={selectedDomain === item.id}
-                                onSelect={() => {
-                                  leaveRecoveredSelection();
-                                  setSelectedDomain(item.id);
-                                  setInspectorTab('domains');
-                                }}
-                              />
-                            ))
+                          ? doc.domains
+                              .filter((item) => matches(item.name, item.description))
+                              .map((item) => (
+                                <PanelRow
+                                  key={item.id}
+                                  title={item.name}
+                                  accent={item.color ?? '#8993a3'}
+                                  active={selectedDomain === item.id}
+                                  meta={t('관계 {count}개', {
+                                    count: doc.domainRelations.filter(
+                                      (relation) =>
+                                        relation.sourceDomainId === item.id ||
+                                        relation.targetDomainId === item.id,
+                                    ).length,
+                                  })}
+                                  onSelect={() => {
+                                    leaveRecoveredSelection();
+                                    setSelectedDomain(item.id);
+                                    setInspectorTab('domains');
+                                  }}
+                                />
+                              ))
                           : tables.map((table) => (
                               <PanelRow
                                 key={table.id}
                                 title={tableName(table.id)}
                                 active={selectedTable?.id === table.id}
+                                accent={
+                                  table.color ??
+                                  doc.domains.find((item) => item.id === table.domainId)?.color ??
+                                  '#8993a3'
+                                }
+                                meta={t('컬럼 {count}개', {
+                                  count: (doc.columns ?? []).filter(
+                                    (item) => item.tableId === table.id && visible(item.scope),
+                                  ).length,
+                                })}
+                                badge={
+                                  doc.domains.find((item) => item.id === table.domainId)?.name ??
+                                  t('미지정')
+                                }
                                 onSelect={() => {
                                   leaveRecoveredSelection();
                                   setSelected(table.id);
+                                  setEditingColumn(null);
+                                  setCreateRequest(null);
                                   setInspectorTab('properties');
                                   setSelectedDomain(null);
                                 }}
@@ -923,7 +1070,55 @@ export function NativeProjectView({
                             ))}
                       </PanelList>
                     </PanelSection>
-                    {!tables.length && <p>{t('선택한 범위에 테이블이 없습니다.')}</p>}
+                    <PanelSection
+                      title={t(canvasView === 'overview' ? '도메인 관계' : '테이블 관계')}
+                      count={
+                        canvasView === 'overview'
+                          ? doc.domainRelations.length
+                          : (doc.tableRelations ?? []).length
+                      }
+                      defaultOpen={canvasView === 'overview'}
+                    >
+                      <PanelList empty={t('표시할 관계가 없습니다.')}>
+                        {canvasView === 'overview'
+                          ? doc.domainRelations
+                              .filter((item) => matches(item.name, item.description))
+                              .map((relation) => (
+                                <PanelRow
+                                  key={relation.id}
+                                  title={relation.name}
+                                  meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
+                                  onSelect={() => requestAction('domainRelation', relation.id)}
+                                />
+                              ))
+                          : (doc.tableRelations ?? [])
+                              .filter(
+                                (item) =>
+                                  visible(item.scope) &&
+                                  matches(
+                                    item.logical.name,
+                                    item.physical?.name,
+                                    tableName(item.sourceTableId),
+                                    tableName(item.targetTableId),
+                                  ),
+                              )
+                              .map((relation) => (
+                                <PanelRow
+                                  key={relation.id}
+                                  title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
+                                  meta={relation.physical?.name || relation.logical.name}
+                                  badge={relation.physical ? 'FK' : undefined}
+                                  onSelect={() =>
+                                    requestStructure(
+                                      'patch',
+                                      JSON.stringify(['tableRelations', relation.id]),
+                                      relation.sourceTableId,
+                                    )
+                                  }
+                                />
+                              ))}
+                      </PanelList>
+                    </PanelSection>
                   </aside>
                   <section
                     className="native-table-detail native-inspector-panel"
@@ -942,47 +1137,60 @@ export function NativeProjectView({
                         initialSelection={recovered.selection}
                       />
                     )}
-                    {editable && recovered?.kind !== 'advanced' && (
-                      <PanelSection
-                        title={t(createRequest ? '새 객체 만들기' : '구조 편집')}
-                        defaultOpen={!!createRequest || recovered?.kind === 'structure'}
-                        key={`structure:${createRequest?.nonce ?? 0}:${recoveryEpoch}`}
-                      >
-                        <NativeStructureEditor
-                          key={`${userId}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${createRequest?.nonce ?? 0}`}
-                          context={{
-                            userId: userId!,
-                            snapshot,
-                            busy: editorBusy,
-                            onSave: save,
-                          }}
-                          document={doc}
-                          {...(recovered?.kind === 'structure'
-                            ? {
-                                initialSelection: recovered.selection,
-                                ...(recovered.tableId &&
-                                doc.tables?.find((table) => table.id === recovered.tableId)
-                                  ? {
-                                      table: doc.tables.find(
-                                        (table) => table.id === recovered.tableId,
-                                      )!,
-                                    }
-                                  : {}),
-                              }
-                            : createRequest
+                    {editable &&
+                      recovered?.kind !== 'advanced' &&
+                      (createRequest || recovered?.kind === 'structure') && (
+                        <div
+                          className="native-contextual-editor"
+                          key={`structure:${createRequest?.nonce ?? 0}:${recoveryEpoch}`}
+                        >
+                          <NativeStructureEditor
+                            focused
+                            {...(createRequest?.values
+                              ? { initialValues: createRequest.values }
+                              : {})}
+                            key={`${userId}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${createRequest?.nonce ?? 0}`}
+                            context={{
+                              userId: userId!,
+                              snapshot,
+                              busy: editorBusy,
+                              onSave: save,
+                            }}
+                            document={doc}
+                            {...(recovered?.kind === 'structure'
                               ? {
-                                  initialSelection: {
-                                    action: createRequest.action,
-                                    target: createRequest.target ?? '',
-                                  },
-                                  ...(selectedTable ? { table: selectedTable } : {}),
+                                  initialSelection: recovered.selection,
+                                  ...(recovered.tableId &&
+                                  doc.tables?.find((table) => table.id === recovered.tableId)
+                                    ? {
+                                        table: doc.tables.find(
+                                          (table) => table.id === recovered.tableId,
+                                        )!,
+                                      }
+                                    : {}),
                                 }
-                              : selectedTable
-                                ? { table: selectedTable }
-                                : {})}
-                        />
-                      </PanelSection>
-                    )}
+                              : createRequest
+                                ? {
+                                    initialSelection: {
+                                      action: createRequest.action,
+                                      target: createRequest.target ?? '',
+                                    },
+                                    ...(selectedTable ? { table: selectedTable } : {}),
+                                  }
+                                : selectedTable
+                                  ? { table: selectedTable }
+                                  : {})}
+                          />
+                          <Button
+                            onClick={() => {
+                              leaveRecoveredSelection();
+                              setCreateRequest(null);
+                            }}
+                          >
+                            {t('편집 닫기')}
+                          </Button>
+                        </div>
+                      )}
                     {focusedReview && (
                       <section aria-label={t('리뷰')}>
                         <h3>{t('리뷰')}</h3>
@@ -994,7 +1202,7 @@ export function NativeProjectView({
                     {!selectedTable && !createRequest && (
                       <>
                         <div className="panel-empty">
-                          <strong>{t('도메인 뷰')}</strong>
+                          <strong>{currentViewName}</strong>
                           <p>
                             {t('테이블을 선택하면 이름·컬럼·연결된 관계를 여기에서 편집합니다.')}
                           </p>
@@ -1006,13 +1214,41 @@ export function NativeProjectView({
                           <span>
                             {t('관계')} {(doc.tableRelations ?? []).length}
                           </span>
+                          <span>ENUM {(doc.enums ?? []).length}</span>
                         </div>
+                        {editable && (
+                          <NativeStructureEditor
+                            focused
+                            key={`new-table:${userId}:${snapshot.project.id}:${recoveryEpoch}`}
+                            context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
+                            document={doc}
+                            initialSelection={{ action: 'table', target: '' }}
+                          />
+                        )}
                       </>
                     )}
                     {selectedTable && (
                       <>
                         <PanelSection title={t('기본 정보')} defaultOpen>
-                          {editable && !editingColumn ? (
+                          <p className="panel-note">
+                            {t('도메인')}:{' '}
+                            {doc.domains.find((item) => item.id === selectedTable.domainId)?.name ??
+                              t('미지정')}
+                          </p>
+                          {editable && (
+                            <Button
+                              disabled={editorBusy}
+                              onClick={() => {
+                                leaveRecoveredSelection();
+                                setSelectedDomain(null);
+                                setDomainAction('move');
+                                setInspectorTab('domains');
+                              }}
+                            >
+                              {t('테이블 소속 이동')}
+                            </Button>
+                          )}
+                          {editable ? (
                             <>
                               <NativePropertyEditor
                                 key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
@@ -1028,7 +1264,9 @@ export function NativeProjectView({
                             <>
                               <strong>{tableName(selectedTable.id)}</strong>
                               <p>
-                                {selectedTable.physical.comment || selectedTable.logical.definition}
+                                {mode === 'physical'
+                                  ? selectedTable.physical.comment
+                                  : selectedTable.logical.definition}
                               </p>
                             </>
                           )}
@@ -1052,10 +1290,18 @@ export function NativeProjectView({
                               .map((column, index) => (
                                 <Fragment key={column.id}>
                                   <PanelRow
+                                    className={
+                                      columnDrop === column.id
+                                        ? 'table-column-drop'
+                                        : columnDrag === column.id
+                                          ? 'table-column-dragging'
+                                          : ''
+                                    }
                                     drag={{
                                       draggable: editable && !editorBusy,
                                       onDragStart: (event) => {
                                         draggingColumn.current = column.id;
+                                        setColumnDrag(column.id);
                                         event.dataTransfer.effectAllowed = 'move';
                                         event.dataTransfer.setData('text/plain', column.id);
                                       },
@@ -1063,6 +1309,7 @@ export function NativeProjectView({
                                         if (editable && !editorBusy && draggingColumn.current) {
                                           event.preventDefault();
                                           event.dataTransfer.dropEffect = 'move';
+                                          setColumnDrop(column.id);
                                         }
                                       },
                                       onDrop: (event) => {
@@ -1070,10 +1317,15 @@ export function NativeProjectView({
                                         if (draggingColumn.current)
                                           reorderColumns(draggingColumn.current, column.id);
                                         draggingColumn.current = null;
+                                        setColumnDrag(null);
+                                        setColumnDrop(null);
                                       },
                                       onDragEnd: () => {
                                         draggingColumn.current = null;
+                                        setColumnDrag(null);
+                                        setColumnDrop(null);
                                       },
+                                      onDragLeave: () => setColumnDrop(null),
                                     }}
                                     action={
                                       <button
@@ -1141,16 +1393,62 @@ export function NativeProjectView({
                                     id={`native-column-${column.id}`}
                                   >
                                     {editable ? (
-                                      <NativePropertyEditor
-                                        key={`${column.id}:${snapshot.sequence}:${recoveryEpoch}`}
-                                        table={selectedTable}
-                                        column={column}
-                                        mode={mode}
-                                        userId={userId!}
-                                        snapshot={snapshot}
-                                        busy={editorBusy}
-                                        onSave={save}
-                                      />
+                                      <>
+                                        <NativePropertyEditor
+                                          key={`${column.id}:${snapshot.sequence}:${recoveryEpoch}`}
+                                          table={selectedTable}
+                                          column={column}
+                                          mode={mode}
+                                          userId={userId!}
+                                          snapshot={snapshot}
+                                          busy={editorBusy}
+                                          onSave={save}
+                                        />
+                                        <div className="actions native-column-actions">
+                                          {mode === 'physical' && (
+                                            <Button
+                                              disabled={editorBusy}
+                                              onClick={() => {
+                                                const primary = doc.keys?.find(
+                                                  (key) =>
+                                                    key.tableId === selectedTable.id &&
+                                                    key.kind === 'primary',
+                                                );
+                                                if (primary)
+                                                  requestStructure(
+                                                    'patch',
+                                                    JSON.stringify(['keys', primary.id]),
+                                                    selectedTable.id,
+                                                  );
+                                                else
+                                                  requestAction('key', '', {
+                                                    tableId: selectedTable.id,
+                                                    keyKind: 'primary',
+                                                    columnIds: column.id,
+                                                  });
+                                              }}
+                                            >
+                                              {t('PK 설정')}
+                                            </Button>
+                                          )}
+                                          <Button
+                                            variant="danger"
+                                            disabled={editorBusy}
+                                            onClick={() =>
+                                              requestStructure(
+                                                'delete',
+                                                JSON.stringify(['columns', column.id]),
+                                                selectedTable.id,
+                                              )
+                                            }
+                                          >
+                                            {t('컬럼 삭제')}
+                                          </Button>
+                                          <Button onClick={() => setEditingColumn(null)}>
+                                            {t('편집 닫기')}
+                                          </Button>
+                                        </div>
+                                      </>
                                     ) : (
                                       <p>
                                         {column.physical.comment ||
@@ -1164,6 +1462,7 @@ export function NativeProjectView({
                           </PanelList>
                           {editable && (
                             <Button
+                              disabled={editorBusy}
                               onClick={() =>
                                 setCreateRequest((previous) => ({
                                   action: 'column',
@@ -1182,20 +1481,80 @@ export function NativeProjectView({
                               .length
                           }
                         >
-                          <ul>
+                          <PanelList empty={t('키가 없습니다.')}>
                             {(doc.keys ?? [])
                               .filter(
                                 (key) => key.tableId === selectedTable.id && visible(key.scope),
                               )
                               .map((key) => (
-                                <li key={key.id}>
-                                  {key.kind === 'primary' ? 'PK' : 'UNIQUE'} {key.name} (
-                                  {key.columnIds.map(columnName).join(', ')})
-                                  {key.deferrable ? ` DEFERRABLE ${key.deferrable.initially}` : ''}
-                                  {key.nullsNotDistinct ? ' NULLS NOT DISTINCT' : ''}
-                                </li>
+                                <Fragment key={key.id}>
+                                  <PanelRow
+                                    title={key.name || (key.kind === 'primary' ? 'PK' : 'UNIQUE')}
+                                    meta={`${key.columnIds.map(columnName).join(', ')}${key.deferrable ? ` · DEFERRABLE ${key.deferrable.initially}` : ''}${key.nullsNotDistinct ? ' · NULLS NOT DISTINCT' : ''}`}
+                                    badge={key.kind === 'primary' ? 'PK' : 'UNIQUE'}
+                                    active={editingConstraint === key.id}
+                                    expanded={editingConstraint === key.id}
+                                    controls={`native-key-${key.id}`}
+                                    onSelect={() =>
+                                      setEditingConstraint(
+                                        editingConstraint === key.id ? null : key.id,
+                                      )
+                                    }
+                                  />
+                                  <PanelListDetail
+                                    id={`native-key-${key.id}`}
+                                    open={editingConstraint === key.id}
+                                  >
+                                    {editable && (
+                                      <>
+                                        <NativeStructureEditor
+                                          focused
+                                          context={{
+                                            userId: userId!,
+                                            snapshot,
+                                            busy: editorBusy,
+                                            onSave: save,
+                                          }}
+                                          document={doc}
+                                          table={selectedTable}
+                                          initialSelection={{
+                                            action: 'patch',
+                                            target: JSON.stringify(['keys', key.id]),
+                                          }}
+                                        />
+                                        <Button
+                                          variant="danger"
+                                          disabled={editorBusy}
+                                          onClick={() =>
+                                            requestStructure(
+                                              'delete',
+                                              JSON.stringify(['keys', key.id]),
+                                              selectedTable.id,
+                                            )
+                                          }
+                                        >
+                                          {t('키 삭제')}
+                                        </Button>
+                                      </>
+                                    )}
+                                  </PanelListDetail>
+                                </Fragment>
                               ))}
-                          </ul>
+                          </PanelList>
+                          {editable && (
+                            <Button
+                              disabled={
+                                editorBusy ||
+                                !(doc.columns ?? []).some(
+                                  (item) =>
+                                    item.tableId === selectedTable.id && item.scope !== 'logical',
+                                )
+                              }
+                              onClick={() => requestStructure('key', '', selectedTable.id)}
+                            >
+                              {t('+ 키 추가')}
+                            </Button>
+                          )}
                         </PanelSection>
                         <PanelSection
                           title={t('테이블 관계')}
@@ -1228,7 +1587,23 @@ export function NativeProjectView({
                                 </li>
                               ))}
                           </ul>
+                          {editable && (
+                            <Button
+                              disabled={editorBusy}
+                              onClick={() => requestStructure('foreignKey', '', selectedTable.id)}
+                            >
+                              {t('+ 테이블 관계 추가')}
+                            </Button>
+                          )}
                         </PanelSection>
+                        {editable && recovered?.kind !== 'advanced' && (
+                          <NativeAdvancedEditor
+                            key={`advanced:${userId}:${snapshot.project.id}:${selectedTable.id}`}
+                            context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
+                            document={doc}
+                            table={selectedTable}
+                          />
+                        )}
                         <PanelSection title={t('상세 설계 정보')}>
                           <p>
                             {mode === 'physical'
@@ -1425,6 +1800,8 @@ export function NativeProjectView({
                     )}
                     {editable && selectedTable && (
                       <Button
+                        variant="danger"
+                        disabled={editorBusy}
                         className="danger"
                         onClick={() =>
                           setCreateRequest((previous) => ({
@@ -1437,6 +1814,72 @@ export function NativeProjectView({
                         {t('테이블 삭제')}
                       </Button>
                     )}
+                    <PanelSection
+                      title="ENUM"
+                      count={(doc.enums ?? []).length}
+                      open={enumOpen}
+                      onOpenChange={setEnumOpen}
+                    >
+                      <PanelList empty={t('ENUM이 없습니다.')}>
+                        {(doc.enums ?? []).map((item) => (
+                          <Fragment key={item.id}>
+                            <PanelRow
+                              title={`${item.schema ? `${item.schema}.` : ''}${item.name}`}
+                              meta={item.values.map((value) => JSON.stringify(value)).join(', ')}
+                              badge={String(item.values.length)}
+                              active={editingConstraint === item.id}
+                              expanded={editingConstraint === item.id}
+                              controls={`native-enum-${item.id}`}
+                              onSelect={() =>
+                                setEditingConstraint(editingConstraint === item.id ? null : item.id)
+                              }
+                            />
+                            <PanelListDetail
+                              id={`native-enum-${item.id}`}
+                              open={editingConstraint === item.id}
+                            >
+                              {editable && (
+                                <>
+                                  <NativeStructureEditor
+                                    focused
+                                    context={{
+                                      userId: userId!,
+                                      snapshot,
+                                      busy: editorBusy,
+                                      onSave: save,
+                                    }}
+                                    document={doc}
+                                    initialSelection={{
+                                      action: 'patch',
+                                      target: JSON.stringify(['enums', item.id]),
+                                    }}
+                                  />
+                                  <Button
+                                    variant="danger"
+                                    disabled={editorBusy}
+                                    onClick={() =>
+                                      requestStructure('delete', JSON.stringify(['enums', item.id]))
+                                    }
+                                  >
+                                    {t('ENUM 삭제')}
+                                  </Button>
+                                </>
+                              )}
+                            </PanelListDetail>
+                          </Fragment>
+                        ))}
+                      </PanelList>
+                      {editable && (
+                        <Button
+                          disabled={
+                            editorBusy || !nativeEditorPolicy(doc).feature('enumType').supported
+                          }
+                          onClick={() => toolbarCreate('enum')}
+                        >
+                          {t('ENUM 추가')}
+                        </Button>
+                      )}
+                    </PanelSection>
                     {snapshot.native.status === 'available' &&
                       snapshot.native.issues.length > 0 && (
                         <section className="native-issues" aria-label={t('설계 확인 항목')}>

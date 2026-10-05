@@ -1,29 +1,61 @@
 import { NativeDomainFilter, type NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { memo, type ReactNode } from 'react';
-import { Button, IconButton, Select } from '../../components/ui/index.js';
+import { Button, Dropdown, IconButton } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
+
 registerTranslations({
-  '← 도메인 맵으로': '← Domain map',
-  '＋ 텍스트': '＋ Text',
   '더 보기': 'More',
   '전체 테이블': 'All tables',
   '도메인 맵': 'Domain map',
   '보기 선택': 'Choose view',
   '편집 도구': 'Editing tools',
   '보기와 내보내기': 'Views and export',
-  '속성 패널': 'Inspector',
   '속성 패널 숨기기': 'Hide inspector',
   '속성 패널 열기': 'Show inspector',
   '커서 도구': 'Select tool',
   '손 도구': 'Hand tool',
   '캔버스 도구': 'Canvas tools',
-  '손 도구 · 드래그로 화면 이동': 'Hand tool · drag to pan',
-  '커서 도구 · 객체 선택과 이동': 'Select tool · select and move objects',
   '배율 100%로 초기화': 'Reset zoom to 100%',
   '＋ 테이블': '＋ Table',
   '＋ 도메인': '＋ Domain',
   '＋ 메모': '＋ Note',
+  '캔버스 작업': 'Canvas actions',
+  '자동 배치': 'Automatic layout',
+  '관계 경로 초기화': 'Reset relation routes',
+  '프로젝트 내보내기': 'Export project',
+  'DDL 내보내기': 'Export DDL',
+  '고화질 PNG': 'High resolution PNG',
+  공유: 'Share',
 });
+
+export interface NativeCanvasToolbarProps {
+  exportControl?: ReactNode;
+  viewId: string;
+  views: { id: string; name: string }[];
+  onView: (id: string) => void;
+  domains?: { id: string; name: string; color?: string | null | undefined }[];
+  filter?: NativeDomainFilterValue | null;
+  onFilter?: ((value: NativeDomainFilterValue | null) => void) | undefined;
+  onCreate?: ((kind: 'table' | 'domain' | 'enum') => void) | undefined;
+  onNote: () => void;
+  onTools?: (() => void) | undefined;
+  onAutoLayout?: (() => void) | undefined;
+  onResetRoutes?: (() => void) | undefined;
+  onPaste?: (() => void) | undefined;
+  onExportProject?: (() => void) | undefined;
+  onExportDDL?: (() => void) | undefined;
+  onExportPNG?: (() => void) | undefined;
+  onOpenEnums?: (() => void) | undefined;
+  exportBusy?: boolean;
+  editable: boolean;
+  noteEditable: boolean;
+  disabled: boolean;
+  mode: 'physical' | 'logical';
+  onMode?: ((mode: 'physical' | 'logical') => void) | undefined;
+  inspectorOpen?: boolean | undefined;
+  onToggleInspector?: (() => void) | undefined;
+}
+
 export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   viewId,
   views,
@@ -34,6 +66,14 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   onCreate,
   onNote,
   onTools,
+  onAutoLayout,
+  onResetRoutes,
+  onPaste,
+  onExportProject,
+  onExportDDL,
+  onExportPNG,
+  onOpenEnums,
+  exportBusy = false,
   editable,
   noteEditable,
   disabled,
@@ -42,52 +82,91 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   inspectorOpen,
   onToggleInspector,
   exportControl,
-}: {
-  exportControl?: ReactNode;
-  viewId: string;
-  views: { id: string; name: string }[];
-  onView: (id: string) => void;
-  domains?: { id: string; name: string }[];
-  filter?: NativeDomainFilterValue | null;
-  onFilter?: ((value: NativeDomainFilterValue | null) => void) | undefined;
-  onCreate?: ((kind: 'table' | 'domain' | 'enum') => void) | undefined;
-  onNote: () => void;
-  onTools?: (() => void) | undefined;
-  editable: boolean;
-  noteEditable: boolean;
-  disabled: boolean;
-  mode: 'physical' | 'logical';
-  onMode?: ((mode: 'physical' | 'logical') => void) | undefined;
-  inspectorOpen?: boolean | undefined;
-  onToggleInspector?: (() => void) | undefined;
-}) {
+}: NativeCanvasToolbarProps) {
   const { t } = useI18n();
+  const filteredNames = filter
+    ? [
+        ...(domains ?? [])
+          .filter((domain) => filter.domainIds.includes(domain.id))
+          .map((domain) => domain.name),
+        ...(filter.unassigned ? [t('미지정')] : []),
+      ]
+    : [];
+  const viewName =
+    viewId === 'overview'
+      ? t('도메인 맵')
+      : (views.find((view) => view.id === viewId)?.name ??
+        domains?.find((domain) => domain.id === viewId)?.name ??
+        t('전체 테이블'));
+  const currentPath =
+    viewId === '__tables__' && filter
+      ? `${viewName} · ${filteredNames.join(' · ') || t('선택 없음')}`
+      : viewName;
+  const writeBlocked = !editable || disabled;
+  const exports = [
+    {
+      id: 'project-export',
+      label: t('프로젝트 내보내기'),
+      disabled: disabled || exportBusy || !onExportProject,
+      onAction: () => onExportProject?.(),
+    },
+    {
+      id: 'ddl-export',
+      label: t('DDL 내보내기'),
+      disabled: disabled || exportBusy || !onExportDDL,
+      onAction: () => onExportDDL?.(),
+    },
+    {
+      id: 'png-export',
+      label: t('고화질 PNG'),
+      disabled: disabled || exportBusy || !onExportPNG,
+      onAction: () => onExportPNG?.(),
+    },
+  ];
   return (
     <div className="canvas-toolbar native-canvas-toolbar" data-view-id={viewId}>
       <nav className="editor-path native-editor-path" aria-label={t('현재 위치')}>
-        {viewId !== 'overview' && (
-          <Button disabled={disabled} onClick={() => onView('overview')}>
-            {t('← 도메인 맵으로')}
-          </Button>
-        )}
-        <strong>{views.find((view) => view.id === viewId)?.name ?? t('전체 테이블')}</strong>
+        <span className="path-sep" aria-hidden="true">
+          /
+        </span>
+        <strong className="path-current" title={currentPath}>
+          {currentPath}
+        </strong>
       </nav>
       <div className="actions">
-        {onCreate && (
-          <div className="toolbar-group" role="group" aria-label={t('편집 도구')}>
+        <div className="toolbar-group toolbar-create" role="group" aria-label={t('편집 도구')}>
+          {onCreate && (
             <Button
-              disabled={!editable || disabled}
+              disabled={writeBlocked}
               onClick={() => onCreate(viewId === 'overview' ? 'domain' : 'table')}
             >
               {t(viewId === 'overview' ? '＋ 도메인' : '＋ 테이블')}
             </Button>
-            <Button disabled={!noteEditable || disabled} onClick={onNote}>
-              {t('＋ 텍스트')}
-            </Button>
-          </div>
-        )}
+          )}
+          <Button disabled={!noteEditable || disabled} onClick={onNote}>
+            {t('＋ 메모')}
+          </Button>
+        </div>
+        <span className="toolbar-divider" aria-hidden="true" />
         <div className="toolbar-group" role="group" aria-label={t('보기와 내보내기')}>
-          {domains && onFilter && (
+          <Button
+            aria-pressed={viewId === '__tables__'}
+            disabled={disabled}
+            onClick={() => {
+              onFilter?.(null);
+              onView('__tables__');
+            }}
+          >
+            {t('전체 테이블')}
+          </Button>
+          <Button
+            aria-pressed={viewId === 'overview'}
+            disabled={disabled}
+            onClick={() => onView('overview')}
+          >
+            {t('도메인 맵')}
+          </Button>
+          {viewId === '__tables__' && domains && onFilter && (
             <NativeDomainFilter
               domains={domains}
               value={filter ?? null}
@@ -95,35 +174,171 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               disabled={disabled}
             />
           )}
-          <Select aria-label={t('화면')} value={viewId} disabled={disabled} onValueChange={onView}>
-            {views.map((view) => (
-              <option key={view.id} value={view.id}>
-                {view.name}
-              </option>
-            ))}
-          </Select>
-          {onCreate && (
-            <Button onClick={() => onCreate('enum')} disabled={!editable || disabled}>
+          {viewId === '__tables__' && filter && onFilter && (
+            <Button disabled={disabled} onClick={() => onFilter(null)}>
+              {t('필터 해제')}
+            </Button>
+          )}
+          {views.some((view) => !['overview', '__tables__'].includes(view.id)) && (
+            <Dropdown
+              label={t('보기 선택')}
+              trigger={
+                <Button disabled={disabled} aria-label={t('보기 선택')}>
+                  {t('보기 선택')} ▾
+                </Button>
+              }
+              items={views.map((view) => ({
+                id: view.id,
+                label: view.name,
+                disabled,
+                onAction: () => onView(view.id),
+              }))}
+            />
+          )}
+          {(onOpenEnums || onCreate) && (
+            <Button
+              disabled={disabled || (!onOpenEnums && !editable)}
+              onClick={() => (onOpenEnums ? onOpenEnums() : onCreate?.('enum'))}
+            >
               ENUM
             </Button>
           )}
-          {exportControl}
-          {onTools && <Button onClick={onTools}>{t('더 보기')}</Button>}
+          {exportControl ??
+            ((onExportProject || onExportDDL || onExportPNG) && (
+              <Dropdown
+                label={t('공유')}
+                trigger={
+                  <IconButton
+                    aria-label={t('공유')}
+                    title={t('공유')}
+                    aria-busy={exportBusy}
+                    disabled={disabled || exportBusy}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      aria-hidden="true"
+                    >
+                      <circle cx="18" cy="5" r="3" />
+                      <circle cx="6" cy="12" r="3" />
+                      <circle cx="18" cy="19" r="3" />
+                      <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
+                    </svg>
+                  </IconButton>
+                }
+                items={exports}
+              />
+            ))}
+        </div>
+        <span className="toolbar-divider" aria-hidden="true" />
+        <div className="toolbar-group" role="group" aria-label={t('캔버스 작업')}>
+          {onAutoLayout && (
+            <Button disabled={!noteEditable || disabled} onClick={onAutoLayout}>
+              {t('자동 배치')}
+            </Button>
+          )}
+          {(onCreate || onTools || onResetRoutes || onPaste) && (
+            <Dropdown
+              label={t('캔버스 작업')}
+              trigger={
+                <IconButton aria-label={t('더 보기')} title={t('더 보기')} disabled={disabled}>
+                  ⋯
+                </IconButton>
+              }
+              items={[
+                ...(onCreate
+                  ? [
+                      {
+                        id: 'create-table',
+                        label: t('＋ 테이블'),
+                        disabled: writeBlocked || viewId === 'overview',
+                        onAction: () => onCreate('table'),
+                      },
+                      {
+                        id: 'create-domain',
+                        label: t('＋ 도메인'),
+                        disabled: writeBlocked,
+                        onAction: () => onCreate('domain'),
+                      },
+                      {
+                        id: 'create-enum',
+                        label: '＋ ENUM',
+                        disabled: writeBlocked,
+                        onAction: () => onCreate('enum'),
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'create-note',
+                  label: t('＋ 메모'),
+                  disabled: !noteEditable || disabled,
+                  onAction: onNote,
+                },
+                ...(onPaste
+                  ? [
+                      {
+                        id: 'paste',
+                        label: t('붙여넣기'),
+                        disabled: writeBlocked || viewId === 'overview',
+                        onAction: onPaste,
+                      },
+                    ]
+                  : []),
+                ...(onAutoLayout
+                  ? [
+                      {
+                        id: 'auto-layout',
+                        label: t('자동 배치'),
+                        disabled: !noteEditable || disabled,
+                        onAction: onAutoLayout,
+                      },
+                    ]
+                  : []),
+                ...(onResetRoutes
+                  ? [
+                      {
+                        id: 'reset-routes',
+                        label: t('관계 경로 초기화'),
+                        disabled: !noteEditable || disabled,
+                        onAction: onResetRoutes,
+                      },
+                    ]
+                  : []),
+                ...(onTools ? [{ id: 'tools', label: t('도구'), onAction: onTools }] : []),
+              ]}
+            />
+          )}
         </div>
         {onMode && (
           <div className="toolbar-group" role="group" aria-label={t('모델 보기')}>
-            <Button aria-pressed={mode === 'physical'} onClick={() => onMode('physical')}>
+            <Button
+              disabled={disabled}
+              aria-pressed={mode === 'physical'}
+              onClick={() => onMode('physical')}
+            >
               {t('물리')}
             </Button>
-            <Button aria-pressed={mode === 'logical'} onClick={() => onMode('logical')}>
+            <Button
+              disabled={disabled}
+              aria-pressed={mode === 'logical'}
+              onClick={() => onMode('logical')}
+            >
               {t('논리')}
             </Button>
           </div>
         )}
         {onToggleInspector && (
           <IconButton
+            className="inspector-toggle panel-toggle"
             aria-label={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
+            title={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
             aria-pressed={inspectorOpen}
+            aria-expanded={inspectorOpen}
+            aria-controls="native-canvas-inspector"
             onClick={onToggleInspector}
           >
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -191,16 +406,16 @@ export function NativeCameraControls({
           </svg>
         </IconButton>
       </div>
-      <IconButton aria-label={t('축소')} onClick={() => onZoom(1 / 1.2)}>
+      <IconButton aria-label={t('축소')} tooltip={t('축소')} onClick={() => onZoom(1 / 1.2)}>
         −
       </IconButton>
       <Button aria-label={t('배율 100%로 초기화')} onClick={onReset}>
         {Math.round(zoom * 100)}%
       </Button>
-      <IconButton aria-label={t('확대')} onClick={() => onZoom(1.2)}>
+      <IconButton aria-label={t('확대')} tooltip={t('확대')} onClick={() => onZoom(1.2)}>
         ＋
       </IconButton>
-      <IconButton aria-label={t('중앙으로')} onClick={onFit}>
+      <IconButton aria-label={t('중앙으로')} tooltip={t('중앙으로')} onClick={onFit}>
         ⌖
       </IconButton>
     </div>
