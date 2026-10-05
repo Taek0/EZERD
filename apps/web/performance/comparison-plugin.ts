@@ -7,6 +7,14 @@ export function comparisonPlugin(controlPath: string): Plugin {
     enforce: 'pre',
     transform(source, id) {
       const path = id.replaceAll('\\', '/').split('?')[0]!;
+      if (path.endsWith('/features/projects/NativeERDCanvas.tsx')) {
+        const marker = 'onEdit={userId && editable ? openInline : undefined}';
+        if (!source.includes(marker)) this.error('Missing native editable-presentation target');
+        return {
+          code: `import { comparisonControl as __nativeComparison } from ${JSON.stringify(controlPath)};\n${source.replace(marker, "onEdit={__nativeComparison.variant === 'editable-presentation' ? openInline : userId && editable ? openInline : undefined}")}`,
+          map: null,
+        };
+      }
       const name = path.endsWith('/features/tables/TableEditor.tsx')
         ? 'TableNodeContent'
         : path.endsWith('/features/relations/TableRelations.tsx')

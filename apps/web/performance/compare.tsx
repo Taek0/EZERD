@@ -303,7 +303,14 @@ function Compare() {
             setOutput('');
           }}
         >
-          {['baseline', 'memo-leaves', 'simple-cards', 'no-relations', 'flat-style'].map((v) => (
+          {[
+            'baseline',
+            'memo-leaves',
+            'simple-cards',
+            'no-relations',
+            'flat-style',
+            'editable-presentation',
+          ].map((v) => (
             <option key={v}>{v}</option>
           ))}
         </select>

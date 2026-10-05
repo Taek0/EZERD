@@ -49,6 +49,7 @@ export default defineConfig(() => {
           : 'dist-performance-immediate',
       rollupOptions: {
         input: {
+          interactions: fileURLToPath(new URL('./performance/interactions.html', import.meta.url)),
           legacy: fileURLToPath(new URL('./performance/index.html', import.meta.url)),
           compare: fileURLToPath(new URL('./performance/compare.html', import.meta.url)),
           native: fileURLToPath(new URL('./performance/native.html', import.meta.url)),
