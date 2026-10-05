@@ -25,6 +25,7 @@ import '../src/styles/canvas-viewport.css';
 import '../src/styles/editor-topbar.css';
 import '../src/styles/navigation-controls.css';
 import './compare.css';
+import './content-visibility-candidate.css';
 
 declare const __PERF_COMMIT__: string;
 declare const __PERF_DIRTY__: boolean;
@@ -318,6 +319,7 @@ function Compare() {
             'inline-content-visibility',
             'inline-contain-only',
             'inline-paint-only',
+            'inline-candidate',
           ].map((v) => (
             <option key={v}>{v}</option>
           ))}

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { upsertRelationLayout } from '@ezerd/model';
+import { updateNodeLayout, type NodeLayout, upsertRelationLayout } from '@ezerd/model';
 import { nativeEditorCommandSchema } from '@ezerd/contracts';
 import {
   NativeCanvasScene,
@@ -23,6 +23,9 @@ import '../src/components/ui/tailwind.css';
 import '../src/styles/tokens.css';
 import '../src/components/ui/ui.css';
 import '../src/styles/styles.css';
+import '../src/styles/inspector.css';
+import '../src/styles/editor-feedback.css';
+import './content-visibility-candidate.css';
 function Demo() {
   const surface = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -35,7 +38,7 @@ function Demo() {
     el.addEventListener('wheel', wheel, { passive: false });
     return () => el.removeEventListener('wheel', wheel);
   }, []);
-  const fixture = useMemo(() => createNativePerformanceFixture(10, 5), []);
+  const fixture = useMemo(() => createNativePerformanceFixture(100, 10), []);
   const [document, setDocument] = useState(fixture.document),
     [version, setVersion] = useState(0),
     [fail, setFail] = useState(false),
@@ -44,6 +47,10 @@ function Demo() {
     [inline, setInline] = useState<NativeInlineTarget | null>(null),
     [relation, setRelation] = useState<string | null>(null),
     [selected, setSelected] = useState<string | null>(null);
+  const [candidate, setCandidate] = useState(false),
+    [report, setReport] = useState('');
+  const [placement, setPlacement] = useState<NodeLayout | null>(null);
+  const placementRef = useRef<NodeLayout | null>(null);
   const [camera, setCamera] = useState({ viewId: '__tables__', x: 24, y: 24, zoom: 1 });
   const [world, setWorld] = useState<HTMLDivElement | null>(null),
     [preview, setPreview] = useState('');
@@ -108,6 +115,8 @@ function Demo() {
                   : c,
               ),
             };
+          else if (command.type === 'update_node_layout')
+            next = updateNodeLayout(next, command.nodeId, command.patch);
           else if (command.type === 'upsert_relation_layout')
             next = upsertRelationLayout(next, command.value);
           else if (command.type === 'delete_relation_layout')
@@ -132,7 +141,22 @@ function Demo() {
     }),
     [snapshot, editable],
   );
-  const scene = useMemo(() => nativeCanvasScene(document, '__tables__', 'physical'), [document]);
+  const displayDocument = useMemo(
+    () =>
+      placement
+        ? updateNodeLayout(document, placement.id, {
+            x: placement.x,
+            y: placement.y,
+            width: placement.width,
+            height: placement.height,
+          })
+        : document,
+    [document, placement],
+  );
+  const scene = useMemo(
+    () => nativeCanvasScene(displayDocument, '__tables__', 'physical'),
+    [displayDocument],
+  );
   const gesture = useRef<Parameters<typeof NativeCanvasScene>[0]['gesture']['current']>(null);
   const actions = useRef<NativeSceneActions>({
     zoom: camera.zoom,
@@ -141,12 +165,111 @@ function Demo() {
     savePlacement: async () => {},
   });
   useLayoutEffect(() => {
-    actions.current.zoom = camera.zoom;
+    actions.current = {
+      zoom: camera.zoom,
+      begin: (event, node) => {
+        if (
+          !editable ||
+          event.button !== 0 ||
+          (event.target instanceof Element &&
+            event.target.closest('button,input,textarea,select,[data-inline-cell]'))
+        )
+          return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        gesture.current = { node, x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+        setSelected(node.id);
+      },
+      preserve: (node, x, y, size) => {
+        if (!editable) return;
+        const next = { ...node, x, y, ...size };
+        placementRef.current = next;
+        setPlacement(next);
+      },
+      savePlacement: async () => {
+        const node = placementRef.current;
+        if (!node || !editable) return;
+        const accepted = await context.onSave(
+          [
+            {
+              type: 'update_node_layout',
+              nodeId: node.id,
+              patch: { x: node.x, y: node.y, width: node.width, height: node.height },
+            },
+          ],
+          { version, sequence: version, databaseRevision: 0 },
+        );
+        if (accepted) {
+          placementRef.current = null;
+          setPlacement(null);
+        }
+      },
+    };
   });
   return (
-    <>
+    <div className={candidate ? 'native-validation cv-candidate' : 'native-validation'}>
       <header>
         <strong>Memory-only interaction lab · no HTTP/API/DB</strong>
+        <label>
+          <input
+            type="checkbox"
+            checked={candidate}
+            onChange={(e) => setCandidate(e.target.checked)}
+          />
+          Content visibility candidate
+        </label>
+        <button onClick={() => setCamera({ viewId: '__tables__', x: 24, y: 24, zoom: 1 })}>
+          Reset camera
+        </button>
+        <button
+          onClick={() => {
+            const node = scene.nodes.find((n) => n.objectId === 't90')!;
+            setCamera({ viewId: '__tables__', x: 24 - node.x, y: 24 - node.y, zoom: 1 });
+          }}
+        >
+          Visit table 90
+        </button>
+        <button onClick={() => setCamera((c) => ({ ...c, zoom: 0.5 }))}>Zoom 50%</button>
+        <button
+          onClick={() => {
+            const root = surface.current!;
+            const cards = Array.from(root.querySelectorAll<HTMLElement>('.native-erd-node'));
+            const first = cards[0]!;
+            const style = getComputedStyle(first);
+            setReport(
+              JSON.stringify(
+                {
+                  candidate,
+                  version,
+                  camera,
+                  selected,
+                  placement,
+                  first: {
+                    rect: first.getBoundingClientRect().toJSON(),
+                    contentVisibility: style.contentVisibility,
+                    contain: style.contain,
+                  },
+                  cards: cards.length,
+                  visible: cards.filter((card) =>
+                    card.checkVisibility({ contentVisibilityAuto: true }),
+                  ).length,
+                  active: window.document.activeElement?.getAttribute('aria-label'),
+                  png: nativeCanvasSvg(
+                    document,
+                    nativeCanvasScene(document, '__tables__', 'physical'),
+                    'physical',
+                  ).svg.length,
+                  alerts: Array.from(root.querySelectorAll('[role=alert]')).map(
+                    (n) => n.textContent,
+                  ),
+                },
+                null,
+                2,
+              ),
+            );
+          }}
+        >
+          Capture UI state
+        </button>
         <label>
           <input type="checkbox" checked={fail} onChange={(e) => setFail(e.target.checked)} />
           Fail save
@@ -225,7 +348,7 @@ function Demo() {
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
           <NativeCanvasScene
-            base={document}
+            base={displayDocument}
             sharedSource={document}
             drawn={scene}
             effectiveView="__tables__"
@@ -235,7 +358,9 @@ function Demo() {
             selectedDomainId={undefined}
             selectedDomainRelation={null}
             selectedRelationId={relation}
-            draftObjectId={undefined}
+            draftObjectId={placement?.objectId}
+            editorContext={editable ? context : undefined}
+            resizeEnabled={editable}
             setSelectedNode={setSelected}
             setSelectedDomainRelation={() => {}}
             onSelect={(id) => setSelected(scene.nodes.find((n) => n.objectId === id)?.id ?? null)}
@@ -286,10 +411,11 @@ function Demo() {
           />
         )}
       </div>
+      <textarea aria-label="UI validation JSON" readOnly value={report} />
       <output aria-label="Demo revision">{version}</output>
       <textarea aria-label="Save ledger" readOnly value={ledger} />
       {preview && <img alt="PNG source preview" src={preview} style={{ maxWidth: '100%' }} />}
-    </>
+    </div>
   );
 }
 createRoot(globalThis.document.getElementById('root')!).render(
