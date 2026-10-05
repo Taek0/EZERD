@@ -260,7 +260,7 @@ export function NativeEditorField({
     <label>
       {t(label)}
       {choices ? (
-        <Select value={value} disabled={disabled} onValueChange={onChange}>
+        <Select aria-label={t(label)} value={value} disabled={disabled} onValueChange={onChange}>
           {choices.map((choice) => (
             <option key={choice.value} value={choice.value} disabled={choice.disabled}>
               {choice.label}
