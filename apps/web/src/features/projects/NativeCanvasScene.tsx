@@ -31,6 +31,7 @@ export interface NativeCanvasSceneProps {
   setSelectedDomainRelation: (id: string) => void;
   onSelect: (tableId: string, columnId?: string) => void;
   onSelectDomain: ((domainId: string) => void) | undefined;
+  onOpenDomain?: ((domainId: string) => void) | undefined;
   gesture: RefObject<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>;
   actions: RefObject<NativeSceneActions>;
   onEdit?: ((target: NativeInlineTarget) => void) | undefined;
@@ -53,6 +54,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   setSelectedDomainRelation,
   onSelect,
   onSelectDomain,
+  onOpenDomain,
   gesture,
   actions,
   onEdit,
@@ -105,6 +107,8 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               width: node.width,
               height: node.height,
               borderColor: nativeCardColor(base, node.objectId),
+              ...(domain ? { '--native-domain-color': nativeCardColor(base, node.objectId) } : {}),
+              ...(note ? { '--native-note-color': note.color ?? '#fff9d9' } : {}),
             }}
             onFocus={() => setSelectedNode(node.id)}
             onClick={(event) => {
@@ -173,6 +177,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                   : undefined
               }
             >
+              {domain && <span className="native-domain-overline">DOMAIN</span>}
               {table ? (
                 <button
                   type="button"
@@ -235,6 +240,15 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                   {(base.tables ?? []).filter((table) => table.domainId === domain.id).length}
                 </small>
                 {unsavedDomain && <p>{t('저장된 배치가 없는 도메인입니다.')}</p>}
+                {onOpenDomain && (
+                  <button
+                    className="native-enter-domain"
+                    type="button"
+                    onClick={() => onOpenDomain(domain.id)}
+                  >
+                    {t('도메인 열기 ↗')}
+                  </button>
+                )}
               </>
             )}
           </article>

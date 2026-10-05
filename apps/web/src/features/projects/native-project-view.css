@@ -148,3 +148,146 @@
     gap: 8px;
   }
 }
+
+/* Native uses the same canvas-first workspace and docked inspector as the original editor. */
+.app-shell.editor-shell > .editor.native-project-view {
+  overflow: hidden;
+}
+.native-project-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.native-editor-workspace {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.native-editor-workspace > .native-erd {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+.native-editor-workspace .native-erd-surface {
+  flex: 1;
+  height: auto;
+  min-height: 260px;
+  border-radius: 0;
+}
+.native-editor-inspector {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel, #fff);
+  border-left: 1px solid var(--line, #dfe4eb);
+}
+.native-inspector-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line, #dfe4eb);
+  flex: none;
+}
+.native-inspector-tabs [aria-selected='true'] {
+  color: var(--accent, #4169e1);
+  background: var(--accent-soft, #eef2ff);
+}
+.native-inspector-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  overscroll-behavior: contain;
+}
+.native-editor-inspector .native-project-content {
+  display: contents;
+}
+.native-editor-inspector [hidden],
+.native-editor-workspace > [hidden] {
+  display: none !important;
+}
+.native-editor-inspector .native-property-editor fieldset {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 12px;
+}
+.native-editor-inspector .native-table-detail {
+  padding: 16px;
+}
+.native-editor-inspector .native-table-nav {
+  border: 0;
+}
+.native-inspector-resize {
+  cursor: col-resize;
+  background: var(--canvas-bg, #f6f8fb);
+  touch-action: none;
+}
+.native-inspector-resize:hover,
+.native-inspector-resize:focus-visible {
+  background: var(--accent, #4169e1);
+  outline: none;
+}
+.native-editor-inspector table {
+  display: block;
+  overflow: auto;
+}
+@media (max-width: 900px) {
+  .native-editor-workspace {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(380px, 1fr) minmax(220px, 40vh);
+    overflow: auto;
+  }
+  .native-editor-workspace.inspector-closed {
+    grid-template-rows: minmax(380px, 1fr);
+  }
+  .native-inspector-resize {
+    display: none;
+  }
+  .native-editor-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--line, #dfe4eb);
+  }
+  .native-project-status {
+    gap: 6px;
+  }
+}
+.app-shell.editor-shell:has(> .native-project-view) {
+  display: flex;
+  flex-direction: column;
+}
+.app-shell.editor-shell:has(> .native-project-view) > .app-header {
+  flex-shrink: 0;
+}
+.app-shell.editor-shell > .native-project-view {
+  flex: 1 1 0;
+  min-height: 0;
+}
+.native-editor-inspector .native-table-detail table {
+  display: table;
+  width: max-content;
+  min-width: 100%;
+}
+.native-editor-inspector .native-table-detail th,
+.native-editor-inspector .native-table-detail td {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.native-editor-workspace > .native-erd > :not(.native-erd-surface) {
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .native-editor-workspace {
+    grid-template-rows: minmax(520px, 1fr) minmax(240px, 42dvh);
+  }
+  .native-editor-workspace.inspector-closed {
+    grid-template-rows: minmax(520px, 1fr);
+  }
+}
