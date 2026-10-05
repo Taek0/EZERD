@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { PanelSection } from '../../shared/editor/panel.js';
+import { DomainColorPicker } from '../domains/DomainColorPicker.js';
+import { useEffect, useState } from 'react';
 import {
   nativeDomainCommandSchema,
   type NativeDomainCommand,
@@ -261,14 +263,12 @@ export function NativeDomainEditor({
   );
   const [targetTable, setTargetTable] = useState(selectedTableId ?? document.tables?.[0]?.id ?? '');
   const [open, setOpen] = useState(!!selectedDomainId || !!initialAction);
-  const editor = useRef<HTMLDetailsElement | null>(null);
+
   useEffect(() => {
     if (selectedDomainId) {
       setTargetDomain(selectedDomainId);
       setAction((current) => (current === 'delete' ? current : 'edit'));
       setOpen(true);
-      editor.current?.querySelector('summary')?.focus();
-      editor.current?.scrollIntoView({ block: 'nearest' });
     }
   }, [selectedDomainId]);
   useEffect(() => {
@@ -283,14 +283,12 @@ export function NativeDomainEditor({
   const table = document.tables?.find((table) => table.id === targetTable);
   const formKey = `${userId}:${snapshot.project.id}:${action}:${action === 'move' ? targetTable : action === 'create' ? 'project' : targetDomain}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}`;
   return (
-    <details
+    <PanelSection
       className="native-property-editor"
-      ref={editor}
+      title={t(selectedDomainId ? '기본 정보' : '새 도메인 만들기')}
       open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-      aria-label={t('도메인 관리')}
+      onOpenChange={setOpen}
     >
-      <summary>{t('도메인 관리')}</summary>
       {!canWrite ? (
         <>
           <p>{t('조회 전용')}</p>
@@ -363,7 +361,7 @@ export function NativeDomainEditor({
           )}
         </>
       )}
-    </details>
+    </PanelSection>
   );
 }
 
@@ -473,7 +471,12 @@ function NativeDomainForm({
               <>
                 {field('name', '이름')}
                 {field('description', '설명', true)}
-                {field('color', '색상')}
+                <DomainColorPicker
+                  value={values.color || '#2f8cff'}
+                  onChange={(color) => change('color', color)}
+                  disabled={context.busy}
+                  onReset={() => change('color', '')}
+                />
                 <small>{t('색상 없음')}: —</small>
               </>
             )}

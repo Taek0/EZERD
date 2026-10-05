@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import type { ProjectDocumentState } from '@ezerd/contracts';
-import { Button } from '../../components/ui/index.js';
+import { Button, Input, Select, Textarea } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { message } from '../../shared/api/client.js';
 import {
@@ -260,25 +260,21 @@ export function NativeEditorField({
     <label>
       {t(label)}
       {choices ? (
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-        >
+        <Select value={value} disabled={disabled} onValueChange={onChange}>
           {choices.map((choice) => (
             <option key={choice.value} value={choice.value} disabled={choice.disabled}>
               {choice.label}
             </option>
           ))}
-        </select>
+        </Select>
       ) : multiline ? (
-        <textarea
+        <Textarea
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
         />
       ) : (
-        <input
+        <Input
           type={type}
           value={value}
           disabled={disabled}

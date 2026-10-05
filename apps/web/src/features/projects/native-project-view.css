@@ -291,3 +291,47 @@
     grid-template-rows: minmax(520px, 1fr);
   }
 }
+
+/* Keep the original inspector motion alive during both opening and closing. */
+.native-editor-inspector.inspector {
+  background: var(--bg);
+  padding: 0;
+}
+.native-editor-inspector .native-inspector-panel {
+  padding: 12px;
+}
+.native-editor-inspector .panel-list > .panel-row {
+  margin: 0;
+}
+.native-editor-inspector .panel-section .panel-section {
+  margin-top: 8px;
+}
+.native-editor-inspector .native-property-editor fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.native-editor-inspector .native-property-editor legend {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.native-editor-workspace.inspector-closed .native-editor-inspector {
+  opacity: 0;
+  visibility: hidden;
+}
+.native-project-view .project-name small {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .native-editor-workspace {
+    transition: grid-template-columns 220ms ease;
+  }
+  .native-editor-inspector {
+    transition:
+      opacity 180ms ease,
+      visibility 220ms ease;
+  }
+}

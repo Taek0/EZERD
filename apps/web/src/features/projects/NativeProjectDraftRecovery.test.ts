@@ -350,8 +350,8 @@ describe('native original-editor toolbar wiring', () => {
     (canvas().onToggleInspector as () => void)();
     expect(
       nodes(render()).find(
-        (node) => node.props.className === 'native-editor-inspector inspector-shell',
-      )?.props.hidden,
+        (node) => node.props.className === 'native-editor-inspector inspector-shell inspector',
+      )?.props.inert,
     ).toBe(true);
     expect(child(render(), NativeStructureEditor)).toBeDefined();
     (canvas().onCreate as (kind: string) => void)('enum');
