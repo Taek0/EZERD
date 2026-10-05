@@ -615,7 +615,13 @@ describe('native input registers export blockers even without a durable storage 
         onSelect() {},
       }),
     );
-    expect(exportBlocker.mock.calls).toContainEqual([userId, projectId, false, true]);
+    expect(exportBlocker.mock.calls).toContainEqual([
+      userId,
+      projectId,
+      false,
+      true,
+      'canvas:canvas:action:__tables__:note:',
+    ]);
     const privateF = personalFixture();
     await expect(
       stageNativeCanvasPersonal(

@@ -1,3 +1,4 @@
+import { nativeRouteKey } from './native-route-edit.js';
 import { nativeInlineKey } from './NativeCanvasInlineEditor.js';
 import type { NativeDesignDocument } from '@ezerd/model';
 import type { NativeDraftArchiveEntry } from './native-draft-archive.js';
@@ -96,6 +97,15 @@ export function nativeDraftRecoveryTarget(
               personal: false,
             };
         }
+  for (const viewId of views)
+    for (const relation of doc.tableRelations ?? []) {
+      if (key === nativeRouteKey(viewId, relation.id))
+        return {
+          kind: 'canvas',
+          selection: { viewId, routeId: relation.id },
+          personal: privateView(viewId),
+        };
+    }
   if (key === 'create:domain:project')
     return freshCreation() ? { kind: 'domain', action: 'create', personal: false } : null;
   for (const domain of doc.domains) {

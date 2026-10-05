@@ -24,6 +24,8 @@ export interface NativeCanvasSceneProps {
   selectedTableId: string | undefined;
   selectedDomainId: string | undefined;
   selectedDomainRelation: string | null;
+  selectedRelationId?: string | null | undefined;
+  onSelectRelation?: ((id: string | null) => void) | undefined;
   draftObjectId: string | undefined;
   setSelectedNode: (id: string) => void;
   setSelectedDomainRelation: (id: string) => void;
@@ -44,6 +46,8 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   selectedTableId,
   selectedDomainId,
   selectedDomainRelation,
+  selectedRelationId,
+  onSelectRelation,
   draftObjectId,
   setSelectedNode,
   setSelectedDomainRelation,
@@ -56,7 +60,12 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   const { t } = useI18n();
   return (
     <>
-      <NativeTableLines relations={drawn.relations} mode={mode} />
+      <NativeTableLines
+        relations={drawn.relations}
+        mode={mode}
+        selectedId={selectedRelationId}
+        onSelect={onSelectRelation}
+      />
       {effectiveView === 'overview' && (
         <NativeDomainLines
           document={base}
