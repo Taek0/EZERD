@@ -998,3 +998,21 @@
     animation: none;
   }
 }
+
+/* NodeLayout supplies explicit card dimensions, so skipped contents keep their
+   canvas geometry. Retain active cards for editing, focus and pointer gestures.
+   Fall back to normal rendering unless the visibility exceptions are supported. */
+@supports (content-visibility: auto) and selector(:has(input)) {
+  .native-erd-node.table {
+    content-visibility: auto;
+  }
+  .native-erd-node.table:is([data-selected='true'], [data-preview='true'], :focus-within, :active),
+  .native-erd-node.table:has(
+      input:not([type='checkbox']),
+      textarea,
+      [contenteditable='true'],
+      [data-dirty='true']
+    ) {
+    content-visibility: visible;
+  }
+}
