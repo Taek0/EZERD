@@ -17,6 +17,10 @@ describe('native PNG uses semantic source and common geometry', () => {
     expect(output.svg).not.toContain('<script>');
     expect(output.svg).toContain('stroke="#123456"');
     expect(output.svg).toContain('NOT NULL');
+    expect(output.svg).toContain('native-png-header');
+    expect(output.svg).toContain('height="50" fill="#123456"');
+    expect(output.svg).toContain('native-png-crow-0-many');
+    expect(output.svg).toContain('clip-path=');
     source.layout.viewports = [{ viewId: '__tables__', x: 1e7, y: -1e7, zoom: 4 }];
     expect(
       nativeCanvasSvg(source, nativeCanvasScene(source, '__tables__', 'physical'), 'physical'),
