@@ -1,4 +1,6 @@
+import { NativeCanvasInlineEditor, type NativeInlineTarget } from './NativeCanvasInlineEditor.js';
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -586,6 +588,12 @@ export function NativeERDCanvas({
   useEffect(() => {
     if (selectedDomainId && !draftRef.current && !gesture.current) setViewId('overview');
   }, [selectedDomainId]);
+  const [inlineTarget, setInlineTarget] = useState<NativeInlineTarget | null>(null);
+  const closeInline = useCallback(() => setInlineTarget(null), []);
+  useEffect(
+    () => setInlineTarget(recoverySelection?.inline ?? null),
+    [userId, snapshot.project.id, recoverySelection?.inline],
+  );
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
@@ -947,6 +955,10 @@ export function NativeERDCanvas({
     gesture.current = { node, x: event.clientX, y: event.clientY, pointerId: event.pointerId };
     setSelectedNode(node.id);
   }
+  const inlineContext = useMemo(
+    () => ({ userId: userId ?? '', snapshot, busy: allBusy || !!draft || !editable, onSave }),
+    [userId, snapshot, allBusy, draft, editable, onSave],
+  );
   const sceneActions = useRef<NativeSceneActions>({
     zoom: camera.zoom,
     begin,
@@ -1247,8 +1259,18 @@ export function NativeERDCanvas({
             onSelectDomain={onSelectDomain}
             gesture={gesture}
             actions={sceneActions}
+            onEdit={userId && editable ? setInlineTarget : undefined}
           />
         </div>
+        {inlineTarget && userId && (
+          <NativeCanvasInlineEditor
+            key={`${userId}:${snapshot.project.id}`}
+            document={sharedSource}
+            target={inlineTarget}
+            context={inlineContext}
+            onClose={closeInline}
+          />
+        )}
         {!drawn.nodes.length && (
           <p className="native-erd-empty">{t('이 화면에 표시할 노드가 없습니다.')}</p>
         )}

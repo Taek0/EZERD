@@ -1,3 +1,4 @@
+import type { NativeInlineTarget } from './NativeCanvasInlineEditor.js';
 import { memo, type PointerEvent, type RefObject } from 'react';
 import type { NativeDesignDocument, NodeLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
@@ -30,6 +31,7 @@ export interface NativeCanvasSceneProps {
   onSelectDomain: ((domainId: string) => void) | undefined;
   gesture: RefObject<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>;
   actions: RefObject<NativeSceneActions>;
+  onEdit?: ((target: NativeInlineTarget) => void) | undefined;
 }
 /** Camera state lives outside this subtree. Refs are read only by event handlers. */
 export const NativeCanvasScene = memo(function NativeCanvasScene({
@@ -49,6 +51,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   onSelectDomain,
   gesture,
   actions,
+  onEdit,
 }: NativeCanvasSceneProps) {
   const { t } = useI18n();
   return (
@@ -141,6 +144,10 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                   node.y + delta[1]! * step,
                 );
               }
+              if (event.key === 'F2' && table && onEdit) {
+                event.preventDefault();
+                onEdit({ tableId: table.id, mode, field: 'name' });
+              }
               if (event.key === 'Enter') {
                 event.preventDefault();
                 if (draftObjectId === node.objectId) void actions.current.savePlacement();
@@ -158,7 +165,19 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               }
             >
               {table ? (
-                <button type="button" onClick={() => onSelect(table.id)}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(table.id)}
+                  onDoubleClick={() => onEdit?.({ tableId: table.id, mode, field: 'name' })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'F2' && onEdit) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onEdit({ tableId: table.id, mode, field: 'name' });
+                    }
+                  }}
+                  title={onEdit ? t('더블클릭 또는 F2로 편집') : undefined}
+                >
                   {title || t('이름 없는 테이블')}
                 </button>
               ) : domain ? (
@@ -193,6 +212,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                     table={table}
                     mode={mode}
                     onSelect={onSelect}
+                    onEdit={onEdit}
                   />
                 </table>
               </>
