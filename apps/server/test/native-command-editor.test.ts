@@ -336,3 +336,33 @@ describe('native editor candidate and MCP ordering', () => {
     );
   });
 });
+
+describe('native column order command', () => {
+  it('reorders the entire table including hidden scope columns while preserving other tables and opaque values', () => {
+    const source = fixture();
+    const first = source.columns![0]!;
+    source.columns = [
+      first,
+      { ...structuredClone(first), id: 'foreign', tableId: 'other' },
+      { ...structuredClone(first), id: 'second', scope: 'logical' },
+    ];
+    const before = structuredClone(source);
+    const next = nativeEditorCandidate(source, [
+      { type: 'reorder_columns', tableId: 't', columnIds: ['second', 'c'] },
+    ]);
+    expect(next.columns?.map((column) => column.id)).toEqual(['second', 'foreign', 'c']);
+    expect(next.columns![0]).toEqual(before.columns![2]);
+    expect(next.columns![1]).toEqual(before.columns![1]);
+    expect(source).toEqual(before);
+  });
+  it.each([['c'], ['c', 'c'], ['c', 'foreign']])(
+    'rejects partial, duplicate or foreign orders: %j',
+    (...columnIds) => {
+      const source = fixture();
+      source.columns!.push({ ...structuredClone(source.columns![0]!), id: 'second' });
+      expect(() =>
+        nativeEditorCandidate(source, [{ type: 'reorder_columns', tableId: 't', columnIds }]),
+      ).toThrow();
+    },
+  );
+});

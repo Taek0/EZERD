@@ -1,3 +1,4 @@
+import { PanelSection } from '../../shared/editor/panel.js';
 import { useEffect, useState } from 'react';
 import {
   nativeDomainRelationCommandSchema,
@@ -102,12 +103,12 @@ export function NativeDomainRelationEditor({
       label: domain.name || domain.id,
     }));
   return (
-    <details
+    <PanelSection
       className="native-property-editor"
+      title={t('새 도메인 관계')}
       open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onOpenChange={setOpen}
     >
-      <summary>{t('도메인 연결')}</summary>
       {!editable || !context ? (
         <>
           <p>{t('조회 전용')}</p>
@@ -164,7 +165,7 @@ export function NativeDomainRelationEditor({
           )}
         </>
       )}
-    </details>
+    </PanelSection>
   );
 }
 function NativeDomainRelationForm({

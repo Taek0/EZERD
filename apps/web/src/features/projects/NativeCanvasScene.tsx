@@ -31,6 +31,7 @@ export interface NativeCanvasSceneProps {
   setSelectedDomainRelation: (id: string) => void;
   onSelect: (tableId: string, columnId?: string) => void;
   onSelectDomain: ((domainId: string) => void) | undefined;
+  onAddColumn?: ((tableId: string) => void) | undefined;
   onOpenDomain?: ((domainId: string) => void) | undefined;
   gesture: RefObject<{ node: NodeLayout; x: number; y: number; pointerId: number } | null>;
   actions: RefObject<NativeSceneActions>;
@@ -55,6 +56,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   onSelect,
   onSelectDomain,
   onOpenDomain,
+  onAddColumn,
   gesture,
   actions,
   onEdit,
@@ -229,6 +231,17 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                     onEdit={onEdit}
                   />
                 </table>
+                <footer className="native-table-footer">
+                  <button
+                    type="button"
+                    aria-label={t('컬럼 추가')}
+                    disabled={!onAddColumn}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => onAddColumn?.(table.id)}
+                  >
+                    ＋
+                  </button>
+                </footer>
               </>
             )}
             {note && <p>{note.text}</p>}

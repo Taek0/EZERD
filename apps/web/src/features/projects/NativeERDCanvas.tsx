@@ -407,7 +407,7 @@ export function nativeCanvasScene(
           Math.max(
             size.height,
             table
-              ? 78 +
+              ? 112 +
                   nativeTableCanvasRows(document, table, mode).reduce(
                     (height, row) => height + row.height,
                     0,
@@ -600,7 +600,7 @@ export function NativeERDCanvas({
   inspectorOpen?: boolean;
   onToggleInspector?: () => void;
   onOpenTools?: () => void;
-  onCreate?: (kind: 'table' | 'domain' | 'enum') => void;
+  onCreate?: (kind: 'table' | 'domain' | 'enum' | 'column') => void;
   onModeChange?: (mode: 'physical' | 'logical') => void;
   onViewChange?: (id: string) => void;
   pins?: ReactNode;
@@ -669,6 +669,13 @@ export function NativeERDCanvas({
   const spacePan = useRef(false);
   const panGesture = useRef<{ pointerId: number; x: number; y: number; camera: Viewport } | null>(
     null,
+  );
+  const addColumnFromCard = useCallback(
+    (tableId: string) => {
+      onSelect(tableId);
+      onCreate?.('column');
+    },
+    [onSelect, onCreate],
   );
   const addNoteFromToolbar = useCallback(() => {
     setToolbarAction((value) => ({ action: 'note', target: '', nonce: (value?.nonce ?? 0) + 1 }));
@@ -1615,6 +1622,7 @@ export function NativeERDCanvas({
               gesture={gesture}
               actions={sceneActions}
               onOpenDomain={navigateView}
+              onAddColumn={editable ? addColumnFromCard : undefined}
               onEdit={userId && editable ? openInline : undefined}
             />
           </div>

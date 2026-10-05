@@ -67,6 +67,7 @@ export const applyNativeProjectChangesMetadataSchema = z.strictObject({
             'patch_domain_relation',
             'delete_domain_relation',
             'paste_native_clipboard',
+            'reorder_columns',
             'patch_column',
             'patch_table',
             'add_column',
@@ -241,6 +242,22 @@ export function nativeEditorCandidate(
           (route) => route.relationId !== command.relationId || route.viewId !== command.viewId,
         );
         break;
+      case 'reorder_columns': {
+        const columns = candidate.columns ?? [];
+        const owned = columns.filter((column) => column.tableId === command.tableId);
+        const byId = new Map(owned.map((column) => [column.id, column]));
+        if (
+          !candidate.tables?.some((table) => table.id === command.tableId) ||
+          owned.length !== command.columnIds.length ||
+          command.columnIds.some((id) => !byId.has(id))
+        )
+          throw new Error('column.order-invalid');
+        let index = 0;
+        candidate.columns = columns.map((column) =>
+          column.tableId === command.tableId ? byId.get(command.columnIds[index++]!)! : column,
+        );
+        break;
+      }
       case 'patch_column':
         candidate = updateNativeColumn(candidate, command.id, command.patch);
         break;
