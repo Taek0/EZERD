@@ -1,5 +1,16 @@
-import { memo } from 'react';
-import { nativeEditorCommandSchema } from '@ezerd/contracts';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import {
+  nativeInlineKey,
+  nativeInlineInput,
+  nativeInlineCommand,
+  type NativeInlineTarget,
+} from './native-inline-edit.js';
+export {
+  nativeInlineKey,
+  nativeInlineInput,
+  nativeInlineCommand,
+  type NativeInlineTarget,
+} from './native-inline-edit.js';
 import type { NativeDesignDocument } from '@ezerd/model';
 import {
   NativeEditorField,
@@ -18,61 +29,6 @@ registerTranslations({
   '의미 타입': 'Semantic type',
   필수: 'Required',
 });
-export interface NativeInlineTarget {
-  tableId: string;
-  columnId?: string;
-  mode: 'physical' | 'logical';
-  field: 'name' | 'comment' | 'semanticType' | 'required' | 'format';
-}
-export const nativeInlineKey = (target: NativeInlineTarget) =>
-  `canvas:inline:${JSON.stringify([target.tableId, target.columnId ?? '', target.mode, target.field])}`;
-export function nativeInlineInput(document: NativeDesignDocument, target: NativeInlineTarget) {
-  const table = document.tables?.find((t) => t.id === target.tableId);
-  const column = target.columnId
-    ? document.columns?.find((c) => c.id === target.columnId && c.tableId === target.tableId)
-    : undefined;
-  if (!table || (target.columnId && !column)) throw Error('document.object-not-found');
-  const item = column ?? table;
-  const value =
-    target.field === 'name'
-      ? item[target.mode].name
-      : target.field === 'comment'
-        ? target.mode === 'physical'
-          ? item.physical.comment
-          : item.logical.definition
-        : target.field === 'semanticType'
-          ? (column?.logical.semanticType ?? '')
-          : target.field === 'required'
-            ? String(column?.logical.required ?? false)
-            : '';
-  return { table, column, value };
-}
-export function nativeInlineCommand(
-  document: NativeDesignDocument,
-  target: NativeInlineTarget,
-  value: string,
-) {
-  const { column, table } = nativeInlineInput(document, target);
-  if (target.field === 'format') throw Error('native.inline-format-required');
-  if (
-    (target.field === 'semanticType' || target.field === 'required') &&
-    (!column || target.mode !== 'logical')
-  )
-    throw Error('native.inline-field-invalid');
-  if (target.field === 'required' && !['true', 'false'].includes(value))
-    throw Error('native.inline-value-invalid');
-  const field =
-    target.field === 'comment'
-      ? target.mode === 'physical'
-        ? 'comment'
-        : 'definition'
-      : target.field;
-  return nativeEditorCommandSchema.parse({
-    type: column ? 'patch_column' : 'patch_table',
-    id: column?.id ?? table.id,
-    patch: { [target.mode]: { [field]: target.field === 'required' ? value === 'true' : value } },
-  });
-}
 export const NativeCanvasInlineEditor = memo(function NativeCanvasInlineEditor({
   document,
   target,
@@ -85,6 +41,30 @@ export const NativeCanvasInlineEditor = memo(function NativeCanvasInlineEditor({
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const active = useRef(true),
+    targetKey = nativeInlineKey(target),
+    latest = useRef(targetKey);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    latest.current = targetKey;
+  }, [targetKey]);
+  const saveContext = useMemo(
+    () => ({
+      ...context,
+      onSave: async (...args: Parameters<NativeEditorContext['onSave']>) => {
+        const saved = await context.onSave(...args);
+        if (saved && active.current && latest.current === targetKey) onClose();
+        return saved;
+      },
+    }),
+    [context, onClose, targetKey],
+  );
+
   const table = document.tables?.find((item) => item.id === target.tableId);
   const column = target.columnId
     ? document.columns?.find(
@@ -96,6 +76,7 @@ export const NativeCanvasInlineEditor = memo(function NativeCanvasInlineEditor({
   return (
     <aside
       className="native-inline-editor"
+      onWheel={(event) => event.stopPropagation()}
       role="dialog"
       aria-label={t('캔버스에서 편집')}
       onKeyDown={(event) => {
@@ -116,12 +97,12 @@ export const NativeCanvasInlineEditor = memo(function NativeCanvasInlineEditor({
           document={document}
           table={table}
           {...(column ? { column } : {})}
-          context={context}
+          context={saveContext}
         />
       ) : (
         <NativeEditorForm
           key={nativeInlineKey(target)}
-          context={context}
+          context={saveContext}
           draftKey={nativeInlineKey(target)}
           title={t('캔버스에서 편집')}
           initial={{ value: input.value }}
