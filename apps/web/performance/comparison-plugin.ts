@@ -10,8 +10,26 @@ export function comparisonPlugin(controlPath: string): Plugin {
       if (path.endsWith('/features/projects/NativeERDCanvas.tsx')) {
         const marker = 'onEdit={userId && editable ? openInline : undefined}';
         if (!source.includes(marker)) this.error('Missing native editable-presentation target');
+        const contextMarker = 'userId && editable ? { editorContext: inlineContext } : {}';
+        const contextValue =
+          "userId: userId ?? '', snapshot, busy: allBusy || !!draft || !editable, onSave";
+        if (!source.includes(contextMarker) || !source.includes(contextValue))
+          this.error('Missing native inline context measurement target');
+        const native = source
+          .replace(
+            marker,
+            "onEdit={__nativeComparison.variant === 'editable-presentation' ? openInline : userId && editable ? openInline : undefined}",
+          )
+          .replace(
+            contextMarker,
+            "userId && editable || __nativeComparison.variant === 'editable-presentation' ? { editorContext: inlineContext } : {}",
+          )
+          .replace(
+            contextValue,
+            "userId: userId ?? '90000000-0000-4000-8000-000000000090', snapshot, busy: __nativeComparison.variant === 'editable-presentation' ? false : allBusy || !!draft || !editable, onSave",
+          );
         return {
-          code: `import { comparisonControl as __nativeComparison } from ${JSON.stringify(controlPath)};\n${source.replace(marker, "onEdit={__nativeComparison.variant === 'editable-presentation' ? openInline : userId && editable ? openInline : undefined}")}`,
+          code: `import { comparisonControl as __nativeComparison } from ${JSON.stringify(controlPath)};\n${native}`,
           map: null,
         };
       }
