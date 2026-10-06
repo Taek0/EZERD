@@ -14,7 +14,15 @@ import {
   nativeExpressionDisplay,
   nativeGenerationDisplay,
 } from '@ezerd/model';
-import { Button, IconButton, Input, Select, TabButton } from '../../components/ui/index.js';
+import {
+  Button,
+  Collapse,
+  DisclosureButton,
+  IconButton,
+  Input,
+  Select,
+  TabButton,
+} from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import './native-project-view.css';
 import { PanelSection, PanelList, PanelRow, PanelListDetail } from '../../shared/editor/panel.js';
@@ -176,6 +184,7 @@ export function NativeProjectView({
     setOperationState((current) => ({ ...current, pendingBlocked: value }));
   const [saveError, setSaveError] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [issuesOpen, setIssuesOpen] = useState(true);
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [recoveryEpoch, setRecoveryEpoch] = useState(0);
   const [recoveredInput, setRecoveredInput] = useState<{
@@ -2273,28 +2282,38 @@ export function NativeProjectView({
                     {snapshot.native.status === 'available' &&
                       snapshot.native.issues.length > 0 && (
                         <section className="native-issues" aria-label={t('설계 확인 항목')}>
-                          <h3>{t('설계 확인 항목')}</h3>
-                          <ul>
-                            {snapshot.native.issues.map((issue, index) => (
-                              <li key={`${issue.code}-${index}`}>
-                                <button type="button" onClick={() => focusIssue(issue.objectId)}>
-                                  {issue.objectId &&
-                                  doc.tables?.some((table) => table.id === issue.objectId)
-                                    ? `${tableName(issue.objectId)}: `
-                                    : ''}
-                                  {t(
-                                    issue.code.startsWith('legacy.')
-                                      ? '기존 타입 또는 기본값을 확인해 주세요.'
-                                      : issue.category === 'incomplete'
-                                        ? '물리 설계를 완성해 주세요.'
-                                        : issue.category === 'unsupported'
-                                          ? '지원하지 않는 설정입니다.'
-                                          : '설정이나 연결 대상을 확인해 주세요.',
-                                  )}
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
+                          <h3>
+                            <DisclosureButton
+                              expanded={issuesOpen}
+                              controls="native-issues-list"
+                              onClick={() => setIssuesOpen((open) => !open)}
+                            >
+                              {t('설계 확인 항목')} · {snapshot.native.issues.length}
+                            </DisclosureButton>
+                          </h3>
+                          <Collapse open={issuesOpen} id="native-issues-list">
+                            <ul>
+                              {snapshot.native.issues.map((issue, index) => (
+                                <li key={`${issue.code}-${index}`}>
+                                  <button type="button" onClick={() => focusIssue(issue.objectId)}>
+                                    {issue.objectId &&
+                                    doc.tables?.some((table) => table.id === issue.objectId)
+                                      ? `${tableName(issue.objectId)}: `
+                                      : ''}
+                                    {t(
+                                      issue.code.startsWith('legacy.')
+                                        ? '기존 타입 또는 기본값을 확인해 주세요.'
+                                        : issue.category === 'incomplete'
+                                          ? '물리 설계를 완성해 주세요.'
+                                          : issue.category === 'unsupported'
+                                            ? '지원하지 않는 설정입니다.'
+                                            : '설정이나 연결 대상을 확인해 주세요.',
+                                    )}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </Collapse>
                         </section>
                       )}
                   </section>
