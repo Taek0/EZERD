@@ -18,6 +18,7 @@ import '../src/styles/editor-feedback.css';
 import './panels.css';
 declare const __PERF_COMMIT__: string;
 declare const __PERF_DIRTY__: boolean;
+declare const __PANEL_BASELINE__: boolean;
 const actor = '90000000-0000-4000-8000-000000000031',
   project = '90000000-0000-4000-8000-000000000032';
 if (location.hostname !== '127.0.0.1' || location.port !== '4180')
@@ -117,6 +118,9 @@ function Demo() {
     };
   };
   async function settle() {
+    // Let React commit and CSS register transitions before checking their state.
+    await frame();
+    await frame();
     // Off-screen descendants may have suspended animations; do not await them.
     const elements = [
       ...root.current!.querySelectorAll<HTMLElement>(
@@ -190,6 +194,7 @@ function Demo() {
       active.current = true;
       collector.start({
         scenario: 'panel-transition',
+        implementation: __PANEL_BASELINE__ ? 'original-1745501' : 'current',
         kind,
         open,
         count,

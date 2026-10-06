@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { measurementPlugin } from './performance/instrumentation.js';
+import { panelBaselinePlugin } from './performance/panel-baseline-plugin.js';
 import { panelProfilingPlugin } from './performance/panel-profiling-plugin.js';
 import { comparisonPlugin } from './performance/comparison-plugin.js';
 
@@ -19,6 +20,7 @@ export default defineConfig(() => {
         : [],
     },
     plugins: [
+      ...(process.env.EZERD_PANEL_BASELINE === '1' ? [panelBaselinePlugin()] : []),
       ...(process.env.EZERD_PANEL_DETAIL === '1'
         ? [
             panelProfilingPlugin(
@@ -41,6 +43,7 @@ export default defineConfig(() => {
       tailwindcss(),
     ],
     define: {
+      __PANEL_BASELINE__: JSON.stringify(process.env.EZERD_PANEL_BASELINE === '1'),
       __PERF_FRAME_MODE__: JSON.stringify(frameMode),
       __PERF_DIRTY__: JSON.stringify(
         Boolean(execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()),
