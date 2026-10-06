@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
+import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
 import { PanelSection, PanelList, PanelRow } from '../../shared/editor/panel.js';
 import type { NativeDesignDocument, NativeTable, NativeIndex } from '@ezerd/model';
 import { Button } from '../../components/ui/index.js';
@@ -431,21 +432,35 @@ export function NativeAdvancedExpressionForm({
   );
 }
 /** A separate bounded editor; the caller supplies the same durable context as the existing forms. */
-export function NativeAdvancedEditor({
-  context,
-  document,
-  table,
-  readOnly = false,
-  initialSelection,
-  recoveryRevision,
-}: {
+type NativeAdvancedEditorProps = {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table: NativeTable;
   readOnly?: boolean;
   initialSelection?: string;
   recoveryRevision?: string;
-}) {
+};
+
+/** Keep mounted drafts and policy validation alive, but do not re-run the whole
+ * advanced editor when only the surrounding panel geometry changes. */
+export function NativeAdvancedEditor(props: NativeAdvancedEditorProps) {
+  const onSave = useCommittedEvent(props.context.onSave);
+  const { userId, snapshot, busy } = props.context;
+  const context = useMemo(
+    () => ({ userId, snapshot, busy, onSave }),
+    [userId, snapshot, busy, onSave],
+  );
+  return <MemoNativeAdvancedEditor {...props} context={context} />;
+}
+const MemoNativeAdvancedEditor = memo(NativeAdvancedEditorContent);
+function NativeAdvancedEditorContent({
+  context,
+  document,
+  table,
+  readOnly = false,
+  initialSelection,
+  recoveryRevision,
+}: NativeAdvancedEditorProps) {
   const { t } = useI18n();
   const [selected, setSelected] = useState(initialSelection ?? 'index:new');
   const [newCheckId] = useState(nativeDurableId);
