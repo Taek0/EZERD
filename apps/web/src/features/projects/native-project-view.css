@@ -220,6 +220,11 @@
   border-top: 1px solid var(--line);
   padding-top: 12px;
 }
+.native-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .native-issues button {
   border: 0;
   background: transparent;

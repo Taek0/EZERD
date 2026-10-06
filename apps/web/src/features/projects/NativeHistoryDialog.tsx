@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { NativeHistoryPage, ProjectDocumentState } from '@ezerd/contracts';
-import { Button } from '../../components/ui/index.js';
+import { Button, TabButton } from '../../components/ui/index.js';
 import { message } from '../../shared/api/client.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { nativeEditorExportBlocked } from './native-export-state.js';
@@ -11,6 +11,9 @@ import {
   stageNativeHistory,
   cancelNativeHistory,
   type NativeHistoryPending,
+  nativeHistoryFilters,
+  filterNativeHistory,
+  type NativeHistoryFilter,
 } from './native-history.js';
 
 registerTranslations({
@@ -29,6 +32,18 @@ registerTranslations({
     'The change was not applied. Review the latest history.',
   '요청 취소 확정': 'Confirm request cancellation',
   닫기: 'Close',
+  '히스토리 동작 필터': 'History action filter',
+  전체: 'All',
+  추가: 'Add',
+  수정: 'Edit',
+  이동: 'Move',
+  '크기 변경': 'Resize',
+  '순서 변경': 'Reorder',
+  삭제: 'Delete',
+  관계: 'Relationships',
+  '데이터베이스 변경': 'Database changes',
+  '불러온 이력에서 필터링합니다.': 'Filters apply to loaded history.',
+  '일치하는 이력이 없습니다.': 'No matching history.',
 });
 export function NativeHistoryDialog({
   userId,
@@ -52,6 +67,8 @@ export function NativeHistoryDialog({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const active = useRef(true);
+  const [filter, setFilter] = useState<NativeHistoryFilter>('all');
+  const history = filterNativeHistory(page?.history ?? [], filter);
   async function load(since = 0) {
     const next = await fetchNativeHistory(snapshot.project.id, since);
     setPage((old) =>
@@ -142,8 +159,19 @@ export function NativeHistoryDialog({
           </Button>
         </div>
       )}
+      <div className="native-history-filters" role="group" aria-label={t('히스토리 동작 필터')}>
+        {nativeHistoryFilters.map(([value, label]) => (
+          <TabButton key={value} selected={filter === value} onClick={() => setFilter(value)}>
+            {t(label)}
+          </TabButton>
+        ))}
+      </div>
+      <p role="status">
+        {t('불러온 이력에서 필터링합니다.')} {history.length} / {page?.history.length ?? 0}
+      </p>
+      {page && history.length === 0 && <p>{t('일치하는 이력이 없습니다.')}</p>}
       <ol>
-        {page?.history.map((entry) => {
+        {history.map((entry) => {
           const own = entry.result.actor.id === userId,
             native = entry.format === 'native',
             accepted = entry.result.status === 'accepted';

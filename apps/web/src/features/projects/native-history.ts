@@ -5,6 +5,7 @@ import {
   nativeSyncSnapshotSchema,
   type ProjectDocumentState,
   type NativeHistoryPending,
+  type NativeHistoryPage,
 } from '@ezerd/contracts';
 import { body, request } from '../../shared/api/client.js';
 import { assertNativeExportReady, assertNativeLocalInputsReady } from './project-ddl-export.js';
@@ -21,6 +22,56 @@ type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem' | '
 const key = (actor: string, project: string) =>
   `ezerd.native.history:${JSON.stringify([actor, project])}`;
 export type { NativeHistoryPending };
+
+export const nativeHistoryFilters = [
+  ['all', '전체'],
+  ['add', '추가'],
+  ['edit', '수정'],
+  ['move', '이동'],
+  ['resize', '크기 변경'],
+  ['reorder', '순서 변경'],
+  ['delete', '삭제'],
+  ['relation', '관계'],
+  ['database', '데이터베이스 변경'],
+] as const;
+export type NativeHistoryFilter = (typeof nativeHistoryFilters)[number][0];
+type HistoryEntry = NativeHistoryPage['history'][number];
+
+export function nativeHistoryKinds(entry: Pick<HistoryEntry, 'changes'>): Set<NativeHistoryFilter> {
+  const kinds = new Set<NativeHistoryFilter>();
+  for (const change of entry.changes) {
+    const path = change.path.replace(/^\/layout(?=\/)/, '');
+    if (/^\/(tableRelations|domainRelations)(\/|$)/.test(path)) kinds.add('relation');
+    if (/^\/database(\/|$)/.test(path)) kinds.add('database');
+    if (/\/@move\//.test(path)) kinds.add('reorder');
+    else if (/^\/nodes\/[^/]+\/position(\/|$)/.test(path)) kinds.add('move');
+    else if (/^\/nodes\/[^/]+\/size(\/|$)/.test(path)) kinds.add('resize');
+    else if (
+      /^\/(tables|columns|keys|indexes|checks|enums|views|domains|tableRelations|domainRelations|notes|nodes)\/[^/]+$/.test(
+        path,
+      ) &&
+      (change.afterExists === false || (change.after === null && change.before !== null))
+    )
+      kinds.add('delete');
+    else if (
+      /^\/(tables|columns|keys|indexes|checks|enums|views|domains|tableRelations|domainRelations|notes|nodes)\/[^/]+$/.test(
+        path,
+      ) &&
+      (change.beforeExists === false || (change.before === null && change.after !== null))
+    )
+      kinds.add('add');
+    else kinds.add('edit');
+  }
+  return kinds;
+}
+
+/** Match whole operations so compensation always refers to their complete changes. */
+export function filterNativeHistory<T extends Pick<HistoryEntry, 'changes'>>(
+  history: readonly T[],
+  filter: NativeHistoryFilter,
+): T[] {
+  return history.filter((entry) => filter === 'all' || nativeHistoryKinds(entry).has(filter));
+}
 function loadLegacyHistoryPending(
   userId: string,
   projectId: string,
