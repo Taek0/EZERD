@@ -1,3 +1,4 @@
+import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
 import type { CommentContext } from '../comments/CommentsPanel.js';
 import { pinPosition, reviewCanvasView, type ReviewTarget } from '../comments/comments-state.js';
 import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
@@ -582,31 +583,31 @@ function NativeCanvasWorkspace({
   personalEditable = editable,
   busy,
   recoveryBusy = busy,
-  onSave,
-  onReload,
+  onSave: onSaveFromParent,
+  onReload: onReloadFromParent,
   mode,
   selectedTableId,
   selectedDomainId,
-  onSelect,
-  onSelectDomain,
+  onSelect: onSelectFromParent,
+  onSelectDomain: onSelectDomainFromParent,
   recoverySelection,
   inspectorHost,
   inspectorOpen,
-  onToggleInspector,
-  onOpenTools,
-  onCreate,
-  onModeChange,
-  onViewChange,
+  onToggleInspector: onToggleInspectorFromParent,
+  onOpenTools: onOpenToolsFromParent,
+  onCreate: onCreateFromParent,
+  onModeChange: onModeChangeFromParent,
+  onViewChange: onViewChangeFromParent,
   pins,
-  onReviewContext,
+  onReviewContext: onReviewContextFromParent,
   pinMode = false,
-  onCreatePin,
+  onCreatePin: onCreatePinFromParent,
   reviewFocus,
-  onRequestStructure,
-  onRequestAction,
+  onRequestStructure: onRequestStructureFromParent,
+  onRequestAction: onRequestActionFromParent,
   selectedColumnId,
   requestedView,
-  onCanvasScopeChange,
+  onCanvasScopeChange: onCanvasScopeChangeFromParent,
   renderExportActions,
   toolbarHost,
   pathHost,
@@ -667,6 +668,22 @@ function NativeCanvasWorkspace({
   panelToggle?: ReactNode;
   selectionHost?: HTMLElement | null;
 }) {
+  // Parent panel/resize state must not invalidate the memoized document scene.
+  // Event handlers still observe the latest committed permissions and save baseline.
+  const onSave = useCommittedEvent(onSaveFromParent);
+  const onReload = useCommittedEvent(onReloadFromParent);
+  const onSelect = useCommittedEvent(onSelectFromParent);
+  const onSelectDomain = useCommittedEvent(onSelectDomainFromParent);
+  const onToggleInspector = useCommittedEvent(onToggleInspectorFromParent);
+  const onOpenTools = useCommittedEvent(onOpenToolsFromParent);
+  const onCreate = useCommittedEvent(onCreateFromParent);
+  const onModeChange = useCommittedEvent(onModeChangeFromParent);
+  const onViewChange = useCommittedEvent(onViewChangeFromParent);
+  const onReviewContext = useCommittedEvent(onReviewContextFromParent);
+  const onCreatePin = useCommittedEvent(onCreatePinFromParent);
+  const onRequestStructure = useCommittedEvent(onRequestStructureFromParent);
+  const onRequestAction = useCommittedEvent(onRequestActionFromParent);
+  const onCanvasScopeChange = useCommittedEvent(onCanvasScopeChangeFromParent);
   const { t, locale } = useI18n();
   const confirm = useConfirm();
   const [descriptionId, setDescriptionId] = useState<string | null>(
