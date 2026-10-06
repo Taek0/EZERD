@@ -589,9 +589,10 @@ function NativeCanvasWorkspace({
   onSelectDomain: onSelectDomainFromParent,
   recoverySelection,
   inspectorHost,
+  recoveryOpen = false,
   inspectorOpen,
   onToggleInspector: onToggleInspectorFromParent,
-  onOpenTools: onOpenToolsFromParent,
+  onOpenRecovery: onOpenRecoveryFromParent,
   onCreate: onCreateFromParent,
   onModeChange: onModeChangeFromParent,
   onViewChange: onViewChangeFromParent,
@@ -629,9 +630,10 @@ function NativeCanvasWorkspace({
   onSelectDomain?: (domainId: string) => void;
   recoverySelection?: NativeCanvasRecoverySelection;
   inspectorHost?: HTMLElement | null;
+  recoveryOpen?: boolean;
   inspectorOpen?: boolean;
   onToggleInspector?: () => void;
-  onOpenTools?: () => void;
+  onOpenRecovery?: () => void;
   onCreate?: (kind: 'table' | 'domain' | 'enum' | 'column') => void;
   onModeChange?: (mode: 'physical' | 'logical') => void;
   onViewChange?: (id: string) => void;
@@ -672,7 +674,7 @@ function NativeCanvasWorkspace({
   const onSelect = useCommittedEvent(onSelectFromParent);
   const onSelectDomain = useCommittedEvent(onSelectDomainFromParent);
   const onToggleInspector = useCommittedEvent(onToggleInspectorFromParent);
-  const onOpenTools = useCommittedEvent(onOpenToolsFromParent);
+  const onOpenRecovery = useCommittedEvent(onOpenRecoveryFromParent);
   const onCreate = useCommittedEvent(onCreateFromParent);
   const onModeChange = useCommittedEvent(onModeChangeFromParent);
   const onViewChange = useCommittedEvent(onViewChangeFromParent);
@@ -1683,6 +1685,7 @@ function NativeCanvasWorkspace({
     try {
       let command: CanvasCommand;
       if (connection.kind === 'domain') {
+        if (effectiveView !== 'overview') return;
         if (!base.domains.some((d) => d.id === target) || target === connection.source) return;
         command = {
           type: 'add_domain_relation',
@@ -1912,21 +1915,24 @@ function NativeCanvasWorkspace({
   const auxiliary = (
     <>
       <div className="native-canvas-settings">
-        <MemoNativeDomainRelationEditor
-          document={sharedSource}
-          editable={editable}
-          {...(recoverySelection?.domainRelation
-            ? {
-                initialAction: recoverySelection.domainRelation.action,
-                ...(recoverySelection.domainRelation.id
-                  ? { selectedId: recoverySelection.domainRelation.id }
-                  : {}),
-              }
-            : selectedDomainRelation
-              ? { selectedId: selectedDomainRelation }
-              : {})}
-          {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
-        />
+        {(inspectorHost === undefined || recoverySelection?.domainRelation) && (
+          <MemoNativeDomainRelationEditor
+            allowCreate={effectiveView === 'overview'}
+            document={sharedSource}
+            editable={editable}
+            {...(recoverySelection?.domainRelation
+              ? {
+                  initialAction: recoverySelection.domainRelation.action,
+                  ...(recoverySelection.domainRelation.id
+                    ? { selectedId: recoverySelection.domainRelation.id }
+                    : {}),
+                }
+              : selectedDomainRelation
+                ? { selectedId: selectedDomainRelation }
+                : {})}
+            {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
+          />
+        )}
         <MemoNativeCanvasStyleEditor
           document={sharedSource}
           editable={editable}
@@ -2076,7 +2082,7 @@ function NativeCanvasWorkspace({
         )
       }
       onOpenEnums={() => onRequestAction?.('enums', '')}
-      onTools={onOpenTools}
+      onOpenRecovery={onOpenRecoveryFromParent ? onOpenRecovery : undefined}
       editable={editable}
       noteEditable={placementEditable}
       disabled={personalBusy || !!draft}
@@ -2109,7 +2115,9 @@ function NativeCanvasWorkspace({
         : toolbarHost
           ? createPortal(toolbar, toolbarHost)
           : null}
-      {error && <p role="alert">{error}</p>}
+      {error && (recoveryOpen || error !== t('미저장 배치가 있습니다.')) && (
+        <p role="alert">{error}</p>
+      )}
       {personalEditable && !personalReady && (
         <p role="status">
           {t(
@@ -2122,7 +2130,7 @@ function NativeCanvasWorkspace({
         <p>{t('공유 도메인 화면은 공유 테이블 배치를 사용합니다.')}</p>
       )}
 
-      {draft && (
+      {draft && (recoveryOpen || stale) && (
         <div role="status">
           <p>
             {t(
@@ -2982,7 +2990,9 @@ function NativeCanvasWorkspace({
                       },
                     ]
                   : []),
-                ...(menu.source && base.domains.some((d) => d.id === menu.source)
+                ...(effectiveView === 'overview' &&
+                menu.source &&
+                base.domains.some((d) => d.id === menu.source)
                   ? [
                       {
                         id: 'direct-relation',

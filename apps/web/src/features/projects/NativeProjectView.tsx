@@ -77,7 +77,7 @@ registerTranslations({
   '설계 조회': 'Design overview',
   속성: 'Properties',
   도메인: 'Domains',
-  도구: 'Tools',
+  '프로젝트 정보': 'Project information',
   '속성 패널': 'Inspector',
   '속성 패널 너비': 'Inspector width',
   '조회 전용': 'Read only',
@@ -198,7 +198,7 @@ export function NativeProjectView({
       return true;
     }
   });
-  const [inspectorTab, setInspectorTab] = useState<'properties' | 'tables' | 'domains' | 'tools'>(
+  const [inspectorTab, setInspectorTab] = useState<'properties' | 'tables' | 'domains'>(
     'properties',
   );
   const [inspectorWidth, setInspectorWidth] = useState(() => {
@@ -279,7 +279,7 @@ export function NativeProjectView({
     setPinMode(false);
     setCommentsOpen(true);
   }
-  const [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
+  const [canvasSettingsHost, setCanvasSettingsHost] = useState<HTMLDivElement | null>(null);
   const [createRequest, setCreateRequest] = useState<{
     action: NonNullable<Parameters<typeof NativeStructureEditor>[0]['initialSelection']>['action'];
     target?: string;
@@ -364,16 +364,12 @@ export function NativeProjectView({
       return;
     }
     if (action === 'createDomainRelation') {
+      if (canvasView !== 'overview') return;
       leaveRecoveredSelection();
       setInspectorOpen(true);
       setInspectorTab('domains');
       setSelectedDomainRelation(null);
       setDomainRelationCreation(target);
-      return;
-    }
-    if (action === 'tools') {
-      setInspectorOpen(true);
-      setInspectorTab('tools');
       return;
     }
     if (action === 'domain') {
@@ -447,6 +443,9 @@ export function NativeProjectView({
     if (!canRecoverDraft(input)) throw Error('native.draft-recovery-unavailable');
     const target = nativeDraftRecoveryTarget(activeDocument.current, input)!;
     setRecoveredInput({ entry: input, generation });
+    if (target.kind === 'canvas' && target.selection.domainRelation?.action === 'create') {
+      setRequestedView((previous) => ({ id: 'overview', nonce: (previous?.nonce ?? 0) + 1 }));
+    }
     setRecoveryEpoch((value) => value + 1);
     setDomain('*');
     setSearch('');
@@ -457,9 +456,7 @@ export function NativeProjectView({
     setEditingColumn('columnId' in target ? (target.columnId ?? null) : null);
     setSelectedDomain(target.kind === 'domain' ? (target.domainId ?? null) : null);
     setInspectorOpen(true);
-    setInspectorTab(
-      target.kind === 'canvas' ? 'tools' : target.kind === 'domain' ? 'domains' : 'properties',
-    );
+    setInspectorTab(target.kind === 'domain' ? 'domains' : 'properties');
     setCreateRequest(null);
     setDomainCreation(0);
   }
@@ -706,6 +703,7 @@ export function NativeProjectView({
   function receiveCanvasScope(scope: NativeCanvasScope) {
     setCanvasScope(scope);
     setCanvasView(scope.viewId);
+    if (scope.viewId !== 'overview') setDomainRelationCreation(null);
     // Scope refreshes during saves/layout are not new picks; retain an explicitly opened relation.
     if (
       canvasScope &&
@@ -880,6 +878,19 @@ export function NativeProjectView({
           <span className="navigation-divider" aria-hidden="true" />
           <h1 title={snapshot.project.name}>{snapshot.project.name}</h1>
           <div className="editor-path-host" ref={setPathHost} />
+          <div className="native-project-context" aria-label={t('프로젝트 정보')}>
+            <span>
+              {snapshot.project.databaseKind === 'postgresql'
+                ? 'PostgreSQL'
+                : snapshot.project.databaseKind === 'mysql'
+                  ? 'MySQL'
+                  : 'SQLite'}
+            </span>
+            <span>
+              {t('목표 DB 버전')}: {profile.targetVersion}
+            </span>
+            <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
+          </div>
         </div>
         <div className="editor-toolbar-host" ref={setToolbarHost} />
         <div className="save-controls" role="group" aria-label={t('변경 기록과 동기화')}>
@@ -912,25 +923,6 @@ export function NativeProjectView({
             />
           )}
         </div>
-      </div>
-      <div className="native-project-status native-project-context">
-        <span>
-          {snapshot.project.databaseKind === 'postgresql'
-            ? 'PostgreSQL'
-            : snapshot.project.databaseKind === 'mysql'
-              ? 'MySQL'
-              : 'SQLite'}{' '}
-          · {t('목표 DB 버전')}: {profile.targetVersion}
-        </span>
-        <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
-        {userId && (
-          <Button onClick={() => setDraftRecoveryOpen((value) => !value)}>
-            {t('보관된 입력 복구')}
-          </Button>
-        )}
-        <Button onClick={onReload} disabled={busy}>
-          {t('다시 불러오기')}
-        </Button>
       </div>
       {workspaceStatus === 'archived' && (
         <div className="notice" role="status">
@@ -969,12 +961,12 @@ export function NativeProjectView({
           {saveError}
         </p>
       )}
-      {userId && (pendingBlocked || durableState === 'unknown') && (
+      {draftRecoveryOpen && userId && (pendingBlocked || durableState === 'unknown') && (
         <Button disabled={saving} onClick={() => void loadPending()}>
           {t('저장 결과 확인')}
         </Button>
       )}
-      {pending && (
+      {draftRecoveryOpen && pending && (
         <div className="notice native-pending" role="status">
           <p>{t('미확인 또는 미적용 저장 요청이 있습니다.')}</p>
           <Button onClick={() => void recover()} disabled={saving}>
@@ -1077,18 +1069,19 @@ export function NativeProjectView({
                 }
 
                 mode={mode}
-                inspectorHost={toolsHost}
+                inspectorHost={canvasSettingsHost}
                 inspectorOpen={inspectorOpen}
                 onToggleInspector={() => setInspectorOpen((value) => !value)}
-                onOpenTools={() => {
-                  setInspectorOpen(true);
-                  setInspectorTab('tools');
-                }}
+                recoveryOpen={draftRecoveryOpen}
+                {...(userId
+                  ? { onOpenRecovery: () => setDraftRecoveryOpen((value) => !value) }
+                  : {})}
                 onCreate={toolbarCreate}
                 {...{ onRequestStructure: requestStructure, onRequestAction: requestAction }}
                 onModeChange={setMode}
                 onViewChange={(id) => {
                   setCanvasView(id);
+                  setDomainRelationCreation(null);
                   setSelected(null);
                   setSelectedDomain(null);
                   setEditingColumn(null);
@@ -1255,12 +1248,6 @@ export function NativeProjectView({
                       {t('속성')}
                     </TabButton>
                     <TabButton
-                      selected={inspectorTab === 'tools'}
-                      onClick={() => setInspectorTab('tools')}
-                    >
-                      {t('도구')}
-                    </TabButton>
-                    <TabButton
                       selected={inspectorTab === 'tables'}
                       onClick={() => setInspectorTab('tables')}
                     >
@@ -1272,12 +1259,9 @@ export function NativeProjectView({
                   </div>
                 </div>
                 <div
-                  className="native-inspector-panel"
-                  role="tabpanel"
-                  id={`${snapshot.project.id}-tools`}
-                  aria-label={t('도구')}
-                  hidden={inspectorTab !== 'tools'}
-                  ref={setToolsHost}
+                  className="native-canvas-settings-host"
+                  hidden={inspectorTab === 'tables'}
+                  ref={setCanvasSettingsHost}
                 />
                 <div
                   className="native-inspector-panel"
@@ -1329,18 +1313,24 @@ export function NativeProjectView({
                       setDomainCreation(0);
                     }}
                   />
-                  <NativeDomainRelationEditor
-                    key={`domain-relation:${selectedDomainRelation ?? ''}:create:${domainRelationCreation ?? ''}`}
-                    document={doc}
-                    editable={editable}
-                    {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
-                    {...(domainRelationCreation
-                      ? { initialAction: 'create' as const, sourceDomainId: domainRelationCreation }
-                      : {})}
-                    {...(userId
-                      ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
-                      : {})}
-                  />
+                  {(canvasView === 'overview' || selectedDomainRelation) && (
+                    <NativeDomainRelationEditor
+                      allowCreate={canvasView === 'overview'}
+                      key={`domain-relation:${selectedDomainRelation ?? ''}:create:${domainRelationCreation ?? ''}`}
+                      document={doc}
+                      editable={editable}
+                      {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
+                      {...(domainRelationCreation
+                        ? {
+                            initialAction: 'create' as const,
+                            sourceDomainId: domainRelationCreation,
+                          }
+                        : {})}
+                      {...(userId
+                        ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
+                        : {})}
+                    />
+                  )}
                   <div
                     ref={setDomainSelectionHost}
                     className="native-selection-host"
@@ -1352,12 +1342,14 @@ export function NativeProjectView({
                         <Button onClick={() => openDomain(selectedDomain)}>
                           {t('도메인 열기')}
                         </Button>
-                        <Button
-                          disabled={!editable || editorBusy}
-                          onClick={() => requestAction('createDomainRelation', selectedDomain)}
-                        >
-                          {t('+ 도메인 관계')}
-                        </Button>
+                        {canvasView === 'overview' && (
+                          <Button
+                            disabled={!editable || editorBusy}
+                            onClick={() => requestAction('createDomainRelation', selectedDomain)}
+                          >
+                            {t('+ 도메인 관계')}
+                          </Button>
+                        )}
                       </div>
                       <PanelSection
                         title={t('연결된 도메인 관계')}
@@ -1515,7 +1507,7 @@ export function NativeProjectView({
                           ? filteredDomainRelations.length
                           : filteredTableRelations.length
                       }
-                      defaultOpen={canvasView === 'overview'}
+                      defaultOpen={false}
                     >
                       <PanelList empty={t('표시할 관계가 없습니다.')}>
                         {canvasView === 'overview'

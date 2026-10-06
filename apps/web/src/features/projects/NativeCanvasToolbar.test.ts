@@ -73,3 +73,30 @@ describe('native canvas chrome', () => {
     },
   );
 });
+
+it.each(['ko', 'en'] as const)(
+  'keeps recovery menu reachable while writes are blocked in %s',
+  (locale) => {
+    setLocale(locale);
+    const html = renderToStaticMarkup(
+      createElement(NativeCanvasToolbar, {
+        viewId: '__tables__',
+        views: [],
+        onView() {},
+        onNote() {},
+        onOpenRecovery() {},
+        editable: true,
+        noteEditable: true,
+        disabled: true,
+        mode: 'physical',
+      }),
+    );
+    const more = html.match(
+      new RegExp('<button[^>]*aria-label="' + (locale === 'ko' ? '더 보기' : 'More') + '"[^>]*>'),
+    )?.[0];
+    expect(more).toBeDefined();
+    expect(more).not.toContain('disabled');
+    expect(html).not.toContain(locale === 'ko' ? '보관된 입력 복구' : 'Recover preserved input');
+    setLocale('ko');
+  },
+);

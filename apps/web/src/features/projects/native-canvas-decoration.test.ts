@@ -141,8 +141,9 @@ describe('native common style/domain relation UI and geometry', () => {
         onReload() {},
       }),
     );
-    for (const text of ['PNG 내보내기', '카드 표시', '새 도메인 관계', 'ORIGINAL_TYPE', 'NOT NULL'])
+    for (const text of ['PNG 내보내기', '카드 표시', '도메인 관계', 'ORIGINAL_TYPE', 'NOT NULL'])
       expect(html).toContain(text);
+    expect(html).not.toContain('새 도메인 관계');
     expect(html).not.toContain('type="submit"');
     expect(html).toContain('border-color:#c8d0de');
     expect(html).toContain('background:#123456');

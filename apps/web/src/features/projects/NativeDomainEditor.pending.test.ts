@@ -305,6 +305,7 @@ describe('native project asynchronous pending calls', () => {
     expect(ui.canvas().props.busy).toBe(true);
     await ui.save();
     expect(io.stage).not.toHaveBeenCalled();
+    (ui.canvas().props.onOpenRecovery as () => void)();
     const retry = ui.render().find((node) => node.props.children === '저장 결과 확인')!;
     io.load.mockResolvedValue(pending(snapshot()));
     (retry.props.onClick as () => void)();
@@ -328,6 +329,7 @@ describe('native project asynchronous pending calls', () => {
     const ui = mount();
     await flush();
     io.discard.mockRejectedValue(new Error('native.pending-inflight'));
+    (ui.canvas().props.onOpenRecovery as () => void)();
     const discard = ui.render().find((node) => node.props.children === '요청 취소 확정')!;
     (discard.props.onClick as () => void)();
     await flush();

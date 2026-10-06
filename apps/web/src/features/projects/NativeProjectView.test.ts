@@ -163,3 +163,23 @@ describe('native readonly project view', () => {
     expect(html).toContain('! 확인 필요');
   });
 });
+
+it.each(['ko', 'en'] as const)(
+  'consolidates native metadata and removes obsolete chrome in %s',
+  (locale) => {
+    setLocale(locale);
+    const html = renderToStaticMarkup(
+      createElement(NativeProjectView, {
+        entry: entry(),
+        onLeave() {},
+        onReload() {},
+      }),
+    );
+    expect(html).toMatch(/class="editor-heading"[\s\S]*class="native-project-context"/);
+    expect(html).toContain(locale === 'ko' ? '목표 DB 버전' : 'Target DB version');
+    expect(html).not.toMatch(
+      /다시 불러오기|Reload|>도구<|>Tools<|미저장 배치가 있습니다|A save request is unconfirmed or unapplied/,
+    );
+    setLocale('ko');
+  },
+);

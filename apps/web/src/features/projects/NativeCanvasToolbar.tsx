@@ -6,6 +6,7 @@ import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 
 registerTranslations({
   '더 보기': 'More',
+  '보관된 입력 복구': 'Recover preserved input',
   '전체 테이블': 'All tables',
   '도메인 맵': 'Domain map',
   '편집 도구': 'Editing tools',
@@ -39,7 +40,7 @@ export interface NativeCanvasToolbarProps {
   onFilter?: ((value: NativeDomainFilterValue | null) => void) | undefined;
   onCreate?: ((kind: 'table' | 'domain' | 'enum') => void) | undefined;
   onNote: () => void;
-  onTools?: (() => void) | undefined;
+  onOpenRecovery?: (() => void) | undefined;
   onResetRoutes?: (() => void) | undefined;
   onPaste?: (() => void) | undefined;
   onExportProject?: (() => void) | undefined;
@@ -65,7 +66,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   onFilter,
   onCreate,
   onNote,
-  onTools,
+  onOpenRecovery,
   onResetRoutes,
   onPaste,
   onExportProject,
@@ -222,14 +223,14 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               />
             ))}
         </div>
-        {(onCreate || onTools || onResetRoutes || onPaste) && (
+        {(onCreate || onOpenRecovery || onResetRoutes || onPaste) && (
           <>
             <span className="toolbar-divider" aria-hidden="true" />
             <div className="toolbar-group" role="group" aria-label={t('캔버스 작업')}>
               <Dropdown
                 label={t('캔버스 작업')}
                 trigger={
-                  <IconButton aria-label={t('더 보기')} title={t('더 보기')} disabled={disabled}>
+                  <IconButton aria-label={t('더 보기')} title={t('더 보기')}>
                     ⋯
                   </IconButton>
                 }
@@ -282,7 +283,9 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
                         },
                       ]
                     : []),
-                  ...(onTools ? [{ id: 'tools', label: t('도구'), onAction: onTools }] : []),
+                  ...(onOpenRecovery
+                    ? [{ id: 'recovery', label: t('보관된 입력 복구'), onAction: onOpenRecovery }]
+                    : []),
                 ]}
               />
             </div>
