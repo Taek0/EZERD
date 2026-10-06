@@ -1,3 +1,4 @@
+import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
@@ -79,6 +80,7 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
         name: 'Engine test',
         databaseKind: 'mysql',
       });
+      await seedLegacyProject(pool, created.id);
       const updated = await service.updateProject(actorId, created.id, {
         expectedVersion: 0,
         databaseKind: 'sqlite',

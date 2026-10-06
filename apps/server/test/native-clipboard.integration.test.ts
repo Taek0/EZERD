@@ -1,3 +1,4 @@
+import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
@@ -54,6 +55,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         databaseKind: kind,
       });
       expect(created.status, JSON.stringify(created.data)).toBe(201);
+      await seedLegacyProject(pool, created.data.id);
       const id = created.data.id as string;
       const upgraded = await request(`/projects/${id}/document/upgrade`, 'POST', {
         operationId: randomUUID(),

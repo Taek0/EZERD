@@ -13,12 +13,12 @@ describe('latest gallery creation request', () => {
       });
     },
   );
-  it('preserves explicit legacy selection and blank automatic-name input', () => {
-    expect(galleryProjectCreationInput(workspaceId, '   ', 'mysql', { formatVersion: 1 })).toEqual({
+  it('preserves blank automatic-name input', () => {
+    expect(galleryProjectCreationInput(workspaceId, '   ', 'mysql', { formatVersion: 2 })).toEqual({
       workspaceId,
       name: '',
       databaseKind: 'mysql',
-      formatVersion: 1,
+      formatVersion: 2,
     });
     expect(() => galleryProjectCreationInput('other-short', 'Name', 'postgresql')).toThrow();
   });

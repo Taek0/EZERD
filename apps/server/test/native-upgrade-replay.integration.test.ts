@@ -1,3 +1,4 @@
+import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { createHash, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -43,6 +44,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('actual AppModule native upgra
       databaseKind: 'postgresql',
     });
     expect(created.status, JSON.stringify(created.data)).toBe(201);
+    await seedLegacyProject(pool, created.data.id);
     return created.data.id as string;
   };
   const inputFor = () => ({

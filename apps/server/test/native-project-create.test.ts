@@ -66,7 +66,6 @@ describe('fresh native project storage selection', () => {
         workspaceId,
         name: 'Native',
         databaseKind,
-        formatVersion: 2,
       });
       const context = defaultDatabaseContext(databaseKind);
       expect(h.stored()).toMatchObject({
@@ -102,21 +101,17 @@ describe('fresh native project storage selection', () => {
       });
     },
   );
-  it.each([undefined, 1] as const)(
-    'keeps v1 database document defaults with format %s',
-    async (formatVersion) => {
-      const h = harness();
-      await h.service.createProject(randomUUID(), {
+  it('rejects legacy creation before writing a project', async () => {
+    const h = harness();
+    await expect(
+      h.service.createProject(randomUUID(), {
         workspaceId: randomUUID(),
         name: 'Legacy',
-        ...(formatVersion ? { formatVersion } : {}),
-      });
-      expect(h.stored()).not.toHaveProperty('document');
-      expect(h.stored()).not.toHaveProperty('formatVersion');
-      expect(h.stored()).toMatchObject({
-        databaseKind: 'postgresql',
-        databaseProfileId: 'postgresql-18-v1',
-      });
-    },
-  );
+        // @ts-expect-error Check runtime callers that bypass the request schema.
+        formatVersion: 1,
+      }),
+    ).rejects.toThrow();
+    expect(h.access.runWorkspace).not.toHaveBeenCalled();
+    expect(h.values).not.toHaveBeenCalled();
+  });
 });
