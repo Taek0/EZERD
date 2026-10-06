@@ -96,7 +96,6 @@ import {
 import './NativeERDCanvas.css';
 import { useNativeExportBlocker } from './native-export-state.js';
 import { nativeDurableId } from './native-durable-queue.js';
-import { NativeClipboardMenu } from './native-clipboard.js';
 import { NativePrivateCASRecovery } from './NativePrivateCASRecovery.js';
 import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
 import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
@@ -126,14 +125,14 @@ type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
 const MemoNativeCanvasPngExport = memo(NativeCanvasPngExport);
 const MemoNativeDomainRelationEditor = memo(NativeDomainRelationEditor);
 const MemoNativeCanvasStyleEditor = memo(NativeCanvasStyleEditor);
-const MemoNativeClipboardMenu = memo(NativeClipboardMenu);
 const MemoNativeCanvasActions = memo(NativeCanvasActions);
 
 registerTranslations({
   '복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.':
     'Loading the recovery view. You can download its source from preserved input.',
   'Native ERD': 'Native ERD',
-  '공유 캔버스': 'Shared canvas',
+  '보관된 입력 복구': 'Recover saved input',
+  '자동 배치': 'Automatic layout',
   '도메인 개요': 'Domain overview',
   '개인 화면': 'Personal view',
   화면: 'View',
@@ -156,7 +155,6 @@ registerTranslations({
   '미확인 개인 저장 요청이 있습니다.': 'A personal save request is unconfirmed.',
   '개인 요청 초기화': 'Reset personal request',
   '개인 화면을 불러오는 중입니다.': 'Loading personal views.',
-  '카메라 저장': 'Save camera',
   중앙으로: 'Center view',
   확대: 'Zoom in',
   축소: 'Zoom out',
@@ -171,7 +169,6 @@ registerTranslations({
   '배치 재조회 후 비교': 'Review placement against the latest design',
   '개인 화면 저장은 아직 지원하지 않습니다. 이 프로젝트에서는 공유 캔버스를 사용해 주세요.':
     'Saving personal views is not available yet. Use the shared canvas in this project.',
-  '카메라 초기화': 'Reset camera',
   '저장된 배치가 없는 도메인입니다.': 'This domain has no saved placement.',
 });
 
@@ -794,11 +791,6 @@ function NativeCanvasWorkspace({
     [onViewChange],
   );
   const [tool, setTool] = useState<'select' | 'hand'>('select');
-  const [toolbarAction, setToolbarAction] = useState<{
-    action: string;
-    target: string;
-    nonce: number;
-  } | null>(null);
   const spacePan = useRef(false);
   const panGesture = useRef<{ pointerId: number; x: number; y: number; camera: Viewport } | null>(
     null,
@@ -810,10 +802,6 @@ function NativeCanvasWorkspace({
     },
     [onSelect, onCreate],
   );
-  const addNoteFromToolbar = useCallback(() => {
-    setToolbarAction((value) => ({ action: 'note', target: '', nonce: (value?.nonce ?? 0) + 1 }));
-    onOpenTools?.();
-  }, [onOpenTools]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
@@ -958,9 +946,6 @@ function NativeCanvasWorkspace({
     privateQueueState === 'sending' ||
     (isPrivate && (!personalReady || privateQueueState !== 'empty'));
   const inputKey = `canvas:placement:${effectiveView}`;
-  const savedCamera = personal?.state.viewports.find(
-    (viewport) => viewport.viewId === effectiveView,
-  ) ?? { viewId: effectiveView, x: 24, y: 24, zoom: 1 };
   const exportState = nativeCanvasExportBlocker(sharedSource, draft, sharedStorageFailure);
   useNativeExportBlocker(
     userId ?? '',
@@ -1927,21 +1912,6 @@ function NativeCanvasWorkspace({
   const auxiliary = (
     <>
       <div className="native-canvas-settings">
-        {' '}
-        {personalEditable && (
-          <Button
-            disabled={allBusy || !personal || !personalReady}
-            onClick={() =>
-              void savePersonalCommand({
-                type: 'set_viewport',
-                value: { ...camera, viewId: effectiveView },
-              })
-            }
-          >
-            {t('카메라 저장')}
-          </Button>
-        )}
-        <Button onClick={() => setCamera(savedCamera)}>{t('카메라 초기화')}</Button>{' '}
         <MemoNativeDomainRelationEditor
           document={sharedSource}
           editable={editable}
@@ -1965,42 +1935,29 @@ function NativeCanvasWorkspace({
           {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
           {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
         />
-        <MemoNativeClipboardMenu
-          key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
-          snapshot={snapshot}
-          {...(userId ? { userId } : {})}
-          editable={editable}
-          busy={allBusy || !!draft}
-          onSave={onSave}
-          {...(selectedTableId ? { selectedTableId } : {})}
-          destinationDomainId={
-            base.domains.some((domain) => domain.id === effectiveView) ? effectiveView : null
-          }
-        />
         {recoveryWaiting && (
           <p role="status">
             {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
           </p>
         )}
-        {userId && (editable || personalEditable) && !recoveryWaiting && (
-          <MemoNativeCanvasActions
-            key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}:${toolbarAction?.nonce ?? 0}`}
-            document={base}
-            source={sharedSource}
-            snapshot={snapshot}
-            userId={userId}
-            viewId={effectiveView}
-            busy={allBusy || !!draft || (isPrivate && !personal)}
-            onSave={saveCanvasLatest}
-            onSharedSave={onSave}
-            sharedEditable={editable}
-            {...(toolbarAction
-              ? { initialSelection: toolbarAction }
-              : recoverySelection?.action
-                ? { initialSelection: recoverySelection.action }
-                : {})}
-          />
-        )}
+        {userId &&
+          (editable || personalEditable) &&
+          !recoveryWaiting &&
+          recoverySelection?.action && (
+            <MemoNativeCanvasActions
+              key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}
+              document={base}
+              source={sharedSource}
+              snapshot={snapshot}
+              userId={userId}
+              viewId={effectiveView}
+              busy={allBusy || !!draft || (isPrivate && !personal)}
+              onSave={saveCanvasLatest}
+              onSharedSave={onSave}
+              sharedEditable={editable}
+              initialSelection={recoverySelection.action}
+            />
+          )}
       </div>
     </>
   );
@@ -2102,7 +2059,6 @@ function NativeCanvasWorkspace({
         } else void createObject(kind);
       }}
       onNote={() => void createObject('note')}
-      onAutoLayout={() => void arrangeVisibleNodes()}
       onPaste={() => void pasteFromMenu()}
       onResetRoutes={() =>
         void saveCommands(
@@ -3228,9 +3184,7 @@ function NativeCanvasActions({
   };
   return (
     <details className="native-erd-actions" open={initialSelection ? true : undefined}>
-      <summary>
-        {t('공유 캔버스')} / {t('개인 화면')}
-      </summary>
+      <summary>{t('보관된 입력 복구')}</summary>
       <NativeEditorField
         label="작업"
         value={action}
