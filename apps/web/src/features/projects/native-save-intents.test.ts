@@ -11,8 +11,9 @@ import {
   flushNativeSaveIntent,
   nativeSaveIntents,
   nativeRejectedSaveIntents,
+  lookupNativeSaveIntentResult,
 } from './native-save-intents.js';
-import { loadNativePending } from './native-save.js';
+import { checkNativeAck, loadNativePending } from './native-save.js';
 import { nativeEditorExportBlocked } from './native-export-state.js';
 beforeEach(() => vi.stubGlobal('indexedDB', createNativeTestIndexedDB()));
 afterEach(() => {
@@ -85,6 +86,95 @@ function ack(operationId: string, status = 'accepted') {
   };
 }
 describe('durable unsent native save intents', () => {
+  it('stages pre-existing unsent intents verbatim instead of changing their operation hash', async () => {
+    const store = storage(),
+      id = enqueueNativeSave(userId, snapshot(), [command], undefined, undefined, store),
+      intent = nativeSaveIntents(userId, projectId, store)[0]!;
+    // Simulate an intent persisted before enqueue normalization was introduced.
+    intent.pending.request.commands = [
+      { ...command, patch: { physical: { comment: 'older input' } } },
+      structuredClone(command),
+    ];
+    store.setItem(intent.key, JSON.stringify(intent.pending));
+    const api = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError(404, 'missing'))
+      .mockResolvedValueOnce(ack(id));
+    expect(await flushNativeSaveIntent(userId, snapshot(), store, api as typeof request)).toEqual({
+      operationId: id,
+      accepted: true,
+    });
+    expect(JSON.parse(api.mock.calls[1]![1].body as string)).toEqual(intent.pending.request);
+  });
+
+  it('stores a canonical request once and validates the same waiter payload after another tab ACKs', async () => {
+    const store = storage(),
+      commands = [{ ...command, patch: { physical: { comment: 'intermediate' } } }, command],
+      original = structuredClone(commands),
+      id = enqueueNativeSave(userId, snapshot(), commands, undefined, undefined, store),
+      waiter = nativeSaveIntents(userId, projectId, store)[0]!.pending,
+      api = vi
+        .fn()
+        .mockRejectedValueOnce(new ApiError(404, 'missing'))
+        .mockResolvedValueOnce(ack(id));
+    expect(waiter.request.commands).toEqual([command]);
+    expect(commands).toEqual(original);
+    expect(enqueueNativeSave(userId, snapshot(), [command], undefined, undefined, store)).toBe(id);
+    expect(await flushNativeSaveIntent(userId, snapshot(), store, api as typeof request)).toEqual({
+      operationId: id,
+      accepted: true,
+    });
+    expect(JSON.parse(api.mock.calls[1]![1].body as string)).toEqual(waiter.request);
+    expect(() =>
+      checkNativeAck(waiter, ack(id) as Parameters<typeof checkNativeAck>[1]),
+    ).not.toThrow();
+    expect(
+      await lookupNativeSaveIntentResult(
+        waiter,
+        vi.fn().mockResolvedValue(ack(id)) as typeof request,
+      ),
+    ).toBe(true);
+  });
+
+  it('never rewrites an already-claimed request when a later final patch is enqueued', async () => {
+    const store = storage(),
+      sent = nativeTestDeferred<unknown>(),
+      id = enqueueNativeSave(userId, snapshot(), [command], undefined, undefined, store),
+      waiter = nativeSaveIntents(userId, projectId, store)[0]!.pending,
+      api = vi
+        .fn()
+        .mockRejectedValueOnce(new ApiError(404, 'missing'))
+        .mockImplementationOnce(() => sent.promise),
+      flushing = flushNativeSaveIntent(userId, snapshot(), store, api as typeof request);
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(2));
+    const bodyBefore = api.mock.calls[1]![1].body,
+      claimedBefore = await loadNativePending(userId, projectId, store),
+      later = { ...command, patch: { physical: { comment: 'final input' } } },
+      laterId = enqueueNativeSave(
+        userId,
+        snapshot(),
+        [command, later],
+        undefined,
+        undefined,
+        store,
+      );
+    expect(laterId).not.toBe(id);
+    expect(await loadNativePending(userId, projectId, store)).toEqual(claimedBefore);
+    expect(claimedBefore).toEqual(waiter);
+    expect(api.mock.calls[1]![1].body).toBe(bodyBefore);
+    expect(JSON.parse(bodyBefore as string)).toEqual(waiter.request);
+    expect(nativeSaveIntents(userId, projectId, store)[1]!.pending.request.commands).toEqual([
+      later,
+    ]);
+    sent.resolve(ack(id));
+    expect(await flushing).toEqual({ operationId: id, accepted: true });
+    expect(
+      nativeSaveIntents(userId, projectId, store).map(
+        (intent) => intent.pending.request.operationId,
+      ),
+    ).toEqual([laterId]);
+  });
+
   it('preserves the next edit while the first request is in flight, then sends in order', async () => {
     const store = storage(),
       sent = nativeTestDeferred<unknown>();
