@@ -23,5 +23,7 @@
 ## 추가 동시성 검증
 
 - ACK 직전 unrelated snapshot에서 원복 입력이 사라지지 않도록 저장한 변경 필드가 observed snapshot에 반영되었는지 구분하여 rebase 기준을 선택한다.
-- 실제 ACK snapshot과 unrelated snapshot 양쪽을 검증했다. 최종 전용 2 파일 9 테스트 통과, web 타입 검사 통과.
+- 실제 ACK snapshot과 unrelated snapshot 양쪽을 검증했다. 최종 전용 2 파일 9 테스트 통과. 이전 web 타입 검사는 통과했으나 최종 재검사는 다른 워커의 native-clipboard-interaction.test.ts:35 및 native-continuous-editing.test.ts:58 TS2412로 실패했다. 담당 파일 오류는 보고되지 않았다.
 - 외부 busy fieldset guard 복원 커밋: bfbbea3. 최초 b0b7153은 공유 index 동시 staging으로 Canvas/SearchType 변경이 함께 포함되었다. 자동 승인 검토가 main 이력 재작성 방식의 분리를 거부하여 기존 이력은 보존했다.
+
+- ACK 구분 수정은 f8f9445에 완료했다. 오너의 커밋 중지 요청 이후 add/commit을 수행하지 않는다. 이 최종 검증 결과 정정만 미커밋 문서 변경이다.

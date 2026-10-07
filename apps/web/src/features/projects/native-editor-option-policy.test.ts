@@ -788,12 +788,12 @@ describe('native default and key UI policies without coverage promotion', () => 
     expect(loadNativeEditorDraft(draft.userId, draft.projectId, draft.key)).toEqual(draft);
     expect(f.context.onSave).not.toHaveBeenCalled();
   });
-  it('keeps fields editable while an ACK is pending without altering default/generation originals', () => {
+  it('preserves the external busy guard without altering default/generation originals', () => {
     const f = fixture('mysql');
     f.context.busy = true;
     const before = structuredClone(f.document);
     const html = renderToStaticMarkup(createElement(NativeFormatEditor, f));
-    expect(html).not.toContain('<fieldset disabled="">');
+    expect(html).toContain('<fieldset disabled="">');
     expect(f.document).toEqual(before);
     expect(f.context.onSave).not.toHaveBeenCalled();
   });
