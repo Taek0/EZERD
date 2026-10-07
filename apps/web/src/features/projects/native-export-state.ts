@@ -4,6 +4,7 @@ import {
   subscribeNativeDraftMemory,
   subscribeNativeDraftForget,
   hasNativeMemoryDrafts,
+  queueNativeDraftNotifications,
 } from './native-durable-drafts.js';
 import { getNativeDurableQueue } from './native-durable-queue.js';
 type State = { dirty: boolean; storageFailure: boolean };
@@ -11,7 +12,7 @@ const states = new Map<string, Map<symbol | string, State>>(),
   listeners = new Set<() => void>();
 const scope = (userId: string, projectId: string) => JSON.stringify([userId, projectId]);
 function notify() {
-  for (const listener of listeners) listener();
+  queueNativeDraftNotifications(listeners);
 }
 function hasUnsentIntent(userId: string, projectId: string): boolean {
   try {

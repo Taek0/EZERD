@@ -10,6 +10,23 @@ const defaultOwner = {};
 const pools = new WeakMap<object, Map<string, MemoryDraft>>();
 const listeners = new Set<() => void>();
 const forgotten = new Set<(key: string) => void>();
+let pendingNotifications = new Set<Set<() => void>>();
+/** Defer only UI subscriptions, never draft mutations or synchronous forget/ACK handling.
+ * A subscriber shared by memory and export stores receives one callback per batch. */
+export function queueNativeDraftNotifications(subscribers: Set<() => void>) {
+  const scheduled = pendingNotifications.size > 0;
+  pendingNotifications.add(subscribers);
+  if (scheduled) return;
+  queueMicrotask(() => {
+    const batch = [...pendingNotifications];
+    pendingNotifications = new Set();
+    // Snapshot before delivery: a subscription added while flushing waits for the next change.
+    const callbacks = new Set(batch.flatMap((group) => [...group]));
+    for (const listener of callbacks) {
+      if (batch.some((group) => group.has(listener))) listener();
+    }
+  });
+}
 export function subscribeNativeDraftForget(listener: (key: string) => void) {
   forgotten.add(listener);
   return () => {
@@ -41,7 +58,7 @@ function pool(storage?: NativeDraftStorage) {
   return entries;
 }
 function notify() {
-  for (const listener of listeners) listener();
+  queueNativeDraftNotifications(listeners);
 }
 export function subscribeNativeDraftMemory(listener: () => void): () => void {
   listeners.add(listener);
