@@ -90,164 +90,167 @@ export function NativeIndexOptionsEditor({
     />
   );
   return (
-    <fieldset disabled={disabled}>
-      <legend>{t('고급 인덱스 옵션')}</legend>
-      {options.database === 'postgresql' && (
-        <>
-          {field(
-            '인덱스 방식',
-            options.method,
-            (method) => change({ ...options, method: method as typeof options.method }),
-            methodChoices.map((p) => ({
-              value: p.method,
-              label: `${p.method}${p.allowed ? '' : ` · ${nativeEditorConditionText(p.code)}`}`,
-              disabled: p.method !== options.method && !p.allowed,
-            })),
-          )}
-          {field(
-            'NULL을 같은 값으로 취급',
-            options.nullsNotDistinct,
-            (v) => change({ ...options, nullsNotDistinct: v }),
-            booleanChoices.map((c) => ({
-              ...c,
-              disabled:
-                c.value !== options.nullsNotDistinct &&
-                !allowedOptions({ ...options, nullsNotDistinct: c.value }),
-            })),
-          )}
-          <fieldset>
-            <legend>{t('포함 컬럼')}</legend>
-            {options.includeColumnIds.map((id, i) => (
-              <div key={i}>
-                {field(
-                  `${i + 1}`,
-                  id,
-                  (id) =>
-                    change({
+    <>
+      {(options.database === 'postgresql' || options.database === 'mysql') &&
+        field(
+          '인덱스 방식',
+          options.database === 'postgresql' ? options.method : options.kind,
+          (method) =>
+            change(
+              options.database === 'postgresql'
+                ? { ...options, method: method as typeof options.method }
+                : { ...options, kind: method as typeof options.kind },
+            ),
+          methodChoices.map((p) => ({
+            value: p.method,
+            label: p.method + (p.allowed ? '' : ' · ' + nativeEditorConditionText(p.code)),
+            disabled:
+              p.method !== (options.database === 'postgresql' ? options.method : options.kind) &&
+              !p.allowed,
+          })),
+        )}
+      <details className="native-index-options">
+        <summary>{t('고급 인덱스 옵션')}</summary>
+        <fieldset disabled={disabled}>
+          {options.database === 'postgresql' && (
+            <>
+              {field(
+                'NULL을 같은 값으로 취급',
+                options.nullsNotDistinct,
+                (v) => change({ ...options, nullsNotDistinct: v }),
+                booleanChoices.map((c) => ({
+                  ...c,
+                  disabled:
+                    c.value !== options.nullsNotDistinct &&
+                    !allowedOptions({ ...options, nullsNotDistinct: c.value }),
+                })),
+              )}
+              <fieldset>
+                <legend>{t('포함 컬럼')}</legend>
+                {options.includeColumnIds.map((id, i) => (
+                  <div key={i}>
+                    {field(
+                      `${i + 1}`,
+                      id,
+                      (id) =>
+                        change({
+                          ...options,
+                          includeColumnIds: options.includeColumnIds.map((old, j) =>
+                            j === i ? id : old,
+                          ),
+                        }),
+                      [
+                        ...columns.map((c) => ({
+                          value: c.id,
+                          label: c.physical.name || c.logical.name || c.id,
+                          disabled: c.id !== id && options.includeColumnIds.includes(c.id),
+                        })),
+                        ...(!columns.some((c) => c.id === id)
+                          ? [{ value: id, label: `${id} · ${t('현재 원문 유지')}`, disabled: true }]
+                          : []),
+                      ],
+                    )}
+                    <Button
+                      disabled={disabled || i === 0}
+                      onClick={() => {
+                        const ids = [...options.includeColumnIds];
+                        [ids[i - 1], ids[i]] = [ids[i]!, ids[i - 1]!];
+                        change({ ...options, includeColumnIds: ids });
+                      }}
+                    >
+                      {t('위로')}
+                    </Button>
+                    <Button
+                      disabled={disabled || i === options.includeColumnIds.length - 1}
+                      onClick={() => {
+                        const ids = [...options.includeColumnIds];
+                        [ids[i + 1], ids[i]] = [ids[i]!, ids[i + 1]!];
+                        change({ ...options, includeColumnIds: ids });
+                      }}
+                    >
+                      {t('아래로')}
+                    </Button>
+                    <Button
+                      disabled={disabled}
+                      onClick={() =>
+                        change({
+                          ...options,
+                          includeColumnIds: options.includeColumnIds.filter((_, j) => j !== i),
+                        })
+                      }
+                    >
+                      {t('제거')}
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  disabled={
+                    disabled ||
+                    options.includeColumnIds.length >= 32 ||
+                    !allowedOptions({
                       ...options,
-                      includeColumnIds: options.includeColumnIds.map((old, j) =>
-                        j === i ? id : old,
-                      ),
-                    }),
-                  [
-                    ...columns.map((c) => ({
-                      value: c.id,
-                      label: c.physical.name || c.logical.name || c.id,
-                      disabled: c.id !== id && options.includeColumnIds.includes(c.id),
-                    })),
-                    ...(!columns.some((c) => c.id === id)
-                      ? [{ value: id, label: `${id} · ${t('현재 원문 유지')}`, disabled: true }]
-                      : []),
-                  ],
-                )}
-                <Button
-                  disabled={disabled || i === 0}
+                      includeColumnIds: [
+                        ...options.includeColumnIds,
+                        columns.find((c) => !options.includeColumnIds.includes(c.id))?.id ?? '',
+                      ],
+                    }) ||
+                    !columns.some((c) => !options.includeColumnIds.includes(c.id))
+                  }
                   onClick={() => {
-                    const ids = [...options.includeColumnIds];
-                    [ids[i - 1], ids[i]] = [ids[i]!, ids[i - 1]!];
-                    change({ ...options, includeColumnIds: ids });
+                    const id = columns.find((c) => !options.includeColumnIds.includes(c.id))?.id;
+                    if (id)
+                      change({ ...options, includeColumnIds: [...options.includeColumnIds, id] });
                   }}
                 >
-                  {t('위로')}
+                  {t('컬럼 추가')}
                 </Button>
-                <Button
-                  disabled={disabled || i === options.includeColumnIds.length - 1}
-                  onClick={() => {
-                    const ids = [...options.includeColumnIds];
-                    [ids[i + 1], ids[i]] = [ids[i]!, ids[i + 1]!];
-                    change({ ...options, includeColumnIds: ids });
-                  }}
-                >
-                  {t('아래로')}
-                </Button>
+              </fieldset>
+            </>
+          )}
+          {options.database === 'mysql' && (
+            <>
+              {field(
+                '보이지 않는 인덱스',
+                options.invisible,
+                (v) => change({ ...options, invisible: v }),
+                booleanChoices,
+              )}
+            </>
+          )}
+          {(options.database === 'postgresql' || options.database === 'sqlite') && (
+            <section aria-label={t('조건 인덱스')}>
+              {predicate ? (
+                <>
+                  <NativeExpressionTreeEditor
+                    label="조건 인덱스"
+                    database={document.database}
+                    facts={nativeAdvancedExpressionFacts(document, table, 'predicate')}
+                    value={JSON.stringify(predicate)}
+                    onChange={(text) => updatePredicate(JSON.parse(text) as NativeAstDraft)}
+                    disabled={disabled}
+                  />
+                  <Button disabled={disabled} onClick={() => updatePredicate(null)}>
+                    {t('조건 식 제거')}
+                  </Button>
+                </>
+              ) : (
                 <Button
                   disabled={disabled}
                   onClick={() =>
-                    change({
-                      ...options,
-                      includeColumnIds: options.includeColumnIds.filter((_, j) => j !== i),
+                    updatePredicate({
+                      kind: 'isNull',
+                      negate: true,
+                      operand: nativeAstSeed('column', document.database, columns[0]?.id ?? ''),
                     })
                   }
                 >
-                  {t('제거')}
+                  {t('조건 식 추가')}
                 </Button>
-              </div>
-            ))}
-            <Button
-              disabled={
-                disabled ||
-                options.includeColumnIds.length >= 32 ||
-                !allowedOptions({
-                  ...options,
-                  includeColumnIds: [
-                    ...options.includeColumnIds,
-                    columns.find((c) => !options.includeColumnIds.includes(c.id))?.id ?? '',
-                  ],
-                }) ||
-                !columns.some((c) => !options.includeColumnIds.includes(c.id))
-              }
-              onClick={() => {
-                const id = columns.find((c) => !options.includeColumnIds.includes(c.id))?.id;
-                if (id) change({ ...options, includeColumnIds: [...options.includeColumnIds, id] });
-              }}
-            >
-              {t('컬럼 추가')}
-            </Button>
-          </fieldset>
-        </>
-      )}
-      {options.database === 'mysql' && (
-        <>
-          {field(
-            '인덱스 방식',
-            options.kind,
-            (kind) => change({ ...options, kind: kind as typeof options.kind }),
-            methodChoices.map((p) => ({
-              value: p.method,
-              label: `${p.method}${p.allowed ? '' : ` · ${nativeEditorConditionText(p.code)}`}`,
-              disabled: p.method !== options.kind && !p.allowed,
-            })),
+              )}
+            </section>
           )}
-          {field(
-            '보이지 않는 인덱스',
-            options.invisible,
-            (v) => change({ ...options, invisible: v }),
-            booleanChoices,
-          )}
-        </>
-      )}
-      {(options.database === 'postgresql' || options.database === 'sqlite') && (
-        <section aria-label={t('조건 인덱스')}>
-          {predicate ? (
-            <>
-              <NativeExpressionTreeEditor
-                label="조건 인덱스"
-                database={document.database}
-                facts={nativeAdvancedExpressionFacts(document, table, 'predicate')}
-                value={JSON.stringify(predicate)}
-                onChange={(text) => updatePredicate(JSON.parse(text) as NativeAstDraft)}
-                disabled={disabled}
-              />
-              <Button disabled={disabled} onClick={() => updatePredicate(null)}>
-                {t('조건 식 제거')}
-              </Button>
-            </>
-          ) : (
-            <Button
-              disabled={disabled}
-              onClick={() =>
-                updatePredicate({
-                  kind: 'isNull',
-                  negate: true,
-                  operand: nativeAstSeed('column', document.database, columns[0]?.id ?? ''),
-                })
-              }
-            >
-              {t('조건 식 추가')}
-            </Button>
-          )}
-        </section>
-      )}
-    </fieldset>
+        </fieldset>
+      </details>
+    </>
   );
 }

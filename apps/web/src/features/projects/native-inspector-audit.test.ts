@@ -16,6 +16,7 @@ import {
   nativeInspectorSaveStatus,
 } from './native-inspector-state.js';
 import { NativeTableRelationInspector } from './NativeTableRelationInspector.js';
+import { NativeLogicalModeProvider } from './NativeLogicalMode.js';
 import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
 import { nativeTableCanvasRows } from './native-canvas-style.js';
 import { nativeFormatInitial } from './native-editor-format.js';
@@ -202,11 +203,15 @@ describe('native inspector audit semantics', () => {
         ),
       ).toThrow('foreign-key.columns-invalid');
     const html = renderToStaticMarkup(
-      createElement(NativeConstraintForm, {
-        document: f.document,
-        context: f.context,
-        collection: 'tableRelations',
-        id: 'r',
+      createElement(NativeLogicalModeProvider, {
+        enabled: true,
+        onEnabledChange() {},
+        children: createElement(NativeConstraintForm, {
+          document: f.document,
+          context: f.context,
+          collection: 'tableRelations',
+          id: 'r',
+        }),
       }),
     );
     for (const label of [
@@ -305,7 +310,14 @@ describe('native inspector audit semantics', () => {
     setLocale('ko');
     const f = fixture();
     const relation = renderToStaticMarkup(
-      createElement(NativeTableRelationInspector, { document: f.document, relation: f.relation }),
+      createElement(NativeLogicalModeProvider, {
+        enabled: true,
+        onEnabledChange() {},
+        children: createElement(NativeTableRelationInspector, {
+          document: f.document,
+          relation: f.relation,
+        }),
+      }),
     );
     expect(relation).toContain('customers (PK) → records (FK)');
     expect(relation).toContain('&lt;Korean 설명&gt;');
@@ -323,6 +335,66 @@ describe('native inspector audit semantics', () => {
     expect(domain).toContain('↔');
     expect(domain).not.toContain('<form');
   });
+  it.each(['default', 'off'] as const)(
+    'keeps physical relationship controls and hides logical semantics in %s mode without rewriting data',
+    (mode) => {
+      const f = fixture();
+      const before = structuredClone(f.document);
+      const render = (element: ReturnType<typeof createElement>) =>
+        renderToStaticMarkup(
+          mode === 'default'
+            ? element
+            : createElement(NativeLogicalModeProvider, {
+                enabled: false,
+                onEnabledChange() {},
+                children: element,
+              }),
+        );
+      const form = render(
+        createElement(NativeConstraintForm, {
+          document: f.document,
+          context: f.context,
+          collection: 'tableRelations',
+          id: 'r',
+        }),
+      );
+      for (const label of [
+        'PK / UNIQUE 컬럼 1',
+        'FK 컬럼 1',
+        'FK 정의 제거',
+        'ON DELETE',
+        'ON UPDATE',
+      ])
+        expect(form).toContain(label);
+      const readonly = render(
+        createElement(NativeTableRelationInspector, {
+          document: f.document,
+          relation: f.relation,
+        }),
+      );
+      expect(readonly).toContain('customers (PK) → records (FK)');
+      expect(readonly).toContain('fk_owner');
+      expect(readonly).not.toContain('type="submit"');
+      expect(readonly).not.toContain('&lt;Korean 설명&gt;');
+      // The collapsed original-source audit intentionally retains logical data.
+      // OFF hides logical editors, not the lossless recovery/audit payload.
+      expect(form.match(/<pre>[\s\S]*?<\/pre>/)?.[0]).toContain('&lt;Korean 설명&gt;');
+      for (const html of [form, readonly]) {
+        for (const label of ['관계 설명', '출발 끝점 (PK)', '대상 끝점 (FK)', '0..N'])
+          expect(html).not.toContain(label);
+      }
+      expect(
+        render(
+          createElement(NativeTableRelationInspector, {
+            document: f.document,
+            relation: { ...f.relation, scope: 'logical' },
+          }),
+        ),
+      ).toBe('');
+      expect(f.document).toEqual(before);
+      expect(f.context.onSave).not.toHaveBeenCalled();
+    },
+  );
   it('reads optional shared inspector preferences and mounts the original heading hosts', () => {
     const f = fixture();
     vi.stubGlobal('localStorage', {

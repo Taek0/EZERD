@@ -1,3 +1,4 @@
+import './native-advanced-editor.css';
 import { useState } from 'react';
 import type { DatabaseContext, NativeExpressionPolicyFacts } from '@ezerd/model';
 import { Button } from '../../components/ui/index.js';
@@ -138,7 +139,11 @@ export function NativeExpressionTreeEditor({
       slot: string | readonly (string | number)[],
       name: string,
     ) => (
-      <PanelSection title={`${t(name)} · ${t(labels[part.kind])}`} defaultOpen>
+      <PanelSection
+        className="native-expression-branch"
+        title={`${t(name)} · ${t(labels[part.kind])}`}
+        defaultOpen={part.kind === 'column' || part.kind === 'literal' || part.kind === 'null'}
+      >
         {nodeFields(part, [...path, ...(typeof slot === 'string' ? [slot] : slot)], name)}
       </PanelSection>
     );
@@ -379,7 +384,7 @@ export function NativeExpressionTreeEditor({
     );
   }
   return (
-    <section aria-label={t(label)}>
+    <section className="native-expression-editor" aria-label={t(label)}>
       {nodeFields(root, [], label)}
       <p role="status">
         {t(decision.allowed ? '엔진에서 허용' : '입력 또는 조합을 지원하지 않음')}

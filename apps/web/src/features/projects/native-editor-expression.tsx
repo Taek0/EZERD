@@ -1,3 +1,4 @@
+import './native-advanced-editor.css';
 import type { NativeColumn, NativeExpression } from '@ezerd/model';
 import { nativeExpressionSchema } from '@ezerd/contracts';
 import { NativeEditorField } from './native-editor-form.js';
@@ -55,7 +56,7 @@ export function NativeExpressionFields({
 }) {
   const { t } = useI18n();
   return (
-    <>
+    <div className="native-expression-comparison">
       <fieldset disabled={disabled}>
         <legend>{t('비교할 컬럼과 연산자')}</legend>
         <NativeEditorField
@@ -103,6 +104,6 @@ export function NativeExpressionFields({
             : {})}
         />
       </fieldset>
-    </>
+    </div>
   );
 }

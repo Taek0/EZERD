@@ -24,13 +24,20 @@ describe('advanced editor static meaning and readonly controls', () => {
           table: f.table,
         }),
       );
-      const item = locale === 'ko' ? '생성하려는 항목 선택' : 'Select an item to create';
+      const item = locale === 'ko' ? '항목 종류' : 'Item kind';
+      const target = locale === 'ko' ? '편집 대상' : 'Editing target';
       const expression = locale === 'ko' ? '생성하려는 식 선택' : 'Select an expression to create';
-      const detail = locale === 'ko' ? '선택한 항목 편집' : 'Edit the selected item';
+      const detail = locale === 'ko' ? '핵심 설정' : 'Core settings';
       expect(html).toContain(item);
+      expect(html).toContain(target);
+      expect(html).toContain(detail);
       expect(html).toContain(expression);
-      expect(html.indexOf(item)).toBeLessThan(html.indexOf(detail));
+      expect(html.indexOf(item)).toBeLessThan(html.indexOf(target));
+      expect(html.indexOf(target)).toBeLessThan(html.indexOf(detail));
       expect(html.indexOf(detail)).toBeLessThan(html.indexOf(expression));
+      expect(html).toContain('<option value="index" selected="">');
+      expect(html).toContain('<option value="index:new" selected="">');
+      expect(html).not.toContain('<option value="check:new"');
       expect(f.context.onSave).not.toHaveBeenCalled();
     },
   );
@@ -345,7 +352,22 @@ describe('advanced editor static meaning and readonly controls', () => {
     expect(html).toContain('구조 편집');
     expect(html).toContain('새 외래 키');
     expect(html).toContain('고급 인덱스·식 편집');
-    expect(html).toContain('새 복합 CHECK');
+    expect(html).toContain('CHECK 조건');
+    expect(html).toContain('새 고급 인덱스');
+    // Targets belong to the chosen kind; CHECK creation is exposed after selecting CHECK.
+    const check = renderToStaticMarkup(
+      createElement(NativeAdvancedEditor, {
+        context: f.context,
+        document: f.document,
+        table: f.table,
+        initialSelection: 'check:new',
+      }),
+    );
+    expect(check).toContain('<option value="check" selected="">');
+    expect(check).toContain('<option value="check:new" selected="">');
+    expect(check).toContain('새 복합 CHECK');
+    expect(check).toContain('생성하려는 식 선택');
+    expect(check).not.toContain('<option value="index:new"');
     expect(f.context.onSave).not.toHaveBeenCalled();
   });
   it('does not expose editable writes for archived projects and logical tables', () => {

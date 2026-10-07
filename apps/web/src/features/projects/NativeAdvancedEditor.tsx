@@ -1,6 +1,7 @@
+import './native-advanced-editor.css';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
-import { PanelSection, PanelList, PanelRow } from '../../shared/editor/panel.js';
+import { PanelSection } from '../../shared/editor/panel.js';
 import type { NativeDesignDocument, NativeTable, NativeIndex } from '@ezerd/model';
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
@@ -64,6 +65,11 @@ registerTranslations({
   '현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.':
     'The recovery target was not found in the current design. The archived draft is retained.',
   범위: 'Scope',
+  '항목 종류': 'Item kind',
+  '편집 대상': 'Editing target',
+  '핵심 설정': 'Core settings',
+  인덱스: 'Index',
+  'CHECK 조건': 'CHECK constraint',
 });
 function NativeAdvancedStatus({ status }: { status: NativeAdvancedCandidate }) {
   const { t } = useI18n();
@@ -245,7 +251,11 @@ export function NativeAdvancedIndexForm({
                 ]}
               />
               {draft.parts.map((part, position) => (
-                <fieldset key={position} disabled={readOnly || context.busy}>
+                <fieldset
+                  className="native-advanced-key"
+                  key={position}
+                  disabled={readOnly || context.busy}
+                >
                   <legend>
                     {t('인덱스 키 식')} {position + 1}
                   </legend>
@@ -306,40 +316,42 @@ export function NativeAdvancedIndexForm({
                       }
                     />
                   )}
-                  <Button
-                    disabled={readOnly || context.busy || position === 0}
-                    onClick={() => {
-                      const parts = [...draft.parts];
-                      [parts[position - 1], parts[position]] = [
-                        parts[position]!,
-                        parts[position - 1]!,
-                      ];
-                      update({ ...draft, parts });
-                    }}
-                  >
-                    {t('위로')}
-                  </Button>
-                  <Button
-                    disabled={readOnly || context.busy || position === draft.parts.length - 1}
-                    onClick={() => {
-                      const parts = [...draft.parts];
-                      [parts[position + 1], parts[position]] = [
-                        parts[position]!,
-                        parts[position + 1]!,
-                      ];
-                      update({ ...draft, parts });
-                    }}
-                  >
-                    {t('아래로')}
-                  </Button>
-                  <Button
-                    disabled={readOnly || context.busy}
-                    onClick={() =>
-                      update({ ...draft, parts: draft.parts.filter((_, i) => position !== i) })
-                    }
-                  >
-                    {t('제거')}
-                  </Button>
+                  <div className="native-advanced-actions">
+                    <Button
+                      disabled={readOnly || context.busy || position === 0}
+                      onClick={() => {
+                        const parts = [...draft.parts];
+                        [parts[position - 1], parts[position]] = [
+                          parts[position]!,
+                          parts[position - 1]!,
+                        ];
+                        update({ ...draft, parts });
+                      }}
+                    >
+                      {t('위로')}
+                    </Button>
+                    <Button
+                      disabled={readOnly || context.busy || position === draft.parts.length - 1}
+                      onClick={() => {
+                        const parts = [...draft.parts];
+                        [parts[position + 1], parts[position]] = [
+                          parts[position]!,
+                          parts[position + 1]!,
+                        ];
+                        update({ ...draft, parts });
+                      }}
+                    >
+                      {t('아래로')}
+                    </Button>
+                    <Button
+                      disabled={readOnly || context.busy}
+                      onClick={() =>
+                        update({ ...draft, parts: draft.parts.filter((_, i) => position !== i) })
+                      }
+                    >
+                      {t('제거')}
+                    </Button>
+                  </div>
                 </fieldset>
               ))}
               <Button
@@ -577,10 +589,19 @@ function NativeAdvancedEditorContent({
     } else if (kind === 'check') target = { kind: 'check', id, create: false };
     else if (kind === 'default' || kind === 'computed') target = { kind, columnId: id };
   }
+  const kindOf = (value: string): string => {
+    if (value.endsWith(':new')) return value.split(':')[0]!;
+    try {
+      return (JSON.parse(value) as string[])[0] ?? '';
+    } catch {
+      return '';
+    }
+  };
+  const selectedKind = kindOf(selected);
   const mountingKey = `${context.userId}:${context.snapshot.project.id}:${table.id}:${selected}:${context.snapshot.project.databaseRevision}:${recoveryRevision ?? ''}`;
   return (
     <PanelSection
-      className="native-property-editor"
+      className="native-property-editor native-advanced-editor"
       title={t('고급 인덱스·식 편집')}
       defaultOpen={!!initialSelection}
     >
@@ -590,22 +611,37 @@ function NativeAdvancedEditorContent({
           {t('현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.')}
         </p>
       )}
-      <PanelSection title={t('생성하려는 항목 선택')} defaultOpen>
-        <PanelList empty={t('편집할 항목이 없습니다.')}>
-          {choices.map((choice) => (
-            <PanelRow
-              key={choice.value}
-              title={choice.label}
-              active={selected === choice.value}
-              onSelect={() => {
-                if (!context.busy) setSelected(choice.value);
-              }}
-            />
-          ))}
-        </PanelList>
-      </PanelSection>
+      <div className="native-advanced-selection">
+        <NativeEditorField
+          label="항목 종류"
+          value={selectedKind}
+          disabled={context.busy}
+          choices={[
+            { value: 'index', label: t('인덱스') },
+            { value: 'check', label: t('CHECK 조건') },
+            { value: 'default', label: t('기본값 식') },
+            { value: 'computed', label: t('생성 식') },
+          ].map((choice) => ({
+            ...choice,
+            disabled: !choices.some((item) => kindOf(item.value) === choice.value),
+          }))}
+          onChange={(kind) => {
+            const next = choices.find((choice) => kindOf(choice.value) === kind);
+            if (!context.busy && next) setSelected(next.value);
+          }}
+        />
+        <NativeEditorField
+          label="편집 대상"
+          value={selected}
+          disabled={context.busy}
+          choices={choices.filter((choice) => kindOf(choice.value) === selectedKind)}
+          onChange={(value) => {
+            if (!context.busy) setSelected(value);
+          }}
+        />
+      </div>
       {selectionValid && (
-        <PanelSection title={t('선택한 항목 편집')} defaultOpen>
+        <PanelSection title={t('핵심 설정')} defaultOpen>
           {isIndex && selectionValid && (
             <NativeAdvancedIndexForm
               key={mountingKey}

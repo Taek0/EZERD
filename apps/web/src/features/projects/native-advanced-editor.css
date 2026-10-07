@@ -1,0 +1,38 @@
+.native-advanced-selection,
+.native-expression-comparison {
+  display: grid;
+  gap: 12px;
+}
+.native-advanced-editor fieldset,
+.native-expression-editor fieldset,
+.native-expression-comparison fieldset {
+  min-width: 0;
+  margin: 8px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.native-advanced-key,
+.native-expression-branch {
+  border-inline-start: 3px solid var(--line);
+}
+.native-advanced-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.native-index-options {
+  margin-top: 16px;
+}
+.native-index-options > summary {
+  cursor: pointer;
+  padding: 10px 0;
+  font-weight: 600;
+}
+.native-expression-editor {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
