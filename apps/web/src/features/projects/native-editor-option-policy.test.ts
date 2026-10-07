@@ -310,7 +310,7 @@ describe('native default and key UI policies without coverage promotion', () => 
     expect(html).toContain('value="20e-"');
     expect(html).toContain('입력값을 끝까지 작성하세요. 원문 초안은 유지됩니다.');
     expect(html).not.toContain('literal.number-invalid');
-    expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+    expect(html).not.toMatch(/<button\b[^>]*type="submit"/);
     expect(loadNativeEditorDraft(draft.userId, draft.projectId, draft.key)).toEqual(draft);
     expect(f.context.onSave).not.toHaveBeenCalled();
   });
@@ -783,17 +783,17 @@ describe('native default and key UI policies without coverage promotion', () => 
     };
     storeNativeEditorDraft(draft);
     const html = renderToStaticMarkup(createElement(NativeFormatEditor, f));
-    expect(html).toContain('DB 설정이 변경되었습니다. 입력을 확인하고 초기화해 주세요.');
-    expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+    expect(html).toContain('DB 설정이 변경되었습니다. 보관된 입력과 최신 내용을 확인해 주세요.');
+    expect(html).not.toMatch(/<button\b[^>]*type="submit"/);
     expect(loadNativeEditorDraft(draft.userId, draft.projectId, draft.key)).toEqual(draft);
     expect(f.context.onSave).not.toHaveBeenCalled();
   });
-  it('disables all interactive fields while an ACK is pending without altering default/generation originals', () => {
+  it('keeps fields editable while an ACK is pending without altering default/generation originals', () => {
     const f = fixture('mysql');
     f.context.busy = true;
     const before = structuredClone(f.document);
     const html = renderToStaticMarkup(createElement(NativeFormatEditor, f));
-    expect(html).toContain('<fieldset disabled="">');
+    expect(html).not.toContain('<fieldset disabled="">');
     expect(f.document).toEqual(before);
     expect(f.context.onSave).not.toHaveBeenCalled();
   });

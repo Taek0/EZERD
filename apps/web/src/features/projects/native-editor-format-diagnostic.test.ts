@@ -113,7 +113,8 @@ describe('format option condition diagnostics', () => {
         for (const detail of [...schemaDetails, 'expression.column-required'])
           expect(html).not.toContain(detail);
         expect(html).toContain('value="20e"');
-        expect(html).toMatch(/type="submit"[^>]*disabled=""/);
+        expect(html).not.toMatch(/type="submit"/);
+        expect(html).toContain('role="alert"');
       }
       expect(loadNativeEditorDraft(draft.userId, draft.projectId, draft.key)).toEqual(original);
       expect(f.context.onSave).not.toHaveBeenCalled();

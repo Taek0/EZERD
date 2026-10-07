@@ -35,6 +35,7 @@ import { NativeSelectedObjectInspector } from './NativeSelectedObjectInspector.j
 export { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
 import { NativeRelationEditor } from './NativeRelationEditor.js';
 import { NativeCanvasInlineEditor, type NativeInlineTarget } from './NativeCanvasInlineEditor.js';
+import { nativeInlineKey } from './native-inline-edit.js';
 import {
   memo,
   useCallback,
@@ -80,6 +81,8 @@ import {
   nativeDefaultDisplay,
   nativeGenerationDisplay,
   createNativeTable,
+  createNativeColumn,
+  type NativeColumn,
   type NativeDesignDocument,
   type NodeLayout,
   type Viewport,
@@ -142,7 +145,6 @@ registerTranslations({
   화면: 'View',
   '배치 저장': 'Save placement',
   '미저장 배치가 있습니다.': 'There is an unsaved placement.',
-  '배치 입력 초기화': 'Reset placement input',
   '배치의 저장 기준이 변경되었습니다. 입력을 보관했습니다.':
     'The placement revision changed. Your input is preserved.',
   '노드 선택 후 방향키로 이동하고 Enter로 저장합니다.':
@@ -833,13 +835,20 @@ function NativeCanvasWorkspace({
   const panGesture = useRef<{ pointerId: number; x: number; y: number; camera: Viewport } | null>(
     null,
   );
-  const addColumnFromCard = useCallback(
-    (tableId: string) => {
-      onSelect(tableId);
-      onCreate?.('column');
-    },
-    [onSelect, onCreate],
-  );
+  const cardIdentity = JSON.stringify([
+    userId,
+    snapshot.project.id,
+    snapshot.project.databaseRevision,
+  ]);
+  const cardIdentityRef = useRef(cardIdentity);
+  useLayoutEffect(() => {
+    cardIdentityRef.current = cardIdentity;
+  }, [cardIdentity]);
+  const [cardColumns, setCardColumns] = useState<{ identity: string; column: NativeColumn }[]>([]);
+  const [cardFocus, setCardFocus] = useState<{
+    identity: string;
+    target: NativeInlineTarget;
+  } | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, commitCamera] = useState<Viewport>({
@@ -999,16 +1008,43 @@ function NativeCanvasWorkspace({
   }, [storedBase, snapshot.sequence, snapshot.project.databaseRevision]);
   useEffect(() => setSubmittedNodes([]), [userId, snapshot.project.id]);
   const base = useMemo(() => {
-    if (!submittedNodes.length) return storedBase;
+    const columns = cardColumns.filter(
+      (entry) =>
+        entry.identity === cardIdentity &&
+        !storedBase.columns?.some((column) => column.id === entry.column.id),
+    );
+    if (!submittedNodes.length && !columns.length) return storedBase;
     const pending = new Map(submittedNodes.map(({ node }) => [node.id, node]));
     return {
       ...storedBase,
+      columns: [...(storedBase.columns ?? []), ...columns.map((entry) => entry.column)],
       layout: {
         ...storedBase.layout,
         nodes: storedBase.layout.nodes.map((node) => pending.get(node.id) ?? node),
       },
     };
-  }, [storedBase, submittedNodes]);
+  }, [storedBase, submittedNodes, cardColumns, cardIdentity]);
+  useEffect(() => {
+    setCardColumns((entries) => {
+      const remaining = entries.filter(
+        (entry) =>
+          entry.identity === cardIdentity &&
+          !storedBase.columns?.some((column) => column.id === entry.column.id),
+      );
+      return remaining.length === entries.length ? entries : remaining;
+    });
+  }, [storedBase.columns, cardIdentity]);
+  useLayoutEffect(() => {
+    if (!cardFocus || cardFocus.identity !== cardIdentity || !worldElement) return;
+    const key = nativeInlineKey(cardFocus.target);
+    const cell = Array.from(worldElement.querySelectorAll<HTMLElement>('[data-inline-key]')).find(
+      (element) => element.dataset.inlineKey === key,
+    );
+    if (cell) {
+      cell.focus();
+      setCardFocus(null);
+    }
+  }, [cardFocus, cardIdentity, worldElement, base]);
   const effectiveView =
     viewId === TABLES_VIEW_ID ||
     viewId === 'overview' ||
@@ -1876,6 +1912,40 @@ function NativeCanvasWorkspace({
     }),
     [userId, snapshot, allBusy, placementDraftBlocked, editable, onSave],
   );
+  const addColumnFromCard = useCallback(
+    async (tableId: string) => {
+      if (!userId || !editable || allBusy || placementDraftBlocked) return;
+      const table = base.tables?.find((item) => item.id === tableId);
+      if (!table) return;
+      const column = createNativeColumn(base.database, table, nativeDurableId());
+      setCardColumns((entries) => [...entries, { identity: cardIdentity, column }]);
+      setCardFocus({
+        identity: cardIdentity,
+        target: { tableId, columnId: column.id, mode, field: 'name' },
+      });
+      onSelect(tableId, column.id);
+      try {
+        const saved = await onSave([{ type: 'add_column', value: column }], expected(snapshot));
+        if (!saved)
+          setCardColumns((entries) => entries.filter((entry) => entry.column.id !== column.id));
+      } catch (failure) {
+        setCardColumns((entries) => entries.filter((entry) => entry.column.id !== column.id));
+        if (cardIdentityRef.current === cardIdentity) setError(message(failure));
+      }
+    },
+    [
+      userId,
+      editable,
+      allBusy,
+      placementDraftBlocked,
+      base,
+      cardIdentity,
+      mode,
+      onSelect,
+      onSave,
+      snapshot,
+    ],
+  );
   const routeSave = async (
     commands: CanvasCommand[],
     expectation: ReturnType<typeof expected>,
@@ -2384,17 +2454,6 @@ function NativeCanvasWorkspace({
           >
             {t('배치 저장')}
           </Button>
-          <Button
-            disabled={allBusy}
-            onClick={() => {
-              if (!userId) return;
-              discardNativeEditorDraft(userId, snapshot.project.id, draft);
-              draftRef.current = null;
-              setDraft(null);
-            }}
-          >
-            {t('배치 입력 초기화')}
-          </Button>
         </div>
       )}
       {personalPending && (
@@ -2888,7 +2947,11 @@ function NativeCanvasWorkspace({
               gesture={gesture}
               actions={sceneActions}
               onOpenDomain={navigateView}
-              onAddColumn={editable ? addColumnFromCard : undefined}
+              onAddColumn={
+                userId && editable && !allBusy && !placementDraftBlocked
+                  ? addColumnFromCard
+                  : undefined
+              }
               resizeEnabled={placementEditable && !allBusy && !stale}
               onEdit={userId && editable ? openInline : undefined}
               {...(userId && editable ? { editorContext: inlineContext } : {})}

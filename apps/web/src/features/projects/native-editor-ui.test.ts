@@ -89,7 +89,7 @@ describe('native structured forms and availability', () => {
     ])
       expect(html).not.toContain(internal);
     const submit = html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0];
-    expect(submit).toContain('disabled=""');
+    expect(submit).toBeUndefined();
     expect(f.document).toEqual(before);
   });
   it('shows SQLite table modes as labels and leaves a clean format form disabled', () => {
@@ -106,7 +106,7 @@ describe('native structured forms and availability', () => {
     expect(html).toContain('스키마: main');
     expect(html).toContain('STRICT: 사용');
     expect(html).toContain('WITHOUT ROWID: 사용 안 함');
-    expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+    expect(html).not.toMatch(/<button\b[^>]*type="submit"/);
   });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'renders only the current DB types, preserved values and unavailable reasons for %s',

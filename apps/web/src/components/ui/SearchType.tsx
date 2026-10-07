@@ -15,6 +15,8 @@ export function SearchType({
   autoFocus = false,
   showSearchIcon = true,
   onEditEnd,
+  query,
+  onQueryChange,
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -24,11 +26,16 @@ export function SearchType({
   autoFocus?: boolean;
   showSearchIcon?: boolean;
   onEditEnd?: (reason: 'blur' | 'escape' | 'selection') => void;
+  query?: string | undefined;
+  onQueryChange?: (query: string) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
   const [blocked, setBlocked] = useState(false);
   const [container, setContainer] = useState<HTMLElement>();
+  const selectedLabel = options.find((option) => option.value === value)?.label.toUpperCase() ?? '';
+  const [inputValue, setInputValue] = useState(selectedLabel);
+  useEffect(() => setInputValue(selectedLabel), [value, selectedLabel]);
   useEffect(() => {
     const fieldset = root.current?.closest('fieldset');
     const sync = () => setBlocked(!!fieldset?.disabled);
@@ -45,8 +52,13 @@ export function SearchType({
       className="ui-search-type"
       aria-label={label}
       selectedKey={value}
+      inputValue={query ?? inputValue}
+      onInputChange={setInputValue}
       onSelectionChange={(key) => {
         if (key !== null) {
+          setInputValue(
+            options.find((option) => option.value === String(key))?.label.toUpperCase() ?? '',
+          );
           onValueChange(String(key));
           onEditEnd?.('selection');
         }
@@ -68,6 +80,7 @@ export function SearchType({
           className="ui-input"
           placeholder={t('타입 검색')}
           autoFocus={autoFocus}
+          onChange={(event) => onQueryChange?.(event.currentTarget.value)}
           onFocus={(event) => event.currentTarget.select()}
           onKeyDown={(event) => {
             if (event.key === 'Escape' && onEditEnd) {

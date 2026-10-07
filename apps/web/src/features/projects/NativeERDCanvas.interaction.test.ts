@@ -3,11 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
 import { NativeCanvasScene } from './NativeCanvasScene.js';
 import { NativeCameraControls } from './NativeCanvasToolbar.js';
-import { clipboardActor, clipboardSnapshot } from './native-clipboard-test-fixtures.js';
+import {
+  clipboardActor,
+  clipboardSnapshot,
+  clipboardFixture,
+} from './native-clipboard-test-fixtures.js';
 import { IDBFactory } from 'fake-indexeddb';
 import { getNativeDurableQueue } from './native-durable-queue.js';
 import type { NativeSceneActions } from './NativeCanvasScene.js';
-import { extractPersonalState, type NodeLayout } from '@ezerd/model';
+import {
+  extractPersonalState,
+  createNativeColumn,
+  type NativeDesignDocument,
+  type NodeLayout,
+} from '@ezerd/model';
+import { nativeInlineKey } from './native-inline-edit.js';
 import {
   readLocalTableClipboard,
   rememberTableClipboard,
@@ -241,6 +251,81 @@ function canvas(authenticated = false) {
 }
 
 describe('native canvas clipboard storage integration', () => {
+  it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+    'creates native %s column types over HTTP without randomUUID',
+    async (kind) => {
+      const ui = canvas(true);
+      const document = clipboardFixture(kind);
+      ui.props.document = document;
+      if (ui.props.snapshot.native?.status === 'available')
+        ui.props.snapshot.native.document = document;
+      const random = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+      vi.stubGlobal('crypto', { getRandomValues: random });
+      ui.render();
+      await (ui.scene().onAddColumn as (id: string) => Promise<void>)('a');
+      ui.render();
+      const column = (ui.scene().base as NativeDesignDocument).columns!.at(-1)!;
+      expect(column).toEqual(
+        createNativeColumn(document.database, document.tables![0]!, column.id),
+      );
+      expect(column.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(column.physical.type).toMatchObject({ database: kind, kind: 'builtin' });
+    },
+  );
+  it('adds a blank card column immediately, preserves DB defaults and focuses its name', async () => {
+    const ui = canvas(true);
+    let accept!: (saved: boolean) => void;
+    ui.props.onSave = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          accept = resolve;
+        }),
+    );
+    ui.render();
+    const save = (ui.scene().onAddColumn as (id: string) => Promise<void>)('a');
+    const tree = ui.render();
+    const base = ui.scene().base as NativeDesignDocument;
+    const column = base.columns!.at(-1)!;
+    expect(column).toEqual(
+      createNativeColumn(
+        base.database,
+        base.tables!.find((table) => table.id === 'a')!,
+        column.id,
+      ),
+    );
+    expect(column.logical.name).toBe('');
+    expect(ui.props.onSave).toHaveBeenCalledWith(
+      [{ type: 'add_column', value: column }],
+      expect.anything(),
+    );
+    const focus = vi.fn();
+    const world = nodes(tree).find(
+      (node) => node.props.className === 'native-erd-world canvas-world',
+    )!;
+    (world.props.ref as (element: unknown) => void)({
+      querySelectorAll: () => [
+        {
+          dataset: {
+            inlineKey: nativeInlineKey({
+              tableId: 'a',
+              columnId: column.id,
+              mode: 'logical',
+              field: 'name',
+            }),
+          },
+          focus,
+        },
+      ],
+    });
+    ui.render();
+    expect(focus).toHaveBeenCalledOnce();
+    accept(false);
+    await save;
+    ui.render();
+    expect(
+      (ui.scene().base as NativeDesignDocument).columns?.some((item) => item.id === column.id),
+    ).toBe(false);
+  });
   function selectTable(ui: ReturnType<typeof canvas>, id: string) {
     const scene = ui.scene();
     const node = (scene.drawn as { nodes: NodeLayout[] }).nodes.find(

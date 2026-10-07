@@ -208,6 +208,76 @@ beforeEach(() => {
 });
 
 describe('native inline cell lifecycle', () => {
+  it('keeps accepting input after an unchanged debounce and saves no reverted value', async () => {
+    vi.useFakeTimers();
+    const ui = mount();
+    try {
+      ui.begin();
+      ui.change('temporary');
+      ui.change('label');
+      await vi.advanceTimersByTimeAsync(350);
+      ui.render();
+      expect(ui.props.context.onSave).not.toHaveBeenCalled();
+      ui.change('next');
+      await vi.advanceTimersByTimeAsync(350);
+      ui.render();
+      expect(ui.props.context.onSave).toHaveBeenCalledOnce();
+      expect(ui.field().props.value).toBe('next');
+    } finally {
+      ui.unmount();
+      vi.useRealTimers();
+    }
+  });
+  it.each(['name', 'comment'] as const)(
+    'autosaves %s without blur and keeps typing after ACK',
+    async (field) => {
+      vi.useFakeTimers();
+      const props = fixture();
+      props.target.field = field;
+      const ui = mount(props);
+      try {
+        ui.begin();
+        ui.change('first');
+        await vi.advanceTimersByTimeAsync(350);
+        ui.render();
+        expect(props.context.onSave).toHaveBeenCalledOnce();
+        expect(ui.field().props.value).toBe('first');
+        expect(ui.focus).not.toHaveBeenCalled();
+        ui.change('second');
+        await vi.advanceTimersByTimeAsync(350);
+        ui.render();
+        expect(props.context.onSave).toHaveBeenCalledTimes(2);
+        expect(props.context.onSave).toHaveBeenLastCalledWith(
+          [{ type: 'patch_column', id: 'c', patch: { physical: { [field]: 'second' } } }],
+          expect.anything(),
+          expect.anything(),
+        );
+        expect(ui.field().props.value).toBe('second');
+      } finally {
+        ui.unmount();
+        vi.useRealTimers();
+      }
+    },
+  );
+  it('defers autosave during IME', async () => {
+    vi.useFakeTimers();
+    const ui = mount();
+    try {
+      ui.begin();
+      call(ui.root(), 'onCompositionStart');
+      ui.change('조합');
+      await vi.advanceTimersByTimeAsync(500);
+      expect(ui.props.context.onSave).not.toHaveBeenCalled();
+      call(ui.root(), 'onCompositionEnd');
+      ui.render();
+      await vi.advanceTimersByTimeAsync(350);
+      expect(ui.props.context.onSave).toHaveBeenCalledOnce();
+      ui.render();
+    } finally {
+      ui.unmount();
+      vi.useRealTimers();
+    }
+  });
   it.each([false, true])(
     'submits later edits after an ACK or another writer advances the shared baseline (%s)',
     async (remoteChange) => {
@@ -463,17 +533,19 @@ describe('native inline cell lifecycle', () => {
     expect(props.context.onSave).toHaveBeenCalledOnce();
     expect(ui.focus).toHaveBeenCalledOnce();
     ui.begin();
-    class TestInput {
-      value = 'unfinished type';
-    }
-    vi.stubGlobal('HTMLInputElement', TestInput);
-    call(ui.root(), 'onInputCapture', { target: new TestInput() });
+    call(ui.field(), 'onQueryChange', 'unfinished type');
     ui.render();
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(props.context.onSave).toHaveBeenCalledOnce();
+    vi.useRealTimers();
     call(ui.field(), 'onEditEnd', 'blur');
     await flush();
     ui.render();
     expect(props.context.onSave).toHaveBeenCalledOnce();
     expect(ui.stored()?.values.query).toBe('unfinished type');
+    ui.begin();
+    expect(ui.field().props.query).toBe('unfinished type');
   });
   it('hands off nuanced types to advanced format without replacing existing advanced drafts', async () => {
     const props = fixture('mysql');
