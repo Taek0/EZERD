@@ -398,7 +398,7 @@ describe('domain forms and overview static UI', () => {
       expect(html).not.toContain('type="submit"');
     },
   );
-  it('disables clean metadata saves and pending input; preserves a stored draft through a revision remount', () => {
+  it('preserves a stored draft across a remote revision without blocking its save', () => {
     setLocale('ko');
     vi.stubGlobal('localStorage', memory());
     const f = fixture();
@@ -428,9 +428,17 @@ describe('domain forms and overview static UI', () => {
       createElement(NativeDomainEditor, { ...props, busy: false }),
     );
     expect(changed).toContain('Unsaved domain');
-    expect(changed).toContain('보관된 입력');
+    expect(changed).not.toContain('저장 기준이 변경되었습니다.');
     expect(loadNativeEditorDraft(userId, projectId, draft.key)).toEqual(draft);
-    expect(changed.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+    expect(changed.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).not.toContain('disabled=""');
+    f.snapshot.project.databaseRevision++;
+    const changedDatabase = renderToStaticMarkup(
+      createElement(NativeDomainEditor, { ...props, busy: false }),
+    );
+    expect(changedDatabase).toContain('DB 설정이 변경되었습니다.');
+    expect(changedDatabase.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain(
+      'disabled=""',
+    );
   });
   it('shows table/FK/key/cascaded-column impact and human blocker labels', () => {
     setLocale('ko');

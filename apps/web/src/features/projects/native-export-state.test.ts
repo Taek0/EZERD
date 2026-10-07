@@ -15,6 +15,16 @@ import {
 } from './native-editor-draft.js';
 afterEach(() => vi.unstubAllGlobals());
 describe('native draft blocker survives editor lifetime', () => {
+  it('detects another tab’s persisted unsent intent before any local queue worker starts', () => {
+    const user = nativeDurableId(),
+      project = nativeDurableId();
+    vi.stubGlobal('localStorage', {
+      length: 1,
+      key: () => `ezerd.native.intent:${JSON.stringify([user, project])}:0001:operation`,
+    });
+    expect(nativeEditorExportBlocked(user, project)).toBe(true);
+    expect(nativeEditorExportBlocked(nativeDurableId(), project)).toBe(false);
+  });
   it('unmount cleanup cannot clear storage failure or unapplied input', () => {
     const user = nativeDurableId(),
       project = nativeDurableId();

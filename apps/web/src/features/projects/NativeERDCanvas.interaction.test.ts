@@ -190,6 +190,28 @@ function canvas() {
 }
 
 describe('native blank canvas pointer interaction', () => {
+  it('keeps an active gesture across remote edits but resets it on DB context change', () => {
+    const ui = canvas();
+    const gesture = ui.scene().gesture as { current: unknown };
+    const active = { pointerId: 1, nodeId: 'a', x: 40, y: 60 };
+    gesture.current = active;
+    ui.props.snapshot = {
+      ...ui.props.snapshot,
+      sequence: ui.props.snapshot.sequence + 1,
+      project: { ...ui.props.snapshot.project, version: ui.props.snapshot.project.version + 1 },
+    };
+    ui.render();
+    expect((ui.scene().gesture as typeof gesture).current).toBe(active);
+    ui.props.snapshot = {
+      ...ui.props.snapshot,
+      project: {
+        ...ui.props.snapshot.project,
+        databaseRevision: ui.props.snapshot.project.databaseRevision + 1,
+      },
+    };
+    ui.render();
+    expect((ui.scene().gesture as typeof gesture).current).toBeNull();
+  });
   it('settles a blank click after a table selection and permits another selection', () => {
     const ui = canvas();
     const node = (ui.scene().drawn as { nodes: unknown[] }).nodes[0];
