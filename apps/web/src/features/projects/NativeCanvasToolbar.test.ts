@@ -106,6 +106,8 @@ it.each(['ko', 'en'] as const)(
   },
 );
 
+const logical = vi.hoisted(() => ({ enabled: false, onEnabledChange: vi.fn() }));
+vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => logical }));
 vi.mock('../../shared/i18n/index.js', async (original) => {
   const actual = await original<typeof import('../../shared/i18n/index.js')>();
   return { ...actual, useI18n: () => ({ t: actual.translate }) };
@@ -115,7 +117,7 @@ function toolbarNodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   if (!isValidElement<Record<string, unknown>>(tree)) return [];
   return [tree, ...toolbarNodes(tree.props.children)];
 }
-it('keeps only design review and recovery in More, invoking their actions while writes are blocked', () => {
+it('keeps logical design, review and recovery in More, invoking their actions while writes are blocked', () => {
   const onOpenIssues = vi.fn(),
     onOpenRecovery = vi.fn();
   const tree = (
@@ -135,11 +137,34 @@ it('keeps only design review and recovery in More, invoking their actions while 
   });
   const menu = toolbarNodes(tree).find((node) => node.type === Dropdown)!;
   const items = menu.props.items as { id: string; disabled?: boolean; onAction: () => void }[];
-  expect(items.map((item) => item.id)).toEqual(['design-issues', 'recovery']);
+  expect(items.map((item) => item.id)).toEqual(['logical-design', 'design-issues', 'recovery']);
   for (const item of items) {
     expect(item.disabled).not.toBe(true);
     item.onAction();
   }
+  expect(logical.onEnabledChange).toHaveBeenCalledWith(true);
   expect(onOpenIssues).toHaveBeenCalledOnce();
   expect(onOpenRecovery).toHaveBeenCalledOnce();
+});
+
+it('places the inspector toggle before pins and removes the physical/logical button group', () => {
+  const html = renderToStaticMarkup(
+    createElement(NativeCanvasToolbar, {
+      viewId: '__tables__',
+      views: [],
+      onView() {},
+      onNote() {},
+      editable: true,
+      noteEditable: true,
+      disabled: false,
+      mode: 'physical',
+      onMode() {},
+      onToggleInspector() {},
+      panelToggle: createElement('button', null, 'PIN_MARKER'),
+    }),
+  );
+  expect(html.indexOf('native-canvas-inspector')).toBeLessThan(html.indexOf('PIN_MARKER'));
+  expect(html).not.toContain('모델 보기');
+  expect(html).not.toContain('>물리<');
+  expect(html).not.toContain('>논리<');
 });

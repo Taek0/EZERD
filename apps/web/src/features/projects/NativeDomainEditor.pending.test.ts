@@ -4,7 +4,7 @@ import { createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model'
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { NativeProjectView } from './NativeProjectView.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
-import type { NativePendingSave } from './native-save.js';
+import type { NativePendingSave, NativeWebCommand } from './native-save.js';
 
 const io = vi.hoisted(() => ({
   load: vi.fn(),
@@ -15,7 +15,7 @@ const io = vi.hoisted(() => ({
   enqueue: vi.fn(),
   flushIntent: vi.fn(),
   lookup: vi.fn(),
-  intents: [] as { pending: { request: { operationId: string } } }[],
+  intents: [] as { pending: { request: { operationId: string; commands: NativeWebCommand[] } } }[],
 }));
 const queue = vi.hoisted(() => ({ state: 'empty' }));
 vi.mock('./native-export-state.js', () => ({
@@ -203,9 +203,9 @@ beforeEach(() => {
   io.intents = [];
   io.flushIntent.mockResolvedValue(null);
   io.lookup.mockResolvedValue(null);
-  io.enqueue.mockImplementation(() => {
+  io.enqueue.mockImplementation((_user, _snapshot, commands: NativeWebCommand[]) => {
     const operationId = `operation-${io.intents.length}`;
-    io.intents.push({ pending: { request: { operationId } } });
+    io.intents.push({ pending: { request: { operationId, commands: structuredClone(commands) } } });
     return operationId;
   });
   vi.useFakeTimers();

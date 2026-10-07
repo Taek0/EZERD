@@ -54,6 +54,16 @@ beforeEach(() => {
 });
 
 describe('table inspector domain selection', () => {
+  it('renders a color dot for a domain and a neutral dot for unassigned', () => {
+    const { props, render } = setup();
+    props.document.domains[0]!.color = '#123456';
+    const leading = render().select.props.renderOptionLeading as (
+      id: string,
+    ) => ReactElement<{ style: { backgroundColor: string }; 'aria-hidden': string }>;
+    expect(leading('d').props.style.backgroundColor).toBe('#123456');
+    expect(leading('').props.style.backgroundColor).toBe('#8993a3');
+    expect(leading('d').props['aria-hidden']).toBe('true');
+  });
   it('shows a normal field and immediately saves the move command without optimistic mutation', async () => {
     const { table, render, onSave } = setup();
     const { tree, select, change } = render();
