@@ -2555,8 +2555,12 @@ function NativeCanvasWorkspace({
           groupOrigins.current = null;
           spacePan.current = false;
         }}
-        onLostPointerCapture={() => {
-          panGesture.current = null;
+        onLostPointerCapture={(event) => {
+          if (panGesture.current?.pointerId === event.pointerId) panGesture.current = null;
+          if (marqueeGesture.current?.pointerId === event.pointerId) {
+            marqueeGesture.current = null;
+            setMarquee(null);
+          }
         }}
         onClickCapture={(event) => {
           if (connection && event.target instanceof Element) {
