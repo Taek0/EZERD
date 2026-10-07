@@ -769,6 +769,15 @@ function NativeCanvasWorkspace({
   const [storageError, setStorageError] = useState('');
   const [sharedStorageFailure, setSharedStorageFailure] = useState(false);
   const [draft, setDraft] = useState<NativeEditorDraft | null>(null);
+  const [submittedNodes, setSubmittedNodes] = useState<
+    {
+      revision: string;
+      node: NodeLayout;
+      sequence: number;
+      databaseRevision: number;
+      accepted: boolean;
+    }[]
+  >([]);
   const draftRef = useRef<NativeEditorDraft | null>(null);
   useEffect(() => {
     if (selectedDomainId && !draftRef.current && !gesture.current) setViewId('overview');
@@ -822,7 +831,18 @@ function NativeCanvasWorkspace({
   );
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
-  const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
+  const [camera, commitCamera] = useState<Viewport>({
+    viewId: TABLES_VIEW_ID,
+    x: 24,
+    y: 24,
+    zoom: 1,
+  });
+  const cameraTouched = useRef(false);
+  const cameraInitialized = useRef(false);
+  function setCamera(viewport: Viewport) {
+    cameraTouched.current = true;
+    commitCamera(viewport);
+  }
   const gesture = useRef<{
     node: NodeLayout;
     x: number;
@@ -853,6 +873,9 @@ function NativeCanvasWorkspace({
     setPersonalPending(null);
     setPersonalBusy(false);
     setPrivateQueueState('unknown');
+  }, [userId, snapshot.project.id]);
+  useEffect(() => {
+    setPersonalBusy(false);
     if (!userId) return;
     let active = true;
     const current = () => active && activeIdentity.current === privateIdentity;
@@ -928,7 +951,7 @@ function NativeCanvasWorkspace({
   }, [userId, privateIdentity, snapshot.project.id]);
   const sharedSource =
     snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document;
-  const base = useMemo(
+  const storedBase = useMemo(
     () =>
       personal
         ? mergeStoredPersonalState(document, reconcilePersonalState(sharedSource, personal.state))
@@ -943,6 +966,38 @@ function NativeCanvasWorkspace({
           },
     [document, sharedSource, personal?.state],
   );
+  useEffect(() => {
+    setSubmittedNodes((entries) => {
+      const remaining = entries.filter(({ node, sequence, databaseRevision, accepted }) => {
+        const saved = storedBase.layout.nodes.find((candidate) => candidate.id === node.id);
+        if (
+          !saved ||
+          databaseRevision !== snapshot.project.databaseRevision ||
+          (accepted && snapshot.sequence > sequence)
+        )
+          return false;
+        return (
+          saved.x !== node.x ||
+          saved.y !== node.y ||
+          saved.width !== node.width ||
+          saved.height !== node.height
+        );
+      });
+      return remaining.length === entries.length ? entries : remaining;
+    });
+  }, [storedBase, snapshot.sequence, snapshot.project.databaseRevision]);
+  useEffect(() => setSubmittedNodes([]), [userId, snapshot.project.id]);
+  const base = useMemo(() => {
+    if (!submittedNodes.length) return storedBase;
+    const pending = new Map(submittedNodes.map(({ node }) => [node.id, node]));
+    return {
+      ...storedBase,
+      layout: {
+        ...storedBase.layout,
+        nodes: storedBase.layout.nodes.map((node) => pending.get(node.id) ?? node),
+      },
+    };
+  }, [storedBase, submittedNodes]);
   const effectiveView =
     viewId === TABLES_VIEW_ID ||
     viewId === 'overview' ||
@@ -954,7 +1009,13 @@ function NativeCanvasWorkspace({
   const recoveryWaiting =
     !!recoverySelection?.viewId && viewId === recoverySelection.viewId && effectiveView !== viewId;
   const placementEditable = isPrivate ? personalEditable : editable;
-  const personalReady = personalGuardAvailable() && !!personal && 'databaseRevision' in personal;
+  const personalReady =
+    personalGuardAvailable() &&
+    !!personal &&
+    'databaseRevision' in personal &&
+    personal.databaseRevision === snapshot.project.databaseRevision &&
+    personal.projectVersion === snapshot.project.version &&
+    personal.syncSequence === snapshot.sequence;
   const [submittedPlacement, setSubmittedPlacement] = useState<string | null>(null);
   const placementDraftBlocked = !!draft && (isPrivate || draft.revision !== submittedPlacement);
   const allBusy =
@@ -991,18 +1052,18 @@ function NativeCanvasWorkspace({
       setStorageError(message(error));
       if (!isPrivate) setSharedStorageFailure(true);
     }
-    const viewport = personal?.state.viewports.find(
-      (viewport) => viewport.viewId === effectiveView,
-    );
-    setCamera(viewport ?? { viewId: effectiveView, x: 24, y: 24, zoom: 1 });
-  }, [
-    recoveryWaiting,
-    inputKey,
-    userId,
-    snapshot.project.id,
-    snapshot.project.databaseRevision,
-    personal?.version,
-  ]);
+  }, [recoveryWaiting, inputKey, userId, snapshot.project.id, snapshot.project.databaseRevision]);
+  useEffect(() => {
+    cameraTouched.current = false;
+    cameraInitialized.current = false;
+    commitCamera({ viewId: effectiveView, x: 24, y: 24, zoom: 1 });
+  }, [userId, snapshot.project.id, effectiveView]);
+  useEffect(() => {
+    if (!personal || cameraInitialized.current || cameraTouched.current || recoveryWaiting) return;
+    cameraInitialized.current = true;
+    const viewport = personal.state.viewports.find((viewport) => viewport.viewId === effectiveView);
+    if (viewport) commitCamera(viewport);
+  }, [personal, recoveryWaiting, userId, snapshot.project.id, effectiveView]);
   const scene = useMemo(
     () => nativeCanvasScene(base, effectiveView, mode, domainFilter),
     [base, effectiveView, mode, domainFilter],
@@ -1165,7 +1226,7 @@ function NativeCanvasWorkspace({
       return;
     }
     try {
-      const retained = draftRef.current;
+      const retained = draftRef.current?.revision !== submittedPlacement ? draftRef.current : null;
       const retainedIds = retained
         ? nativeCanvasDraftPlacements(retained.values).map((node) => node.objectId)
         : [];
@@ -1185,7 +1246,7 @@ function NativeCanvasWorkspace({
         }),
       );
       const node = placements[0]!;
-      const current = draftRef.current;
+      const current = retained;
       const origins = placements.map(
         (node) => scene.nodes.find((raw) => raw.id === node.id) ?? node,
       );
@@ -1394,11 +1455,34 @@ function NativeCanvasWorkspace({
         );
       } else {
         setSubmittedPlacement(current.revision);
+        const placements = current.values.nodesJSON
+          ? nativeCanvasDraftPlacements(current.values)
+          : drawn.nodes.filter((node) => node.objectId === current.values.objectId);
+        setSubmittedNodes((entries) => [
+          ...entries.filter(({ node }) => !placements.some((next) => next.id === node.id)),
+          ...placements.map((node) => ({
+            revision: current.revision,
+            node,
+            sequence: snapshot.sequence,
+            databaseRevision: snapshot.project.databaseRevision,
+            accepted: false,
+          })),
+        ]);
         saved = await onSave(commands, current.expected, {
           key: current.key,
           revision: current.revision,
         });
         setSubmittedPlacement((revision) => (revision === current.revision ? null : revision));
+        if (saved)
+          setSubmittedNodes((entries) =>
+            entries.map((entry) =>
+              entry.revision === current.revision ? { ...entry, accepted: true } : entry,
+            ),
+          );
+        if (!saved)
+          setSubmittedNodes((entries) =>
+            entries.filter(({ revision }) => revision !== current.revision),
+          );
       }
       if (saved) {
         discardNativeEditorDraft(userId, snapshot.project.id, current);
@@ -1408,6 +1492,10 @@ function NativeCanvasWorkspace({
         }
       }
     } catch (error) {
+      setSubmittedPlacement((revision) => (revision === current.revision ? null : revision));
+      setSubmittedNodes((entries) =>
+        entries.filter(({ revision }) => revision !== current.revision),
+      );
       setError(message(error));
     }
   }

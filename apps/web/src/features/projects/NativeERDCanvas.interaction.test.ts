@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
 import { NativeCanvasScene } from './NativeCanvasScene.js';
 import { NativeCameraControls } from './NativeCanvasToolbar.js';
-import { clipboardSnapshot } from './native-clipboard-test-fixtures.js';
+import { clipboardActor, clipboardSnapshot } from './native-clipboard-test-fixtures.js';
+import { IDBFactory } from 'fake-indexeddb';
+import { getNativeDurableQueue } from './native-durable-queue.js';
+import type { NativeSceneActions } from './NativeCanvasScene.js';
+import { extractPersonalState, type NodeLayout } from '@ezerd/model';
+const personalApi = vi.hoisted(() => vi.fn());
 
 // Run the actual component's event handlers and effect dependency graph without a browser.
 const hooks = vi.hoisted(() => ({
@@ -18,6 +23,9 @@ const hooks = vi.hoisted(() => ({
   effects: [] as (() => void)[],
 }));
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker() {} }));
+vi.mock('./native-actor-api.js', () => ({
+  captureNativeActorApi: () => personalApi,
+}));
 vi.mock('../../shared/i18n/index.js', () => ({
   registerTranslations() {},
   useI18n: () => ({ t: (value: string) => value, locale: 'en' }),
@@ -103,6 +111,18 @@ function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   return [tree, ...nodes(tree.props.children)];
 }
 beforeEach(() => {
+  personalApi.mockReset().mockImplementation(() => new Promise(() => {}));
+  const storage = new Map<string, string>();
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
+    key: (index: number) => [...storage.keys()][index] ?? null,
+    get length() {
+      return storage.size;
+    },
+  });
+  vi.stubGlobal('indexedDB', new IDBFactory());
   hooks.cursor = 0;
   hooks.dirty = false;
   hooks.slots = [];
@@ -116,15 +136,17 @@ beforeEach(() => {
   });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
 });
-afterEach(() => {
+afterEach(async () => {
   hooks.slots.forEach((slot) => slot.cleanup?.());
+  await getNativeDurableQueue().close();
   vi.unstubAllGlobals();
 });
 
-function canvas() {
+function canvas(authenticated = false) {
   const snapshot = clipboardSnapshot();
   if (snapshot.native?.status !== 'available') throw Error('Expected native document');
   const props: Parameters<typeof NativeERDCanvas>[0] = {
+    ...(authenticated ? { userId: clipboardActor } : {}),
     document: snapshot.native.document,
     snapshot,
     editable: true,
@@ -210,6 +232,127 @@ function canvas() {
 }
 
 describe('native blank canvas pointer interaction', () => {
+  it('does not restore a saved camera when personal state refreshes after local navigation', async () => {
+    const ui = canvas(true);
+    const response = (version: number) => ({
+      databaseRevision: ui.props.snapshot.project.databaseRevision,
+      projectVersion: ui.props.snapshot.project.version,
+      syncSequence: ui.props.snapshot.sequence,
+      version,
+      state: {
+        ...extractPersonalState(ui.props.document),
+        viewports: [{ viewId: '__tables__', x: 300, y: 200, zoom: 0.5 }],
+      },
+    });
+    (ui.controls().onZoom as (factor: number) => void)(1.2);
+    ui.render();
+    const position = ui.transform();
+    ui.props.snapshot = { ...ui.props.snapshot, sequence: ui.props.snapshot.sequence + 1 };
+    personalApi.mockResolvedValueOnce(response(2));
+    ui.render();
+    await Promise.resolve();
+    ui.render();
+    expect(ui.transform()).toBe(position);
+    ui.props.snapshot = { ...ui.props.snapshot, sequence: ui.props.snapshot.sequence + 1 };
+    personalApi.mockResolvedValueOnce(response(3));
+    ui.render();
+    await Promise.resolve();
+    ui.render();
+    expect(ui.transform()).toBe(position);
+  });
+  it('preserves pan and zoom across server snapshots and database revisions', () => {
+    const ui = canvas();
+    (ui.controls().onZoom as (factor: number) => void)(1.2);
+    ui.render();
+    (ui.controls().onTool as (tool: string) => void)('hand');
+    ui.render();
+    ui.event('onPointerDownCapture');
+    ui.event('onPointerMove', { clientX: 1180, clientY: 1050 });
+    ui.event('onPointerUp');
+    const position = ui.transform();
+    ui.props.snapshot = {
+      ...ui.props.snapshot,
+      sequence: ui.props.snapshot.sequence + 1,
+      project: {
+        ...ui.props.snapshot.project,
+        version: ui.props.snapshot.project.version + 1,
+        databaseRevision: ui.props.snapshot.project.databaseRevision + 1,
+      },
+    };
+    ui.render();
+    expect(ui.transform()).toBe(position);
+  });
+  it('keeps earlier placements visible and accepts a second drag before the first ACK', async () => {
+    const ui = canvas(true);
+    let acknowledge!: (saved: boolean) => void;
+    ui.props.onSave = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    ui.render();
+    const actions = () => (ui.scene().actions as { current: NativeSceneActions }).current;
+    const drawn = () => (ui.scene().drawn as { nodes: NodeLayout[] }).nodes;
+    const first = drawn()[0]!;
+    actions().begin(
+      {
+        button: 0,
+        pointerId: 1,
+        clientX: 0,
+        clientY: 0,
+        target: new Target(),
+        currentTarget: ui.surface,
+      } as never,
+      first,
+    );
+    ui.render();
+    actions().preserve(first, first.x + 80, first.y + 30);
+    ui.render();
+    const saving = actions().savePlacement();
+    ui.render();
+    const second = drawn().find((node) => node.id !== first.id)!;
+    actions().begin(
+      {
+        button: 0,
+        pointerId: 2,
+        clientX: 0,
+        clientY: 0,
+        target: new Target(),
+        currentTarget: ui.surface,
+      } as never,
+      second,
+    );
+    ui.render();
+    actions().preserve(second, second.x + 50, second.y + 10);
+    ui.render();
+    expect(drawn().find((node) => node.id === first.id)?.x).toBe(first.x + 80);
+    expect(drawn().find((node) => node.id === second.id)?.x).toBe(second.x + 50);
+    const activeGesture = (ui.scene().gesture as { current: unknown }).current;
+    ui.props.document = {
+      ...ui.props.document,
+      layout: {
+        ...ui.props.document.layout,
+        nodes: ui.props.document.layout.nodes.map((node) =>
+          // Another writer moved the first node again before the refresh completed.
+          node.id === first.id ? { ...node, x: first.x + 100, y: first.y + 30 } : node,
+        ),
+      },
+    };
+    ui.props.snapshot = { ...ui.props.snapshot, sequence: ui.props.snapshot.sequence + 1 };
+    ui.render();
+    expect((ui.scene().gesture as { current: unknown }).current).toBe(activeGesture);
+    acknowledge(true);
+    await saving;
+    ui.render();
+    expect(drawn().find((node) => node.id === second.id)?.x).toBe(second.x + 50);
+    // An unrelated snapshot before ACK cannot roll back the accepted local position.
+    expect(drawn().find((node) => node.id === first.id)?.x).toBe(first.x + 80);
+    ui.props.snapshot = { ...ui.props.snapshot, sequence: ui.props.snapshot.sequence + 1 };
+    ui.render();
+    expect(drawn().find((node) => node.id === second.id)?.x).toBe(second.x + 50);
+    expect(drawn().find((node) => node.id === first.id)?.x).toBe(first.x + 100);
+  });
   it('keeps an active gesture across remote edits but resets it on DB context change', () => {
     const ui = canvas();
     const gesture = ui.scene().gesture as { current: unknown };
