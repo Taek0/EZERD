@@ -61,6 +61,9 @@
   flex-shrink: 0;
 }
 .native-editor-workspace .native-erd-surface {
+  /* The camera owns navigation. Hidden overflow still permits focus/anchoring
+     scroll offsets, which otherwise add a second translation at low zoom. */
+  overflow: clip;
   flex: 1;
   height: auto;
   min-height: 0;
