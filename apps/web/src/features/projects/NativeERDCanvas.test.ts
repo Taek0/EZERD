@@ -565,7 +565,7 @@ describe('native input registers export blockers even without a durable storage 
       storageFailure: true,
     });
   });
-  it('uses a feature availability message and disables unchanged structured form saves', () => {
+  it('omits passive personal-view notices and disables unchanged structured form saves', () => {
     setLocale('ko');
     const f = fixture();
     const html = renderToStaticMarkup(
@@ -580,9 +580,10 @@ describe('native input registers export blockers even without a durable storage 
         onSelect() {},
       }),
     );
-    expect(html).toContain(
+    expect(html).not.toContain(
       '개인 화면 저장은 아직 지원하지 않습니다. 이 프로젝트에서는 공유 캔버스를 사용해 주세요.',
     );
+    expect(html).not.toContain('개인 화면을 불러오는 중입니다.');
     expect(html).not.toContain('DB 문맥 보호가 아직 연결되지');
     const cleanForm = renderToStaticMarkup(
       createElement(NativeEditorForm, {

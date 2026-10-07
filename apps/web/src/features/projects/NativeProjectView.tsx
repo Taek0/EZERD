@@ -94,8 +94,6 @@ registerTranslations({
   '이름 없는 테이블': 'Untitled table',
   '테이블 검색': 'Search tables',
   '선택한 범위에 테이블이 없습니다.': 'There are no tables in this scope.',
-  '개인 화면을 불러오지 못했습니다. 저장된 공유 설계를 표시합니다.':
-    'Personal views could not be loaded. Showing the saved shared design.',
   'DB 설정과 저장된 설계의 종류가 다릅니다.':
     'The project database and the saved design do not match.',
   '설계의 구조 또는 크기를 확인해 주세요.': 'Check the design structure or size.',
@@ -1168,11 +1166,6 @@ export function NativeProjectView({
         </p>
       ) : (
         <>
-          {entry.personalUnavailable && (
-            <p className="notice" role="status">
-              {t('개인 화면을 불러오지 못했습니다. 저장된 공유 설계를 표시합니다.')}
-            </p>
-          )}
           <div className="review-workspace native-review-workspace">
             <div
               className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}${stackedInspector ? ' inspector-stacked' : ''}`}

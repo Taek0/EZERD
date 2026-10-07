@@ -161,6 +161,16 @@ describe('native readonly project view', () => {
     expect(html).not.toContain('DECIMAL');
     expect(html).toContain('! 확인 필요');
   });
+  it('renders the shared design without a passive personal-view fallback notice', () => {
+    setLocale('ko');
+    const input = entry();
+    input.personalUnavailable = true;
+    const html = renderToStaticMarkup(
+      createElement(NativeProjectView, { entry: input, onLeave() {}, onReload() {} }),
+    );
+    expect(html).toContain('DECIMAL(18,2)');
+    expect(html).not.toContain('개인 화면을 불러오지 못했습니다.');
+  });
 });
 
 it.each(['ko', 'en'] as const)(

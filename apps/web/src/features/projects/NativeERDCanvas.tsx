@@ -155,7 +155,6 @@ registerTranslations({
   '개인 저장 결과 확인': 'Check personal save result',
   '미확인 개인 저장 요청이 있습니다.': 'A personal save request is unconfirmed.',
   '개인 요청 초기화': 'Reset personal request',
-  '개인 화면을 불러오는 중입니다.': 'Loading personal views.',
   중앙으로: 'Center view',
   확대: 'Zoom in',
   축소: 'Zoom out',
@@ -2249,14 +2248,6 @@ function NativeCanvasWorkspace({
       {error && (recoveryOpen || error !== t('미저장 배치가 있습니다.')) && (
         <p role="alert">{error}</p>
       )}
-      {personalEditable && !personalReady && (
-        <p role="status">
-          {t(
-            '개인 화면 저장은 아직 지원하지 않습니다. 이 프로젝트에서는 공유 캔버스를 사용해 주세요.',
-          )}
-        </p>
-      )}
-      {userId && !personal && <p role="status">{t('개인 화면을 불러오는 중입니다.')}</p>}
       {base.domains.some((domain) => domain.id === effectiveView) && (
         <p>{t('공유 도메인 화면은 공유 테이블 배치를 사용합니다.')}</p>
       )}
