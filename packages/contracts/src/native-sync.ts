@@ -5,23 +5,23 @@ import { databaseIssueSchema } from './project-document-state.js';
 import {
   syncBaselineSchema,
   syncChangeSchema,
-  syncEventSchema,
-  syncOperationInputSchema,
-  syncOperationResultSchema,
-} from './sync.js';
+  syncOperationInputFields,
+  syncOperationResultFields,
+} from './sync-base.js';
 const sameContext = (
   left: { kind: string; profileId: string },
   right: { kind: string; profileId: string },
 ) => left.kind === right.kind && left.profileId === right.profileId;
 
-/** Additive contracts only: the live v1 endpoint continues rejecting this envelope. */
-export const nativeSyncOperationInputSchema = syncOperationInputSchema
-  .extend({
+/** Native wire contracts are independent of the historical v1 envelopes. */
+export const nativeSyncOperationInputSchema = z
+  .strictObject({
+    ...syncOperationInputFields,
+    baselineDocument: nativeStoredDesignDocumentSchema,
+    document: nativeStoredDesignDocumentSchema,
     protocolVersion: z.literal(2),
     database: databaseContextSchema,
     databaseRevision: databaseRevisionSchema,
-    baselineDocument: nativeStoredDesignDocumentSchema,
-    document: nativeStoredDesignDocumentSchema,
   })
   .superRefine((input, ctx) => {
     for (const field of ['baselineDocument', 'document'] as const)
@@ -35,13 +35,14 @@ export const nativeSyncOperationInputSchema = syncOperationInputSchema
 export const nativeSyncBaselineSchema = syncBaselineSchema.extend({
   databaseRevision: databaseRevisionSchema,
 });
-export const nativeSyncOperationResultSchema = syncOperationResultSchema
-  .extend({
+export const nativeSyncOperationResultSchema = z
+  .strictObject({
+    ...syncOperationResultFields,
+    nextBaseline: nativeSyncBaselineSchema,
+    document: nativeStoredDesignDocumentSchema.optional(),
     protocolVersion: z.literal(2),
     database: databaseContextSchema,
     databaseRevision: databaseRevisionSchema,
-    nextBaseline: nativeSyncBaselineSchema,
-    document: nativeStoredDesignDocumentSchema.optional(),
     issues: z.array(databaseIssueSchema).max(1000).optional(),
   })
   .superRefine((result, ctx) => {
@@ -64,21 +65,9 @@ export const nativeSyncOperationResultSchema = syncOperationResultSchema
 export const nativeSyncEventSchema = nativeSyncOperationResultSchema.safeExtend({
   changes: z.array(syncChangeSchema).max(1000),
 });
-export const syncOperationInputReadSchema = z.union([
-  syncOperationInputSchema,
-  nativeSyncOperationInputSchema,
-]);
-export const syncOperationResultReadSchema = z.union([
-  syncOperationResultSchema,
-  nativeSyncOperationResultSchema,
-]);
-export const syncEventReadSchema = z.union([syncEventSchema, nativeSyncEventSchema]);
 export type NativeSyncOperationInput = z.infer<typeof nativeSyncOperationInputSchema>;
 export type NativeSyncOperationResult = z.infer<typeof nativeSyncOperationResultSchema>;
 export type NativeSyncEvent = z.infer<typeof nativeSyncEventSchema>;
-export type SyncOperationInputRead = z.infer<typeof syncOperationInputReadSchema>;
-export type SyncOperationResultRead = z.infer<typeof syncOperationResultReadSchema>;
-export type SyncEventRead = z.infer<typeof syncEventReadSchema>;
 export const nativeSyncSnapshotSchema = z
   .strictObject({
     protocolVersion: z.literal(2),
