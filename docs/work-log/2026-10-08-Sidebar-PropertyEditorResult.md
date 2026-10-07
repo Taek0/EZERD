@@ -9,7 +9,7 @@
 - 정책 사용 가능 여부는 우회하지 않았다. PostgreSQL 새 컬럼 initial/nullable/문자열 default/varchar 변경은 허용되고 txid_snapshot 신규 사용은 차단된다. 기존 SQLite untyped의 NULL만 수정할 때 타입은 보존된다.
 - 컬럼 이름 → 타입 → 설명 배치, 기본 접힘 옵션 NULL → 기본값 → 배열 차원 순서. 표시 라벨의 DB 접두어만 제거하고 option value는 유지한다.
 - 외부 property form은 div로 바꾸고 format의 afterType 슬롯에 설명을 배치하여 form 중첩을 방지했다.
-- 수동 저장/초기화를 제거하고 공용 useNativeAutosave를 적용했다. 빈 이름은 기존 patch schema로 검증한다. 저장 중 fieldset을 잠그지 않는다.
+- 수동 저장/초기화를 제거하고 공용 useNativeAutosave를 적용했다. 빈 이름은 기존 patch schema로 검증한다. 외부 busy의 권한/read-only fieldset guard는 보존한다. ACK 대기는 내부 outstanding으로 처리한다.
 - 사용자 입력만 예약하며 currentDraft로 최신 입력을 전송한다. 성공 ACK에만 before를 전진하고 전송 당시 sequence를 기준으로 최신 snapshot rebase를 허용한다. getBlocked/draining으로 선택 전환과 ACK 대기 중 후속 입력을 처리한다.
 - NativeLabelFields의 제거된 초기화 기능 안내를 한국어/영어 모두 수정했다.
 

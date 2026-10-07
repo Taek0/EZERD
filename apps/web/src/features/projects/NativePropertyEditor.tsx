@@ -246,7 +246,7 @@ export function NativePropertyEditor({
   return (
     <>
       <div className="native-property-editor inspector-fields" {...autosave.compositionProps}>
-        <fieldset>
+        <fieldset disabled={busy}>
           {storageError && (
             <>
               <p role="alert">{storageError}</p>
