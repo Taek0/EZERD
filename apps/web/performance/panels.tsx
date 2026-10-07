@@ -1,3 +1,4 @@
+import { VisualLayerAudit } from './visual-layer-audit.js';
 import { Profiler, useMemo, useRef, useState, type ProfilerOnRenderCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { NativeProjectView } from '../src/features/projects/NativeProjectView.js';
@@ -349,6 +350,7 @@ function Demo() {
         </ConfirmProvider>
       </div>
       <textarea aria-label="Panel JSON" readOnly value={output} />
+      <VisualLayerAudit />
     </>
   );
 }
