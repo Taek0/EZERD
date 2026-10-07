@@ -1,8 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { TableRelationsSvg } from './TableRelations.js';
-import * as routing from './relation-routing.js';
+
 import { createTestDocument } from '../../test-utils/diagram-fixture.js';
 import { prepareTableRelations } from './prepare-table-relations.js';
 import { relationGeometry } from './relation-routing.js';
@@ -122,32 +119,6 @@ it('retains first-match semantics even for duplicate IDs in unvalidated input', 
   expect(prepareTableRelations(doc, 'perf', 'physical')).toEqual(
     prepareTableRelationsReference(doc, 'perf', 'physical'),
   );
-});
-
-it('shares one calculation across both SVG layers without changing standalone output', () => {
-  const doc = createTestDocument();
-  const spy = vi.spyOn(routing, 'relationGeometry');
-  try {
-    const sharedRelations = prepareTableRelations(doc, 'perf', 'physical');
-    const props = {
-      document: doc,
-      viewId: 'perf',
-      viewMode: 'physical' as const,
-      onSelect: () => {},
-    };
-    const render = (extra: object) =>
-      renderToStaticMarkup(
-        createElement('svg', null, createElement(TableRelationsSvg, { ...props, ...extra })),
-      );
-    const body = render({ sharedRelations, hideControls: true });
-    const overlay = render({ sharedRelations, controlsOnly: true });
-    expect(spy).toHaveBeenCalledTimes(10);
-    expect(render({ hideControls: true })).toBe(body);
-    expect(render({ controlsOnly: true })).toBe(overlay);
-    expect(spy).toHaveBeenCalledTimes(30);
-  } finally {
-    spy.mockRestore();
-  }
 });
 
 it('keeps view, scope, endpoint and combined-view visibility semantics', () => {

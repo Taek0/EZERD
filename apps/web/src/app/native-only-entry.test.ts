@@ -21,6 +21,7 @@ it('keeps legacy editor and sync entry points outside the application runtime gr
       if (!specifier.startsWith('.')) return;
       const base = resolve(dirname(file), specifier).replace(/\.js$/, '');
       const target = [base + '.ts', base + '.tsx'].find(existsSync);
+      if (specifier.endsWith('.js')) expect(target, `${file}: ${specifier}`).toBeDefined();
       if (target) visit(target);
     }
     function scan(node: ts.Node) {
@@ -49,6 +50,21 @@ it('keeps legacy editor and sync entry points outside the application runtime gr
   const paths = [...reached].map((file) => relative(root, file).replaceAll('\\', '/'));
   expect(paths).toContain('features/projects/NativeProjectView.tsx');
   expect(paths).toContain('features/projects/NativeERDCanvas.tsx');
+  for (const file of [
+    'features/canvas/canvas-selection.ts',
+    'features/canvas/selection-frame.ts',
+    'features/canvas/canvas-tool-shortcuts.ts',
+    'features/canvas/canvas-wheel.ts',
+    'features/canvas/table-clipboard.ts',
+    'features/canvas/inspector-state.ts',
+    'features/relations/relation-routing.ts',
+    'features/relations/obstacle-queries.ts',
+    'features/domains/domain-relations.ts',
+    'features/domains/DomainDescription.tsx',
+    'features/domains/DomainColorPicker.tsx',
+    'features/tables/column-type-display.ts',
+  ])
+    expect(paths).toContain(file);
   for (const file of [
     'features/canvas/Canvas.tsx',
     'features/collaboration/sync-client.ts',

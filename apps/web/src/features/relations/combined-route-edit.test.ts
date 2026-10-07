@@ -7,9 +7,10 @@ import {
   sharedDocument,
   upsertCombinedView,
   upsertTableRelation,
+  upsertRelationLayout,
+  mergeStoredPersonalState,
+  extractPersonalState,
 } from '@ezerd/model';
-import { applyRoutePatch } from './TableRelations.js';
-import { mergePersonalState } from '../collaboration/sync-client.js';
 
 it('keeps combined view routes personal while preserving owner positions and routes across remote sync', () => {
   let doc = addDomain(
@@ -38,8 +39,16 @@ it('keeps combined view routes personal while preserving owner positions and rou
     physical: null,
   });
   doc = upsertCombinedView(doc, { id: 'combined', name: 'view', domainIds: ['d'] });
-  doc = applyRoutePatch(doc, 'r', 'd', { sourceAnchor: { side: 'left', ratio: 0.2 } });
-  const changed = applyRoutePatch(doc, 'r', 'combined', {
+  doc = upsertRelationLayout(doc, {
+    relationId: 'r',
+    viewId: 'd',
+    offset: 0,
+    sourceAnchor: { side: 'left', ratio: 0.2 },
+  });
+  const changed = upsertRelationLayout(doc, {
+    relationId: 'r',
+    viewId: 'combined',
+    offset: 0,
     sourceAnchor: { side: 'right', ratio: 0.6 },
     targetAnchor: { side: 'bottom', ratio: 0.4 },
   });
@@ -53,7 +62,7 @@ it('keeps combined view routes personal while preserving owner positions and rou
     { id: 'remote', name: 'remote', description: '' },
     { x: 0, y: 0 },
   );
-  const merged = mergePersonalState(remote, changed);
+  const merged = mergeStoredPersonalState(remote, extractPersonalState(changed));
   expect(merged.layout.relations!.find((route) => route.viewId === 'combined')).toEqual(
     changed.layout.relations!.find((route) => route.viewId === 'combined'),
   );
