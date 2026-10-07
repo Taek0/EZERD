@@ -151,6 +151,7 @@ function Demo() {
           commits.current = [];
           active.current = true;
           const intervals: number[] = [];
+          const observedSelections = new Set<string>();
           let previous = await frame();
           for (let step = 0; step < 60; step++) {
             for (let burst = 0; burst < 4; burst++) {
@@ -166,6 +167,7 @@ function Demo() {
             }
             const now = await frame();
             intervals.push(now - previous);
+            observedSelections.add(JSON.stringify(selected()));
             previous = now;
           }
           send('pointerup', end.x, end.y);
@@ -173,6 +175,7 @@ function Demo() {
           for (let i = 0; i < 3; i++) {
             const now = await frame();
             intervals.push(now - previous);
+            observedSelections.add(JSON.stringify(selected()));
             previous = now;
           }
           active.current = false;
@@ -188,6 +191,7 @@ function Demo() {
             react: stats(commits.current),
             commits: commits.current,
             selectionBefore,
+            observedSelections: [...observedSelections],
             selectionAfter: selected(),
             boxHidden:
               !surface.querySelector<HTMLElement>('.canvas-selection-box') ||
