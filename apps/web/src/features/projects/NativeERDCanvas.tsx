@@ -2842,7 +2842,12 @@ function NativeCanvasWorkspace({
         <div
           className="native-erd-world canvas-world"
           ref={setWorldElement}
-          style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
+          style={{
+            transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
+            // Do not retain the whole scene in a promoted layer across zoom changes.
+            // Chrome can otherwise leave stale horizontal bands after zooming out.
+            willChange: 'auto',
+          }}
         >
           {pins}
           <div key={effectiveView} className="native-scene-entry">
