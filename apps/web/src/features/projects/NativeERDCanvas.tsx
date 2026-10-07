@@ -350,6 +350,28 @@ export function nativeCanvasScene(
   filter?: NativeDomainFilterValue | null,
 ) {
   const view = viewFor(document, viewId);
+  // Placement changes still reroute every edge, but card measurements are shared by its ports.
+  const tablesById = new Map((document.tables ?? []).map((table) => [table.id, table]));
+  const domainIds = new Set(document.domains.map((domain) => domain.id));
+  const noteIds = new Set(
+    document.notes.filter((note) => note.viewId === view).map((note) => note.id),
+  );
+  const tableMetrics = new Map<string, ReturnType<typeof nativeTableCanvasMetrics>>();
+  const metricsFor = (table: NonNullable<NativeDesignDocument['tables']>[number]) => {
+    let metrics = tableMetrics.get(table.id);
+    if (!metrics) {
+      metrics = nativeTableCanvasMetrics(document, table, mode);
+      tableMetrics.set(table.id, metrics);
+    }
+    return metrics;
+  };
+  const routesByRelation = new Map<
+    string,
+    NonNullable<NativeDesignDocument['layout']['relations']>[number]
+  >();
+  for (const route of document.layout.relations ?? [])
+    if (route.viewId === view && !routesByRelation.has(route.relationId))
+      routesByRelation.set(route.relationId, route);
   const sceneNodes = [...document.layout.nodes];
   if (view === 'overview') {
     const ids = new Set(sceneNodes.map((node) => node.id));
@@ -382,7 +404,7 @@ export function nativeCanvasScene(
   const nodes = sceneNodes
     .filter((node) => {
       if (node.viewId !== view) return false;
-      const table = document.tables?.find((table) => table.id === node.objectId);
+      const table = tablesById.get(node.objectId);
       if (table)
         return (
           view !== 'overview' &&
@@ -391,22 +413,15 @@ export function nativeCanvasScene(
               ? filter.unassigned
               : filter.domainIds.includes(table.domainId))) &&
           isVisibleInView(table.scope, mode) &&
-          (!document.domains.some((domain) => domain.id === viewId) || table.domainId === viewId)
+          (!domainIds.has(viewId) || table.domainId === viewId)
         );
-      return (
-        document.notes.some((note) => note.id === node.objectId && note.viewId === view) ||
-        (view === 'overview' && document.domains.some((domain) => domain.id === node.objectId))
-      );
+      return noteIds.has(node.objectId) || (view === 'overview' && domainIds.has(node.objectId));
     })
     .map((node) => {
-      const table = document.tables?.find((table) => table.id === node.objectId);
-      const kind = table
-        ? 'table'
-        : document.domains.some((domain) => domain.id === node.objectId)
-          ? 'domain'
-          : 'note';
+      const table = tablesById.get(node.objectId);
+      const kind = table ? 'table' : domainIds.has(node.objectId) ? 'domain' : 'note';
       const size = basicCardSize(kind, node.width, node.height);
-      const metrics = table ? nativeTableCanvasMetrics(document, table, mode) : null;
+      const metrics = table ? metricsFor(table) : null;
       // Native labels drive rows; no v1 type/DDL/metrics adapter is involved.
       return {
         ...node,
@@ -431,22 +446,16 @@ export function nativeCanvasScene(
       (mode === 'physical' && !relation.physical)
     )
       return [];
-    const route = document.layout.relations?.find(
-      (route) => route.relationId === relation.id && route.viewId === view,
-    );
+    const route = routesByRelation.get(relation.id);
     const label = mode === 'physical' ? (relation.physical?.name ?? '') : relation.logical.name;
     const columnAnchor = (
       node: NodeLayout,
       columnId: string | undefined,
       side: 'left' | 'right',
     ) => {
-      const table = document.tables?.find((table) => table.id === node.objectId)!;
-      const columns = (document.columns ?? []).filter(
-        (column) =>
-          column.tableId === node.objectId && isVisibleInView(column.scope, mode, table.scope),
-      );
-      const index = columns.findIndex((column) => column.id === columnId);
-      const rows = nativeTableCanvasRows(document, table, mode);
+      const table = tablesById.get(node.objectId)!;
+      const rows = metricsFor(table).rows;
+      const index = rows.findIndex((row) => row.column.id === columnId);
       return index < 0
         ? undefined
         : {
