@@ -153,14 +153,15 @@ describe('native common style/domain relation UI and geometry', () => {
   it('keeps common editors pending-disabled and clean saves unavailable', () => {
     const document = decorationFixture(),
       snapshot = decorationSnapshot(document),
-      context = { userId: decorationUserId, snapshot, busy: true, onSave: async () => true };
+      context = { userId: decorationUserId, snapshot, busy: true, onSave: vi.fn(async () => true) };
     for (const node of [
       createElement(NativeCanvasStyleEditor, { document, context, editable: true }),
       createElement(NativeDomainRelationEditor, { document, context, editable: true }),
     ]) {
       const html = renderToStaticMarkup(node);
       expect(html).toContain('<fieldset disabled=""');
-      expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+      expect(html).not.toContain('type="submit"');
+      expect(context.onSave).not.toHaveBeenCalled();
     }
     const privateHtml = renderToStaticMarkup(
       createElement(NativeCanvasPngExport, {

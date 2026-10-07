@@ -224,7 +224,8 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
       }),
     );
     expect(html).toContain('native-erd-actions');
-    expect(html).toContain('type="submit"');
+    expect(html).toContain('<form');
+    expect(html).not.toContain('type="submit"');
     expect(crypto.randomUUID).toBeUndefined();
     expect(crypto.subtle).toBeUndefined();
     expect(getRandomValues).toHaveBeenCalled();
@@ -565,7 +566,7 @@ describe('native input registers export blockers even without a durable storage 
       storageFailure: true,
     });
   });
-  it('omits passive personal-view notices and disables unchanged structured form saves', () => {
+  it('omits passive personal-view notices and leaves unchanged structured forms clean', () => {
     setLocale('ko');
     const f = fixture();
     const html = renderToStaticMarkup(
@@ -585,9 +586,10 @@ describe('native input registers export blockers even without a durable storage 
     );
     expect(html).not.toContain('개인 화면을 불러오는 중입니다.');
     expect(html).not.toContain('DB 문맥 보호가 아직 연결되지');
+    const onSave = vi.fn(async () => true);
     const cleanForm = renderToStaticMarkup(
       createElement(NativeEditorForm, {
-        context: { userId, snapshot: f.snapshot, busy: false, onSave: async () => true },
+        context: { userId, snapshot: f.snapshot, busy: false, onSave },
         draftKey: 'clean',
         title: 'Form',
         initial: { name: 'same' },
@@ -595,7 +597,15 @@ describe('native input registers export blockers even without a durable storage 
         children: () => null,
       }),
     );
-    expect(cleanForm.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+    expect(cleanForm).not.toContain('type="submit"');
+    expect(exportBlocker.mock.calls).toContainEqual([
+      userId,
+      projectId,
+      false,
+      false,
+      'editor:clean',
+    ]);
+    expect(onSave).not.toHaveBeenCalled();
   });
   it('blocks basic property export when storage cannot load, even though fresh values are clean', () => {
     const f = fixture();
@@ -638,9 +648,10 @@ describe('native input registers export blockers even without a durable storage 
       store,
     );
     vi.stubGlobal('localStorage', store);
+    const onSave = vi.fn(async () => true);
     const html = renderToStaticMarkup(
       createElement(NativeEditorForm, {
-        context: { userId, snapshot: f.snapshot, busy: false, onSave: async () => true },
+        context: { userId, snapshot: f.snapshot, busy: false, onSave },
         draftKey: 'form',
         title: 'Form',
         initial: { name: 'old' },
@@ -655,7 +666,9 @@ describe('native input registers export blockers even without a durable storage 
       false,
       'editor:form',
     ]);
-    expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).not.toContain('disabled=""');
+    expect(html).not.toContain('type="submit"');
+    expect(loadNativeEditorDraft(userId, projectId, 'form')?.values).toEqual({ name: 'unsaved' });
+    expect(onSave).not.toHaveBeenCalled();
   });
   it('blocks canvas form export on storage failure and rejects pending staging before any PUT', async () => {
     const f = fixture(),
