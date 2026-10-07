@@ -1,3 +1,5 @@
+import './native-property-editor.css';
+import { useNativeLogicalMode } from './NativeLogicalMode.js';
 import { useNativeAutosave } from './use-native-autosave.js';
 import { PanelSection } from '../../shared/editor/panel.js';
 import { useEffect, useRef, useState } from 'react';
@@ -55,6 +57,8 @@ export function NativePropertyEditor({
   snapshot: ProjectDocumentState;
 }) {
   const { t } = useI18n();
+  const { enabled: logicalEnabled } = useNativeLogicalMode();
+  if (!logicalEnabled) mode = 'physical';
   const original = column ?? table;
   const kind = column ? 'column' : 'table';
   const fresh = (): NativePropertyDraft => ({
@@ -273,10 +277,14 @@ export function NativePropertyEditor({
                 <dd>{original.physical.name}</dd>
                 <dt>{t('물리 설명')}</dt>
                 <dd>{original.physical.comment}</dd>
-                <dt>{t('논리 이름')}</dt>
-                <dd>{original.logical.name}</dd>
-                <dt>{t('논리 정의')}</dt>
-                <dd>{original.logical.definition}</dd>
+                {logicalEnabled && (
+                  <>
+                    <dt>{t('논리 이름')}</dt>
+                    <dd>{original.logical.name}</dd>
+                    <dt>{t('논리 정의')}</dt>
+                    <dd>{original.logical.definition}</dd>
+                  </>
+                )}
               </dl>
               <Button
                 disabled={draft.expected.databaseRevision !== snapshot.project.databaseRevision}
@@ -295,7 +303,6 @@ export function NativePropertyEditor({
               </Button>
             </div>
           )}
-          <legend>{t('속성 편집')}</legend>
           <label hidden={mode === 'logical'}>
             {t(mode ? (column ? '컬럼명' : '테이블명') : '물리 이름')}
             <Input
@@ -322,6 +329,11 @@ export function NativePropertyEditor({
                       onChange={(event) => change('comment', event.target.value)}
                     />
                   </label>
+                  <NativePrimaryKeyControl
+                    document={snapshot.native.document}
+                    column={column}
+                    context={{ userId, snapshot, busy, onSave }}
+                  />
                   <label hidden={mode === 'physical'}>
                     {t('논리 이름')}
                     <Input
@@ -390,21 +402,7 @@ export function NativePropertyEditor({
             {...(mode ? { mode } : {})}
             {...(column ? { column } : {})}
           />
-          {column && mode !== 'logical' && (
-            <NativePrimaryKeyControl
-              document={snapshot.native.document}
-              column={column}
-              context={{ userId, snapshot, busy, onSave }}
-            />
-          )}
         </PanelSection>
-      )}
-      {column && mode !== 'logical' && snapshot.native.status === 'available' && (
-        <NativePrimaryKeyControl
-          document={snapshot.native.document}
-          column={column}
-          context={{ userId, snapshot, busy, onSave }}
-        />
       )}
     </>
   );

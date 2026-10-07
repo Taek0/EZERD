@@ -1,6 +1,7 @@
+vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enabled: true }) }));
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createEmptyNativeDocument,
   createNativeTable,
@@ -121,8 +122,7 @@ describe('native structured forms and availability', () => {
       const html = renderToStaticMarkup(
         createElement(NativeFormatEditor, { ...f, context: f.context }),
       );
-      for (const label of [kind === 'mysql' ? 'mysql:int' : `${kind}:integer`, '현재 값'])
-        expect(html).toContain(label);
+      for (const label of ['role="combobox"']) expect(html).toContain(label);
       for (const foreign of ['postgresql', 'mysql', 'sqlite'].filter((item) => item !== kind))
         expect(html).not.toContain(`<option value="${foreign}:`);
       expect(policy.types.every((item) => item.definition.databaseKind === kind)).toBe(true);

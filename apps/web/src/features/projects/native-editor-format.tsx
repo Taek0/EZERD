@@ -1,3 +1,6 @@
+import './native-property-editor.css';
+import { SearchType } from '../../components/ui/SearchType.js';
+import { useNativeLogicalMode } from './NativeLogicalMode.js';
 import type { ReactNode } from 'react';
 import {
   nativeColumnTypeSchema,
@@ -612,6 +615,8 @@ export function NativeFormatEditor({
   afterType?: ReactNode;
 }) {
   const { t } = useI18n();
+  const { enabled: logicalEnabled } = useNativeLogicalMode();
+  if (!logicalEnabled) mode = 'physical';
   const policy = nativeEditorPolicy(document, table, column);
   const blocked = (id: Parameters<typeof policy.feature>[0]) => !policy.feature(id).usable;
   const reason = (code: string | undefined) =>
@@ -625,7 +630,7 @@ export function NativeFormatEditor({
   return (
     <NativeEditorForm
       context={context}
-      title={t(mode === 'logical' ? '논리 속성 · 추가 속성' : '형식·DB 옵션 편집')}
+      title=""
       draftKey={`format:${column ? 'column' : 'table'}:${column?.id ?? table.id}`}
       initial={nativeFormatInitial(table, column)}
       disabled={(values) => !!nativeFormatDraftIssue(document, table, column, values)}
@@ -858,7 +863,11 @@ export function NativeFormatEditor({
             !defaultFunctions.some((item) => item.productUsable),
         });
         if (originalDefault.kind === 'legacyExpression')
-          defaults.push({ value: 'legacyExpression', label: t('현재 원문 유지'), disabled: false });
+          defaults.push({
+            value: 'legacyExpression',
+            label: t('현재 원문 유지'),
+            disabled: false,
+          });
         const currentDefaultDecision =
           originalDefault.kind === 'expression'
             ? nativeBuiltinDefaultPolicy(document, table, column, originalDefault.expression)
@@ -866,12 +875,21 @@ export function NativeFormatEditor({
         const issue = nativeFormatDraftIssue(document, table, column, values);
         return (
           <>
-            <p>
-              {t('현재 값')}: {nativeTypeCurrentLabel(column, document)} ·{' '}
-              {nativeDefaultDisplay(column.physical.defaultValue, document)} ·{' '}
-              {nativeGenerationDisplay(column.physical.generation, document)}
-            </p>
-            {field('typeChoice', '타입', false, choices)}
+            <div className="native-property-type-field">
+              <span>{t('타입')}</span>
+              <SearchType
+                label={t('타입')}
+                value={values.typeChoice ?? ''}
+                disabled={context.busy}
+                options={choices.filter(
+                  (choice) => !choice.disabled || choice.value === values.typeChoice,
+                )}
+                onValueChange={(value) => {
+                  if (choices.some((choice) => choice.value === value && !choice.disabled))
+                    change('typeChoice', value);
+                }}
+              />
+            </div>
             {Object.entries(nativeTypeParameterRules(values.typeChoice ?? '')).map(([key, rule]) =>
               key === 'srid' ? (
                 <NativeSridParameterField
@@ -920,7 +938,11 @@ export function NativeFormatEditor({
               </p>
             )}
             {afterType}
-            <PanelSection title={t('NULL · 기본값 · 배열 차원')}>
+            <PanelSection title={t('NULL · 기본값 · 배열 차원')} defaultOpen={false}>
+              <p>
+                {nativeDefaultDisplay(column.physical.defaultValue, document)} ·{' '}
+                {nativeGenerationDisplay(column.physical.generation, document)}
+              </p>
               {field('nullable', 'NULL', false, bool)}
               {field('defaultChoice', '기본값', typeChanged, defaults)}
               {currentDefaultDecision.category === 'environment' && (

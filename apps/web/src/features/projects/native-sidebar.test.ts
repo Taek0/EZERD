@@ -90,7 +90,12 @@ describe('sidebar properties', () => {
       expect(depth).toBeLessThanOrEqual(1);
     }
     expect(depth).toBe(0);
-    expect(html).toContain('value="postgresql:varchar"');
+    expect(html).toContain('role="combobox"');
+    expect(html.indexOf('>설명<')).toBeLessThan(html.indexOf('기본 키(PK)'));
+    expect(html.indexOf('기본 키(PK)')).toBeLessThan(html.indexOf('>NULL<'));
+    expect(html).not.toContain('속성 편집');
+    expect(html).not.toContain('형식·DB 옵션 편집');
+    expect(html).not.toContain('현재 값');
     expect(nativeTypeOptionLabel('postgresql:varchar')).toBe('varchar');
   });
   it('preserves existing unverified SQLite type for unrelated NULL edits while blocking new use', () => {
