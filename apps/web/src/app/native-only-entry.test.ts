@@ -55,7 +55,7 @@ it('keeps legacy editor and sync entry points outside the application runtime gr
     'features/canvas/selection-frame.ts',
     'features/canvas/canvas-tool-shortcuts.ts',
     'features/canvas/canvas-wheel.ts',
-    'features/canvas/table-clipboard.ts',
+    'shared/clipboard/table-clipboard-store.ts',
     'features/canvas/inspector-state.ts',
     'features/relations/relation-routing.ts',
     'features/relations/obstacle-queries.ts',
@@ -66,6 +66,7 @@ it('keeps legacy editor and sync entry points outside the application runtime gr
   ])
     expect(paths).toContain(file);
   for (const file of [
+    'features/canvas/table-clipboard.ts',
     'features/canvas/Canvas.tsx',
     'features/collaboration/sync-client.ts',
     'features/collaboration/sync-history-panel.tsx',

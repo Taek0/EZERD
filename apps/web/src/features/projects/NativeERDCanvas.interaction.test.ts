@@ -8,6 +8,10 @@ import { IDBFactory } from 'fake-indexeddb';
 import { getNativeDurableQueue } from './native-durable-queue.js';
 import type { NativeSceneActions } from './NativeCanvasScene.js';
 import { extractPersonalState, type NodeLayout } from '@ezerd/model';
+import {
+  readLocalTableClipboard,
+  rememberTableClipboard,
+} from '../../shared/clipboard/table-clipboard-store.js';
 const personalApi = vi.hoisted(() => vi.fn());
 
 // Run the actual component's event handlers and effect dependency graph without a browser.
@@ -111,6 +115,7 @@ function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   return [tree, ...nodes(tree.props.children)];
 }
 beforeEach(() => {
+  rememberTableClipboard('');
   personalApi.mockReset().mockImplementation(() => new Promise(() => {}));
   const storage = new Map<string, string>();
   vi.stubGlobal('localStorage', {
@@ -137,6 +142,7 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
 });
 afterEach(async () => {
+  rememberTableClipboard('');
   hooks.slots.forEach((slot) => slot.cleanup?.());
   await getNativeDurableQueue().close();
   vi.unstubAllGlobals();
@@ -233,6 +239,98 @@ function canvas(authenticated = false) {
     hasMarquee: () => !overlay.hidden,
   };
 }
+
+describe('native canvas clipboard storage integration', () => {
+  function selectTable(ui: ReturnType<typeof canvas>, id: string) {
+    const scene = ui.scene();
+    const node = (scene.drawn as { nodes: NodeLayout[] }).nodes.find(
+      (item) => item.objectId === id,
+    )!;
+    (
+      scene.onNodeSelect as (
+        node: NodeLayout,
+        event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+      ) => void
+    )(node, { shiftKey: false, ctrlKey: false, metaKey: false });
+    ui.render();
+  }
+  function copiedCanvas() {
+    const ui = canvas();
+    selectTable(ui, 'a');
+    const setData = vi.fn();
+    ui.event('onCopy', { clipboardData: { setData } });
+    expect(setData).toHaveBeenCalledWith('text/plain', readLocalTableClipboard());
+    expect(JSON.parse(readLocalTableClipboard())).toMatchObject({
+      format: 'ezerd/tables',
+      formatVersion: 2,
+      document: { schemaVersion: 2 },
+    });
+    return ui;
+  }
+
+  it('uses the last copied Native text for keyboard paste while leaving source and text inputs unchanged', () => {
+    const ui = copiedCanvas();
+    const source = structuredClone(ui.props.snapshot.sourceDocument);
+    const first = readLocalTableClipboard();
+    selectTable(ui, 'b');
+    ui.event('onCopy', { clipboardData: { setData: vi.fn() } });
+    const text = readLocalTableClipboard();
+    expect(text).not.toBe(first);
+    expect(JSON.parse(text).document.tables.map((table: { id: string }) => table.id)).toEqual([
+      'b',
+    ]);
+    ui.event('onKeyDownCapture', { key: 'v', ctrlKey: true, nativeEvent: { isComposing: false } });
+    expect(ui.props.onSave).toHaveBeenCalledWith(
+      [expect.objectContaining({ type: 'paste_native_clipboard', clipboard: JSON.parse(text) })],
+      expect.objectContaining({
+        version: ui.props.snapshot.project.version,
+        sequence: ui.props.snapshot.sequence,
+      }),
+    );
+    expect(ui.props.snapshot.sourceDocument).toEqual(source);
+    vi.mocked(ui.props.onSave).mockClear();
+    ui.event('onCopy', { target: new Target('input'), clipboardData: { setData: vi.fn() } });
+    ui.event('onKeyDownCapture', {
+      target: new Target('input'),
+      key: 'v',
+      ctrlKey: true,
+      nativeEvent: { isComposing: false },
+    });
+    expect(readLocalTableClipboard()).toBe(text);
+    expect(ui.props.onSave).not.toHaveBeenCalled();
+    ui.props.editable = false;
+    ui.render();
+    ui.event('onKeyDownCapture', { key: 'v', ctrlKey: true, nativeEvent: { isComposing: false } });
+    expect(ui.props.onSave).not.toHaveBeenCalled();
+  });
+
+  it('falls back to copied Native text when the context menu cannot read the device clipboard', async () => {
+    const ui = copiedCanvas();
+    const text = readLocalTableClipboard();
+    const readText = vi.fn(async () => {
+      throw Error('permission denied');
+    });
+    vi.stubGlobal('navigator', { clipboard: { readText } });
+    vi.stubGlobal('window', { innerWidth: 1600, innerHeight: 1000 });
+    ui.event('onContextMenu');
+    const items = nodes(ui.render()).flatMap((node) =>
+      Array.isArray(node.props.items)
+        ? (node.props.items as { id: string; onAction?: () => void }[])
+        : [],
+    );
+    const paste = items.find((item) => item.id === 'paste-tables');
+    expect(paste).toBeDefined();
+    paste!.onAction!();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(readText).toHaveBeenCalledTimes(1);
+    expect(ui.props.onSave).toHaveBeenCalledWith(
+      [expect.objectContaining({ type: 'paste_native_clipboard', clipboard: JSON.parse(text) })],
+      expect.any(Object),
+    );
+    expect(readLocalTableClipboard()).toBe(text);
+  });
+});
 
 describe('native blank canvas pointer interaction', () => {
   it.each([

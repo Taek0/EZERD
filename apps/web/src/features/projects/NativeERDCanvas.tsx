@@ -22,7 +22,10 @@ import {
   readNativeClipboard,
 } from './native-clipboard-helpers.js';
 import { nativeClipboardMessage } from './native-clipboard.js';
-import { rememberTableClipboard, readLocalTableClipboard } from '../canvas/table-clipboard.js';
+import {
+  rememberTableClipboard,
+  readLocalTableClipboard,
+} from '../../shared/clipboard/table-clipboard-store.js';
 import { ConfirmProvider, useConfirm } from '../../components/ui/ConfirmProvider.js';
 import { nativeCanvasDeleteCommands } from './native-canvas-delete.js';
 import { createPortal } from 'react-dom';
@@ -1785,7 +1788,7 @@ function NativeCanvasWorkspace({
     if (!ids.length || (cut && !editable)) return;
     try {
       const copied = copyNativeClipboard(snapshot, ids);
-      rememberTableClipboard(copied.text, true);
+      rememberTableClipboard(copied.text);
       if (transfer) transfer.setData('text/plain', copied.text);
       else void navigator.clipboard?.writeText(copied.text).catch(() => {});
       if (cut) void deleteSelection(ids);
