@@ -1,0 +1,152 @@
+.native-enum-dialog.table-fk-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.native-enum-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.native-enum-dialog[open][data-closing] {
+  animation: native-enum-exit 160ms ease-in forwards;
+  pointer-events: none;
+}
+.native-enum-dialog[open][data-closing]::backdrop {
+  animation: native-enum-backdrop-exit 160ms ease-in forwards;
+}
+@keyframes native-enum-exit {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@keyframes native-enum-backdrop-exit {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .native-enum-dialog[open][data-closing],
+  .native-enum-dialog[open][data-closing]::backdrop {
+    animation: none;
+  }
+}
+.native-enum-dialog > .enum-dialog-head {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.native-enum-dialog .enum-dialog-head > h2 {
+  font-size: 16px;
+}
+.native-enum-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px 20px;
+  flex-shrink: 0;
+}
+.native-enum-toolbar .table-enum-search {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.native-enum-toolbar input {
+  width: 100%;
+}
+.native-enum-count {
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.native-enum-body {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  padding: 0 20px 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.native-enum-dialog .table-enum-list {
+  max-height: none;
+  overflow: visible;
+  gap: 8px;
+}
+.native-enum-dialog .table-enum-item {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 12px;
+}
+.native-enum-dialog .table-enum-item > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
+}
+.native-enum-dialog .table-enum-item > summary small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+.native-enum-value-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: var(--surface-raised, #eff8ff);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.native-enum-dialog .table-enum-values span {
+  border: 1px solid var(--line);
+  white-space: pre-wrap;
+}
+.native-enum-editor {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.native-enum-dialog .native-property-editor fieldset {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.native-enum-dialog .native-property-editor label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.native-enum-dialog .native-property-editor input,
+.native-enum-dialog .native-property-editor textarea {
+  width: 100%;
+  min-width: 0;
+}
+.native-enum-dialog .native-enum-footer {
+  margin: 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}
+@media (max-width: 480px) {
+  .native-enum-dialog > .enum-dialog-head,
+  .native-enum-toolbar,
+  .native-enum-dialog .native-enum-footer {
+    padding: 12px;
+  }
+  .native-enum-body {
+    padding: 0 12px 12px;
+  }
+  .native-enum-editor {
+    padding: 12px;
+  }
+}

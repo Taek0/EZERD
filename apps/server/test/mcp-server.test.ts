@@ -560,7 +560,7 @@ describe('MCP workspace authorization', () => {
       });
       const invalid = await harness.client.callTool({
         name: 'create_project',
-        arguments: { workspaceId: project.workspaceId, formatVersion: 3 },
+        arguments: { workspaceId: project.workspaceId, formatVersion: 1 },
       });
       expect(invalid.isError).toBe(true);
       expect(harness.workspace.createProject).toHaveBeenCalledTimes(2);

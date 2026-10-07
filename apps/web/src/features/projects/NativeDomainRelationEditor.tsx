@@ -83,16 +83,20 @@ export function NativeDomainRelationEditor({
   selectedId,
   initialAction,
   sourceDomainId,
+  allowCreate = true,
 }: {
   document: NativeDesignDocument;
   context?: NativeEditorContext;
   editable: boolean;
+  allowCreate?: boolean;
   selectedId?: string;
   initialAction?: 'create' | 'edit' | 'delete';
   sourceDomainId?: string;
 }) {
   const { t } = useI18n(),
-    [action, setAction] = useState(initialAction ?? (selectedId ? 'edit' : 'create')),
+    [action, setAction] = useState(
+      initialAction ?? (selectedId || !allowCreate ? 'edit' : 'create'),
+    ),
     [target, setTarget] = useState(selectedId ?? document.domainRelations[0]?.id ?? '');
   const [open, setOpen] = useState(!!selectedId || !!initialAction);
   const formHost = useRef<HTMLDivElement>(null);
@@ -167,7 +171,9 @@ export function NativeDomainRelationEditor({
               value={action}
               disabled={context.busy}
               choices={[
-                { value: 'create', label: t('연결 추가'), disabled: !document.domains.length },
+                ...(allowCreate
+                  ? [{ value: 'create', label: t('연결 추가'), disabled: !document.domains.length }]
+                  : []),
                 {
                   value: 'edit',
                   label: t('연결 수정'),
@@ -180,7 +186,8 @@ export function NativeDomainRelationEditor({
                 },
               ]}
               onChange={(value) => {
-                if (value === 'create' || value === 'edit' || value === 'delete') setAction(value);
+                if ((value === 'create' && allowCreate) || value === 'edit' || value === 'delete')
+                  setAction(value);
               }}
             />
           )}
@@ -196,7 +203,7 @@ export function NativeDomainRelationEditor({
               onChange={setTarget}
             />
           )}
-          {(action === 'create' ? document.domains.length > 0 : !!relation) && (
+          {(action === 'create' ? allowCreate && document.domains.length > 0 : !!relation) && (
             <div ref={formHost}>
               <NativeDomainRelationForm
                 key={`${action}:${target}:${context.snapshot.project.version}:${context.snapshot.sequence}:${context.snapshot.project.databaseRevision}`}

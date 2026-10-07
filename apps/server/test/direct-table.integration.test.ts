@@ -1,3 +1,4 @@
+import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -122,6 +123,12 @@ describe.runIf(process.env.EZERD_DIRECT_TABLE_DB_TEST === '1')(
       ).toBe(201);
       const project = await request('/projects', 'POST', { workspaceId, name: 'Tables first' });
       expect(project.status).toBe(201);
+      const fixturePool = new pg.Pool({ connectionString: url.toString() });
+      try {
+        await seedLegacyProject(fixturePool, project.data.id);
+      } finally {
+        await fixturePool.end();
+      }
       projectId = project.data.id;
     }, 30000);
 

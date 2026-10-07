@@ -1,3 +1,4 @@
+import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -275,6 +276,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       const projectId = project.id as string;
       projects.push(projectId);
+      await seedLegacyProject(pool, projectId);
       expect(project.workspaceId).toBe(id);
       expect((await call(b, 'list_projects', { workspaceId: id })).projects).toHaveLength(1);
       await call(b, 'get_project_summary', { projectId });
@@ -433,6 +435,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       const project = created.structuredContent as { id: string; version: number };
       projects.push(project.id);
+      await seedLegacyProject(pool, project.id);
       const opened = await a.instance.callTool({
         name: 'get_project',
         arguments: { projectId: project.id },
@@ -750,6 +753,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     expect(created.status).toBe(201);
     const projectId = created.data.id as string;
     projects.push(projectId);
+    await seedLegacyProject(pool, projectId);
     const tokenA = await issue(userA.session, 'personal A');
     const tokenB = await issue(userB.session, 'personal B');
     const a = client(tokenA.token);

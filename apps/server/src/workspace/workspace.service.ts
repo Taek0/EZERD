@@ -92,6 +92,8 @@ export class WorkspaceService {
 
   createProject(actorId: string, input: z.infer<typeof createProjectSchema>) {
     return operation(async () => {
+      if (input.formatVersion !== undefined && input.formatVersion !== 2)
+        throw new BadRequestException('새 프로젝트는 Native 설계로만 생성할 수 있습니다.');
       return this.access.runWorkspace(actorId, input.workspaceId, 'createProject', async (tx) => {
         const context = defaultDatabaseContext(input.databaseKind ?? 'postgresql');
         const name =
@@ -111,15 +113,11 @@ export class WorkspaceService {
             databaseKind: context.kind,
             name,
             databaseProfileId: context.profileId,
-            ...(input.formatVersion === 2
-              ? {
-                  // The JSONB row annotation remains v1 for older clients; the factory supplies v2.
-                  document: sharedDocument(
-                    createEmptyNativeDocument(context),
-                  ) as unknown as ProjectRow['document'],
-                  databaseRevision: 0,
-                }
-              : {}),
+            // The JSONB row annotation remains v1 for older clients; the factory supplies v2.
+            document: sharedDocument(
+              createEmptyNativeDocument(context),
+            ) as unknown as ProjectRow['document'],
+            databaseRevision: 0,
           })
           .returning();
         await tx.insert(workspaceAuditEvents).values({

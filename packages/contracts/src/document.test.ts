@@ -14,14 +14,15 @@ const empty = () => ({
   layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] },
 });
 describe('API input boundaries', () => {
-  it('keeps omitted creation format unchanged and accepts only explicit v1/v2 formats', () => {
+  it('accepts omitted or native creation format and rejects legacy creation', () => {
     const workspaceId = '00000000-0000-4000-8000-000000000001';
     expect(createProjectSchema.parse({ workspaceId })).toEqual({ workspaceId });
-    for (const formatVersion of [1, 2])
+    for (const formatVersion of [2])
       expect(
         createProjectSchema.parse({ workspaceId, databaseKind: 'mysql', formatVersion }),
       ).toEqual({ workspaceId, databaseKind: 'mysql', formatVersion });
     for (const input of [
+      { workspaceId, formatVersion: 1 },
       { workspaceId, formatVersion: 3 },
       { workspaceId, formatVersion: '2' },
       { workspaceId, native: true },

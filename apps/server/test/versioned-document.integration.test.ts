@@ -1,3 +1,4 @@
+import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -93,6 +94,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         databaseKind: kind,
       });
       expect(result.status).toBe(201);
+      await seedLegacyProject(pool, result.data.id);
       projectIds.push(result.data.id);
       return result.data.id as string;
     };

@@ -6,9 +6,9 @@ import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 
 registerTranslations({
   '더 보기': 'More',
+  '보관된 입력 복구': 'Recover preserved input',
   '전체 테이블': 'All tables',
   '도메인 맵': 'Domain map',
-  '보기 선택': 'Choose view',
   '편집 도구': 'Editing tools',
   '보기와 내보내기': 'Views and export',
   '속성 패널 숨기기': 'Hide inspector',
@@ -21,7 +21,6 @@ registerTranslations({
   '＋ 도메인': '＋ Domain',
   '＋ 메모': '＋ Note',
   '캔버스 작업': 'Canvas actions',
-  '자동 배치': 'Automatic layout',
   '관계 경로 초기화': 'Reset relation routes',
   '프로젝트 내보내기': 'Export project',
   'DDL 내보내기': 'Export DDL',
@@ -41,8 +40,7 @@ export interface NativeCanvasToolbarProps {
   onFilter?: ((value: NativeDomainFilterValue | null) => void) | undefined;
   onCreate?: ((kind: 'table' | 'domain' | 'enum') => void) | undefined;
   onNote: () => void;
-  onTools?: (() => void) | undefined;
-  onAutoLayout?: (() => void) | undefined;
+  onOpenRecovery?: (() => void) | undefined;
   onResetRoutes?: (() => void) | undefined;
   onPaste?: (() => void) | undefined;
   onExportProject?: (() => void) | undefined;
@@ -68,8 +66,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   onFilter,
   onCreate,
   onNote,
-  onTools,
-  onAutoLayout,
+  onOpenRecovery,
   onResetRoutes,
   onPaste,
   onExportProject,
@@ -187,22 +184,6 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               {t('필터 해제')}
             </Button>
           )}
-          {views.some((view) => !['overview', '__tables__'].includes(view.id)) && (
-            <Dropdown
-              label={t('보기 선택')}
-              trigger={
-                <Button disabled={disabled} aria-label={t('보기 선택')}>
-                  {t('보기 선택')} ▾
-                </Button>
-              }
-              items={views.map((view) => ({
-                id: view.id,
-                label: view.name,
-                disabled,
-                onAction: () => onView(view.id),
-              }))}
-            />
-          )}
           {(onOpenEnums || onCreate) && (
             <Button
               disabled={disabled || (!onOpenEnums && !editable)}
@@ -242,85 +223,74 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               />
             ))}
         </div>
-        <span className="toolbar-divider" aria-hidden="true" />
-        <div className="toolbar-group" role="group" aria-label={t('캔버스 작업')}>
-          {onAutoLayout && (
-            <Button disabled={!noteEditable || disabled} onClick={onAutoLayout}>
-              {t('자동 배치')}
-            </Button>
-          )}
-          {(onCreate || onTools || onResetRoutes || onPaste) && (
-            <Dropdown
-              label={t('캔버스 작업')}
-              trigger={
-                <IconButton aria-label={t('더 보기')} title={t('더 보기')} disabled={disabled}>
-                  ⋯
-                </IconButton>
-              }
-              items={[
-                ...(onCreate
-                  ? [
-                      {
-                        id: 'create-table',
-                        label: t('＋ 테이블'),
-                        disabled: writeBlocked || viewId === 'overview',
-                        onAction: () => onCreate('table'),
-                      },
-                      {
-                        id: 'create-domain',
-                        label: t('＋ 도메인'),
-                        disabled: writeBlocked,
-                        onAction: () => onCreate('domain'),
-                      },
-                      {
-                        id: 'create-enum',
-                        label: '＋ ENUM',
-                        disabled: writeBlocked,
-                        onAction: () => onCreate('enum'),
-                      },
-                    ]
-                  : []),
-                {
-                  id: 'create-note',
-                  label: t('＋ 메모'),
-                  disabled: !noteEditable || disabled,
-                  onAction: onNote,
-                },
-                ...(onPaste
-                  ? [
-                      {
-                        id: 'paste',
-                        label: t('붙여넣기'),
-                        disabled: writeBlocked || viewId === 'overview',
-                        onAction: onPaste,
-                      },
-                    ]
-                  : []),
-                ...(onAutoLayout
-                  ? [
-                      {
-                        id: 'auto-layout',
-                        label: t('자동 배치'),
-                        disabled: !noteEditable || disabled,
-                        onAction: onAutoLayout,
-                      },
-                    ]
-                  : []),
-                ...(onResetRoutes
-                  ? [
-                      {
-                        id: 'reset-routes',
-                        label: t('관계 경로 초기화'),
-                        disabled: !noteEditable || disabled,
-                        onAction: onResetRoutes,
-                      },
-                    ]
-                  : []),
-                ...(onTools ? [{ id: 'tools', label: t('도구'), onAction: onTools }] : []),
-              ]}
-            />
-          )}
-        </div>
+        {(onCreate || onOpenRecovery || onResetRoutes || onPaste) && (
+          <>
+            <span className="toolbar-divider" aria-hidden="true" />
+            <div className="toolbar-group" role="group" aria-label={t('캔버스 작업')}>
+              <Dropdown
+                label={t('캔버스 작업')}
+                trigger={
+                  <IconButton aria-label={t('더 보기')} title={t('더 보기')}>
+                    ⋯
+                  </IconButton>
+                }
+                items={[
+                  ...(onCreate
+                    ? [
+                        {
+                          id: 'create-table',
+                          label: t('＋ 테이블'),
+                          disabled: writeBlocked || viewId === 'overview',
+                          onAction: () => onCreate('table'),
+                        },
+                        {
+                          id: 'create-domain',
+                          label: t('＋ 도메인'),
+                          disabled: writeBlocked,
+                          onAction: () => onCreate('domain'),
+                        },
+                        {
+                          id: 'create-enum',
+                          label: '＋ ENUM',
+                          disabled: writeBlocked,
+                          onAction: () => onCreate('enum'),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'create-note',
+                    label: t('＋ 메모'),
+                    disabled: !noteEditable || disabled,
+                    onAction: onNote,
+                  },
+                  ...(onPaste
+                    ? [
+                        {
+                          id: 'paste',
+                          label: t('붙여넣기'),
+                          disabled: writeBlocked || viewId === 'overview',
+                          onAction: onPaste,
+                        },
+                      ]
+                    : []),
+                  ...(onResetRoutes
+                    ? [
+                        {
+                          id: 'reset-routes',
+                          label: t('관계 경로 초기화'),
+                          disabled: !noteEditable || disabled,
+                          onAction: onResetRoutes,
+                        },
+                      ]
+                    : []),
+                  ...(onOpenRecovery
+                    ? [{ id: 'recovery', label: t('보관된 입력 복구'), onAction: onOpenRecovery }]
+                    : []),
+                ]}
+              />
+            </div>
+          </>
+        )}
         {onMode && (
           <div className="toolbar-group" role="group" aria-label={t('모델 보기')}>
             <Button

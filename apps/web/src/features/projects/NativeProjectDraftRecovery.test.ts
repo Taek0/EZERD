@@ -9,6 +9,8 @@ import {
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeAdvancedEditor } from './NativeAdvancedEditor.js';
+import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
+import { PanelSection } from '../../shared/editor/panel.js';
 import { NativeDomainEditor } from './NativeDomainEditor.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
 import {
@@ -164,7 +166,7 @@ function input(key: string): NativeDraftArchiveEntry {
 }
 function openPanel(root: ReturnType<typeof renderer>, props: ReturnType<typeof fixture>) {
   const render = () => root.render(() => NativeProjectView(props));
-  click(render(), '보관된 입력 복구');
+  (child(render(), NativeERDCanvas).props.onOpenRecovery as () => void)();
   return {
     render,
     panel: child(render(), NativeDraftRecoveryPanel)
@@ -381,6 +383,59 @@ describe('native original-editor toolbar wiring', () => {
     (canvas().onCreate as (kind: string) => void)('domain');
     expect(child(render(), NativeDomainEditor).props.initialAction).toBe('create');
     expect(hooks.stage).not.toHaveBeenCalled();
+    root.unmount();
+  });
+});
+
+describe('simplified native inspector', () => {
+  it('limits domain relation creation to the domain map and closes creation on navigation', () => {
+    const root = renderer(),
+      props = fixture();
+    const render = () => root.render(() => NativeProjectView(props));
+    const canvas = () => child(render(), NativeERDCanvas).props;
+    const request = (action: string, id: string) =>
+      (canvas().onRequestAction as (action: string, id: string) => void)(action, id);
+    const navigate = (id: string) => (canvas().onViewChange as (id: string) => void)(id);
+    request('createDomainRelation', 'd');
+    expect(child(render(), NativeDomainRelationEditor)).toBeUndefined();
+    navigate('overview');
+    request('createDomainRelation', 'd');
+    expect(child(render(), NativeDomainRelationEditor).props).toMatchObject({
+      allowCreate: true,
+      initialAction: 'create',
+      sourceDomainId: 'd',
+    });
+    navigate('__tables__');
+    expect(child(render(), NativeDomainRelationEditor)).toBeUndefined();
+    request('domainRelation', 'existing');
+    expect(child(render(), NativeDomainRelationEditor).props).toMatchObject({
+      allowCreate: false,
+      selectedId: 'existing',
+    });
+    expect(hooks.stage).not.toHaveBeenCalled();
+    root.unmount();
+  });
+  it('starts outline objects expanded and relationships collapsed in both views', () => {
+    const root = renderer(),
+      props = fixture();
+    const render = () => root.render(() => NativeProjectView(props));
+    for (const [view, objects, relations] of [
+      ['__tables__', '테이블', '테이블 관계'],
+      ['overview', '도메인', '도메인 관계'],
+    ]) {
+      (child(render(), NativeERDCanvas).props.onViewChange as (id: string) => void)(view!);
+      const sections = nodes(render()).filter((node) => node.type === PanelSection);
+      expect(sections.find((node) => node.props.title === objects)?.props.defaultOpen).toBe(true);
+      expect(sections.find((node) => node.props.title === relations)?.props.defaultOpen).toBe(
+        false,
+      );
+      expect(nodes(render()).some((node) => node.props.children === '도구')).toBe(false);
+    }
+    expect(child(render(), NativeDraftRecoveryPanel)).toBeUndefined();
+    expect(child(render(), NativeERDCanvas).props.recoveryOpen).toBe(false);
+    (child(render(), NativeERDCanvas).props.onOpenRecovery as () => void)();
+    expect(child(render(), NativeDraftRecoveryPanel)).toBeDefined();
+    expect(child(render(), NativeERDCanvas).props.recoveryOpen).toBe(true);
     root.unmount();
   });
 });

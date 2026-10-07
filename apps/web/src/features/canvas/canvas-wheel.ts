@@ -22,7 +22,7 @@ export function wheelCamera<T extends Camera>(
   if (event.ctrlKey || event.metaKey) {
     const zoom = Math.max(
       MIN_CANVAS_ZOOM,
-      Math.min(MAX_CANVAS_ZOOM, camera.zoom * Math.exp(-Math.max(-40, Math.min(40, dy)) * 0.003)),
+      Math.min(MAX_CANVAS_ZOOM, camera.zoom * Math.exp(-Math.max(-40, Math.min(40, dy)) * 0.0036)),
     );
     return {
       ...camera,

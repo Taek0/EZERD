@@ -1,3 +1,4 @@
+import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -48,12 +49,15 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       ...(input === undefined ? {} : { body: JSON.stringify(input) }),
     });
     const text = await response.text();
-    return {
+    const result = {
       status: response.status,
       data: response.headers.get('content-type')?.includes('application/json')
         ? JSON.parse(text)
         : text,
     };
+    if (path === '/projects' && method === 'POST' && result.status === 201)
+      await seedLegacyProject(pool, result.data.id);
+    return result;
   }
   async function login(userId: string, pin = '0012'): Promise<string> {
     const response = await request('/sessions', 'POST', { userId, pin }, null);

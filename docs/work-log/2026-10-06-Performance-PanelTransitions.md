@@ -55,3 +55,9 @@
 원시/집계/manifest/입력 보존 screenshot: `artifacts/performance/2026-10-06-panel-transitions/` (Git 제외).
 계획: [PanelTransitions](../planning/2026-10-06-Performance-PanelTransitions.md).
 구현: [PanelRenderIsolation](2026-10-06-Performance-PanelRenderIsolation.md), [AdvancedPanelMemo](2026-10-06-Performance-AdvancedPanelMemo.md).
+
+## main 대상 제품 브랜치 검증
+
+- origin/main `834712e`에서 `codex/native-panel-transition-performance`를 생성해 위 제품 변경과 문서만 선별했다. 앞의 push/PR 미수행 상태는 lab 검증 완료 시점의 기록이다.
+- `pnpm format` 및 `pnpm check` 통과: 218개 파일 / 2,749개 테스트 통과, 27개 파일 / 500개 환경 조건부 skip. 포맷·타입 검사·서버/웹 빌드 통과, 기존 bundle 크기 경고 유지.
+- 변경 문서의 상대 링크와 `git diff --check`를 확인했다. 계측 스크립트와 원시 결과는 PR에서 제외했다.
