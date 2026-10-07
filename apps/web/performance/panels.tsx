@@ -78,6 +78,10 @@ const stats = (values: number[]) => {
   };
 };
 function Demo() {
+  const [visibilityOff, setVisibilityOff] = useState(false);
+  const [layerOff, setLayerOff] = useState(false);
+  const [svgExtent, setSvgExtent] = useState(false);
+  const [gridOff, setGridOff] = useState(false);
   const [count, setCount] = useState(50),
     [output, setOutput] = useState(''),
     [running, setRunning] = useState(false);
@@ -263,6 +267,44 @@ function Demo() {
     <>
       <header className="panel-lab-controls">
         <strong>Full editor panel profiling · no server writes</strong>
+        <label>
+          <input
+            type="checkbox"
+            checked={visibilityOff}
+            onChange={(e) => setVisibilityOff(e.target.checked)}
+          />{' '}
+          Disable card content visibility
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={layerOff}
+            onChange={(e) => setLayerOff(e.target.checked)}
+          />{' '}
+          Disable world promotion
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={svgExtent}
+            onChange={(e) => setSvgExtent(e.target.checked)}
+          />{' '}
+          Expand relation SVG viewport
+        </label>
+        <label>
+          <input type="checkbox" checked={gridOff} onChange={(e) => setGridOff(e.target.checked)} />{' '}
+          Disable dot grid
+        </label>
+        <style>
+          {(gridOff ? '.native-erd-surface {background-image:none !important;}' : '') +
+            (visibilityOff
+              ? '.native-erd-node.table {content-visibility:visible !important;}'
+              : '') +
+            (layerOff ? '.native-erd-world {will-change:auto !important;}' : '') +
+            (svgExtent
+              ? '.native-erd-lines {width:100px !important;height:100px !important;}'
+              : '')}
+        </style>
         <select
           aria-label="Tables"
           value={count}
