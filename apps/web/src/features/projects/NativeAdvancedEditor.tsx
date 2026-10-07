@@ -1,10 +1,11 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
 import { PanelSection, PanelList, PanelRow } from '../../shared/editor/panel.js';
 import type { NativeDesignDocument, NativeTable, NativeIndex } from '@ezerd/model';
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { nativeDurableId } from './native-durable-queue.js';
+import { loadNativeEditorDraft } from './native-editor-draft.js';
 import {
   NativeEditorForm,
   NativeEditorField,
@@ -94,8 +95,52 @@ function NativeAdvancedStatus({ status }: { status: NativeAdvancedCandidate }) {
     </div>
   );
 }
+/** Keep the legacy recovery key, including the identity of a recovered creation. */
+function useAdvancedCreationIdentity(context: NativeEditorContext, draftKey: string) {
+  return useState(() => {
+    try {
+      const draft = loadNativeEditorDraft(context.userId, context.snapshot.project.id, draftKey);
+      if (draft?.before.id)
+        return {
+          id: draft.before.id,
+          existing: !!draft.before.originalJSON && draft.before.originalJSON !== 'null',
+        };
+    } catch {
+      // NativeEditorForm presents storage/recovery errors and blocks saving.
+    }
+    return { id: nativeDurableId(), existing: false };
+  })[0];
+}
+
+/** Advanced forms predate create: keys. Give them the same ACK/document barrier
+ * without renaming archived draft keys or arming autosave on mount. */
+function useAdvancedCreationContext(
+  context: NativeEditorContext,
+  creating: boolean,
+  existing: boolean,
+) {
+  const [ackSequence, setAckSequence] = useState(-1);
+  const [wasExisting, setWasExisting] = useState(existing);
+  useEffect(() => {
+    if (existing) setWasExisting(true);
+  }, [existing]);
+  const save = useCommittedEvent(context.onSave);
+  const onSave: NativeEditorContext['onSave'] = async (commands, expected, draft) => {
+    const accepted = await save(commands, expected, draft);
+    if (accepted && creating) setAckSequence(expected.sequence);
+    return accepted;
+  };
+  return {
+    acknowledged: wasExisting || ackSequence >= 0,
+    waitingForDocument: creating && context.snapshot.sequence <= ackSequence,
+    context: {
+      ...context,
+      onSave,
+    },
+  };
+}
 export function NativeAdvancedIndexForm({
-  context,
+  context: providedContext,
   document,
   table,
   index,
@@ -108,12 +153,19 @@ export function NativeAdvancedIndexForm({
   readOnly?: boolean;
 }) {
   const { t } = useI18n();
-  const [newId] = useState(nativeDurableId);
-  const id = index?.id ?? newId;
+  const draftKey = `advanced:index:${table.id}:${index?.id ?? 'new'}`;
+  const identity = useAdvancedCreationIdentity(providedContext, draftKey);
+  const id = index?.id ?? identity.id;
+  const current = document.indexes?.find((item) => item.id === id && item.tableId === table.id);
+  const { context, acknowledged, waitingForDocument } = useAdvancedCreationContext(
+    providedContext,
+    !index,
+    identity.existing || !!current,
+  );
   const initial = {
     id,
-    indexDraftJSON: JSON.stringify(nativeIndexDraft(document, table, index)),
-    originalJSON: JSON.stringify(index ?? null),
+    indexDraftJSON: JSON.stringify(nativeIndexDraft(document, table, current)),
+    originalJSON: JSON.stringify(current ?? null),
   };
   function evaluate(
     values: Record<string, string>,
@@ -123,7 +175,8 @@ export function NativeAdvancedIndexForm({
       const persistedId = values.id ?? '';
       if (
         values.id !== before.id ||
-        (index && persistedId !== index.id) ||
+        persistedId !== id ||
+        ((index || acknowledged) && !current) ||
         values.originalJSON !== before.originalJSON ||
         JSON.stringify(document.indexes?.find((i) => i.id === persistedId) ?? null) !==
           before.originalJSON
@@ -134,7 +187,7 @@ export function NativeAdvancedIndexForm({
         table,
         persistedId,
         readNativeIndexDraft(values.indexDraftJSON ?? ''),
-        !!index,
+        !!current,
       );
     } catch (error) {
       return {
@@ -150,10 +203,10 @@ export function NativeAdvancedIndexForm({
     <fieldset disabled={readOnly || context.busy}>
       <NativeEditorForm
         context={context}
-        draftKey={`advanced:index:${table.id}:${index?.id ?? 'new'}`}
+        draftKey={draftKey}
         title={t(index ? '인덱스 키 식' : '새 고급 인덱스')}
         initial={initial}
-        disabled={(values) => readOnly || !evaluate(values).usable}
+        disabled={(values) => readOnly || waitingForDocument || !evaluate(values).usable}
         build={(values, before) => nativeAdvancedCommands(evaluate(values, before), readOnly)}
       >
         {(values, change) => {
@@ -233,7 +286,7 @@ export function NativeAdvancedIndexForm({
                                 : p,
                             ),
                           },
-                          index?.id,
+                          current?.id,
                         ).allowed,
                     }))}
                     disabled={readOnly || context.busy}
@@ -318,7 +371,7 @@ export function NativeAdvancedIndexForm({
                 table={table}
                 value={draft}
                 onChange={update}
-                indexId={index?.id}
+                indexId={current?.id}
                 disabled={readOnly || context.busy}
               />
               <NativeAdvancedStatus status={evaluate(values)} />
@@ -330,7 +383,7 @@ export function NativeAdvancedIndexForm({
   );
 }
 export function NativeAdvancedExpressionForm({
-  context,
+  context: providedContext,
   document,
   table,
   target: providedTarget,
@@ -343,27 +396,47 @@ export function NativeAdvancedExpressionForm({
   readOnly?: boolean;
 }) {
   const { t } = useI18n();
-  const [createdId] = useState(nativeDurableId);
-  const target =
-    providedTarget.kind === 'check' && providedTarget.create
-      ? { ...providedTarget, id: createdId }
-      : providedTarget;
+  const creating = providedTarget.kind === 'check' && providedTarget.create;
+  const key =
+    providedTarget.kind === 'check'
+      ? creating
+        ? 'new'
+        : providedTarget.id
+      : providedTarget.columnId;
+  const draftKey = `advanced:expression:${table.id}:${providedTarget.kind}:${key}`;
+  const identity = useAdvancedCreationIdentity(providedContext, draftKey);
+  const createdId = identity.id;
+  const exists = !!document.checks?.some(
+    (check) => check.id === createdId && check.tableId === table.id,
+  );
+  const { context, acknowledged, waitingForDocument } = useAdvancedCreationContext(
+    providedContext,
+    creating,
+    identity.existing || exists,
+  );
+  const target = creating
+    ? { kind: 'check' as const, id: createdId, create: !exists }
+    : providedTarget;
   const initial = nativeExpressionInitial(document, table, target);
+  // A creation session remains in replacement mode after its first ACK so that
+  // rebasing an expression edited in flight cannot silently switch to preserve.
+  if (creating) initial.mode = 'replace';
   const column =
     target.kind === 'check' ? undefined : document.columns?.find((c) => c.id === target.columnId);
   const title =
     target.kind === 'check' ? '새 복합 CHECK' : target.kind === 'default' ? '기본값 식' : '생성 식';
-  const key = target.kind === 'check' ? (target.create ? 'new' : target.id) : target.columnId;
   const evaluate = (values: Record<string, string>, before: Record<string, string> = initial) =>
-    nativeExpressionCandidate(document, table, target, values, before);
+    creating && acknowledged && target.kind === 'check' && target.create
+      ? { allowed: false, usable: false, preserved: false, issues: [], code: 'check.not-found' }
+      : nativeExpressionCandidate(document, table, target, values, before);
   return (
     <fieldset disabled={readOnly || context.busy}>
       <NativeEditorForm
         context={context}
-        draftKey={`advanced:expression:${table.id}:${target.kind}:${key}`}
+        draftKey={draftKey}
         title={t(title)}
         initial={initial}
-        disabled={(values) => readOnly || !evaluate(values).usable}
+        disabled={(values) => readOnly || waitingForDocument || !evaluate(values).usable}
         build={(values, before) => nativeAdvancedCommands(evaluate(values, before), readOnly)}
       >
         {(values, change) => (
@@ -504,7 +577,7 @@ function NativeAdvancedEditorContent({
     } else if (kind === 'check') target = { kind: 'check', id, create: false };
     else if (kind === 'default' || kind === 'computed') target = { kind, columnId: id };
   }
-  const mountingKey = `${context.userId}:${context.snapshot.project.id}:${table.id}:${selected}:${context.snapshot.project.databaseRevision}:${context.snapshot.project.version}:${context.snapshot.sequence}:${recoveryRevision ?? ''}`;
+  const mountingKey = `${context.userId}:${context.snapshot.project.id}:${table.id}:${selected}:${context.snapshot.project.databaseRevision}:${recoveryRevision ?? ''}`;
   return (
     <PanelSection
       className="native-property-editor"
