@@ -101,6 +101,8 @@ export function NativePropertyEditor({
   const [storageError, setStorageError] = useState(loaded.error);
   const [outstanding, setOutstanding] = useState(0);
   const [ackSequence, setAckSequence] = useState(-1);
+  const observed = useRef({ sequence: snapshot.sequence, values: fresh().values });
+  observed.current = { sequence: snapshot.sequence, values: fresh().values };
   const { physicalName, comment, logicalName, definition } = draft.values;
   function change(field: keyof NativePropertyDraft['values'], value: string) {
     const next = {
@@ -228,7 +230,11 @@ export function NativePropertyEditor({
       );
       const saved = await completion;
       if (saved) {
-        setAckSequence(draft.expected.sequence);
+        const latest = observed.current;
+        const reflected = (Object.keys(draft.values) as (keyof typeof draft.values)[])
+          .filter((key) => draft.values[key] !== draft.before[key])
+          .every((key) => latest.values[key] === draft.values[key]);
+        setAckSequence(reflected ? draft.expected.sequence : latest.sequence);
         const current = currentDraft.current;
         const next = { ...current, before: { ...draft.values } };
         if (current === draft) {

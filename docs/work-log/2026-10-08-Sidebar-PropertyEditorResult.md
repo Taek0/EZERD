@@ -19,3 +19,9 @@
 - 실제 hook/컴포넌트 로직의 Node hook driver로 같은 프레임 입력 후 unmount, ACK 중 추가 입력 후 unmount drain, 이미 도착한 ACK snapshot rebase 후 다음 sequence 저장을 검증했다. 브라우저 DOM/E2E 검증은 아니다.
 - web TypeScript 검사 수행. 담당 파일의 TS2367 수정 포함.
 - 담당 파일만 Prettier 적용. 공용 form/hook 및 다른 워커 파일은 수정/커밋하지 않았다.
+
+## 추가 동시성 검증
+
+- ACK 직전 unrelated snapshot에서 원복 입력이 사라지지 않도록 저장한 변경 필드가 observed snapshot에 반영되었는지 구분하여 rebase 기준을 선택한다.
+- 실제 ACK snapshot과 unrelated snapshot 양쪽을 검증했다. 최종 전용 2 파일 9 테스트 통과, web 타입 검사 통과.
+- 외부 busy fieldset guard 복원 커밋: bfbbea3. 최초 b0b7153은 공유 index 동시 staging으로 Canvas/SearchType 변경이 함께 포함되었다. 자동 승인 검토가 main 이력 재작성 방식의 분리를 거부하여 기존 이력은 보존했다.

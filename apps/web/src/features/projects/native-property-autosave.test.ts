@@ -198,4 +198,39 @@ describe('property autosave lifecycle', () => {
     await vi.advanceTimersByTimeAsync(0);
     ui.unmount();
   });
+  it('does not consume a revert edit when an unrelated snapshot precedes ACK', async () => {
+    vi.useFakeTimers();
+    let ack!: (value: boolean) => void;
+    const save = vi.fn(
+      () =>
+        new Promise<boolean>((r) => {
+          ack = r;
+        }),
+    );
+    const ui = fixture(save);
+    const original = ui.column.physical.name;
+    ui.render();
+    ui.change('first');
+    ui.render();
+    await vi.advanceTimersByTimeAsync(300);
+    ui.change(original);
+    ui.snapshot.sequence++;
+    ui.snapshot.project.version++;
+    ui.render();
+    ack(true);
+    await vi.advanceTimersByTimeAsync(0);
+    ui.render();
+    ui.render();
+    expect(ui.draft()?.values.physicalName).toBe(original);
+    expect(ui.draft()?.before.physicalName).toBe('first');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(
+      (save.mock.calls[1] as unknown as [Array<{ patch: { physical: { name: string } } }>])[0][0]!
+        .patch.physical.name,
+    ).toBe(original);
+    ack(true);
+    await vi.advanceTimersByTimeAsync(0);
+    ui.unmount();
+  });
 });
