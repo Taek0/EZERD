@@ -10,6 +10,7 @@ import type { ProjectEntry } from './project-entry.js';
 import type { Thread, NativeSyncOperationResult } from '@ezerd/contracts';
 import {
   getDatabaseProfile,
+  moveNativeTableDomain,
   nativeColumnTypeDisplay,
   nativeDefaultDisplay,
   nativeExpressionDisplay,
@@ -86,6 +87,7 @@ registerTranslations({
   '설계 조회': 'Design overview',
   속성: 'Properties',
   도메인: 'Domains',
+  '소속 도메인': 'Domain membership',
   '프로젝트 정보': 'Project information',
   '속성 패널': 'Inspector',
   '속성 패널 너비': 'Inspector width',
@@ -136,6 +138,62 @@ registerTranslations({
     'Save was rejected. Keep your input and check the latest design.',
 });
 
+/** Keep the acknowledged domain visible until the parent receives the saved document. */
+export function NativeTableDomainSelect({
+  document,
+  tableId,
+  editable,
+  onSave,
+}: {
+  document: NativeDesignDocument;
+  tableId: string;
+  editable: boolean;
+  onSave: (commands: NativeWebCommand[]) => Promise<boolean>;
+}) {
+  const { t } = useI18n();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const inFlight = useRef(false);
+  const table = document.tables?.find((item) => item.id === tableId);
+  async function change(value: string) {
+    const targetDomainId = value || null;
+    if (!editable || !table || inFlight.current || table.domainId === targetDomainId) return;
+    inFlight.current = true;
+    setSaving(true);
+    setError('');
+    try {
+      moveNativeTableDomain(document, tableId, targetDomainId);
+      await onSave([{ type: 'move_table_domain', tableId, targetDomainId }]);
+    } catch (error) {
+      setError(message(error));
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="native-property-editor inspector-fields">
+      <label>
+        {t('소속 도메인')}
+        <Select
+          aria-label={t('소속 도메인')}
+          value={table?.domainId ?? ''}
+          disabled={!editable || !table || saving}
+          onValueChange={change}
+        >
+          <option value="">{t('미소속')}</option>
+          {document.domains.map((domain) => (
+            <option key={domain.id} value={domain.id}>
+              {domain.name || domain.id}
+            </option>
+          ))}
+        </Select>
+      </label>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+}
+
 /** Native data and commands stay outside the v1 editor/runtime. */
 export function NativeProjectView({
   entry,
@@ -184,7 +242,6 @@ export function NativeProjectView({
   const [enumOpen, setEnumOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [editingConstraint, setEditingConstraint] = useState<string | null>(null);
-  const [domainAction, setDomainAction] = useState<'move' | null>(null);
   const [pending, setPending] = useState<NativePendingSave | null>(null);
   const [operationState, setOperationState] = useState({ saving: false, pendingBlocked: !!userId });
   const { saving, pendingBlocked } = operationState;
@@ -308,7 +365,6 @@ export function NativeProjectView({
   function toolbarCreate(kind: 'table' | 'domain' | 'enum' | 'column') {
     leaveRecoveredSelection();
     setInspectorOpen(true);
-    setDomainAction(null);
     if (kind === 'enum') {
       setEnumOpen(true);
       return;
@@ -1276,7 +1332,6 @@ export function NativeProjectView({
                   setInspectorOpen(true);
                   setInspectorTab('domains');
                   setDomainCreation(0);
-                  setDomainAction(null);
                   setSelectedDomainRelation(null);
                 }}
                 onSelect={(tableId, columnId) => {
@@ -1463,7 +1518,7 @@ export function NativeProjectView({
                     </>
                   )}
                   <NativeDomainEditor
-                    key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${domainCreation}:action:${domainAction ?? ''}`}
+                    key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${domainCreation}`}
                     document={doc}
                     snapshot={snapshot}
                     {...(userId ? { userId } : {})}
@@ -1476,9 +1531,7 @@ export function NativeProjectView({
                       ? { initialAction: recovered.action }
                       : domainCreation
                         ? { initialAction: 'create' as const }
-                        : domainAction
-                          ? { initialAction: domainAction }
-                          : {})}
+                        : {})}
                     onSelectDomain={(id) => {
                       leaveRecoveredSelection();
                       setSelectedDomain(id);
@@ -1866,24 +1919,19 @@ export function NativeProjectView({
                     {selectedTable && (
                       <>
                         <PanelSection title={t('기본 정보')} defaultOpen>
-                          <p className="panel-note">
-                            {t('도메인')}:{' '}
-                            {doc.domains.find((item) => item.id === selectedTable.domainId)?.name ??
-                              t('미지정')}
-                          </p>
-                          {editable && (
-                            <Button
-                              disabled={editorBusy}
-                              onClick={() => {
-                                leaveRecoveredSelection();
-                                setSelectedDomain(null);
-                                setDomainAction('move');
-                                setInspectorTab('domains');
-                              }}
-                            >
-                              {t('테이블 소속 이동')}
-                            </Button>
-                          )}
+                          <NativeTableDomainSelect
+                            key={`${userId}:${snapshot.project.id}:${selectedTable.id}`}
+                            document={doc}
+                            tableId={selectedTable.id}
+                            editable={editable}
+                            onSave={(commands) =>
+                              save(commands, {
+                                version: snapshot.project.version,
+                                sequence: snapshot.sequence,
+                                databaseRevision: snapshot.project.databaseRevision,
+                              })
+                            }
+                          />
                           {editable ? (
                             <>
                               <NativePropertyEditor
