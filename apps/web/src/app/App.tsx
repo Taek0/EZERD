@@ -385,10 +385,6 @@ export function App() {
     setOpened(value);
   }
   function replaceEntry(entry: ProjectEntry) {
-    if (entry.kind === 'legacy') {
-      replaceProject(entry.value);
-      return;
-    }
     replaceProject(null);
     nativeCurrent.current = entry;
     setNativeOpened(entry);

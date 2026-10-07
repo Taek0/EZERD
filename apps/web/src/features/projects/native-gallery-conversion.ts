@@ -263,7 +263,7 @@ export async function loadGalleryProjectForOpen(
   if (projectId !== auth.projectId) throw Error('database.change-scope-invalid');
   const entry = await load(projectId);
   auth.assertCurrent();
-  const project = entry.kind === 'native' ? entry.snapshot.project : entry.value.project;
+  const project = entry.snapshot.project;
   if (project.id !== auth.projectId || project.workspaceId !== auth.workspaceId)
     throw Error('database.change-scope-invalid');
   if (entry.kind === 'native') {
