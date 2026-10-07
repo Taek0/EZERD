@@ -2,7 +2,9 @@ import type { NativeSyncOperationResult } from '@ezerd/contracts';
 import {
   extractPersonalState,
   mergeStoredPersonalState,
+  normalizeSharedTableCanvas,
   reconcilePersonalState,
+  TABLES_VIEW_ID,
   validateDatabaseDocument,
 } from '@ezerd/model';
 import type { ProjectEntry } from './project-entry.js';
@@ -62,6 +64,14 @@ export function nativeEntryAfterAck(
   )
     return null;
   const document = shareNativeJson(snapshot.sourceDocument, ack.document);
+  // ACKs carry raw storage, whereas the server reader supplies canonical canvas placement.
+  // Apply exactly that read-only projection without ever replacing sourceDocument.
+  const displayDocument = shareNativeJson(
+    snapshot.native.document,
+    normalizeSharedTableCanvas(document, {
+      nodeId: (tableId) => `node:${tableId.slice(0, 128)}:${TABLES_VIEW_ID}`,
+    }),
+  );
   const geometryOnly =
     ack.changedPaths.length > 0 &&
     ack.changedPaths.every((path) =>
@@ -71,11 +81,11 @@ export function nativeEntryAfterAck(
     ? shareNativeJson(
         current.document,
         mergeStoredPersonalState(
-          document,
-          reconcilePersonalState(document, extractPersonalState(current.document)),
+          displayDocument,
+          reconcilePersonalState(displayDocument, extractPersonalState(current.document)),
         ),
       )
-    : document;
+    : displayDocument;
   return {
     ...current,
     document: preview,
@@ -90,10 +100,10 @@ export function nativeEntryAfterAck(
       sourceDocument: document,
       native: {
         ...snapshot.native,
-        document,
+        document: displayDocument,
         issues: geometryOnly
           ? snapshot.native.issues
-          : validateDatabaseDocument(document, document.database, { mode: 'read' }),
+          : validateDatabaseDocument(displayDocument, displayDocument.database, { mode: 'read' }),
       },
     },
   };
