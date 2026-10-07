@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
 import { McpServerFactory } from '../src/mcp/mcp-server.js';
+import { NativeCancellationService } from '../src/sync/native-cancellation.service.js';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import {
   createEmptyNativeDocument,
@@ -367,7 +368,7 @@ describe('MCP workspace authorization', () => {
       { history: vi.fn(), compensate: vi.fn() } as never,
       { baseline: vi.fn() } as never,
       transfer as never,
-      { cancel: vi.fn() } as never,
+      (overrides.cancellation ?? { cancel: vi.fn() }) as never,
     );
     const server = factory.create(actor, tokenId, crypto.randomUUID());
     const client = new Client({ name: 'authorization-test', version: '1.0.0' });
@@ -390,6 +391,39 @@ describe('MCP workspace authorization', () => {
       },
     };
   }
+
+  it('returns cancellation input errors with field paths before accessing the database', async () => {
+    const transaction = vi.fn();
+    const cancellation = new NativeCancellationService(
+      { db: { transaction } } as never,
+      {} as never,
+    );
+    const harness = await connected({ cancellation });
+    try {
+      for (const [input, path] of [
+        [{ kind: 'native-command', request: { operationId: 'invalid' } }, ['request']],
+        [
+          {
+            kind: 'history-undo',
+            request: { operationId: project.id, groupId: project.id, clientId: project.id },
+          },
+          ['sourceOperationId'],
+        ],
+      ] as const) {
+        const result = await harness.client.callTool({
+          name: 'cancel_native_project_request',
+          arguments: { projectId: project.id, ...input },
+        });
+        expect(result.isError).toBe(true);
+        const error = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+        expect(error).toMatchObject({ status: 400, code: 'native.cancellation-input-invalid' });
+        expect(error.issues).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
+      }
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      await harness.close();
+    }
+  });
 
   it('passes raw v1 evidence and compact v2 input through the Native transfer service', async () => {
     const transfer = { importProject: vi.fn(async () => ({ project })), exportProject: vi.fn() };

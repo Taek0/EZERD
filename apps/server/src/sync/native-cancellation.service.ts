@@ -57,7 +57,10 @@ export class NativeCancellationService {
   ): Promise<NativeCancellationResult> {
     const parsed = nativeCancellationInputSchema.safeParse(raw);
     if (!parsed.success)
-      throw new BadRequestException({ code: 'native.cancellation-input-invalid' });
+      throw new BadRequestException({
+        code: 'native.cancellation-input-invalid',
+        issues: parsed.error.issues,
+      });
     const input = parsed.data,
       hash = fingerprint(projectId, input);
     return this.database.db.transaction(async (tx) => {

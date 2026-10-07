@@ -35,7 +35,6 @@ import {
   nativeHistoryQuerySchema,
   nativeHistoryPageSchema,
   nativeSyncSnapshotSchema,
-  nativeCancellationInputSchema,
   nativeCancellationResultSchema,
 } from '@ezerd/contracts';
 
@@ -602,11 +601,7 @@ export class McpServerFactory {
       ({ projectId, ...raw }) =>
         invoke('cancel_native_project_request', async () =>
           nativeCancellationResultSchema.parse(
-            await this.nativeCancellation.cancel(
-              projectId,
-              nativeCancellationInputSchema.parse(raw),
-              user,
-            ),
+            await this.nativeCancellation.cancel(projectId, raw, user),
           ),
         ),
     );
