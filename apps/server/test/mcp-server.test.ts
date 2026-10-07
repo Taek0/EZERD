@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
 import { describe, expect, it, vi } from 'vitest';
 import { McpServerFactory } from '../src/mcp/mcp-server.js';
 import { NativeCancellationService } from '../src/sync/native-cancellation.service.js';
@@ -118,6 +119,17 @@ describe('MCP server tools', () => {
     await client.connect(clientTransport as never);
     try {
       const tools = await client.listTools();
+      const jsonValidator = new AjvJsonSchemaValidator();
+      expect(tools.tools).toHaveLength(42);
+      for (const tool of tools.tools) {
+        expect(() => jsonValidator.getValidator(tool.inputSchema), tool.name).not.toThrow();
+        expect(tool.outputSchema, tool.name).toBeDefined();
+        expect(tool.annotations, tool.name).toMatchObject({
+          readOnlyHint: expect.any(Boolean),
+          destructiveHint: expect.any(Boolean),
+          openWorldHint: false,
+        });
+      }
       expect(client.getInstructions()).toContain('최소 40px');
       expect(client.getInstructions()).toContain('PK→FK 방향');
       expect(client.getInstructions()).toContain('관계선 교차');
@@ -392,6 +404,122 @@ describe('MCP workspace authorization', () => {
     };
   }
 
+  it('publishes all three import envelopes, guarded expressions and cancellation identities without rewriting raw inputs', async () => {
+    const harness = await connected();
+    try {
+      const tools = (await harness.client.listTools()).tools;
+      const validator = new AjvJsonSchemaValidator();
+      const importTool = tools.find((tool) => tool.name === 'import_project')!;
+      const validate = validator.getValidator(importTool.inputSchema);
+      const native = createEmptyNativeDocument(defaultDatabaseContext('sqlite'));
+      const files = [
+        {
+          format: 'ezerd-project',
+          formatVersion: 1,
+          exportedAt: now,
+          project: { name: ' Raw legacy ' },
+          document,
+        },
+        {
+          format: 'ezerd-project',
+          formatVersion: 2,
+          exportedAt: now,
+          project: {
+            name: ' Native ',
+            databaseKind: 'sqlite',
+            databaseProfileId: 'sqlite-3.45-v1',
+          },
+          document: native,
+        },
+        {
+          format: 'ezerd-project',
+          formatVersion: 2,
+          exportedAt: now,
+          project: {
+            name: ' Native ',
+            databaseKind: 'sqlite',
+            databaseProfileId: 'sqlite-3.45-v1',
+          },
+          source: { projectId: project.id, version: 1, sequence: 1, databaseRevision: 0 },
+          sourceDocument: native,
+          native: { status: 'available', document: native, migrationIssues: [], issues: [] },
+        },
+      ];
+      for (const file of files)
+        expect(validate({ workspaceId: space.id, transfer: file }).valid).toBe(true);
+      expect(
+        validate({ workspaceId: space.id, transfer: { format: 'ezerd-project', formatVersion: 2 } })
+          .valid,
+      ).toBe(false);
+      const changes = tools.find((tool) => tool.name === 'apply_native_project_changes')!;
+      expect(JSON.stringify(changes.inputSchema)).toContain('ezerd_mcp_expression');
+      expect(JSON.stringify(changes.inputSchema)).toContain('sqlite:current_timestamp');
+      const input = {
+        projectId: project.id,
+        operationId: crypto.randomUUID(),
+        clientId: crypto.randomUUID(),
+        groupId: crypto.randomUUID(),
+        expectedVersion: 0,
+        expectedSequence: 0,
+        expectedDatabaseRevision: 0,
+        commands: [
+          {
+            type: 'add_check',
+            value: {
+              id: 'check',
+              tableId: 'table',
+              name: 'positive',
+              scope: 'physical',
+              expression: {
+                kind: 'binary',
+                operator: '>',
+                left: { kind: 'column', columnId: 'column' },
+                right: { kind: 'literal', literalType: 'number', value: '0' },
+              },
+            },
+          },
+        ],
+      };
+      const validateChanges = validator.getValidator(changes.inputSchema);
+      expect(validateChanges(input).valid).toBe(true);
+      input.commands[0]!.value.expression.right.value = 0 as never;
+      expect(validateChanges(input).valid).toBe(false);
+      const cancellation = tools.find((tool) => tool.name === 'cancel_native_project_request')!;
+      const validateCancellation = validator.getValidator(cancellation.inputSchema);
+      const request = JSON.parse(
+        `{"operationId":"${project.id}","groupId":"${project.id}","clientId":"${project.id}","__proto__":{"raw":" value "}}`,
+      );
+      const original = JSON.stringify(request);
+      expect(
+        validateCancellation({ projectId: project.id, kind: 'native-command', request }).valid,
+      ).toBe(true);
+      expect(
+        validateCancellation({ projectId: project.id, kind: 'history-undo', request }).valid,
+      ).toBe(false);
+      expect(
+        validateCancellation({
+          projectId: project.id,
+          kind: 'native-upgrade',
+          request: {
+            operationId: project.id,
+            clientId: project.id,
+          },
+        }).valid,
+      ).toBe(true);
+      expect(JSON.stringify(request)).toBe(original);
+      expect(
+        JSON.stringify(tools.find((tool) => tool.name === 'export_project')!.outputSchema),
+      ).toContain('sourceDocument');
+      expect(
+        JSON.stringify(
+          tools.find((tool) => tool.name === 'get_native_project_history')!.outputSchema,
+        ),
+      ).toContain('recordedAck');
+    } finally {
+      await harness.close();
+    }
+  });
+
   it('returns a recorded v1 cancellation ACK verbatim without requiring protocolVersion', async () => {
     const operationId = crypto.randomUUID();
     const result = {
@@ -407,6 +535,7 @@ describe('MCP workspace authorization', () => {
     const cancellation = { cancel: vi.fn(async () => ({ outcome: 'recorded', result })) };
     const harness = await connected({ cancellation });
     try {
+      await harness.client.listTools();
       const response = await harness.client.callTool({
         name: 'cancel_native_project_request',
         arguments: {

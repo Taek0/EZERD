@@ -7,6 +7,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import pg from 'pg';
+import { createNativeColumn, createNativeTable, defaultDatabaseContext } from '@ezerd/model';
 
 describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integration', () => {
   let app: NestExpressApplication;
@@ -444,6 +445,168 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       await b.instance.close();
     }
   });
+
+  it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+    'runs %s Native design, DDL, reviews, notifications and personal state through discovered MCP tools',
+    async (kind) => {
+      const tokenA = await issue(userA.session, `native-${kind}-owner`);
+      const tokenB = await issue(userB.session, `native-${kind}-member`);
+      const a = client(tokenA.token),
+        b = client(tokenB.token);
+      await a.instance.connect(a.transport);
+      await b.instance.connect(b.transport);
+      const call = async (
+        connection: typeof a,
+        name: string,
+        args: Record<string, unknown> = {},
+      ) => {
+        const result = await connection.instance.callTool({ name, arguments: args });
+        expect(result.isError, `${name}: ${JSON.stringify(result.content)}`).not.toBe(true);
+        return result.structuredContent as Record<string, any>;
+      };
+      try {
+        // Real consumers discover schemas first, enabling SDK validation of every output below.
+        expect((await a.instance.listTools()).tools).toHaveLength(42);
+        await b.instance.listTools();
+        const created = await call(a, 'create_project', {
+          workspaceId,
+          name: `MCP ${kind} native`,
+          databaseKind: kind,
+        });
+        const projectId = created.id as string;
+        projects.push(projectId);
+        const state = await call(a, 'get_project_document_state', { projectId });
+        expect(state.sourceDocument).toMatchObject({ schemaVersion: 2, database: { kind } });
+        expect(await call(a, 'get_project_database_capabilities', { projectId })).toMatchObject({
+          documentSchemaVersion: 2,
+        });
+        const database = defaultDatabaseContext(kind);
+        const table = createNativeTable(database, randomUUID());
+        table.logical.name = 'Records';
+        table.physical.name = 'records';
+        const column = createNativeColumn(database, table, randomUUID());
+        column.logical.name = 'ID';
+        column.physical.name = 'id';
+        const operationId = randomUUID();
+        const saved = await call(a, 'apply_native_project_changes', {
+          projectId,
+          operationId,
+          groupId: operationId,
+          clientId: randomUUID(),
+          expectedVersion: state.project.version,
+          expectedSequence: state.sequence,
+          expectedDatabaseRevision: state.project.databaseRevision,
+          includeDocument: true,
+          commands: [
+            { type: 'add_table', value: table },
+            { type: 'add_column', value: column },
+            {
+              type: 'add_table_reference',
+              tableId: table.id,
+              viewId: '__tables__',
+              placement: { x: 1500, y: 180, width: 400, height: 260 },
+            },
+          ],
+        });
+        expect(saved.status).toBe('accepted');
+        const ddl = await call(a, 'export_project_ddl', { projectId });
+        expect(ddl.canExport, JSON.stringify(ddl.issues)).toBe(true);
+        expect(ddl.sql).toContain('records');
+        expect(ddl.sql).toContain('id');
+        const file = await call(a, 'export_project', { projectId });
+        expect(file.sourceDocument.tables).toEqual([table]);
+        const thread = await call(a, 'create_review_thread', {
+          projectId,
+          thread: {
+            viewId: '__tables__',
+            objectId: table.id,
+            x: 1550,
+            y: 210,
+            body: 'Please review',
+            mentionIds: [userB.id],
+          },
+        });
+        const replied = await call(b, 'reply_review_thread', {
+          threadId: thread.id,
+          message: {
+            body: 'Reviewed',
+            mentionIds: [userA.id],
+          },
+        });
+        expect(replied.messages).toHaveLength(2);
+        expect((await call(a, 'get_review_thread', { threadId: thread.id })).messages).toEqual(
+          replied.messages,
+        );
+        expect((await call(a, 'list_review_threads', { projectId })).threads).toEqual(
+          expect.arrayContaining([expect.objectContaining({ id: thread.id })]),
+        );
+        const inbox = await call(b, 'list_notifications', { unreadOnly: true });
+        const notice = inbox.notifications.find(
+          (row: { threadId: string }) => row.threadId === thread.id,
+        );
+        expect(notice).toBeDefined();
+        expect(
+          (
+            await a.instance.callTool({
+              name: 'update_notification',
+              arguments: { notificationId: notice.id, update: { read: true } },
+            })
+          ).isError,
+        ).toBe(true);
+        expect(
+          await call(b, 'update_notification', {
+            notificationId: notice.id,
+            update: { read: true },
+          }),
+        ).toMatchObject({ read: true, userId: userB.id });
+        const resolved = await call(a, 'update_review_thread', {
+          threadId: thread.id,
+          update: { resolved: true },
+        });
+        expect(resolved.resolved).toBe(true);
+        expect(
+          await call(a, 'delete_review_thread', {
+            threadId: thread.id,
+            delete: { expectedUpdatedAt: resolved.updatedAt },
+          }),
+        ).toEqual({ id: thread.id, deleted: true });
+        const personal = await call(b, 'get_personal_state', { projectId });
+        const changedPersonal = await call(b, 'apply_personal_changes', {
+          projectId,
+          operationId: randomUUID(),
+          expectedVersion: personal.version,
+          expectedDatabaseRevision: personal.databaseRevision,
+          expectedProjectVersion: personal.projectVersion,
+          expectedSyncSequence: personal.syncSequence,
+          commands: [
+            { type: 'set_viewport', value: { viewId: '__tables__', x: 50, y: 30, zoom: 1 } },
+          ],
+        });
+        expect(changedPersonal.state.viewports).toEqual([
+          { viewId: '__tables__', x: 50, y: 30, zoom: 1 },
+        ]);
+        expect((await call(a, 'get_native_project_history', { projectId })).history).toEqual(
+          expect.arrayContaining([expect.objectContaining({ operationId, format: 'native' })]),
+        );
+        const current = await call(a, 'get_project_document_state', { projectId });
+        expect(current.sourceDocument).toEqual(saved.document);
+        const archived = await call(a, 'update_project', {
+          projectId,
+          update: { expectedVersion: current.project.version, status: 'archived' },
+        });
+        expect(
+          await call(a, 'delete_project', {
+            projectId,
+            delete: { expectedVersion: archived.version },
+          }),
+        ).toEqual({ id: projectId, deleted: true });
+        projects.splice(projects.indexOf(projectId), 1);
+      } finally {
+        await a.instance.close();
+        await b.instance.close();
+      }
+    },
+  );
 
   it('paginates project and review listings with stable cursors', async () => {
     const token = await issue(userA.session, 'pagination');

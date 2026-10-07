@@ -40,6 +40,7 @@ import {
   applyNativeCanvasStyle,
   applyNativeDomainRelation,
 } from './native-canvas-decoration-candidate.js';
+import { mcpSchemaMetadata } from './mcp-schema-metadata.js';
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const applyNativeProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -63,13 +64,7 @@ export const applyNativeProjectChangesMetadataSchema = z
       .min(1)
       .max(100),
   })
-  .meta(
-    z.toJSONSchema(applyNativeProjectChangesSchema, {
-      io: 'input',
-      target: 'draft-07',
-      unrepresentable: 'any',
-    }),
-  );
+  .meta(mcpSchemaMetadata(applyNativeProjectChangesSchema));
 
 function commandValidationError(error: z.ZodError) {
   return new BadRequestException({

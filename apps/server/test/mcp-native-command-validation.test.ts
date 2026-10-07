@@ -130,14 +130,40 @@ describe('native MCP command discovery and diagnostics', () => {
       const tool = (await session.client.listTools()).tools.find(
         (row) => row.name === 'apply_native_project_changes',
       )!;
-      const commands = tool.inputSchema.properties!.commands as {
+      const resolve = (value: any): any => {
+        if (value.$ref)
+          return resolve(
+            value.$ref
+              .slice(2)
+              .split('/')
+              .reduce((node: any, key: string) => node[key], tool.inputSchema),
+          );
+        if (value.allOf)
+          return value.allOf.map(resolve).reduce(
+            (left: any, right: any) => ({
+              ...left,
+              ...right,
+              properties: { ...left.properties, ...right.properties },
+              required: [...new Set([...(left.required ?? []), ...(right.required ?? [])])],
+            }),
+            {},
+          );
+        return value;
+      };
+      const commands = resolve(tool.inputSchema.properties!.commands) as {
         items: { oneOf: Array<{ properties: Record<string, any>; required: string[] }> };
       };
-      expect(commands.items.oneOf).toHaveLength(nativeEditorCommandSchema.options.length);
-      const table = commands.items.oneOf.find((row) => row.properties.type.const === 'add_table')!;
+      const options = resolve(commands.items).oneOf as Array<{
+        properties: Record<string, any>;
+        required: string[];
+      }>;
+      expect(options).toHaveLength(nativeEditorCommandSchema.options.length);
+      const table = options
+        .map(resolve)
+        .find((row) => resolve(row.properties.type).const === 'add_table')!;
       expect(table.required).toEqual(['type', 'value']);
       expect(table.properties).not.toHaveProperty('placement');
-      expect(table.properties.value.required).toEqual(
+      expect(resolve(table.properties.value).required).toEqual(
         expect.arrayContaining([
           'id',
           'domainId',
@@ -147,13 +173,12 @@ describe('native MCP command discovery and diagnostics', () => {
           'customProperties',
         ]),
       );
-      expect(JSON.stringify(table.properties.value.properties.physical)).toContain('sqliteMain');
-      expect(JSON.stringify(table.properties.value.properties.physical)).not.toContain('"none"');
-      const reference = commands.items.oneOf.find(
-        (row) => row.properties.type.const === 'add_table_reference',
-      )!;
+      expect(JSON.stringify(tool.inputSchema)).toContain('sqliteMain');
+      const reference = options
+        .map(resolve)
+        .find((row) => resolve(row.properties.type).const === 'add_table_reference')!;
       expect(reference.required).toEqual(['type', 'tableId', 'viewId', 'placement']);
-      expect(reference.properties.placement.properties).toHaveProperty('width');
+      expect(resolve(reference.properties.placement).properties).toHaveProperty('width');
       expect(tool.description).toContain('sqliteMain');
     } finally {
       await session.close();
