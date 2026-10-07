@@ -178,7 +178,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         expect(state.native.status).toBe('available');
         expect(state.sourceDocument.domains).toEqual([]);
         expect(state.sourceDocument.layout.viewports).toEqual([]);
-        expect((await request(`/projects/${project.id}`)).status).toBe(409);
+        expect((await request(`/projects/${project.id}`)).status).toBe(410);
         const caps = (await request(`/projects/${project.id}/database/capabilities`)).data;
         expect(caps.documentSchemaVersion).toBe(2);
         expect(caps.database).toMatchObject({ ...context, revision: 0 });
@@ -220,7 +220,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         );
       },
     );
-    it('preserves existing legacy projects and imports while rejecting legacy creation', async () => {
+    it('preserves legacy sources and restores imports as native while rejecting legacy creation', async () => {
       expect((await create('mysql', 1, 'Legacy')).status).toBe(400);
       const document = createEmptyDocument();
       const imported = await request('/projects/import', 'POST', {
@@ -234,10 +234,20 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         },
       });
       expect(imported.status, JSON.stringify(imported.data)).toBe(201);
-      const legacy = await request(`/projects/${imported.data.id}`);
-      expect(legacy.status).toBe(200);
-      expect(legacy.data.document.schemaVersion).toBe(1);
-      expect((await row(imported.data.id)).document.schemaVersion).toBe(1);
+      const restored = await request(`/projects/${imported.data.id}/document-state`);
+      expect(restored.status).toBe(200);
+      expect(restored.data.sourceDocument.schemaVersion).toBe(2);
+      expect((await row(imported.data.id)).document.schemaVersion).toBe(2);
+      const existing = await create('mysql', undefined, 'Historical fixture');
+      await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+        existing.data.id,
+        JSON.stringify(document),
+      ]);
+      expect(
+        (await request(`/projects/${existing.data.id}/document-state`)).data.sourceDocument,
+      ).toEqual(document);
+      expect((await row(existing.data.id)).document).toEqual(document);
+      expect((await request(`/projects/${existing.data.id}`)).status).toBe(410);
     });
     it('isolates native personal camera defaults and never invents a default domain or another user canvas', async () => {
       const created = await create('sqlite', 2, 'Private defaults');
