@@ -34,3 +34,4 @@ export type {
   NativeDatabaseConversionMapping,
   NativeDatabaseConversionPlan,
 } from './database/conversion.js';
+export * from './native-table-canvas.js';
