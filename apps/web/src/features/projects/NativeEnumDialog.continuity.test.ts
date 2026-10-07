@@ -11,6 +11,7 @@ import { NativeLabelFields } from './NativeLabelFields.js';
 import { advancedFixture } from './native-advanced-test-fixtures.js';
 import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import type { NativeWebCommand } from './native-save.js';
+import { loadNativeEditorDraft } from './native-editor-draft.js';
 
 // Walk the actual dialog -> structure -> create -> durable form -> label-field chain.
 // Hook state is keyed by element type/key/path, so an ACK-dependent React key really remounts.
@@ -67,6 +68,7 @@ vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enable
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker() {} }));
 vi.mock('../../shared/i18n/index.js', () => ({
   registerTranslations() {},
+  translate: (text: string) => text,
   useI18n: () => ({
     t: (text: string, values?: Record<string, unknown>) =>
       text.replace(/\{(\w+)\}/g, (_, key: string) => String(values?.[key] ?? key)),
@@ -182,6 +184,20 @@ it.each([false, true])(
     render();
     click('ENUM 추가');
     change('물리 이름', 'qa_status');
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+    render();
+    expect(saves).toHaveLength(0);
+    const alerts = nodes
+      .filter(({ element }) => element.props.role === 'alert')
+      .map(({ element }) => element.props.children)
+      .join(' ');
+    expect(alerts).toContain('값을 하나 이상 추가해 주세요.');
+    expect(alerts).not.toMatch(/origin|too_small|"path"|ZodError/);
+    expect(field('물리 이름').element.props.value).toBe('qa_status');
+    expect(
+      loadNativeEditorDraft(context.userId, context.snapshot.project.id, 'create:enum:project')
+        ?.values,
+    ).toMatchObject({ name: 'qa_status', enumLabelsJSON: '[]' });
     click('값 추가');
     const inputPath = field('값 1').path;
     const instance = states.get(

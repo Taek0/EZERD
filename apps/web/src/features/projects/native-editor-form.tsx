@@ -11,6 +11,7 @@ import type { ProjectDocumentState } from '@ezerd/contracts';
 import { Button, Input, Select, Textarea } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { message } from '../../shared/api/client.js';
+import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
   loadNativeEditorDraft,
   storeNativeEditorDraft,
@@ -226,7 +227,11 @@ export function NativeEditorForm({
         } else persist(next);
       }
     } catch (error) {
-      setError(message(error));
+      setError(
+        error instanceof Error && error.name === 'ZodError'
+          ? nativeEditorConditionText(nativeEditorErrorCode(error))
+          : message(error),
+      );
     } finally {
       if (queued) setOutstanding((count) => count - 1);
     }

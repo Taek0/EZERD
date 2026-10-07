@@ -9,6 +9,34 @@ import { nativeEditorConditionText, nativeEditorErrorCode } from './native-edito
 
 afterEach(() => setLocale('ko'));
 describe('native editor condition diagnostics', () => {
+  it.each(['add_enum', 'patch_enum'] as const)(
+    'guides empty ENUM values for %s without validator JSON',
+    (type) => {
+      const result = nativeEditorCommandSchema.safeParse(
+        type === 'add_enum'
+          ? { type, value: { id: 'e', name: 'qa_status', schema: 'public', values: [] } }
+          : { type, id: 'e', patch: { values: [] } },
+      );
+      if (result.success) throw Error('Expected missing ENUM values');
+      expect(nativeEditorErrorCode(result.error)).toBe('enum.values-required');
+      setLocale('ko');
+      expect(nativeEditorConditionText(nativeEditorErrorCode(result.error))).toBe(
+        '값을 하나 이상 추가해 주세요. 입력한 내용은 유지됩니다.',
+      );
+      setLocale('en');
+      expect(nativeEditorConditionText(nativeEditorErrorCode(result.error))).toBe(
+        'Add at least one value. Your input is preserved.',
+      );
+    },
+  );
+  it('retains valid empty-string ENUM values', () => {
+    expect(
+      nativeEditorCommandSchema.safeParse({
+        type: 'add_enum',
+        value: { id: 'e', name: 'qa_status', schema: 'public', values: [''] },
+      }).success,
+    ).toBe(true);
+  });
   it('classifies an actual Zod missing-column error without its schema JSON', () => {
     const result = nativeExpressionSchema.safeParse({ kind: 'column', columnId: '' });
     if (result.success) throw Error('Expected an invalid column reference');
