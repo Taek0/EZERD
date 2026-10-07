@@ -1,4 +1,3 @@
-import { type DesignDocument, updateNodeLayout } from '@ezerd/model';
 export type SelectionPoint = { x: number; y: number };
 export function selectionRect(a: SelectionPoint, b: SelectionPoint) {
   return {
@@ -22,20 +21,4 @@ export function intersectingObjects(
         n.y + n.height > rect.y,
     )
     .map((n) => n.objectId);
-}
-export function translateSelectedNodes(
-  doc: DesignDocument,
-  origins: { id: string; x: number; y: number }[],
-  dx: number,
-  dy: number,
-) {
-  let next = doc;
-  for (const n of origins) {
-    if (!next.layout.nodes.some((row) => row.id === n.id)) continue;
-    next = updateNodeLayout(next, n.id, {
-      x: Math.max(-1e7, Math.min(1e7, n.x + dx)),
-      y: Math.max(-1e7, Math.min(1e7, n.y + dy)),
-    });
-  }
-  return next;
 }

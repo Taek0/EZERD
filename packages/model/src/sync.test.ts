@@ -3,17 +3,15 @@ import { createEmptyDocument, type DesignDocument } from './document.js';
 import {
   applyChanges,
   applyOperationsOverlay,
-  canApplyInverse,
+  findInverseConflicts,
   claimedChangesMatch,
   diffSharedDocument,
   deriveStructuralDependencyPaths,
   findFieldVersionConflicts,
   inverseChanges,
-  isEffectiveChange,
   isDeletionChange,
   mergeCandidateOntoDocument,
   requestFingerprint,
-  retainPendingOperations,
   sharedDocument,
 } from './sync.js';
 
@@ -131,7 +129,7 @@ describe('shared document sync model', () => {
     expect(isDeletionChange(deletion)).toBe(true);
   });
 
-  it('removes only the acknowledged operation and retains its later overlay', () => {
+  it('applies pending overlays in order without changing the base', () => {
     const first = {
       operationId: 'first',
       changes: [{ path: '/tables/table/logical/name', before: '주문', after: '주문 1' }],
@@ -140,9 +138,9 @@ describe('shared document sync model', () => {
       operationId: 'later',
       changes: [{ path: '/tables/table/logical/name', before: '주문 1', after: '주문 12' }],
     };
-    const pending = retainPendingOperations([first, later], 'first');
-    expect(pending).toEqual([later]);
-    expect(applyOperationsOverlay(fixture(), pending).tables![0]!.logical.name).toBe('주문 12');
+    const base = fixture();
+    expect(applyOperationsOverlay(base, [first, later]).tables![0]!.logical.name).toBe('주문 12');
+    expect(base.tables![0]!.logical.name).toBe('주문');
   });
 
   it('excludes personal viewports and combined-view derived layouts', () => {
@@ -245,15 +243,22 @@ describe('shared document sync model', () => {
     );
   });
 
-  it('recognizes effective changes while preserving property existence semantics', () => {
-    expect(isEffectiveChange({ before: ['id'], after: ['id'] })).toBe(false);
-    expect(isEffectiveChange({ before: ['id'], after: ['other-id'] })).toBe(true);
-    expect(
-      isEffectiveChange({ before: null, after: null, beforeExists: false, afterExists: true }),
-    ).toBe(true);
-    expect(
-      isEffectiveChange({ before: null, after: null, beforeExists: false, afterExists: false }),
-    ).toBe(false);
+  it('distinguishes an absent property from null when deriving and applying changes', () => {
+    const missing = fixture();
+    delete (missing.tables![0]! as Partial<NonNullable<DesignDocument['tables']>[number]>).domainId;
+    const present = structuredClone(missing);
+    present.tables![0]!.domainId = null;
+    const added = diffSharedDocument(missing, present);
+    expect(added).toEqual([
+      { path: '/tables/table/domainId', before: null, after: null, beforeExists: false },
+    ]);
+    expect(Object.hasOwn(applyChanges(missing, added).tables![0]!, 'domainId')).toBe(true);
+    const removed = diffSharedDocument(present, missing);
+    expect(removed).toEqual([
+      { path: '/tables/table/domainId', before: null, after: null, afterExists: false },
+    ]);
+    expect(Object.hasOwn(applyChanges(present, removed).tables![0]!, 'domainId')).toBe(false);
+    expect(Object.hasOwn(missing.tables![0]!, 'domainId')).toBe(false);
   });
 
   it('creates deterministic fingerprints and field-scoped inverse edits', () => {
@@ -262,12 +267,16 @@ describe('shared document sync model', () => {
     expect(inverseChanges(changes)).toEqual([
       { path: '/tables/table/logical/name', before: '결제 주문', after: '주문' },
     ]);
-    expect(canApplyInverse(changes, 5, { '/tables/table/logical/name': 5 })).toBe(true);
-    expect(canApplyInverse(changes, 5, { '/tables/table/logical/name': 6 })).toBe(false);
+    expect(findInverseConflicts(changes, 5, { '/tables/table/logical/name': 5 })).toEqual([]);
+    expect(findInverseConflicts(changes, 5, { '/tables/table/logical/name': 6 })).toEqual([
+      '/tables/table/logical/name',
+    ]);
     const create = [
       { path: '/tables/table', before: null, after: fixture().tables![0], beforeExists: false },
     ];
-    expect(canApplyInverse(create, 5, { '/tables/table/logical/name': 6 })).toBe(false);
+    expect(findInverseConflicts(create, 5, { '/tables/table/logical/name': 6 })).toEqual([
+      '/tables/table',
+    ]);
   });
 
   it('detects advisory claimed changes that differ from the semantic baseline diff', () => {
