@@ -232,6 +232,27 @@ function canvas(authenticated = false) {
 }
 
 describe('native blank canvas pointer interaction', () => {
+  it('does not move the low-zoom camera on hand-tool hover before or after pointerup', () => {
+    const ui = canvas();
+    (ui.controls().onTool as (tool: string) => void)('hand');
+    ui.render();
+    (ui.controls().onZoom as (factor: number) => void)(0.1);
+    ui.render();
+    const initial = ui.transform();
+    expect(initial).toContain('scale(0.1)');
+    ui.event('onPointerMove', { clientX: 1100, clientY: 1050, buttons: 0 });
+    expect(ui.transform()).toBe(initial);
+    ui.event('onPointerDownCapture', { buttons: 1 });
+    ui.event('onPointerMove', { clientX: 1180, clientY: 1050, buttons: 1 });
+    const moved = ui.transform();
+    expect(moved).not.toBe(initial);
+    ui.event('onPointerUp', { clientX: 1180, clientY: 1050, buttons: 0 });
+    ui.event('onPointerMove', { clientX: 1300, clientY: 1150, buttons: 0 });
+    ui.event('onPointerMove', { clientX: 1400, clientY: 1200, buttons: 0 });
+    expect(ui.transform()).toBe(moved);
+    expect(ui.hasMarquee()).toBe(false);
+  });
+
   it('does not restore a saved camera when personal state refreshes after local navigation', async () => {
     const ui = canvas(true);
     const response = (version: number) => ({
