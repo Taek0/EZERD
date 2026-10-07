@@ -30,6 +30,7 @@ export function SearchType({
   onQueryChange?: (query: string) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const selectInitialFocus = useRef(true);
   const { t } = useI18n();
   const [blocked, setBlocked] = useState(false);
   const [container, setContainer] = useState<HTMLElement>();
@@ -80,8 +81,17 @@ export function SearchType({
           className="ui-input"
           placeholder={t('타입 검색')}
           autoFocus={autoFocus}
-          onChange={(event) => onQueryChange?.(event.currentTarget.value)}
-          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => {
+            selectInitialFocus.current = false;
+            onQueryChange?.(event.currentTarget.value);
+          }}
+          onFocus={(event) => {
+            // Opening the popover can restore input focus after the first key.
+            // Never reselect text that the user has already started entering.
+            if (!selectInitialFocus.current) return;
+            selectInitialFocus.current = false;
+            event.currentTarget.select();
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Escape' && onEditEnd) {
               event.stopPropagation();

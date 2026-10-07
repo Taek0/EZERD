@@ -2631,6 +2631,8 @@ function NativeCanvasWorkspace({
           void pasteSelection(text);
         }}
         onPointerDownCapture={(event) => {
+          // React portals retain ancestry, but their options are not canvas space.
+          if (!event.currentTarget.contains(event.target as Node)) return;
           setMenu(null);
           setRelationMenu(null);
           if (

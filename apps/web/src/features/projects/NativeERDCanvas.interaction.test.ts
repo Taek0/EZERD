@@ -115,6 +115,7 @@ function flushFrame() {
   callbacks.forEach((callback) => callback(0));
 }
 class Target {
+  parentElement: unknown;
   constructor(private selector = '') {}
   closest(selector: string) {
     return this.selector && selector.split(',').includes(this.selector) ? this : null;
@@ -205,11 +206,19 @@ function canvas(authenticated = false) {
   }
   const captured = new Set<number>();
   const surface = {
+    contains(target: unknown): boolean {
+      let current = target;
+      while (current instanceof Target) current = current.parentElement;
+      return current === surface;
+    },
     setPointerCapture: vi.fn((id: number) => captured.add(id)),
     hasPointerCapture: (id: number) => captured.has(id),
     releasePointerCapture: vi.fn((id: number) => captured.delete(id)),
   };
   function event(name: string, extra: Record<string, unknown> = {}) {
+    const eventTarget = extra.target ?? new Target();
+    if (eventTarget instanceof Target && !eventTarget.parentElement)
+      eventTarget.parentElement = surface;
     const target = nodes(tree).find(
       (node) => typeof node.props.onPointerDownCapture === 'function',
     )!;
@@ -219,7 +228,7 @@ function canvas(authenticated = false) {
       clientX: 1000,
       clientY: 1000,
       shiftKey: false,
-      target: new Target(),
+      target: eventTarget,
       currentTarget: surface,
       preventDefault() {},
       stopPropagation() {},
@@ -252,6 +261,29 @@ function canvas(authenticated = false) {
 }
 
 describe('native canvas clipboard storage integration', () => {
+  it.each(['select', 'hand'])(
+    'ignores a portal option in %s mode without capturing its pointer',
+    (tool) => {
+      const ui = canvas();
+      (ui.controls().onTool as (tool: string) => void)(tool);
+      ui.render();
+      const start = ui.transform();
+      const portalOption = new Target();
+      portalOption.parentElement = {}; // Body portal, outside the canvas DOM subtree.
+      ui.event('onPointerDownCapture', { target: portalOption });
+      ui.event('onPointerMove', { target: portalOption, clientX: 1200 });
+      expect(ui.surface.setPointerCapture).not.toHaveBeenCalled();
+      expect(ui.hasMarquee()).toBe(false);
+      expect(ui.transform()).toBe(start);
+      // Normal canvas descendants remain interactive after the ignored portal event.
+      ui.event('onPointerDownCapture');
+      expect(ui.surface.setPointerCapture).toHaveBeenCalledOnce();
+      expect(ui.hasMarquee()).toBe(tool === 'select');
+      ui.event('onPointerMove', { clientX: 1100 });
+      if (tool === 'hand') expect(ui.transform()).not.toBe(start);
+      ui.event('onPointerUp');
+    },
+  );
   it.each([false, true])(
     'updates reference coordinates after add ACK (private=%s), including delayed snapshots',
     async (privateView) => {

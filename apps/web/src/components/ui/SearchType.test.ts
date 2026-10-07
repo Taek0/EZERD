@@ -36,6 +36,39 @@ beforeEach(() => {
   hooks.slots = [];
 });
 describe('type search input and database IDs', () => {
+  it('selects only the initial focus and preserves characters after popover focus returns', () => {
+    const tree = SearchType({
+      value: 'postgresql:text',
+      options: [{ value: 'postgresql:text', label: 'text' }],
+      label: 'Type',
+      onValueChange: vi.fn(),
+      onQueryChange: vi.fn(),
+    });
+    const input = nodes(tree).find((node) => node.type === Input)!;
+    const select = vi.fn();
+    const focus = () =>
+      (input.props.onFocus as (event: unknown) => void)({ currentTarget: { select } });
+    focus();
+    (input.props.onChange as (event: unknown) => void)({ currentTarget: { value: 'v' } });
+    focus();
+    expect(select).toHaveBeenCalledOnce();
+  });
+  it('does not select the first typed character when input focus arrives late', () => {
+    const onQueryChange = vi.fn();
+    const tree = SearchType({
+      value: 'postgresql:text',
+      options: [{ value: 'postgresql:text', label: 'text' }],
+      label: 'Type',
+      onValueChange: vi.fn(),
+      onQueryChange,
+    });
+    const input = nodes(tree).find((node) => node.type === Input)!;
+    (input.props.onChange as (event: unknown) => void)({ currentTarget: { value: 'v' } });
+    const select = vi.fn();
+    (input.props.onFocus as (event: unknown) => void)({ currentTarget: { select } });
+    expect(select).not.toHaveBeenCalled();
+    expect(onQueryChange).toHaveBeenCalledWith('v');
+  });
   it('keeps text across option rerenders and sends a DB ID only on selection', () => {
     const onValueChange = vi.fn(),
       onQueryChange = vi.fn(),

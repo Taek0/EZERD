@@ -92,6 +92,7 @@ function frame() {
   callbacks.forEach((callback) => callback(0));
 }
 class Target {
+  parentElement: unknown;
   constructor(private selector = '') {}
   closest(selector: string) {
     return this.selector && selector.split(',').includes(this.selector) ? this : null;
@@ -166,11 +167,19 @@ function canvas() {
   }
   const captured = new Set<number>();
   const surface = {
+    contains(target: unknown): boolean {
+      let current = target;
+      while (current instanceof Target) current = current.parentElement;
+      return current === surface;
+    },
     setPointerCapture: vi.fn((id: number) => captured.add(id)),
     hasPointerCapture: (id: number) => captured.has(id),
     releasePointerCapture: vi.fn((id: number) => captured.delete(id)),
   };
   function event(name: string, extra: Record<string, unknown> = {}) {
+    const eventTarget = extra.target ?? new Target();
+    if (eventTarget instanceof Target && !eventTarget.parentElement)
+      eventTarget.parentElement = surface;
     const target = nodes(tree).find(
       (node) => typeof node.props.onPointerDownCapture === 'function',
     )!;
@@ -180,7 +189,7 @@ function canvas() {
       clientX: 1000,
       clientY: 1000,
       shiftKey: false,
-      target: new Target(),
+      target: eventTarget,
       currentTarget: surface,
       preventDefault() {},
       stopPropagation() {},
