@@ -45,6 +45,7 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
     >
       <Button
         disabled={disabled}
+        aria-label={`${t('도메인 필터')}${value ? ` · ${value.domainIds.length + Number(value.unassigned)}` : ''}`}
         title={
           value
             ? [
@@ -58,7 +59,6 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
         className={`native-toolbar-action domain-view-trigger${value ? ' is-active' : ''}`}
       >
         {t('도메인 필터')}
-        {value ? ` · ${value.domainIds.length + Number(value.unassigned)}` : ''}
       </Button>
       <UntitledPopover
         className="domain-view-popover"

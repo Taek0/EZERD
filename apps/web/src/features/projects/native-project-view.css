@@ -346,11 +346,11 @@
 
 /* Keep the six primary canvas actions the same size, including the domain filter. */
 .app-shell.editor-shell .native-canvas-toolbar .toolbar-group .ui-button.native-toolbar-action {
-  width: 108px;
-  min-width: 108px;
+  width: 88px;
+  min-width: 88px;
   height: var(--editor-control-height, 32px);
   min-height: var(--editor-control-height, 32px);
-  padding: 0 8px;
+  padding: 0 4px;
   justify-content: center;
   font-size: 12px;
 }
