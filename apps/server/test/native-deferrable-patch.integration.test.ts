@@ -216,9 +216,14 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         const mismatch = await api(route, 'POST', alias);
         expect(mismatch).toMatchObject({ status: 409, data: { code: 'sync.replay-mismatch' } });
         expect(await stored(id)).toEqual(current);
-        // The stale command cannot borrow current previous or receive a fresh ACK.
+        // Reapplying a stale explicit patch with identical current values is still a no-op.
+        // Omitted deferrable fields must not recreate the options cleared by another writer.
         const stale = { ...omission, operationId: randomUUID(), groupId: randomUUID() };
-        expect((await api(route, 'POST', stale)).status).toBe(409);
+        expect(await api(route, 'POST', stale)).toMatchObject({
+          status: 400,
+          data: { code: 'sync.no-changes' },
+        });
+        expect(await stored(id)).toEqual(current);
         expect(await operations(id)).toEqual(rows);
         const later = await api(
           route,
