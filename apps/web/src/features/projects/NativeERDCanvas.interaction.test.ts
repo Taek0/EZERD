@@ -282,6 +282,48 @@ describe('native blank canvas pointer interaction', () => {
     ui.render();
     expect(ui.transform()).toBe(position);
   });
+  it('moves the same object again before ACK and preserves its latest position when the earlier save settles', async () => {
+    const ui = canvas(true);
+    const acknowledgements: ((saved: boolean) => void)[] = [];
+    ui.props.onSave = vi.fn(
+      () => new Promise<boolean>((resolve) => acknowledgements.push(resolve)),
+    );
+    ui.render();
+    const actions = () => (ui.scene().actions as { current: NativeSceneActions }).current;
+    const drawn = () => (ui.scene().drawn as { nodes: NodeLayout[] }).nodes;
+    const first = drawn()[0]!;
+    function drag(x: number, y: number) {
+      const node = drawn().find((candidate) => candidate.id === first.id)!;
+      actions().begin(
+        {
+          button: 0,
+          pointerId: 1,
+          clientX: 0,
+          clientY: 0,
+          target: new Target(),
+          currentTarget: ui.surface,
+        } as never,
+        node,
+      );
+      ui.render();
+      actions().preserve(node, x, y);
+      ui.render();
+      const saving = actions().savePlacement();
+      ui.render();
+      return saving;
+    }
+    const earlier = drag(first.x + 80, first.y + 30);
+    const later = drag(first.x + 160, first.y + 60);
+    expect(ui.props.onSave).toHaveBeenCalledTimes(2);
+    acknowledgements[0]!(true);
+    await earlier;
+    ui.render();
+    expect(drawn().find((node) => node.id === first.id)?.x).toBe(first.x + 160);
+    acknowledgements[1]!(true);
+    await later;
+    ui.render();
+    expect(drawn().find((node) => node.id === first.id)?.x).toBe(first.x + 160);
+  });
   it('keeps earlier placements visible and accepts a second drag before the first ACK', async () => {
     const ui = canvas(true);
     let acknowledge!: (saved: boolean) => void;

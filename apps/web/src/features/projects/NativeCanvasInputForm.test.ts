@@ -149,6 +149,27 @@ afterEach(() => {
 });
 
 describe('native canvas form gesture-submit registration', () => {
+  it('submits another revision of the same route while its earlier save is in flight', async () => {
+    const acknowledgements: ((saved: boolean) => void)[] = [];
+    const save = vi.fn(() => new Promise<boolean>((resolve) => acknowledgements.push(resolve)));
+    const ui = fixture(save);
+    ui.render();
+    ui.change('route', '42');
+    const first = ui.submit();
+    ui.render();
+    ui.change('route', '51');
+    const second = ui.submit();
+    expect(save).toHaveBeenCalledTimes(2);
+    await ui.submit();
+    expect(save).toHaveBeenCalledTimes(2);
+    const latest = ui.draft();
+    acknowledgements[0]!(true);
+    await first;
+    expect(ui.draft()).toEqual(latest);
+    acknowledgements[1]!(false);
+    await second;
+    expect(ui.draft()).toEqual(latest);
+  });
   it('registers after commit without saving and submits the latest same-frame draft once', async () => {
     let acknowledge!: (accepted: boolean) => void;
     const save = vi.fn(
@@ -203,7 +224,24 @@ describe('native canvas form gesture-submit registration', () => {
     ui.unmount();
   });
 
-  it.each(['busy', 'disabled', 'sequence', 'version', 'databaseRevision'] as const)(
+  it.each(['version', 'sequence'] as const)(
+    'retains private canvas CAS guards when %s advances',
+    async (guard) => {
+      const save = vi.fn(async () => true);
+      const ui = fixture(save);
+      ui.props.context.affectsSharedDocument = false;
+      ui.render();
+      ui.change('route', '2');
+      if (guard === 'sequence') ui.snapshot.sequence++;
+      else ui.snapshot.project.version++;
+      ui.render();
+      await ui.submit();
+      expect(save).not.toHaveBeenCalled();
+      expect(ui.draft()?.values.route).toBe('2');
+      ui.unmount();
+    },
+  );
+  it.each(['busy', 'disabled', 'databaseRevision'] as const)(
     'reads the latest %s guard through a retained callback',
     async (guard) => {
       const save = vi.fn(async () => true);
@@ -213,7 +251,6 @@ describe('native canvas form gesture-submit registration', () => {
       const callback = ui.callback();
       if (guard === 'busy') ui.props.context = { ...ui.props.context, busy: true };
       else if (guard === 'disabled') ui.props.disabled = true;
-      else if (guard === 'sequence') ui.snapshot.sequence++;
       else ui.snapshot.project[guard]++;
       ui.render();
       await callback();
@@ -338,7 +375,7 @@ describe('native canvas form gesture-submit registration', () => {
     ui.unmount();
   });
 
-  it('preserves newer input typed while waiting for ACK and keeps version review visible', async () => {
+  it('preserves newer input typed while waiting for ACK and submits against the advanced shared baseline', async () => {
     let acknowledge!: (accepted: boolean) => void;
     const save = vi.fn(
       () =>
@@ -367,9 +404,11 @@ describe('native canvas form gesture-submit registration', () => {
           node.props.children ===
           '저장 기준이 변경되었습니다. 보관된 입력을 최신 내용과 비교해 주세요.',
       ),
-    ).toBe(true);
-    await ui.submit();
-    expect(save).toHaveBeenCalledTimes(1);
+    ).toBe(false);
+    const next = ui.submit();
+    expect(save).toHaveBeenCalledTimes(2);
+    acknowledge(true);
+    await next;
     ui.unmount();
   });
 

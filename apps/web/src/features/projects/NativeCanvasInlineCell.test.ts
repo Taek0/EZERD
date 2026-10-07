@@ -208,6 +208,73 @@ beforeEach(() => {
 });
 
 describe('native inline cell lifecycle', () => {
+  it.each([false, true])(
+    'submits later edits after an ACK or another writer advances the shared baseline (%s)',
+    async (remoteChange) => {
+      const props = fixture();
+      let acknowledge!: (saved: boolean) => void;
+      props.context.onSave = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<boolean>((resolve) => {
+              acknowledge = resolve;
+            }),
+        )
+        .mockResolvedValue(true);
+      const ui = mount(props);
+      ui.begin();
+      ui.change('first');
+      call(ui.field(), 'onBlur');
+      ui.render();
+      ui.begin();
+      ui.change('second');
+      acknowledge(true);
+      await flush();
+      const document = structuredClone(props.document);
+      document.columns![0]!.physical.name = remoteChange ? 'another writer' : 'first';
+      const snapshot = structuredClone(props.context.snapshot);
+      snapshot.sequence++;
+      ui.render({ ...props, document, context: { ...props.context, snapshot } });
+      call(ui.field(), 'onBlur');
+      await flush();
+      ui.render();
+      expect(props.context.onSave).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(props.context.onSave).mock.calls[1]![1].sequence).toBe(snapshot.sequence);
+    },
+  );
+  it('edits and submits the same cell repeatedly before ACK without losing the latest draft', async () => {
+    const acknowledgements: ((saved: boolean) => void)[] = [];
+    const props = fixture();
+    props.context.onSave = vi.fn(
+      () => new Promise<boolean>((resolve) => acknowledgements.push(resolve)),
+    );
+    const ui = mount(props);
+    ui.begin();
+    ui.change('first');
+    call(ui.field(), 'onBlur');
+    ui.render();
+    expect(ui.root().props.tabIndex).toBe(0);
+    expect(ui.root().props.children).toContain('first');
+    ui.begin();
+    ui.change('second');
+    call(ui.field(), 'onBlur');
+    ui.render();
+    expect(props.context.onSave).toHaveBeenCalledTimes(2);
+    ui.begin();
+    ui.change('still typing');
+    const retained = ui.stored();
+    acknowledgements[0]!(true);
+    await flush();
+    ui.render();
+    expect(ui.field().props.value).toBe('still typing');
+    expect(ui.stored()).toEqual(retained);
+    acknowledgements[1]!(false);
+    await flush();
+    ui.render();
+    expect(ui.field().props.value).toBe('still typing');
+    expect(ui.stored()).toEqual(retained);
+  });
   it('starts an autofocus shared Input on focus and commits with the latest save callback on Enter', async () => {
     const ui = mount();
     ui.begin();
@@ -291,7 +358,7 @@ describe('native inline cell lifecycle', () => {
       patch: { physical: { name: '한글' } },
     });
   });
-  it.each(['version', 'databaseRevision', 'sequence', 'busy'])(
+  it.each(['databaseRevision', 'busy'])(
     'retains input when the %s guard changes',
     async (guard) => {
       const ui = mount();
@@ -358,6 +425,30 @@ describe('native inline cell lifecycle', () => {
     await flush();
     ui.render();
     expect(ui.props.context.onSave).toHaveBeenCalledOnce();
+  });
+  it('can restore the original type before the preceding type edit is acknowledged', async () => {
+    const props = fixture();
+    props.target.field = 'format';
+    const acknowledgements: ((saved: boolean) => void)[] = [];
+    props.context.onSave = vi.fn(
+      () => new Promise<boolean>((resolve) => acknowledgements.push(resolve)),
+    );
+    const ui = mount(props);
+    ui.begin();
+    const original = ui.field().props.value;
+    call(ui.field(), 'onValueChange', 'postgresql:integer');
+    call(ui.field(), 'onEditEnd', 'selection');
+    ui.render();
+    ui.begin();
+    call(ui.field(), 'onValueChange', original);
+    call(ui.field(), 'onEditEnd', 'selection');
+    ui.render();
+    expect(props.context.onSave).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(props.context.onSave).mock.calls[1]![0][0]).toMatchObject({
+      patch: { physical: { type: { typeId: original } } },
+    });
+    acknowledgements.forEach((resolve) => resolve(true));
+    await flush();
   });
   it('searchable type selection saves directly and unselected query remains durable without a command', async () => {
     const props = fixture();
