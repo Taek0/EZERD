@@ -2,13 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { NativeDesignDocument } from '@ezerd/model';
 import { AnimatedDetails, Button, IconButton, Input } from '../../components/ui/index.js';
-import { useI18n } from '../../shared/i18n/index.js';
+import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { NativeStructureEditor, NativeDeleteForm } from './native-editor-structure.js';
 import type { NativeEditorContext } from './native-editor-form.js';
 import { nativeEditorPolicy } from './native-editor-policy.js';
 import { nativeInspectorMatches } from './native-inspector-state.js';
 import '../tables/enum-manager.css';
 import './native-enum-dialog.css';
+
+registerTranslations({
+  'ENUM 생성': 'Create ENUM',
+  'ENUM 편집': 'Edit ENUM',
+  'ENUM 삭제 확인': 'Confirm ENUM deletion',
+  '편집 영역 닫기': 'Close editor',
+  '프로젝트에서 사용할 값 목록을 관리합니다.': 'Manage reusable value lists for this project.',
+  '등록된 ENUM': 'Saved ENUMs',
+});
 
 export function NativeEnumDialog({
   document: design,
@@ -87,7 +96,12 @@ export function NativeEnumDialog({
       }}
     >
       <div className="enum-dialog-head">
-        <h2 id="native-enum-dialog-title">{t('프로젝트 ENUM')}</h2>
+        <div>
+          <h2 id="native-enum-dialog-title">{t('프로젝트 ENUM')}</h2>
+          <p className="native-enum-description">
+            {t('프로젝트에서 사용할 값 목록을 관리합니다.')}
+          </p>
+        </div>
         <IconButton aria-label={t('ENUM 관리 닫기')} onClick={close}>
           ×
         </IconButton>
@@ -122,7 +136,34 @@ export function NativeEnumDialog({
         {context &&
           selected &&
           (selected === 'new' || design.enums?.some((item) => item.id === selected)) && (
-            <div className="native-enum-editor" ref={editor}>
+            <section
+              className="native-enum-editor"
+              ref={editor}
+              aria-labelledby="native-enum-editor-title"
+              data-deleting={deleting || undefined}
+            >
+              <div className="native-enum-editor-head">
+                <div>
+                  <h3 id="native-enum-editor-title">
+                    {t(
+                      selected === 'new' ? 'ENUM 생성' : deleting ? 'ENUM 삭제 확인' : 'ENUM 편집',
+                    )}
+                  </h3>
+                  {selected !== 'new' && (
+                    <p>{design.enums?.find((item) => item.id === selected)?.name}</p>
+                  )}
+                </div>
+                <IconButton
+                  aria-label={t('편집 영역 닫기')}
+                  disabled={context.busy}
+                  onClick={() => {
+                    setSelected(null);
+                    setDeleting(false);
+                  }}
+                >
+                  {'×'}
+                </IconButton>
+              </div>
               {selected === 'new' ? (
                 <NativeStructureEditor
                   key="new"
@@ -155,66 +196,74 @@ export function NativeEnumDialog({
                   />
                 ))
               )}
-            </div>
+            </section>
           )}
         {!supported && (
           <p className="panel-note">
             {t('이 DB의 ENUM / SET 값은 컬럼 타입 속성에서 편집합니다.')}
           </p>
         )}
-        <div className="table-enum-list">
-          {items.map((item) => (
-            <AnimatedDetails className="table-enum-item" key={item.id}>
-              <summary>
-                <strong>
-                  {item.schema ? `${item.schema}.` : ''}
-                  {item.name}
-                </strong>
-                <span className="native-enum-value-count">{item.values.length}</span>
-                <small>
-                  {item.values
-                    .slice(0, 3)
-                    .map((value) => value || t('빈 문자열'))
-                    .join(' · ')}
-                  {item.values.length > 3 ? ' …' : ''}
-                </small>
-              </summary>
-              <div className="table-enum-values">
-                {item.values.map((value, index) => (
-                  <span key={index} className="native-enum-value">
-                    {value || t('빈 문자열')}
-                  </span>
-                ))}
-              </div>
-              <div className="table-actions">
-                <Button
-                  disabled={!context || context.busy}
-                  onClick={() => {
-                    setSelected(item.id);
-                    setDeleting(false);
-                  }}
-                >
-                  {t('편집')}
-                </Button>
-                <Button
-                  variant="danger"
-                  disabled={!context || context.busy}
-                  onClick={() => {
-                    setSelected(item.id);
-                    setDeleting(true);
-                  }}
-                >
-                  {t('삭제')}
-                </Button>
-              </div>
-            </AnimatedDetails>
-          ))}
-        </div>
-        {!items.length && (
-          <p className="panel-note">
-            {t(query.trim() ? '검색 결과가 없습니다.' : '아직 ENUM이 없습니다.')}
-          </p>
-        )}
+        <section className="native-enum-library" aria-labelledby="native-enum-list-title">
+          <h3 id="native-enum-list-title">{t('등록된 ENUM')}</h3>
+          <div className="table-enum-list">
+            {items.map((item) => (
+              <AnimatedDetails
+                className="table-enum-item"
+                key={item.id}
+                data-selected={selected === item.id || undefined}
+              >
+                <summary>
+                  <strong>
+                    {item.schema ? `${item.schema}.` : ''}
+                    {item.name}
+                  </strong>
+                  <span className="native-enum-value-count">{item.values.length}</span>
+                  <small>
+                    {item.values
+                      .slice(0, 3)
+                      .map((value) => value || t('빈 문자열'))
+                      .join(' · ')}
+                    {item.values.length > 3 ? ' …' : ''}
+                  </small>
+                </summary>
+                <div className="table-enum-values">
+                  {item.values.map((value, index) => (
+                    <span key={index} className="native-enum-value">
+                      {value || t('빈 문자열')}
+                    </span>
+                  ))}
+                </div>
+                <div className="table-actions">
+                  <Button
+                    aria-pressed={selected === item.id && !deleting}
+                    disabled={!context || context.busy}
+                    onClick={() => {
+                      setSelected(item.id);
+                      setDeleting(false);
+                    }}
+                  >
+                    {t('편집')}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    disabled={!context || context.busy}
+                    onClick={() => {
+                      setSelected(item.id);
+                      setDeleting(true);
+                    }}
+                  >
+                    {t('삭제')}
+                  </Button>
+                </div>
+              </AnimatedDetails>
+            ))}
+          </div>
+          {!items.length && (
+            <p className="panel-note">
+              {t(query.trim() ? '검색 결과가 없습니다.' : '아직 ENUM이 없습니다.')}
+            </p>
+          )}
+        </section>
       </div>
       <div className="table-actions native-enum-footer">
         <Button onClick={close}>{t('닫기')}</Button>

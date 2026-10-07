@@ -12,6 +12,11 @@ function entry(id: string, sequence: number, source?: string) {
   } as NativeHistoryPage['history'][number];
 }
 describe('native toolbar undo selection', () => {
+  it('keeps latest undo at the stack end even for newest-first display input', () => {
+    const entries = [entry('latest', 30), entry('middle', 20), entry('first', 10)];
+    expect(nativeUndoCandidates(entries, 'me')).toEqual(['first', 'middle', 'latest']);
+    expect(entries.map((item) => item.sequence)).toEqual([30, 20, 10]);
+  });
   it('excludes another actor, upgrades and compensated work, without treating undo as new forward work', () => {
     const other = {
       ...entry('other', 4),

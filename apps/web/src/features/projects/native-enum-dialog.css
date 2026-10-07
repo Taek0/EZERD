@@ -39,8 +39,14 @@
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
-.native-enum-dialog .enum-dialog-head > h2 {
+.native-enum-dialog .enum-dialog-head h2 {
+  margin: 0;
   font-size: 16px;
+}
+.native-enum-description {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 .native-enum-toolbar {
   display: flex;
@@ -64,6 +70,8 @@
 }
 .native-enum-body {
   display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: 16px;
   min-height: 0;
   padding: 0 20px 20px;
@@ -72,9 +80,22 @@
   scrollbar-gutter: stable;
 }
 .native-enum-dialog .table-enum-list {
-  max-height: none;
-  overflow: visible;
+  max-height: min(360px, 42dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   gap: 8px;
+}
+.native-enum-library {
+  min-width: 0;
+}
+.native-enum-library > h3,
+.native-enum-editor-head h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.native-enum-dialog .table-enum-item[data-selected] {
+  border-color: var(--accent);
 }
 .native-enum-dialog .table-enum-item {
   min-width: 0;
@@ -116,10 +137,70 @@
   border: 1px solid var(--line);
   border-radius: 12px;
 }
+.native-enum-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.native-enum-editor-head p {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.native-enum-editor[data-deleting] {
+  border-inline-start: 3px solid var(--danger, #b42318);
+}
+.native-enum-dialog .native-property-editor {
+  border: 0;
+  padding: 0;
+}
 .native-enum-dialog .native-property-editor fieldset {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 12px;
   margin: 0;
   padding: 0;
   min-width: 0;
+}
+/* Scope the shared value editor's layout to this dialog, preserving its validation. */
+.native-enum-dialog .native-property-editor fieldset fieldset:has(> legend) {
+  min-height: 180px;
+  max-height: min(400px, 45dvh);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overscroll-behavior: contain;
+}
+.native-enum-dialog .native-property-editor fieldset fieldset:has(> legend) > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.native-enum-dialog .native-property-editor fieldset fieldset:has(> legend) > div > label,
+.native-enum-dialog .native-property-editor fieldset fieldset:has(> legend) > div > p {
+  grid-column: 1 / -1;
+}
+.native-enum-dialog .native-property-editor fieldset fieldset p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.native-enum-dialog .native-property-editor textarea {
+  min-height: 56px;
+  resize: vertical;
+}
+.native-enum-dialog .table-enum-item .table-actions {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
 }
 .native-enum-dialog .native-property-editor label {
   display: grid;

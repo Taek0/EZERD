@@ -1,7 +1,52 @@
+.native-history-popover.native-history-popover {
+  max-height: min(620px, calc(100dvh - 32px));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.native-history-popover > [role='dialog'] {
+  min-width: 0;
+}
+.native-history-dialog {
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+}
+.native-history-list.native-history-list {
+  max-height: min(380px, 45dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 0;
+  list-style: none;
+  border-block: 1px solid var(--line);
+}
+.native-history-list > li {
+  padding: 12px 8px;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.native-history-list > li:last-child {
+  border-bottom: 0;
+}
+.native-history-list > li > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.native-history-order {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 8px 0;
+}
+.native-history-changes {
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 .native-history-filter-bar {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   padding-block: 8px;
   border-block: 1px solid var(--line);
 }

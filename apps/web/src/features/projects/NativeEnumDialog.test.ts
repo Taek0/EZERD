@@ -150,3 +150,41 @@ it('opens the focused create form above the list immediately and keeps it on rep
   expect(harness.states[1]).toBe('new');
   expect(render()).toContain('data-action="enum" data-focused="true"');
 });
+
+it('identifies the selected ENUM and separates editing from deletion confirmation', () => {
+  vi.stubGlobal('document', { body: {} });
+  harness.states = ['', 'e', false, false];
+  const fixture = advancedFixture();
+  fixture.document.enums = [{ id: 'e', schema: 'public', name: 'order_state', values: ['open'] }];
+  const render = () => {
+    harness.stateIndex = 0;
+    return renderToStaticMarkup(
+      createElement(NativeEnumDialog, {
+        document: fixture.document,
+        context: { busy: false } as NativeEditorContext,
+        onClose: vi.fn(),
+      }),
+    );
+  };
+  const find = (node: ReactNode, label: string): ReactElement<Record<string, any>> | undefined => {
+    for (const child of Children.toArray(node)) {
+      if (!isValidElement<Record<string, any>>(child)) continue;
+      if (child.props.children === label || child.props['aria-label'] === label) return child;
+      const result = find(child.props.children, label);
+      if (result) return result;
+    }
+  };
+  const markup = render();
+  expect(markup).toContain('ENUM 편집');
+  expect(markup).toContain('data-selected="true"');
+  expect(markup).toContain('aria-pressed="true"');
+  expect(markup).toContain('data-action="patch"');
+  find(harness.content, '삭제')!.props.onClick();
+  const deleting = render();
+  expect(deleting).toContain('ENUM 삭제 확인');
+  expect(deleting).toContain('data-deleting="true"');
+  expect(deleting).not.toContain('data-action="patch"');
+  find(harness.content, '편집 영역 닫기')!.props.onClick();
+  expect(render()).not.toContain('native-enum-editor-title');
+  expect(harness.states[1]).toBeNull();
+});
