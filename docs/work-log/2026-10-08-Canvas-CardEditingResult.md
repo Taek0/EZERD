@@ -21,3 +21,9 @@
 - NativeCanvasActions note/view는 각각 upsert_note/upsert_combined_view를 사용한다. 서버·모델은 기존 ID를 갱신하므로 add 중복은 없다.
 - 현재 NativeCanvasInputForm 저장 성공 경로의 fresh()는 생성폼의 빈 initial로 되돌아갈 위험이 있다. 승인된 입력을 다음 before/values로 유지할 필요를 이 채팅에 보고했다(Nash/오너 통합 대상). 이 파일은 수정 금지 범위다.
 - reference 작업은 후속 좌표 입력도 add_table_reference를 생성한다. 이미 생성된 참조에 대해서는 update_node_layout으로 전환하는 보완이 필요하다.
+
+## 커밋 경합 기록
+
+- 자체 변경 8개 파일만 stage하고 확인한 직후 다른 워커의 b0b7153 커밋에 함께 포함됐다. 이어 실행한 명시적 경로의 git commit --only는 변경 없음으로 종료됐다.
+- 해당 커밋에서 위 6개 코드·테스트 파일과 계획·결과 문서가 모두 보존된 것을 확인했다. 다른 워커의 이력을 재작성하지 않았다.
+- 공유 use-native-autosave.ts는 다른 워커의 미추적 파일이므로 통합 시 별도 커밋이 필요하다.
