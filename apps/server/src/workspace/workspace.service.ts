@@ -110,10 +110,7 @@ export class WorkspaceService {
             databaseKind: context.kind,
             name,
             databaseProfileId: context.profileId,
-            // The JSONB row annotation remains v1 for older clients; the factory supplies v2.
-            document: sharedDocument(
-              createEmptyNativeDocument(context),
-            ) as unknown as ProjectRow['document'],
+            document: sharedDocument(createEmptyNativeDocument(context)),
             databaseRevision: 0,
           })
           .returning();

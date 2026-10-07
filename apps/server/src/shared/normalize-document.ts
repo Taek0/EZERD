@@ -2,11 +2,14 @@ import {
   normalizeSharedTableCanvas,
   normalizeDocumentPhysicalTypes,
   type DesignDocument,
+  type StoredDesignDocument,
 } from '@ezerd/model';
 import { ConflictException } from '@nestjs/common';
 
 /** Prevent a v1 consumer from silently interpreting or re-saving native physical structures. */
-export function requireLegacyServerDocument(document: { schemaVersion: number }): void {
+export function requireLegacyServerDocument(
+  document: StoredDesignDocument,
+): asserts document is DesignDocument {
   if (document.schemaVersion !== 1)
     throw new ConflictException({
       code: 'document.client-upgrade-required',
@@ -14,8 +17,8 @@ export function requireLegacyServerDocument(document: { schemaVersion: number })
     });
 }
 
-/** The same deterministic representation for loads, baselines, and accepted sync writes. */
-export function normalizeServerDocument(document: DesignDocument): DesignDocument {
+/** Canonical representation for legacy exports and compatibility reads; Native stays guarded. */
+export function normalizeServerDocument(document: StoredDesignDocument): DesignDocument {
   requireLegacyServerDocument(document);
   return normalizeSharedTableCanvas(normalizeDocumentPhysicalTypes(document));
 }
