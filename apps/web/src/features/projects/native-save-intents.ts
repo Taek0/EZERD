@@ -3,6 +3,7 @@ import {
   nativeSyncOperationResultSchema,
   type ProjectDocumentState,
   type NativeEditorDraftRef,
+  type NativeSyncOperationResult,
 } from '@ezerd/contracts';
 import { ApiError, request } from '../../shared/api/client.js';
 import { captureNativeActorApi } from './native-actor-api.js';
@@ -33,6 +34,7 @@ interface Intent {
 export async function lookupNativeSaveIntentResult(
   pending: NativePendingSave,
   api: typeof request = request,
+  onResult?: (result: NativeSyncOperationResult) => void,
 ): Promise<boolean | null> {
   const actorApi = captureNativeActorApi(pending.userId, api);
   try {
@@ -43,6 +45,7 @@ export async function lookupNativeSaveIntentResult(
       ),
     );
     checkNativeAck(pending, result);
+    onResult?.(result);
     return result.status === 'accepted';
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
@@ -165,6 +168,7 @@ export async function flushNativeSaveIntent(
   storage: Storage = localStorage,
   api: typeof request = request,
   canTransmit: () => boolean = () => true,
+  onResult?: (result: NativeSyncOperationResult) => void,
 ): Promise<{ operationId: string; accepted: boolean } | null> {
   const actorApi = captureNativeActorApi(user, api);
   updateNativeIntentBlocker(user, snapshot.project.id, storage);
@@ -190,6 +194,7 @@ export async function flushNativeSaveIntent(
       (item) => item.pending.request.operationId === existing.request.operationId,
     );
     if (intent) finishIntent(intent, noChanges || result.status === 'accepted', storage);
+    onResult?.(result);
     return {
       operationId: existing.request.operationId,
       accepted: noChanges || result.status === 'accepted',
@@ -209,6 +214,7 @@ export async function flushNativeSaveIntent(
     );
     checkNativeAck(pending, result);
     finishIntent(intent, result.status === 'accepted', storage);
+    onResult?.(result);
     return { operationId: pending.request.operationId, accepted: result.status === 'accepted' };
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
@@ -224,6 +230,7 @@ export async function flushNativeSaveIntent(
     });
     const result = await cancelNativePending(pending, storage, actorApi);
     finishIntent(intent, result.status === 'accepted', storage);
+    onResult?.(result);
     return { operationId: pending.request.operationId, accepted: result.status === 'accepted' };
   }
   let editorDraft = pending.editorDraft;
@@ -260,6 +267,7 @@ export async function flushNativeSaveIntent(
   if (result.status === 'rejected')
     await discardNativePending(user, snapshot.project.id, staged.request.operationId, storage);
   finishIntent(intent, noChanges || result.status === 'accepted', storage);
+  onResult?.(result);
   return {
     operationId: staged.request.operationId,
     accepted: noChanges || result.status === 'accepted',

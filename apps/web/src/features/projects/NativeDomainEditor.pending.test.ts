@@ -137,6 +137,7 @@ function mount(
   state = snapshot(),
   userId = 'actor-a',
   projectActions?: Parameters<typeof NativeProjectView>[0]['projectActions'],
+  onAcknowledged?: Parameters<typeof NativeProjectView>[0]['onAcknowledged'],
 ) {
   const reload = vi.fn();
   let current = state,
@@ -159,6 +160,7 @@ function mount(
       canEdit,
       onLeave() {},
       onReload: reload,
+      ...(onAcknowledged ? { onAcknowledged } : {}),
       ...(projectActions ? { projectActions } : {}),
     });
     driver.effects.splice(0).forEach((effect) => effect());
@@ -178,6 +180,7 @@ function mount(
 async function flush() {
   await Promise.resolve();
   await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(0);
 }
 beforeEach(() => {
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
@@ -215,6 +218,25 @@ afterEach(() => {
 });
 
 describe('native project asynchronous pending calls', () => {
+  it('starts transmission after the input event and uses a confirmed ACK without reopening the document', async () => {
+    const acknowledged = vi.fn(() => true);
+    const ui = mount(snapshot(), 'actor-a', undefined, acknowledged);
+    await flush();
+    io.flushIntent.mockClear();
+    const serverAck = { status: 'accepted', operationId: 'operation-0' };
+    io.flushIntent.mockImplementationOnce(async (...args: unknown[]) => {
+      (args[5] as (ack: unknown) => void)(serverAck);
+      return { operationId: 'operation-0', accepted: true };
+    });
+    const saved = ui.save();
+    expect(io.enqueue).toHaveBeenCalledOnce();
+    expect(io.flushIntent).not.toHaveBeenCalled();
+    expect(ui.canvas().props.busy).toBe(false);
+    await flush();
+    expect(await saved).toBe(true);
+    expect(acknowledged).toHaveBeenCalledWith(serverAck);
+    expect(ui.reload).not.toHaveBeenCalled();
+  });
   it('passes the PNG control to the shared toolbar renderer without rendering a second header menu', () => {
     const actions = vi.fn(() => createElement('span', null, 'Main actions'));
     const ui = mount(undefined, undefined, actions),
@@ -244,6 +266,7 @@ describe('native project asynchronous pending calls', () => {
     void ui.save();
     expect(io.enqueue).toHaveBeenCalledTimes(2);
     expect(ui.canvas().props.busy).toBe(false);
+    await flush();
     waiting.resolve({ operationId: 'operation-0', accepted: true });
     expect(await first).toBe(true);
     expect(ui.reload).toHaveBeenCalled();
@@ -268,6 +291,7 @@ describe('native project asynchronous pending calls', () => {
     const waiting = deferred<null>();
     io.flushIntent.mockReturnValueOnce(waiting.promise);
     const saved = ui.save();
+    await flush();
     const mayTransmit = io.flushIntent.mock.calls.at(-1)![4] as () => boolean;
     expect(mayTransmit()).toBe(true);
     ui.render(snapshot('project-b'), 'actor-b');
@@ -286,6 +310,7 @@ describe('native project asynchronous pending calls', () => {
       const waiting = deferred<null>();
       io.flushIntent.mockReturnValueOnce(waiting.promise);
       void ui.save();
+      await flush();
       const mayTransmit = io.flushIntent.mock.calls.at(-1)![4] as () => boolean;
       const changed = structuredClone(state);
       if (reason === 'databaseRevision') changed.project.databaseRevision++;
@@ -308,12 +333,12 @@ describe('native project asynchronous pending calls', () => {
     await flush();
     const original = io.intents[0]!.pending;
     io.intents = [];
-    await vi.advanceTimersByTimeAsync(4000);
-    expect(io.lookup).toHaveBeenCalledWith(original);
+    await vi.advanceTimersByTimeAsync(4001);
+    expect(io.lookup).toHaveBeenCalledWith(original, expect.any(Function), expect.any(Function));
     expect(settled).toBe(false);
     expect(ui.reload).not.toHaveBeenCalled();
     io.lookup.mockResolvedValueOnce(true);
-    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(4001);
     expect(await saved).toBe(true);
     expect(ui.reload).toHaveBeenCalledTimes(1);
   });

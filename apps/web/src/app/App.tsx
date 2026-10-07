@@ -11,7 +11,14 @@ import { PinPanelResizer } from '../features/comments/PinPanelResizer.js';
 import { userColorStyle } from '../features/identity/user-color-style.js';
 import { UserColorEditor } from '../features/identity/UserColorEditor.js';
 import { clampCommentsPanelWidth } from '../features/comments/comments-panel-size.js';
-import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
+import {
+  startTransition,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type CSSProperties,
+} from 'react';
 import { applyChanges, diffSharedDocument, type DesignDocument } from '@ezerd/model';
 import {
   userSchema,
@@ -64,6 +71,7 @@ import {
 import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
 import { NativeProjectView } from '../features/projects/NativeProjectView.js';
 import { NativeBackgroundRefresh } from '../features/projects/native-background-refresh.js';
+import { nativeEntryAfterAck } from '../features/projects/native-ack-entry.js';
 import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
 import { NativeUpgradeButton } from '../features/projects/NativeUpgradeButton.js';
 import { ProjectDDLDialog } from '../features/projects/ProjectDDLDialog.js';
@@ -221,7 +229,7 @@ export function App() {
     { kind: 'native' }
   > | null>(null);
   const nativeCurrent = useRef(nativeOpened);
-  nativeCurrent.current = nativeOpened;
+  // Updated with each accepted snapshot, independently of deferred presentation renders.
   const activeProject = opened?.project ?? nativeOpened?.snapshot.project;
   const [ddlExport, setDDLExport] = useState<{
     actorId: string;
@@ -355,7 +363,7 @@ export function App() {
           : null,
       apply: (entry) => {
         nativeCurrent.current = entry;
-        setNativeOpened(entry);
+        startTransition(() => setNativeOpened(entry));
         setWorkspaceId(entry.snapshot.project.workspaceId);
       },
       error: (cause) => setError(message(cause)),
@@ -1231,6 +1239,27 @@ export function App() {
           entry={nativeOpened}
           onLeave={() => void leave()}
           onReload={() => void nativeBackgroundRefresh.current?.refresh()}
+          onAcknowledged={(ack) => {
+            const current = nativeCurrent.current;
+            if (
+              !current ||
+              current.snapshot.project.id !== nativeOpened.snapshot.project.id ||
+              ack.actor.id !== user.id
+            )
+              return false;
+            try {
+              const next = nativeEntryAfterAck(current, ack);
+              if (!next) return false;
+              if (next !== current) {
+                nativeCurrent.current = next;
+                startTransition(() => setNativeOpened(next));
+              }
+              return true;
+            } catch {
+              // The write is already accepted; fall back to reconciliation without losing its ACK.
+              return false;
+            }
+          }}
           busy={busy}
           userId={user.id}
           canEdit={permissions.edit}
