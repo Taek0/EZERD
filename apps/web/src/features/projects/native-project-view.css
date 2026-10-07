@@ -334,3 +334,12 @@
   overflow: auto;
   padding: 10px 14px 0;
 }
+
+.native-history-changes {
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.native-history-changes li {
+  margin-block: 6px;
+}
