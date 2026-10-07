@@ -3347,7 +3347,7 @@ function NativeCanvasWorkspace({
   );
 }
 
-function NativeCanvasActions({
+export function NativeCanvasActions({
   document,
   source,
   snapshot,
@@ -3374,10 +3374,32 @@ function NativeCanvasActions({
   const [action, setAction] = useState(initialSelection?.action ?? 'note');
   const [target, setTarget] = useState(initialSelection?.target ?? '');
   const [id] = useState(() => nativeDurableId());
+  // An ACK can precede the refreshed document. Keep only references that have not
+  // appeared in that document yet; once observed, deletion must not resurrect them.
+  const referenceScope = JSON.stringify([
+    userId,
+    snapshot.project.id,
+    snapshot.project.databaseRevision,
+  ]);
+  const acceptedReferences = useRef(new Map<string, string>());
+  const referenceDocument = useRef(document);
+  const referenceKey = (tableId: string, targetView: string) =>
+    JSON.stringify([referenceScope, tableId, targetView]);
+  useLayoutEffect(() => {
+    referenceDocument.current = document;
+    for (const node of document.layout.nodes)
+      acceptedReferences.current.delete(referenceKey(node.objectId, node.viewId));
+  }, [document.layout.nodes, referenceScope]);
   const isPrivate = privateView(document, viewId),
     placementView = viewFor(document, viewId);
   const note = document.notes.find((note) => note.id === target);
   const view = document.views?.find((view) => view.id === target);
+  const referenceNode =
+    action === 'reference'
+      ? document.layout.nodes.find(
+          (node) => node.objectId === target && node.viewId === placementView,
+        )
+      : undefined;
   const context = {
     userId,
     snapshot,
@@ -3385,16 +3407,44 @@ function NativeCanvasActions({
     affectsSharedDocument: !isPrivate && !['view', 'view-edit', 'view-delete'].includes(action),
     onSave: async (commands: CanvasCommand[], exp: ReturnType<typeof expected>, ref?: DraftRef) => {
       if (!commands.length) return false;
+      const rememberReferences = () => {
+        for (const command of commands) {
+          if (command.type !== 'add_table_reference') continue;
+          if (
+            referenceDocument.current.layout.nodes.some(
+              (node) => node.objectId === command.tableId && node.viewId === command.viewId,
+            )
+          )
+            continue;
+          // Personal saves derive IDs with the same model operation as the server.
+          const nodeId =
+            !isPrivate && 'nodeId' in command && command.nodeId
+              ? command.nodeId
+              : addTableReference(
+                  document,
+                  command.tableId,
+                  command.viewId,
+                  command.placement,
+                ).layout.nodes.find(
+                  (node) => node.objectId === command.tableId && node.viewId === command.viewId,
+                )!.id;
+          acceptedReferences.current.set(referenceKey(command.tableId, command.viewId), nodeId);
+        }
+      };
       if (!isPrivate && !['view', 'view-edit', 'view-delete'].includes(action)) {
         if (!sharedEditable) return false;
-        return onSharedSave(
+        const saved = await onSharedSave(
           commands.map((command) => nativeEditorCommandSchema.parse(command)),
           exp,
           ref,
         );
+        if (saved) rememberReferences();
+        return saved;
       }
       const command = nativePersonalCanvasCommandSchema.parse(commands[0]);
-      return onSave(command, ref);
+      const saved = await onSave(command, ref);
+      if (saved) rememberReferences();
+      return saved;
     },
   };
   return (
@@ -3459,8 +3509,8 @@ function NativeCanvasActions({
           name: view?.name ?? '',
           domains: view?.domainIds.join('\n') ?? '',
           text: note?.text ?? '',
-          x: '40',
-          y: '40',
+          x: String(referenceNode?.x ?? 40),
+          y: String(referenceNode?.y ?? 40),
           confirm: 'false',
         }}
         disabled={
@@ -3470,15 +3520,25 @@ function NativeCanvasActions({
         }
         build={(values) => {
           let command: unknown;
-          if (action === 'reference')
-            command = {
-              type: 'add_table_reference',
-              tableId: target,
-              viewId: placementView,
-              nodeId: values.id,
-              placement: { x: Number(values.x), y: Number(values.y) },
-            };
-          else if (action === 'remove-reference') {
+          if (action === 'reference') {
+            const nodeId =
+              document.layout.nodes.find(
+                (node) => node.objectId === target && node.viewId === placementView,
+              )?.id ?? acceptedReferences.current.get(referenceKey(target, placementView));
+            command = nodeId
+              ? {
+                  type: 'update_node_layout',
+                  nodeId,
+                  patch: { x: Number(values.x), y: Number(values.y) },
+                }
+              : {
+                  type: 'add_table_reference',
+                  tableId: target,
+                  viewId: placementView,
+                  nodeId: values.id,
+                  placement: { x: Number(values.x), y: Number(values.y) },
+                };
+          } else if (action === 'remove-reference') {
             if (values.confirm !== 'true') throw new Error('deletion.review-required');
             const node = document.layout.nodes.find(
               (node) => node.objectId === target && node.viewId === placementView,

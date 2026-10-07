@@ -127,7 +127,9 @@ function EditableNativeCanvasInlineCell({
   } | null>(null);
   const autosave = useNativeAutosave({
     blocked: !editing || typeCell || context.busy || !!storageError,
-    save: () => commit(false, true),
+    // The shared hook drains explicit edits after cleanup. Keep the captured cell
+    // context alive for that save, without reviving or focusing its UI.
+    save: () => commit(false, true, true),
   });
   useLayoutEffect(() => {
     if (
@@ -185,12 +187,12 @@ function EditableNativeCanvasInlineCell({
   }
   function persist(next: NativeEditorDraft) {
     current.current = next;
-    setDraft(next);
+    if (active.current) setDraft(next);
     try {
       storeNativeEditorDraft(next);
-      setStorageError('');
+      if (active.current) setStorageError('');
     } catch (failure) {
-      setStorageError(message(failure));
+      if (active.current) setStorageError(message(failure));
     }
   }
   function begin() {
@@ -302,13 +304,25 @@ function EditableNativeCanvasInlineCell({
       setStorageError(message(failure));
     }
   }
-  async function commit(returnFocus: boolean, keepEditing = false) {
+  async function commit(returnFocus: boolean, keepEditing = false, drain = false) {
     const complete = () => {
-      if (!keepEditing) finish(returnFocus);
+      if (active.current && !keepEditing) finish(returnFocus);
     };
-    if (!active.current || finishing.current) return;
+    if ((!active.current && !drain) || finishing.current) return;
     let selected = current.current;
     if (!selected) return;
+    if (drain && !active.current) {
+      // A replacement cell/tab may already own a newer durable revision.
+      try {
+        if (
+          loadNativeEditorDraft(selected.userId, selected.projectId, key)?.revision !==
+          selected.revision
+        )
+          return;
+      } catch {
+        return;
+      }
+    }
     if (pending.current.has(selected.revision)) {
       complete();
       return;
@@ -320,7 +334,7 @@ function EditableNativeCanvasInlineCell({
     const { context: ctx, document: doc, target: selectedTarget } = latest.current;
     // Query text is durable input, but only a catalog selection can become a type command.
     if (typeCell && selected.values.query !== undefined) {
-      setError(t('입력을 보관했습니다. 다시 포커스하여 수정하세요.'));
+      if (active.current) setError(t('입력을 보관했습니다. 다시 포커스하여 수정하세요.'));
       complete();
       return;
     }
@@ -329,11 +343,11 @@ function EditableNativeCanvasInlineCell({
         discardNativeEditorDraft(selected.userId, selected.projectId, selected);
         if (!keepEditing) {
           current.current = null;
-          setDraft(null);
+          if (active.current) setDraft(null);
         }
         complete();
       } catch (failure) {
-        setStorageError(message(failure));
+        if (active.current) setStorageError(message(failure));
       }
       return;
     }
@@ -365,13 +379,14 @@ function EditableNativeCanvasInlineCell({
       selected.expected.sequence !== snapshot.sequence ||
       selected.expected.databaseRevision !== snapshot.project.databaseRevision
     ) {
-      setError(t('저장 기준이 변경되었습니다. 보관된 입력을 최신 내용과 비교해 주세요.'));
+      if (active.current)
+        setError(t('저장 기준이 변경되었습니다. 보관된 입력을 최신 내용과 비교해 주세요.'));
       complete();
       return;
     }
     try {
       storeNativeEditorDraft(selected);
-      setStorageError('');
+      if (active.current) setStorageError('');
       const commandDocument =
         typeCell && submitted?.type
           ? {
@@ -391,28 +406,29 @@ function EditableNativeCanvasInlineCell({
         return;
       }
       pending.current.add(selected.revision);
-      setSubmitted({
-        revision: selected.revision,
-        value: selected.values.value ?? '',
-        ...(command.type === 'patch_column' && command.patch.physical?.type
-          ? { type: command.patch.physical.type }
-          : {}),
-        display:
-          typeCell &&
-          input.column &&
-          command.type === 'patch_column' &&
-          command.patch.physical?.type
-            ? nativeTypeCurrentLabel(
-                {
-                  ...input.column,
-                  physical: { ...input.column.physical, type: command.patch.physical.type },
-                },
-                doc,
-              )
-            : (selected.values.value ?? ''),
-        sequence: snapshot.sequence,
-        accepted: false,
-      });
+      if (active.current)
+        setSubmitted({
+          revision: selected.revision,
+          value: selected.values.value ?? '',
+          ...(command.type === 'patch_column' && command.patch.physical?.type
+            ? { type: command.patch.physical.type }
+            : {}),
+          display:
+            typeCell &&
+            input.column &&
+            command.type === 'patch_column' &&
+            command.patch.physical?.type
+              ? nativeTypeCurrentLabel(
+                  {
+                    ...input.column,
+                    physical: { ...input.column.physical, type: command.patch.physical.type },
+                  },
+                  doc,
+                )
+              : (selected.values.value ?? ''),
+          sequence: snapshot.sequence,
+          accepted: false,
+        });
       complete();
       const saved = await ctx.onSave([command], selected.expected, {
         key,
@@ -426,14 +442,16 @@ function EditableNativeCanvasInlineCell({
               : null
             : value,
         );
-      if (!active.current || current.current?.revision !== selected.revision) return;
+      if (current.current?.revision !== selected.revision) return;
       if (saved) {
         discardNativeEditorDraft(selected.userId, selected.projectId, selected);
         const next = keepEditing ? { ...selected, before: { ...selected.values } } : null;
         current.current = next;
-        setDraft(next);
-        setError('');
-      } else setError(t('입력을 보관했습니다. 다시 포커스하여 수정하세요.'));
+        if (active.current) {
+          setDraft(next);
+          setError('');
+        }
+      } else if (active.current) setError(t('입력을 보관했습니다. 다시 포커스하여 수정하세요.'));
     } catch (failure) {
       if (active.current)
         setSubmitted((value) => (value?.revision === selected.revision ? null : value));

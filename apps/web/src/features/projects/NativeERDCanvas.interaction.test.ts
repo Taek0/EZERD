@@ -1,6 +1,6 @@
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NativeERDCanvas } from './NativeERDCanvas.js';
+import { NativeERDCanvas, NativeCanvasActions, NativeCanvasInputForm } from './NativeERDCanvas.js';
 import { NativeCanvasScene } from './NativeCanvasScene.js';
 import { NativeCameraControls } from './NativeCanvasToolbar.js';
 import {
@@ -14,6 +14,7 @@ import type { NativeSceneActions } from './NativeCanvasScene.js';
 import {
   extractPersonalState,
   createNativeColumn,
+  addTableReference,
   type NativeDesignDocument,
   type NodeLayout,
 } from '@ezerd/model';
@@ -251,6 +252,103 @@ function canvas(authenticated = false) {
 }
 
 describe('native canvas clipboard storage integration', () => {
+  it.each([false, true])(
+    'updates reference coordinates after add ACK (private=%s), including delayed snapshots',
+    async (privateView) => {
+      const snapshot = clipboardSnapshot();
+      const document = clipboardFixture();
+      const viewId = privateView ? 'combined' : '__tables__';
+      if (privateView) document.views = [{ id: viewId, name: 'Combined', domainIds: ['d'] }];
+      document.layout.nodes = document.layout.nodes.filter((node) => node.viewId !== viewId);
+      const props: Parameters<typeof NativeCanvasActions>[0] = {
+        document,
+        source: document,
+        snapshot,
+        userId: clipboardActor,
+        viewId,
+        busy: false,
+        sharedEditable: true,
+        initialSelection: { action: 'reference', target: 'a' },
+        onSave: vi.fn(async () => true),
+        onSharedSave: vi.fn(async () => true),
+      };
+      const render = () => {
+        hooks.cursor = 0;
+        const tree = NativeCanvasActions(props);
+        hooks.layouts.splice(0).forEach((effect) => effect());
+        return nodes(tree).find((node) => node.type === NativeCanvasInputForm)!.props as Parameters<
+          typeof NativeCanvasInputForm
+        >[0];
+      };
+      let form = render();
+      const values: Record<string, string> = { ...form.initial, x: '70', y: '80' };
+      const first = form.build(values);
+      expect(first[0]?.type).toBe('add_table_reference');
+      const expected = {
+        version: snapshot.project.version,
+        sequence: snapshot.sequence,
+        databaseRevision: snapshot.project.databaseRevision,
+      };
+      expect(
+        await form.context.onSave(first, expected, {
+          key: form.draftKey,
+          revision: clipboardActor,
+        }),
+      ).toBe(true);
+      form = render();
+      const nodeId = privateView
+        ? addTableReference(document, 'a', viewId, { x: 70, y: 80 }).layout.nodes.find(
+            (node) => node.objectId === 'a' && node.viewId === viewId,
+          )!.id
+        : values.id;
+      expect(form.build({ ...values, x: '120' })).toEqual([
+        { type: 'update_node_layout', nodeId, patch: { x: 120, y: 80 } },
+      ]);
+      const updated = addTableReference(document, 'a', viewId, { x: 70, y: 80 });
+      updated.layout.nodes = updated.layout.nodes.map((node) =>
+        node.objectId === 'a' && node.viewId === viewId ? { ...node, id: nodeId! } : node,
+      );
+      props.document = updated;
+      form = render();
+      expect(form.initial).toMatchObject({ x: '70', y: '80' });
+      expect(form.build({ ...values, y: '200' })).toEqual([
+        { type: 'update_node_layout', nodeId, patch: { x: 70, y: 200 } },
+      ]);
+      props.document = document;
+      form = render();
+      expect(form.build(values)[0]?.type).toBe('add_table_reference');
+    },
+  );
+  it('does not remember a rejected reference creation', async () => {
+    const snapshot = clipboardSnapshot(),
+      document = clipboardFixture();
+    document.layout.nodes = [];
+    hooks.cursor = 0;
+    const tree = NativeCanvasActions({
+      document,
+      source: document,
+      snapshot,
+      userId: clipboardActor,
+      viewId: 'd',
+      busy: false,
+      sharedEditable: true,
+      initialSelection: { action: 'reference', target: 'a' },
+      onSave: vi.fn(async () => false),
+      onSharedSave: vi.fn(async () => false),
+    });
+    const form = nodes(tree).find((node) => node.type === NativeCanvasInputForm)!
+      .props as Parameters<typeof NativeCanvasInputForm>[0];
+    const expected = {
+      version: snapshot.project.version,
+      sequence: snapshot.sequence,
+      databaseRevision: snapshot.project.databaseRevision,
+    };
+    await form.context.onSave(form.build(form.initial), expected, {
+      key: form.draftKey,
+      revision: clipboardActor,
+    });
+    expect(form.build({ ...form.initial, x: '100' })[0]?.type).toBe('add_table_reference');
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'creates native %s column types over HTTP without randomUUID',
     async (kind) => {
