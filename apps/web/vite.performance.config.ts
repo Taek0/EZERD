@@ -1,3 +1,4 @@
+import { actualFixturePlugin } from './performance/actual-fixture-plugin.js';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -20,6 +21,7 @@ export default defineConfig(() => {
         : [],
     },
     plugins: [
+      actualFixturePlugin(),
       ...(process.env.EZERD_PANEL_BASELINE === '1' ? [panelBaselinePlugin()] : []),
       ...(process.env.EZERD_PANEL_DETAIL === '1'
         ? [

@@ -1,3 +1,4 @@
+import { projectDocumentStateSchema } from '@ezerd/contracts';
 import { VisualLayerAudit } from './visual-layer-audit.js';
 import { Profiler, useMemo, useRef, useState, type ProfilerOnRenderCallback } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -66,6 +67,14 @@ window.fetch = async (input, init) => {
     });
   return Response.json({ message: 'Unsupported fixture API' }, { status: 403 });
 };
+const actualSnapshot = new URLSearchParams(location.search).has('actual')
+  ? projectDocumentStateSchema.parse(
+      await originalFetch('/__diagnostic/snapshot.json').then((r) => {
+        if (!r.ok) throw Error('Actual fixture unavailable');
+        return r.json();
+      }),
+    )
+  : null;
 const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
 const noop = () => {};
 const stats = (values: number[]) => {
@@ -91,7 +100,11 @@ function Demo() {
     active = useRef(false),
     commits = useRef<number[]>([]);
   const fixture = useMemo(() => {
-    const f = createNativePerformanceFixture(count, 10);
+    const imported = actualSnapshot ? structuredClone(actualSnapshot) : null;
+    const f =
+      imported?.native?.status === 'available'
+        ? { document: imported.native.document, snapshot: imported }
+        : createNativePerformanceFixture(count, 10);
     f.snapshot.project.id = project;
     f.snapshot.project.name = 'Panel transition fixture';
     const documents = new Set([
