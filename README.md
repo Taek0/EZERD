@@ -82,6 +82,6 @@ docs/               제품 계획·작업 기록·기타 문서
 - [역할별 권한](./docs/work-log/2026-09-30-Workspace-Authorization.md) · [캔버스 선택·이동](./docs/work-log/2026-09-21-Canvas-SelectionAndOwnership.md) · [V/H 단축키](./docs/work-log/2026-09-30-Canvas-ToolShortcuts.md)
 - [동기화 중 카메라·이동 유지](./docs/work-log/2026-10-07-Canvas-ContinuousInteraction.md) · [저장 대기 중 필드 편집](./docs/work-log/2026-10-07-Canvas-NonblockingFieldEdits.md)
 - [히스토리·ENUM 안내](./docs/work-log/2026-10-07-UI-HistoryEnumControls.md) · [상단 메뉴·입력 복구](./docs/work-log/2026-10-07-UI-ToolbarRecoveryRefinement.md)
-- [LAN 호스팅·MCP 연결](./docs/work-log/LAN_HOSTING.md) · [MCP 편집·개인 화면](./docs/work-log/2026-09-28-MCP-FeatureParity.md)
+- [LAN 호스팅·MCP 연결](./docs/work-log/LAN_HOSTING.md) · [MCP Native v2 도구·이전 도구 대체 안내](./docs/work-log/2026-10-07-MCP-NativeOnlyModernization.md)
 - [개발 환경 버전](./docs/work-log/DEVELOPMENT_VERSIONS.md) · [전체 의존성](./docs/work-log/DEPENDENCY_VERSIONS.md) · [환경 문제 확인](./docs/work-log/SETUP_VERIFICATION.md)
 - [데이터 모델](./docs/planning/DATA_MODEL.md) · [디자인 시스템](./docs/planning/DESIGN_SYSTEM.md) · [DDL 모델 지원 범위](./docs/work-log/POSTGRES_EXPORT.md)

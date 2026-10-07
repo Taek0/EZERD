@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { effectiveCardSize, type DesignDocument } from '@ezerd/model';
+import { nodeLayoutSchema } from '@ezerd/contracts';
+import {
+  basicCardSize,
+  isVisibleInView,
+  nativeTableCanvasMetrics,
+  type NativeDesignDocument,
+} from '@ezerd/model';
 
 const coordinate = z.number().min(-1e7).max(1e7);
 export const layoutDiagnosticSchema = z.strictObject({
@@ -22,7 +28,7 @@ export const layoutDiagnosisInputSchema = z.strictObject({
 });
 
 export function diagnoseLayout(
-  document: DesignDocument,
+  document: NativeDesignDocument,
   viewId: string | undefined,
   limit: number,
 ) {
@@ -37,13 +43,39 @@ export function diagnoseLayout(
   }
   let truncated = false;
   const tableIds = new Set((document.tables ?? []).map((table) => table.id));
+  const tablesById = new Map((document.tables ?? []).map((table) => [table.id, table]));
+  const domainIds = new Set(document.domains.map((domain) => domain.id));
+  const sizeFor = (node: NativeDesignDocument['layout']['nodes'][number]) => {
+    const table = tablesById.get(node.objectId);
+    const minimum = basicCardSize(
+      table ? 'table' : domainIds.has(node.objectId) ? 'domain' : 'note',
+      node.width,
+      node.height,
+    );
+    // The request has no display mode: cover every mode in which the card can render.
+    const metrics = table
+      ? (['physical', 'logical'] as const)
+          .filter((mode) => isVisibleInView(table.scope, mode))
+          .map((mode) => nativeTableCanvasMetrics(document, table, mode))
+      : [];
+    return {
+      width: Math.min(
+        nodeLayoutSchema.shape.width.maxValue!,
+        Math.max(minimum.width, ...metrics.map((metric) => metric.width)),
+      ),
+      height: Math.min(
+        nodeLayoutSchema.shape.height.maxValue!,
+        Math.max(minimum.height, ...metrics.map((metric) => metric.height)),
+      ),
+    };
+  };
   const push = (diagnostic: Diagnostic) => {
     if (diagnostics.length < limit) diagnostics.push(diagnostic);
     else truncated = true;
   };
   for (const [currentView, nodes] of byView) {
     const visible = nodes
-      .map((node) => ({ node, size: effectiveCardSize(document, node) }))
+      .map((node) => ({ node, size: sizeFor(node) }))
       .sort((a, b) => a.node.x - b.node.x || a.node.id.localeCompare(b.node.id));
     for (let index = 0; index < visible.length; index++) {
       const a = visible[index]!;

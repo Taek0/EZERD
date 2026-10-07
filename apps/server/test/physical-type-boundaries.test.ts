@@ -9,7 +9,6 @@ import {
 } from '@ezerd/model';
 import { SyncService } from '../src/sync/sync.service.js';
 import { projects } from '../src/db/schema.js';
-import { McpDocumentService } from '../src/mcp/mcp-document.service.js';
 import { WorkspaceService } from '../src/workspace/workspace.service.js';
 
 const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
@@ -50,32 +49,6 @@ function document(type: Column['physical']['type']): DesignDocument {
     ],
   };
 }
-function mcp(baseline: DesignDocument) {
-  const sync = {
-    findReplay: vi.fn(async () => undefined),
-    establishBaseline: vi.fn(async () => ({
-      baselineId: crypto.randomUUID(),
-      sequence: 0,
-      baselineIssuedAt: new Date().toISOString(),
-      document: baseline,
-    })),
-    apply: vi.fn(async (_projectId, operation) => ({
-      status: 'accepted' as const,
-      document: operation.document,
-    })),
-  };
-  const service = new McpDocumentService(sync as never);
-  const request = {
-    projectId: crypto.randomUUID(),
-    expectedVersion: 0,
-    expectedSequence: 0,
-    operationId: crypto.randomUUID(),
-    groupId: crypto.randomUUID(),
-    clientId: crypto.randomUUID(),
-  };
-  return { sync, service, request };
-}
-
 describe('physical type write boundaries', () => {
   it.each(['alias', 'forged', 'correction'])(
     'checks raw claims and legacy correction before canonicalizing: %s',
@@ -175,65 +148,6 @@ describe('physical type write boundaries', () => {
       expect(gateway.publish).toHaveBeenCalledOnce();
     },
   );
-  it.each([
-    ['FLOAT4', 'real'],
-    ['float8', 'double precision'],
-    ['decimal', 'numeric'],
-  ])('canonicalizes merged MCP %s patch before deriving changes', async (name, expected) => {
-    const { sync, service, request } = mcp(document({ name: 'integer', isArray: false }));
-    await service.apply(
-      {
-        ...request,
-        commands: [{ type: 'patch_column', id: 'c', patch: { physical: { type: { name } } } }],
-      },
-      actor,
-    );
-    const operation = sync.apply.mock.calls[0]![1];
-    expect(operation.document.columns[0].physical.type.name).toBe(expected);
-    expect(operation.changes).toContainEqual(
-      expect.objectContaining({
-        path: '/columns/c/physical/type',
-        after: { name: expected, isArray: false },
-      }),
-    );
-  });
-
-  it('rejects invalid merged modifiers without applying an operation', async () => {
-    const { sync, service, request } = mcp(
-      document({ name: 'numeric', precision: 5, scale: 2, isArray: false }),
-    );
-    await expect(
-      service.apply(
-        {
-          ...request,
-          commands: [
-            { type: 'patch_column', id: 'c', patch: { physical: { type: { name: 'integer' } } } },
-          ],
-        },
-        actor,
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(sync.apply).not.toHaveBeenCalled();
-  });
-
-  it('preserves an ENUM name that matches a built-in alias', async () => {
-    const baseline = document({ name: 'FLOAT4', enumId: 'e', isArray: false });
-    baseline.enums = [{ id: 'e', name: 'FLOAT4', schema: 'public', values: ['a', 'b'] }];
-    const { sync, service, request } = mcp(baseline);
-    await service.apply(
-      {
-        ...request,
-        commands: [{ type: 'patch_column', id: 'c', patch: { physical: { comment: 'Changed' } } }],
-      },
-      actor,
-    );
-    expect(sync.apply.mock.calls[0]![1].document.columns[0].physical.type).toEqual({
-      name: 'FLOAT4',
-      enumId: 'e',
-      isArray: false,
-    });
-  });
-
   it.each([
     ['float4', 'real'],
     ['float8', 'double precision'],
