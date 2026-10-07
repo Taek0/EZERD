@@ -88,7 +88,7 @@ export function NativeCanvasInputForm({
   const recoveryInput = useRef(loaded.recovery);
   const [error, setError] = useState(loaded.error);
   const [storageError, setStorageError] = useState(loaded.error);
-  const submitting = useRef(false);
+  const submitting = useRef(new Set<string>());
   const submitLatest = useRef<NativeCanvasSubmit>(async () => {});
   const dirty = [...new Set([...Object.keys(draft.values), ...Object.keys(draft.before)])].some(
     (key) => draft.values[key] !== draft.before[key],
@@ -101,8 +101,9 @@ export function NativeCanvasInputForm({
     `canvas:${draftKey}`,
   );
   const stale =
-    draft.expected.version !== currentExpected.version ||
-    draft.expected.sequence !== currentExpected.sequence ||
+    (!context.affectsSharedDocument &&
+      (draft.expected.version !== currentExpected.version ||
+        draft.expected.sequence !== currentExpected.sequence)) ||
     draft.expected.databaseRevision !== currentExpected.databaseRevision;
   function preserve(next: NativeEditorDraft) {
     latest.current = next;
@@ -115,9 +116,24 @@ export function NativeCanvasInputForm({
     }
   }
   async function handleSubmit() {
-    if (context.busy || stale || disabled || storageError || submitting.current) return;
-    submitting.current = true;
-    const captured = latest.current;
+    let captured = latest.current;
+    if (
+      context.busy ||
+      stale ||
+      disabled ||
+      storageError ||
+      submitting.current.has(captured.revision)
+    )
+      return;
+    if (
+      context.affectsSharedDocument &&
+      (captured.expected.version !== currentExpected.version ||
+        captured.expected.sequence !== currentExpected.sequence)
+    ) {
+      captured = { ...captured, revision: nativeDurableId(), expected: currentExpected };
+      preserve(captured);
+    }
+    submitting.current.add(captured.revision);
     setError('');
     try {
       const commands = build(captured.values);
@@ -137,9 +153,9 @@ export function NativeCanvasInputForm({
         }
       }
     } catch (error) {
-      setError(message(error));
+      if (latest.current.revision === captured.revision) setError(message(error));
     } finally {
-      submitting.current = false;
+      submitting.current.delete(captured.revision);
     }
   }
   useLayoutEffect(() => {
@@ -156,7 +172,7 @@ export function NativeCanvasInputForm({
     if (
       !baselineChanged ||
       inputChanged ||
-      submitting.current ||
+      submitting.current.size > 0 ||
       storageError ||
       recoveryInput.current ||
       current.before.personalVersion !== initial.personalVersion ||

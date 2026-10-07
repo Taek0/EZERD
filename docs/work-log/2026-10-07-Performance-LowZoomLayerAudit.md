@@ -41,3 +41,7 @@ lab의 결과 textarea 때문에 body scroll이 발생하는 교란 요인도 �
 원시 DOM JSON 전후 4개, comparison/fixed-comparison 및 capture-calibration은 `artifacts/performance/2026-10-07-lowzoom-layer-audit/`에 보존한다(Git 제외). capture-calibration은 REPL에서 비교한 이미지 크기/바이트 동일성 기록이며 JPEG 원본 파일 자체는 포함하지 않는다.
 
 [계획](../planning/2026-10-07-Performance-LowZoomLayerAudit.md) · [정정 대상 기존 조사](2026-10-07-Performance-DragVisualRegression.md)
+
+## 제품 PR 브랜치 독립 검증
+
+원격 main b617496을 반영한 codex/canvas-native-scroll-fix에서 제품 변경은 native surface의 overflow:clip과 주석으로 제한했다. main의 88px 버튼 크기·카메라 유지·백그라운드 동기화·측정 재사용 변경을 보존했다. pnpm format / pnpm check 통과: 230개 파일·2,826개 테스트, 27개 파일·506개 환경 조건부 skip, 타입·서버/웹 빌드 통과. 기존 bundle 경고 유지. 이 독립 검사는 lab 브라우저 계측을 최신 main에서 반복했다는 의미는 아니다.

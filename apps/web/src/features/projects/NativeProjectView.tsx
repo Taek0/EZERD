@@ -7,7 +7,7 @@ import type { CSSProperties } from 'react';
 import type { NativeDesignDocument } from '@ezerd/model';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProjectEntry } from './project-entry.js';
-import type { Thread } from '@ezerd/contracts';
+import type { Thread, NativeSyncOperationResult } from '@ezerd/contracts';
 import {
   getDatabaseProfile,
   nativeColumnTypeDisplay,
@@ -143,6 +143,7 @@ export function NativeProjectView({
   entry,
   onLeave,
   onReload,
+  onAcknowledged,
   busy = false,
   focusedReview,
   userId,
@@ -155,6 +156,7 @@ export function NativeProjectView({
   entry: Extract<ProjectEntry, { kind: 'native' }>;
   onLeave: () => void;
   onReload: () => void;
+  onAcknowledged?: (result: NativeSyncOperationResult) => boolean;
   busy?: boolean;
   focusedReview?: Thread;
   userId?: string;
@@ -189,9 +191,13 @@ export function NativeProjectView({
   const [operationState, setOperationState] = useState({ saving: false, pendingBlocked: !!userId });
   const { saving, pendingBlocked } = operationState;
   const setSaving = (value: boolean) =>
-    setOperationState((current) => ({ ...current, saving: value }));
+    setOperationState((current) =>
+      current.saving === value ? current : { ...current, saving: value },
+    );
   const setPendingBlocked = (value: boolean) =>
-    setOperationState((current) => ({ ...current, pendingBlocked: value }));
+    setOperationState((current) =>
+      current.pendingBlocked === value ? current : { ...current, pendingBlocked: value },
+    );
   const [saveError, setSaveError] = useState('');
   const [rejectedIntents, setRejectedIntents] = useState<
     ReturnType<typeof nativeRejectedSaveIntents>
@@ -545,12 +551,21 @@ export function NativeProjectView({
   );
   async function flushSaves() {
     if (!userId || !editable || savingRef.current || !currentEditor()) return;
+    if (!pendingBlocked && !pending && durableState === 'empty' && !saveWaiters.current.size) {
+      try {
+        if (!nativeSaveIntents(userId, snapshot.project.id).length) return;
+      } catch (error) {
+        setSaveError(message(error));
+        return;
+      }
+    }
     savingRef.current = true;
     setSaving(true);
     try {
-      setRejectedIntents(nativeRejectedSaveIntents(userId, snapshot.project.id));
+      refreshRejectedIntents();
       for (let count = 0; count < 128 && currentEditor() && activePermission.current; count++) {
         const baseline = latestSnapshot.current;
+        let confirmedLocally = false;
         const result = await flushNativeSaveIntent(
           userId,
           baseline,
@@ -560,6 +575,9 @@ export function NativeProjectView({
             currentEditor() &&
             activePermission.current &&
             latestSnapshot.current.project.databaseRevision === baseline.project.databaseRevision,
+          (ack) => {
+            if (currentEditor()) confirmedLocally = onAcknowledged?.(ack) ?? false;
+          },
         );
         if (!result) {
           const remaining = new Set(
@@ -569,12 +587,15 @@ export function NativeProjectView({
           );
           for (const [operationId, waiter] of saveWaiters.current) {
             if (remaining.has(operationId)) continue;
-            const accepted = await lookupNativeSaveIntentResult(waiter.pending);
+            let confirmedOtherTab = false;
+            const accepted = await lookupNativeSaveIntentResult(waiter.pending, request, (ack) => {
+              if (currentEditor()) confirmedOtherTab = onAcknowledged?.(ack) ?? false;
+            });
             if (!currentEditor()) return;
             if (accepted === null) continue;
             for (const resolve of waiter.callbacks) resolve(accepted);
             saveWaiters.current.delete(operationId);
-            onReload();
+            if (!confirmedOtherTab) onReload();
           }
           break;
         }
@@ -583,14 +604,14 @@ export function NativeProjectView({
         saveWaiters.current.delete(result.operationId);
         if (currentEditor()) {
           setPending(null);
-          setRejectedIntents(nativeRejectedSaveIntents(userId, snapshot.project.id));
+          if (!result.accepted) refreshRejectedIntents();
           setPendingBlocked(false);
           setSaveError(
             result.accepted
               ? ''
               : t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'),
           );
-          onReload();
+          if (!confirmedLocally) onReload();
         }
       }
     } catch (error) {
@@ -609,13 +630,35 @@ export function NativeProjectView({
       }
     }
   }
+  function refreshRejectedIntents() {
+    if (!userId) return;
+    const next = nativeRejectedSaveIntents(userId, snapshot.project.id);
+    setRejectedIntents((current) =>
+      current.length === next.length &&
+      current.every((item, index) => item.key === next[index]?.key)
+        ? current
+        : next,
+    );
+  }
+  const flushLatest = useRef(flushSaves);
+  flushLatest.current = flushSaves;
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  function scheduleFlush() {
+    if (flushTimer.current !== undefined) return;
+    flushTimer.current = setTimeout(() => {
+      flushTimer.current = undefined;
+      void flushLatest.current();
+    }, 0);
+  }
   useEffect(() => {
-    void flushSaves();
-    const timer = setInterval(() => void flushSaves(), 4000);
-    const wake = () => void flushSaves();
+    scheduleFlush();
+    const timer = setInterval(scheduleFlush, 4000);
+    const wake = scheduleFlush;
     window.addEventListener('online', wake);
     return () => {
       clearInterval(timer);
+      if (flushTimer.current !== undefined) clearTimeout(flushTimer.current);
+      flushTimer.current = undefined;
       window.removeEventListener('online', wake);
     };
   }, [userId, snapshot.project.id, editable, snapshot.project.databaseRevision]);
@@ -639,7 +682,7 @@ export function NativeProjectView({
           callbacks: [...(current?.callbacks ?? []), resolve],
         });
       });
-      void flushSaves();
+      scheduleFlush();
       return await completion;
     } catch (error) {
       if (currentEditor()) setSaveError(message(error));

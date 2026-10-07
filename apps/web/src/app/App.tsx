@@ -11,7 +11,14 @@ import { PinPanelResizer } from '../features/comments/PinPanelResizer.js';
 import { userColorStyle } from '../features/identity/user-color-style.js';
 import { UserColorEditor } from '../features/identity/UserColorEditor.js';
 import { clampCommentsPanelWidth } from '../features/comments/comments-panel-size.js';
-import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from 'react';
+import {
+  startTransition,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type CSSProperties,
+} from 'react';
 import { applyChanges, diffSharedDocument, type DesignDocument } from '@ezerd/model';
 import {
   userSchema,
@@ -63,6 +70,8 @@ import {
 } from '../features/projects/native-gallery-conversion.js';
 import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
 import { NativeProjectView } from '../features/projects/NativeProjectView.js';
+import { NativeBackgroundRefresh } from '../features/projects/native-background-refresh.js';
+import { nativeEntryAfterAck } from '../features/projects/native-ack-entry.js';
 import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
 import { NativeUpgradeButton } from '../features/projects/NativeUpgradeButton.js';
 import { ProjectDDLDialog } from '../features/projects/ProjectDDLDialog.js';
@@ -220,7 +229,7 @@ export function App() {
     { kind: 'native' }
   > | null>(null);
   const nativeCurrent = useRef(nativeOpened);
-  nativeCurrent.current = nativeOpened;
+  // Updated with each accepted snapshot, independently of deferred presentation renders.
   const activeProject = opened?.project ?? nativeOpened?.snapshot.project;
   const [ddlExport, setDDLExport] = useState<{
     actorId: string;
@@ -339,7 +348,29 @@ export function App() {
   }>();
   const [nativeReview, setNativeReview] = useState<Thread | null>(null);
   const navigation = useRef(new LatestRequest());
+  const nativeNavigationGeneration = useRef(0);
+  const nativeRefreshIdentity = useRef('');
+  nativeRefreshIdentity.current = JSON.stringify([user?.id, session?.token]);
+  const nativeBackgroundRefresh = useRef<NativeBackgroundRefresh | null>(null);
+  if (!nativeBackgroundRefresh.current) {
+    nativeBackgroundRefresh.current = new NativeBackgroundRefresh({
+      current: () =>
+        nativeCurrent.current
+          ? {
+              identity: `${nativeRefreshIdentity.current}:${nativeNavigationGeneration.current}`,
+              entry: nativeCurrent.current,
+            }
+          : null,
+      apply: (entry) => {
+        nativeCurrent.current = entry;
+        startTransition(() => setNativeOpened(entry));
+        setWorkspaceId(entry.snapshot.project.workspaceId);
+      },
+      error: (cause) => setError(message(cause)),
+    });
+  }
   function replaceProject(value: OpenProject | null) {
+    nativeNavigationGeneration.current++;
     nativeCurrent.current = null;
     setNativeOpened(null);
     setNativeReview(null);
@@ -1207,7 +1238,28 @@ export function App() {
           key={nativeOpened.snapshot.project.id}
           entry={nativeOpened}
           onLeave={() => void leave()}
-          onReload={() => void open(nativeOpened.snapshot.project.id)}
+          onReload={() => void nativeBackgroundRefresh.current?.refresh()}
+          onAcknowledged={(ack) => {
+            const current = nativeCurrent.current;
+            if (
+              !current ||
+              current.snapshot.project.id !== nativeOpened.snapshot.project.id ||
+              ack.actor.id !== user.id
+            )
+              return false;
+            try {
+              const next = nativeEntryAfterAck(current, ack);
+              if (!next) return false;
+              if (next !== current) {
+                nativeCurrent.current = next;
+                startTransition(() => setNativeOpened(next));
+              }
+              return true;
+            } catch {
+              // The write is already accepted; fall back to reconciliation without losing its ACK.
+              return false;
+            }
+          }}
           busy={busy}
           userId={user.id}
           canEdit={permissions.edit}

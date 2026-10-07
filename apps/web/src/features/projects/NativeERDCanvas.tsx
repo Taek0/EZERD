@@ -350,6 +350,28 @@ export function nativeCanvasScene(
   filter?: NativeDomainFilterValue | null,
 ) {
   const view = viewFor(document, viewId);
+  // Placement changes still reroute every edge, but card measurements are shared by its ports.
+  const tablesById = new Map((document.tables ?? []).map((table) => [table.id, table]));
+  const domainIds = new Set(document.domains.map((domain) => domain.id));
+  const noteIds = new Set(
+    document.notes.filter((note) => note.viewId === view).map((note) => note.id),
+  );
+  const tableMetrics = new Map<string, ReturnType<typeof nativeTableCanvasMetrics>>();
+  const metricsFor = (table: NonNullable<NativeDesignDocument['tables']>[number]) => {
+    let metrics = tableMetrics.get(table.id);
+    if (!metrics) {
+      metrics = nativeTableCanvasMetrics(document, table, mode);
+      tableMetrics.set(table.id, metrics);
+    }
+    return metrics;
+  };
+  const routesByRelation = new Map<
+    string,
+    NonNullable<NativeDesignDocument['layout']['relations']>[number]
+  >();
+  for (const route of document.layout.relations ?? [])
+    if (route.viewId === view && !routesByRelation.has(route.relationId))
+      routesByRelation.set(route.relationId, route);
   const sceneNodes = [...document.layout.nodes];
   if (view === 'overview') {
     const ids = new Set(sceneNodes.map((node) => node.id));
@@ -382,7 +404,7 @@ export function nativeCanvasScene(
   const nodes = sceneNodes
     .filter((node) => {
       if (node.viewId !== view) return false;
-      const table = document.tables?.find((table) => table.id === node.objectId);
+      const table = tablesById.get(node.objectId);
       if (table)
         return (
           view !== 'overview' &&
@@ -391,22 +413,15 @@ export function nativeCanvasScene(
               ? filter.unassigned
               : filter.domainIds.includes(table.domainId))) &&
           isVisibleInView(table.scope, mode) &&
-          (!document.domains.some((domain) => domain.id === viewId) || table.domainId === viewId)
+          (!domainIds.has(viewId) || table.domainId === viewId)
         );
-      return (
-        document.notes.some((note) => note.id === node.objectId && note.viewId === view) ||
-        (view === 'overview' && document.domains.some((domain) => domain.id === node.objectId))
-      );
+      return noteIds.has(node.objectId) || (view === 'overview' && domainIds.has(node.objectId));
     })
     .map((node) => {
-      const table = document.tables?.find((table) => table.id === node.objectId);
-      const kind = table
-        ? 'table'
-        : document.domains.some((domain) => domain.id === node.objectId)
-          ? 'domain'
-          : 'note';
+      const table = tablesById.get(node.objectId);
+      const kind = table ? 'table' : domainIds.has(node.objectId) ? 'domain' : 'note';
       const size = basicCardSize(kind, node.width, node.height);
-      const metrics = table ? nativeTableCanvasMetrics(document, table, mode) : null;
+      const metrics = table ? metricsFor(table) : null;
       // Native labels drive rows; no v1 type/DDL/metrics adapter is involved.
       return {
         ...node,
@@ -431,22 +446,16 @@ export function nativeCanvasScene(
       (mode === 'physical' && !relation.physical)
     )
       return [];
-    const route = document.layout.relations?.find(
-      (route) => route.relationId === relation.id && route.viewId === view,
-    );
+    const route = routesByRelation.get(relation.id);
     const label = mode === 'physical' ? (relation.physical?.name ?? '') : relation.logical.name;
     const columnAnchor = (
       node: NodeLayout,
       columnId: string | undefined,
       side: 'left' | 'right',
     ) => {
-      const table = document.tables?.find((table) => table.id === node.objectId)!;
-      const columns = (document.columns ?? []).filter(
-        (column) =>
-          column.tableId === node.objectId && isVisibleInView(column.scope, mode, table.scope),
-      );
-      const index = columns.findIndex((column) => column.id === columnId);
-      const rows = nativeTableCanvasRows(document, table, mode);
+      const table = tablesById.get(node.objectId)!;
+      const rows = metricsFor(table).rows;
+      const index = rows.findIndex((row) => row.column.id === columnId);
       return index < 0
         ? undefined
         : {
@@ -769,6 +778,15 @@ function NativeCanvasWorkspace({
   const [storageError, setStorageError] = useState('');
   const [sharedStorageFailure, setSharedStorageFailure] = useState(false);
   const [draft, setDraft] = useState<NativeEditorDraft | null>(null);
+  const [submittedNodes, setSubmittedNodes] = useState<
+    {
+      revision: string;
+      node: NodeLayout;
+      sequence: number;
+      databaseRevision: number;
+      accepted: boolean;
+    }[]
+  >([]);
   const draftRef = useRef<NativeEditorDraft | null>(null);
   useEffect(() => {
     if (selectedDomainId && !draftRef.current && !gesture.current) setViewId('overview');
@@ -822,7 +840,18 @@ function NativeCanvasWorkspace({
   );
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
-  const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
+  const [camera, commitCamera] = useState<Viewport>({
+    viewId: TABLES_VIEW_ID,
+    x: 24,
+    y: 24,
+    zoom: 1,
+  });
+  const cameraTouched = useRef(false);
+  const cameraInitialized = useRef(false);
+  function setCamera(viewport: Viewport) {
+    cameraTouched.current = true;
+    commitCamera(viewport);
+  }
   const gesture = useRef<{
     node: NodeLayout;
     x: number;
@@ -853,6 +882,9 @@ function NativeCanvasWorkspace({
     setPersonalPending(null);
     setPersonalBusy(false);
     setPrivateQueueState('unknown');
+  }, [userId, snapshot.project.id]);
+  useEffect(() => {
+    setPersonalBusy(false);
     if (!userId) return;
     let active = true;
     const current = () => active && activeIdentity.current === privateIdentity;
@@ -928,7 +960,7 @@ function NativeCanvasWorkspace({
   }, [userId, privateIdentity, snapshot.project.id]);
   const sharedSource =
     snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document;
-  const base = useMemo(
+  const storedBase = useMemo(
     () =>
       personal
         ? mergeStoredPersonalState(document, reconcilePersonalState(sharedSource, personal.state))
@@ -943,6 +975,38 @@ function NativeCanvasWorkspace({
           },
     [document, sharedSource, personal?.state],
   );
+  useEffect(() => {
+    setSubmittedNodes((entries) => {
+      const remaining = entries.filter(({ node, sequence, databaseRevision, accepted }) => {
+        const saved = storedBase.layout.nodes.find((candidate) => candidate.id === node.id);
+        if (
+          !saved ||
+          databaseRevision !== snapshot.project.databaseRevision ||
+          (accepted && snapshot.sequence > sequence)
+        )
+          return false;
+        return (
+          saved.x !== node.x ||
+          saved.y !== node.y ||
+          saved.width !== node.width ||
+          saved.height !== node.height
+        );
+      });
+      return remaining.length === entries.length ? entries : remaining;
+    });
+  }, [storedBase, snapshot.sequence, snapshot.project.databaseRevision]);
+  useEffect(() => setSubmittedNodes([]), [userId, snapshot.project.id]);
+  const base = useMemo(() => {
+    if (!submittedNodes.length) return storedBase;
+    const pending = new Map(submittedNodes.map(({ node }) => [node.id, node]));
+    return {
+      ...storedBase,
+      layout: {
+        ...storedBase.layout,
+        nodes: storedBase.layout.nodes.map((node) => pending.get(node.id) ?? node),
+      },
+    };
+  }, [storedBase, submittedNodes]);
   const effectiveView =
     viewId === TABLES_VIEW_ID ||
     viewId === 'overview' ||
@@ -954,7 +1018,13 @@ function NativeCanvasWorkspace({
   const recoveryWaiting =
     !!recoverySelection?.viewId && viewId === recoverySelection.viewId && effectiveView !== viewId;
   const placementEditable = isPrivate ? personalEditable : editable;
-  const personalReady = personalGuardAvailable() && !!personal && 'databaseRevision' in personal;
+  const personalReady =
+    personalGuardAvailable() &&
+    !!personal &&
+    'databaseRevision' in personal &&
+    personal.databaseRevision === snapshot.project.databaseRevision &&
+    personal.projectVersion === snapshot.project.version &&
+    personal.syncSequence === snapshot.sequence;
   const [submittedPlacement, setSubmittedPlacement] = useState<string | null>(null);
   const placementDraftBlocked = !!draft && (isPrivate || draft.revision !== submittedPlacement);
   const allBusy =
@@ -991,18 +1061,18 @@ function NativeCanvasWorkspace({
       setStorageError(message(error));
       if (!isPrivate) setSharedStorageFailure(true);
     }
-    const viewport = personal?.state.viewports.find(
-      (viewport) => viewport.viewId === effectiveView,
-    );
-    setCamera(viewport ?? { viewId: effectiveView, x: 24, y: 24, zoom: 1 });
-  }, [
-    recoveryWaiting,
-    inputKey,
-    userId,
-    snapshot.project.id,
-    snapshot.project.databaseRevision,
-    personal?.version,
-  ]);
+  }, [recoveryWaiting, inputKey, userId, snapshot.project.id, snapshot.project.databaseRevision]);
+  useEffect(() => {
+    cameraTouched.current = false;
+    cameraInitialized.current = false;
+    commitCamera({ viewId: effectiveView, x: 24, y: 24, zoom: 1 });
+  }, [userId, snapshot.project.id, effectiveView]);
+  useEffect(() => {
+    if (!personal || cameraInitialized.current || cameraTouched.current || recoveryWaiting) return;
+    cameraInitialized.current = true;
+    const viewport = personal.state.viewports.find((viewport) => viewport.viewId === effectiveView);
+    if (viewport) commitCamera(viewport);
+  }, [personal, recoveryWaiting, userId, snapshot.project.id, effectiveView]);
   const scene = useMemo(
     () => nativeCanvasScene(base, effectiveView, mode, domainFilter),
     [base, effectiveView, mode, domainFilter],
@@ -1165,7 +1235,7 @@ function NativeCanvasWorkspace({
       return;
     }
     try {
-      const retained = draftRef.current;
+      const retained = draftRef.current?.revision !== submittedPlacement ? draftRef.current : null;
       const retainedIds = retained
         ? nativeCanvasDraftPlacements(retained.values).map((node) => node.objectId)
         : [];
@@ -1185,7 +1255,7 @@ function NativeCanvasWorkspace({
         }),
       );
       const node = placements[0]!;
-      const current = draftRef.current;
+      const current = retained;
       const origins = placements.map(
         (node) => scene.nodes.find((raw) => raw.id === node.id) ?? node,
       );
@@ -1394,11 +1464,34 @@ function NativeCanvasWorkspace({
         );
       } else {
         setSubmittedPlacement(current.revision);
+        const placements = current.values.nodesJSON
+          ? nativeCanvasDraftPlacements(current.values)
+          : drawn.nodes.filter((node) => node.objectId === current.values.objectId);
+        setSubmittedNodes((entries) => [
+          ...entries.filter(({ node }) => !placements.some((next) => next.id === node.id)),
+          ...placements.map((node) => ({
+            revision: current.revision,
+            node,
+            sequence: snapshot.sequence,
+            databaseRevision: snapshot.project.databaseRevision,
+            accepted: false,
+          })),
+        ]);
         saved = await onSave(commands, current.expected, {
           key: current.key,
           revision: current.revision,
         });
         setSubmittedPlacement((revision) => (revision === current.revision ? null : revision));
+        if (saved)
+          setSubmittedNodes((entries) =>
+            entries.map((entry) =>
+              entry.revision === current.revision ? { ...entry, accepted: true } : entry,
+            ),
+          );
+        if (!saved)
+          setSubmittedNodes((entries) =>
+            entries.filter(({ revision }) => revision !== current.revision),
+          );
       }
       if (saved) {
         discardNativeEditorDraft(userId, snapshot.project.id, current);
@@ -1408,6 +1501,10 @@ function NativeCanvasWorkspace({
         }
       }
     } catch (error) {
+      setSubmittedPlacement((revision) => (revision === current.revision ? null : revision));
+      setSubmittedNodes((entries) =>
+        entries.filter(({ revision }) => revision !== current.revision),
+      );
       setError(message(error));
     }
   }

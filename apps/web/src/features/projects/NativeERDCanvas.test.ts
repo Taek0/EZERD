@@ -32,6 +32,35 @@ import { getNativeDurableQueue } from './native-durable-queue.js';
 import { setLocale } from '../../shared/i18n/index.js';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 import { NativeEditorForm } from './native-editor-form.js';
+
+describe('native scene measurement reuse', () => {
+  it('measures each table once when several foreign keys reuse its column ports', () => {
+    const { document } = fixture();
+    const relation = document.tableRelations![0]!;
+    document.tableRelations = Array.from({ length: 12 }, (_, index) => ({
+      ...relation,
+      id: `reused-port-${index}`,
+    }));
+    const columnsFilter = vi.spyOn(document.columns!, 'filter');
+    const relationsFilter = vi.spyOn(document.tableRelations, 'filter');
+    const scene = nativeCanvasScene(document, '__tables__', 'physical');
+    expect(scene.relations).toHaveLength(12);
+    expect(columnsFilter).toHaveBeenCalledTimes(2);
+    expect(relationsFilter).toHaveBeenCalledTimes(2);
+    columnsFilter.mockRestore();
+    relationsFilter.mockRestore();
+  });
+
+  it('remeasures mutated column data on the next build', () => {
+    const { document } = fixture();
+    const before = nativeCanvasScene(document, '__tables__', 'physical');
+    document.columns![0]!.physical.comment = 'A much longer description '.repeat(40);
+    const after = nativeCanvasScene(document, '__tables__', 'physical');
+    expect(after.nodes.find((node) => node.objectId === 'a')!.height).toBeGreaterThan(
+      before.nodes.find((node) => node.objectId === 'a')!.height,
+    );
+  });
+});
 const exportBlocker = vi.hoisted(() => vi.fn());
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker: exportBlocker }));
 beforeEach(() => {
