@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { setLocale } from '../../shared/i18n/index.js';
 import { NativeExpressionTreeEditor } from './native-expression-tree.js';
+import { NativeExpressionFields, nativeExpressionFromInputs } from './native-editor-expression.js';
 import { NativeIndexOptionsEditor } from './native-index-options.js';
 import { NativeAdvancedEditor, NativeAdvancedExpressionForm } from './NativeAdvancedEditor.js';
 import { NativeStructureEditor } from './native-editor-structure.js';
@@ -11,6 +12,80 @@ import { advancedFixture } from './native-advanced-test-fixtures.js';
 
 afterEach(() => setLocale('ko'));
 describe('advanced editor static meaning and readonly controls', () => {
+  it.each(['ko', 'en'] as const)(
+    'separates item selection from expression selection in %s',
+    (locale) => {
+      setLocale(locale);
+      const f = advancedFixture();
+      const html = renderToStaticMarkup(
+        createElement(NativeAdvancedEditor, {
+          context: f.context,
+          document: f.document,
+          table: f.table,
+        }),
+      );
+      const item = locale === 'ko' ? '생성하려는 항목 선택' : 'Select an item to create';
+      const expression = locale === 'ko' ? '생성하려는 식 선택' : 'Select an expression to create';
+      const detail = locale === 'ko' ? '선택한 항목 편집' : 'Edit the selected item';
+      expect(html).toContain(item);
+      expect(html).toContain(expression);
+      expect(html.indexOf(item)).toBeLessThan(html.indexOf(detail));
+      expect(html.indexOf(detail)).toBeLessThan(html.indexOf(expression));
+      expect(f.context.onSave).not.toHaveBeenCalled();
+    },
+  );
+  it('keeps nested incomplete input mounted inside collapsible expression groups', () => {
+    const f = advancedFixture(),
+      changed = vi.fn();
+    const html = renderToStaticMarkup(
+      createElement(NativeExpressionTreeEditor, {
+        database: f.document.database,
+        facts: nativeAdvancedExpressionFacts(f.document, f.table, 'index'),
+        value: JSON.stringify({
+          kind: 'binary',
+          operator: '+',
+          left: { kind: 'literal', literalType: 'number', value: '20e' },
+          right: { kind: 'column', columnId: 'a' },
+        }),
+        onChange: changed,
+      }),
+    );
+    expect(html).toContain('왼쪽 · 리터럴');
+    expect(html).toContain('오른쪽 · 컬럼 참조');
+    expect(html).toContain('기존 식 묶기');
+    expect(html).toContain('value="20e"');
+    expect(html).toContain('기존 식을 합으로 묶기');
+    expect(changed).not.toHaveBeenCalled();
+  });
+  it('groups comparison fields without changing their input conversion', () => {
+    const f = advancedFixture(),
+      change = vi.fn();
+    const values = {
+      expressionColumn: 'a',
+      expressionOperator: '>',
+      expressionLiteralType: 'number',
+      expressionValue: '20e',
+    };
+    const html = renderToStaticMarkup(
+      createElement(NativeExpressionFields, {
+        values,
+        change,
+        columns: f.columns,
+        disabled: true,
+      }),
+    );
+    expect(html).toContain('<legend>비교할 컬럼과 연산자</legend>');
+    expect(html).toContain('<legend>비교할 값</legend>');
+    expect(html).toContain('value="20e"');
+    expect(html.match(/<fieldset disabled="">/g)).toHaveLength(2);
+    expect(nativeExpressionFromInputs({ ...values, expressionValue: '20' })).toEqual({
+      kind: 'binary',
+      operator: '>',
+      left: { kind: 'column', columnId: 'a' },
+      right: { kind: 'literal', literalType: 'number', value: '20' },
+    });
+    expect(change).not.toHaveBeenCalled();
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'shows bilingual empty-table guidance instead of raw validator JSON for %s',
     (kind) => {
@@ -56,7 +131,7 @@ describe('advanced editor static meaning and readonly controls', () => {
           ])
             expect(output).not.toContain(forbidden);
         }
-        expect(html).toMatch(/type="submit"[^>]*disabled=""/);
+        expect(html).not.toMatch(/<button\b(?=[^>]*type="submit")(?![^>]*disabled="")[^>]*>/);
       }
       expect(changed).not.toHaveBeenCalled();
       expect(f.context.onSave).not.toHaveBeenCalled();
@@ -124,7 +199,7 @@ describe('advanced editor static meaning and readonly controls', () => {
       );
       expect(editor).toContain('고급 인덱스·식 편집');
       expect(editor).toContain('검증 미완료');
-      expect(editor).toMatch(/type="submit"[^>]*disabled=""/);
+      expect(editor).not.toMatch(/<button\b(?=[^>]*type="submit")(?![^>]*disabled="")[^>]*>/);
     },
   );
   it.each(['ko', 'en'] as const)(
@@ -198,9 +273,11 @@ describe('advanced editor static meaning and readonly controls', () => {
     );
     expect(html).toContain('value="20e"');
     expect(html).toContain('저장되지 않습니다');
-    expect(
-      renderToStaticMarkup(createElement(NativeExpressionTreeEditor, { ...props, value: '{bad' })),
-    ).toContain('입력 초기화');
+    const damaged = renderToStaticMarkup(
+      createElement(NativeExpressionTreeEditor, { ...props, value: '{bad' }),
+    );
+    expect(damaged).toContain('원문은 유지됩니다');
+    expect(damaged).not.toContain('입력 초기화');
     expect(changed).not.toHaveBeenCalled();
   });
   it('shows missing-column guidance for incomplete tree probes without rewriting them', () => {

@@ -32,6 +32,8 @@ import { nativeEditorConditionText, nativeEditorErrorCode } from './native-edito
 registerTranslations({
   '고급 인덱스·식 편집': 'Advanced index and expression editing',
   '고급 편집 대상': 'Advanced editing target',
+  '생성하려는 항목 선택': 'Select an item to create',
+  '선택한 항목 편집': 'Edit the selected item',
   '새 고급 인덱스': 'New advanced index',
   '새 복합 CHECK': 'New compound CHECK',
   '기본값 식': 'Default expression',
@@ -54,8 +56,8 @@ registerTranslations({
   '현재 저장 경로 검증 미완료': 'Verification of the current saving path is incomplete',
   '현재 원문을 유지합니다.': 'The current original is preserved.',
   '입력 또는 조합을 지원하지 않음': 'Input or combination is unsupported',
-  '고급 초안을 보존했습니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.':
-    'The advanced draft was preserved. Reset input or retry preserving it.',
+  '고급 초안을 보존했습니다. 이 초안은 저장할 수 없으며 원문은 유지됩니다.':
+    'The advanced draft was preserved. This draft cannot be saved; its original text is retained.',
   '고급 편집은 현재 DB의 물리 테이블에서만 가능합니다.':
     'Advanced editing is available only for a physical table in the current database.',
   '현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.':
@@ -161,7 +163,7 @@ export function NativeAdvancedIndexForm({
           } catch (error) {
             return (
               <p role="alert">
-                {t('고급 초안을 보존했습니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.')} (
+                {t('고급 초안을 보존했습니다. 이 초안은 저장할 수 없으며 원문은 유지됩니다.')} (
                 {nativeEditorConditionText(nativeEditorErrorCode(error, 'index.draft-invalid'))})
               </p>
             );
@@ -515,37 +517,43 @@ function NativeAdvancedEditorContent({
           {t('현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.')}
         </p>
       )}
-      <PanelList empty={t('편집할 항목이 없습니다.')}>
-        {choices.map((choice) => (
-          <PanelRow
-            key={choice.value}
-            title={choice.label}
-            active={selected === choice.value}
-            onSelect={() => {
-              if (!context.busy) setSelected(choice.value);
-            }}
-          />
-        ))}
-      </PanelList>
-      {isIndex && selectionValid && (
-        <NativeAdvancedIndexForm
-          key={mountingKey}
-          context={context}
-          document={document}
-          table={table}
-          {...(index ? { index } : {})}
-          readOnly={readonly}
-        />
-      )}
-      {target && selectionValid && (
-        <NativeAdvancedExpressionForm
-          key={mountingKey}
-          context={context}
-          document={document}
-          table={table}
-          target={target}
-          readOnly={readonly}
-        />
+      <PanelSection title={t('생성하려는 항목 선택')} defaultOpen>
+        <PanelList empty={t('편집할 항목이 없습니다.')}>
+          {choices.map((choice) => (
+            <PanelRow
+              key={choice.value}
+              title={choice.label}
+              active={selected === choice.value}
+              onSelect={() => {
+                if (!context.busy) setSelected(choice.value);
+              }}
+            />
+          ))}
+        </PanelList>
+      </PanelSection>
+      {selectionValid && (
+        <PanelSection title={t('선택한 항목 편집')} defaultOpen>
+          {isIndex && selectionValid && (
+            <NativeAdvancedIndexForm
+              key={mountingKey}
+              context={context}
+              document={document}
+              table={table}
+              {...(index ? { index } : {})}
+              readOnly={readonly}
+            />
+          )}
+          {target && selectionValid && (
+            <NativeAdvancedExpressionForm
+              key={mountingKey}
+              context={context}
+              document={document}
+              table={table}
+              target={target}
+              readOnly={readonly}
+            />
+          )}
+        </PanelSection>
       )}
     </PanelSection>
   );

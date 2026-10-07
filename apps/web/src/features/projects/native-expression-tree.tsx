@@ -3,6 +3,7 @@ import type { DatabaseContext, NativeExpressionPolicyFacts } from '@ezerd/model'
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { NativeEditorField } from './native-editor-form.js';
+import { PanelSection } from '../../shared/editor/panel.js';
 import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
   nativeAstKinds,
@@ -18,7 +19,8 @@ import {
 
 registerTranslations({
   '식 트리': 'Expression tree',
-  '노드 종류': 'Node kind',
+  '생성하려는 식 선택': 'Select an expression to create',
+  '기존 식 묶기': 'Wrap the current expression',
   리터럴: 'Literal',
   '컬럼 참조': 'Column reference',
   함수: 'Function',
@@ -40,8 +42,8 @@ registerTranslations({
   '엔진에서 허용': 'Allowed by the engine',
   '저장 검증 미완료': 'Saving verification is incomplete',
   '입력 또는 조합을 지원하지 않음': 'Input or combination is unsupported',
-  '손상된 식 초안을 보존했습니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.':
-    'The damaged expression draft was preserved. Reset input or retry preserving it.',
+  '손상된 식 초안을 보존했습니다. 이 초안은 저장할 수 없으며 원문은 유지됩니다.':
+    'The damaged expression draft was preserved. This draft cannot be saved; its original text is retained.',
   '기존 식을 AND로 묶기': 'Wrap the current expression with AND',
   '기존 식을 OR로 묶기': 'Wrap the current expression with OR',
   '기존 식을 NOT으로 묶기': 'Wrap the current expression with NOT',
@@ -87,7 +89,7 @@ export function NativeExpressionTreeEditor({
   } catch (error) {
     return (
       <p role="alert">
-        {t('손상된 식 초안을 보존했습니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.')} (
+        {t('손상된 식 초안을 보존했습니다. 이 초안은 저장할 수 없으며 원문은 유지됩니다.')} (
         {nativeEditorConditionText(nativeEditorErrorCode(error, 'expression.draft-invalid'))})
       </p>
     );
@@ -135,7 +137,11 @@ export function NativeExpressionTreeEditor({
       part: NativeAstDraft,
       slot: string | readonly (string | number)[],
       name: string,
-    ) => nodeFields(part, [...path, ...(typeof slot === 'string' ? [slot] : slot)], name);
+    ) => (
+      <PanelSection title={`${t(name)} · ${t(labels[part.kind])}`} defaultOpen>
+        {nodeFields(part, [...path, ...(typeof slot === 'string' ? [slot] : slot)], name)}
+      </PanelSection>
+    );
     const local = nativeAstDecision(database, node, childFacts);
     const wrapAllowed = (operator: Parameters<typeof wrapNativeAstDraft>[1]) =>
       nativeAstDecision(database, wrapNativeAstDraft(node, operator), childFacts).allowed;
@@ -207,7 +213,7 @@ export function NativeExpressionTreeEditor({
       <fieldset disabled={disabled} key={JSON.stringify(path)}>
         <legend>{t(title)}</legend>
         {field(
-          '노드 종류',
+          '생성하려는 식 선택',
           node.kind,
           (kind) => nativeAstSeed(kind as NativeAstDraft['kind'], database, columnId),
           nativeAstKinds.map((kind) => ({
@@ -313,7 +319,7 @@ export function NativeExpressionTreeEditor({
             { value: 'true', label: 'true' },
           ])}
         {node.kind === 'in' && list(node.values, 'values')}
-        <div>
+        <PanelSection title={t('기존 식 묶기')}>
           <Button
             disabled={disabled || !wrapAllowed('AND')}
             onClick={() =>
@@ -367,7 +373,7 @@ export function NativeExpressionTreeEditor({
           >
             {t('기존 식을 비교로 묶기')}
           </Button>
-        </div>
+        </PanelSection>
         {!local.allowed && <p role="status">{nativeEditorConditionText(local.code)}</p>}
       </fieldset>
     );
