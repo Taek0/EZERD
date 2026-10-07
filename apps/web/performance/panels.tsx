@@ -79,6 +79,7 @@ const stats = (values: number[]) => {
   };
 };
 function Demo() {
+  const [spacing, setSpacing] = useState(1);
   const [visibilityOff, setVisibilityOff] = useState(false);
   const [layerOff, setLayerOff] = useState(false);
   const [svgExtent, setSvgExtent] = useState(false);
@@ -93,8 +94,20 @@ function Demo() {
     const f = createNativePerformanceFixture(count, 10);
     f.snapshot.project.id = project;
     f.snapshot.project.name = 'Panel transition fixture';
+    const documents = new Set([
+      f.document,
+      f.snapshot.sourceDocument,
+      ...(f.snapshot.native?.status === 'available' ? [f.snapshot.native.document] : []),
+    ]);
+    for (const document of documents) {
+      document.layout.nodes = document.layout.nodes.map((node) => ({
+        ...node,
+        x: node.x * spacing,
+        y: node.y * spacing,
+      }));
+    }
     return f;
-  }, [count]);
+  }, [count, spacing]);
   const profile: ProfilerOnRenderCallback = (_id, _phase, actual) => {
     if (active.current) commits.current.push(actual);
   };
@@ -269,6 +282,19 @@ function Demo() {
       <header className="panel-lab-controls">
         <strong>Full editor panel profiling · no server writes</strong>
         <label>
+          Layout spacing{' '}
+          <select
+            aria-label="Layout spacing"
+            value={spacing}
+            disabled={running}
+            onChange={(e) => setSpacing(Number(e.target.value))}
+          >
+            <option value="1">1x</option>
+            <option value="4">4x</option>
+            <option value="8">8x</option>
+          </select>
+        </label>
+        <label>
           <input
             type="checkbox"
             checked={visibilityOff}
@@ -312,6 +338,7 @@ function Demo() {
           disabled={running}
           onChange={(e) => setCount(Number(e.target.value))}
         >
+          <option>36</option>
           <option>50</option>
           <option>100</option>
         </select>
@@ -338,7 +365,7 @@ function Demo() {
         <ConfirmProvider>
           <Profiler id="workspace" onRender={profile}>
             <NativeProjectView
-              key={count}
+              key={`${count}:${spacing}`}
               entry={{ kind: 'native', ...fixture, personalUnavailable: false }}
               userId={actor}
               canEdit
