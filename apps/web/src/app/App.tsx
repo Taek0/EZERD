@@ -63,6 +63,7 @@ import {
 } from '../features/projects/native-gallery-conversion.js';
 import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
 import { NativeProjectView } from '../features/projects/NativeProjectView.js';
+import { NativeBackgroundRefresh } from '../features/projects/native-background-refresh.js';
 import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
 import { NativeUpgradeButton } from '../features/projects/NativeUpgradeButton.js';
 import { ProjectDDLDialog } from '../features/projects/ProjectDDLDialog.js';
@@ -339,7 +340,29 @@ export function App() {
   }>();
   const [nativeReview, setNativeReview] = useState<Thread | null>(null);
   const navigation = useRef(new LatestRequest());
+  const nativeNavigationGeneration = useRef(0);
+  const nativeRefreshIdentity = useRef('');
+  nativeRefreshIdentity.current = JSON.stringify([user?.id, session?.token]);
+  const nativeBackgroundRefresh = useRef<NativeBackgroundRefresh | null>(null);
+  if (!nativeBackgroundRefresh.current) {
+    nativeBackgroundRefresh.current = new NativeBackgroundRefresh({
+      current: () =>
+        nativeCurrent.current
+          ? {
+              identity: `${nativeRefreshIdentity.current}:${nativeNavigationGeneration.current}`,
+              entry: nativeCurrent.current,
+            }
+          : null,
+      apply: (entry) => {
+        nativeCurrent.current = entry;
+        setNativeOpened(entry);
+        setWorkspaceId(entry.snapshot.project.workspaceId);
+      },
+      error: (cause) => setError(message(cause)),
+    });
+  }
   function replaceProject(value: OpenProject | null) {
+    nativeNavigationGeneration.current++;
     nativeCurrent.current = null;
     setNativeOpened(null);
     setNativeReview(null);
@@ -1207,7 +1230,7 @@ export function App() {
           key={nativeOpened.snapshot.project.id}
           entry={nativeOpened}
           onLeave={() => void leave()}
-          onReload={() => void open(nativeOpened.snapshot.project.id)}
+          onReload={() => void nativeBackgroundRefresh.current?.refresh()}
           busy={busy}
           userId={user.id}
           canEdit={permissions.edit}
