@@ -592,9 +592,8 @@ export class McpServerFactory {
         }),
         outputSchema: z.strictObject({
           outcome: z.enum(['recorded', 'cancelled']),
-          result: z
-            .object({ protocolVersion: z.union([z.literal(1), z.literal(2)]) })
-            .passthrough(),
+          // Historical v1 ACKs have no protocolVersion. The handler validates both formats.
+          result: z.object({}).passthrough(),
         }),
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },

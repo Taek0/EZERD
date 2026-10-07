@@ -392,6 +392,40 @@ describe('MCP workspace authorization', () => {
     };
   }
 
+  it('returns a recorded v1 cancellation ACK verbatim without requiring protocolVersion', async () => {
+    const operationId = crypto.randomUUID();
+    const result = {
+      operationId,
+      groupId: crypto.randomUUID(),
+      sequence: 1,
+      status: 'accepted',
+      actor: { id: actor.id, username: ' historical actor ', color: '#4169e1' },
+      changedPaths: ['/domains/legacy'],
+      createdAt: now,
+      nextBaseline: { baselineId: crypto.randomUUID(), baseSequence: 1, baselineIssuedAt: now },
+    };
+    const cancellation = { cancel: vi.fn(async () => ({ outcome: 'recorded', result })) };
+    const harness = await connected({ cancellation });
+    try {
+      const response = await harness.client.callTool({
+        name: 'cancel_native_project_request',
+        arguments: {
+          projectId: project.id,
+          kind: 'protocol-operation',
+          request: {
+            operationId,
+            groupId: result.groupId,
+            clientId: crypto.randomUUID(),
+          },
+        },
+      });
+      expect(response.isError, JSON.stringify(response.content)).not.toBe(true);
+      expect(response.structuredContent).toEqual({ outcome: 'recorded', result });
+    } finally {
+      await harness.close();
+    }
+  });
+
   it('returns cancellation input errors with field paths before accessing the database', async () => {
     const transaction = vi.fn();
     const cancellation = new NativeCancellationService(

@@ -1,6 +1,6 @@
 import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -16,6 +16,7 @@ import {
   migrateDesignDocumentV1,
   createNativeTable,
   createNativeColumn,
+  requestFingerprint,
   type DesignDocument,
 } from '@ezerd/model';
 import {
@@ -2092,6 +2093,72 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         }
       },
     );
+    it('returns a recorded v1 ACK without protocolVersion through the actual MCP cancellation tool', async () => {
+      const id = await createProject('sqlite');
+      const input = {
+        operationId: randomUUID(),
+        groupId: randomUUID(),
+        clientId: randomUUID(),
+        old: true,
+      };
+      const result = {
+        operationId: input.operationId,
+        groupId: input.groupId,
+        sequence: 0,
+        status: 'accepted',
+        actor: { id: actorId, username: ' historical actor ', color: '#112233' },
+        changedPaths: [],
+        createdAt: new Date().toISOString(),
+        nextBaseline: {
+          baselineId: randomUUID(),
+          baseSequence: 0,
+          baselineIssuedAt: new Date().toISOString(),
+        },
+      };
+      await pool.query(
+        "INSERT INTO sync_operations (project_id,operation_id,group_id,client_id,actor_id,sequence,base_sequence,baseline_id,baseline_issued_at,kind,fingerprint,changes,result) VALUES ($1,$2,$3,$4,$5,0,0,$6,NOW(),'online',$7,'[]'::jsonb,$8::jsonb)",
+        [
+          id,
+          input.operationId,
+          input.groupId,
+          input.clientId,
+          actorId,
+          result.nextBaseline.baselineId,
+          createHash('sha256').update(requestFingerprint(input)).digest('hex'),
+          JSON.stringify(result),
+        ],
+      );
+      const before = await stored(id);
+      const client = new Client({ name: 'historical-cancel', version: '1.0.0' });
+      try {
+        await client.connect(
+          new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+            requestInit: { headers: { Authorization: `Bearer ${ownerMcpToken}` } },
+          }),
+        );
+        const response = await client.callTool({
+          name: 'cancel_native_project_request',
+          arguments: {
+            projectId: id,
+            kind: 'protocol-operation',
+            request: input,
+          },
+        });
+        expect(response.isError, JSON.stringify(response.content)).not.toBe(true);
+        expect(response.structuredContent).toEqual({ outcome: 'recorded', result });
+        expect(await stored(id)).toEqual(before);
+        expect(
+          (
+            await pool.query(
+              'SELECT count(*)::int AS n FROM native_request_cancellations WHERE project_id=$1',
+              [id],
+            )
+          ).rows[0].n,
+        ).toBe(0);
+      } finally {
+        await client.close();
+      }
+    });
     it('keeps a native DB mismatch explicit instead of interpreting it in the project dialect', async () => {
       const id = await createProject('mysql');
       const source = migrateDesignDocumentV1(
