@@ -247,6 +247,19 @@ function Demo() {
         <button disabled={running} onClick={() => void run()}>
           Measure marquee suite
         </button>
+        <button
+          disabled={!output || running}
+          onClick={() => {
+            const url = URL.createObjectURL(new Blob([output], { type: 'application/json' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `marquee-${__MARQUEE_BASELINE__ ? 'before' : 'after'}-${count}.json`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }}
+        >
+          Download measurement JSON
+        </button>
         <output aria-label="Marquee status">{progress}</output>
       </header>
       <div ref={root} className="app-shell editor-shell panel-lab-shell">
