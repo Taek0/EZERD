@@ -66,3 +66,28 @@ describe('Untitled UI runtime controls and form compatibility', () => {
     expect(area).toContain('Description');
   });
 });
+
+it('adds a decorative domain color before selected text without changing option names', () => {
+  const html = render(
+    h(
+      Select,
+      {
+        value: 'sales',
+        'aria-label': 'Domain',
+        name: 'domain',
+        renderOptionLeading: (value) =>
+          h('span', {
+            'aria-hidden': true,
+            'data-domain': value,
+            style: { backgroundColor: '#ff0000' },
+          }),
+      },
+      h('option', { value: 'sales' }, 'Sales'),
+    ),
+  );
+  expect(html).toContain('data-domain="sales"');
+  expect(html).toContain('background-color:#ff0000');
+  expect(html).toContain('aria-hidden="true"');
+  expect(html).toContain('Sales');
+  expect(html).toContain('aria-haspopup="listbox"');
+});

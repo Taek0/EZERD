@@ -156,6 +156,7 @@ export interface SelectProps extends Omit<
   value?: string | number;
   defaultValue?: string | number;
   onValueChange?: (value: string) => void;
+  renderOptionLeading?: (value: string) => ReactNode;
   invalid?: boolean;
   readOnly?: boolean;
   placeholder?: string;
@@ -170,6 +171,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
     value,
     defaultValue,
     onValueChange,
+    renderOptionLeading,
     id,
     name,
     disabled,
@@ -313,9 +315,13 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
         {...(style ? { style } : {})}
       >
         <SelectValue className="ui-select-value">
-          {({ selectedText }) => (
+          {({ selectedText, state }) => (
             <>
-              <span>{selectedText || placeholder || t('선택')}</span>
+              <span>
+                {state.selectionManager.firstSelectedKey != null &&
+                  renderOptionLeading?.(String(state.selectionManager.firstSelectedKey))}
+                {selectedText || placeholder || t('선택')}
+              </span>
               <ChevronDown className="ui-select-chevron" />
             </>
           )}
@@ -338,6 +344,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                     key={option.value}
                     id={option.value}
                     label={option.label}
+                    leading={renderOptionLeading?.(option.value)}
                     disabled={option.disabled}
                   />
                 ))}
@@ -348,6 +355,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
                   key={option.value}
                   id={option.value}
                   label={option.label}
+                  leading={renderOptionLeading?.(option.value)}
                   disabled={option.disabled}
                 />
               ))

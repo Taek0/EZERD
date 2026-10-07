@@ -1,3 +1,4 @@
+import { AnimatedDetails, Button } from '../../components/ui/index.js';
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -88,7 +89,7 @@ function fixture() {
 }
 function click(tree: unknown, label: string, index = 0) {
   const button = nodes(tree).filter(
-    (node) => node.type === 'button' && node.props.children === label,
+    (node) => node.type === Button && node.props.children === label,
   )[index]!;
   (button.props.onClick as () => void)();
 }
@@ -107,6 +108,9 @@ describe('explicit native draft recovery panel', () => {
     expect(text(tree, '삭제되었거나 닫힌 편집 대상')).toBe(true);
     expect(text(tree, '다른 저장 기준')).toBe(true);
     expect(text(tree, record.raw)).toBe(true);
+    expect(nodes(tree).find((node) => node.type === AnimatedDetails)?.props.open).toBeUndefined();
+    expect(text(tree, '설계 편집')).toBe(true);
+    expect(text(tree, '입력 원문 보기')).toBe(true);
     click(tree, '원문 다운로드');
     expect(props.onDownload).toHaveBeenCalledWith('native-draft-source.json', record.raw);
     click(tree, '복구 사본 만들기');
@@ -197,4 +201,17 @@ describe('explicit native draft recovery panel', () => {
     expect(listNativeMemoryDrafts(actor, project, storage)[0]?.value).toEqual(newer);
     expect(props.onRecovered).not.toHaveBeenCalled();
   });
+});
+
+it('identifies a preserved input by its name while keeping raw identifiers in the disclosure', () => {
+  const { draft, storage, props } = fixture();
+  nativeDraftArchive(storage).store('editor', draft.key, {
+    ...draft,
+    values: { ...draft.values, name: 'Orders' },
+  });
+  const tree = renderer()(props);
+  expect(text(tree, 'Orders')).toBe(true);
+  const disclosure = nodes(tree).find((node) => node.type === AnimatedDetails)!;
+  expect(text(disclosure, draft.key)).toBe(true);
+  expect(disclosure.props.open).toBeUndefined();
 });

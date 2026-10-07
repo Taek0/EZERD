@@ -6,6 +6,7 @@ import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 
 registerTranslations({
   '더 보기': 'More',
+  '설계 확인 항목': 'Design issues',
   '보관된 입력 복구': 'Recover preserved input',
   '전체 테이블': 'All tables',
   '도메인 맵': 'Domain map',
@@ -41,8 +42,7 @@ export interface NativeCanvasToolbarProps {
   onCreate?: ((kind: 'table' | 'domain' | 'enum') => void) | undefined;
   onNote: () => void;
   onOpenRecovery?: (() => void) | undefined;
-  onResetRoutes?: (() => void) | undefined;
-  onPaste?: (() => void) | undefined;
+  onOpenIssues?: (() => void) | undefined;
   onExportProject?: (() => void) | undefined;
   onExportDDL?: (() => void) | undefined;
   onExportPNG?: (() => void) | undefined;
@@ -67,8 +67,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   onCreate,
   onNote,
   onOpenRecovery,
-  onResetRoutes,
-  onPaste,
+  onOpenIssues,
   onExportProject,
   onExportDDL,
   onExportPNG,
@@ -142,19 +141,25 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
         <div className="toolbar-group toolbar-create" role="group" aria-label={t('편집 도구')}>
           {onCreate && (
             <Button
+              className="native-toolbar-action"
               disabled={writeBlocked}
               onClick={() => onCreate(viewId === 'overview' ? 'domain' : 'table')}
             >
               {t(viewId === 'overview' ? '＋ 도메인' : '＋ 테이블')}
             </Button>
           )}
-          <Button disabled={!noteEditable || disabled} onClick={onNote}>
+          <Button
+            className="native-toolbar-action"
+            disabled={!noteEditable || disabled}
+            onClick={onNote}
+          >
             {t('＋ 메모')}
           </Button>
         </div>
         <span className="toolbar-divider" aria-hidden="true" />
         <div className="toolbar-group" role="group" aria-label={t('보기와 내보내기')}>
           <Button
+            className="native-toolbar-action"
             aria-pressed={viewId === '__tables__'}
             disabled={disabled}
             onClick={() => {
@@ -165,6 +170,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
             {t('전체 테이블')}
           </Button>
           <Button
+            className="native-toolbar-action"
             aria-pressed={viewId === 'overview'}
             disabled={disabled}
             onClick={() => onView('overview')}
@@ -186,6 +192,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
           )}
           {(onOpenEnums || onCreate) && (
             <Button
+              className="native-toolbar-action"
               disabled={disabled || (!onOpenEnums && !editable)}
               onClick={() => (onOpenEnums ? onOpenEnums() : onCreate?.('enum'))}
             >
@@ -223,7 +230,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               />
             ))}
         </div>
-        {(onCreate || onOpenRecovery || onResetRoutes || onPaste) && (
+        {(onOpenIssues || onOpenRecovery) && (
           <>
             <span className="toolbar-divider" aria-hidden="true" />
             <div className="toolbar-group" role="group" aria-label={t('캔버스 작업')}>
@@ -235,53 +242,8 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
                   </IconButton>
                 }
                 items={[
-                  ...(onCreate
-                    ? [
-                        {
-                          id: 'create-table',
-                          label: t('＋ 테이블'),
-                          disabled: writeBlocked || viewId === 'overview',
-                          onAction: () => onCreate('table'),
-                        },
-                        {
-                          id: 'create-domain',
-                          label: t('＋ 도메인'),
-                          disabled: writeBlocked,
-                          onAction: () => onCreate('domain'),
-                        },
-                        {
-                          id: 'create-enum',
-                          label: '＋ ENUM',
-                          disabled: writeBlocked,
-                          onAction: () => onCreate('enum'),
-                        },
-                      ]
-                    : []),
-                  {
-                    id: 'create-note',
-                    label: t('＋ 메모'),
-                    disabled: !noteEditable || disabled,
-                    onAction: onNote,
-                  },
-                  ...(onPaste
-                    ? [
-                        {
-                          id: 'paste',
-                          label: t('붙여넣기'),
-                          disabled: writeBlocked || viewId === 'overview',
-                          onAction: onPaste,
-                        },
-                      ]
-                    : []),
-                  ...(onResetRoutes
-                    ? [
-                        {
-                          id: 'reset-routes',
-                          label: t('관계 경로 초기화'),
-                          disabled: !noteEditable || disabled,
-                          onAction: onResetRoutes,
-                        },
-                      ]
+                  ...(onOpenIssues
+                    ? [{ id: 'design-issues', label: t('설계 확인 항목'), onAction: onOpenIssues }]
                     : []),
                   ...(onOpenRecovery
                     ? [{ id: 'recovery', label: t('보관된 입력 복구'), onAction: onOpenRecovery }]

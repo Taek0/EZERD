@@ -55,7 +55,7 @@ export const NativeDomainFilter = memo(function NativeDomainFilter({
               ].join(' · ') || t('선택 없음')
             : t('전체 테이블 표시')
         }
-        className={`domain-view-trigger${value ? ' is-active' : ''}`}
+        className={`native-toolbar-action domain-view-trigger${value ? ' is-active' : ''}`}
       >
         {t('도메인 필터')}
         {value ? ` · ${value.domainIds.length + Number(value.unassigned)}` : ''}
