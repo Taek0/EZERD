@@ -222,6 +222,9 @@ function canvas(authenticated = false) {
     render,
     scene: () => nodes(tree).find((node) => node.type === NativeCanvasScene)!.props,
     controls: () => nodes(tree).find((node) => node.type === NativeCameraControls)!.props,
+    worldStyle: () =>
+      nodes(tree).find((node) => node.props.className === 'native-erd-world canvas-world')!.props
+        .style as { transform: string; willChange?: string },
     transform: () =>
       (
         nodes(tree).find((node) => node.props.className === 'native-erd-world canvas-world')!.props
@@ -232,6 +235,40 @@ function canvas(authenticated = false) {
 }
 
 describe('native blank canvas pointer interaction', () => {
+  it.each([
+    [0.1, 'auto'],
+    [0.15, 'auto'],
+    [0.16, 'auto'],
+    [1, 'auto'],
+  ] as const)('selects the world promotion hint at zoom %s', (zoom, hint) => {
+    const ui = canvas();
+    (ui.controls().onZoom as (factor: number) => void)(zoom);
+    ui.render();
+    expect(ui.worldStyle().willChange).toBe(hint);
+  });
+
+  it('keeps the world promotion hint disabled across pan and zoom round trips', () => {
+    const ui = canvas();
+    expect(ui.worldStyle().willChange).toBe('auto');
+    (ui.controls().onZoom as (factor: number) => void)(0.1);
+    ui.render();
+    expect(ui.worldStyle().willChange).toBe('auto');
+    const before = ui.transform();
+    (ui.controls().onTool as (tool: string) => void)('hand');
+    ui.render();
+    ui.event('onPointerDownCapture');
+    ui.event('onPointerMove', { clientX: 1100, clientY: 1050 });
+    ui.event('onPointerUp');
+    expect(ui.transform()).not.toBe(before);
+    expect(ui.worldStyle().willChange).toBe('auto');
+    (ui.controls().onZoom as (factor: number) => void)(1.4);
+    ui.render();
+    expect(ui.worldStyle().willChange).toBe('auto');
+    (ui.controls().onZoom as (factor: number) => void)(2);
+    ui.render();
+    expect(ui.worldStyle().willChange).toBe('auto');
+  });
+
   it('does not restore a saved camera when personal state refreshes after local navigation', async () => {
     const ui = canvas(true);
     const response = (version: number) => ({
