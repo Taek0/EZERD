@@ -199,17 +199,22 @@ export function UntitledPopover({
 export function UntitledSelectItem({
   id,
   label,
+  leading,
   disabled = false,
 }: {
   id: string;
   label: string;
+  leading?: ReactNode;
   disabled?: boolean;
 }) {
   return (
     <ListBoxItem id={id} textValue={label} isDisabled={disabled} className="ui-select-item">
       {({ isSelected }) => (
         <div className="ui-select-item-content">
-          <Text slot="label">{label}</Text>
+          <Text slot="label">
+            {leading}
+            {label}
+          </Text>
           {isSelected && <Check className="ui-select-check" />}
         </div>
       )}

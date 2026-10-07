@@ -1,19 +1,55 @@
-import { createElement, type ReactElement } from 'react';
+import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
 import { NativeEnumDialog } from './NativeEnumDialog.js';
 import { advancedFixture } from './native-advanced-test-fixtures.js';
+import type { NativeEditorContext } from './native-editor-form.js';
 const harness = vi.hoisted(() => ({
   effect: null as (() => (() => void) | void) | null,
-  dialog: { showModal: vi.fn(), close: vi.fn() },
-  content: null as ReactElement<Record<string, any>> | null,
-}));
-vi.mock('react', async () => ({
-  ...(await vi.importActual<typeof import('react')>('react')),
-  useEffect: (effect: () => void) => {
-    harness.effect = effect;
+  dialog: {
+    showModal: vi.fn(),
+    close: vi.fn(),
+    scrollIntoView: vi.fn(),
+    querySelector: vi.fn(() => null),
   },
-  useRef: (initial: unknown) => ({ current: initial === null ? harness.dialog : initial }),
+  content: null as ReactElement<Record<string, any>> | null,
+  states: null as unknown[] | null,
+  stateIndex: 0,
+}));
+vi.mock('react', async () => {
+  const react = await vi.importActual<typeof import('react')>('react');
+  return {
+    ...react,
+    useState: (initial: unknown) => {
+      if (!harness.states) return react.useState(initial);
+      const index = harness.stateIndex++;
+      return [
+        harness.states[index],
+        (value: unknown) => {
+          harness.states![index] = value;
+        },
+      ];
+    },
+    useEffect: (effect: () => void) => {
+      harness.effect = effect;
+    },
+    useRef: (initial: unknown) => ({ current: initial === null ? harness.dialog : initial }),
+  };
+});
+vi.mock('./native-editor-structure.js', () => ({
+  NativeStructureEditor: ({
+    initialSelection,
+    focused,
+  }: {
+    initialSelection: { action: string };
+    focused: boolean;
+  }) =>
+    createElement(
+      'form',
+      { 'data-action': initialSelection.action, 'data-focused': focused },
+      createElement('input'),
+    ),
+  NativeDeleteForm: () => createElement('form'),
 }));
 vi.mock('react-dom', async () => ({
   ...(await vi.importActual<typeof import('react-dom')>('react-dom')),
@@ -34,6 +70,8 @@ afterEach(() => {
   vi.clearAllMocks();
   harness.effect = null;
   harness.content = null;
+  harness.states = null;
+  harness.stateIndex = 0;
 });
 it('uses native modal/escape semantics and restores the previous connected trigger on closing', () => {
   vi.useFakeTimers();
@@ -78,4 +116,37 @@ it('closes immediately when reduced motion is requested', () => {
   );
   harness.content!.props.onCancel({ preventDefault: vi.fn() });
   expect(onClose).toHaveBeenCalledOnce();
+});
+it('opens the focused create form above the list immediately and keeps it on repeated add clicks', () => {
+  vi.stubGlobal('document', { body: {} });
+  harness.states = ['', null, false, false];
+  const fixture = advancedFixture();
+  fixture.document.enums = [{ id: 'e', schema: 'public', name: 'existing', values: ['one'] }];
+  const render = () => {
+    harness.stateIndex = 0;
+    return renderToStaticMarkup(
+      createElement(NativeEnumDialog, {
+        document: fixture.document,
+        context: { busy: false } as NativeEditorContext,
+        onClose: vi.fn(),
+      }),
+    );
+  };
+  const findAdd = (node: ReactNode): ReactElement<Record<string, any>> | undefined => {
+    for (const child of Children.toArray(node)) {
+      if (!isValidElement<Record<string, any>>(child)) continue;
+      if (child.props.children === 'ENUM 추가') return child;
+      const found = findAdd(child.props.children);
+      if (found) return found;
+    }
+  };
+  expect(render()).not.toContain('native-enum-editor');
+  findAdd(harness.content)!.props.onClick();
+  const markup = render();
+  expect(markup).toContain('data-action="enum" data-focused="true"');
+  expect(markup.indexOf('native-enum-editor')).toBeLessThan(markup.indexOf('table-enum-list'));
+  // An already open editor retains the same selection and therefore the same durable form.
+  findAdd(harness.content)!.props.onClick();
+  expect(harness.states[1]).toBe('new');
+  expect(render()).toContain('data-action="enum" data-focused="true"');
 });

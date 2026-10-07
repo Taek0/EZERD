@@ -594,6 +594,7 @@ function NativeCanvasWorkspace({
   inspectorOpen,
   onToggleInspector: onToggleInspectorFromParent,
   onOpenRecovery: onOpenRecoveryFromParent,
+  onOpenIssues,
   onCreate: onCreateFromParent,
   onModeChange: onModeChangeFromParent,
   onViewChange: onViewChangeFromParent,
@@ -635,6 +636,7 @@ function NativeCanvasWorkspace({
   inspectorOpen?: boolean;
   onToggleInspector?: () => void;
   onOpenRecovery?: () => void;
+  onOpenIssues?: () => void;
   onCreate?: (kind: 'table' | 'domain' | 'enum' | 'column') => void;
   onModeChange?: (mode: 'physical' | 'logical') => void;
   onViewChange?: (id: string) => void;
@@ -2112,22 +2114,7 @@ function NativeCanvasWorkspace({
         } else void createObject(kind);
       }}
       onNote={() => void createObject('note')}
-      onPaste={() => void pasteFromMenu()}
-      onResetRoutes={() =>
-        void saveCommands(
-          (base.layout.relations ?? [])
-            .filter(
-              (route) =>
-                route.viewId === drawn.viewId &&
-                scene.relations.some((item) => item.relation.id === route.relationId),
-            )
-            .map((route) => ({
-              type: 'delete_relation_layout' as const,
-              relationId: route.relationId,
-              viewId: route.viewId,
-            })),
-        )
-      }
+      onOpenIssues={onOpenIssues}
       onOpenEnums={() => onRequestAction?.('enums', '')}
       onOpenRecovery={onOpenRecoveryFromParent ? onOpenRecovery : undefined}
       editable={editable}

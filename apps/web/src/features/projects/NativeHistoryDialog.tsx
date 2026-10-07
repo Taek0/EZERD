@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { NativeHistoryPage, ProjectDocumentState } from '@ezerd/contracts';
-import { Button, Collapse, DisclosureButton, TabButton } from '../../components/ui/index.js';
+import { Button, Collapse, DisclosureButton, Select } from '../../components/ui/index.js';
 import { message } from '../../shared/api/client.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { describeChanges, nativeHistoryPreview } from './native-history-labels.js';
 import { nativeEditorExportBlocked } from './native-export-state.js';
+import './native-history-dialog.css';
 import {
   fetchNativeHistory,
   loadNativeHistoryPending,
@@ -43,7 +44,8 @@ registerTranslations({
   삭제: 'Delete',
   관계: 'Relationships',
   '데이터베이스 변경': 'Database changes',
-  '불러온 이력에서 필터링합니다.': 'Filters apply to loaded history.',
+  '동작 필터': 'Action filter',
+  '{shown} / {total}개': '{shown} / {total}',
   '일치하는 이력이 없습니다.': 'No matching history.',
 });
 export function NativeHistoryChanges({ lines }: { lines: readonly string[] }) {
@@ -64,6 +66,8 @@ export function NativeHistoryChanges({ lines }: { lines: readonly string[] }) {
       {preview.expandable && (
         <>
           <DisclosureButton
+            className="native-history-more"
+            variant="ghost"
             expanded={expanded}
             controls={id}
             onClick={() => setExpanded(!expanded)}
@@ -101,6 +105,7 @@ export function NativeHistoryDialog({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const active = useRef(true);
+  const filterId = useId();
   const [filter, setFilter] = useState<NativeHistoryFilter>('all');
   const history = filterNativeHistory(page?.history ?? [], filter);
   async function load(since = 0) {
@@ -161,7 +166,6 @@ export function NativeHistoryDialog({
   const content = (
     <>
       <h2 id="native-history-title">{t('설계 이력')}</h2>
-      <p>{t('내 작업만 현재 설계의 충돌을 확인한 뒤 되돌릴 수 있습니다.')}</p>
       {error && <p role="alert">{error}</p>}
       {pending && (
         <div role="status">
@@ -193,16 +197,27 @@ export function NativeHistoryDialog({
           </Button>
         </div>
       )}
-      <div className="native-history-filters" role="group" aria-label={t('히스토리 동작 필터')}>
-        {nativeHistoryFilters.map(([value, label]) => (
-          <TabButton key={value} selected={filter === value} onClick={() => setFilter(value)}>
-            {t(label)}
-          </TabButton>
-        ))}
+      <div className="native-history-filter-bar">
+        <label htmlFor={filterId}>{t('동작 필터')}</label>
+        <Select
+          id={filterId}
+          aria-label={t('히스토리 동작 필터')}
+          value={filter}
+          onValueChange={(value) => setFilter(value as NativeHistoryFilter)}
+        >
+          {nativeHistoryFilters.map(([value, label]) => (
+            <option key={value} value={value}>
+              {t(label)}
+            </option>
+          ))}
+        </Select>
+        <span className="native-history-count" role="status">
+          {t('{shown} / {total}개', {
+            shown: history.length,
+            total: page?.history.length ?? 0,
+          })}
+        </span>
       </div>
-      <p role="status">
-        {t('불러온 이력에서 필터링합니다.')} {history.length} / {page?.history.length ?? 0}
-      </p>
       {page && history.length === 0 && <p>{t('일치하는 이력이 없습니다.')}</p>}
       <ol>
         {history.map((entry) => {
@@ -230,9 +245,6 @@ export function NativeHistoryDialog({
               <NativeHistoryChanges
                 lines={describeChanges(entry.changes, snapshot.sourceDocument, page?.history ?? [])}
               />
-              <Button disabled={blocked} onClick={() => void act(entry.operationId, 'undo')}>
-                {t('실행 취소')}
-              </Button>
               {deleted && (
                 <Button disabled={blocked} onClick={() => void act(entry.operationId, 'restore')}>
                   {t('삭제 복원')}

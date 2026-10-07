@@ -1,7 +1,12 @@
-import { createElement } from 'react';
+import { createElement, isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import { NativeCanvasToolbar, NativeCameraControls } from './NativeCanvasToolbar.js';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  NativeCanvasToolbar,
+  NativeCameraControls,
+  type NativeCanvasToolbarProps,
+} from './NativeCanvasToolbar.js';
+import { Dropdown } from '../../components/ui/index.js';
 import { setLocale } from '../../shared/i18n/index.js';
 describe('native canvas chrome', () => {
   it('keeps create controls disabled for read-only views and exposes view navigation', () => {
@@ -100,3 +105,41 @@ it.each(['ko', 'en'] as const)(
     setLocale('ko');
   },
 );
+
+vi.mock('../../shared/i18n/index.js', async (original) => {
+  const actual = await original<typeof import('../../shared/i18n/index.js')>();
+  return { ...actual, useI18n: () => ({ t: actual.translate }) };
+});
+function toolbarNodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
+  if (Array.isArray(tree)) return tree.flatMap(toolbarNodes);
+  if (!isValidElement<Record<string, unknown>>(tree)) return [];
+  return [tree, ...toolbarNodes(tree.props.children)];
+}
+it('keeps only design review and recovery in More, invoking their actions while writes are blocked', () => {
+  const onOpenIssues = vi.fn(),
+    onOpenRecovery = vi.fn();
+  const tree = (
+    NativeCanvasToolbar as unknown as { type: (props: NativeCanvasToolbarProps) => ReactElement }
+  ).type({
+    viewId: '__tables__',
+    views: [],
+    onView() {},
+    onCreate() {},
+    onNote() {},
+    onOpenIssues,
+    onOpenRecovery,
+    editable: false,
+    noteEditable: false,
+    disabled: true,
+    mode: 'physical',
+  });
+  const menu = toolbarNodes(tree).find((node) => node.type === Dropdown)!;
+  const items = menu.props.items as { id: string; disabled?: boolean; onAction: () => void }[];
+  expect(items.map((item) => item.id)).toEqual(['design-issues', 'recovery']);
+  for (const item of items) {
+    expect(item.disabled).not.toBe(true);
+    item.onAction();
+  }
+  expect(onOpenIssues).toHaveBeenCalledOnce();
+  expect(onOpenRecovery).toHaveBeenCalledOnce();
+});

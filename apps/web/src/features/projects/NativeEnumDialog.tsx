@@ -21,11 +21,21 @@ export function NativeEnumDialog({
 }) {
   const { t } = useI18n(),
     dialog = useRef<HTMLDialogElement>(null),
+    editor = useRef<HTMLDivElement>(null),
     closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [query, setQuery] = useState(''),
     [selected, setSelected] = useState<string | null>(null),
     [deleting, setDeleting] = useState(false),
     [closing, setClosing] = useState(false);
+  const revealEditor = () => {
+    const element = editor.current;
+    if (!element) return;
+    element.scrollIntoView({ block: 'nearest' });
+    element.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus({ preventScroll: true });
+  };
+  useEffect(() => {
+    if (selected) revealEditor();
+  }, [selected, deleting]);
   const close = () => {
     if (closeTimer.current !== undefined) return;
     if (
@@ -101,6 +111,7 @@ export function NativeEnumDialog({
             onClick={() => {
               setSelected('new');
               setDeleting(false);
+              if (selected === 'new' && !deleting) revealEditor();
             }}
           >
             {t('ENUM 추가')}
@@ -108,6 +119,44 @@ export function NativeEnumDialog({
         )}
       </div>
       <div className="native-enum-body">
+        {context &&
+          selected &&
+          (selected === 'new' || design.enums?.some((item) => item.id === selected)) && (
+            <div className="native-enum-editor" ref={editor}>
+              {selected === 'new' ? (
+                <NativeStructureEditor
+                  key="new"
+                  focused
+                  document={design}
+                  context={context}
+                  initialSelection={{ action: 'enum', target: '' }}
+                />
+              ) : (
+                selected &&
+                design.enums?.some((item) => item.id === selected) &&
+                (deleting ? (
+                  <NativeDeleteForm
+                    key={`delete:${selected}`}
+                    document={design}
+                    collection="enums"
+                    id={selected}
+                    context={context}
+                  />
+                ) : (
+                  <NativeStructureEditor
+                    key={`edit:${selected}`}
+                    focused
+                    document={design}
+                    context={context}
+                    initialSelection={{
+                      action: 'patch',
+                      target: JSON.stringify(['enums', selected]),
+                    }}
+                  />
+                ))
+              )}
+            </div>
+          )}
         {!supported && (
           <p className="panel-note">
             {t('이 DB의 ENUM / SET 값은 컬럼 타입 속성에서 편집합니다.')}
@@ -166,44 +215,6 @@ export function NativeEnumDialog({
             {t(query.trim() ? '검색 결과가 없습니다.' : '아직 ENUM이 없습니다.')}
           </p>
         )}
-        {context &&
-          selected &&
-          (selected === 'new' || design.enums?.some((item) => item.id === selected)) && (
-            <div className="native-enum-editor">
-              {selected === 'new' ? (
-                <NativeStructureEditor
-                  key="new"
-                  focused
-                  document={design}
-                  context={context}
-                  initialSelection={{ action: 'enum', target: '' }}
-                />
-              ) : (
-                selected &&
-                design.enums?.some((item) => item.id === selected) &&
-                (deleting ? (
-                  <NativeDeleteForm
-                    key={`delete:${selected}`}
-                    document={design}
-                    collection="enums"
-                    id={selected}
-                    context={context}
-                  />
-                ) : (
-                  <NativeStructureEditor
-                    key={`edit:${selected}`}
-                    focused
-                    document={design}
-                    context={context}
-                    initialSelection={{
-                      action: 'patch',
-                      target: JSON.stringify(['enums', selected]),
-                    }}
-                  />
-                ))
-              )}
-            </div>
-          )}
       </div>
       <div className="table-actions native-enum-footer">
         <Button onClick={close}>{t('닫기')}</Button>

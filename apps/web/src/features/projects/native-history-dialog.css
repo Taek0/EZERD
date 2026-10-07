@@ -1,0 +1,39 @@
+.native-history-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 8px;
+  border-block: 1px solid var(--line);
+}
+.native-history-filter-bar > label {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.native-history-filter-bar > .ui-select-root {
+  flex: 1;
+  min-width: 0;
+}
+.native-history-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ui-button.native-history-more,
+.ui-button.native-history-more:is(:hover, [aria-expanded='true']) {
+  min-height: 24px;
+  padding: 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: inherit;
+  font-weight: 500;
+  line-height: inherit;
+  color: var(--accent);
+}
+.ui-button.native-history-more:hover {
+  text-decoration: underline;
+}

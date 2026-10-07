@@ -1,3 +1,4 @@
+import { Dialog, Modal, ModalOverlay } from 'react-aria-components';
 import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
 import { NativeHistoryControls } from './NativeHistoryControls.js';
 import { CommentPins, CommentsPanel, type CommentContext } from '../comments/CommentsPanel.js';
@@ -16,8 +17,6 @@ import {
 } from '@ezerd/model';
 import {
   Button,
-  Collapse,
-  DisclosureButton,
   IconButton,
   Input,
   Select,
@@ -105,6 +104,7 @@ registerTranslations({
   '물리 설계를 완성해 주세요.': 'Complete the physical design.',
   '지원하지 않는 설정입니다.': 'This setting is not supported.',
   '설계 확인 항목': 'Design issues',
+  '확인이 필요한 설계 항목이 없습니다.': 'No design issues to review.',
   '다시 불러오기': 'Reload',
   물리: 'Physical',
   논리: 'Logical',
@@ -197,7 +197,7 @@ export function NativeProjectView({
     ReturnType<typeof nativeRejectedSaveIntents>
   >([]);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [issuesOpen, setIssuesOpen] = useState(true);
+  const [issuesOpen, setIssuesOpen] = useState(false);
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [recoveryEpoch, setRecoveryEpoch] = useState(0);
   const [recoveredInput, setRecoveredInput] = useState<{
@@ -863,15 +863,6 @@ export function NativeProjectView({
           <path d="M7 13v3.2L10.6 13" />
         </svg>
       </IconButton>
-      <IconButton
-        aria-label={t(pinMode ? '핀 추가 취소' : '핀 추가')}
-        tooltip={t(pinMode ? '핀 추가 취소' : '핀 추가')}
-        disabled={!canPersonalEdit || snapshot.project.status !== 'active'}
-        aria-pressed={pinMode}
-        onClick={() => setPinMode((value) => !value)}
-      >
-        ＋
-      </IconButton>
     </div>
   ) : undefined;
   function focusIssue(id: string | null) {
@@ -1006,6 +997,53 @@ export function NativeProjectView({
           {t('보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.')}
         </div>
       )}
+      <ModalOverlay
+        isOpen={issuesOpen}
+        onOpenChange={setIssuesOpen}
+        isDismissable
+        className="native-issues-overlay"
+      >
+        <Modal className="native-issues-modal">
+          <Dialog aria-label={t('설계 확인 항목')} className="native-issues-dialog">
+            <div className="native-issues-header">
+              <h2>{t('설계 확인 항목')}</h2>
+              <IconButton aria-label={t('닫기')} onClick={() => setIssuesOpen(false)}>
+                ×
+              </IconButton>
+            </div>
+            {snapshot.native.status === 'available' && snapshot.native.issues.length > 0 ? (
+              <ul>
+                {snapshot.native.issues.map((issue, index) => (
+                  <li key={`${issue.code}-${index}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIssuesOpen(false);
+                        focusIssue(issue.objectId);
+                      }}
+                    >
+                      {issue.objectId && doc?.tables?.some((table) => table.id === issue.objectId)
+                        ? `${tableName(issue.objectId)}: `
+                        : ''}
+                      {t(
+                        issue.code.startsWith('legacy.')
+                          ? '기존 타입 또는 기본값을 확인해 주세요.'
+                          : issue.category === 'incomplete'
+                            ? '물리 설계를 완성해 주세요.'
+                            : issue.category === 'unsupported'
+                              ? '지원하지 않는 설정입니다.'
+                              : '설정이나 연결 대상을 확인해 주세요.',
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="panel-note">{t('확인이 필요한 설계 항목이 없습니다.')}</p>
+            )}
+          </Dialog>
+        </Modal>
+      </ModalOverlay>
       {draftRecoveryOpen && userId && (
         <NativeDraftRecoveryPanel
           key={`draft-recovery:${userId}:${snapshot.project.id}:${generation}`}
@@ -1019,6 +1057,7 @@ export function NativeProjectView({
           isActorCurrent={recoveryActorCurrent}
           isObjectAvailable={(input) => !!nativeDraftRecoveryTarget(activeDocument.current, input)}
           canRecover={canRecoverDraft}
+          onClose={() => setDraftRecoveryOpen(false)}
           onRecovered={openRecoveredDraft}
         />
       )}
@@ -1044,7 +1083,7 @@ export function NativeProjectView({
         </div>
       )}
       {draftRecoveryOpen && rejectedIntents.length > 0 && (
-        <section className="notice native-pending">
+        <section className="notice native-pending native-rejected-recovery">
           <p>{t('적용되지 않은 저장 요청을 보관했습니다.')}</p>
           {rejectedIntents.map(({ key, pending: rejected }) => (
             <details key={key}>
@@ -1170,6 +1209,7 @@ export function NativeProjectView({
                 inspectorHost={canvasSettingsHost}
                 inspectorOpen={inspectorOpen}
                 onToggleInspector={() => setInspectorOpen((value) => !value)}
+                onOpenIssues={() => setIssuesOpen(true)}
                 recoveryOpen={draftRecoveryOpen}
                 {...(userId
                   ? { onOpenRecovery: () => setDraftRecoveryOpen((value) => !value) }
@@ -1500,7 +1540,21 @@ export function NativeProjectView({
                         onChange={(event) => setSearch(event.target.value)}
                       />
                     </label>
-                    <Select aria-label={t('전체 도메인')} value={domain} onValueChange={setDomain}>
+                    <Select
+                      aria-label={t('전체 도메인')}
+                      value={domain}
+                      onValueChange={setDomain}
+                      renderOptionLeading={(id) => {
+                        const item = doc.domains.find((candidate) => candidate.id === id);
+                        return item ? (
+                          <span
+                            className="native-domain-option-dot"
+                            style={{ backgroundColor: item.color ?? '#8993a3' }}
+                            aria-hidden="true"
+                          />
+                        ) : null;
+                      }}
+                    >
                       <option value="*">{t('전체 도메인')}</option>
                       <option value="">{t('미소속')}</option>
                       {doc.domains.map((item) => (
@@ -2369,43 +2423,6 @@ export function NativeProjectView({
                         {t('테이블 삭제')}
                       </Button>
                     )}
-                    {snapshot.native.status === 'available' &&
-                      snapshot.native.issues.length > 0 && (
-                        <section className="native-issues" aria-label={t('설계 확인 항목')}>
-                          <h3>
-                            <DisclosureButton
-                              expanded={issuesOpen}
-                              controls="native-issues-list"
-                              onClick={() => setIssuesOpen((open) => !open)}
-                            >
-                              {t('설계 확인 항목')} · {snapshot.native.issues.length}
-                            </DisclosureButton>
-                          </h3>
-                          <Collapse open={issuesOpen} id="native-issues-list">
-                            <ul>
-                              {snapshot.native.issues.map((issue, index) => (
-                                <li key={`${issue.code}-${index}`}>
-                                  <button type="button" onClick={() => focusIssue(issue.objectId)}>
-                                    {issue.objectId &&
-                                    doc.tables?.some((table) => table.id === issue.objectId)
-                                      ? `${tableName(issue.objectId)}: `
-                                      : ''}
-                                    {t(
-                                      issue.code.startsWith('legacy.')
-                                        ? '기존 타입 또는 기본값을 확인해 주세요.'
-                                        : issue.category === 'incomplete'
-                                          ? '물리 설계를 완성해 주세요.'
-                                          : issue.category === 'unsupported'
-                                            ? '지원하지 않는 설정입니다.'
-                                            : '설정이나 연결 대상을 확인해 주세요.',
-                                    )}
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          </Collapse>
-                        </section>
-                      )}
                   </section>
                 </div>
               </aside>
