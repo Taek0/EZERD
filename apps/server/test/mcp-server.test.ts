@@ -126,9 +126,26 @@ describe('MCP server tools', () => {
       expect(client.getInstructions()).toContain('불필요한 폭·높이·빈 공간을 줄여');
       expect(client.getInstructions()).toContain('구조적 계층');
       expect(client.getInstructions()).toContain('겹침을 확인하고 수정');
-      expect(
-        tools.tools.find((tool) => tool.name === 'apply_project_changes')?.description,
-      ).toContain('겹침 없이');
+      for (const name of [
+        'get_project',
+        'get_project_summary',
+        'list_tables',
+        'get_project_view',
+        'list_view_relations',
+        'get_table_details',
+        'diagnose_project',
+        'diagnose_layout',
+        'apply_project_changes',
+        'get_project_history',
+        'undo_project_operation',
+        'restore_project_deletion',
+      ]) {
+        expect(tools.tools.some((tool) => tool.name === name)).toBe(false);
+        expect(
+          (await client.callTool({ name, arguments: { projectId: project.id } })).isError,
+        ).toBe(true);
+      }
+      expect(documents.apply).not.toHaveBeenCalled();
       expect(tools.tools.map((tool) => tool.name)).toEqual([
         'whoami',
         'create_workspace',
@@ -147,16 +164,10 @@ describe('MCP server tools', () => {
         'decline_workspace_invitation',
         'cancel_workspace_invitation',
         'list_projects',
-        'get_project',
         'get_project_document_state',
         'export_project_ddl',
         'get_project_database_capabilities',
-        'get_project_summary',
-        'list_tables',
-        'get_project_view',
-        'list_view_relations',
         'get_personal_state',
-        'get_table_details',
         'list_review_threads',
         'get_review_thread',
         'list_notifications',
@@ -170,15 +181,9 @@ describe('MCP server tools', () => {
         'reply_review_thread',
         'update_review_thread',
         'delete_review_thread',
-        'diagnose_project',
-        'diagnose_layout',
-        'apply_project_changes',
         'upgrade_project_document',
         'apply_native_project_changes',
         'apply_personal_changes',
-        'get_project_history',
-        'undo_project_operation',
-        'restore_project_deletion',
         'get_native_project_baseline',
         'get_native_project_history',
         'undo_native_project_operation',
@@ -595,38 +600,9 @@ describe('MCP workspace authorization', () => {
     }
   });
 
-  it('rechecks membership for snapshot helpers and passes the actor to review and history reads', async () => {
+  it('passes the token actor to review reads', async () => {
     const harness = await connected();
     try {
-      expect(
-        (
-          await harness.client.callTool({
-            name: 'get_project_summary',
-            arguments: { projectId: project.id },
-          })
-        ).isError,
-      ).not.toBe(true);
-      expect(harness.workspace.getProjectState).toHaveBeenCalledWith(actor.id, project.id);
-      harness.workspace.getProjectState.mockRejectedValue(
-        new ForbiddenException('공간 접근 권한이 없습니다.'),
-      );
-      for (const [name, args] of [
-        ['get_project', {}],
-        ['get_project_summary', {}],
-        ['list_tables', {}],
-        ['get_project_view', { viewId: 'overview' }],
-        ['list_view_relations', { viewId: 'overview' }],
-        ['get_table_details', { tableId: 'missing' }],
-        ['diagnose_project', {}],
-        ['diagnose_layout', {}],
-      ] as const) {
-        const result = await harness.client.callTool({
-          name,
-          arguments: { projectId: project.id, ...args },
-        });
-        expect(result.isError).toBe(true);
-        expect(result.structuredContent).toBeUndefined();
-      }
       await harness.client.callTool({
         name: 'list_review_threads',
         arguments: { projectId: project.id },
@@ -635,11 +611,6 @@ describe('MCP workspace authorization', () => {
       const threadId = crypto.randomUUID();
       await harness.client.callTool({ name: 'get_review_thread', arguments: { threadId } });
       expect(harness.reviews.getThread).toHaveBeenCalledWith(threadId, actor.id);
-      await harness.client.callTool({
-        name: 'get_project_history',
-        arguments: { projectId: project.id },
-      });
-      expect(harness.sync.historyPage).toHaveBeenCalledWith(actor.id, project.id, 0, 50);
     } finally {
       await harness.close();
     }
