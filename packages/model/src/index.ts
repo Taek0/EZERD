@@ -1,4 +1,4 @@
-import type { ModelScope, ViewMode } from './document.js';
+import type { ModelScope, ViewMode } from './document-base.js';
 
 export interface ModelIdentity {
   id: string;
