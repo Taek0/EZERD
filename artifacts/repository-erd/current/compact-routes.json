@@ -1,0 +1,1761 @@
+{
+  "before": {
+    "overlapPixels": 21180,
+    "nearParallelPixels": 21206,
+    "labels": 0,
+    "labelLines": 0,
+    "crossings": 48,
+    "length": 50920,
+    "cardIntersections": 0
+  },
+  "after": {
+    "overlapPixels": 0,
+    "nearParallelPixels": 0,
+    "labels": 0,
+    "labelLines": 12,
+    "crossings": 68,
+    "length": 59877,
+    "cardIntersections": 0,
+    "labelCollisions": 0
+  },
+  "routes": [
+    {
+      "relationId": "fk:mcp_tokens_user_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.5
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.35714285714285715
+      },
+      "waypoints": [
+        {
+          "x": 1375,
+          "y": 476.9375
+        },
+        {
+          "x": 1304.0714285714287,
+          "y": 476.9375
+        }
+      ]
+    },
+    {
+      "relationId": "fk:review_messages_thread_id_review_threads_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.6666666666666666
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.3333333333333333
+      },
+      "waypoints": [
+        {
+          "x": 1052.6666666666665,
+          "y": 2013.625
+        },
+        {
+          "x": 2087,
+          "y": 2013.625
+        }
+      ]
+    },
+    {
+      "relationId": "fk:review_messages_author_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.3333333333333333
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.2857142857142857
+      },
+      "waypoints": [
+        {
+          "x": 912.3333333333333,
+          "y": 602
+        },
+        {
+          "x": 1274.857142857143,
+          "y": 602
+        }
+      ]
+    },
+    {
+      "relationId": "fk:review_notifications_user_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.25
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.5
+      },
+      "waypoints": [
+        {
+          "x": 1646.25,
+          "y": 2270.8
+        },
+        {
+          "x": -152,
+          "y": 2270.8
+        },
+        {
+          "x": -152,
+          "y": 381.2
+        },
+        {
+          "x": 1362.5,
+          "y": 381.2
+        }
+      ]
+    },
+    {
+      "relationId": "fk:review_notifications_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.5
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.36363636363636365
+      },
+      "waypoints": [
+        {
+          "x": 1748.5,
+          "y": 2230.4
+        },
+        {
+          "x": 1120,
+          "y": 2230.4
+        },
+        {
+          "x": 1120,
+          "y": 1302.6
+        },
+        {
+          "x": 2141.6363636363635,
+          "y": 1302.6
+        }
+      ]
+    },
+    {
+      "relationId": "fk:review_notifications_thread_id_review_threads_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.75
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.6666666666666666
+      },
+      "waypoints": [
+        {
+          "x": 1850.75,
+          "y": 2056.875
+        },
+        {
+          "x": 2244,
+          "y": 2056.875
+        }
+      ]
+    },
+    {
+      "relationId": "fk:project_personal_operations_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.6666666666666666
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.8181818181818182
+      },
+      "waypoints": [
+        {
+          "x": 3780.6666666666665,
+          "y": 1450.6
+        },
+        {
+          "x": 2431,
+          "y": 1450.6
+        },
+        {
+          "x": 2431,
+          "y": 1343.4
+        },
+        {
+          "x": 2406.181818181818,
+          "y": 1343.4
+        }
+      ]
+    },
+    {
+      "relationId": "fk:project_personal_operations_user_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.3333333333333333
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.7857142857142857
+      },
+      "waypoints": [
+        {
+          "x": 3627.3333333333335,
+          "y": 1490.2
+        },
+        {
+          "x": 3430,
+          "y": 1490.2
+        },
+        {
+          "x": 3430,
+          "y": 422.8
+        },
+        {
+          "x": 1479.357142857143,
+          "y": 422.8
+        }
+      ]
+    },
+    {
+      "relationId": "fk:project_personal_states_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.6666666666666666
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.6363636363636364
+      },
+      "waypoints": [
+        {
+          "x": 2974.6666666666665,
+          "y": 1305.5
+        },
+        {
+          "x": 2300.3636363636365,
+          "y": 1305.5
+        }
+      ]
+    },
+    {
+      "relationId": "fk:project_personal_states_user_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.3333333333333333
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.5714285714285714
+      },
+      "waypoints": [
+        {
+          "x": 2838.3333333333335,
+          "y": 1489.4
+        },
+        {
+          "x": 1882,
+          "y": 1489.4
+        },
+        {
+          "x": 1882,
+          "y": 463.6
+        },
+        {
+          "x": 1391.7142857142858,
+          "y": 463.6
+        }
+      ]
+    },
+    {
+      "relationId": "fk:projects_workspace_id_workspace_workspace_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.5
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.25
+      },
+      "waypoints": [
+        {
+          "x": 2221,
+          "y": 476
+        },
+        {
+          "x": 2832.25,
+          "y": 476
+        }
+      ]
+    },
+    {
+      "relationId": "fk:sessions_user_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.5
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.21428571428571427
+      },
+      "waypoints": [
+        {
+          "x": 603,
+          "y": 564.75
+        },
+        {
+          "x": 1245.642857142857,
+          "y": 564.75
+        }
+      ]
+    },
+    {
+      "relationId": "fk:sync_client_baselines_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.6666666666666666
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.09090909090909091
+      },
+      "waypoints": [
+        {
+          "x": 334,
+          "y": 2307.2
+        },
+        {
+          "x": 941,
+          "y": 2307.2
+        },
+        {
+          "x": 941,
+          "y": 1345.8
+        },
+        {
+          "x": 1982.909090909091,
+          "y": 1345.8
+        }
+      ]
+    },
+    {
+      "relationId": "fk:sync_client_baselines_user_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.3333333333333333
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.07142857142857142
+      },
+      "waypoints": [
+        {
+          "x": 167,
+          "y": 2306.8
+        },
+        {
+          "x": -392,
+          "y": 2306.8
+        },
+        {
+          "x": -392,
+          "y": 425.2
+        },
+        {
+          "x": 1187.2142857142858,
+          "y": 425.2
+        }
+      ]
+    },
+    {
+      "relationId": "fk:sync_field_versions_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.5
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.5454545454545454
+      },
+      "waypoints": [
+        {
+          "x": 2533,
+          "y": 2306.4
+        },
+        {
+          "x": 3169,
+          "y": 2306.4
+        },
+        {
+          "x": 3169,
+          "y": 1386.6
+        },
+        {
+          "x": 2247.4545454545455,
+          "y": 1386.6
+        }
+      ]
+    },
+    {
+      "relationId": "fk:sync_operations_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.6666666666666666
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.9090909090909091
+      },
+      "waypoints": [
+        {
+          "x": 4194,
+          "y": 2306
+        },
+        {
+          "x": 4005,
+          "y": 2306
+        },
+        {
+          "x": 4005,
+          "y": 1347
+        },
+        {
+          "x": 2459.090909090909,
+          "y": 1347
+        }
+      ]
+    },
+    {
+      "relationId": "fk:sync_operations_actor_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.3333333333333333
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.9285714285714286
+      },
+      "waypoints": [
+        {
+          "x": 4027,
+          "y": 2265.6
+        },
+        {
+          "x": 4825,
+          "y": 2265.6
+        },
+        {
+          "x": 4825,
+          "y": 386.4
+        },
+        {
+          "x": 1537.7857142857142,
+          "y": 386.4
+        }
+      ]
+    },
+    {
+      "relationId": "fk:sync_tombstones_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.5
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.7272727272727273
+      },
+      "waypoints": [
+        {
+          "x": 3305,
+          "y": 2265.2
+        },
+        {
+          "x": 2638,
+          "y": 2265.2
+        },
+        {
+          "x": 2638,
+          "y": 1427.8
+        },
+        {
+          "x": 2353.2727272727275,
+          "y": 1427.8
+        }
+      ]
+    },
+    {
+      "relationId": "fk:review_threads_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.5
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.45454545454545453
+      },
+      "waypoints": [
+        {
+          "x": 2165.5,
+          "y": 1336
+        },
+        {
+          "x": 2194.5454545454545,
+          "y": 1336
+        }
+      ]
+    },
+    {
+      "relationId": "fk:user_workspaces_workspace_id_workspace_workspace_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.6666666666666666
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.75
+      },
+      "waypoints": [
+        {
+          "x": 3788,
+          "y": 336.875
+        },
+        {
+          "x": 3092.75,
+          "y": 336.875
+        }
+      ]
+    },
+    {
+      "relationId": "fk:user_workspaces_user_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.3333333333333333
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.8571428571428571
+      },
+      "waypoints": [
+        {
+          "x": 3631,
+          "y": 512.0625
+        },
+        {
+          "x": 1508.5714285714284,
+          "y": 512.0625
+        }
+      ]
+    },
+    {
+      "relationId": "fk:workspace_invitations_workspace_id_workspace_workspace_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.75
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.5
+      },
+      "waypoints": [
+        {
+          "x": 3116,
+          "y": 476
+        },
+        {
+          "x": 2962.5,
+          "y": 476
+        }
+      ]
+    },
+    {
+      "relationId": "fk:workspace_invitations_invited_user_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.5
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.7142857142857143
+      },
+      "waypoints": [
+        {
+          "x": 2978,
+          "y": 564.75
+        },
+        {
+          "x": 1450.142857142857,
+          "y": 564.75
+        }
+      ]
+    },
+    {
+      "relationId": "fk:workspace_invitations_invited_by_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.25
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.6428571428571429
+      },
+      "waypoints": [
+        {
+          "x": 2840,
+          "y": 617.4375
+        },
+        {
+          "x": 1420.9285714285716,
+          "y": 617.4375
+        }
+      ]
+    },
+    {
+      "relationId": "fk:native_request_cancellations_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.6666666666666666
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.18181818181818182
+      },
+      "waypoints": [
+        {
+          "x": 720,
+          "y": 1427.5
+        },
+        {
+          "x": 2035.8181818181818,
+          "y": 1427.5
+        }
+      ]
+    },
+    {
+      "relationId": "fk:native_request_cancellations_actor_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.3333333333333333
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.14285714285714285
+      },
+      "waypoints": [
+        {
+          "x": 553,
+          "y": 1443
+        },
+        {
+          "x": -80,
+          "y": 1443
+        },
+        {
+          "x": -80,
+          "y": 470
+        },
+        {
+          "x": 1216.4285714285713,
+          "y": 470
+        }
+      ]
+    },
+    {
+      "relationId": "fk:project_database_operations_project_id_projects_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.6666666666666666
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.2727272727272727
+      },
+      "waypoints": [
+        {
+          "x": 1464.6666666666665,
+          "y": 1482.6
+        },
+        {
+          "x": 1848,
+          "y": 1482.6
+        },
+        {
+          "x": 1848,
+          "y": 1391.4
+        },
+        {
+          "x": 2088.7272727272725,
+          "y": 1391.4
+        }
+      ]
+    },
+    {
+      "relationId": "fk:project_database_operations_actor_id_users_id_fk",
+      "viewId": "repository-current",
+      "offset": 0,
+      "sourceAnchor": {
+        "side": "top",
+        "ratio": 0.3333333333333333
+      },
+      "targetAnchor": {
+        "side": "bottom",
+        "ratio": 0.42857142857142855
+      },
+      "waypoints": [
+        {
+          "x": 1311.3333333333333,
+          "y": 1482.2
+        },
+        {
+          "x": 302,
+          "y": 1482.2
+        },
+        {
+          "x": 302,
+          "y": 510.8
+        },
+        {
+          "x": 1333.2857142857142,
+          "y": 510.8
+        }
+      ]
+    }
+  ],
+  "rendered": [
+    {
+      "id": "fk:mcp_tokens_user_id_users_id_fk",
+      "label": "mcp_tokens_user_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 1375,
+            "y": 635
+          },
+          {
+            "x": 1375,
+            "y": 476.9375
+          },
+          {
+            "x": 1304.0714285714287,
+            "y": 476.9375
+          },
+          {
+            "x": 1304.0714285714287,
+            "y": 354
+          }
+        ],
+        "path": "M 1375 635 L 1375 476.9375 L 1304.0714285714287 476.9375 L 1304.0714285714287 354",
+        "labelX": 1375,
+        "labelY": 535.96875,
+        "handle": {
+          "x": 1375,
+          "y": 555.96875
+        }
+      }
+    },
+    {
+      "id": "fk:review_messages_thread_id_review_threads_id_fk",
+      "label": "review_messages_thread_id_review_threads_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 1052.6666666666665,
+            "y": 2338
+          },
+          {
+            "x": 1052.6666666666665,
+            "y": 2013.625
+          },
+          {
+            "x": 2087,
+            "y": 2013.625
+          },
+          {
+            "x": 2087,
+            "y": 1992
+          }
+        ],
+        "path": "M 1052.6666666666665 2338 L 1052.6666666666665 2013.625 L 2087 2013.625 L 2087 1992",
+        "labelX": 1569.8333333333333,
+        "labelY": 1993.625,
+        "handle": {
+          "x": 1569.8333333333333,
+          "y": 2013.625
+        }
+      }
+    },
+    {
+      "id": "fk:review_messages_author_id_users_id_fk",
+      "label": "review_messages_author_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 912.3333333333333,
+            "y": 2338
+          },
+          {
+            "x": 912.3333333333333,
+            "y": 602
+          },
+          {
+            "x": 1274.857142857143,
+            "y": 602
+          },
+          {
+            "x": 1274.857142857143,
+            "y": 354
+          }
+        ],
+        "path": "M 912.3333333333333 2338 L 912.3333333333333 602 L 1274.857142857143 602 L 1274.857142857143 354",
+        "labelX": 1093.595238095238,
+        "labelY": 582,
+        "handle": {
+          "x": 1093.595238095238,
+          "y": 602
+        }
+      }
+    },
+    {
+      "id": "fk:review_notifications_user_id_users_id_fk",
+      "label": "review_notifications_user_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 1646.25,
+            "y": 2338
+          },
+          {
+            "x": 1646.25,
+            "y": 2270.8
+          },
+          {
+            "x": -152,
+            "y": 2270.8
+          },
+          {
+            "x": -152,
+            "y": 381.2
+          },
+          {
+            "x": 1362.5,
+            "y": 381.2
+          },
+          {
+            "x": 1362.5,
+            "y": 354
+          }
+        ],
+        "path": "M 1646.25 2338 L 1646.25 2270.8 L -152 2270.8 L -152 381.2 L 1362.5 381.2 L 1362.5 354",
+        "labelX": 747.125,
+        "labelY": 2250.8,
+        "handle": {
+          "x": 747.125,
+          "y": 2270.8
+        }
+      }
+    },
+    {
+      "id": "fk:review_notifications_project_id_projects_id_fk",
+      "label": "review_notifications_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 1748.5,
+            "y": 2338
+          },
+          {
+            "x": 1748.5,
+            "y": 2230.4
+          },
+          {
+            "x": 1120,
+            "y": 2230.4
+          },
+          {
+            "x": 1120,
+            "y": 1302.6
+          },
+          {
+            "x": 2141.6363636363635,
+            "y": 1302.6
+          },
+          {
+            "x": 2141.6363636363635,
+            "y": 1275
+          }
+        ],
+        "path": "M 1748.5 2338 L 1748.5 2230.4 L 1120 2230.4 L 1120 1302.6 L 2141.6363636363635 1302.6 L 2141.6363636363635 1275",
+        "labelX": 1630.8181818181818,
+        "labelY": 1282.6,
+        "handle": {
+          "x": 1630.8181818181818,
+          "y": 1302.6
+        }
+      }
+    },
+    {
+      "id": "fk:review_notifications_thread_id_review_threads_id_fk",
+      "label": "review_notifications_thread_id_review_threads_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 1850.75,
+            "y": 2338
+          },
+          {
+            "x": 1850.75,
+            "y": 2056.875
+          },
+          {
+            "x": 2244,
+            "y": 2056.875
+          },
+          {
+            "x": 2244,
+            "y": 1992
+          }
+        ],
+        "path": "M 1850.75 2338 L 1850.75 2056.875 L 2244 2056.875 L 2244 1992",
+        "labelX": 2047.375,
+        "labelY": 2036.875,
+        "handle": {
+          "x": 2047.375,
+          "y": 2056.875
+        }
+      }
+    },
+    {
+      "id": "fk:project_personal_operations_project_id_projects_id_fk",
+      "label": "project_personal_operations_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 3780.6666666666665,
+            "y": 1519
+          },
+          {
+            "x": 3780.6666666666665,
+            "y": 1450.6
+          },
+          {
+            "x": 2431,
+            "y": 1450.6
+          },
+          {
+            "x": 2431,
+            "y": 1343.4
+          },
+          {
+            "x": 2406.181818181818,
+            "y": 1343.4
+          },
+          {
+            "x": 2406.181818181818,
+            "y": 1275
+          }
+        ],
+        "path": "M 3780.6666666666665 1519 L 3780.6666666666665 1450.6 L 2431 1450.6 L 2431 1343.4 L 2406.181818181818 1343.4 L 2406.181818181818 1275",
+        "labelX": 3105.833333333333,
+        "labelY": 1430.6,
+        "handle": {
+          "x": 3105.833333333333,
+          "y": 1450.6
+        }
+      }
+    },
+    {
+      "id": "fk:project_personal_operations_user_id_users_id_fk",
+      "label": "project_personal_operations_user_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 3627.3333333333335,
+            "y": 1519
+          },
+          {
+            "x": 3627.3333333333335,
+            "y": 1490.2
+          },
+          {
+            "x": 3430,
+            "y": 1490.2
+          },
+          {
+            "x": 3430,
+            "y": 422.8
+          },
+          {
+            "x": 1479.357142857143,
+            "y": 422.8
+          },
+          {
+            "x": 1479.357142857143,
+            "y": 354
+          }
+        ],
+        "path": "M 3627.3333333333335 1519 L 3627.3333333333335 1490.2 L 3430 1490.2 L 3430 422.8 L 1479.357142857143 422.8 L 1479.357142857143 354",
+        "labelX": 2454.6785714285716,
+        "labelY": 402.8,
+        "handle": {
+          "x": 2454.6785714285716,
+          "y": 422.8
+        }
+      }
+    },
+    {
+      "id": "fk:project_personal_states_project_id_projects_id_fk",
+      "label": "project_personal_states_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 2974.6666666666665,
+            "y": 1519
+          },
+          {
+            "x": 2974.6666666666665,
+            "y": 1305.5
+          },
+          {
+            "x": 2300.3636363636365,
+            "y": 1305.5
+          },
+          {
+            "x": 2300.3636363636365,
+            "y": 1275
+          }
+        ],
+        "path": "M 2974.6666666666665 1519 L 2974.6666666666665 1305.5 L 2300.3636363636365 1305.5 L 2300.3636363636365 1275",
+        "labelX": 2637.5151515151515,
+        "labelY": 1285.5,
+        "handle": {
+          "x": 2637.5151515151515,
+          "y": 1305.5
+        }
+      }
+    },
+    {
+      "id": "fk:project_personal_states_user_id_users_id_fk",
+      "label": "project_personal_states_user_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 2838.3333333333335,
+            "y": 1519
+          },
+          {
+            "x": 2838.3333333333335,
+            "y": 1489.4
+          },
+          {
+            "x": 1882,
+            "y": 1489.4
+          },
+          {
+            "x": 1882,
+            "y": 463.6
+          },
+          {
+            "x": 1391.7142857142858,
+            "y": 463.6
+          },
+          {
+            "x": 1391.7142857142858,
+            "y": 354
+          }
+        ],
+        "path": "M 2838.3333333333335 1519 L 2838.3333333333335 1489.4 L 1882 1489.4 L 1882 463.6 L 1391.7142857142858 463.6 L 1391.7142857142858 354",
+        "labelX": 2360.166666666667,
+        "labelY": 1469.4,
+        "handle": {
+          "x": 2360.166666666667,
+          "y": 1489.4
+        }
+      }
+    },
+    {
+      "id": "fk:projects_workspace_id_workspace_workspace_id_fk",
+      "label": "projects_workspace_id_workspace_workspace_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 2221,
+            "y": 635
+          },
+          {
+            "x": 2221,
+            "y": 476
+          },
+          {
+            "x": 2832.25,
+            "y": 476
+          },
+          {
+            "x": 2832.25,
+            "y": 317
+          }
+        ],
+        "path": "M 2221 635 L 2221 476 L 2832.25 476 L 2832.25 317",
+        "labelX": 2526.625,
+        "labelY": 456,
+        "handle": {
+          "x": 2526.625,
+          "y": 476
+        }
+      }
+    },
+    {
+      "id": "fk:sessions_user_id_users_id_fk",
+      "label": "sessions_user_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 603,
+            "y": 635
+          },
+          {
+            "x": 603,
+            "y": 564.75
+          },
+          {
+            "x": 1245.642857142857,
+            "y": 564.75
+          },
+          {
+            "x": 1245.642857142857,
+            "y": 354
+          }
+        ],
+        "path": "M 603 635 L 603 564.75 L 1245.642857142857 564.75 L 1245.642857142857 354",
+        "labelX": 924.3214285714286,
+        "labelY": 544.75,
+        "handle": {
+          "x": 924.3214285714286,
+          "y": 564.75
+        }
+      }
+    },
+    {
+      "id": "fk:sync_client_baselines_project_id_projects_id_fk",
+      "label": "sync_client_baselines_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 334,
+            "y": 2338
+          },
+          {
+            "x": 334,
+            "y": 2307.2
+          },
+          {
+            "x": 941,
+            "y": 2307.2
+          },
+          {
+            "x": 941,
+            "y": 1345.8
+          },
+          {
+            "x": 1982.909090909091,
+            "y": 1345.8
+          },
+          {
+            "x": 1982.909090909091,
+            "y": 1275
+          }
+        ],
+        "path": "M 334 2338 L 334 2307.2 L 941 2307.2 L 941 1345.8 L 1982.909090909091 1345.8 L 1982.909090909091 1275",
+        "labelX": 1461.9545454545455,
+        "labelY": 1325.8,
+        "handle": {
+          "x": 1461.9545454545455,
+          "y": 1345.8
+        }
+      }
+    },
+    {
+      "id": "fk:sync_client_baselines_user_id_users_id_fk",
+      "label": "sync_client_baselines_user_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 167,
+            "y": 2338
+          },
+          {
+            "x": 167,
+            "y": 2306.8
+          },
+          {
+            "x": -392,
+            "y": 2306.8
+          },
+          {
+            "x": -392,
+            "y": 425.2
+          },
+          {
+            "x": 1187.2142857142858,
+            "y": 425.2
+          },
+          {
+            "x": 1187.2142857142858,
+            "y": 354
+          }
+        ],
+        "path": "M 167 2338 L 167 2306.8 L -392 2306.8 L -392 425.2 L 1187.2142857142858 425.2 L 1187.2142857142858 354",
+        "labelX": 397.6071428571429,
+        "labelY": 405.2,
+        "handle": {
+          "x": 397.6071428571429,
+          "y": 425.2
+        }
+      }
+    },
+    {
+      "id": "fk:sync_field_versions_project_id_projects_id_fk",
+      "label": "sync_field_versions_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 2533,
+            "y": 2338
+          },
+          {
+            "x": 2533,
+            "y": 2306.4
+          },
+          {
+            "x": 3169,
+            "y": 2306.4
+          },
+          {
+            "x": 3169,
+            "y": 1386.6
+          },
+          {
+            "x": 2247.4545454545455,
+            "y": 1386.6
+          },
+          {
+            "x": 2247.4545454545455,
+            "y": 1275
+          }
+        ],
+        "path": "M 2533 2338 L 2533 2306.4 L 3169 2306.4 L 3169 1386.6 L 2247.4545454545455 1386.6 L 2247.4545454545455 1275",
+        "labelX": 2708.227272727273,
+        "labelY": 1366.6,
+        "handle": {
+          "x": 2708.227272727273,
+          "y": 1386.6
+        }
+      }
+    },
+    {
+      "id": "fk:sync_operations_project_id_projects_id_fk",
+      "label": "sync_operations_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 4194,
+            "y": 2338
+          },
+          {
+            "x": 4194,
+            "y": 2306
+          },
+          {
+            "x": 4005,
+            "y": 2306
+          },
+          {
+            "x": 4005,
+            "y": 1347
+          },
+          {
+            "x": 2459.090909090909,
+            "y": 1347
+          },
+          {
+            "x": 2459.090909090909,
+            "y": 1275
+          }
+        ],
+        "path": "M 4194 2338 L 4194 2306 L 4005 2306 L 4005 1347 L 2459.090909090909 1347 L 2459.090909090909 1275",
+        "labelX": 3232.0454545454545,
+        "labelY": 1327,
+        "handle": {
+          "x": 3232.0454545454545,
+          "y": 1347
+        }
+      }
+    },
+    {
+      "id": "fk:sync_operations_actor_id_users_id_fk",
+      "label": "sync_operations_actor_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 4027,
+            "y": 2338
+          },
+          {
+            "x": 4027,
+            "y": 2265.6
+          },
+          {
+            "x": 4825,
+            "y": 2265.6
+          },
+          {
+            "x": 4825,
+            "y": 386.4
+          },
+          {
+            "x": 1537.7857142857142,
+            "y": 386.4
+          },
+          {
+            "x": 1537.7857142857142,
+            "y": 354
+          }
+        ],
+        "path": "M 4027 2338 L 4027 2265.6 L 4825 2265.6 L 4825 386.4 L 1537.7857142857142 386.4 L 1537.7857142857142 354",
+        "labelX": 3181.392857142857,
+        "labelY": 366.4,
+        "handle": {
+          "x": 3181.392857142857,
+          "y": 386.4
+        }
+      }
+    },
+    {
+      "id": "fk:sync_tombstones_project_id_projects_id_fk",
+      "label": "sync_tombstones_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 3305,
+            "y": 2338
+          },
+          {
+            "x": 3305,
+            "y": 2265.2
+          },
+          {
+            "x": 2638,
+            "y": 2265.2
+          },
+          {
+            "x": 2638,
+            "y": 1427.8
+          },
+          {
+            "x": 2353.2727272727275,
+            "y": 1427.8
+          },
+          {
+            "x": 2353.2727272727275,
+            "y": 1275
+          }
+        ],
+        "path": "M 3305 2338 L 3305 2265.2 L 2638 2265.2 L 2638 1427.8 L 2353.2727272727275 1427.8 L 2353.2727272727275 1275",
+        "labelX": 2971.5,
+        "labelY": 2245.2,
+        "handle": {
+          "x": 2971.5,
+          "y": 2265.2
+        }
+      }
+    },
+    {
+      "id": "fk:review_threads_project_id_projects_id_fk",
+      "label": "review_threads_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 2165.5,
+            "y": 1519
+          },
+          {
+            "x": 2165.5,
+            "y": 1336
+          },
+          {
+            "x": 2194.5454545454545,
+            "y": 1336
+          },
+          {
+            "x": 2194.5454545454545,
+            "y": 1275
+          }
+        ],
+        "path": "M 2165.5 1519 L 2165.5 1336 L 2194.5454545454545 1336 L 2194.5454545454545 1275",
+        "labelX": 2165.5,
+        "labelY": 1407.5,
+        "handle": {
+          "x": 2165.5,
+          "y": 1427.5
+        }
+      }
+    },
+    {
+      "id": "fk:user_workspaces_workspace_id_workspace_workspace_id_fk",
+      "label": "user_workspaces_workspace_id_workspace_workspace_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 3788,
+            "y": 635
+          },
+          {
+            "x": 3788,
+            "y": 336.875
+          },
+          {
+            "x": 3092.75,
+            "y": 336.875
+          },
+          {
+            "x": 3092.75,
+            "y": 317
+          }
+        ],
+        "path": "M 3788 635 L 3788 336.875 L 3092.75 336.875 L 3092.75 317",
+        "labelX": 3440.375,
+        "labelY": -36,
+        "handle": {
+          "x": 3440.375,
+          "y": 336.875
+        }
+      }
+    },
+    {
+      "id": "fk:user_workspaces_user_id_users_id_fk",
+      "label": "user_workspaces_user_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 3631,
+            "y": 635
+          },
+          {
+            "x": 3631,
+            "y": 512.0625
+          },
+          {
+            "x": 1508.5714285714284,
+            "y": 512.0625
+          },
+          {
+            "x": 1508.5714285714284,
+            "y": 354
+          }
+        ],
+        "path": "M 3631 635 L 3631 512.0625 L 1508.5714285714284 512.0625 L 1508.5714285714284 354",
+        "labelX": 2569.785714285714,
+        "labelY": 492.0625,
+        "handle": {
+          "x": 2569.785714285714,
+          "y": 512.0625
+        }
+      }
+    },
+    {
+      "id": "fk:workspace_invitations_workspace_id_workspace_workspace_id_fk",
+      "label": "workspace_invitations_workspace_id_workspace_workspace_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 3116,
+            "y": 635
+          },
+          {
+            "x": 3116,
+            "y": 476
+          },
+          {
+            "x": 2962.5,
+            "y": 476
+          },
+          {
+            "x": 2962.5,
+            "y": 317
+          }
+        ],
+        "path": "M 3116 635 L 3116 476 L 2962.5 476 L 2962.5 317",
+        "labelX": 3116,
+        "labelY": 535.5,
+        "handle": {
+          "x": 3116,
+          "y": 555.5
+        }
+      }
+    },
+    {
+      "id": "fk:workspace_invitations_invited_user_id_users_id_fk",
+      "label": "workspace_invitations_invited_user_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 2978,
+            "y": 635
+          },
+          {
+            "x": 2978,
+            "y": 564.75
+          },
+          {
+            "x": 1450.142857142857,
+            "y": 564.75
+          },
+          {
+            "x": 1450.142857142857,
+            "y": 354
+          }
+        ],
+        "path": "M 2978 635 L 2978 564.75 L 1450.142857142857 564.75 L 1450.142857142857 354",
+        "labelX": 2214.0714285714284,
+        "labelY": 544.75,
+        "handle": {
+          "x": 2214.0714285714284,
+          "y": 564.75
+        }
+      }
+    },
+    {
+      "id": "fk:workspace_invitations_invited_by_users_id_fk",
+      "label": "workspace_invitations_invited_by_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 2840,
+            "y": 635
+          },
+          {
+            "x": 2840,
+            "y": 617.4375
+          },
+          {
+            "x": 1420.9285714285716,
+            "y": 617.4375
+          },
+          {
+            "x": 1420.9285714285716,
+            "y": 354
+          }
+        ],
+        "path": "M 2840 635 L 2840 617.4375 L 1420.9285714285716 617.4375 L 1420.9285714285716 354",
+        "labelX": 2130.464285714286,
+        "labelY": 597.4375,
+        "handle": {
+          "x": 2130.464285714286,
+          "y": 617.4375
+        }
+      }
+    },
+    {
+      "id": "fk:native_request_cancellations_project_id_projects_id_fk",
+      "label": "native_request_cancellations_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 720,
+            "y": 1519
+          },
+          {
+            "x": 720,
+            "y": 1427.5
+          },
+          {
+            "x": 2035.8181818181818,
+            "y": 1427.5
+          },
+          {
+            "x": 2035.8181818181818,
+            "y": 1275
+          }
+        ],
+        "path": "M 720 1519 L 720 1427.5 L 2035.8181818181818 1427.5 L 2035.8181818181818 1275",
+        "labelX": 1377.909090909091,
+        "labelY": 1407.5,
+        "handle": {
+          "x": 1377.909090909091,
+          "y": 1427.5
+        }
+      }
+    },
+    {
+      "id": "fk:native_request_cancellations_actor_id_users_id_fk",
+      "label": "native_request_cancellations_actor_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 553,
+            "y": 1519
+          },
+          {
+            "x": 553,
+            "y": 1443
+          },
+          {
+            "x": -80,
+            "y": 1443
+          },
+          {
+            "x": -80,
+            "y": 470
+          },
+          {
+            "x": 1216.4285714285713,
+            "y": 470
+          },
+          {
+            "x": 1216.4285714285713,
+            "y": 354
+          }
+        ],
+        "path": "M 553 1519 L 553 1443 L -80 1443 L -80 470 L 1216.4285714285713 470 L 1216.4285714285713 354",
+        "labelX": 568.2142857142857,
+        "labelY": 450,
+        "handle": {
+          "x": 568.2142857142857,
+          "y": 470
+        }
+      }
+    },
+    {
+      "id": "fk:project_database_operations_project_id_projects_id_fk",
+      "label": "project_database_operations_project_id_projects_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 1464.6666666666665,
+            "y": 1519
+          },
+          {
+            "x": 1464.6666666666665,
+            "y": 1482.6
+          },
+          {
+            "x": 1848,
+            "y": 1482.6
+          },
+          {
+            "x": 1848,
+            "y": 1391.4
+          },
+          {
+            "x": 2088.7272727272725,
+            "y": 1391.4
+          },
+          {
+            "x": 2088.7272727272725,
+            "y": 1275
+          }
+        ],
+        "path": "M 1464.6666666666665 1519 L 1464.6666666666665 1482.6 L 1848 1482.6 L 1848 1391.4 L 2088.7272727272725 1391.4 L 2088.7272727272725 1275",
+        "labelX": 1656.3333333333333,
+        "labelY": 1462.6,
+        "handle": {
+          "x": 1656.3333333333333,
+          "y": 1482.6
+        }
+      }
+    },
+    {
+      "id": "fk:project_database_operations_actor_id_users_id_fk",
+      "label": "project_database_operations_actor_id_users_id_fk",
+      "geometry": {
+        "points": [
+          {
+            "x": 1311.3333333333333,
+            "y": 1519
+          },
+          {
+            "x": 1311.3333333333333,
+            "y": 1482.2
+          },
+          {
+            "x": 302,
+            "y": 1482.2
+          },
+          {
+            "x": 302,
+            "y": 510.8
+          },
+          {
+            "x": 1333.2857142857142,
+            "y": 510.8
+          },
+          {
+            "x": 1333.2857142857142,
+            "y": 354
+          }
+        ],
+        "path": "M 1311.3333333333333 1519 L 1311.3333333333333 1482.2 L 302 1482.2 L 302 510.8 L 1333.2857142857142 510.8 L 1333.2857142857142 354",
+        "labelX": 817.6428571428571,
+        "labelY": 490.8,
+        "handle": {
+          "x": 817.6428571428571,
+          "y": 510.8
+        }
+      }
+    }
+  ]
+}
