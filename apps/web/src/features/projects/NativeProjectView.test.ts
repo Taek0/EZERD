@@ -103,6 +103,28 @@ function entry() {
   return result;
 }
 describe('native readonly project view', () => {
+  it('keeps design issues visible with an accessible animated disclosure', () => {
+    setLocale('ko');
+    const input = entry();
+    if (input.snapshot.native.status !== 'available') throw Error('Expected available');
+    input.snapshot.native.issues = [
+      {
+        code: 'test.issue',
+        category: 'incomplete',
+        severity: 'warning',
+        params: {},
+        objectId: 't',
+        path: '/tables/t',
+      },
+    ];
+    const html = renderToStaticMarkup(
+      createElement(NativeProjectView, { entry: input, onLeave() {}, onReload() {} }),
+    );
+    expect(html).toContain('aria-expanded="true" aria-controls="native-issues-list"');
+    expect(html).toContain('설계 확인 항목 · 1');
+    expect(html).toContain('id="native-issues-list" class="ui-collapse" data-open="true"');
+    expect(html).toContain('물리 설계를 완성해 주세요.');
+  });
   it('renders native types/options/constraints as data without write actions or v1 projections', () => {
     setLocale('ko');
     const input = entry();
@@ -141,3 +163,23 @@ describe('native readonly project view', () => {
     expect(html).toContain('! 확인 필요');
   });
 });
+
+it.each(['ko', 'en'] as const)(
+  'consolidates native metadata and removes obsolete chrome in %s',
+  (locale) => {
+    setLocale(locale);
+    const html = renderToStaticMarkup(
+      createElement(NativeProjectView, {
+        entry: entry(),
+        onLeave() {},
+        onReload() {},
+      }),
+    );
+    expect(html).toMatch(/class="editor-heading"[\s\S]*class="native-project-context"/);
+    expect(html).toContain(locale === 'ko' ? '목표 DB 버전' : 'Target DB version');
+    expect(html).not.toMatch(
+      /다시 불러오기|Reload|>도구<|>Tools<|미저장 배치가 있습니다|A save request is unconfirmed or unapplied/,
+    );
+    setLocale('ko');
+  },
+);

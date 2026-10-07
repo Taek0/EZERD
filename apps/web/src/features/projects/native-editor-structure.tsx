@@ -42,6 +42,7 @@ import {
 import { NativeLabelFields } from './NativeLabelFields.js';
 import { serializeNativeLabels, nativeLabelsForCommand } from './native-label-draft.js';
 import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
+import { nativeDurableId } from './native-durable-queue.js';
 
 registerTranslations({
   '물리·논리 범위를 선택하고 이름을 입력하세요.':
@@ -434,7 +435,7 @@ function NativeCreateForm({
   const { t } = useI18n();
   const policy = nativeEditorPolicy(document, table);
   // IDs belong to the durable input; retries do not regenerate objects.
-  const [id] = useState(() => crypto.randomUUID());
+  const [id] = useState(() => nativeDurableId());
   const initial = {
     scope:
       action === 'table'
@@ -677,7 +678,7 @@ function NativeCreateForm({
                         change('primaryKeyId', value);
                         change(
                           'generatedColumnIds',
-                          (key?.columnIds ?? []).map(() => crypto.randomUUID()).join('\n'),
+                          (key?.columnIds ?? []).map(() => nativeDurableId()).join('\n'),
                         );
                       }}
                       choices={[

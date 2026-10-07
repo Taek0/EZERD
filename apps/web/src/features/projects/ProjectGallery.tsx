@@ -40,9 +40,6 @@ registerTranslations({
   '프로젝트를 만들려면 워크스페이스가 필요합니다. 워크스페이스를 만들고 설계를 시작하세요.':
     'You need a workspace to create projects. Create one to start designing.',
   '테이블 {tables}개 · 관계 {relations}개': '{tables} tables · {relations} relations',
-  '설계 형식': 'Design format',
-  'Native 설계': 'Native design',
-  '기존 클라이언트 호환 설계': 'Design for older clients',
   '선택한 DB의 빈 설계로 시작합니다.': 'Start with an empty design for the selected database.',
 });
 type DatabaseKind = 'postgresql' | 'mysql' | 'sqlite';
@@ -55,7 +52,6 @@ type Edit = {
   project?: Project | undefined;
   name: string;
   databaseKind: DatabaseKind;
-  formatVersion: 1 | 2;
 };
 export type GalleryHandle = { flush: () => Promise<boolean>; hasDraft: () => boolean };
 type Props = {
@@ -146,7 +142,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
           }
         } else
           await p.onCreate(value.name.trim(), value.databaseKind, {
-            formatVersion: value.formatVersion,
+            formatVersion: 2,
           });
         update(null);
         return true;
@@ -195,7 +191,6 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
       project,
       name: project?.name ?? '',
       databaseKind: project?.databaseKind ?? 'postgresql',
-      formatVersion: 2,
     });
   }
   const sorted = sortProjects(p.projects, sort, locale);
@@ -259,25 +254,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
             }}
           />
           <p className="erd-detail">{t('도메인에서 시작하는 데이터 설계')}</p>
-          {!value.project && (
-            <>
-              <label>
-                {t('설계 형식')}
-                <select
-                  aria-label={t('설계 형식')}
-                  value={value.formatVersion}
-                  disabled={saving}
-                  onChange={(event) =>
-                    update({ ...value, formatVersion: event.target.value === '1' ? 1 : 2 })
-                  }
-                >
-                  <option value="2">{t('Native 설계')}</option>
-                  <option value="1">{t('기존 클라이언트 호환 설계')}</option>
-                </select>
-              </label>
-              <p className="erd-detail">{t('선택한 DB의 빈 설계로 시작합니다.')}</p>
-            </>
-          )}
+          {!value.project && <p className="erd-detail">{t('선택한 DB의 빈 설계로 시작합니다.')}</p>}
           <div className="erd-footer">
             <Dropdown
               label={t('데이터베이스 선택')}

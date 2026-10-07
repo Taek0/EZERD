@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { NativeCanvasToolbar, NativeCameraControls } from './NativeCanvasToolbar.js';
+import { setLocale } from '../../shared/i18n/index.js';
 describe('native canvas chrome', () => {
   it('keeps create controls disabled for read-only views and exposes view navigation', () => {
     const html = renderToStaticMarkup(
@@ -37,29 +38,65 @@ describe('native canvas chrome', () => {
     expect(html).toContain('aria-label="손 도구"');
     expect(html).toContain('aria-pressed="true"');
   });
-  it('restores original view buttons, current filtered path and a guarded auto layout action', () => {
+  it.each(['ko', 'en'] as const)(
+    'keeps domain filters and removes view chooser and auto layout in %s',
+    (locale) => {
+      setLocale(locale);
+      const html = renderToStaticMarkup(
+        createElement(NativeCanvasToolbar, {
+          viewId: '__tables__',
+          views: [
+            { id: '__tables__', name: locale === 'ko' ? '전체 테이블' : 'All tables' },
+            { id: 'saved', name: 'Saved view' },
+          ],
+          domains: [{ id: 'sales', name: 'Sales', color: undefined }],
+          filter: { domainIds: ['sales'], unassigned: false },
+          onFilter() {},
+          onView() {},
+          onNote() {},
+          onMode() {},
+          onToggleInspector() {},
+          editable: true,
+          noteEditable: true,
+          disabled: true,
+          mode: 'physical',
+          inspectorOpen: true,
+        }),
+      );
+      expect(html).toContain(locale === 'ko' ? '전체 테이블 · Sales' : 'All tables · Sales');
+      expect(html).toContain(locale === 'ko' ? '도메인 필터' : 'Domain filter');
+      expect(html).toContain(locale === 'ko' ? '필터 해제' : 'Clear filter');
+      expect(html).not.toMatch(/보기 선택|Choose view|자동 배치|Automatic layout/);
+      expect(html).toContain(locale === 'ko' ? '도메인 맵' : 'Domain map');
+      setLocale('ko');
+      expect(html).toContain('aria-controls="native-canvas-inspector"');
+    },
+  );
+});
+
+it.each(['ko', 'en'] as const)(
+  'keeps recovery menu reachable while writes are blocked in %s',
+  (locale) => {
+    setLocale(locale);
     const html = renderToStaticMarkup(
       createElement(NativeCanvasToolbar, {
         viewId: '__tables__',
-        views: [{ id: '__tables__', name: '전체 테이블' }],
-        domains: [{ id: 'sales', name: 'Sales', color: undefined }],
-        filter: { domainIds: ['sales'], unassigned: false },
-        onFilter() {},
+        views: [],
         onView() {},
         onNote() {},
-        onAutoLayout() {},
-        onMode() {},
-        onToggleInspector() {},
+        onOpenRecovery() {},
         editable: true,
         noteEditable: true,
         disabled: true,
         mode: 'physical',
-        inspectorOpen: true,
       }),
     );
-    expect(html).toContain('title="전체 테이블 · Sales"');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*><span[^>]*>자동 배치<\/span><\/button>/);
-    expect(html).toContain('도메인 맵');
-    expect(html).toContain('aria-controls="native-canvas-inspector"');
-  });
-});
+    const more = html.match(
+      new RegExp('<button[^>]*aria-label="' + (locale === 'ko' ? '더 보기' : 'More') + '"[^>]*>'),
+    )?.[0];
+    expect(more).toBeDefined();
+    expect(more).not.toContain('disabled');
+    expect(html).not.toContain(locale === 'ko' ? '보관된 입력 복구' : 'Recover preserved input');
+    setLocale('ko');
+  },
+);

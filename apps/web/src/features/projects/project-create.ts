@@ -1,7 +1,7 @@
 import { createProjectSchema } from '@ezerd/contracts';
 import type { DatabaseKind } from '@ezerd/model';
-export type GalleryProjectCreationOptions = { formatVersion: 1 | 2 };
-/** Latest gallery explicitly requests native; omission at the REST boundary still means v1. */
+export type GalleryProjectCreationOptions = { formatVersion: 2 };
+/** New projects always start with a native document. */
 export function galleryProjectCreationInput(
   workspaceId: string,
   name: string,

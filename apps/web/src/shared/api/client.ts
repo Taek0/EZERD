@@ -13,6 +13,7 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code?: string,
   ) {
     super(message);
   }
@@ -49,7 +50,21 @@ export async function request<T>(
       ...init?.headers,
     },
   });
-  if (!response.ok)
+  if (!response.ok) {
+    let code: string | undefined;
+    try {
+      const payload: unknown = await response.json();
+      if (
+        payload &&
+        typeof payload === 'object' &&
+        'code' in payload &&
+        typeof payload.code === 'string'
+      ) {
+        code = payload.code;
+      }
+    } catch {
+      // Proxies can return empty or non-JSON failures; keep the HTTP status usable.
+    }
     throw new ApiError(
       response.status,
       response.status === 409
@@ -57,7 +72,9 @@ export async function request<T>(
         : t('요청을 완료하지 못했습니다 ({status}). 다시 시도해 주세요.', {
             status: response.status,
           }),
+      code,
     );
+  }
   return (await response.json()) as T;
 }
 export const savedRevision = (current: number, snapshot: number) => current === snapshot;

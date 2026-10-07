@@ -130,8 +130,19 @@
   white-space: pre-wrap;
 }
 .native-project-context {
-  flex-shrink: 0;
-  padding: 4px 14px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.native-project-context > span {
+  white-space: nowrap;
+}
+.native-project-context > span + span::before {
+  content: '·';
+  margin-right: 6px;
 }
 .native-selection-host:empty {
   display: none;
@@ -219,6 +230,11 @@
 .native-issues {
   border-top: 1px solid var(--line);
   padding-top: 12px;
+}
+.native-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .native-issues button {
   border: 0;
@@ -309,4 +325,21 @@
   .native-project-status {
     gap: 6px;
   }
+}
+
+.native-canvas-settings-host {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 45%;
+  overflow: auto;
+  padding: 10px 14px 0;
+}
+
+.native-history-changes {
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.native-history-changes li {
+  margin-block: 6px;
 }

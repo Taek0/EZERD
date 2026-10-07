@@ -1,3 +1,4 @@
+import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
@@ -128,6 +129,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       await enroll('viewer', 'viewer');
       const project = await api('/projects', 'POST', { name: 'Secured project', workspaceId });
       expect(project.status).toBe(201);
+      await seedLegacyProject(pool, project.data.id);
       projectId = project.data.id;
     });
     afterAll(async () => {

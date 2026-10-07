@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { NativeHistoryPage, ProjectDocumentState } from '@ezerd/contracts';
-import { Button } from '../../components/ui/index.js';
+import { Button, Collapse, DisclosureButton, TabButton } from '../../components/ui/index.js';
 import { message } from '../../shared/api/client.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
+import { describeChanges, nativeHistoryPreview } from './native-history-labels.js';
 import { nativeEditorExportBlocked } from './native-export-state.js';
 import {
   fetchNativeHistory,
@@ -11,6 +12,9 @@ import {
   stageNativeHistory,
   cancelNativeHistory,
   type NativeHistoryPending,
+  nativeHistoryFilters,
+  filterNativeHistory,
+  type NativeHistoryFilter,
 } from './native-history.js';
 
 registerTranslations({
@@ -29,7 +33,52 @@ registerTranslations({
     'The change was not applied. Review the latest history.',
   '요청 취소 확정': 'Confirm request cancellation',
   닫기: 'Close',
+  '히스토리 동작 필터': 'History action filter',
+  전체: 'All',
+  추가: 'Add',
+  수정: 'Edit',
+  이동: 'Move',
+  '크기 변경': 'Resize',
+  '순서 변경': 'Reorder',
+  삭제: 'Delete',
+  관계: 'Relationships',
+  '데이터베이스 변경': 'Database changes',
+  '불러온 이력에서 필터링합니다.': 'Filters apply to loaded history.',
+  '일치하는 이력이 없습니다.': 'No matching history.',
 });
+export function NativeHistoryChanges({ lines }: { lines: readonly string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const { t } = useI18n();
+  const preview = nativeHistoryPreview(lines);
+  const list = (values: readonly string[]) => (
+    <ul className="native-history-changes">
+      {values.map((line, index) => (
+        <li key={index}>{line}</li>
+      ))}
+    </ul>
+  );
+  return (
+    <div>
+      {!expanded && list(preview.lines)}
+      {preview.expandable && (
+        <>
+          <DisclosureButton
+            expanded={expanded}
+            controls={id}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {t(expanded ? '변경 내용 접기' : '변경 내용 더보기')}
+          </DisclosureButton>
+          <Collapse open={expanded} id={id}>
+            {list(lines)}
+          </Collapse>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function NativeHistoryDialog({
   userId,
   snapshot,
@@ -52,6 +101,8 @@ export function NativeHistoryDialog({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const active = useRef(true);
+  const [filter, setFilter] = useState<NativeHistoryFilter>('all');
+  const history = filterNativeHistory(page?.history ?? [], filter);
   async function load(since = 0) {
     const next = await fetchNativeHistory(snapshot.project.id, since);
     setPage((old) =>
@@ -142,8 +193,19 @@ export function NativeHistoryDialog({
           </Button>
         </div>
       )}
+      <div className="native-history-filters" role="group" aria-label={t('히스토리 동작 필터')}>
+        {nativeHistoryFilters.map(([value, label]) => (
+          <TabButton key={value} selected={filter === value} onClick={() => setFilter(value)}>
+            {t(label)}
+          </TabButton>
+        ))}
+      </div>
+      <p role="status">
+        {t('불러온 이력에서 필터링합니다.')} {history.length} / {page?.history.length ?? 0}
+      </p>
+      {page && history.length === 0 && <p>{t('일치하는 이력이 없습니다.')}</p>}
       <ol>
-        {page?.history.map((entry) => {
+        {history.map((entry) => {
           const own = entry.result.actor.id === userId,
             native = entry.format === 'native',
             accepted = entry.result.status === 'accepted';
@@ -165,11 +227,9 @@ export function NativeHistoryDialog({
                 {t(accepted ? '처리됨' : '거부됨')}
               </span>
               {!native && <span> · {t('형식 변경 이전 이력')}</span>}
-              <ul>
-                {entry.changes.map((change, index) => (
-                  <li key={index}>{change.path}</li>
-                ))}
-              </ul>
+              <NativeHistoryChanges
+                lines={describeChanges(entry.changes, snapshot.sourceDocument, page?.history ?? [])}
+              />
               <Button disabled={blocked} onClick={() => void act(entry.operationId, 'undo')}>
                 {t('실행 취소')}
               </Button>

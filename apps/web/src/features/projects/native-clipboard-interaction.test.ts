@@ -203,7 +203,7 @@ describe('native clipboard menu real callback consumption without DOM', () => {
       ui.snapshot.project.id,
       'canvas:clipboard:paste',
     )!;
-    expect(sent[2].revision).toBe(before.revision);
+    expect(sent[2].revision).not.toBe(before.revision);
     text(ui.renderForm(), sourceText + ' ');
     const newer = loadNativeEditorDraft(clipboardActor, ui.snapshot.project.id, before.key)!;
     expect(newer.revision).not.toBe(before.revision);

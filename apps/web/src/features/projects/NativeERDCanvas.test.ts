@@ -174,7 +174,7 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
     expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toBeNull();
     expect(getRandomValues.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
-  it('renders editable canvas action and fresh input revisions with only getRandomValues', () => {
+  it('renders recovered canvas action and fresh input revisions with only getRandomValues', () => {
     const f = fixture(),
       before = structuredClone(f.document);
     const getRandomValues = vi.fn(crypto.getRandomValues.bind(crypto));
@@ -185,6 +185,7 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
       createElement(NativeERDCanvas, {
         ...f,
         userId,
+        recoverySelection: { action: { action: 'note', target: '' } },
         editable: true,
         busy: false,
         mode: 'physical',
@@ -223,6 +224,38 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
   });
 });
 describe('native ERD consumes raw native payloads', () => {
+  it.each(['ko', 'en'] as const)(
+    'simplifies editable tools while preserving domain filters in %s',
+    (locale) => {
+      setLocale(locale);
+      const f = personalFixture();
+      const before = structuredClone(f.document);
+      const html = renderToStaticMarkup(
+        createElement(NativeERDCanvas, {
+          document: f.document,
+          snapshot: f.snapshot,
+          userId,
+          editable: true,
+          personalEditable: true,
+          busy: false,
+          mode: 'physical',
+          onSave: async () => true,
+          onReload() {},
+          onSelect() {},
+        }),
+      );
+      expect(html).toContain(locale === 'ko' ? '도메인 필터' : 'Domain filter');
+      expect(html).not.toMatch(
+        /카메라 저장|Save camera|카메라 초기화|Reset camera|테이블 복사·붙여넣기|Copy and paste tables|보기 선택|Choose view|자동 배치|Automatic layout/,
+      );
+      expect(html).not.toContain('native-erd-actions');
+      expect(html).not.toContain('Shared canvas / Personal view');
+      expect(html).toContain('native-camera-controls');
+      expect(f.document).toEqual(before);
+      setLocale('ko');
+    },
+  );
+
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'renders %s native labels, keys and FK lines without rewriting the document',
     (kind) => {
@@ -607,6 +640,7 @@ describe('native input registers export blockers even without a durable storage 
       createElement(NativeERDCanvas, {
         ...f,
         userId,
+        recoverySelection: { action: { action: 'note', target: '' } },
         editable: true,
         busy: false,
         onSave: async () => true,

@@ -97,7 +97,6 @@ import {
 import './NativeERDCanvas.css';
 import { useNativeExportBlocker } from './native-export-state.js';
 import { nativeDurableId } from './native-durable-queue.js';
-import { NativeClipboardMenu } from './native-clipboard.js';
 import { NativePrivateCASRecovery } from './NativePrivateCASRecovery.js';
 import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
 import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
@@ -127,14 +126,14 @@ type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
 const MemoNativeCanvasPngExport = memo(NativeCanvasPngExport);
 const MemoNativeDomainRelationEditor = memo(NativeDomainRelationEditor);
 const MemoNativeCanvasStyleEditor = memo(NativeCanvasStyleEditor);
-const MemoNativeClipboardMenu = memo(NativeClipboardMenu);
 const MemoNativeCanvasActions = memo(NativeCanvasActions);
 
 registerTranslations({
   '복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.':
     'Loading the recovery view. You can download its source from preserved input.',
   'Native ERD': 'Native ERD',
-  '공유 캔버스': 'Shared canvas',
+  '보관된 입력 복구': 'Recover saved input',
+  '자동 배치': 'Automatic layout',
   '도메인 개요': 'Domain overview',
   '개인 화면': 'Personal view',
   화면: 'View',
@@ -157,7 +156,6 @@ registerTranslations({
   '미확인 개인 저장 요청이 있습니다.': 'A personal save request is unconfirmed.',
   '개인 요청 초기화': 'Reset personal request',
   '개인 화면을 불러오는 중입니다.': 'Loading personal views.',
-  '카메라 저장': 'Save camera',
   중앙으로: 'Center view',
   확대: 'Zoom in',
   축소: 'Zoom out',
@@ -172,7 +170,6 @@ registerTranslations({
   '배치 재조회 후 비교': 'Review placement against the latest design',
   '개인 화면 저장은 아직 지원하지 않습니다. 이 프로젝트에서는 공유 캔버스를 사용해 주세요.':
     'Saving personal views is not available yet. Use the shared canvas in this project.',
-  '카메라 초기화': 'Reset camera',
   '저장된 배치가 없는 도메인입니다.': 'This domain has no saved placement.',
 });
 
@@ -593,9 +590,10 @@ function NativeCanvasWorkspace({
   onSelectDomain: onSelectDomainFromParent,
   recoverySelection,
   inspectorHost,
+  recoveryOpen = false,
   inspectorOpen,
   onToggleInspector: onToggleInspectorFromParent,
-  onOpenTools: onOpenToolsFromParent,
+  onOpenRecovery: onOpenRecoveryFromParent,
   onCreate: onCreateFromParent,
   onModeChange: onModeChangeFromParent,
   onViewChange: onViewChangeFromParent,
@@ -633,9 +631,10 @@ function NativeCanvasWorkspace({
   onSelectDomain?: (domainId: string) => void;
   recoverySelection?: NativeCanvasRecoverySelection;
   inspectorHost?: HTMLElement | null;
+  recoveryOpen?: boolean;
   inspectorOpen?: boolean;
   onToggleInspector?: () => void;
-  onOpenTools?: () => void;
+  onOpenRecovery?: () => void;
   onCreate?: (kind: 'table' | 'domain' | 'enum' | 'column') => void;
   onModeChange?: (mode: 'physical' | 'logical') => void;
   onViewChange?: (id: string) => void;
@@ -676,7 +675,7 @@ function NativeCanvasWorkspace({
   const onSelect = useCommittedEvent(onSelectFromParent);
   const onSelectDomain = useCommittedEvent(onSelectDomainFromParent);
   const onToggleInspector = useCommittedEvent(onToggleInspectorFromParent);
-  const onOpenTools = useCommittedEvent(onOpenToolsFromParent);
+  const onOpenRecovery = useCommittedEvent(onOpenRecoveryFromParent);
   const onCreate = useCommittedEvent(onCreateFromParent);
   const onModeChange = useCommittedEvent(onModeChangeFromParent);
   const onViewChange = useCommittedEvent(onViewChangeFromParent);
@@ -808,11 +807,6 @@ function NativeCanvasWorkspace({
     [onViewChange],
   );
   const [tool, setTool] = useState<'select' | 'hand'>('select');
-  const [toolbarAction, setToolbarAction] = useState<{
-    action: string;
-    target: string;
-    nonce: number;
-  } | null>(null);
   const spacePan = useRef(false);
   const panGesture = useRef<{ pointerId: number; x: number; y: number; camera: Viewport } | null>(
     null,
@@ -824,10 +818,6 @@ function NativeCanvasWorkspace({
     },
     [onSelect, onCreate],
   );
-  const addNoteFromToolbar = useCallback(() => {
-    setToolbarAction((value) => ({ action: 'note', target: '', nonce: (value?.nonce ?? 0) + 1 }));
-    onOpenTools?.();
-  }, [onOpenTools]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, setCamera] = useState<Viewport>({ viewId: TABLES_VIEW_ID, x: 24, y: 24, zoom: 1 });
@@ -963,18 +953,14 @@ function NativeCanvasWorkspace({
     !!recoverySelection?.viewId && viewId === recoverySelection.viewId && effectiveView !== viewId;
   const placementEditable = isPrivate ? personalEditable : editable;
   const personalReady = personalGuardAvailable() && !!personal && 'databaseRevision' in personal;
+  const [submittedPlacement, setSubmittedPlacement] = useState<string | null>(null);
+  const placementDraftBlocked = !!draft && (isPrivate || draft.revision !== submittedPlacement);
   const allBusy =
     busy ||
     recoveryWaiting ||
-    personalBusy ||
-    !!personalPending ||
-    privateQueueState === 'pending' ||
-    privateQueueState === 'sending' ||
-    (isPrivate && (!personalReady || privateQueueState !== 'empty'));
+    (isPrivate &&
+      (personalBusy || !!personalPending || !personalReady || privateQueueState !== 'empty'));
   const inputKey = `canvas:placement:${effectiveView}`;
-  const savedCamera = personal?.state.viewports.find(
-    (viewport) => viewport.viewId === effectiveView,
-  ) ?? { viewId: effectiveView, x: 24, y: 24, zoom: 1 };
   const exportState = nativeCanvasExportBlocker(sharedSource, draft, sharedStorageFailure);
   useNativeExportBlocker(
     userId ?? '',
@@ -984,9 +970,7 @@ function NativeCanvasWorkspace({
   );
   const stale =
     !!draft &&
-    (draft.expected.version !== snapshot.project.version ||
-      draft.expected.sequence !== snapshot.sequence ||
-      draft.expected.databaseRevision !== snapshot.project.databaseRevision ||
+    (draft.expected.databaseRevision !== snapshot.project.databaseRevision ||
       (isPrivate && String(personal?.version ?? '') !== draft.values.personalVersion));
   useEffect(() => {
     gesture.current = null;
@@ -1014,8 +998,6 @@ function NativeCanvasWorkspace({
     inputKey,
     userId,
     snapshot.project.id,
-    snapshot.project.version,
-    snapshot.sequence,
     snapshot.project.databaseRevision,
     personal?.version,
   ]);
@@ -1267,8 +1249,6 @@ function NativeCanvasWorkspace({
     )
       return;
     const command = nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
-      x: limit(x),
-      y: limit(y),
       ...(size
         ? {
             width: Math.max(
@@ -1280,20 +1260,28 @@ function NativeCanvasWorkspace({
               Math.min(nodeLayoutSchema.shape.height.maxValue!, size.height),
             ),
           }
-        : {}),
+        : { x: limit(x), y: limit(y) }),
     });
     const current = draftRef.current;
-    if (current && current.values.objectId !== node.objectId) {
+    if (
+      current &&
+      current.revision !== submittedPlacement &&
+      current.values.objectId !== node.objectId
+    ) {
       setError(t('미저장 배치가 있습니다.'));
       return;
     }
+    const origin =
+      current?.values.objectId === node.objectId && current.revision !== submittedPlacement
+        ? current
+        : null;
     const next: NativeEditorDraft = {
       userId,
       projectId: snapshot.project.id,
       key: inputKey,
       revision: nativeDurableId(),
-      expected: current?.expected ?? expected(snapshot),
-      before: current?.before ?? {
+      expected: origin?.expected ?? expected(snapshot),
+      before: origin?.before ?? {
         objectId: node.objectId,
         x: String(node.x),
         y: String(node.y),
@@ -1402,11 +1390,14 @@ function NativeCanvasWorkspace({
             revision: current.revision,
           },
         );
-      } else
+      } else {
+        setSubmittedPlacement(current.revision);
         saved = await onSave(commands, current.expected, {
           key: current.key,
           revision: current.revision,
         });
+        setSubmittedPlacement((revision) => (revision === current.revision ? null : revision));
+      }
       if (saved) {
         discardNativeEditorDraft(userId, snapshot.project.id, current);
         if (alive.current && draftRef.current?.revision === current.revision) {
@@ -1513,7 +1504,8 @@ function NativeCanvasWorkspace({
     }
   }
   async function saveCommands(commands: CanvasCommand[], ref?: DraftRef): Promise<boolean> {
-    if (!userId || allBusy || draft || stale || storageError || !commands.length) return false;
+    if (!userId || allBusy || placementDraftBlocked || stale || storageError || !commands.length)
+      return false;
     if (
       isPrivate &&
       commands.every((command) => nativePersonalCanvasCommandSchema.safeParse(command).success)
@@ -1533,7 +1525,7 @@ function NativeCanvasWorkspace({
     );
   }
   async function commitDescription(id: string, value: string) {
-    if (!userId || !placementEditable || allBusy || draft) return;
+    if (!userId || !placementEditable || allBusy || placementDraftBlocked) return;
     const domain = sharedSource.domains.find((item) => item.id === id);
     const note = base.notes.find((item) => item.id === id);
     if (!domain && !note) return;
@@ -1567,7 +1559,7 @@ function NativeCanvasWorkspace({
     }
   }
   async function createObject(kind: 'table' | 'domain' | 'note', point?: { x: number; y: number }) {
-    if (!placementEditable || allBusy || draft) return;
+    if (!placementEditable || allBusy || placementDraftBlocked) return;
     const rect = surface.current?.getBoundingClientRect();
     const at = point ?? {
       x: limit(((rect?.width ?? 800) / 2 - camera.x) / camera.zoom - 120),
@@ -1628,7 +1620,7 @@ function NativeCanvasWorkspace({
     }
   }
   async function arrangeVisibleNodes() {
-    if (!placementEditable || allBusy || draft) return;
+    if (!placementEditable || allBusy || placementDraftBlocked) return;
     try {
       const placements = nativeAutoLayoutPlacements(base, scene.nodes, effectiveView);
       if (placements.length > 100) {
@@ -1645,7 +1637,14 @@ function NativeCanvasWorkspace({
     }
   }
   async function deleteSelection(ids = selectionIds) {
-    if (!placementEditable || allBusy || draft || deletionBusy.current || !ids.length) return;
+    if (
+      !placementEditable ||
+      allBusy ||
+      placementDraftBlocked ||
+      deletionBusy.current ||
+      !ids.length
+    )
+      return;
     deletionBusy.current = true;
     const scope = operationScope.current;
     try {
@@ -1698,7 +1697,7 @@ function NativeCanvasWorkspace({
     }
   }
   async function pasteSelection(text: string, point?: { x: number; y: number }) {
-    if (!editable || allBusy || draft || effectiveView === 'overview') return;
+    if (!editable || allBusy || placementDraftBlocked || effectiveView === 'overview') return;
     try {
       const domainId = base.domains.some((d) => d.id === effectiveView) ? effectiveView : null;
       const paste = prepareNativeClipboardPaste(
@@ -1723,10 +1722,11 @@ function NativeCanvasWorkspace({
     if (alive.current && scope === operationScope.current) await pasteSelection(text, point);
   }
   async function completeConnection(target: string) {
-    if (!connection || !editable || allBusy || draft) return;
+    if (!connection || !editable || allBusy || placementDraftBlocked) return;
     try {
       let command: CanvasCommand;
       if (connection.kind === 'domain') {
+        if (effectiveView !== 'overview') return;
         if (!base.domains.some((d) => d.id === target) || target === connection.source) return;
         command = {
           type: 'add_domain_relation',
@@ -1767,8 +1767,13 @@ function NativeCanvasWorkspace({
     }
   }
   const inlineContext = useMemo(
-    () => ({ userId: userId ?? '', snapshot, busy: allBusy || !!draft || !editable, onSave }),
-    [userId, snapshot, allBusy, draft, editable, onSave],
+    () => ({
+      userId: userId ?? '',
+      snapshot,
+      busy: allBusy || placementDraftBlocked || !editable,
+      onSave,
+    }),
+    [userId, snapshot, allBusy, placementDraftBlocked, editable, onSave],
   );
   const routeSave = async (
     commands: CanvasCommand[],
@@ -1804,7 +1809,7 @@ function NativeCanvasWorkspace({
     () => ({
       userId: userId ?? '',
       snapshot,
-      busy: allBusy || !!draft || !placementEditable,
+      busy: allBusy || placementDraftBlocked || !placementEditable,
       affectsSharedDocument: !isPrivate,
       onSave: (
         commands: CanvasCommand[],
@@ -1812,7 +1817,7 @@ function NativeCanvasWorkspace({
         ref: DraftRef,
       ) => routeSaveRef.current(commands, expectation, ref),
     }),
-    [userId, snapshot, allBusy, draft, placementEditable, isPrivate],
+    [userId, snapshot, allBusy, placementDraftBlocked, placementEditable, isPrivate],
   );
   const openInline = useCallback((target: NativeInlineTarget, focusTarget?: HTMLElement) => {
     inlineFocusReturn.current = focusTarget ?? null;
@@ -1843,8 +1848,9 @@ function NativeCanvasWorkspace({
     [onRequestAction],
   );
   const sharedEditorContext = useMemo(
-    () => (userId ? { userId, snapshot, busy: allBusy || !!draft, onSave } : undefined),
-    [userId, snapshot, allBusy, draft, onSave],
+    () =>
+      userId ? { userId, snapshot, busy: allBusy || placementDraftBlocked, onSave } : undefined,
+    [userId, snapshot, allBusy, placementDraftBlocked, onSave],
   );
   const canvasSaveRef = useRef(saveCanvasCommand);
   useLayoutEffect(() => {
@@ -1956,36 +1962,24 @@ function NativeCanvasWorkspace({
   const auxiliary = (
     <>
       <div className="native-canvas-settings">
-        {' '}
-        {personalEditable && (
-          <Button
-            disabled={allBusy || !personal || !personalReady}
-            onClick={() =>
-              void savePersonalCommand({
-                type: 'set_viewport',
-                value: { ...camera, viewId: effectiveView },
-              })
-            }
-          >
-            {t('카메라 저장')}
-          </Button>
+        {(inspectorHost === undefined || recoverySelection?.domainRelation) && (
+          <MemoNativeDomainRelationEditor
+            allowCreate={effectiveView === 'overview'}
+            document={sharedSource}
+            editable={editable}
+            {...(recoverySelection?.domainRelation
+              ? {
+                  initialAction: recoverySelection.domainRelation.action,
+                  ...(recoverySelection.domainRelation.id
+                    ? { selectedId: recoverySelection.domainRelation.id }
+                    : {}),
+                }
+              : selectedDomainRelation
+                ? { selectedId: selectedDomainRelation }
+                : {})}
+            {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
+          />
         )}
-        <Button onClick={() => setCamera(savedCamera)}>{t('카메라 초기화')}</Button>{' '}
-        <MemoNativeDomainRelationEditor
-          document={sharedSource}
-          editable={editable}
-          {...(recoverySelection?.domainRelation
-            ? {
-                initialAction: recoverySelection.domainRelation.action,
-                ...(recoverySelection.domainRelation.id
-                  ? { selectedId: recoverySelection.domainRelation.id }
-                  : {}),
-              }
-            : selectedDomainRelation
-              ? { selectedId: selectedDomainRelation }
-              : {})}
-          {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
-        />
         <MemoNativeCanvasStyleEditor
           document={sharedSource}
           editable={editable}
@@ -1994,42 +1988,29 @@ function NativeCanvasWorkspace({
           {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
           {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
         />
-        <MemoNativeClipboardMenu
-          key={`clipboard:${userId ?? ''}:${snapshot.project.id}`}
-          snapshot={snapshot}
-          {...(userId ? { userId } : {})}
-          editable={editable}
-          busy={allBusy || !!draft}
-          onSave={onSave}
-          {...(selectedTableId ? { selectedTableId } : {})}
-          destinationDomainId={
-            base.domains.some((domain) => domain.id === effectiveView) ? effectiveView : null
-          }
-        />
         {recoveryWaiting && (
           <p role="status">
             {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
           </p>
         )}
-        {userId && (editable || personalEditable) && !recoveryWaiting && (
-          <MemoNativeCanvasActions
-            key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}:${toolbarAction?.nonce ?? 0}`}
-            document={base}
-            source={sharedSource}
-            snapshot={snapshot}
-            userId={userId}
-            viewId={effectiveView}
-            busy={allBusy || !!draft || (isPrivate && !personal)}
-            onSave={saveCanvasLatest}
-            onSharedSave={onSave}
-            sharedEditable={editable}
-            {...(toolbarAction
-              ? { initialSelection: toolbarAction }
-              : recoverySelection?.action
-                ? { initialSelection: recoverySelection.action }
-                : {})}
-          />
-        )}
+        {userId &&
+          (editable || personalEditable) &&
+          !recoveryWaiting &&
+          recoverySelection?.action && (
+            <MemoNativeCanvasActions
+              key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}
+              document={base}
+              source={sharedSource}
+              snapshot={snapshot}
+              userId={userId}
+              viewId={effectiveView}
+              busy={allBusy || placementDraftBlocked || (isPrivate && !personal)}
+              onSave={saveCanvasLatest}
+              onSharedSave={onSave}
+              sharedEditable={editable}
+              initialSelection={recoverySelection.action}
+            />
+          )}
       </div>
     </>
   );
@@ -2131,7 +2112,6 @@ function NativeCanvasWorkspace({
         } else void createObject(kind);
       }}
       onNote={() => void createObject('note')}
-      onAutoLayout={() => void arrangeVisibleNodes()}
       onPaste={() => void pasteFromMenu()}
       onResetRoutes={() =>
         void saveCommands(
@@ -2149,7 +2129,7 @@ function NativeCanvasWorkspace({
         )
       }
       onOpenEnums={() => onRequestAction?.('enums', '')}
-      onTools={onOpenTools}
+      onOpenRecovery={onOpenRecoveryFromParent ? onOpenRecovery : undefined}
       editable={editable}
       noteEditable={placementEditable}
       disabled={personalBusy || !!draft}
@@ -2169,7 +2149,7 @@ function NativeCanvasWorkspace({
       context={{
         userId,
         snapshot,
-        busy: allBusy || !!draft || !placementEditable,
+        busy: allBusy || placementDraftBlocked || !placementEditable,
         affectsSharedDocument: !isPrivate,
         onSave: (commands, exp, ref) => routeSave(commands, exp, ref),
       }}
@@ -2182,7 +2162,9 @@ function NativeCanvasWorkspace({
         : toolbarHost
           ? createPortal(toolbar, toolbarHost)
           : null}
-      {error && <p role="alert">{error}</p>}
+      {error && (recoveryOpen || error !== t('미저장 배치가 있습니다.')) && (
+        <p role="alert">{error}</p>
+      )}
       {personalEditable && !personalReady && (
         <p role="status">
           {t(
@@ -2195,7 +2177,7 @@ function NativeCanvasWorkspace({
         <p>{t('공유 도메인 화면은 공유 테이블 배치를 사용합니다.')}</p>
       )}
 
-      {draft && (
+      {draft && (recoveryOpen || stale) && (
         <div role="status">
           <p>
             {t(
@@ -2800,10 +2782,14 @@ function NativeCanvasWorkspace({
               onNodeSelect={selectNodeLatest}
               onNodeContextMenu={nodeMenuLatest}
               onConnectFromColumn={
-                userId && editable && !allBusy && !draft ? connectFromColumn : undefined
+                userId && editable && !allBusy && !placementDraftBlocked
+                  ? connectFromColumn
+                  : undefined
               }
               onDescriptionCommit={
-                placementEditable && !allBusy && !draft ? commitDescriptionLatest : undefined
+                placementEditable && !allBusy && !placementDraftBlocked
+                  ? commitDescriptionLatest
+                  : undefined
               }
               selectedTableId={selectedTableId}
               selectedColumnId={selectedColumnId}
@@ -2826,7 +2812,9 @@ function NativeCanvasWorkspace({
               onRequestStructure={onRequestStructure}
               onRequestAction={onRequestAction}
               onToggleNullable={
-                userId && editable && !allBusy && !draft ? toggleNullableLatest : undefined
+                userId && editable && !allBusy && !placementDraftBlocked
+                  ? toggleNullableLatest
+                  : undefined
               }
             />
           </div>
@@ -2882,7 +2870,7 @@ function NativeCanvasWorkspace({
                   context={{
                     userId,
                     snapshot,
-                    busy: allBusy || !!draft || !placementEditable,
+                    busy: allBusy || placementDraftBlocked || !placementEditable,
                     affectsSharedDocument: !isPrivate,
                     onSave: async (commands, exp, ref) => {
                       const saved = await routeSave(commands, exp, ref);
@@ -3005,7 +2993,7 @@ function NativeCanvasWorkspace({
             </p>
             <Button
               variant="primary"
-              disabled={!editable || allBusy || !!draft}
+              disabled={!editable || allBusy || placementDraftBlocked}
               onClick={() => void createObject(effectiveView === 'overview' ? 'domain' : 'table')}
             >
               {t(effectiveView === 'overview' ? '첫 도메인 만들기' : '첫 테이블 만들기')}
@@ -3025,7 +3013,7 @@ function NativeCanvasWorkspace({
                       {
                         id: 'cut-tables',
                         label: t('오려두기'),
-                        disabled: !editable || allBusy || !!draft,
+                        disabled: !editable || allBusy || placementDraftBlocked,
                         onAction: () => copySelection(undefined, true),
                       },
                       { id: 'copy-tables', label: t('복사하기'), onAction: () => copySelection() },
@@ -3036,7 +3024,7 @@ function NativeCanvasWorkspace({
                       {
                         id: 'paste-tables',
                         label: t('붙여넣기'),
-                        disabled: !editable || allBusy || !!draft,
+                        disabled: !editable || allBusy || placementDraftBlocked,
                         onAction: () => void pasteFromMenu(),
                       },
                     ]
@@ -3056,12 +3044,15 @@ function NativeCanvasWorkspace({
                       },
                     ]
                   : []),
-                ...(menu.source && base.domains.some((d) => d.id === menu.source)
+                ...(effectiveView === 'overview' &&
+                menu.source &&
+                base.domains.some((d) => d.id === menu.source)
                   ? [
                       {
                         id: 'direct-relation',
                         label: t('도메인 직접 연결'),
-                        disabled: !editable || allBusy || !!draft || base.domains.length < 2,
+                        disabled:
+                          !editable || allBusy || placementDraftBlocked || base.domains.length < 2,
                         onAction: () => {
                           setConnection({ kind: 'domain', source: menu.source! });
                           setConnectPointer(null);
@@ -3083,7 +3074,7 @@ function NativeCanvasWorkspace({
                         label: t(
                           effectiveView === 'overview' ? '새 도메인 생성' : '새 테이블 생성',
                         ),
-                        disabled: !editable || allBusy || !!draft,
+                        disabled: !editable || allBusy || placementDraftBlocked,
                         onAction: () =>
                           void createObject(
                             effectiveView === 'overview' ? 'domain' : 'table',
@@ -3093,13 +3084,17 @@ function NativeCanvasWorkspace({
                       {
                         id: 'new-note',
                         label: t('메모 추가'),
-                        disabled: !placementEditable || allBusy || !!draft,
+                        disabled: !placementEditable || allBusy || placementDraftBlocked,
                         onAction: () => void createObject('note', menu.point),
                       },
                       {
                         id: 'auto-layout',
                         label: t('자동 배치'),
-                        disabled: !placementEditable || allBusy || !!draft || !scene.nodes.length,
+                        disabled:
+                          !placementEditable ||
+                          allBusy ||
+                          placementDraftBlocked ||
+                          !scene.nodes.length,
                         onAction: () => void arrangeVisibleNodes(),
                       },
                     ]
@@ -3109,7 +3104,7 @@ function NativeCanvasWorkspace({
                       {
                         id: 'delete-selected',
                         label: t('삭제'),
-                        disabled: !placementEditable || allBusy || !!draft,
+                        disabled: !placementEditable || allBusy || placementDraftBlocked,
                         onAction: () => void deleteSelection(),
                       },
                     ]
@@ -3141,7 +3136,7 @@ function NativeCanvasWorkspace({
                       {
                         id: 'reset-route',
                         label: t('자동 경로로 복원'),
-                        disabled: !placementEditable || allBusy || !!draft,
+                        disabled: !placementEditable || allBusy || placementDraftBlocked,
                         onAction: () =>
                           void saveCommands([
                             {
@@ -3156,7 +3151,7 @@ function NativeCanvasWorkspace({
                 {
                   id: 'delete-relation',
                   label: t('관계 삭제'),
-                  disabled: !editable || allBusy || !!draft,
+                  disabled: !editable || allBusy || placementDraftBlocked,
                   onAction: () => {
                     const scope = operationScope.current,
                       id = relationMenu.id,
@@ -3258,9 +3253,7 @@ function NativeCanvasActions({
   };
   return (
     <details className="native-erd-actions" open={initialSelection ? true : undefined}>
-      <summary>
-        {t('공유 캔버스')} / {t('개인 화면')}
-      </summary>
+      <summary>{t('보관된 입력 복구')}</summary>
       <NativeEditorField
         label="작업"
         value={action}

@@ -452,7 +452,7 @@ export class McpServerFactory {
       'create_project',
       {
         description:
-          '새 EZERD 프로젝트를 생성합니다. 이름 생략/공백은 워크스페이스에서 새 프로젝트 및 증가하는 숫자로 자동 지정합니다. formatVersion: 2는 선택 databaseKind/default profile의 빈 native 설계를 만들며 get_project_document_state 및 apply_native_project_changes로 조회/편집합니다. formatVersion 생략 또는 1은 기존 v1 클라이언트 호환 생성입니다. native 생성은 미검증 DB 기능의 사용 가능 상태를 켜지 않습니다.',
+          '새 EZERD 프로젝트를 생성합니다. 이름 생략/공백은 워크스페이스에서 새 프로젝트 및 증가하는 숫자로 자동 지정합니다. formatVersion: 2 또는 생략은 선택 databaseKind/default profile의 빈 native 설계를 만들며 get_project_document_state 및 apply_native_project_changes로 조회/편집합니다. 새 프로젝트는 native 설계만 지원합니다. native 생성은 미검증 DB 기능의 사용 가능 상태를 켜지 않습니다.',
         inputSchema: createProjectSchema,
         outputSchema: projectSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -647,7 +647,7 @@ export class McpServerFactory {
       'apply_native_project_changes',
       {
         description:
-          'schemaVersion 2로 저장된 프로젝트의 native 컬럼/테이블 부분 수정, 컬럼 추가, 삭제 계획 및 PK 기반 FK 생성을 수행합니다. get_project_document_state로 최신 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. expectedDatabaseRevision은 필수이며 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
+          'schemaVersion 2로 저장된 프로젝트의 native 컬럼/테이블 부분 수정, 컬럼 추가, 삭제 계획 및 PK 기반 FK 생성을 수행합니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
         inputSchema: applyNativeProjectChangesMetadataSchema,
         outputSchema: z.strictObject({
           ...nativeSyncOperationResultSchema.shape,

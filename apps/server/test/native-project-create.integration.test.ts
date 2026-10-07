@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import pg from 'pg';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import {
+  createEmptyDocument,
   createEmptyNativeDocument,
   sharedDocument,
   defaultDatabaseContext,
@@ -209,21 +210,35 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         expect(count).toEqual({ personal: '0', ledger: '0' });
       },
     );
-    it.each([undefined, 1] as const)(
-      'preserves legacy REST creation and legacy reads for format %s',
-      async (format) => {
-        const created = await create('mysql', format, 'Legacy');
+    it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+      'defaults omitted REST format to native for %s',
+      async (kind) => {
+        const created = await create(kind, undefined, 'Default native');
         expect(created.status).toBe(201);
-        expect((await row(created.data.id)).document.schemaVersion).toBe(1);
-        const legacy = await request(`/projects/${created.data.id}`);
-        expect(legacy.status).toBe(200);
-        expect(legacy.data.document.schemaVersion).toBe(1);
-        expect(
-          (await request(`/projects/${created.data.id}/database/capabilities`)).data
-            .documentSchemaVersion,
-        ).toBe(1);
+        expect((await row(created.data.id)).document).toEqual(
+          sharedDocument(createEmptyNativeDocument(defaultDatabaseContext(kind))),
+        );
       },
     );
+    it('preserves existing legacy projects and imports while rejecting legacy creation', async () => {
+      expect((await create('mysql', 1, 'Legacy')).status).toBe(400);
+      const document = createEmptyDocument();
+      const imported = await request('/projects/import', 'POST', {
+        workspaceId,
+        transfer: {
+          format: 'ezerd-project',
+          formatVersion: 1,
+          exportedAt: new Date().toISOString(),
+          project: { name: 'Imported legacy', databaseKind: 'mysql' },
+          document,
+        },
+      });
+      expect(imported.status, JSON.stringify(imported.data)).toBe(201);
+      const legacy = await request(`/projects/${imported.data.id}`);
+      expect(legacy.status).toBe(200);
+      expect(legacy.data.document.schemaVersion).toBe(1);
+      expect((await row(imported.data.id)).document.schemaVersion).toBe(1);
+    });
     it('isolates native personal camera defaults and never invents a default domain or another user canvas', async () => {
       const created = await create('sqlite', 2, 'Private defaults');
       expect(created.status).toBe(201);
@@ -251,7 +266,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await row(id)).document).toEqual(original);
       expect(original.domains).toEqual([]);
     });
-    it('keeps permission, ownership and archive creation protection for native and legacy paths', async () => {
+    it('keeps permission, ownership and archive creation protection for native creation', async () => {
       expect((await create('postgresql', 2, 'Viewer', viewer)).status).toBe(403);
       expect((await create('postgresql', 2, 'Outsider', outsider)).status).toBe(403);
       const edited = await create('postgresql', 2, 'Editor created', editor);
@@ -274,7 +289,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         workspaceId,
       ]);
       try {
-        for (const format of [1, 2] as const)
+        for (const format of [undefined, 2] as const)
           expect((await create('mysql', format, 'Blocked')).status).toBe(403);
       } finally {
         await pool.query("UPDATE workspace SET status='active' WHERE workspace_id=$1", [
@@ -282,10 +297,10 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         ]);
       }
     });
-    it('serializes native/legacy automatic gallery names while considering manual and archived names', async () => {
+    it('serializes native automatic gallery names while considering manual and archived names', async () => {
       const first = await create('postgresql', 2);
       expect(first.data.name).toBe('새 프로젝트');
-      const manual = await create('mysql', 1, '새 프로젝트 7');
+      const manual = await create('mysql', undefined, '새 프로젝트 7');
       expect(manual.status).toBe(201);
       await request(`/projects/${manual.data.id}`, 'PATCH', {
         expectedVersion: 0,
@@ -293,7 +308,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       });
       const created = await Promise.all([
         create('postgresql', 2, ' '),
-        create('mysql', 1),
+        create('mysql', undefined),
         create('sqlite', 2),
         create('postgresql', undefined),
       ]);
@@ -318,6 +333,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         await pool.query('SELECT COUNT(*) FROM projects WHERE workspace_id=$1', [workspaceId])
       ).rows[0].count;
       for (const extra of [
+        { formatVersion: 1 },
         { formatVersion: 3 },
         { formatVersion: '2' },
         { document: createEmptyNativeDocument(defaultDatabaseContext('postgresql')) },
@@ -385,14 +401,14 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         ]);
       },
     );
-    it('keeps the omitted create_project MCP format backward compatible', async () => {
+    it('defaults the omitted create_project MCP format to native', async () => {
       const result = await client.callTool({
         name: 'create_project',
         arguments: { workspaceId, databaseKind: 'mysql' },
       });
       expect(result.isError).not.toBe(true);
       const project = projectSchema.parse(result.structuredContent);
-      expect((await row(project.id)).document.schemaVersion).toBe(1);
+      expect((await row(project.id)).document.schemaVersion).toBe(2);
       const invalid = await client.callTool({
         name: 'create_project',
         arguments: { workspaceId, formatVersion: 3 },

@@ -13,7 +13,7 @@ vi.mock('react', async () => ({
   useEffect: (effect: () => void) => {
     harness.effect = effect;
   },
-  useRef: () => ({ current: harness.dialog }),
+  useRef: (initial: unknown) => ({ current: initial === null ? harness.dialog : initial }),
 }));
 vi.mock('react-dom', async () => ({
   ...(await vi.importActual<typeof import('react-dom')>('react-dom')),
@@ -29,12 +29,14 @@ vi.mock('../../components/ui/index.js', () => ({
   AnimatedDetails: (props: Record<string, unknown>) => createElement('details', props),
 }));
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   harness.effect = null;
   harness.content = null;
 });
 it('uses native modal/escape semantics and restores the previous connected trigger on closing', () => {
+  vi.useFakeTimers();
   class FakeElement {
     isConnected = true;
     focus = vi.fn();
@@ -60,8 +62,20 @@ it('uses native modal/escape semantics and restores the previous connected trigg
   const event = { preventDefault: vi.fn() };
   harness.content!.props.onCancel(event);
   expect(event.preventDefault).toHaveBeenCalledOnce();
+  expect(onClose).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(160);
   expect(onClose).toHaveBeenCalledOnce();
   cleanup!();
   expect(harness.dialog.close).toHaveBeenCalledOnce();
   expect(previous.focus).toHaveBeenCalledOnce();
+});
+it('closes immediately when reduced motion is requested', () => {
+  vi.stubGlobal('document', { body: {} });
+  vi.stubGlobal('window', { matchMedia: () => ({ matches: true }) });
+  const onClose = vi.fn();
+  renderToStaticMarkup(
+    createElement(NativeEnumDialog, { document: advancedFixture().document, onClose }),
+  );
+  harness.content!.props.onCancel({ preventDefault: vi.fn() });
+  expect(onClose).toHaveBeenCalledOnce();
 });

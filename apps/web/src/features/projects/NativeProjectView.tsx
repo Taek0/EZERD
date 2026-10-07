@@ -14,7 +14,16 @@ import {
   nativeExpressionDisplay,
   nativeGenerationDisplay,
 } from '@ezerd/model';
-import { Button, IconButton, Input, Select, TabButton } from '../../components/ui/index.js';
+import {
+  Button,
+  Collapse,
+  DisclosureButton,
+  IconButton,
+  Input,
+  Select,
+  TabButton,
+  Textarea,
+} from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import './native-project-view.css';
 import { PanelSection, PanelList, PanelRow, PanelListDetail } from '../../shared/editor/panel.js';
@@ -26,8 +35,6 @@ import { useNativeDurableState, useNativeExportBlocked } from './native-export-s
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
-  stageNativeSave,
-  sendNativePending,
   recoverNativePending,
   cancelNativePending,
   type NativePendingSave,
@@ -35,7 +42,13 @@ import {
   type NativeSaveExpected,
 } from './native-save.js';
 import { message, request } from '../../shared/api/client.js';
-import { captureNativeActorApi } from './native-actor-api.js';
+import {
+  enqueueNativeSave,
+  flushNativeSaveIntent,
+  nativeRejectedSaveIntents,
+  nativeSaveIntents,
+  lookupNativeSaveIntentResult,
+} from './native-save-intents.js';
 import { currentTransferUserId } from './project-transfer.js';
 import { NativeDraftRecoveryPanel } from './NativeDraftRecoveryPanel.js';
 import type { NativeDraftArchiveEntry } from './native-draft-archive.js';
@@ -61,6 +74,11 @@ import { NativeTableRelationInspector } from './NativeTableRelationInspector.js'
 import { NativeEnumDialog } from './NativeEnumDialog.js';
 
 registerTranslations({
+  '적용되지 않은 저장 요청을 보관했습니다.': 'Unapplied save requests have been preserved.',
+  '보관된 저장 요청': 'Preserved save request',
+  '보관된 편집 {count}개': '{count} preserved edits',
+  '원본 보기': 'View original data',
+  '보관 요청 삭제': 'Remove preserved request',
   '◌ 저장 확인 중…': '◌ Confirming save…',
   '○ 오프라인': '○ Offline',
   '! 확인 필요': '! Action needed',
@@ -69,7 +87,7 @@ registerTranslations({
   '설계 조회': 'Design overview',
   속성: 'Properties',
   도메인: 'Domains',
-  도구: 'Tools',
+  '프로젝트 정보': 'Project information',
   '속성 패널': 'Inspector',
   '속성 패널 너비': 'Inspector width',
   '조회 전용': 'Read only',
@@ -175,7 +193,11 @@ export function NativeProjectView({
   const setPendingBlocked = (value: boolean) =>
     setOperationState((current) => ({ ...current, pendingBlocked: value }));
   const [saveError, setSaveError] = useState('');
+  const [rejectedIntents, setRejectedIntents] = useState<
+    ReturnType<typeof nativeRejectedSaveIntents>
+  >([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [issuesOpen, setIssuesOpen] = useState(true);
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [recoveryEpoch, setRecoveryEpoch] = useState(0);
   const [recoveredInput, setRecoveredInput] = useState<{
@@ -189,7 +211,7 @@ export function NativeProjectView({
       return true;
     }
   });
-  const [inspectorTab, setInspectorTab] = useState<'properties' | 'tables' | 'domains' | 'tools'>(
+  const [inspectorTab, setInspectorTab] = useState<'properties' | 'tables' | 'domains'>(
     'properties',
   );
   const [inspectorWidth, setInspectorWidth] = useState(() => {
@@ -270,7 +292,7 @@ export function NativeProjectView({
     setPinMode(false);
     setCommentsOpen(true);
   }
-  const [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
+  const [canvasSettingsHost, setCanvasSettingsHost] = useState<HTMLDivElement | null>(null);
   const [createRequest, setCreateRequest] = useState<{
     action: NonNullable<Parameters<typeof NativeStructureEditor>[0]['initialSelection']>['action'];
     target?: string;
@@ -355,16 +377,12 @@ export function NativeProjectView({
       return;
     }
     if (action === 'createDomainRelation') {
+      if (canvasView !== 'overview') return;
       leaveRecoveredSelection();
       setInspectorOpen(true);
       setInspectorTab('domains');
       setSelectedDomainRelation(null);
       setDomainRelationCreation(target);
-      return;
-    }
-    if (action === 'tools') {
-      setInspectorOpen(true);
-      setInspectorTab('tools');
       return;
     }
     if (action === 'domain') {
@@ -401,9 +419,8 @@ export function NativeProjectView({
   }
   const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
   const dirty = useNativeExportBlocked(userId ?? '', snapshot.project.id);
-  const queueBlocked = !!userId && durableState !== 'empty';
   const recoveryBusy = saving || busy || !!pending || pendingBlocked;
-  const editorBusy = recoveryBusy || queueBlocked;
+  const editorBusy = false;
   const activeEditor = useRef('');
   const activeGeneration = useRef(0);
   const mounted = useRef(true);
@@ -438,6 +455,9 @@ export function NativeProjectView({
     if (!canRecoverDraft(input)) throw Error('native.draft-recovery-unavailable');
     const target = nativeDraftRecoveryTarget(activeDocument.current, input)!;
     setRecoveredInput({ entry: input, generation });
+    if (target.kind === 'canvas' && target.selection.domainRelation?.action === 'create') {
+      setRequestedView((previous) => ({ id: 'overview', nonce: (previous?.nonce ?? 0) + 1 }));
+    }
     setRecoveryEpoch((value) => value + 1);
     setDomain('*');
     setSearch('');
@@ -448,9 +468,7 @@ export function NativeProjectView({
     setEditingColumn('columnId' in target ? (target.columnId ?? null) : null);
     setSelectedDomain(target.kind === 'domain' ? (target.domainId ?? null) : null);
     setInspectorOpen(true);
-    setInspectorTab(
-      target.kind === 'canvas' ? 'tools' : target.kind === 'domain' ? 'domains' : 'properties',
-    );
+    setInspectorTab(target.kind === 'domain' ? 'domains' : 'properties');
     setCreateRequest(null);
     setDomainCreation(0);
   }
@@ -465,13 +483,6 @@ export function NativeProjectView({
     recoveredInput.entry.projectId === snapshot.project.id
       ? nativeDraftRecoveryTarget(doc, recoveredInput.entry)
       : null;
-  const saveContext = JSON.stringify([
-    snapshot.project.version,
-    snapshot.sequence,
-    snapshot.project.databaseRevision,
-  ]);
-  const activeSaveContext = useRef(saveContext);
-  activeSaveContext.current = saveContext;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -516,62 +527,123 @@ export function NativeProjectView({
       active = false;
     };
   }, [userId, snapshot.project.id]);
-  async function save(
-    commands: NativeWebCommand[],
-    expected?: NativeSaveExpected,
-    editorDraft?: NativeEditorDraftRef,
-  ): Promise<boolean> {
-    if (
-      !editable ||
-      !userId ||
-      busy ||
-      pendingBlocked ||
-      queueBlocked ||
-      pending ||
-      savingRef.current
-    )
-      return false;
+  const saveWaiters = useRef(
+    new Map<
+      string,
+      { pending: NativePendingSave; callbacks: Array<(accepted: boolean) => void> }
+    >(),
+  );
+  const latestSnapshot = useRef(snapshot);
+  latestSnapshot.current = snapshot;
+  useEffect(
+    () => () => {
+      for (const { callbacks } of saveWaiters.current.values())
+        for (const resolve of callbacks) resolve(false);
+      saveWaiters.current.clear();
+    },
+    [userId, snapshot.project.id],
+  );
+  async function flushSaves() {
+    if (!userId || !editable || savingRef.current || !currentEditor()) return;
     savingRef.current = true;
     setSaving(true);
-    setSaveError('');
     try {
-      const actorApi = captureNativeActorApi(userId);
-      const staged = await stageNativeSave(
-        userId,
-        snapshot,
-        commands,
-        localStorage,
-        expected,
-        editorDraft,
-      );
-      if (!currentEditor()) return false;
-      setPending(staged);
-      if (!activePermission.current || activeSaveContext.current !== saveContext) return false;
-      const result = await sendNativePending(staged, localStorage, actorApi);
-      if (!currentEditor()) return result.status === 'accepted';
-      if (result.status === 'rejected') {
-        setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
-        return false;
+      setRejectedIntents(nativeRejectedSaveIntents(userId, snapshot.project.id));
+      for (let count = 0; count < 128 && currentEditor() && activePermission.current; count++) {
+        const baseline = latestSnapshot.current;
+        const result = await flushNativeSaveIntent(
+          userId,
+          baseline,
+          localStorage,
+          request,
+          () =>
+            currentEditor() &&
+            activePermission.current &&
+            latestSnapshot.current.project.databaseRevision === baseline.project.databaseRevision,
+        );
+        if (!result) {
+          const remaining = new Set(
+            nativeSaveIntents(userId, snapshot.project.id).map(
+              (item) => item.pending.request.operationId,
+            ),
+          );
+          for (const [operationId, waiter] of saveWaiters.current) {
+            if (remaining.has(operationId)) continue;
+            const accepted = await lookupNativeSaveIntentResult(waiter.pending);
+            if (!currentEditor()) return;
+            if (accepted === null) continue;
+            for (const resolve of waiter.callbacks) resolve(accepted);
+            saveWaiters.current.delete(operationId);
+            onReload();
+          }
+          break;
+        }
+        for (const resolve of saveWaiters.current.get(result.operationId)?.callbacks ?? [])
+          resolve(result.accepted);
+        saveWaiters.current.delete(result.operationId);
+        if (currentEditor()) {
+          setPending(null);
+          setRejectedIntents(nativeRejectedSaveIntents(userId, snapshot.project.id));
+          setPendingBlocked(false);
+          setSaveError(
+            result.accepted
+              ? ''
+              : t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'),
+          );
+          onReload();
+        }
       }
-      setPending(null);
-      onReload();
-      return true;
     } catch (error) {
       if (currentEditor()) {
         setSaveError(message(error));
         try {
-          const stored = await loadNativePending(userId, snapshot.project.id);
-          if (currentEditor()) setPending(stored);
+          setPending(await loadNativePending(userId, snapshot.project.id));
         } catch {
-          if (currentEditor()) setPendingBlocked(true);
+          setPendingBlocked(true);
         }
       }
-      return false;
     } finally {
       if (currentEditor()) {
         savingRef.current = false;
         setSaving(false);
       }
+    }
+  }
+  useEffect(() => {
+    void flushSaves();
+    const timer = setInterval(() => void flushSaves(), 4000);
+    const wake = () => void flushSaves();
+    window.addEventListener('online', wake);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', wake);
+    };
+  }, [userId, snapshot.project.id, editable, snapshot.project.databaseRevision]);
+  async function save(
+    commands: NativeWebCommand[],
+    expected?: NativeSaveExpected,
+    editorDraft?: NativeEditorDraftRef,
+  ): Promise<boolean> {
+    if (!editable || !userId || !currentEditor()) return false;
+    try {
+      const operationId = enqueueNativeSave(userId, snapshot, commands, expected, editorDraft);
+      setSaveError('');
+      const intent = nativeSaveIntents(userId, snapshot.project.id).find(
+        (item) => item.pending.request.operationId === operationId,
+      );
+      if (!intent) throw Error('native.pending-changed');
+      const completion = new Promise<boolean>((resolve) => {
+        const current = saveWaiters.current.get(operationId);
+        saveWaiters.current.set(operationId, {
+          pending: intent.pending,
+          callbacks: [...(current?.callbacks ?? []), resolve],
+        });
+      });
+      void flushSaves();
+      return await completion;
+    } catch (error) {
+      if (currentEditor()) setSaveError(message(error));
+      return false;
     }
   }
   async function recover() {
@@ -697,6 +769,7 @@ export function NativeProjectView({
   function receiveCanvasScope(scope: NativeCanvasScope) {
     setCanvasScope(scope);
     setCanvasView(scope.viewId);
+    if (scope.viewId !== 'overview') setDomainRelationCreation(null);
     // Scope refreshes during saves/layout are not new picks; retain an explicitly opened relation.
     if (
       canvasScope &&
@@ -871,6 +944,19 @@ export function NativeProjectView({
           <span className="navigation-divider" aria-hidden="true" />
           <h1 title={snapshot.project.name}>{snapshot.project.name}</h1>
           <div className="editor-path-host" ref={setPathHost} />
+          <div className="native-project-context" aria-label={t('프로젝트 정보')}>
+            <span>
+              {snapshot.project.databaseKind === 'postgresql'
+                ? 'PostgreSQL'
+                : snapshot.project.databaseKind === 'mysql'
+                  ? 'MySQL'
+                  : 'SQLite'}
+            </span>
+            <span>
+              {t('목표 DB 버전')}: {profile.targetVersion}
+            </span>
+            <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
+          </div>
         </div>
         <div className="editor-toolbar-host" ref={setToolbarHost} />
         <div className="save-controls" role="group" aria-label={t('변경 기록과 동기화')}>
@@ -903,25 +989,6 @@ export function NativeProjectView({
             />
           )}
         </div>
-      </div>
-      <div className="native-project-status native-project-context">
-        <span>
-          {snapshot.project.databaseKind === 'postgresql'
-            ? 'PostgreSQL'
-            : snapshot.project.databaseKind === 'mysql'
-              ? 'MySQL'
-              : 'SQLite'}{' '}
-          · {t('목표 DB 버전')}: {profile.targetVersion}
-        </span>
-        <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
-        {userId && (
-          <Button onClick={() => setDraftRecoveryOpen((value) => !value)}>
-            {t('보관된 입력 복구')}
-          </Button>
-        )}
-        <Button onClick={onReload} disabled={busy}>
-          {t('다시 불러오기')}
-        </Button>
       </div>
       {workspaceStatus === 'archived' && (
         <div className="notice" role="status">
@@ -960,12 +1027,12 @@ export function NativeProjectView({
           {saveError}
         </p>
       )}
-      {userId && (pendingBlocked || durableState === 'unknown') && (
+      {draftRecoveryOpen && userId && (pendingBlocked || durableState === 'unknown') && (
         <Button disabled={saving} onClick={() => void loadPending()}>
           {t('저장 결과 확인')}
         </Button>
       )}
-      {pending && (
+      {draftRecoveryOpen && pending && (
         <div className="notice native-pending" role="status">
           <p>{t('미확인 또는 미적용 저장 요청이 있습니다.')}</p>
           <Button onClick={() => void recover()} disabled={saving}>
@@ -975,6 +1042,38 @@ export function NativeProjectView({
             {t('요청 취소 확정')}
           </Button>
         </div>
+      )}
+      {draftRecoveryOpen && rejectedIntents.length > 0 && (
+        <section className="notice native-pending">
+          <p>{t('적용되지 않은 저장 요청을 보관했습니다.')}</p>
+          {rejectedIntents.map(({ key, pending: rejected }) => (
+            <details key={key}>
+              <summary>
+                {t('보관된 편집 {count}개', { count: rejected.request.commands.length })}
+              </summary>
+              <details>
+                <summary>{t('원본 보기')}</summary>
+                <Textarea
+                  readOnly
+                  aria-label={t('보관된 저장 요청')}
+                  value={JSON.stringify(rejected.request.commands, null, 2)}
+                />
+              </details>
+              <Button
+                onClick={() => {
+                  try {
+                    localStorage.removeItem(key);
+                    setRejectedIntents((items) => items.filter((item) => item.key !== key));
+                  } catch (error) {
+                    setSaveError(message(error));
+                  }
+                }}
+              >
+                {t('보관 요청 삭제')}
+              </Button>
+            </details>
+          ))}
+        </section>
       )}
       {!doc ? (
         <p className="notice error" role="alert">
@@ -1068,18 +1167,19 @@ export function NativeProjectView({
                 }
 
                 mode={mode}
-                inspectorHost={toolsHost}
+                inspectorHost={canvasSettingsHost}
                 inspectorOpen={inspectorOpen}
                 onToggleInspector={() => setInspectorOpen((value) => !value)}
-                onOpenTools={() => {
-                  setInspectorOpen(true);
-                  setInspectorTab('tools');
-                }}
+                recoveryOpen={draftRecoveryOpen}
+                {...(userId
+                  ? { onOpenRecovery: () => setDraftRecoveryOpen((value) => !value) }
+                  : {})}
                 onCreate={toolbarCreate}
                 {...{ onRequestStructure: requestStructure, onRequestAction: requestAction }}
                 onModeChange={setMode}
                 onViewChange={(id) => {
                   setCanvasView(id);
+                  setDomainRelationCreation(null);
                   setSelected(null);
                   setSelectedDomain(null);
                   setEditingColumn(null);
@@ -1246,12 +1346,6 @@ export function NativeProjectView({
                       {t('속성')}
                     </TabButton>
                     <TabButton
-                      selected={inspectorTab === 'tools'}
-                      onClick={() => setInspectorTab('tools')}
-                    >
-                      {t('도구')}
-                    </TabButton>
-                    <TabButton
                       selected={inspectorTab === 'tables'}
                       onClick={() => setInspectorTab('tables')}
                     >
@@ -1263,12 +1357,9 @@ export function NativeProjectView({
                   </div>
                 </div>
                 <div
-                  className="native-inspector-panel"
-                  role="tabpanel"
-                  id={`${snapshot.project.id}-tools`}
-                  aria-label={t('도구')}
-                  hidden={inspectorTab !== 'tools'}
-                  ref={setToolsHost}
+                  className="native-canvas-settings-host"
+                  hidden={inspectorTab === 'tables'}
+                  ref={setCanvasSettingsHost}
                 />
                 <div
                   className="native-inspector-panel"
@@ -1320,18 +1411,24 @@ export function NativeProjectView({
                       setDomainCreation(0);
                     }}
                   />
-                  <NativeDomainRelationEditor
-                    key={`domain-relation:${selectedDomainRelation ?? ''}:create:${domainRelationCreation ?? ''}`}
-                    document={doc}
-                    editable={editable}
-                    {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
-                    {...(domainRelationCreation
-                      ? { initialAction: 'create' as const, sourceDomainId: domainRelationCreation }
-                      : {})}
-                    {...(userId
-                      ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
-                      : {})}
-                  />
+                  {(canvasView === 'overview' || selectedDomainRelation) && (
+                    <NativeDomainRelationEditor
+                      allowCreate={canvasView === 'overview'}
+                      key={`domain-relation:${selectedDomainRelation ?? ''}:create:${domainRelationCreation ?? ''}`}
+                      document={doc}
+                      editable={editable}
+                      {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
+                      {...(domainRelationCreation
+                        ? {
+                            initialAction: 'create' as const,
+                            sourceDomainId: domainRelationCreation,
+                          }
+                        : {})}
+                      {...(userId
+                        ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
+                        : {})}
+                    />
+                  )}
                   <div
                     ref={setDomainSelectionHost}
                     className="native-selection-host"
@@ -1343,12 +1440,14 @@ export function NativeProjectView({
                         <Button onClick={() => openDomain(selectedDomain)}>
                           {t('도메인 열기')}
                         </Button>
-                        <Button
-                          disabled={!editable || editorBusy}
-                          onClick={() => requestAction('createDomainRelation', selectedDomain)}
-                        >
-                          {t('+ 도메인 관계')}
-                        </Button>
+                        {canvasView === 'overview' && (
+                          <Button
+                            disabled={!editable || editorBusy}
+                            onClick={() => requestAction('createDomainRelation', selectedDomain)}
+                          >
+                            {t('+ 도메인 관계')}
+                          </Button>
+                        )}
                       </div>
                       <PanelSection
                         title={t('연결된 도메인 관계')}
@@ -1506,7 +1605,7 @@ export function NativeProjectView({
                           ? filteredDomainRelations.length
                           : filteredTableRelations.length
                       }
-                      defaultOpen={canvasView === 'overview'}
+                      defaultOpen={false}
                     >
                       <PanelList empty={t('표시할 관계가 없습니다.')}>
                         {canvasView === 'overview'
@@ -1698,7 +1797,7 @@ export function NativeProjectView({
                           {editable ? (
                             <>
                               <NativePropertyEditor
-                                key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
+                                key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
                                 table={selectedTable}
                                 mode={mode}
                                 userId={userId!}
@@ -1831,7 +1930,7 @@ export function NativeProjectView({
                                     {editable ? (
                                       <>
                                         <NativePropertyEditor
-                                          key={`${column.id}:${snapshot.sequence}:${recoveryEpoch}`}
+                                          key={`${column.id}:${recoveryEpoch}`}
                                           table={selectedTable}
                                           column={column}
                                           mode={mode}
@@ -2273,28 +2372,38 @@ export function NativeProjectView({
                     {snapshot.native.status === 'available' &&
                       snapshot.native.issues.length > 0 && (
                         <section className="native-issues" aria-label={t('설계 확인 항목')}>
-                          <h3>{t('설계 확인 항목')}</h3>
-                          <ul>
-                            {snapshot.native.issues.map((issue, index) => (
-                              <li key={`${issue.code}-${index}`}>
-                                <button type="button" onClick={() => focusIssue(issue.objectId)}>
-                                  {issue.objectId &&
-                                  doc.tables?.some((table) => table.id === issue.objectId)
-                                    ? `${tableName(issue.objectId)}: `
-                                    : ''}
-                                  {t(
-                                    issue.code.startsWith('legacy.')
-                                      ? '기존 타입 또는 기본값을 확인해 주세요.'
-                                      : issue.category === 'incomplete'
-                                        ? '물리 설계를 완성해 주세요.'
-                                        : issue.category === 'unsupported'
-                                          ? '지원하지 않는 설정입니다.'
-                                          : '설정이나 연결 대상을 확인해 주세요.',
-                                  )}
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
+                          <h3>
+                            <DisclosureButton
+                              expanded={issuesOpen}
+                              controls="native-issues-list"
+                              onClick={() => setIssuesOpen((open) => !open)}
+                            >
+                              {t('설계 확인 항목')} · {snapshot.native.issues.length}
+                            </DisclosureButton>
+                          </h3>
+                          <Collapse open={issuesOpen} id="native-issues-list">
+                            <ul>
+                              {snapshot.native.issues.map((issue, index) => (
+                                <li key={`${issue.code}-${index}`}>
+                                  <button type="button" onClick={() => focusIssue(issue.objectId)}>
+                                    {issue.objectId &&
+                                    doc.tables?.some((table) => table.id === issue.objectId)
+                                      ? `${tableName(issue.objectId)}: `
+                                      : ''}
+                                    {t(
+                                      issue.code.startsWith('legacy.')
+                                        ? '기존 타입 또는 기본값을 확인해 주세요.'
+                                        : issue.category === 'incomplete'
+                                          ? '물리 설계를 완성해 주세요.'
+                                          : issue.category === 'unsupported'
+                                            ? '지원하지 않는 설정입니다.'
+                                            : '설정이나 연결 대상을 확인해 주세요.',
+                                    )}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </Collapse>
                         </section>
                       )}
                   </section>

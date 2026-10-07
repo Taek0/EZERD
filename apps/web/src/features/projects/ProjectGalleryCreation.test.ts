@@ -106,9 +106,8 @@ describe('gallery native creation callback consumption', () => {
     const h = harness();
     await h.begin();
     expect(
-      h.render().find((node) => node.type === 'select' && node.props['aria-label'] === '설계 형식')!
-        .props.value,
-    ).toBe(2);
+      h.render().find((node) => node.type === 'select' && node.props['aria-label'] === '설계 형식'),
+    ).toBeUndefined();
     const database = h.render().find((node) => node.props.label === '데이터베이스 선택')!;
     (database.props.items as { id: string; onAction: () => void }[])
       .find((item) => item.id === 'mysql')!
@@ -124,15 +123,13 @@ describe('gallery native creation callback consumption', () => {
     expect(h.props.onSearch).toHaveBeenCalledWith('');
     expect(h.handle.current!.hasDraft()).toBe(false);
   });
-  it('sends explicit v1 compatibility selection and keeps the name input lifecycle', async () => {
+  it('keeps the native name input lifecycle', async () => {
     const h = harness();
     await h.begin();
-    const format = h.render().find((node) => node.type === 'select')!;
-    (format.props.onChange as (event: unknown) => void)({ target: { value: '1' } });
     const name = h.render().find((node) => node.props.className === 'inline-name')!;
-    (name.props.onChange as (event: unknown) => void)({ target: { value: '  Legacy design  ' } });
+    (name.props.onChange as (event: unknown) => void)({ target: { value: '  Native design  ' } });
     await h.handle.current!.flush();
-    expect(h.onCreate).toHaveBeenCalledWith('Legacy design', 'postgresql', { formatVersion: 1 });
+    expect(h.onCreate).toHaveBeenCalledWith('Native design', 'postgresql', { formatVersion: 2 });
     expect(h.onEdit).not.toHaveBeenCalled();
   });
   it('retains failed native creation input for retry without creating a second simultaneous request', async () => {
