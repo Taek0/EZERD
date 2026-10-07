@@ -1,0 +1,98 @@
+{
+  "version": 78,
+  "sequence": 79,
+  "personalVersion": 14,
+  "shared": {
+    "nodes": 20,
+    "relations": 28,
+    "overlaps": [],
+    "sharedLength": 0,
+    "crossings": 20,
+    "labelOverlaps": 0,
+    "cardIntersections": 0,
+    "bounds": {
+      "width": 7040,
+      "height": 3303
+    }
+  },
+  "personal": {
+    "nodes": 19,
+    "relations": 28,
+    "overlaps": [],
+    "sharedLength": 0,
+    "crossings": 20,
+    "labelOverlaps": 0,
+    "cardIntersections": 0,
+    "bounds": {
+      "width": 6120,
+      "height": 3303
+    }
+  },
+  "domains": {
+    "인증": {
+      "nodes": 4,
+      "relations": 2,
+      "overlaps": [],
+      "sharedLength": 0,
+      "crossings": 0,
+      "labelOverlaps": 0,
+      "cardIntersections": 0,
+      "bounds": {
+        "width": 2240,
+        "height": 940
+      }
+    },
+    "프로젝트": {
+      "nodes": 5,
+      "relations": 3,
+      "overlaps": [],
+      "sharedLength": 0,
+      "crossings": 0,
+      "labelOverlaps": 0,
+      "cardIntersections": 0,
+      "bounds": {
+        "width": 2240,
+        "height": 1346
+      }
+    },
+    "리뷰": {
+      "nodes": 4,
+      "relations": 2,
+      "overlaps": [],
+      "sharedLength": 0,
+      "crossings": 0,
+      "labelOverlaps": 0,
+      "cardIntersections": 0,
+      "bounds": {
+        "width": 2240,
+        "height": 1141
+      }
+    },
+    "동기화": {
+      "nodes": 6,
+      "relations": 0,
+      "overlaps": [],
+      "sharedLength": 0,
+      "crossings": 0,
+      "labelOverlaps": 0,
+      "cardIntersections": 0,
+      "bounds": {
+        "width": 3140,
+        "height": 1269
+      }
+    },
+    "워크스페이스": {
+      "nodes": 5,
+      "relations": 2,
+      "overlaps": [],
+      "sharedLength": 0,
+      "crossings": 0,
+      "labelOverlaps": 0,
+      "cardIntersections": 0,
+      "bounds": {
+        "width": 2240,
+        "height": 1033
+      }
+    }
+  }
+}

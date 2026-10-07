@@ -1,0 +1,17 @@
+import {readFileSync,writeFileSync} from 'node:fs';
+import {nativeTableCanvasMetrics,nativeRelationLabelWidth} from '../../apps/web/src/features/projects/native-canvas-style.ts';
+import {relationGeometry,segmentCrossesBounds} from '../../apps/web/src/features/relations/relation-routing.ts';
+const root='artifacts/layout-refinement-2026-10-07/';
+const s=JSON.parse(readFileSync(root+'balanced-shared.json','utf8')),p=JSON.parse(readFileSync(root+'balanced-personal.json','utf8')),d=s.sourceDocument;
+function verify(raw,routes){const nodes=raw.map(n=>{const t=d.tables.find(t=>t.id===n.objectId);const m=t?nativeTableCanvasMetrics(d,t,'physical'):n;return {...n,width:Math.max(n.width,m.width),height:Math.max(n.height,m.height)};});
+ const overlaps=[];for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){const a=nodes[i],b=nodes[j];if(!(a.x+a.width+40<=b.x||b.x+b.width+40<=a.x||a.y+a.height+40<=b.y||b.y+b.height+40<=a.y))overlaps.push([a.objectId,b.objectId]);}
+ const paths=[];for(const r of routes){const e=d.tableRelations.find(e=>e.id===r.relationId),a=nodes.find(n=>n.objectId===e.sourceTableId),b=nodes.find(n=>n.objectId===e.targetTableId);if(!a||!b)continue;const g=relationGeometry(a,b,nativeRelationLabelWidth(e.physical.name),paths.length,0,undefined,nodes.filter(n=>n!==a&&n!==b),r);paths.push({relation:e,segments:g.points.slice(1).map((q,i)=>[g.points[i],q]),label:{x:g.labelX-nativeRelationLabelWidth(e.physical.name)/2,y:g.labelY-13,width:nativeRelationLabelWidth(e.physical.name),height:28}});}
+ let sharedLength=0,crossings=0,labelOverlaps=0;for(let i=0;i<paths.length;i++)for(let j=i+1;j<paths.length;j++){const aa=paths[i].label,bb=paths[j].label;if(aa.x<bb.x+bb.width&&aa.x+aa.width>bb.x&&aa.y<bb.y+bb.height&&aa.y+aa.height>bb.y)labelOverlaps++;for(const[a,b]of paths[i].segments)for(const[c,e]of paths[j].segments){const h=a.y===b.y,k=c.y===e.y;if(h===k){if(h?a.y===c.y:a.x===c.x)sharedLength+=Math.max(0,Math.min(h?Math.max(a.x,b.x):Math.max(a.y,b.y),h?Math.max(c.x,e.x):Math.max(c.y,e.y))-Math.max(h?Math.min(a.x,b.x):Math.min(a.y,b.y),h?Math.min(c.x,e.x):Math.min(c.y,e.y)));}else{const[u,v,w,z]=h?[a,b,c,e]:[c,e,a,b];if(w.x>Math.min(u.x,v.x)&&w.x<Math.max(u.x,v.x)&&u.y>Math.min(w.y,z.y)&&u.y<Math.max(w.y,z.y))crossings++;}}}
+ const cardIntersections=paths.reduce((s,r)=>s+r.segments.filter(([a,b])=>nodes.some(n=>segmentCrossesBounds(a,b,n))).length,0);
+ return {nodes:nodes.length,relations:paths.length,overlaps,sharedLength,crossings,labelOverlaps,cardIntersections,bounds:{width:Math.max(...nodes.map(n=>n.x+n.width))-Math.min(...nodes.map(n=>n.x)),height:Math.max(...nodes.map(n=>n.y+n.height))-Math.min(...nodes.map(n=>n.y))}};
+}
+const sharedNodes=d.layout.nodes.filter(n=>n.viewId==='__tables__');const sharedRoutes=d.layout.relations.filter(r=>r.viewId==='__tables__');
+const results={version:s.project.version,sequence:s.sequence,personalVersion:p.version,shared:verify(sharedNodes,sharedRoutes),personal:verify(p.state.nodes,p.state.relations),domains:{}};
+for(const domain of d.domains){const nodes=d.layout.nodes.filter(n=>n.viewId==='__tables__'&&d.tables.find(t=>t.id===n.objectId)?.domainId===domain.id||d.notes.find(t=>t.id===n.objectId)?.viewId===domain.id);results.domains[domain.name]=verify(nodes,sharedRoutes);}
+writeFileSync(root+'verification.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));
+if([results.shared,results.personal,...Object.values(results.domains)].some(v=>v.overlaps.length||v.sharedLength||v.labelOverlaps||v.cardIntersections))process.exitCode=1;
