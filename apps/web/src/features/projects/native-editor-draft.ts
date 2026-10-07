@@ -76,17 +76,6 @@ export function discardNativeEditorDraft(
     forgetNativeMemoryDraft(key, storage);
   }
 }
-/** Explicit reset is separate from ACK matching and preserves input if storage is still unreadable. */
-export function resetNativeEditorDraft(
-  userId: string,
-  projectId: string,
-  key: string,
-  storage?: NativeDraftStorage,
-): void {
-  const identity = storageKey(userId, projectId, key);
-  nativeDraftArchive(storage).reset(userId, projectId, 'editor', key);
-  forgetNativeMemoryDraft(identity, storage);
-}
 export function rebaseNativeEditorDraft(
   draft: NativeEditorDraft,
   expected: NativeEditorDraft['expected'],

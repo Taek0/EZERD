@@ -8,11 +8,7 @@ import {
   preserveNativeDraftAckSources,
   consumeNativeDraftAckSources,
 } from './native-draft-archive.js';
-import {
-  storeNativeEditorDraft,
-  loadNativeEditorDraft,
-  resetNativeEditorDraft,
-} from './native-editor-draft.js';
+import { storeNativeEditorDraft, loadNativeEditorDraft } from './native-editor-draft.js';
 import { retainNativeMemoryDraft, listNativeMemoryDrafts } from './native-durable-drafts.js';
 
 const actor = '00000000-0000-4000-8000-000000000001',
@@ -195,7 +191,7 @@ describe('native per-writer recovery archive', () => {
     expect(record.raw).toBe('{ broken raw');
     expect(() => archive.recoverRecord(actor, project, record)).toThrow('native.draft-invalid');
     expect(() => storeNativeEditorDraft(draft, target)).toThrow();
-    resetNativeEditorDraft(actor, project, draft.key, target);
+    archive.dismiss(actor, project, record);
     storeNativeEditorDraft(draft, target);
     expect(loadNativeEditorDraft(actor, project, draft.key, target)).toEqual(draft);
     expect(target.getItem(key)).toBe('{ broken raw');

@@ -289,22 +289,6 @@ export function discardNativeDraft(
   if (entry) archive.discard(userId, projectId, entry);
   forgetNativeMemoryDraft(key, storage);
 }
-export function resetNativeDraft(
-  userId: string,
-  projectId: string,
-  kind: 'table' | 'column',
-  objectId: string,
-  storage?: Storage,
-): void {
-  const key = draftKey(userId, projectId, kind, objectId);
-  nativeDraftArchive(storage).reset(
-    userId,
-    projectId,
-    'property',
-    nativePropertyArchiveKey(kind, objectId),
-  );
-  forgetNativeMemoryDraft(key, storage);
-}
 /** Explicit user review preserves only edited fields; other users' newer fields are inherited. */
 export function rebaseNativeDraft(
   draft: NativePropertyDraft,

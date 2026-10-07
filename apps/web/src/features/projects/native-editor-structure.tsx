@@ -1,5 +1,5 @@
 import { PanelSection } from '../../shared/editor/panel.js';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { nativeEditorCommandSchema } from '@ezerd/contracts';
 import {
   createNativeTable,
@@ -217,7 +217,65 @@ export function nativeStructureCommands(
   table: NativeTable | undefined,
   action: NativeStructureAction,
   values: Record<string, string>,
+  before?: Record<string, string>,
 ): NativeWebCommand[] {
+  // The durable create identity becomes an edit identity after the first ACK.
+  const collection = (
+    {
+      table: 'tables',
+      column: 'columns',
+      key: 'keys',
+      index: 'indexes',
+      check: 'checks',
+      enum: 'enums',
+      foreignKey: 'tableRelations',
+    } as const
+  )[action];
+  const existing = document[collection]?.find((item) => item.id === values.id);
+  if (existing) {
+    const changed = (key: string) => !before || values[key] !== before[key];
+    if (action === 'table' || action === 'column') {
+      const patch = {
+        ...(changed('scope') ? { scope: values.scope } : {}),
+        ...(changed('name') ? { physical: { name: values.name ?? '' } } : {}),
+        ...(changed('logicalName') ? { logical: { name: values.logicalName ?? '' } } : {}),
+      };
+      const commands: NativeWebCommand[] = Object.keys(patch).length
+        ? [
+            nativeEditorCommandSchema.parse({
+              type: action === 'table' ? 'patch_table' : 'patch_column',
+              id: existing.id,
+              patch,
+            }),
+          ]
+        : [];
+      if (
+        action === 'table' &&
+        changed('domainId') &&
+        'domainId' in existing &&
+        existing.domainId !== (values.domainId || null)
+      )
+        commands.push({
+          type: 'move_table_domain',
+          tableId: existing.id,
+          targetDomainId: values.domainId || null,
+        });
+      return commands;
+    }
+    const constraintCollection = collection as
+      'keys' | 'indexes' | 'checks' | 'enums' | 'tableRelations';
+    const baseline = nativeConstraintInitial(document, constraintCollection, existing.id);
+    return nativeConstraintCommands(
+      document,
+      constraintCollection,
+      existing.id,
+      {
+        ...baseline,
+        ...Object.fromEntries(Object.entries(values).filter(([key]) => changed(key))),
+      },
+      baseline,
+    );
+  }
   const policy = nativeEditorPolicy(document, table);
   if (action !== 'table' && action !== 'enum' && !table)
     throw new Error('document.owner-table-not-found');
@@ -419,7 +477,7 @@ export function nativeStructureCommands(
   return [parsed];
 }
 
-function NativeCreateForm({
+export function NativeCreateForm({
   context,
   document,
   table,
@@ -436,6 +494,41 @@ function NativeCreateForm({
   const policy = nativeEditorPolicy(document, table);
   // IDs belong to the durable input; retries do not regenerate objects.
   const [id] = useState(() => nativeDurableId());
+  const acceptedDocument = useRef<NativeDesignDocument | null>(null);
+  const collection = (
+    {
+      table: 'tables',
+      column: 'columns',
+      key: 'keys',
+      index: 'indexes',
+      check: 'checks',
+      enum: 'enums',
+      foreignKey: 'tableRelations',
+    } as const
+  )[action];
+  const creationContext: NativeEditorContext = {
+    ...context,
+    onSave: async (commands, expected, draft) => {
+      const saved = await context.onSave(commands, expected, draft);
+      if (saved) {
+        const created = commands.find(
+          (command) => command.type.startsWith('add_') && 'value' in command,
+        );
+        if (created && 'value' in created) {
+          acceptedDocument.current = {
+            ...document,
+            [collection]: [...(document[collection] ?? []), created.value],
+          };
+        }
+        const derived = commands.find((command) => command.type === 'create_foreign_key');
+        if (derived?.type === 'create_foreign_key') {
+          const { type: _type, ...input } = derived;
+          acceptedDocument.current = createNativeForeignKeyFromPrimaryKey(document, input);
+        }
+      }
+      return saved;
+    },
+  };
   const initial = {
     scope:
       action === 'table'
@@ -478,7 +571,7 @@ function NativeCreateForm({
   }[action];
   return (
     <NativeEditorForm
-      context={context}
+      context={creationContext}
       draftKey={`create:${action}:${table?.id ?? 'project'}`}
       title={t(title)}
       initial={initial}
@@ -499,7 +592,17 @@ function NativeCreateForm({
               : action;
         return !policy.feature(feature as Parameters<typeof policy.feature>[0]).usable;
       }}
-      build={(values) => nativeStructureCommands(document, table, action, values)}
+      build={(values, before) =>
+        nativeStructureCommands(
+          document[collection]?.some((item) => item.id === values.id)
+            ? document
+            : (acceptedDocument.current ?? document),
+          table,
+          action,
+          values,
+          before,
+        )
+      }
     >
       {(values, change) => {
         const feature =

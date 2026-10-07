@@ -4,7 +4,6 @@ import {
   storeNativeEditorDraft,
   discardNativeEditorDraft,
   rebaseNativeEditorDraft,
-  resetNativeEditorDraft,
   type NativeEditorDraft,
 } from './native-editor-draft.js';
 import { nativeDraftMemoryState } from './native-durable-drafts.js';
@@ -117,10 +116,10 @@ describe('native editor durable incomplete input', () => {
     failing = false;
     storeNativeEditorDraft(next, broken);
     expect(nativeDraftMemoryState(uuid, uuid, broken).storageFailure).toBe(false);
-    resetNativeEditorDraft(uuid, uuid, input.key, broken);
+    discardNativeEditorDraft(uuid, uuid, next, broken);
     expect(loadNativeEditorDraft(uuid, uuid, input.key, broken)).toBeNull();
   });
-  it('explicit reset never destroys memory if storage removal cannot be confirmed', () => {
+  it('ACK discard never destroys memory if storage removal cannot be confirmed', () => {
     const target = {
         ...memory(),
         removeItem() {
@@ -129,7 +128,7 @@ describe('native editor durable incomplete input', () => {
       },
       input = draft();
     storeNativeEditorDraft(input, target);
-    expect(() => resetNativeEditorDraft(uuid, uuid, input.key, target)).toThrow('Denied');
+    expect(() => discardNativeEditorDraft(uuid, uuid, input, target)).toThrow('Denied');
     expect(loadNativeEditorDraft(uuid, uuid, input.key, target)).toEqual(input);
   });
 });
