@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cardSize, relationTargets, connectedRelations } from './canvas-state.js';
+import { cardSize, connectedRelations } from './canvas-state.js';
 describe('canvas domain interactions', () => {
-  it('excludes the source from context relationship targets', () => {
-    expect(relationTargets([{ id: 'a' }, { id: 'b' }], 'a')).toEqual([{ id: 'b' }]);
-  });
   it('lists incoming and outgoing relationships for the selected domain', () => {
     const relations = [
       { sourceDomainId: 'a', targetDomainId: 'b' },

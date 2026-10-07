@@ -1,6 +1,6 @@
 import { ConfirmProvider } from '../../components/ui/ConfirmProvider.js';
 import { describe, expect, it } from 'vitest';
-import { moveColumn, parseMetadata, setMappingPair } from './TableEditor.js';
+import { moveColumn, setMappingPair } from './TableEditor.js';
 describe('table editor actions', () => {
   it('reorders only the selected table columns while preserving unrelated positions', () => {
     const doc = {
@@ -22,11 +22,6 @@ describe('table editor actions', () => {
         'z',
       ),
     ).toEqual({ sourceColumnIds: ['a', 'b'], targetColumnIds: ['x', 'z'] });
-  });
-  it('accepts string metadata and rejects nested or non-string data without dropping it', () => {
-    expect(parseMetadata('{"owner":"billing"}')).toEqual({ owner: 'billing' });
-    expect(() => parseMetadata('{"owner":2}')).toThrow();
-    expect(() => parseMetadata('[]')).toThrow();
   });
 });
 

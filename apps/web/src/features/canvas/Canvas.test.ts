@@ -149,35 +149,7 @@ describe('editor sidebar structure', () => {
   });
 });
 
-import { referencedDomainTables } from './Canvas.js';
 import type { DesignDocument } from '@ezerd/model';
-describe('saved view reference table list', () => {
-  it('lists only physical cross-domain relations shared through a saved domain view, in either direction', () => {
-    const doc = {
-      ...example(),
-      views: [{ id: 'view', name: '함께', domainIds: ['a', 'b'] }],
-      tables: [
-        { id: 'own', domainId: 'a', scope: 'physical' },
-        { id: 'parent', domainId: 'b', scope: 'physical' },
-        { id: 'child', domainId: 'b', scope: 'physical' },
-        { id: 'unrelated', domainId: 'b', scope: 'physical' },
-        { id: 'not-shared', domainId: 'c', scope: 'physical' },
-        { id: 'logical', domainId: 'b', scope: 'logical' },
-        { id: 'unassigned', domainId: null, scope: 'physical' },
-      ],
-      tableRelations: [
-        { sourceTableId: 'own', targetTableId: 'parent', scope: 'physical', physical: {} },
-        { sourceTableId: 'child', targetTableId: 'own', scope: 'physical', physical: {} },
-        { sourceTableId: 'own', targetTableId: 'not-shared', scope: 'physical', physical: {} },
-        { sourceTableId: 'own', targetTableId: 'logical', scope: 'both', physical: {} },
-        { sourceTableId: 'own', targetTableId: 'unassigned', scope: 'physical', physical: {} },
-      ],
-    } as unknown as DesignDocument;
-    expect(referencedDomainTables(doc, 'a').map((t) => t.id)).toEqual(['parent', 'child']);
-    expect(referencedDomainTables({ ...doc, views: [] }, 'a')).toEqual([]);
-    expect(referencedDomainTables({ ...doc, tableRelations: [] }, 'a')).toEqual([]);
-  });
-});
 
 it('opens domain projects globally, renders shared notes and leaves private saved-view data untouched', () => {
   let document = upsertCombinedView(example(), {

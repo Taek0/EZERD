@@ -47,27 +47,6 @@ export function applyRoutePatch(
   );
   return upsertRelationLayout(document, { relationId, viewId, offset: 0, ...route, ...patch });
 }
-export function applyRouteBend(
-  document: DesignDocument,
-  relationId: string,
-  viewId: string,
-  bend: { x: number; y: number },
-) {
-  const route = document.layout.relations?.find(
-    (item) => item.relationId === relationId && item.viewId === viewId,
-  );
-  if (route)
-    return {
-      ...document,
-      layout: {
-        ...document.layout,
-        relations: document.layout.relations?.map((item) =>
-          item === route ? { ...item, bend } : item,
-        ),
-      },
-    };
-  return upsertRelationLayout(document, { relationId, viewId, offset: 0, bend });
-}
 export function TableRelationsSvg({
   document: doc,
   viewId,

@@ -1,4 +1,4 @@
-import { canonicalPostgresTypeName, postgresTypeNames } from '@ezerd/model';
+import { canonicalPostgresTypeName } from '@ezerd/model';
 import { columnTypeOptions, columnTypeValue } from './column-type-options.js';
 import { LegacyDatabaseEditorNotice } from './LegacyDatabaseEditorNotice.js';
 import {
@@ -85,7 +85,6 @@ import {
   PanelRow,
   PanelSection,
 } from '../../shared/editor/panel.js';
-export const physicalTypes = postgresTypeNames;
 export function typeParameterEnabled(
   type: Column['physical']['type'],
   parameter: 'length' | 'precision' | 'scale',
@@ -120,20 +119,6 @@ export const emptyMetadata = (): CustomProperties => ({ common: {}, logical: {},
 const emptyMeta = emptyMetadata;
 const tableName = (t: Table) => t.physical.name || translate('이름 없는 테이블');
 const columnName = (c: Column) => c.physical.name || translate('이름 없는 컬럼');
-export function parseMetadata(text: string): Record<string, string> {
-  const value: unknown = JSON.parse(text);
-  if (
-    !value ||
-    Array.isArray(value) ||
-    typeof value !== 'object' ||
-    Object.entries(value).some(
-      ([key, v]) => !key.trim() || key.length > 120 || typeof v !== 'string' || v.length > 10000,
-    ) ||
-    Object.keys(value).length > 100
-  )
-    throw new Error(translate('최대 100개, 키 120자 / 문자열 값 10,000자까지 입력하세요.'));
-  return value as Record<string, string>;
-}
 export function moveColumn(doc: DesignDocument, id: string, direction: number): DesignDocument {
   const cols = [...(doc.columns ?? [])],
     at = cols.findIndex((c) => c.id === id);

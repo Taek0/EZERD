@@ -2747,30 +2747,3 @@ export function Canvas({
     </div>
   );
 }
-
-/** External tables must have a physical key relation in a saved view containing this domain. */
-export function referencedDomainTables(doc: DesignDocument, domainId: string): Table[] {
-  const tables = (doc.tables ?? []).filter((t) => isVisibleInView(t.scope, 'physical'));
-  const ownIds = new Set(tables.filter((t) => t.domainId === domainId).map((t) => t.id));
-  const sharedDomains = new Set(
-    (doc.views ?? []).filter((v) => v.domainIds.includes(domainId)).flatMap((v) => v.domainIds),
-  );
-  const referencedIds = new Set(
-    (doc.tableRelations ?? [])
-      .filter((r) => r.physical && isVisibleInView(r.scope, 'physical'))
-      .flatMap((r) =>
-        ownIds.has(r.sourceTableId)
-          ? [r.targetTableId]
-          : ownIds.has(r.targetTableId)
-            ? [r.sourceTableId]
-            : [],
-      ),
-  );
-  return tables.filter(
-    (t) =>
-      t.domainId !== null &&
-      t.domainId !== domainId &&
-      sharedDomains.has(t.domainId) &&
-      referencedIds.has(t.id),
-  );
-}

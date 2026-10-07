@@ -269,10 +269,6 @@ export const projectDocumentSchema = z.strictObject({
   project: projectSchema,
   document: storedDesignDocumentSchema,
 });
-export const saveDocumentSchema = z.strictObject({
-  expectedVersion: version,
-  document: designDocumentSchema,
-});
 export type User = z.infer<typeof userSchema>;
 export type Project = z.infer<typeof projectSchema>;
 export type ProjectDocument = z.infer<typeof projectDocumentSchema>;
