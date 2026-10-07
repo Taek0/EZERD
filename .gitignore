@@ -15,3 +15,6 @@ playwright-report/
 test-results/
 .DS_Store
 dist-performance-comparison/
+
+dist-marquee-before/
+dist-marquee-after/

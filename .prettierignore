@@ -25,3 +25,6 @@ artifacts/
 docs/
 **/*.md
 **/dist-performance-comparison/
+
+**/dist-marquee-before/
+**/dist-marquee-after/
