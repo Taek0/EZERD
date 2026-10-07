@@ -105,14 +105,6 @@ export const syncEventSchema = z.strictObject({
   document: storedDesignDocumentSchema.optional(),
 });
 
-export const syncHistoryEntrySchema = syncEventSchema.extend({
-  clientId: z.uuid(),
-  kind: z.enum(['online', 'reconnect']),
-  deletionSnapshot: z.unknown().optional(),
-});
-
-export const syncFieldVersionSchema = z.strictObject({ path: syncPathSchema, sequence });
-
 export type SyncPath = z.infer<typeof syncPathSchema>;
 export type SyncChange = z.infer<typeof syncChangeSchema>;
 export type SyncOperationInput = z.infer<typeof syncOperationInputSchema>;
@@ -121,5 +113,3 @@ export type SyncOperationStatus = z.infer<typeof syncOperationStatusSchema>;
 export type SyncBaseline = z.infer<typeof syncBaselineSchema>;
 export type SyncOperationResult = z.infer<typeof syncOperationResultSchema>;
 export type SyncEvent = z.infer<typeof syncEventSchema>;
-export type SyncHistoryEntry = z.infer<typeof syncHistoryEntrySchema>;
-export type SyncFieldVersion = z.infer<typeof syncFieldVersionSchema>;

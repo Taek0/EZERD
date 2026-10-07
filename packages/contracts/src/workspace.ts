@@ -265,12 +265,7 @@ export const projectSchema = z.strictObject({
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
-export const projectDocumentSchema = z.strictObject({
-  project: projectSchema,
-  document: storedDesignDocumentSchema,
-});
 export type User = z.infer<typeof userSchema>;
 export type Project = z.infer<typeof projectSchema>;
-export type ProjectDocument = z.infer<typeof projectDocumentSchema>;
 export type DesignDocument = z.infer<typeof designDocumentSchema>;
 export type PersonalState = z.infer<typeof personalStateSchema>;

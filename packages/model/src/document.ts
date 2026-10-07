@@ -908,10 +908,6 @@ export function upsertKey(doc: DesignDocument, key: TableKey): DesignDocument {
   };
 }
 
-export function removeKey(doc: DesignDocument, id: string): DesignDocument {
-  return { ...doc, ...(doc.keys && { keys: doc.keys.filter((key) => key.id !== id) }) };
-}
-
 export function upsertTableRelation(doc: DesignDocument, relation: TableRelation): DesignDocument {
   requireObject(doc.tables?.find((table) => table.id === relation.sourceTableId));
   requireObject(doc.tables?.find((table) => table.id === relation.targetTableId));
@@ -922,21 +918,6 @@ export function upsertTableRelation(doc: DesignDocument, relation: TableRelation
     tableRelations: exists
       ? doc.tableRelations!.map((item) => (item.id === relation.id ? cloneModel(relation) : item))
       : [...(doc.tableRelations ?? []), cloneModel(relation)],
-  };
-}
-
-export function removeTableRelation(doc: DesignDocument, id: string): DesignDocument {
-  return {
-    ...doc,
-    ...(doc.tableRelations && {
-      tableRelations: doc.tableRelations.filter((relation) => relation.id !== id),
-    }),
-    layout: {
-      ...doc.layout,
-      ...(doc.layout.relations && {
-        relations: doc.layout.relations.filter((route) => route.relationId !== id),
-      }),
-    },
   };
 }
 

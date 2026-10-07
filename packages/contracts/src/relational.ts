@@ -40,7 +40,6 @@ export const physicalTypeInputSchema = z.strictObject({
   scale: z.number().int().min(-1000).max(1000).optional(),
   isArray: z.boolean(),
 });
-export const physicalTypePatchSchema = physicalTypeInputSchema.partial();
 export const storedPhysicalTypeSchema = physicalTypeInputSchema.overwrite(normalizePhysicalType);
 export const rawPhysicalTypeSchema = physicalTypeInputSchema.superRefine((value, ctx) => {
   for (const issue of validatePhysicalType(value)) {

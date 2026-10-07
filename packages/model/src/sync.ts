@@ -539,13 +539,6 @@ export function findFieldVersionConflicts(
     .filter((path) => hasNewerOverlap(path, operation.baseSequence, versions));
 }
 
-export function canApplyOperation(
-  operation: Pick<DocumentOperation, 'kind' | 'baseSequence' | 'changes' | 'dependencyPaths'>,
-  versions: FieldVersions,
-): boolean {
-  return findFieldVersionConflicts(operation, versions).length === 0;
-}
-
 function locate(container: unknown, segment: string): unknown {
   if (Array.isArray(container))
     return container.find(
