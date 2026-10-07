@@ -106,6 +106,7 @@ describe('MCP server tools', () => {
       { exportProject: vi.fn() } as never,
       { history: vi.fn(), compensate: vi.fn() } as never,
       { baseline: vi.fn() } as never,
+      { importProject: vi.fn(async () => ({ project })), exportProject: vi.fn() } as never,
       { cancel: vi.fn() } as never,
     );
     const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
@@ -349,6 +350,10 @@ describe('MCP workspace authorization', () => {
       })),
     };
     const auth = { assertActiveToken: vi.fn(async () => undefined) };
+    const transfer = (overrides.transfer ?? {
+      importProject: vi.fn(async () => ({ project })),
+      exportProject: vi.fn(),
+    }) as { importProject: ReturnType<typeof vi.fn>; exportProject: ReturnType<typeof vi.fn> };
     const factory = new McpServerFactory(
       workspace as never,
       reviews as never,
@@ -361,6 +366,7 @@ describe('MCP workspace authorization', () => {
       { exportProject: vi.fn() } as never,
       { history: vi.fn(), compensate: vi.fn() } as never,
       { baseline: vi.fn() } as never,
+      transfer as never,
       { cancel: vi.fn() } as never,
     );
     const server = factory.create(actor, tokenId, crypto.randomUUID());
@@ -376,6 +382,7 @@ describe('MCP workspace authorization', () => {
       reviews,
       sync,
       personal,
+      transfer,
       auth,
       close: async () => {
         await client.close();
@@ -384,6 +391,44 @@ describe('MCP workspace authorization', () => {
     };
   }
 
+  it('passes raw v1 evidence and compact v2 input through the Native transfer service', async () => {
+    const transfer = { importProject: vi.fn(async () => ({ project })), exportProject: vi.fn() };
+    const harness = await connected({ transfer });
+    try {
+      for (const version of [1, 2]) {
+        const raw = {
+          format: 'ezerd-project',
+          formatVersion: version,
+          exportedAt: now,
+          project: {
+            name: ' Raw file ',
+            ...(version === 2
+              ? { databaseKind: 'postgresql', databaseProfileId: 'postgresql-18-v1' }
+              : {}),
+          },
+          document:
+            version === 1
+              ? {
+                  ...document,
+                  domains: [{ id: 'domain', name: '  原文  ', description: ' trailing ' }],
+                }
+              : createEmptyNativeDocument(defaultDatabaseContext('postgresql')),
+        };
+        const result = await harness.client.callTool({
+          name: 'import_project',
+          arguments: { workspaceId: space.id, transfer: raw },
+        });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toEqual(project);
+        expect(transfer.importProject).toHaveBeenLastCalledWith(actor.id, {
+          workspaceId: space.id,
+          transfer: raw,
+        });
+      }
+    } finally {
+      await harness.close();
+    }
+  });
   it('binds every workspace lifecycle tool to the token actor and validated identifiers', async () => {
     const harness = await connected();
     const cases: Array<[string, string, Record<string, unknown>, unknown[]]> = [

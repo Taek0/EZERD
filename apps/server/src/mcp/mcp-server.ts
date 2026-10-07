@@ -1,3 +1,4 @@
+import { NativeTransferService } from '../workspace/native-transfer.service.js';
 import { HttpException, Inject, Injectable } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -10,7 +11,7 @@ import {
   deleteProjectSchema,
   deleteThreadSchema,
   notificationSchema,
-  projectTransferSchema,
+  versionedProjectTransferSchema,
   personalStateSnapshotSchema,
   projectQuerySchema,
   projectSchema,
@@ -115,6 +116,7 @@ export class McpServerFactory {
     @Inject(NativeDDLService) private readonly nativeDDL: NativeDDLService,
     @Inject(NativeHistoryService) private readonly nativeHistory: NativeHistoryService,
     @Inject(NativeSyncService) private readonly nativeSync: NativeSyncService,
+    @Inject(NativeTransferService) private readonly transfer: NativeTransferService,
     @Inject(NativeCancellationService)
     private readonly nativeCancellation: NativeCancellationService,
   ) {}
@@ -318,27 +320,42 @@ export class McpServerFactory {
     server.registerTool(
       'import_project',
       {
-        description: '검증된 EZERD 프로젝트 전송 문서를 새 프로젝트로 가져옵니다.',
-        inputSchema: z.strictObject({ workspaceId: idSchema, transfer: projectTransferSchema }),
+        description:
+          '버전 1·2 파일을 새 Native v2 프로젝트로 가져옵니다. v1 타입·기본값 원문은 서버 변환 정책에 따라 보존하며, 결과 진단은 get_project_document_state로 확인하세요.',
+        inputSchema: z.strictObject({
+          workspaceId: idSchema,
+          // Metadata only: the service validates the entire raw file without trimming evidence.
+          transfer: z
+            .object({
+              format: z.literal('ezerd-project'),
+              formatVersion: z.union([z.literal(1), z.literal(2)]),
+            })
+            .passthrough(),
+        }),
         outputSchema: projectSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (input) =>
         invoke('import_project', async () =>
-          projectSchema.parse(await this.workspace.importProject(user.id, input)),
+          projectSchema.parse((await this.transfer.importProject(user.id, input)).project),
         ),
     );
     server.registerTool(
       'export_project',
       {
-        description: '프로젝트의 공유 설계 문서를 EZERD 전송 형식으로 내보냅니다.',
+        description:
+          '프로젝트의 공유 원본과 Native 미리보기를 버전 2 전송 파일로 내보냅니다. 기존 v1 원본도 손실 없이 포함합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
-        outputSchema: projectTransferSchema,
+        outputSchema: z
+          .object({ format: z.literal('ezerd-project'), formatVersion: z.literal(2) })
+          .passthrough(),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId }) =>
         invoke('export_project', async () =>
-          projectTransferSchema.parse(await this.workspace.exportProject(user.id, projectId)),
+          versionedProjectTransferSchema.parse(
+            await this.transfer.exportProject(user.id, projectId),
+          ),
         ),
     );
     server.registerTool(

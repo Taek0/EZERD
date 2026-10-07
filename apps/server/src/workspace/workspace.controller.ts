@@ -173,15 +173,6 @@ export class WorkspaceController {
     return this.workspace.listProjects(actor.id, input);
   }
 
-  @Post('projects/import')
-  async importProject(
-    @Headers('authorization') authorization: string | undefined,
-    @Body() body: unknown,
-  ) {
-    const actor = await requireSession(this.sessions, authorization);
-    return this.workspace.importProject(actor.id, body);
-  }
-
   @Get('projects/:id/export')
   async exportProject(
     @Headers('authorization') authorization: string | undefined,

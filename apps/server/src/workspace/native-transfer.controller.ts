@@ -36,4 +36,14 @@ export class NativeTransferController {
     const user = await requireSession(this.sessions, authorization);
     return this.transfer.importProject(user.id, raw);
   }
+
+  /** Keep the old response envelope while using the same Native-only writer. */
+  @Post('import')
+  async importCompatibleProject(
+    @Body() raw: unknown,
+    @Headers('authorization') authorization?: string,
+  ) {
+    const user = await requireSession(this.sessions, authorization);
+    return (await this.transfer.importProject(user.id, raw)).project;
+  }
 }

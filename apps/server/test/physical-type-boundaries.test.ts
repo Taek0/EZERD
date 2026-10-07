@@ -1,7 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { BadRequestException } from '@nestjs/common';
+import { describe, expect, it } from 'vitest';
 import { createEmptyDocument, type Column, type DesignDocument } from '@ezerd/model';
-import { WorkspaceService } from '../src/workspace/workspace.service.js';
+import { nativeTransferStore } from './native-transfer-store.js';
 
 const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
 const properties = { common: {}, logical: {}, physical: {} };
@@ -47,23 +46,7 @@ describe('legacy file import type boundaries', () => {
     ['float8', 'double precision'],
     ['decimal', 'numeric'],
   ])('stores canonical %s on import', async (name, expected) => {
-    const values = vi.fn((value) => ({
-      returning: async () => [
-        {
-          ...value,
-          id: crypto.randomUUID(),
-          status: 'active',
-          version: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-    }));
-    const db = { insert: vi.fn(() => ({ values })) };
-    const access = {
-      runWorkspace: vi.fn(async (_actorId, _workspaceId, _permission, run) => run(db)),
-    };
-    const service = new WorkspaceService({ db } as never, access as never);
+    const { service, stored } = nativeTransferStore();
     await service.importProject(actor.id, {
       workspaceId: crypto.randomUUID(),
       transfer: {
@@ -74,24 +57,29 @@ describe('legacy file import type boundaries', () => {
         document: document({ name, isArray: false }),
       },
     });
-    expect(values.mock.calls[0]![0].document.columns[0].physical.type.name).toBe(expected);
+    expect(stored[0].document.columns[0].physical.type).toMatchObject({
+      kind: 'builtin',
+      database: 'postgresql',
+      typeId: `postgresql:${expected}`,
+    });
   });
 
-  it('rejects invalid types before import insertion', () => {
-    const db = { insert: vi.fn() };
-    const service = new WorkspaceService({ db } as never, {} as never);
-    expect(() =>
-      service.importProject(actor.id, {
-        workspaceId: crypto.randomUUID(),
-        transfer: {
-          format: 'ezerd-project',
-          formatVersion: 1,
-          exportedAt: new Date().toISOString(),
-          project: { name: 'Import' },
-          document: document({ name: 'integer', length: 12, isArray: false }),
-        },
-      }),
-    ).toThrow(BadRequestException);
-    expect(db.insert).not.toHaveBeenCalled();
+  it('preserves unresolved old modifiers as legacy evidence instead of creating invalid native types', async () => {
+    const { service, stored } = nativeTransferStore();
+    const source = document({ name: 'integer', length: 12, isArray: false });
+    await service.importProject(actor.id, {
+      workspaceId: crypto.randomUUID(),
+      transfer: {
+        format: 'ezerd-project',
+        formatVersion: 1,
+        exportedAt: new Date().toISOString(),
+        project: { name: 'Import' },
+        document: source,
+      },
+    });
+    expect(stored[0].document.columns[0].physical.type).toMatchObject({
+      kind: 'legacy',
+      original: source.columns![0]!.physical.type,
+    });
   });
 });

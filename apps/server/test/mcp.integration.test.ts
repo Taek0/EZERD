@@ -281,7 +281,23 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect((await call(b, 'list_projects', { workspaceId: id })).projects).toHaveLength(1);
       await call(b, 'get_project_document_state', { projectId });
       const transfer = await call(b, 'export_project', { projectId });
-      expect(transfer.project).toEqual({ name: project.name, databaseKind: 'postgresql' });
+      expect(transfer.project).toMatchObject({ name: project.name, databaseKind: 'postgresql' });
+      expect(transfer).toMatchObject({ formatVersion: 2, sourceDocument: { schemaVersion: 1 } });
+      const imported = await call(a, 'import_project', { workspaceId: id, transfer });
+      projects.push(imported.id);
+      const importedState = await call(a, 'get_project_document_state', { projectId: imported.id });
+      expect(importedState.sourceDocument.schemaVersion).toBe(2);
+      const nativeFile = await call(a, 'export_project', { projectId: imported.id });
+      expect(nativeFile).toMatchObject({ formatVersion: 2, sourceDocument: { schemaVersion: 2 } });
+      const archivedImport = await call(a, 'update_project', {
+        projectId: imported.id,
+        update: { expectedVersion: imported.version, status: 'archived' },
+      });
+      await call(a, 'delete_project', {
+        projectId: imported.id,
+        delete: { expectedVersion: archivedImport.version },
+      });
+      projects.splice(projects.indexOf(imported.id), 1);
       expect(
         (
           await b.instance.callTool({

@@ -140,136 +140,38 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     if (app) await app.close();
   });
 
-  it('roundtrips a design into independent projects and rejects retired writes after import', async () => {
-    let document = addDomain(
+  it('imports legacy files as independent Native projects and round-trips their v2 files', async () => {
+    const document = addDomain(
       createEmptyDocument(),
-      { id: 'transfer-domain', name: '판매', description: '설명', color: '#112233' },
-      { x: 12, y: 34 },
+      { id: 'domain', name: 'Imported domain', description: ' raw ' },
+      { x: 40, y: 50 },
     );
-    document = addNote(
-      document,
-      { id: 'transfer-note', viewId: 'transfer-domain', text: '메모', color: '#ffeeaa' },
-      { x: 60, y: 70 },
-    );
-    for (const id of ['parent', 'child']) {
-      document = addTable(
-        document,
-        {
-          id,
-          domainId: 'transfer-domain',
-          scope: 'both',
-          logical: { name: id, definition: '정의' },
-          physical: { name: id, schema: 'public', comment: '설명' },
-          customProperties: { common: {}, logical: {}, physical: {} },
-          canvasDisplay: { showComment: true, showNullable: false },
-        },
-        { x: id === 'parent' ? 100 : 500, y: 200 },
-      );
-      document = addColumn(document, {
-        id: `${id}-id`,
-        tableId: id,
-        scope: 'both',
-        logical: { name: '번호', definition: '', semanticType: '', required: true },
-        physical: {
-          name: 'id',
-          type: { name: 'integer', isArray: false },
-          nullable: false,
-          defaultExpression: null,
-          comment: '',
-        },
-        customProperties: { common: {}, logical: {}, physical: {} },
-      });
-      document = upsertKey(document, {
-        id: `${id}-pk`,
-        tableId: id,
-        scope: 'both',
-        kind: 'primary',
-        name: `${id}_pk`,
-        columnIds: [`${id}-id`],
-      });
-    }
-    document = upsertTableRelation(document, {
-      id: 'fk',
-      sourceTableId: 'child',
-      targetTableId: 'parent',
-      scope: 'both',
-      logical: { name: '참조', cardinality: 'one-to-many', required: true },
-      physical: {
-        name: 'child_fk',
-        sourceColumnIds: ['child-id'],
-        targetColumnIds: ['parent-id'],
-        onDelete: 'CASCADE',
-        onUpdate: 'RESTRICT',
-      },
-    });
-    document = {
-      ...document,
-      enums: [{ id: 'status', name: 'status', schema: 'public', values: ['ready', 'done'] }],
-      views: [{ id: 'saved-view', name: '저장된 뷰', domainIds: ['transfer-domain'] }],
-      layout: {
-        ...document.layout,
-        relations: [
-          { relationId: 'fk', viewId: 'transfer-domain', offset: 24, bend: { x: 360, y: 220 } },
-        ],
-      },
-    };
     const file = {
       format: 'ezerd-project',
       formatVersion: 1,
       exportedAt: new Date().toISOString(),
-      project: { name: 'transfer-integration' },
+      project: { name: 'Imported legacy' },
       document,
     };
-    expect((await request('/projects/import', 'POST', file, null)).status).toBe(401);
-    const countBefore = Number(
-      (await pool.query("SELECT count(*) FROM projects WHERE name = 'transfer-integration'"))
-        .rows[0].count,
-    );
-    expect(
-      (
-        await request('/projects/import', 'POST', {
-          ...file,
-          document: { ...document, domains: [] },
-        })
-      ).status,
-    ).toBe(400);
-    expect(
-      Number(
-        (await pool.query("SELECT count(*) FROM projects WHERE name = 'transfer-integration'"))
-          .rows[0].count,
-      ),
-    ).toBe(countBefore);
     const first = await request('/projects/import', 'POST', file);
     const second = await request('/projects/import', 'POST', file);
     expect(first.status).toBe(201);
     expect(second.status).toBe(201);
     projectIds.push(first.data.id, second.data.id);
     expect(first.data.id).not.toBe(second.data.id);
-    expect(first.data.version).toBe(0);
-    const exported = await request(`/projects/${first.data.id}/export`);
+    const opened = await request(`/projects/${first.data.id}`);
+    const other = await request(`/projects/${second.data.id}`);
+    expect(opened.data.document.schemaVersion).toBe(2);
+    expect(opened.data.document.domains[0].name).toBe('Imported domain');
+    expect(opened.data.document.domains[0].id).not.toBe(other.data.document.domains[0].id);
+    const exported = await request(`/projects/${first.data.id}/native-transfer`);
     expect(exported.status).toBe(200);
-    const canonical = {
-      ...document,
-      notes: document.notes.map((note) => ({ ...note, viewId: '__tables__' })),
-      layout: {
-        ...document.layout,
-        nodes: document.layout.nodes.map((node) =>
-          node.objectId === 'transfer-note' ? { ...node, viewId: '__tables__' } : node,
-        ),
-        relations: document.layout.relations!.map((route) => ({ ...route, viewId: '__tables__' })),
-      },
-    };
-    expect(exported.data.document).toEqual(canonical);
-    expect(exported.data.project).toEqual({ ...file.project, databaseKind: 'postgresql' });
-    expect(Object.keys(exported.data).sort()).toEqual([
-      'document',
-      'exportedAt',
-      'format',
-      'formatVersion',
-      'project',
-    ]);
+    expect(exported.data).toMatchObject({ formatVersion: 2, sourceDocument: opened.data.document });
+    const copied = await request('/projects/import', 'POST', exported.data);
+    expect(copied.status).toBe(201);
+    projectIds.push(copied.data.id);
+    expect((await request(`/projects/${copied.data.id}`)).data.document.schemaVersion).toBe(2);
     expect((await request(`/projects/${first.data.id}/operations`, 'POST', {})).status).toBe(410);
-    expect((await request(`/projects/${second.data.id}`)).data.document).toEqual(canonical);
   });
   it('normalizes case across registration, login, rename and concurrent creation', async () => {
     const name = 'CaseUser-' + randomUUID().slice(0, 8);

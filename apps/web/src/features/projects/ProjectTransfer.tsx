@@ -19,6 +19,8 @@ import {
 import { exportCurrentProjectFile, type ProjectExportOptions } from './project-versioned-export.js';
 import './project-transfer.css';
 registerTranslations({
+  '기존 v1 설계를 Native v2 프로젝트로 가져옵니다. 변환할 수 없는 타입·기본값은 원문으로 보존합니다.':
+    'Import the v1 design as a Native v2 project. Types and defaults that cannot be converted retain their original values.',
   '원본 native 설계와 DB 문맥을 유지합니다. 미검증 기능과 legacy 가져오기는 서버 정책에 따라 차단될 수 있습니다.':
     'The original native design and database context are retained. Unverified features and legacy imports may be blocked by server policy.',
   '기존 타입·기본값·스키마 원문을 legacy로 보존합니다.':
@@ -288,6 +290,13 @@ export function ProjectTransferSummary({ file }: { file: NativeTransferRead }) {
           </div>
         ))}
       </dl>
+      {doc.schemaVersion === 1 && (
+        <p role="status">
+          {t(
+            '기존 v1 설계를 Native v2 프로젝트로 가져옵니다. 변환할 수 없는 타입·기본값은 원문으로 보존합니다.',
+          )}
+        </p>
+      )}
       {file.formatVersion === 2 && (
         <p>
           {t(
