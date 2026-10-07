@@ -457,7 +457,7 @@ export class McpServerFactory {
       'apply_native_project_changes',
       {
         description:
-          'schemaVersion 2로 저장된 프로젝트의 native 컬럼/테이블 부분 수정, 컬럼 추가, 삭제 계획 및 PK 기반 FK 생성을 수행합니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
+          'schemaVersion 2로 저장된 프로젝트의 native 객체 추가·부분 수정·삭제 및 PK 기반 FK 생성을 수행합니다. 명령별 입력 스키마를 따르세요. add_table은 {type:"add_table",value:NativeTable}이며 컬럼과 placement를 포함하지 않습니다. SQLite 테이블의 physical.namespace는 {kind:"sqliteMain"}, options는 {database:"sqlite",strict:false,withoutRowid:false}입니다. 배치는 같은 commands 배열에 {type:"add_table_reference",tableId:"새 테이블 ID",viewId:"__tables__",placement:{x:1500,y:180,width:400,height:260}}를 추가하세요. 컬럼은 별도 add_column 명령입니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 기존 legacy 원문을 그대로 보존하는 관계없는 신규 객체 추가는 허용합니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
         inputSchema: applyNativeProjectChangesMetadataSchema,
         outputSchema: z.strictObject({
           ...nativeSyncOperationResultSchema.shape,
@@ -900,6 +900,7 @@ export class McpServerFactory {
       return { content: [{ type: 'text' as const, text: `${tool} 완료` }], structuredContent };
     } catch (error) {
       const expected = error instanceof HttpException;
+      const response = expected ? error.getResponse() : undefined;
       const errorCode = expected ? `HTTP_${error.getStatus()}` : 'INTERNAL';
       await this.logger.write({
         level: expected ? 'warn' : 'error',
@@ -917,7 +918,13 @@ export class McpServerFactory {
         content: [
           {
             type: 'text' as const,
-            text: expected ? error.message : `도구 실행에 실패했습니다. 요청 ID: ${requestId}`,
+            text: expected
+              ? JSON.stringify({
+                  ...(typeof response === 'string' ? { message: response } : response),
+                  status: error.getStatus(),
+                  requestId,
+                })
+              : `도구 실행에 실패했습니다. 요청 ID: ${requestId}`,
           },
         ],
       };
