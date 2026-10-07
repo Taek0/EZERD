@@ -64,6 +64,7 @@ import {
 } from './native-editor-option-policy.js';
 
 registerTranslations({
+  'NULL · 기본값 · 배열 차원': 'Nullability, default and array dimensions',
   '형식·DB 옵션 편집': 'Edit type and database options',
   '현재 값': 'Current values',
   엔진: 'Engine',

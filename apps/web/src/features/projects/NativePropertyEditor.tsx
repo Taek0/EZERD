@@ -31,7 +31,6 @@ registerTranslations({
   '물리 설명': 'Physical comment',
   '논리 이름': 'Logical name',
   '논리 정의': 'Logical definition',
-  '저장 요청': 'Save changes',
   '형식 정보와 기존 타입·기본값·생성 규칙은 유지됩니다.':
     'Format information and existing types, defaults and generation rules are preserved.',
   '최신 저장 내용과 비교 후 수정': 'Review edits against the latest saved design',

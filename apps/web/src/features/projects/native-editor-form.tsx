@@ -36,6 +36,7 @@ export interface NativeEditorContext {
   onSave: NativeEditorSave;
 }
 registerTranslations({
+  '삭제 실행 확인': 'Confirm deletion',
   '입력 보관 다시 시도': 'Retry preserving input',
   '입력은 이 탭의 메모리에 보관되었습니다. 탭을 닫기 전에 보관을 다시 시도해 주세요.':
     'Input is preserved in this tab’s memory. Retry preserving it before closing the tab.',
