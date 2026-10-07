@@ -7,6 +7,23 @@ describe('document save acknowledgements', () => {
   });
 });
 describe('API failures', () => {
+  it('exposes a structured error code without displaying raw server details', async () => {
+    const fetcher = async () =>
+      Response.json({ code: 'sync.no-changes', message: 'internal detail' }, { status: 400 });
+    const error = await request('/api/projects/a', undefined, fetcher as typeof fetch).catch(
+      (error) => error,
+    );
+    expect(error).toMatchObject({ status: 400, code: 'sync.no-changes' });
+    expect(error).toMatchObject({ message: expect.not.stringContaining('internal detail') });
+  });
+  it('ignores non-string error codes', async () => {
+    const fetcher = async () => Response.json({ code: { nested: true } }, { status: 400 });
+    const error = await request('/api/projects/a', undefined, fetcher as typeof fetch).catch(
+      (error) => error,
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toHaveProperty('code', undefined);
+  });
   it('preserves the conflict status without requiring a JSON body', async () => {
     const fetcher = async () => new Response('Conflict', { status: 409 });
     await expect(

@@ -22,6 +22,7 @@ import {
   Input,
   Select,
   TabButton,
+  Textarea,
 } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import './native-project-view.css';
@@ -34,8 +35,6 @@ import { useNativeDurableState, useNativeExportBlocked } from './native-export-s
 import type { NativeEditorDraftRef } from './native-editor-draft.js';
 import {
   loadNativePending,
-  stageNativeSave,
-  sendNativePending,
   recoverNativePending,
   cancelNativePending,
   type NativePendingSave,
@@ -43,7 +42,13 @@ import {
   type NativeSaveExpected,
 } from './native-save.js';
 import { message, request } from '../../shared/api/client.js';
-import { captureNativeActorApi } from './native-actor-api.js';
+import {
+  enqueueNativeSave,
+  flushNativeSaveIntent,
+  nativeRejectedSaveIntents,
+  nativeSaveIntents,
+  lookupNativeSaveIntentResult,
+} from './native-save-intents.js';
 import { currentTransferUserId } from './project-transfer.js';
 import { NativeDraftRecoveryPanel } from './NativeDraftRecoveryPanel.js';
 import type { NativeDraftArchiveEntry } from './native-draft-archive.js';
@@ -69,6 +74,11 @@ import { NativeTableRelationInspector } from './NativeTableRelationInspector.js'
 import { NativeEnumDialog } from './NativeEnumDialog.js';
 
 registerTranslations({
+  '적용되지 않은 저장 요청을 보관했습니다.': 'Unapplied save requests have been preserved.',
+  '보관된 저장 요청': 'Preserved save request',
+  '보관된 편집 {count}개': '{count} preserved edits',
+  '원본 보기': 'View original data',
+  '보관 요청 삭제': 'Remove preserved request',
   '◌ 저장 확인 중…': '◌ Confirming save…',
   '○ 오프라인': '○ Offline',
   '! 확인 필요': '! Action needed',
@@ -183,6 +193,9 @@ export function NativeProjectView({
   const setPendingBlocked = (value: boolean) =>
     setOperationState((current) => ({ ...current, pendingBlocked: value }));
   const [saveError, setSaveError] = useState('');
+  const [rejectedIntents, setRejectedIntents] = useState<
+    ReturnType<typeof nativeRejectedSaveIntents>
+  >([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(true);
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
@@ -406,9 +419,8 @@ export function NativeProjectView({
   }
   const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
   const dirty = useNativeExportBlocked(userId ?? '', snapshot.project.id);
-  const queueBlocked = !!userId && durableState !== 'empty';
   const recoveryBusy = saving || busy || !!pending || pendingBlocked;
-  const editorBusy = recoveryBusy || queueBlocked;
+  const editorBusy = false;
   const activeEditor = useRef('');
   const activeGeneration = useRef(0);
   const mounted = useRef(true);
@@ -471,13 +483,6 @@ export function NativeProjectView({
     recoveredInput.entry.projectId === snapshot.project.id
       ? nativeDraftRecoveryTarget(doc, recoveredInput.entry)
       : null;
-  const saveContext = JSON.stringify([
-    snapshot.project.version,
-    snapshot.sequence,
-    snapshot.project.databaseRevision,
-  ]);
-  const activeSaveContext = useRef(saveContext);
-  activeSaveContext.current = saveContext;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -522,62 +527,123 @@ export function NativeProjectView({
       active = false;
     };
   }, [userId, snapshot.project.id]);
-  async function save(
-    commands: NativeWebCommand[],
-    expected?: NativeSaveExpected,
-    editorDraft?: NativeEditorDraftRef,
-  ): Promise<boolean> {
-    if (
-      !editable ||
-      !userId ||
-      busy ||
-      pendingBlocked ||
-      queueBlocked ||
-      pending ||
-      savingRef.current
-    )
-      return false;
+  const saveWaiters = useRef(
+    new Map<
+      string,
+      { pending: NativePendingSave; callbacks: Array<(accepted: boolean) => void> }
+    >(),
+  );
+  const latestSnapshot = useRef(snapshot);
+  latestSnapshot.current = snapshot;
+  useEffect(
+    () => () => {
+      for (const { callbacks } of saveWaiters.current.values())
+        for (const resolve of callbacks) resolve(false);
+      saveWaiters.current.clear();
+    },
+    [userId, snapshot.project.id],
+  );
+  async function flushSaves() {
+    if (!userId || !editable || savingRef.current || !currentEditor()) return;
     savingRef.current = true;
     setSaving(true);
-    setSaveError('');
     try {
-      const actorApi = captureNativeActorApi(userId);
-      const staged = await stageNativeSave(
-        userId,
-        snapshot,
-        commands,
-        localStorage,
-        expected,
-        editorDraft,
-      );
-      if (!currentEditor()) return false;
-      setPending(staged);
-      if (!activePermission.current || activeSaveContext.current !== saveContext) return false;
-      const result = await sendNativePending(staged, localStorage, actorApi);
-      if (!currentEditor()) return result.status === 'accepted';
-      if (result.status === 'rejected') {
-        setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
-        return false;
+      setRejectedIntents(nativeRejectedSaveIntents(userId, snapshot.project.id));
+      for (let count = 0; count < 128 && currentEditor() && activePermission.current; count++) {
+        const baseline = latestSnapshot.current;
+        const result = await flushNativeSaveIntent(
+          userId,
+          baseline,
+          localStorage,
+          request,
+          () =>
+            currentEditor() &&
+            activePermission.current &&
+            latestSnapshot.current.project.databaseRevision === baseline.project.databaseRevision,
+        );
+        if (!result) {
+          const remaining = new Set(
+            nativeSaveIntents(userId, snapshot.project.id).map(
+              (item) => item.pending.request.operationId,
+            ),
+          );
+          for (const [operationId, waiter] of saveWaiters.current) {
+            if (remaining.has(operationId)) continue;
+            const accepted = await lookupNativeSaveIntentResult(waiter.pending);
+            if (!currentEditor()) return;
+            if (accepted === null) continue;
+            for (const resolve of waiter.callbacks) resolve(accepted);
+            saveWaiters.current.delete(operationId);
+            onReload();
+          }
+          break;
+        }
+        for (const resolve of saveWaiters.current.get(result.operationId)?.callbacks ?? [])
+          resolve(result.accepted);
+        saveWaiters.current.delete(result.operationId);
+        if (currentEditor()) {
+          setPending(null);
+          setRejectedIntents(nativeRejectedSaveIntents(userId, snapshot.project.id));
+          setPendingBlocked(false);
+          setSaveError(
+            result.accepted
+              ? ''
+              : t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'),
+          );
+          onReload();
+        }
       }
-      setPending(null);
-      onReload();
-      return true;
     } catch (error) {
       if (currentEditor()) {
         setSaveError(message(error));
         try {
-          const stored = await loadNativePending(userId, snapshot.project.id);
-          if (currentEditor()) setPending(stored);
+          setPending(await loadNativePending(userId, snapshot.project.id));
         } catch {
-          if (currentEditor()) setPendingBlocked(true);
+          setPendingBlocked(true);
         }
       }
-      return false;
     } finally {
       if (currentEditor()) {
         savingRef.current = false;
         setSaving(false);
       }
+    }
+  }
+  useEffect(() => {
+    void flushSaves();
+    const timer = setInterval(() => void flushSaves(), 4000);
+    const wake = () => void flushSaves();
+    window.addEventListener('online', wake);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', wake);
+    };
+  }, [userId, snapshot.project.id, editable, snapshot.project.databaseRevision]);
+  async function save(
+    commands: NativeWebCommand[],
+    expected?: NativeSaveExpected,
+    editorDraft?: NativeEditorDraftRef,
+  ): Promise<boolean> {
+    if (!editable || !userId || !currentEditor()) return false;
+    try {
+      const operationId = enqueueNativeSave(userId, snapshot, commands, expected, editorDraft);
+      setSaveError('');
+      const intent = nativeSaveIntents(userId, snapshot.project.id).find(
+        (item) => item.pending.request.operationId === operationId,
+      );
+      if (!intent) throw Error('native.pending-changed');
+      const completion = new Promise<boolean>((resolve) => {
+        const current = saveWaiters.current.get(operationId);
+        saveWaiters.current.set(operationId, {
+          pending: intent.pending,
+          callbacks: [...(current?.callbacks ?? []), resolve],
+        });
+      });
+      void flushSaves();
+      return await completion;
+    } catch (error) {
+      if (currentEditor()) setSaveError(message(error));
+      return false;
     }
   }
   async function recover() {
@@ -976,6 +1042,38 @@ export function NativeProjectView({
             {t('요청 취소 확정')}
           </Button>
         </div>
+      )}
+      {draftRecoveryOpen && rejectedIntents.length > 0 && (
+        <section className="notice native-pending">
+          <p>{t('적용되지 않은 저장 요청을 보관했습니다.')}</p>
+          {rejectedIntents.map(({ key, pending: rejected }) => (
+            <details key={key}>
+              <summary>
+                {t('보관된 편집 {count}개', { count: rejected.request.commands.length })}
+              </summary>
+              <details>
+                <summary>{t('원본 보기')}</summary>
+                <Textarea
+                  readOnly
+                  aria-label={t('보관된 저장 요청')}
+                  value={JSON.stringify(rejected.request.commands, null, 2)}
+                />
+              </details>
+              <Button
+                onClick={() => {
+                  try {
+                    localStorage.removeItem(key);
+                    setRejectedIntents((items) => items.filter((item) => item.key !== key));
+                  } catch (error) {
+                    setSaveError(message(error));
+                  }
+                }}
+              >
+                {t('보관 요청 삭제')}
+              </Button>
+            </details>
+          ))}
+        </section>
       )}
       {!doc ? (
         <p className="notice error" role="alert">
@@ -1699,7 +1797,7 @@ export function NativeProjectView({
                           {editable ? (
                             <>
                               <NativePropertyEditor
-                                key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
+                                key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
                                 table={selectedTable}
                                 mode={mode}
                                 userId={userId!}
@@ -1832,7 +1930,7 @@ export function NativeProjectView({
                                     {editable ? (
                                       <>
                                         <NativePropertyEditor
-                                          key={`${column.id}:${snapshot.sequence}:${recoveryEpoch}`}
+                                          key={`${column.id}:${recoveryEpoch}`}
                                           table={selectedTable}
                                           column={column}
                                           mode={mode}

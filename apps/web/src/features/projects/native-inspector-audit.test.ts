@@ -355,6 +355,11 @@ describe('native inspector audit semantics', () => {
     expect(nativeInspectorSaveStatus({ ...status, dirty: true })).toBe('draft');
     expect(nativeInspectorSaveStatus({ ...status, durable: 'unknown' })).toBe('attention');
     expect(nativeInspectorSaveStatus({ ...status, durable: 'sending' })).toBe('saving');
+    expect(nativeInspectorSaveStatus({ ...status, pending: true })).toBe('saving');
+    expect(nativeInspectorSaveStatus({ ...status, durable: 'pending' })).toBe('saving');
+    expect(nativeInspectorSaveStatus({ ...status, pending: true, saving: true })).toBe('saving');
+    expect(nativeInspectorSaveStatus({ ...status, pending: true, offline: true })).toBe('offline');
+    expect(nativeInspectorSaveStatus({ ...status, pending: true, error: true })).toBe('attention');
     expect(nativeInspectorSaveStatus({ ...status, offline: true })).toBe('offline');
   });
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, isValidElement, type ReactElement } from 'react';
 import { createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model';
 import type { ProjectDocumentState } from '@ezerd/contracts';
@@ -12,6 +12,10 @@ const io = vi.hoisted(() => ({
   send: vi.fn(),
   discard: vi.fn(),
   recover: vi.fn(),
+  enqueue: vi.fn(),
+  flushIntent: vi.fn(),
+  lookup: vi.fn(),
+  intents: [] as { pending: { request: { operationId: string } } }[],
 }));
 const queue = vi.hoisted(() => ({ state: 'empty' }));
 vi.mock('./native-export-state.js', () => ({
@@ -26,6 +30,13 @@ vi.mock('./native-save.js', async (original) => ({
   sendNativePending: io.send,
   cancelNativePending: io.discard,
   recoverNativePending: io.recover,
+}));
+vi.mock('./native-save-intents.js', () => ({
+  enqueueNativeSave: io.enqueue,
+  flushNativeSaveIntent: io.flushIntent,
+  lookupNativeSaveIntentResult: io.lookup,
+  nativeSaveIntents: () => io.intents,
+  nativeRejectedSaveIntents: () => [],
 }));
 vi.mock('../../shared/i18n/index.js', () => ({
   registerTranslations() {},
@@ -186,6 +197,21 @@ beforeEach(() => {
   queue.state = 'empty';
   vi.stubGlobal('localStorage', { getItem: () => null, setItem() {}, removeItem() {} });
   io.load.mockResolvedValue(null);
+  io.intents = [];
+  io.flushIntent.mockResolvedValue(null);
+  io.lookup.mockResolvedValue(null);
+  io.enqueue.mockImplementation(() => {
+    const operationId = `operation-${io.intents.length}`;
+    io.intents.push({ pending: { request: { operationId } } });
+    return operationId;
+  });
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  driver.slots.forEach((slot) => slot.cleanup?.());
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('native project asynchronous pending calls', () => {
@@ -198,149 +224,128 @@ describe('native project asynchronous pending calls', () => {
     expect(actions).toHaveBeenCalledWith(expect.any(Function), png);
   });
   it.each(['unknown', 'pending', 'sending'])(
-    'blocks writers when another durable queue consumer reports %s',
+    'keeps editing available while durable state is %s and retains a queued save',
     async (state) => {
       const ui = mount();
       await flush();
       queue.state = state;
-      expect(ui.canvas().props.busy).toBe(true);
-      await ui.save();
-      expect(io.stage).not.toHaveBeenCalled();
+      expect(ui.canvas().props.busy).toBe(false);
+      void ui.save();
+      expect(io.enqueue).toHaveBeenCalledTimes(1);
+      expect(io.intents).toHaveLength(1);
     },
   );
-  it('awaits durable load/stage before send, and retains the staged request after a lost ACK', async () => {
-    const baseline = snapshot(),
-      staged = pending(baseline),
-      wait = deferred<NativePendingSave>();
-    const ui = mount(baseline);
-    expect(ui.canvas().props.busy).toBe(true);
+  it('serializes queued callbacks without disabling canvas input during an outstanding ACK', async () => {
+    const ui = mount();
     await flush();
-    io.stage.mockReturnValue(wait.promise);
-    io.send.mockRejectedValue(new Error('Lost ACK'));
-    const saving = ui.save();
-    expect(io.stage).toHaveBeenCalledTimes(1);
-    expect(io.send).not.toHaveBeenCalled();
-    io.load.mockResolvedValue(staged);
-    wait.resolve(staged);
-    expect(await saving).toBe(false);
-    expect(io.send).toHaveBeenCalledWith(staged, localStorage, expect.any(Function));
-    expect(ui.canvas().props.busy).toBe(true);
+    const waiting = deferred<{ operationId: string; accepted: boolean } | null>();
+    io.flushIntent.mockReturnValueOnce(waiting.promise);
+    const first = ui.save();
+    void ui.save();
+    expect(io.enqueue).toHaveBeenCalledTimes(2);
+    expect(ui.canvas().props.busy).toBe(false);
+    waiting.resolve({ operationId: 'operation-0', accepted: true });
+    expect(await first).toBe(true);
+    expect(ui.reload).toHaveBeenCalled();
+  });
+  it('retains input and reports unknown delivery while allowing subsequent edits', async () => {
+    const ui = mount();
+    await flush();
+    io.flushIntent.mockRejectedValueOnce(Error('Lost ACK'));
+    void ui.save();
+    await flush();
+    await flush();
+    expect(io.intents).toHaveLength(1);
+    expect(ui.canvas().props.busy).toBe(false);
     expect(
       ui.render().some((node) => node.props.role === 'alert' && node.props.children === 'Lost ACK'),
     ).toBe(true);
     expect(ui.reload).not.toHaveBeenCalled();
   });
-  it('pins the same actor session before durable staging and refuses a replacement session', async () => {
-    const state = snapshot(),
-      staged = pending(state),
-      wait = deferred<NativePendingSave>();
-    const fetcher = vi.fn();
-    vi.stubGlobal('fetch', fetcher);
-    const ui = mount(state);
-    await flush();
-    io.stage.mockReturnValue(wait.promise);
-    io.load.mockResolvedValue(staged);
-    io.send.mockImplementation((_pending, _storage, actorApi) => actorApi('/test-pinned-session'));
-    const saving = ui.save();
-    vi.stubGlobal('sessionStorage', {
-      getItem: () =>
-        JSON.stringify({
-          userId: 'actor-a',
-          token: 'replacement-session',
-          expiresAt: '2099-01-01T00:00:00Z',
-        }),
-    });
-    wait.resolve(staged);
-    expect(await saving).toBe(false);
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(ui.canvas().props.busy).toBe(true);
-    expect(ui.reload).not.toHaveBeenCalled();
-  });
-  it('ignores delayed old-actor and old-project loads and refuses to send an old staged request', async () => {
-    const oldLoad = deferred<NativePendingSave | null>(),
-      newLoad = deferred<NativePendingSave | null>();
-    io.load.mockReturnValueOnce(oldLoad.promise).mockReturnValueOnce(newLoad.promise);
+  it('settles old actor callbacks and refuses further old-context transmission on identity change', async () => {
     const ui = mount();
+    await flush();
+    const waiting = deferred<null>();
+    io.flushIntent.mockReturnValueOnce(waiting.promise);
+    const saved = ui.save();
+    const mayTransmit = io.flushIntent.mock.calls.at(-1)![4] as () => boolean;
+    expect(mayTransmit()).toBe(true);
     ui.render(snapshot('project-b'), 'actor-b');
-    newLoad.resolve(null);
+    expect(mayTransmit()).toBe(false);
+    expect(await saved).toBe(false);
+    waiting.resolve(null);
     await flush();
-    expect(ui.canvas().props.busy).toBe(false);
-    oldLoad.resolve(pending(snapshot()));
-    await flush();
-    expect(ui.canvas().props.busy).toBe(false);
-    const waiting = deferred<NativePendingSave>();
-    io.stage.mockReturnValue(waiting.promise);
-    const saving = ui.save();
-    ui.render(snapshot('project-c'), 'actor-c');
-    await flush();
-    waiting.resolve(pending(snapshot('project-b'), 'actor-b'));
-    expect(await saving).toBe(false);
-    expect(io.send).not.toHaveBeenCalled();
     expect(ui.reload).not.toHaveBeenCalled();
-    expect(ui.canvas().props.busy).toBe(false);
   });
   it.each(['permission', 'databaseRevision'])(
-    'preserves staged input and refuses transmission after %s changes',
+    'refuses the next transmission after %s changes, preserving local input',
     async (reason) => {
       const state = snapshot(),
-        staged = pending(state),
-        wait = deferred<NativePendingSave>();
-      const ui = mount(state);
+        ui = mount(state);
       await flush();
-      io.stage.mockReturnValue(wait.promise);
-      const saving = ui.save();
+      const waiting = deferred<null>();
+      io.flushIntent.mockReturnValueOnce(waiting.promise);
+      void ui.save();
+      const mayTransmit = io.flushIntent.mock.calls.at(-1)![4] as () => boolean;
       const changed = structuredClone(state);
       if (reason === 'databaseRevision') changed.project.databaseRevision++;
       ui.render(changed, 'actor-a', reason !== 'permission');
-      wait.resolve(staged);
-      expect(await saving).toBe(false);
-      expect(io.send).not.toHaveBeenCalled();
-      expect(ui.canvas().props.busy).toBe(true);
+      expect(mayTransmit()).toBe(false);
+      expect(io.intents).toHaveLength(1);
+      waiting.resolve(null);
+      await flush();
+      expect(ui.reload).not.toHaveBeenCalled();
     },
   );
-  it('keeps storage-unknown blocked and does not clear pending before discard completes', async () => {
-    io.load.mockRejectedValueOnce(new Error('native.pending-storage-unknown'));
+  it('requires a verified result when another tab removes a queued intent', async () => {
     const ui = mount();
     await flush();
-    expect(ui.canvas().props.busy).toBe(true);
-    await ui.save();
-    expect(io.stage).not.toHaveBeenCalled();
-    (ui.canvas().props.onOpenRecovery as () => void)();
-    const retry = ui.render().find((node) => node.props.children === '저장 결과 확인')!;
-    io.load.mockResolvedValue(pending(snapshot()));
-    (retry.props.onClick as () => void)();
+    const saved = ui.save();
+    let settled = false;
+    void saved.then(() => {
+      settled = true;
+    });
     await flush();
-    const discard = ui.render().find((node) => node.props.children === '요청 취소 확정')!;
-    const wait = deferred<{ status: 'rejected' }>();
-    io.discard.mockReturnValue(wait.promise);
-    (discard.props.onClick as () => void)();
-    await flush();
-    expect(ui.canvas().props.busy).toBe(true);
-    expect(ui.render().some((node) => node.props.children === '요청 취소 확정')).toBe(true);
-    io.load.mockResolvedValue(null);
-    wait.resolve({ status: 'rejected' });
-    await flush();
-    await flush();
-    expect(ui.canvas().props.busy).toBe(false);
-    expect(ui.render().some((node) => node.props.children === '요청 취소 확정')).toBe(false);
+    const original = io.intents[0]!.pending;
+    io.intents = [];
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(io.lookup).toHaveBeenCalledWith(original);
+    expect(settled).toBe(false);
+    expect(ui.reload).not.toHaveBeenCalled();
+    io.lookup.mockResolvedValueOnce(true);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(await saved).toBe(true);
+    expect(ui.reload).toHaveBeenCalledTimes(1);
   });
-  it('retains pending and storage error when asynchronous discard fails', async () => {
-    io.load.mockResolvedValue(pending(snapshot()));
+  it('reports storage failure without disabling unrelated editors or dropping saved intents', async () => {
     const ui = mount();
     await flush();
-    io.discard.mockRejectedValue(new Error('native.pending-inflight'));
-    (ui.canvas().props.onOpenRecovery as () => void)();
-    const discard = ui.render().find((node) => node.props.children === '요청 취소 확정')!;
-    (discard.props.onClick as () => void)();
-    await flush();
-    expect(ui.canvas().props.busy).toBe(true);
+    io.enqueue.mockImplementationOnce(() => {
+      throw Error('storage-full');
+    });
+    expect(await ui.save()).toBe(false);
+    expect(ui.canvas().props.busy).toBe(false);
     expect(
       ui
         .render()
-        .some(
-          (node) =>
-            node.props.role === 'alert' && node.props.children === 'native.pending-inflight',
-        ),
+        .some((node) => node.props.role === 'alert' && node.props.children === 'storage-full'),
     ).toBe(true);
+  });
+  it('retains pending cancellation until the server confirms it while leaving editors enabled', async () => {
+    io.load.mockResolvedValue(pending(snapshot()));
+    const ui = mount();
+    await flush();
+    (ui.canvas().props.onOpenRecovery as () => void)();
+    const discard = ui.render().find((node) => node.props.children === '요청 취소 확정')!;
+    const waiting = deferred<{ status: string }>();
+    io.discard.mockReturnValue(waiting.promise);
+    (discard.props.onClick as () => void)();
+    expect(ui.canvas().props.busy).toBe(false);
+    expect(ui.render().some((node) => node.props.children === '요청 취소 확정')).toBe(true);
+    io.load.mockResolvedValue(null);
+    waiting.resolve({ status: 'rejected' });
+    await flush();
+    await flush();
+    expect(ui.render().some((node) => node.props.children === '요청 취소 확정')).toBe(false);
   });
 });

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { NativeHistoryPage, ProjectDocumentState } from '@ezerd/contracts';
-import { Button, TabButton } from '../../components/ui/index.js';
+import { Button, Collapse, DisclosureButton, TabButton } from '../../components/ui/index.js';
 import { message } from '../../shared/api/client.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
+import { describeChanges, nativeHistoryPreview } from './native-history-labels.js';
 import { nativeEditorExportBlocked } from './native-export-state.js';
 import {
   fetchNativeHistory,
@@ -45,6 +46,39 @@ registerTranslations({
   '불러온 이력에서 필터링합니다.': 'Filters apply to loaded history.',
   '일치하는 이력이 없습니다.': 'No matching history.',
 });
+export function NativeHistoryChanges({ lines }: { lines: readonly string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const { t } = useI18n();
+  const preview = nativeHistoryPreview(lines);
+  const list = (values: readonly string[]) => (
+    <ul className="native-history-changes">
+      {values.map((line, index) => (
+        <li key={index}>{line}</li>
+      ))}
+    </ul>
+  );
+  return (
+    <div>
+      {!expanded && list(preview.lines)}
+      {preview.expandable && (
+        <>
+          <DisclosureButton
+            expanded={expanded}
+            controls={id}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {t(expanded ? '변경 내용 접기' : '변경 내용 더보기')}
+          </DisclosureButton>
+          <Collapse open={expanded} id={id}>
+            {list(lines)}
+          </Collapse>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function NativeHistoryDialog({
   userId,
   snapshot,
@@ -193,11 +227,9 @@ export function NativeHistoryDialog({
                 {t(accepted ? '처리됨' : '거부됨')}
               </span>
               {!native && <span> · {t('형식 변경 이전 이력')}</span>}
-              <ul>
-                {entry.changes.map((change, index) => (
-                  <li key={index}>{change.path}</li>
-                ))}
-              </ul>
+              <NativeHistoryChanges
+                lines={describeChanges(entry.changes, snapshot.sourceDocument, page?.history ?? [])}
+              />
               <Button disabled={blocked} onClick={() => void act(entry.operationId, 'undo')}>
                 {t('실행 취소')}
               </Button>

@@ -117,6 +117,7 @@ export async function stageNativeSave(
   storage: Storage = localStorage,
   expected?: NativeSaveExpected,
   editorDraft?: NativeEditorDraftRef,
+  operationId = nativeDurableId(),
 ): Promise<NativePendingSave> {
   if (snapshot.sourceDocument.schemaVersion !== 2)
     throw new Error('document.native-upgrade-required');
@@ -142,7 +143,6 @@ export async function stageNativeSave(
     )
       throw new Error('native.draft-changed');
   }
-  const operationId = nativeDurableId();
   const pending = pendingSchema.parse({
     userId,
     projectId: snapshot.project.id,
@@ -152,7 +152,7 @@ export async function stageNativeSave(
     request: {
       operationId,
       groupId: operationId,
-      clientId: nativeDurableId(),
+      clientId: operationId,
       expectedVersion: expected?.version ?? snapshot.project.version,
       expectedSequence: expected?.sequence ?? snapshot.sequence,
       expectedDatabaseRevision: expected?.databaseRevision ?? snapshot.project.databaseRevision,
@@ -379,7 +379,10 @@ function acknowledgeNativeDrafts(pending: NativePendingSave, storage: Storage): 
     storage,
   );
 }
-function checkNativeAck(pending: NativePendingSave, result: NativeSyncOperationResult): void {
+export function checkNativeAck(
+  pending: NativePendingSave,
+  result: NativeSyncOperationResult,
+): void {
   if (
     result.operationId !== pending.request.operationId ||
     result.actor.id !== pending.userId ||
@@ -440,6 +443,7 @@ export async function recoverNativePending(
   storage: Storage = localStorage,
   api: typeof request = request,
   allowReplay = true,
+  canReplay: () => boolean = () => true,
 ): Promise<NativeSyncOperationResult> {
   const actorApi = captureNativeActorApi(pending.userId, api);
   await ensureNativePending(pending, storage);
@@ -456,7 +460,8 @@ export async function recoverNativePending(
     return result;
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
-    if (!allowReplay || snapshot.project.status !== 'active') throw Error('project.read-only');
+    if (!allowReplay || !canReplay() || snapshot.project.status !== 'active')
+      throw Error('project.read-only');
     if (
       snapshot.project.id !== pending.projectId ||
       snapshot.project.databaseRevision !== pending.request.expectedDatabaseRevision

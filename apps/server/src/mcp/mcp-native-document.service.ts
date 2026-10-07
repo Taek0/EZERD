@@ -364,6 +364,9 @@ export class McpNativeDocumentService {
           const parsed = applyNativeProjectChangesSchema.safeParse(raw);
           if (!parsed.success) throw new BadRequestException({ code: 'native.command-invalid' });
           const input = parsed.data;
+          // The locked issuer accepts an older observed edit head within the same DB revision.
+          // Applying explicit patches to this current document merges disjoint properties and
+          // gives overlapping properties to the command processed later by the server.
           const baseline = await issueBaseline(input.clientId, {
             version: input.expectedVersion,
             sequence: input.expectedSequence,

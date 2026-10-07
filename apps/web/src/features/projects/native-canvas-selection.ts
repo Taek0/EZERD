@@ -11,7 +11,7 @@ import { nativeDurableId } from './native-durable-queue.js';
 export function nativeCanvasMoveCommand(
   source: NativeDesignDocument,
   displayed: NodeLayout,
-  patch: Pick<NodeLayout, 'x' | 'y'> & Partial<Pick<NodeLayout, 'width' | 'height'>>,
+  patch: Partial<Pick<NodeLayout, 'x' | 'y' | 'width' | 'height'>>,
 ): NativeEditorCommand {
   const raw = source.layout.nodes.find(
     (node) => node.objectId === displayed.objectId && node.viewId === displayed.viewId,
@@ -25,7 +25,13 @@ export function nativeCanvasMoveCommand(
     tableId: displayed.objectId,
     viewId: displayed.viewId,
     nodeId: nativeDurableId(),
-    placement: { width: displayed.width, height: displayed.height, ...patch },
+    placement: {
+      x: displayed.x,
+      y: displayed.y,
+      width: displayed.width,
+      height: displayed.height,
+      ...patch,
+    },
   });
 }
 

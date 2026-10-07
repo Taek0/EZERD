@@ -113,13 +113,15 @@ export class NativeSyncService {
     clientId: string,
     user: AuthenticatedUser,
     expected?: ExpectedNativeHead,
+    concurrentCommands = false,
   ): Promise<NativeSyncSnapshot> {
     const database = resolveProjectDatabaseState(project);
     if (project.status !== 'active') throw new ConflictException({ code: 'project.archived' });
     if (
       expected &&
-      (expected.version !== project.version ||
-        expected.sequence !== project.syncSequence ||
+      ((concurrentCommands
+        ? expected.version > project.version || expected.sequence > project.syncSequence
+        : expected.version !== project.version || expected.sequence !== project.syncSequence) ||
         expected.databaseRevision !== database.revision)
     )
       throw new ConflictException({ code: 'database.context-changed' });
@@ -210,7 +212,9 @@ export class NativeSyncService {
       // No command validation or new baseline occurs before both replay checks.
       const operation = prepareCommand
         ? await prepareCommand((clientId, expected) =>
-            this.issueBaseline(tx, project, clientId, user, expected),
+            // Explicit commands patch the latest locked document in server processing order.
+            // Old version/sequence are allowed only here; DB context and raw baselines stay strict.
+            this.issueBaseline(tx, project, clientId, user, expected, true),
           )
         : raw;
       const parsed = nativeSyncOperationInputSchema.safeParse(operation);

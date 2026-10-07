@@ -1,5 +1,5 @@
 import { PanelSection } from '../../shared/editor/panel.js';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { NativeColumn, NativeTable } from '@ezerd/model';
 import { Button, Input } from '../../components/ui/index.js';
 import { NativeAutoTextarea } from './native-editor-form.js';
@@ -95,6 +95,10 @@ export function NativePropertyEditor({
   const [draft, setDraft] = useState(loaded.draft);
   const currentDraft = useRef(loaded.draft);
   const [storageError, setStorageError] = useState(loaded.error);
+  const [outstanding, setOutstanding] = useState(0);
+  const [ackSequence, setAckSequence] = useState(-1);
+  const observedSequence = useRef(snapshot.sequence);
+  observedSequence.current = snapshot.sequence;
   const { physicalName, comment, logicalName, definition } = draft.values;
   function change(field: keyof NativePropertyDraft['values'], value: string) {
     const next = {
@@ -113,6 +117,39 @@ export function NativePropertyEditor({
       setStorageError('변경 입력을 보관하지 못했습니다. 저장 공간을 확인해 주세요.');
     }
   }
+  useEffect(() => {
+    if (outstanding || snapshot.sequence <= ackSequence) return;
+    try {
+      const current = currentDraft.current;
+      if (current.expected.databaseRevision !== snapshot.project.databaseRevision) return;
+      const latest = fresh();
+      if (
+        current.expected.version === latest.expected.version &&
+        current.expected.sequence === latest.expected.sequence
+      )
+        return;
+      const next = rebaseNativeDraft(current, latest.expected, latest.values);
+      const changed = Object.keys(next.values).some(
+        (key) =>
+          next.values[key as keyof typeof next.values] !==
+          next.before[key as keyof typeof next.before],
+      );
+      if (changed) persist(next);
+      else {
+        discardNativeDraft(userId, snapshot.project.id, kind, original.id, undefined, current);
+        currentDraft.current = next;
+        setDraft(next);
+      }
+    } catch (error) {
+      setStorageError(message(error));
+    }
+  }, [
+    snapshot.project.version,
+    snapshot.sequence,
+    snapshot.project.databaseRevision,
+    outstanding,
+    ackSequence,
+  ]);
   const dirty =
     physicalName !== draft.before.physicalName ||
     comment !== draft.before.comment ||
@@ -125,10 +162,7 @@ export function NativePropertyEditor({
     !!storageError,
     `property:${kind}:${original.id}`,
   );
-  const stale =
-    draft.expected.version !== snapshot.project.version ||
-    draft.expected.sequence !== snapshot.sequence ||
-    draft.expected.databaseRevision !== snapshot.project.databaseRevision;
+  const stale = draft.expected.databaseRevision !== snapshot.project.databaseRevision;
   async function submit() {
     if (busy || stale || storageError || !dirty) return;
     const patch = {
@@ -141,9 +175,12 @@ export function NativePropertyEditor({
         ...(definition !== draft.before.definition ? { definition } : {}),
       },
     };
+    let queued = false;
     try {
       storeNativeDraft(draft);
-      const saved = await onSave(
+      queued = true;
+      setOutstanding((count) => count + 1);
+      const completion = onSave(
         [
           column
             ? { type: 'patch_column', id: column.id, patch }
@@ -151,14 +188,21 @@ export function NativePropertyEditor({
         ],
         draft.expected,
       );
-      if (saved && currentDraft.current === draft) {
-        discardNativeDraft(userId, snapshot.project.id, kind, original.id, undefined, draft);
-        const next = fresh();
+      const baseline = { ...draft, before: { ...draft.values } };
+      persist(baseline);
+      const saved = await completion;
+      if (saved) setAckSequence(observedSequence.current);
+      if (!saved && currentDraft.current === baseline) persist(draft);
+      if (saved && currentDraft.current === baseline) {
+        discardNativeDraft(userId, snapshot.project.id, kind, original.id, undefined, baseline);
+        const next = { ...draft, before: { ...draft.values } };
         currentDraft.current = next;
         setDraft(next);
       }
     } catch (error) {
       setStorageError(message(error));
+    } finally {
+      if (queued) setOutstanding((count) => count - 1);
     }
   }
   return (
@@ -284,7 +328,7 @@ export function NativePropertyEditor({
           defaultOpen={!!column}
         >
           <NativeFormatEditor
-            key={`format:${userId}:${snapshot.project.id}:${kind}:${original.id}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}`}
+            key={`format:${userId}:${snapshot.project.id}:${kind}:${original.id}:${snapshot.project.databaseRevision}`}
             context={{ userId, snapshot, busy, onSave }}
             document={snapshot.native.document}
             table={table}

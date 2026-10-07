@@ -266,6 +266,134 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(mismatch.data.code).toBe('database.context-changed');
       expect((await state(id)).sourceDocument.domainRelations[0].description).toBe('Description');
     });
+    it('merges commands from the same observed head and orders overlapping properties by server processing', async () => {
+      const id = await fresh(),
+        before = await state(id),
+        first = await input(id, [
+          { type: 'patch_domain_relation', id: 'r', patch: { name: 'First writer' } },
+        ]),
+        disjoint = await input(id, [
+          { type: 'patch_domain_relation', id: 'r', patch: { description: 'Second property' } },
+        ]),
+        overlap = await input(id, [
+          {
+            type: 'patch_domain_relation',
+            id: 'r',
+            patch: { name: before.sourceDocument.domainRelations[0].name },
+          },
+        ]);
+      const route = `/projects/${id}/native-sync/commands`;
+      for (const body of [first, disjoint, overlap]) {
+        const response = await request(route, 'POST', body);
+        expect(response.status, JSON.stringify(response.data)).toBe(201);
+        expect(response.data.status).toBe('accepted');
+      }
+      const current = await state(id);
+      expect(current.sourceDocument.domainRelations[0]).toEqual({
+        ...before.sourceDocument.domainRelations[0],
+        description: 'Second property',
+      });
+      expect(current.sequence).toBe(before.sequence + 3);
+      const replay = await request(route, 'POST', disjoint);
+      expect(replay.data.status).toBe('accepted');
+      expect(replay.data.sequence).toBe(before.sequence + 2);
+      expect(await state(id)).toEqual(current);
+    });
+    it('keeps stale command bundles atomic and never recreates a deleted target', async () => {
+      const id = await fresh(),
+        invalid = await input(id, [
+          { type: 'patch_domain_relation', id: 'r', patch: { description: 'Must roll back' } },
+          { type: 'patch_domain_relation', id: 'missing', patch: { name: 'Missing' } },
+        ]),
+        deleted = await input(id, [
+          { type: 'patch_domain_relation', id: 'r', patch: { name: 'Deleted edit' } },
+        ]);
+      expect(
+        (await save(id, [{ type: 'patch_domain_relation', id: 'r', patch: { name: 'Current' } }]))
+          .data.status,
+      ).toBe('accepted');
+      const beforeInvalid = await state(id);
+      expect((await request(`/projects/${id}/native-sync/commands`, 'POST', invalid)).status).toBe(
+        400,
+      );
+      expect(await state(id)).toEqual(beforeInvalid);
+      expect((await save(id, [{ type: 'delete_domain_relation', id: 'r' }])).data.status).toBe(
+        'accepted',
+      );
+      const beforeDeletedEdit = await state(id);
+      expect((await request(`/projects/${id}/native-sync/commands`, 'POST', deleted)).status).toBe(
+        400,
+      );
+      expect(await state(id)).toEqual(beforeDeletedEdit);
+      expect(beforeDeletedEdit.sourceDocument.domainRelations).toEqual([]);
+    });
+    it('merges nested column and node patches against the current document for REST and MCP', async () => {
+      const id = await fresh(),
+        before = await state(id),
+        logical = await input(id, [
+          { type: 'patch_column', id: 'c', patch: { logical: { name: 'New label' } } },
+        ]),
+        physical = await input(id, [
+          { type: 'patch_column', id: 'c', patch: { physical: { comment: 'New comment' } } },
+        ]),
+        horizontal = await input(id, [
+          { type: 'update_node_layout', nodeId: 'nt', patch: { x: 500 } },
+        ]),
+        vertical = await input(id, [
+          { type: 'update_node_layout', nodeId: 'nt', patch: { y: 600 } },
+        ]);
+      for (const body of [logical, horizontal, vertical])
+        expect(
+          (await request(`/projects/${id}/native-sync/commands`, 'POST', body)).data.status,
+        ).toBe('accepted');
+      const result = await client.callTool({
+        name: 'apply_native_project_changes',
+        arguments: { projectId: id, ...physical },
+      });
+      expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+      expect(nativeSyncOperationResultSchema.parse(result.structuredContent).status).toBe(
+        'accepted',
+      );
+      const current = (await state(id)).sourceDocument;
+      expect(current.columns[0]).toEqual({
+        ...before.sourceDocument.columns[0],
+        logical: { ...before.sourceDocument.columns[0].logical, name: 'New label' },
+        physical: { ...before.sourceDocument.columns[0].physical, comment: 'New comment' },
+      });
+      expect(current.layout.nodes.find((node: { id: string }) => node.id === 'nt')).toEqual({
+        ...before.sourceDocument.layout.nodes.find((node: { id: string }) => node.id === 'nt'),
+        x: 500,
+        y: 600,
+      });
+    });
+    it('rejects future command heads and preserves the strict raw baseline expectation', async () => {
+      const id = await fresh(),
+        body = await input(id, [
+          { type: 'patch_domain_relation', id: 'r', patch: { name: 'Future' } },
+        ]),
+        before = await state(id);
+      for (const patch of [
+        { expectedVersion: body.expectedVersion + 1 },
+        { expectedSequence: body.expectedSequence + 1 },
+      ])
+        expect(
+          await request(`/projects/${id}/native-sync/commands`, 'POST', { ...body, ...patch }),
+        ).toMatchObject({ status: 409, data: { code: 'database.context-changed' } });
+      expect(await state(id)).toEqual(before);
+      expect(
+        (await request(`/projects/${id}/native-sync/commands`, 'POST', body)).data.status,
+      ).toBe('accepted');
+      expect(
+        await request(`/projects/${id}/native-sync/baseline`, 'POST', {
+          clientId: body.clientId,
+          expected: {
+            version: body.expectedVersion,
+            sequence: body.expectedSequence,
+            databaseRevision: body.expectedDatabaseRevision,
+          },
+        }),
+      ).toMatchObject({ status: 409, data: { code: 'database.context-changed' } });
+    });
     it('consumes both new command families through the registered MCP tool', async () => {
       const id = await fresh('mysql'),
         before = (await state(id)).sourceDocument;

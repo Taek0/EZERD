@@ -41,6 +41,42 @@ function fixture(): NativeDesignDocument {
   return doc;
 }
 describe('restored native canvas interactions', () => {
+  it('resizes an existing node without replacing a concurrent move', () => {
+    const source = upsertCombinedView(fixture(), { id: 'private', name: 'Mine', domainIds: ['d'] });
+    const displayed = source.layout.nodes.find((node) => node.viewId === 'private')!;
+    const moved = {
+      ...source,
+      layout: {
+        ...source.layout,
+        nodes: source.layout.nodes.map((node) =>
+          node.id === displayed.id ? { ...node, x: 300, y: 400 } : node,
+        ),
+      },
+    };
+    const command = nativeCanvasMoveCommand(source, displayed, { width: 500, height: 300 });
+    const next = nativeCanvasPersonalCandidate(
+      moved,
+      nativePersonalCanvasCommandSchema.parse(command),
+    );
+    expect(next.layout.nodes.find((node) => node.id === displayed.id)).toMatchObject({
+      x: 300,
+      y: 400,
+      width: 500,
+      height: 300,
+    });
+    expect(command).toMatchObject({ patch: { width: 500, height: 300 } });
+    expect('patch' in command && command.patch).not.toHaveProperty('x');
+    expect('patch' in command && command.patch).not.toHaveProperty('y');
+  });
+  it('materializes a size-only edit with the generated node position', () => {
+    const source = fixture();
+    const displayed = source.layout.nodes[0]!;
+    const without = { ...source, layout: { ...source.layout, nodes: [] } };
+    expect(nativeCanvasMoveCommand(without, displayed, { width: 500, height: 300 })).toMatchObject({
+      type: 'add_table_reference',
+      placement: { x: displayed.x, y: displayed.y, width: 500, height: 300 },
+    });
+  });
   it('moves a selected group with a shared boundary clamp and retains raw dimensions', () => {
     const nodes = fixture()
       .layout.nodes.slice(0, 2)

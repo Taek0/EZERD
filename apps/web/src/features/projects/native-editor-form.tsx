@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type ComponentProps } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type ComponentProps,
+} from 'react';
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { Button, Input, Select, Textarea } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
@@ -94,15 +101,16 @@ export function NativeEditorForm({
   const [draft, setDraft] = useState(loaded.draft);
   const currentDraft = useRef(loaded.draft);
   const [storageError, setStorageError] = useState(loaded.error);
+  const [outstanding, setOutstanding] = useState(0);
+  const [ackSequence, setAckSequence] = useState(-1);
+  const observedSequence = useRef(snapshot.sequence);
+  observedSequence.current = snapshot.sequence;
   const [error, setError] = useState('');
   const dirty = [...new Set([...Object.keys(draft.values), ...Object.keys(draft.before)])].some(
     (key) => draft.values[key] !== draft.before[key],
   );
   useNativeExportBlocker(userId, snapshot.project.id, dirty, !!storageError, `editor:${draftKey}`);
-  const stale =
-    draft.expected.version !== expected.version ||
-    draft.expected.sequence !== expected.sequence ||
-    draft.expected.databaseRevision !== expected.databaseRevision;
+  const stale = draft.expected.databaseRevision !== expected.databaseRevision;
   const changedContext = draft.expected.databaseRevision !== expected.databaseRevision;
   const blocked = typeof disabled === 'function' ? disabled(draft.values) : disabled;
   function persist(next: NativeEditorDraft) {
@@ -115,9 +123,38 @@ export function NativeEditorForm({
       setStorageError(message(error));
     }
   }
+  useEffect(() => {
+    if (outstanding || snapshot.sequence <= ackSequence) return;
+    try {
+      const current = currentDraft.current;
+      if (current.expected.databaseRevision !== expected.databaseRevision) return;
+      if (
+        current.expected.version === expected.version &&
+        current.expected.sequence === expected.sequence
+      )
+        return;
+      const next = rebaseNativeEditorDraft(current, expected, initial);
+      const changed = Object.keys(next.values).some((key) => next.values[key] !== next.before[key]);
+      if (changed) persist(next);
+      else {
+        discardNativeEditorDraft(userId, snapshot.project.id, current);
+        currentDraft.current = next;
+        setDraft(next);
+      }
+    } catch (error) {
+      setStorageError(message(error));
+    }
+  }, [
+    snapshot.project.version,
+    snapshot.sequence,
+    snapshot.project.databaseRevision,
+    outstanding,
+    ackSequence,
+  ]);
   async function submit() {
     if (!dirty || context.busy || stale || blocked || storageError) return;
     setError('');
+    let queued = false;
     try {
       const commands = build(draft.values, draft.before);
       if (!commands.length) return;
@@ -127,20 +164,27 @@ export function NativeEditorForm({
         setStorageError(message(error));
         return;
       }
-      if (
-        (await context.onSave(commands, draft.expected, {
-          key: draft.key,
-          revision: draft.revision,
-        })) &&
-        currentDraft.current.revision === draft.revision
-      ) {
-        discardNativeEditorDraft(userId, snapshot.project.id, draft);
-        const next = fresh();
+      queued = true;
+      setOutstanding((count) => count + 1);
+      const completion = context.onSave(commands, draft.expected, {
+        key: draft.key,
+        revision: draft.revision,
+      });
+      const baseline = { ...draft, revision: nativeDurableId(), before: { ...draft.values } };
+      persist(baseline);
+      const saved = await completion;
+      if (saved) setAckSequence(observedSequence.current);
+      if (!saved && currentDraft.current.revision === baseline.revision) persist(draft);
+      if (saved && currentDraft.current.revision === baseline.revision) {
+        discardNativeEditorDraft(userId, snapshot.project.id, baseline);
+        const next = { ...draft, before: { ...draft.values } };
         currentDraft.current = next;
         setDraft(next);
       }
     } catch (error) {
       setError(message(error));
+    } finally {
+      if (queued) setOutstanding((count) => count - 1);
     }
   }
   return (

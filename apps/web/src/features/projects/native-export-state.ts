@@ -13,11 +13,27 @@ const scope = (userId: string, projectId: string) => JSON.stringify([userId, pro
 function notify() {
   for (const listener of listeners) listener();
 }
+function hasUnsentIntent(userId: string, projectId: string): boolean {
+  try {
+    if (typeof localStorage === 'undefined') return false;
+    const prefix = `ezerd.native.intent:${JSON.stringify([userId, projectId])}:`;
+    for (let index = 0; index < localStorage.length; index++)
+      if (localStorage.key(index)?.startsWith(prefix)) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+if (typeof window !== 'undefined')
+  window.addEventListener('storage', (event) => {
+    if (event.key === null || event.key.startsWith('ezerd.native.intent:')) notify();
+  });
 export function nativeEditorExportBlocked(userId: string, projectId: string): boolean {
   const memory = nativeDraftMemoryState(userId, projectId);
   return (
     memory.dirty ||
     memory.storageFailure ||
+    hasUnsentIntent(userId, projectId) ||
     [...(states.get(scope(userId, projectId))?.values() ?? [])].some(
       (state) => state.dirty || state.storageFailure,
     )

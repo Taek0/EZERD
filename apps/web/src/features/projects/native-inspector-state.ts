@@ -67,10 +67,16 @@ export function nativeInspectorSaveStatus(input: {
   dirty: boolean;
   error: boolean;
 }) {
-  if (input.error || input.pending || input.durable === 'unknown' || input.durable === 'pending')
-    return 'attention';
-  if (input.saving || input.initializing || input.durable === 'sending') return 'saving';
+  if (input.error || input.durable === 'unknown') return 'attention';
   if (input.offline) return 'offline';
+  if (
+    input.saving ||
+    input.initializing ||
+    input.pending ||
+    input.durable === 'pending' ||
+    input.durable === 'sending'
+  )
+    return 'saving';
   if (input.dirty) return 'draft';
   return 'snapshot';
 }

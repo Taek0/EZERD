@@ -87,20 +87,20 @@ function render(busy = false) {
 }
 describe('native root passes operation busy separately from the row requiring recovery', () => {
   it.each(['unknown', 'pending', 'sending'])(
-    '%s row still blocks new editing while recovery receives no false external operation',
+    '%s row permits editing while recovery receives no false external operation',
     (state) => {
       harness.state = state;
-      expect(render()).toMatchObject({ busy: true, recoveryBusy: false });
+      expect(render()).toMatchObject({ busy: false, recoveryBusy: false });
     },
   );
   it('keeps external operations, pending-state loading and shared saving as recovery blockers', () => {
     harness.state = 'unknown';
-    expect(render(true)).toMatchObject({ busy: true, recoveryBusy: true });
+    expect(render(true)).toMatchObject({ busy: false, recoveryBusy: true });
     harness.initializing = true;
-    expect(render()).toMatchObject({ busy: true, recoveryBusy: true });
+    expect(render()).toMatchObject({ busy: false, recoveryBusy: true });
     harness.initializing = false;
     harness.saving = true;
-    expect(render()).toMatchObject({ busy: true, recoveryBusy: true });
+    expect(render()).toMatchObject({ busy: false, recoveryBusy: true });
   });
   it('keeps an initialized empty writer available for normal editing and recovery', () => {
     harness.state = 'empty';
