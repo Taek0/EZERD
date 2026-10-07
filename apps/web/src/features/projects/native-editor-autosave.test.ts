@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeEditorForm } from './native-editor-form.js';
@@ -22,6 +23,9 @@ vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker() {} }));
 vi.mock('../../shared/i18n/index.js', () => ({
   useI18n: () => ({ t: (value: string) => value }),
   registerTranslations() {},
+}));
+vi.mock('./NativeLogicalMode.js', () => ({
+  useNativeLogicalMode: () => ({ enabled: true, onEnabledChange() {} }),
 }));
 vi.mock('react', async (original) => {
   const react = await original<typeof import('react')>();
@@ -192,7 +196,7 @@ describe('editor autosave', () => {
     ui.render();
     ui.change('name', 'first');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.change('name', 'second');
     ui.render();
     acknowledge(false);
@@ -200,7 +204,7 @@ describe('editor autosave', () => {
     ui.render();
     expect(ui.draft()?.before.name).toBe('before');
     expect(ui.draft()?.values.name).toBe('second');
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(save).toHaveBeenCalledTimes(2);
     ui.change('name', 'third');
     ui.render();
@@ -227,7 +231,7 @@ describe('editor autosave', () => {
     ui.render();
     ui.change('logicalName', 'first');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.render();
     expect(
       ui.save,
@@ -248,7 +252,7 @@ describe('editor autosave', () => {
     ui.snapshot.project.version++;
     ui.render();
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(ui.save).toHaveBeenCalledTimes(2);
     const second = ui.save.mock.calls[1] as unknown as [Array<{ type: string; patch: any }>];
     expect(second[0][0]!.type).toBe('patch_table');
@@ -263,7 +267,7 @@ describe('editor autosave', () => {
     ui.render();
     ui.change('name', 'first');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.change('name', 'last');
     ui.render();
     ui.unmount();
@@ -289,7 +293,7 @@ describe('editor autosave', () => {
     ui.render();
     ui.change('logicalName', 'first');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect((save.mock.calls[0] as unknown as [Array<{ type: string }>])[0][0]!.type).toBe(
       'add_table',
     );

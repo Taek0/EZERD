@@ -1,3 +1,5 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
+vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enabled: true }) }));
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
@@ -146,7 +148,7 @@ describe('property autosave lifecycle', () => {
     ui.render();
     ui.change('first');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.props.busy = true;
     ui.render();
     ui.change('last');
@@ -179,7 +181,7 @@ describe('property autosave lifecycle', () => {
     ui.render();
     ui.change('first');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.change('next');
     ui.column.physical.name = 'first';
     ui.snapshot.sequence++;
@@ -189,7 +191,7 @@ describe('property autosave lifecycle', () => {
     await vi.advanceTimersByTimeAsync(0);
     ui.render();
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(save).toHaveBeenCalledTimes(2);
     expect((save.mock.calls[1] as unknown as [unknown, { sequence: number }])[1].sequence).toBe(
       ui.snapshot.sequence,
@@ -212,7 +214,7 @@ describe('property autosave lifecycle', () => {
     ui.render();
     ui.change('first');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.change(original);
     ui.snapshot.sequence++;
     ui.snapshot.project.version++;
@@ -223,7 +225,7 @@ describe('property autosave lifecycle', () => {
     ui.render();
     expect(ui.draft()?.values.physicalName).toBe(original);
     expect(ui.draft()?.before.physicalName).toBe('first');
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(save).toHaveBeenCalledTimes(2);
     expect(
       (save.mock.calls[1] as unknown as [Array<{ patch: { physical: { name: string } } }>])[0][0]!

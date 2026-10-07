@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactElement, type FunctionComponent } from 'react';
 import { createNativeColumn, createNativeTable, type DatabaseKind } from '@ezerd/model';
@@ -301,7 +302,7 @@ describe('native inline cell lifecycle', () => {
     try {
       ui.begin();
       ui.change('first');
-      await vi.advanceTimersByTimeAsync(350);
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
       ui.render();
       ui.change('last before leaving');
       ui.unmount();
@@ -355,11 +356,11 @@ describe('native inline cell lifecycle', () => {
       ui.begin();
       ui.change('temporary');
       ui.change('label');
-      await vi.advanceTimersByTimeAsync(350);
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
       ui.render();
       expect(ui.props.context.onSave).not.toHaveBeenCalled();
       ui.change('next');
-      await vi.advanceTimersByTimeAsync(350);
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
       ui.render();
       expect(ui.props.context.onSave).toHaveBeenCalledOnce();
       expect(ui.field().props.value).toBe('next');
@@ -378,13 +379,13 @@ describe('native inline cell lifecycle', () => {
       try {
         ui.begin();
         ui.change('first');
-        await vi.advanceTimersByTimeAsync(350);
+        await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
         ui.render();
         expect(props.context.onSave).toHaveBeenCalledOnce();
         expect(ui.field().props.value).toBe('first');
         expect(ui.focus).not.toHaveBeenCalled();
         ui.change('second');
-        await vi.advanceTimersByTimeAsync(350);
+        await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
         ui.render();
         expect(props.context.onSave).toHaveBeenCalledTimes(2);
         expect(props.context.onSave).toHaveBeenLastCalledWith(
@@ -410,7 +411,7 @@ describe('native inline cell lifecycle', () => {
       expect(ui.props.context.onSave).not.toHaveBeenCalled();
       call(ui.root(), 'onCompositionEnd');
       ui.render();
-      await vi.advanceTimersByTimeAsync(350);
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
       expect(ui.props.context.onSave).toHaveBeenCalledOnce();
       ui.render();
     } finally {

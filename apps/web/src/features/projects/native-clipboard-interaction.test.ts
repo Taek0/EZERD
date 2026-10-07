@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { isValidElement, type ReactElement } from 'react';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeClipboardMenu } from './native-clipboard.js';
@@ -223,11 +224,11 @@ describe('native clipboard menu real callback consumption without DOM', () => {
     const sourceText = JSON.stringify(clipboardCommand().clipboard);
     text(ui.renderForm(), sourceText);
     ui.renderForm();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(save).not.toHaveBeenCalled();
     click(ui.renderForm(), '새 ID와 이름 검토');
     ui.renderForm();
-    await vi.advanceTimersByTimeAsync(299);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS - 1);
     expect(save).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(save).toHaveBeenCalledTimes(1);
@@ -251,7 +252,7 @@ describe('native clipboard menu real callback consumption without DOM', () => {
     resolve(true);
     await flush();
     ui.renderForm();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(loadNativeEditorDraft(clipboardActor, ui.snapshot.project.id, before.key)).toEqual({
       ...newer,
       before: before.values,

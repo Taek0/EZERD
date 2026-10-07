@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeEditorForm, type NativeEditorContext } from './native-editor-form.js';
@@ -207,7 +208,7 @@ describe.each(['domain', 'relation'] as const)('%s autosave integration', (kind)
     const key = ui.props().draftKey;
     ui.change('name', 'first');
     ui.draw();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(ui.saves).toHaveLength(1);
     ui.change('name', 'second');
     ui.draw();
@@ -220,7 +221,7 @@ describe.each(['domain', 'relation'] as const)('%s autosave integration', (kind)
     ui.applyCreate();
     ui.draw();
     ui.draw();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(ui.props().draftKey).toBe(key);
     expect(ui.values().name).toBe('second');
     expect(ui.saves).toHaveLength(2);
@@ -238,7 +239,7 @@ describe.each(['domain', 'relation'] as const)('%s autosave integration', (kind)
     ui.draw();
     ui.change('name', 'first');
     ui.draw();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.acknowledgements[0]!(false);
     await vi.advanceTimersByTimeAsync(0);
     ui.draw();
@@ -246,7 +247,7 @@ describe.each(['domain', 'relation'] as const)('%s autosave integration', (kind)
     expect(ui.draft()?.values.name).toBe('first');
     ui.change('name', 'retry');
     ui.draw();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(ui.saves[1]![0]).toMatchObject({
       type: kind === 'domain' ? 'add_domain' : 'add_domain_relation',
       value: { id, name: 'retry' },
@@ -260,7 +261,7 @@ describe.each(['domain', 'relation'] as const)('%s autosave integration', (kind)
     ui.draw();
     ui.change('name', 'first');
     ui.draw();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.change('name', 'newer');
     ui.draw();
     ui.unmount();
@@ -307,7 +308,7 @@ describe.each(['domain', 'relation'] as const)('%s autosave integration', (kind)
     expect(resumed.values().id).toBe(id);
     resumed.change('description', 'continued');
     resumed.draw();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(resumed.saves[0]![0]).toMatchObject({
       type: kind === 'domain' ? 'patch_domain' : 'patch_domain_relation',
       id,

@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { isValidElement, type ReactElement } from 'react';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeEditorForm } from './native-editor-form.js';
@@ -138,14 +139,14 @@ describe('continuous form editing during queued saves', () => {
     render();
     change('name', 'B');
     render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     render();
     expect(save).toHaveBeenCalledTimes(1);
     const firstAck = resolve;
     render();
     change('name', 'A');
     render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     render();
     expect(save).toHaveBeenCalledTimes(1);
     firstAck(true);
@@ -154,7 +155,7 @@ describe('continuous form editing during queued saves', () => {
     expect(
       loadNativeEditorDraft(clipboardActor, snapshot.project.id, 'test:continuous')?.values.name,
     ).toBe('A');
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(save).toHaveBeenCalledTimes(2);
     expect((save.mock.calls[1] as unknown as [unknown])[0]).toEqual([
       { type: 'patch_table', id: 'a', patch: { logical: { name: 'A' } } },

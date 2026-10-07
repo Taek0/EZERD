@@ -1,3 +1,5 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
+vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enabled: true }) }));
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeEditorForm } from './native-editor-form.js';
@@ -192,7 +194,7 @@ function editor(kind: 'generic' | 'property') {
     },
     async settleDebounce() {
       render();
-      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
       render();
     },
     unrelatedSnapshot() {

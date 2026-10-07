@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeCanvasInputForm, type NativeCanvasSubmit } from './NativeCanvasInputForm.js';
@@ -552,9 +553,9 @@ describe('canvas automatic saving', () => {
     expect(save).not.toHaveBeenCalled();
     (nodes(tree).find((n) => n.type === 'form')!.props.onCompositionEnd as () => void)();
     ui.render();
-    await vi.advanceTimersByTimeAsync(299);
     expect(save).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
+    // The max-wait deadline elapsed during IME; save only after composition ends.
+    await vi.advanceTimersByTimeAsync(0);
     ui.render();
     expect(save).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(5000);
@@ -563,7 +564,7 @@ describe('canvas automatic saving', () => {
     expect(ui.draft()?.values.route).toBe('12');
     ui.change('route', '13');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(save).toHaveBeenCalledTimes(2);
     ui.unmount();
   });
@@ -575,7 +576,7 @@ describe('canvas automatic saving', () => {
     ui.render();
     ui.change('route', '1');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     const tree = ui.render();
     expect(save).not.toHaveBeenCalled();
     const confirmation = nodes(tree).find((n) => n.props.children === '삭제 실행 확인')!;
@@ -597,13 +598,13 @@ describe('canvas accepted values', () => {
     ui.render();
     ui.change('route', '10');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.render();
     expect(ui.values().route).toBe('10');
     expect(ui.draft()).toBeNull();
     ui.change('route', '11');
     ui.render();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     ui.render();
     expect(save).toHaveBeenCalledTimes(2);
     expect(ui.values().route).toBe('11');

@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { createElement, isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -165,7 +166,7 @@ describe('native auxiliary original UI compositions', () => {
       false,
       'editor:canvas:style:note:n',
     );
-    await vi.advanceTimersByTimeAsync(299);
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS - 1);
     expect(context.onSave).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     render();
