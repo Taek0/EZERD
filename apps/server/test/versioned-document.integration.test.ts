@@ -272,7 +272,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           documentSchemaVersion: 1,
           database: { kind, revision: 3 },
         });
-        expect((await request(`/projects/${id}`)).status).toBe(200);
+        expect((await request(`/projects/${id}`)).status).toBe(410);
       },
     );
     it('authenticates and enforces read access; archived state remains readable without writes', async () => {
@@ -307,28 +307,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       const id = await createProject();
       const path = `/projects/${id}`;
       const clientId = randomUUID();
-      const old = (await request(`${path}/sync-baseline`, 'POST', { clientId })).data;
-      const document = addDomain(
-        old.document,
-        { id: 'domain', name: 'accepted', description: '' },
-        { x: 0, y: 0 },
-      );
-      const input = {
-        operationId: randomUUID(),
-        groupId: randomUUID(),
-        clientId,
-        baselineId: old.baselineId,
-        baseSequence: old.sequence,
-        baselineIssuedAt: old.baselineIssuedAt,
-        databaseRevision: old.databaseRevision,
-        kind: 'online',
-        dependencyPaths: [],
-        baselineDocument: old.document,
-        document,
-        changes: deriveOperationChanges(old.document, document),
-      };
-      const accepted = await request(`${path}/operations`, 'POST', input);
-      expect(accepted.data.status).toBe('accepted');
+      const input = { operationId: randomUUID() };
       const source = migrateDesignDocumentV1(
         legacyDocument(),
         defaultDatabaseContext('postgresql'),
@@ -356,15 +335,16 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       ] as const) {
         const response = await request(url, method, body);
         expect(response).toMatchObject({
-          status: 409,
-          data: { code: 'document.client-upgrade-required' },
+          status: url.endsWith('/export') ? 409 : 410,
+          data: {
+            code: url.endsWith('/export')
+              ? 'document.client-upgrade-required'
+              : 'document.legacy-api-retired',
+          },
         });
       }
-      const replay = await request(`${path}/operations`, 'POST', input);
-      expect(replay).toEqual(accepted);
-      expect((await request(`${path}/operations/${input.operationId}`)).data).toEqual(
-        accepted.data,
-      );
+      expect((await request(`${path}/operations`, 'POST', input)).status).toBe(410);
+      expect((await request(`${path}/operations/${input.operationId}`)).status).toBe(410);
       expect(await stored(id)).toEqual(before);
       const changed = await request(path, 'PATCH', {
         expectedVersion: before.version,
@@ -502,39 +482,27 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       }
     });
     it.each(['postgresql', 'mysql', 'sqlite'])(
-      'upgrades %s v1 through actual HTTP/MCP while preserving source history and old accepted replay',
+      'upgrades %s v1 through actual HTTP/MCP while preserving source history and rejecting retired clients',
       async (kind) => {
         const id = await createProject(kind);
         const oldClientId = randomUUID();
-        const old = (
-          await request(`/projects/${id}/sync-baseline`, 'POST', { clientId: oldClientId })
-        ).data;
         const legacy = legacyDocument();
-        const oldInput = {
-          operationId: randomUUID(),
-          groupId: randomUUID(),
-          clientId: oldClientId,
-          baselineId: old.baselineId,
-          baseSequence: old.sequence,
-          baselineIssuedAt: old.baselineIssuedAt,
-          databaseRevision: old.databaseRevision,
-          kind: 'online',
-          dependencyPaths: [],
-          baselineDocument: old.document,
-          document: legacy,
-          changes: deriveOperationChanges(old.document, legacy),
-        };
-        const oldAccepted = await request(`/projects/${id}/operations`, 'POST', oldInput);
-        expect(oldAccepted.data).toMatchObject({ status: 'accepted', sequence: 1 });
-        // Emulate an older raw v1 row without rewriting it on reads.
-        await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
-          id,
-          JSON.stringify(legacy),
-        ]);
+        const oldInput = { operationId: randomUUID() };
+        // Historical state fixture, not a call to the retired editing API.
+        await pool.query(
+          'UPDATE projects SET document=$2::jsonb, version=1, sync_sequence=1 WHERE id=$1',
+          [id, JSON.stringify(legacy)],
+        );
         const before = await stored(id);
-        const preUpgrade = (
-          await request(`/projects/${id}/sync-baseline`, 'POST', { clientId: randomUUID() })
-        ).data;
+        const preUpgrade = {
+          baselineId: randomUUID(),
+          sequence: 1,
+          baselineIssuedAt: new Date().toISOString(),
+        };
+        await pool.query(
+          'INSERT INTO sync_client_baselines (baseline_id,project_id,client_id,user_id,last_successful_sync_at,last_sequence,database_revision,document) VALUES ($1,$2,$3,$4,NOW(),1,0,$5::jsonb)',
+          [preUpgrade.baselineId, id, oldClientId, actorId, JSON.stringify(legacy)],
+        );
         const issued = { status: 201, data: { token: ownerMcpToken } };
         const client = new Client({ name: 'native-upgrade-fixture', version: '1.0.0' });
         try {
@@ -608,9 +576,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
               })
             ).status,
           ).toBe(409);
-          expect((await request(`/projects/${id}/operations`, 'POST', oldInput)).data).toEqual(
-            oldAccepted.data,
-          );
+          expect((await request(`/projects/${id}/operations`, 'POST', oldInput)).status).toBe(410);
           const invalidOld = {
             ...oldInput,
             operationId: randomUUID(),
@@ -619,7 +585,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             baselineIssuedAt: preUpgrade.baselineIssuedAt,
           };
           expect((await request(`/projects/${id}/operations`, 'POST', invalidOld)).status).toBe(
-            409,
+            410,
           );
           expect((await request(`/projects/${id}/native-sync/events?since=1`)).data).toMatchObject({
             resetRequired: true,
@@ -1013,7 +979,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         expect(
           await request(`/projects/${id}/native-sync/operations/${input.operationId}`),
         ).toMatchObject({ status: 200, data: accepted.data });
-        expect((await request(`/projects/${id}/operations/${input.operationId}`)).status).toBe(409);
+        expect((await request(`/projects/${id}/operations/${input.operationId}`)).status).toBe(410);
         expect(
           (await request(`/projects/${id}/native-sync/operations`, 'POST', input)).data,
         ).toEqual(accepted.data);

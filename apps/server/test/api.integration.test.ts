@@ -40,7 +40,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
         : path === '/projects/import' && method === 'POST'
           ? { workspaceId, transfer: body }
           : body;
-    const response = await fetch(`${base}/api${path}`, {
+    // Common lifecycle tests use the versioned snapshot, adapting only the local fixture shape.
+    const snapshot = method === 'GET' && /^\/projects\/[^/]+$/.test(path);
+    const response = await fetch(`${base}/api${path}${snapshot ? '/document-state' : ''}`, {
       method,
       headers: {
         'content-type': 'application/json',
@@ -57,6 +59,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     };
     if (path === '/projects' && method === 'POST' && result.status === 201)
       await seedLegacyProject(pool, result.data.id);
+    if (snapshot && result.status === 200)
+      result.data = { project: result.data.project, document: result.data.sourceDocument };
     return result;
   }
   async function login(userId: string, pin = '0012'): Promise<string> {
@@ -82,33 +86,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     }
     return response.data.token;
   }
-  async function syncDocument(
-    projectId: string,
-    document: DesignDocument,
-    clientId = randomUUID(),
-  ) {
-    const baseline = await request(`/projects/${projectId}/sync-baseline`, 'POST', { clientId });
-    if (baseline.status !== 201) return baseline;
-    const operation = {
-      operationId: randomUUID(),
-      groupId: randomUUID(),
-      clientId,
-      baselineId: baseline.data.baselineId,
-      baseSequence: baseline.data.sequence,
-      baselineIssuedAt: baseline.data.baselineIssuedAt,
-      kind: 'online',
-      dependencyPaths: [],
-      changes: deriveOperationChanges(baseline.data.document, document),
-      baselineDocument: baseline.data.document,
-      document,
-    };
-    const result = await request(`/projects/${projectId}/operations`, 'POST', operation);
-    if (result.status !== 201 || result.data.status !== 'accepted') return result;
-    const opened = await request(`/projects/${projectId}`);
-    return {
-      status: result.status,
-      data: { project: opened.data.project, document: result.data.document },
-    };
+  // Seed only review fixtures: retired v1 editing is verified separately as 410.
+  async function seedReviewDocument(projectId: string, document: DesignDocument) {
+    await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+      projectId,
+      JSON.stringify(document),
+    ]);
   }
   beforeAll(async () => {
     // Import compiled Nest decorators, avoiding test-transformer decorator differences.
@@ -157,7 +140,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     if (app) await app.close();
   });
 
-  it('roundtrips a design into independent projects and supports fresh sync after import', async () => {
+  it('roundtrips a design into independent projects and rejects retired writes after import', async () => {
     let document = addDomain(
       createEmptyDocument(),
       { id: 'transfer-domain', name: '판매', description: '설명', color: '#112233' },
@@ -285,13 +268,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       'formatVersion',
       'project',
     ]);
-    const changed = {
-      ...document,
-      domains: document.domains.map((domain) => ({ ...domain, name: '가져온 후 수정' })),
-    };
-    const saved = await syncDocument(first.data.id, changed);
-    expect(saved.status).toBe(201);
-    expect(saved.data.document).toEqual({ ...canonical, domains: changed.domains });
+    expect((await request(`/projects/${first.data.id}/operations`, 'POST', {})).status).toBe(410);
     expect((await request(`/projects/${second.data.id}`)).data.document).toEqual(canonical);
   });
   it('normalizes case across registration, login, rename and concurrent creation', async () => {
@@ -435,148 +412,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect((await request('/users/invalid')).status).toBe(400);
     expect((await request('/users/' + randomUUID())).status).toBe(404);
   });
-  it('persists operation edits, retires full-document writes, and protects archived projects', async () => {
-    const name = `integration-${randomUUID()}_%`;
-    expect(
-      (await request('/projects', 'POST', { name: 'unauthenticated project' }, null)).status,
-    ).toBe(401);
-    const created = await request('/projects', 'POST', { name });
-    if (created.data.id) projectIds.push(created.data.id);
-    expect(created.status).toBe(201);
-    expect(created.data.version).toBe(0);
-    const id = created.data.id;
-    const opened = await request(`/projects/${id}`);
-    expect(opened.data.document).toEqual({
-      schemaVersion: 1,
-      domains: [],
-      domainRelations: [],
-      notes: [],
-      layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] },
-    });
-    const document = {
-      ...opened.data.document,
-      domains: [{ id: 'domain-one', name: '주문', description: '' }],
-    };
-    const writes = await Promise.all([syncDocument(id, document), syncDocument(id, document)]);
-    expect(writes.map((result) => result.status)).toEqual([201, 201]);
-    expect((await request(`/projects/${id}`)).data.document).toEqual(document);
-    expect(
-      (await request(`/projects/${id}/document`, 'PUT', { expectedVersion: 0, document })).status,
-    ).toBe(410);
-    expect(
-      (await request(`/projects?search=${encodeURIComponent(name)}`)).data.map(
-        (p: { id: string }) => p.id,
-      ),
-    ).toEqual([id]);
-    expect(
-      (await request(`/projects/${id}`, 'PATCH', { expectedVersion: 0, name: 'stale' })).status,
-    ).toBe(409);
-    const beforeArchive = (await request(`/projects/${id}`)).data.project.version;
-    const archived = await request(`/projects/${id}`, 'PATCH', {
-      expectedVersion: beforeArchive,
-      name: '보관 프로젝트',
-      status: 'archived',
-    });
-    expect(archived.data.version).toBe(beforeArchive + 1);
-    const archivedWrite = await syncDocument(id, document);
-    expect(archivedWrite.status).toBe(400);
-    expect(
-      (await request('/projects?status=archived')).data.some((p: { id: string }) => p.id === id),
-    ).toBe(true);
-    expect((await request('/projects?status=unknown')).status).toBe(400);
-    expect((await request(`/projects/${randomUUID()}`)).status).toBe(404);
-  });
-
-  it('round-trips project enums, stable references and independent crow-foot endpoints', async () => {
-    const created = await request('/projects', 'POST', { name: 'integration editor workflow' });
-    projectIds.push(created.data.id);
-    const id = created.data.id;
-    const opened = await request('/projects/' + id);
-    const properties = { common: {}, logical: {}, physical: {} };
-    const document = {
-      ...opened.data.document,
-      domains: [{ id: 'd', name: 'domain', description: '' }],
-      enums: [{ id: 'enum', schema: 'public', name: 'status', values: ['new', 'done'] }],
-      tables: [
-        {
-          id: 't',
-          domainId: 'd',
-          scope: 'both',
-          logical: { name: '상태', definition: '' },
-          physical: { name: 'state', schema: 'public', comment: '' },
-          customProperties: properties,
-        },
-      ],
-      columns: [
-        {
-          id: 'c',
-          tableId: 't',
-          scope: 'both',
-          logical: { name: '상태', definition: '', semanticType: '', required: false },
-          physical: {
-            name: 'status',
-            type: { name: 'status', enumId: 'enum', isArray: false },
-            nullable: false,
-            defaultExpression: null,
-            comment: '',
-          },
-          customProperties: properties,
-        },
-      ],
-      tableRelations: [
-        {
-          id: 'r',
-          sourceTableId: 't',
-          targetTableId: 't',
-          scope: 'logical',
-          logical: {
-            name: 'state.status:state',
-            cardinality: 'one-to-many',
-            required: false,
-            description: '설명',
-            sourceCardinality: { min: 0, max: 'many' },
-            targetCardinality: { min: 1, max: 1 },
-          },
-          physical: null,
-        },
-      ],
-      layout: {
-        ...opened.data.document.layout,
-        relations: [{ relationId: 'r', viewId: 'd', offset: 0, bend: { x: -215.5, y: 345 } }],
-      },
-    };
-    expect((await syncDocument(id, document)).status).toBe(201);
-    const canonical = {
-      ...document,
-      layout: {
-        ...document.layout,
-        nodes: [
-          {
-            id: 'node:t:__tables__',
-            objectId: 't',
-            viewId: '__tables__',
-            x: 0,
-            y: 0,
-            width: 320,
-            height: 260,
-          },
-        ],
-        relations: [
-          { relationId: 'r', viewId: '__tables__', offset: 0, bend: { x: -215.5, y: 345 } },
-        ],
-      },
-    };
-    expect((await request('/projects/' + id)).data.document).toEqual(canonical);
-    document.enums[0]!.name = 'workflow_status';
-    expect((await syncDocument(id, document)).status).toBe(201);
-    expect((await request('/projects/' + id)).data.document.columns[0].physical.type.enumId).toBe(
-      'enum',
-    );
-    expect((await request('/projects/' + id)).data.document).toEqual({
-      ...canonical,
-      enums: document.enums,
-    });
-  });
 
   it('deletes only version-matched archived projects and cascades pins without deleting people', async () => {
     const author = await request('/users', 'POST', {
@@ -667,7 +502,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       ...opened.data.document,
       domains: [{ id: 'd', name: 'D', description: '' }],
     };
-    expect((await syncDocument(id, document)).status).toBe(201);
+    await seedReviewDocument(id, document);
     const pin = await request(
       '/projects/' + id + '/threads',
       'POST',
@@ -677,7 +512,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     expect(pin.status).toBe(201);
     expect(pin.data.x).toBe(31);
     expect(pin.data.objectId).toBe(null);
-    expect((await syncDocument(id, { ...document, domains: [] })).status).toBe(201);
+    await seedReviewDocument(id, { ...document, domains: [] });
     const list = await request('/projects/' + id + '/threads');
     expect(list.data[0].messages[0].body).toBe('domain pin');
     expect(
@@ -769,39 +604,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
     ).toBe(404);
   });
 
-  it('accepts operation documents over 100 KB and keeps project validation intact', async () => {
-    const created = await request('/projects', 'POST', { name: 'integration large document' });
-    if (created.data.id) projectIds.push(created.data.id);
-    expect(created.status).toBe(201);
-    const id = created.data.id;
-    const opened = await request(`/projects/${id}`);
-    const document = {
-      ...opened.data.document,
-      notes: Array.from({ length: 20 }, (_, index) => ({
-        id: `note-${index}`,
-        viewId: 'overview',
-        text: 'x'.repeat(10000),
-      })),
-    };
-    expect((await syncDocument(id, document)).status).toBe(201);
-    expect((await request(`/projects/${id}`)).data.document).toEqual(document);
-    expect((await request(`/projects/${id}`, 'PATCH', { expectedVersion: 1 })).status).toBe(400);
-    expect(
-      (await request(`/projects/${id}`, 'PATCH', { expectedVersion: -1, name: 'invalid' })).status,
-    ).toBe(400);
-    expect(
-      (await request(`/projects/${id}`, 'PATCH', { expectedVersion: 1, name: ' ' })).status,
-    ).toBe(400);
-    expect((await request(`/projects/${id}`)).data.project.version).toBe(1);
-    expect((await request('/projects/not-a-uuid')).status).toBe(400);
-    expect(
-      (await request(`/projects/${randomUUID()}/sync-baseline`, 'POST', { clientId: randomUUID() }))
-        .status,
-    ).toBe(404);
-    expect((await request('/health')).status).toBe(200);
-    expect((await request('/health/ready')).status).toBe(200);
-  });
-
   it('does not expose database error details', async () => {
     const { WorkspaceController } = await import('../dist/workspace/workspace.controller.js');
     const brokenDatabase = {
@@ -826,123 +628,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       expect(JSON.stringify(failure.getResponse())).not.toContain('secret');
       expect(JSON.stringify(failure.getResponse())).not.toContain('private-host');
     }
-  });
-
-  it('rejects multibyte operation documents above 1.5 MB without replacing saved data', async () => {
-    const created = await request('/projects', 'POST', { name: 'integration UTF-8 limits' });
-    if (created.data.id) projectIds.push(created.data.id);
-    expect(created.status).toBe(201);
-    const id = created.data.id;
-    const opened = await request(`/projects/${id}`);
-    const savedDocument = {
-      ...opened.data.document,
-      domains: [{ id: 'keep-domain', name: '보존할 도메인', description: '저장된 내용' }],
-    };
-    const saved = await syncDocument(id, savedDocument);
-    expect(saved.status).toBe(201);
-
-    // All individual fields and collections are valid; only total UTF-8 bytes exceed the cap.
-    const multibyteDocument = {
-      ...savedDocument,
-      notes: Array.from({ length: 30 }, (_, index) => ({
-        id: `large-note-${index}`,
-        viewId: 'overview',
-        text: '한'.repeat(20000),
-      })),
-    };
-    const canonical = JSON.stringify(multibyteDocument);
-    expect(canonical.length).toBeLessThan(1_500_000);
-    expect(Buffer.byteLength(canonical, 'utf8')).toBeGreaterThan(1_500_000);
-    expect(Buffer.byteLength(JSON.stringify(multibyteDocument), 'utf8')).toBeLessThan(
-      2 * 1024 * 1024,
-    );
-    expect((await syncDocument(id, multibyteDocument)).status).toBe(400);
-    expect((await request(`/projects/${id}`)).data).toEqual(saved.data);
-  });
-
-  it('reopens shared map content while leaving personal viewports out of persistence', async () => {
-    const created = await request('/projects', 'POST', { name: 'integration complete domain map' });
-    if (created.data.id) projectIds.push(created.data.id);
-    expect(created.status).toBe(201);
-    const id = created.data.id;
-    const document = {
-      schemaVersion: 1,
-      domains: [
-        { id: 'orders', name: '주문', description: '주문 접수와 상태 관리' },
-        { id: 'payments', name: '결제', description: '결제 승인과 취소' },
-      ],
-      domainRelations: [
-        {
-          id: 'orders-to-payments',
-          sourceDomainId: 'orders',
-          targetDomainId: 'payments',
-          name: '결제 요청',
-          direction: 'forward',
-          description: '접수된 주문의 결제를 요청한다.',
-        },
-      ],
-      notes: [
-        {
-          id: 'order-note',
-          viewId: 'orders',
-          text: '주문 상태 전이를 검토하세요.\n취소와 환불을 구분합니다.',
-        },
-      ],
-      layout: {
-        nodes: [
-          {
-            id: 'node-orders',
-            objectId: 'orders',
-            viewId: 'overview',
-            x: -160.5,
-            y: 80,
-            width: 240,
-            height: 140,
-          },
-          {
-            id: 'node-payments',
-            objectId: 'payments',
-            viewId: 'overview',
-            x: 320,
-            y: 120.25,
-            width: 260,
-            height: 150,
-          },
-          {
-            id: 'node-order-note',
-            objectId: 'order-note',
-            viewId: 'orders',
-            x: 48.5,
-            y: -32,
-            width: 280,
-            height: 180,
-          },
-        ],
-        viewports: [
-          { viewId: 'overview', x: 125.5, y: -44, zoom: 0.8 },
-          { viewId: 'orders', x: -72.25, y: 96, zoom: 1.4 },
-          { viewId: 'payments', x: 0, y: 0, zoom: 1 },
-        ],
-      },
-    };
-    const saved = await syncDocument(id, document);
-    expect(saved.status).toBe(201);
-    expect(saved.data.project.version).toBe(1);
-    expect(saved.data.document).toEqual({
-      ...document,
-      notes: document.notes.map((note) => ({ ...note, viewId: '__tables__' })),
-      layout: {
-        ...document.layout,
-        nodes: document.layout.nodes.map((node) =>
-          node.objectId === 'order-note' ? { ...node, viewId: '__tables__' } : node,
-        ),
-        viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }],
-      },
-    });
-    const reopened = await request(`/projects/${id}`);
-    expect(reopened.status).toBe(200);
-    expect(reopened.data).toEqual(saved.data);
-    expect(reopened.data.document).toEqual(saved.data.document);
   });
   it('keeps review threads independent from design saves and atomically validates mentions', async () => {
     const author = (
@@ -981,7 +666,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
         ],
       },
     };
-    expect((await syncDocument(project.id, document)).status).toBe(201);
+    await seedReviewDocument(project.id, document);
     const input = {
       viewId: 'overview',
       objectId: 'orders',
@@ -1064,7 +749,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('PostgreSQL HTTP application',
       ).status,
     ).toBe(400);
     expect((await request(`/projects/${project.id}/threads`)).data).toHaveLength(1);
-    expect((await syncDocument(project.id, original)).status).toBe(201);
+    await seedReviewDocument(project.id, original);
     const reply = await request(
       `/threads/${thread.id}/messages`,
       'POST',

@@ -42,7 +42,6 @@ import type { AuthenticatedUser } from '../identity/session.js';
 import { ReviewService } from '../review/review.service.js';
 import { WorkspaceService } from '../workspace/workspace.service.js';
 import { SpaceService } from '../workspace/space.service.js';
-import { SyncService } from '../sync/sync.service.js';
 import { McpLogger } from './logging.js';
 import { McpAuthService } from './mcp-auth.service.js';
 import { NativeUpgradeService } from '../workspace/native-upgrade.service.js';
@@ -50,7 +49,6 @@ import { NativeDDLService } from '../workspace/native-ddl.service.js';
 import { NativeHistoryService } from '../sync/native-history.service.js';
 import { NativeSyncService } from '../sync/native-sync.service.js';
 import { NativeCancellationService } from '../sync/native-cancellation.service.js';
-import { McpDocumentService } from './mcp-document.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
   applyNativeProjectChangesMetadataSchema,
@@ -109,8 +107,6 @@ export class McpServerFactory {
     @Inject(WorkspaceService) private readonly workspace: WorkspaceService,
     @Inject(ReviewService) private readonly reviews: ReviewService,
     @Inject(McpLogger) private readonly logger: McpLogger,
-    @Inject(SyncService) _sync: SyncService,
-    @Inject(McpDocumentService) _documents: McpDocumentService,
     @Inject(McpPersonalService) private readonly personal: McpPersonalService,
     @Inject(McpNativeDocumentService) private readonly nativeDocuments: McpNativeDocumentService,
     @Inject(SpaceService) private readonly spaces: SpaceService,

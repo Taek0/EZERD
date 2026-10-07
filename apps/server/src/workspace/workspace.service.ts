@@ -132,7 +132,7 @@ export class WorkspaceService {
   }
 
   async exportProject(actorId: string, id: string): Promise<ProjectTransfer> {
-    const snapshot = await this.getProject(actorId, id);
+    const snapshot = await this.readLegacyExportDocument(actorId, id);
     return projectTransferSchema.parse({
       format: 'ezerd-project',
       formatVersion: 1,
@@ -251,18 +251,10 @@ export class WorkspaceService {
     });
   }
 
-  getProject(actorId: string, id: string) {
+  private readLegacyExportDocument(actorId: string, id: string) {
     return this.readProject(actorId, id, (row) => ({
       project: project(row),
       document: normalizeServerDocument(row.document),
-    }));
-  }
-
-  getProjectState(actorId: string, id: string) {
-    return this.readProject(actorId, id, (row) => ({
-      project: project(row),
-      document: normalizeServerDocument(row.document),
-      syncSequence: row.syncSequence,
     }));
   }
 

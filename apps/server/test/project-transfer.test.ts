@@ -40,8 +40,12 @@ const actorId = randomUUID();
 const workspaceId = randomUUID();
 const input = { workspaceId, transfer: file };
 function setup(fail = false) {
+  const stored: { row?: Record<string, unknown> } = {};
   const inserted: Array<Record<string, unknown>> = [];
   const db = {
+    select: vi.fn(() => ({
+      from: () => ({ where: async () => (stored.row ? [stored.row] : []) }),
+    })),
     insert: vi.fn(() => ({
       values: (value: Record<string, unknown>) => ({
         returning: async () => {
@@ -63,9 +67,16 @@ function setup(fail = false) {
     })),
   };
   const access = {
+    runProject: vi.fn(async (_actorId, _projectId, _permission, run) => run(db)),
     runWorkspace: vi.fn(async (_actorId, _workspaceId, _permission, run) => run(db)),
   };
-  return { service: new WorkspaceService({ db } as never, access as never), db, inserted, access };
+  return {
+    service: new WorkspaceService({ db } as never, access as never),
+    db,
+    inserted,
+    access,
+    stored,
+  };
 }
 describe('project file transfer', () => {
   it.each(['bytes', 'nodes'] as const)(
@@ -174,14 +185,19 @@ describe('project file transfer', () => {
       },
       { x: 120, y: 340 },
     );
-    const { service, inserted } = setup();
+    const { service, inserted, stored } = setup();
     const result = await service.importProject(actorId, {
       workspaceId,
       transfer: { ...file, document: direct },
     });
     expect(result.preview?.tableCount).toBe(1);
     expect(inserted[0]!.document).toEqual(direct);
-    vi.spyOn(service, 'getProject').mockResolvedValue({ project: result, document: direct });
+    stored.row = {
+      ...result,
+      document: direct,
+      createdAt: new Date(result.createdAt),
+      updatedAt: new Date(result.updatedAt),
+    };
     const exported = await service.exportProject(actorId, result.id);
     expect(exported).toMatchObject({ formatVersion: 1, document: direct });
     expect(exported.document.layout.nodes[0]).toMatchObject({
@@ -283,29 +299,33 @@ describe('project file transfer', () => {
     expect(inserted).toEqual([]);
   });
   it('exports only the name and document from a single server snapshot', async () => {
-    const { service } = setup();
-    const get = vi.spyOn(service, 'getProject').mockResolvedValue({
-      project: {
-        id: randomUUID(),
-        workspaceId,
-        name: '서버 이름',
-        databaseKind: 'mysql',
-        status: 'archived',
-        version: 12,
-        createdAt: '',
-        updatedAt: '',
-      },
-      document,
-    });
+    const { service, db, stored, access } = setup();
     const projectId = randomUUID();
+    stored.row = {
+      id: projectId,
+      workspaceId,
+      name: '서버 이름',
+      databaseKind: 'mysql',
+      status: 'archived',
+      version: 12,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      document,
+    };
     const result = await service.exportProject(actorId, projectId);
     expect(result).toEqual({
       ...file,
       exportedAt: expect.any(String),
       project: { name: '서버 이름', databaseKind: 'mysql' },
+      document: normalizeServerDocument(document),
     });
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(get).toHaveBeenCalledWith(actorId, projectId);
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(access.runProject).toHaveBeenCalledWith(
+      actorId,
+      projectId,
+      'read',
+      expect.any(Function),
+    );
     expect(Object.keys(result)).toEqual([
       'format',
       'formatVersion',
