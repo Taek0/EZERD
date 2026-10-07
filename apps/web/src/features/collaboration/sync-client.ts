@@ -31,7 +31,8 @@ import {
 } from './sync-storage.js';
 
 export type SyncStatus = 'syncing' | 'synced' | 'offline' | 'action-needed';
-export type SyncSession = { token: string; expiresAt: string; baselineIssuedAt: string };
+import type { SyncSession } from '../../shared/api/session.js';
+export type { SyncSession } from '../../shared/api/session.js';
 export type SyncSnapshot = {
   document: DesignDocument;
   status: SyncStatus;

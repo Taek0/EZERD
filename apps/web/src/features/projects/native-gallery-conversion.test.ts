@@ -342,6 +342,21 @@ describe('native gallery conversion actual consumers', () => {
       prepareGalleryDatabaseConversion(state, 'mysql', undefined, f.options),
     ).rejects.toThrow('context-invalid');
   });
+  it('rejects legacy opening before conversion recovery and sends no writes', async () => {
+    const f = fixture();
+    f.state = transferState('postgresql', 1);
+    const queue = getNativeDurableQueue();
+    const read = vi.spyOn(queue, 'read');
+    try {
+      await expect(
+        loadGalleryProjectForOpen(transferProject, f.options, async () => projectEntry(f.state)),
+      ).rejects.toThrow('v1 프로젝트');
+      expect(read).not.toHaveBeenCalled();
+      expect(f.api).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+    }
+  });
   it('opens native as viewer with no conversion pending and redirects only an actual databaseChange row to recovery', async () => {
     const f = fixture(),
       plan = await f.review();

@@ -7,19 +7,9 @@ import { useI18n } from '../shared/i18n/index.js';
 import { HelpDialog } from '../features/projects/HelpDialog.js';
 import { LanguageDialog } from '../shared/i18n/LanguageDialog.js';
 import '../shared/i18n/app-translations.js';
-import { PinPanelResizer } from '../features/comments/PinPanelResizer.js';
 import { userColorStyle } from '../features/identity/user-color-style.js';
 import { UserColorEditor } from '../features/identity/UserColorEditor.js';
-import { clampCommentsPanelWidth } from '../features/comments/comments-panel-size.js';
-import {
-  startTransition,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type CSSProperties,
-} from 'react';
-import { applyChanges, diffSharedDocument, type DesignDocument } from '@ezerd/model';
+import { startTransition, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   userSchema,
   projectSchema,
@@ -28,24 +18,12 @@ import {
   type Notification,
   type ProjectDDLExport,
 } from '@ezerd/contracts';
-import { ApiError, body, message, newId, request } from '../shared/api/client.js';
-import { Canvas, type CanvasContext } from '../features/canvas/Canvas.js';
-import {
-  CommentsPanel,
-  CommentPins,
-  Notifications,
-  type CommentContext,
-} from '../features/comments/CommentsPanel.js';
+import { ApiError, body, message, request } from '../shared/api/client.js';
+import { Notifications } from '../features/comments/CommentsPanel.js';
 import { useConfirm } from '../components/ui/ConfirmProvider.js';
 import { LatestRequest } from '../features/comments/comments-state.js';
-import {
-  ProjectSyncRuntime,
-  stableClientId,
-  type SyncSession,
-  type SyncSnapshot,
-} from '../features/collaboration/sync-client.js';
-import { SyncHistoryPanel } from '../features/collaboration/sync-history-panel.js';
-import { Avatar, Badge, Button, Dropdown, Input } from '../components/ui/index.js';
+import type { SyncSession } from '../shared/api/session.js';
+import { Avatar, Button, Dropdown, Input } from '../components/ui/index.js';
 import '../styles/responsive-shell.css';
 import { McpConnectionPanel } from '../features/mcp/McpConnectionPanel.js';
 import { exportProjectFile } from '../features/projects/ProjectTransfer.js';
@@ -73,7 +51,6 @@ import { NativeProjectView } from '../features/projects/NativeProjectView.js';
 import { NativeBackgroundRefresh } from '../features/projects/native-background-refresh.js';
 import { nativeEntryAfterAck } from '../features/projects/native-ack-entry.js';
 import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
-import { NativeUpgradeButton } from '../features/projects/NativeUpgradeButton.js';
 import { ProjectDDLDialog } from '../features/projects/ProjectDDLDialog.js';
 import {
   assertNativeExportReady,
@@ -108,20 +85,6 @@ export type Project = {
   version: number;
   createdAt: string;
   updatedAt: string;
-};
-export function rebaseAutosaveDraft(
-  base: DesignDocument,
-  draft: DesignDocument,
-  server: DesignDocument,
-) {
-  return applyChanges(server, diffSharedDocument(base, draft));
-}
-export function autosaveDelay(textEditing: boolean, composing: boolean): 0 | 500 | null {
-  return composing ? null : textEditing ? 500 : 0;
-}
-type OpenProject = {
-  project: Project;
-  document: DesignDocument;
 };
 const identityKey = 'ezerd.userId';
 export function cachedIdentitySession(
@@ -179,36 +142,14 @@ export function App() {
   const [editingLanguage, setEditingLanguage] = useState(false);
   const [showingHelp, setShowingHelp] = useState(false);
   const confirm = useConfirm();
-  const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
-  const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
   const gallery = useRef<GalleryHandle>(null);
   const galleryConversion = useRef<NativeGalleryConversionHandle>(null);
-  const nativeUpgradeEntryRef = useRef<HTMLDivElement>(null);
-  const [draftTarget, setDraftTarget] = useState<CommentContext & { nonce: number }>();
   const [user, setUser] = useState<User | null>(null),
     [checking, setChecking] = useState(true);
   const [session, setSession] = useState<SyncSession | null>(null);
   const [editingColor, setEditingColor] = useState(false);
   const [editingMcp, setEditingMcp] = useState(false);
   const [registrationPin, setRegistrationPin] = useState('');
-  const [members, setMembers] = useState<Array<{ id: string; username: string; color?: string }>>(
-    [],
-  );
-  const [resizingComments, setResizingComments] = useState(false);
-  const [commentsPanelWidth, setCommentsPanelWidth] = useState(() => {
-    try {
-      return clampCommentsPanelWidth(localStorage.getItem('ezerd.commentsPanelWidth'));
-    } catch {
-      return 340;
-    }
-  });
-  function resizeCommentsPanel(width: number) {
-    const next = clampCommentsPanelWidth(width);
-    setCommentsPanelWidth(next);
-    try {
-      localStorage.setItem('ezerd.commentsPanelWidth', String(next));
-    } catch {}
-  }
   const [username, setUsername] = useState(''),
     [editingName, setEditingName] = useState(false);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -222,15 +163,14 @@ export function App() {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false);
-  const [opened, setOpened] = useState<OpenProject | null>(null),
-    [refresh, setRefresh] = useState(0);
+  const [refresh, setRefresh] = useState(0);
   const [nativeOpened, setNativeOpened] = useState<Extract<
     ProjectEntry,
     { kind: 'native' }
   > | null>(null);
   const nativeCurrent = useRef(nativeOpened);
   // Updated with each accepted snapshot, independently of deferred presentation renders.
-  const activeProject = opened?.project ?? nativeOpened?.snapshot.project;
+  const activeProject = nativeOpened?.snapshot.project;
   const [ddlExport, setDDLExport] = useState<{
     actorId: string;
     result: ProjectDDLExport;
@@ -269,11 +209,6 @@ export function App() {
       canEdit: () => galleryIdentity.current.canEdit,
     };
   }
-  const designPermissionReadOnly = !permissions.edit || opened?.project.status === 'archived';
-  const personalReadOnly = !permissions.personal || opened?.project.status === 'archived';
-  const [sync, setSync] = useState<SyncSnapshot | null>(null);
-  const designReadOnly = designPermissionReadOnly || sync?.databaseContextChanged === true;
-  const latestSync = useRef<SyncSnapshot | null>(null);
   async function prepareProjectExport(projectId: string) {
     if (
       !user ||
@@ -281,22 +216,6 @@ export function App() {
       currentExportIdentity.current.projectId !== projectId
     )
       throw Error(t('프로젝트가 변경되었습니다. 최신 프로젝트에서 다시 내보내 주세요.'));
-    const exportingRuntime = opened ? runtime.current : null;
-    if (opened) await flushAutosave();
-    if (
-      currentExportIdentity.current.userId !== user.id ||
-      currentExportIdentity.current.projectId !== projectId
-    )
-      throw Error(t('프로젝트가 변경되었습니다. 최신 프로젝트에서 다시 내보내 주세요.'));
-    await exportingRuntime?.prepareToLeave();
-    if (
-      opened &&
-      (latestSync.current?.pending.length ||
-        latestSync.current?.storageFailure ||
-        latestSync.current?.databaseContextChanged ||
-        latestSync.current?.status === 'action-needed')
-    )
-      throw Error(t('변경 내용이 저장된 뒤 다시 내보내 주세요.'));
     try {
       if (nativeEditorExportBlocked(user.id, projectId))
         throw Error('project-export.unsaved-draft');
@@ -320,32 +239,6 @@ export function App() {
       return;
     setDDLExport({ actorId: user.id, result, ...(onFocusIssue ? { onFocusIssue } : {}) });
   }
-  const [historyAction, setHistoryAction] = useState<string | null>(null);
-  const [historyNotice, setHistoryNotice] = useState('');
-  const current = useRef(opened),
-    runtime = useRef<ProjectSyncRuntime | null>(null);
-  const autosave = useRef<{
-    base?: DesignDocument;
-    document?: DesignDocument;
-    timer?: ReturnType<typeof setTimeout>;
-    composing: boolean;
-  }>({ composing: false });
-  current.current = opened;
-  const [commentsOpen, setCommentsOpen] = useState(false),
-    [threads, setThreads] = useState<Thread[]>([]);
-  const [canvasContext, setCanvasContext] = useState<CanvasContext>({
-    viewId: 'overview',
-    selectedObjectId: null,
-    position: { x: 120, y: 120 },
-  });
-  const [focusTarget, setFocusTarget] = useState<{
-    viewId: string;
-    objectId: string | null;
-    threadId?: string;
-    x: number;
-    y: number;
-    nonce: number;
-  }>();
   const [nativeReview, setNativeReview] = useState<Thread | null>(null);
   const navigation = useRef(new LatestRequest());
   const nativeNavigationGeneration = useRef(0);
@@ -369,80 +262,22 @@ export function App() {
       error: (cause) => setError(message(cause)),
     });
   }
-  function replaceProject(value: OpenProject | null) {
+  function closeProject() {
     nativeNavigationGeneration.current++;
     nativeCurrent.current = null;
     setNativeOpened(null);
     setNativeReview(null);
-    if (autosave.current.timer) clearTimeout(autosave.current.timer);
-    autosave.current = { composing: false };
-    runtime.current?.stop();
-    runtime.current = null;
-    setSync(null);
-    latestSync.current = null;
-    current.current = value;
-    if (value) setWorkspaceId(value.project.workspaceId);
-    setOpened(value);
   }
   function replaceEntry(entry: ProjectEntry) {
-    replaceProject(null);
+    closeProject();
     nativeCurrent.current = entry;
     setNativeOpened(entry);
     setWorkspaceId(entry.snapshot.project.workspaceId);
   }
-  function restoreHistory(direction: 'undo' | 'redo') {
-    if (!current.current || designReadOnly || busy) return;
-    void runtime.current?.[direction]().catch((cause) => setError(message(cause)));
-  }
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      const target = event.target;
-      const editable =
-        target instanceof Element &&
-        !!target.closest(
-          'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
-        );
-      if (
-        editable ||
-        event.isComposing ||
-        event.defaultPrevented ||
-        document.querySelector('dialog[open], [aria-modal="true"]')
-      )
-        return;
-      const key = event.key.toLowerCase();
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && (key === 'z' || key === 'y')) {
-        if (!current.current || designReadOnly || busy) return;
-        event.preventDefault();
-        restoreHistory(key === 'y' || event.shiftKey ? 'redo' : 'undo');
-      }
-    };
-    window.addEventListener('keydown', keydown);
-    return () => {
-      window.removeEventListener('keydown', keydown);
-    };
-  });
-  function focusThread(thread: Thread) {
-    setDraftTarget(undefined);
-    setCommentsOpen(true);
-    setFocusTarget({
-      viewId: thread.viewId,
-      objectId: thread.objectId,
-      threadId: thread.id,
-      x: thread.x,
-      y: thread.y,
-      nonce: Date.now(),
-    });
-  }
-  function resetReview() {
-    setDraftTarget(undefined);
-    setThreads([]);
-    setFocusTarget(undefined);
-    setCanvasContext({ viewId: 'overview', selectedObjectId: null, position: { x: 120, y: 120 } });
-  }
   async function visitNotification(notification: Notification): Promise<boolean> {
     if (gallery.current && !(await gallery.current.flush())) return false;
     if (busy) return false;
-    const sameProject = current.current?.project.id === notification.projectId;
+    const sameProject = nativeCurrent.current?.snapshot.project.id === notification.projectId;
     const ticket = navigation.current.begin();
     setBusy(true);
     setError('');
@@ -457,14 +292,10 @@ export function App() {
         .find((t) => t.id === notification.threadId);
       if (!thread) throw new Error(t('알림의 댓글을 찾을 수 없습니다.'));
       if (projectValue) {
-        await flushAutosave();
-        await runtime.current?.prepareToLeave();
         if (!navigation.current.isCurrent(ticket)) return false;
         replaceEntry(projectValue);
-        resetReview();
       }
-      if (nativeCurrent.current) setNativeReview(thread);
-      else focusThread(thread);
+      setNativeReview(thread);
       return true;
     } catch (e) {
       if (navigation.current.isCurrent(ticket)) setError(message(e));
@@ -536,16 +367,12 @@ export function App() {
             spaces.some((space) => space.id === id) ? id : (spaces[0]?.id ?? ''),
           );
           if (
-            (current.current || nativeCurrent.current) &&
+            nativeCurrent.current &&
             !spaces.some(
-              (space) =>
-                space.id ===
-                (current.current?.project.workspaceId ??
-                  nativeCurrent.current?.snapshot.project.workspaceId),
+              (space) => space.id === nativeCurrent.current?.snapshot.project.workspaceId,
             )
           ) {
-            replaceProject(null);
-            resetReview();
+            closeProject();
             setError(t('워크스페이스 접근 권한이 변경되었습니다.'));
           }
         })
@@ -562,7 +389,7 @@ export function App() {
     };
   }, [user?.id, session?.token, refresh]);
   useEffect(() => {
-    if (!user || !session || opened || nativeOpened || !workspaceId) {
+    if (!user || !session || nativeOpened || !workspaceId) {
       setProjects([]);
       return;
     }
@@ -585,62 +412,7 @@ export function App() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [user, session, opened, nativeOpened, workspaceId, status, search, refresh]);
-  useEffect(() => {
-    if (!opened || !user || !session || !projectWorkspace || opened.project.status === 'archived')
-      return;
-    const projectId = opened.project.id;
-    const instance = new ProjectSyncRuntime({
-      projectId,
-      userId: user.id,
-      clientId: stableClientId(),
-      session,
-      initialDocument: opened.document,
-      initialDatabaseRevision: opened.project.databaseRevision ?? 0,
-      sharedReadOnly: designPermissionReadOnly,
-      personalReadOnly,
-      onWorkspaceAccessChange: (id) => {
-        if (autosave.current.timer) clearTimeout(autosave.current.timer);
-        autosave.current = { composing: false };
-        setDraftTarget(undefined);
-        setWorkspaces((spaces) => spaces.filter((space) => space.id !== id));
-        setRefresh((value) => value + 1);
-      },
-      onChange: (snapshot) => {
-        setSync(snapshot);
-        latestSync.current = snapshot;
-        const value = current.current;
-        if (!value || value.project.id !== projectId) return;
-        let document = snapshot.document;
-        const draft = autosave.current;
-        if (draft.base && draft.document) {
-          try {
-            document = rebaseAutosaveDraft(draft.base, draft.document, snapshot.document);
-            draft.base = snapshot.document;
-            draft.document = document;
-          } catch {
-            document = draft.document;
-          }
-        }
-        const next = { ...value, document };
-        current.current = next;
-        setOpened(next);
-      },
-    });
-    runtime.current = instance;
-    void instance.start();
-    return () => {
-      instance.stop();
-      if (runtime.current === instance) runtime.current = null;
-    };
-  }, [
-    opened?.project.id,
-    opened?.project.status,
-    projectWorkspace?.role,
-    projectWorkspace?.status,
-    user?.id,
-    session?.token,
-  ]);
+  }, [user, session, nativeOpened, workspaceId, status, search, refresh]);
   async function identify(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -715,9 +487,6 @@ export function App() {
       }
       const value = result.entry;
       if (!navigation.current.isCurrent(ticket)) return;
-      resetReview();
-      await flushAutosave();
-      await runtime.current?.prepareToLeave();
       if (!navigation.current.isCurrent(ticket)) return;
       replaceEntry(value);
     } catch (e) {
@@ -821,72 +590,11 @@ export function App() {
       setBusy(false);
     }
   }
-  function applyDocument(document: DesignDocument) {
-    if (!current.current) return;
-    const next = { ...current.current, document };
-    current.current = next;
-    setOpened(next);
-  }
-  function scheduleAutosave() {
-    const draft = autosave.current;
-    if (personalReadOnly || draft.composing || !draft.document) return;
-    if (draft.timer) clearTimeout(draft.timer);
-    draft.timer = setTimeout(() => {
-      void flushAutosave();
-    }, 500);
-  }
-  async function flushAutosave() {
-    const draft = autosave.current;
-    if (personalReadOnly || draft.composing || !draft.document) return;
-    if (draft.timer) clearTimeout(draft.timer);
-    const document = draft.document;
-    autosave.current = { composing: draft.composing };
-    await runtime.current?.edit(document);
-  }
-  function previewEdit(document: DesignDocument) {
-    if (personalReadOnly) return;
-    const previous = current.current?.document;
-    if (
-      !previous ||
-      document === previous ||
-      (designReadOnly && diffSharedDocument(previous, document).length > 0)
-    )
-      return;
-    const draft = autosave.current;
-    draft.base ??= previous;
-    draft.document = document;
-    applyDocument(document);
-  }
-  function edit(document: DesignDocument) {
-    if (personalReadOnly) return;
-    const previous = current.current?.document;
-    if (previous && designReadOnly && diffSharedDocument(previous, document).length > 0) return;
-    if (!previous || (document === previous && autosave.current.document !== document)) return;
-    if (document !== previous) applyDocument(document);
-    const active = globalThis.document?.activeElement;
-    const textEditing =
-      active instanceof Element &&
-      !!active.closest('input, textarea, [contenteditable]:not([contenteditable="false"])');
-    const delay = autosaveDelay(textEditing, autosave.current.composing);
-    if (delay !== 0) {
-      const draft = autosave.current;
-      draft.base ??= previous;
-      draft.document = document;
-      if (delay === 500) scheduleAutosave();
-      return;
-    }
-    if (autosave.current.timer) clearTimeout(autosave.current.timer);
-    autosave.current = { composing: false };
-    void runtime.current?.edit(document);
-  }
   async function signOut() {
     if (gallery.current && !(await gallery.current.flush())) return;
     if (busy) return;
     setBusy(true);
     navigation.current.begin();
-    if (autosave.current.timer) clearTimeout(autosave.current.timer);
-    autosave.current = { composing: false };
-    runtime.current?.stop();
     setEditingName(false);
     setEditingColor(false);
     setEditingLanguage(false);
@@ -897,8 +605,7 @@ export function App() {
       { removeItem: (key) => localStorage.removeItem(key) },
       { removeItem: (key) => sessionStorage.removeItem(key) },
     );
-    replaceProject(null);
-    resetReview();
+    closeProject();
     setSession(null);
     setUser(null);
     setUsername('');
@@ -907,8 +614,6 @@ export function App() {
     setWorkspacesLoaded(false);
     setWorkspaceId('');
     setProjects([]);
-    setMembers([]);
-    setCommentsOpen(false);
     setSearch('');
     setStatus('active');
     setBusy(false);
@@ -923,27 +628,19 @@ export function App() {
   const workspaceSwitchPending = useRef(false);
   async function selectWorkspace(id: string) {
     if (gallery.current && !(await gallery.current.flush())) return;
-    if (
-      workspaceSwitchPending.current ||
-      busy ||
-      (id === workspaceId && !current.current && !nativeCurrent.current)
-    )
+    if (workspaceSwitchPending.current || busy || (id === workspaceId && !nativeCurrent.current))
       return;
     workspaceSwitchPending.current = true;
     setBusy(true);
     setError('');
     const ticket = navigation.current.begin();
     try {
-      await flushAutosave();
-      await runtime.current?.prepareToLeave();
       if (!navigation.current.isCurrent(ticket)) return;
-      resetReview();
-      replaceProject(null);
+      closeProject();
       setWorkspaceId(id);
       setProjects([]);
       setSearch('');
       setStatus('active');
-      setCommentsOpen(false);
     } catch (cause) {
       if (navigation.current.isCurrent(ticket)) setError(message(cause));
     } finally {
@@ -954,7 +651,7 @@ export function App() {
   async function leave() {
     if (gallery.current && !(await gallery.current.flush())) return;
     if (
-      (current.current || nativeCurrent.current) &&
+      nativeCurrent.current &&
       !(await confirm({
         title: t('갤러리로 이동할까요?'),
         description: t('현재 프로젝트를 닫고 프로젝트 갤러리로 이동합니다.'),
@@ -962,59 +659,9 @@ export function App() {
       }))
     )
       return;
-    await flushAutosave();
     navigation.current.begin();
     setBusy(false);
-    resetReview();
-    replaceProject(null);
-  }
-  async function restoreDeletion(operationId: string) {
-    const value = current.current;
-    if (!value || !session || historyAction || designReadOnly) return;
-    setHistoryAction(operationId);
-    setHistoryNotice('');
-    setError('');
-    try {
-      const outcome = await request<{
-        result: { status: 'accepted' | 'rejected'; reason?: string };
-        omittedRelations: string[];
-      }>(`/api/projects/${value.project.id}/deletions/${operationId}/restore`, {
-        ...body('POST', { operationId: newId(), groupId: newId(), clientId: stableClientId() }),
-        headers: { Authorization: `Bearer ${session.token}` },
-      });
-      if (outcome.result.status !== 'accepted')
-        throw new Error(outcome.result.reason ?? t('삭제 항목을 복원하지 못했습니다.'));
-      setHistoryNotice(
-        outcome.omittedRelations.length
-          ? t(
-              '삭제 항목을 새 객체로 복원했습니다. 현재 구조에서 유효하지 않은 관계·배치 {count}개는 제외했습니다: {items}',
-              {
-                count: outcome.omittedRelations.length,
-                items: outcome.omittedRelations.join(', '),
-              },
-            )
-          : t('삭제 항목을 새 객체로 복원했습니다.'),
-      );
-      await runtime.current?.refreshHistory();
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setHistoryAction(null);
-    }
-  }
-  async function resolvePendingEdit(action: 'reapply' | 'discard', operationId: string) {
-    const instance = runtime.current;
-    if (!instance || historyAction || (action === 'reapply' && designReadOnly)) return;
-    setHistoryAction(operationId);
-    setError('');
-    try {
-      if (action === 'reapply') await instance.reapply(operationId);
-      else await instance.discard(operationId);
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setHistoryAction(null);
-    }
+    closeProject();
   }
   const userForm = (
     <form className="identity-form" onSubmit={(e) => void identify(e)}>
@@ -1080,7 +727,7 @@ export function App() {
     </form>
   );
   return (
-    <div className={opened || nativeOpened ? 'app-shell editor-shell' : 'app-shell'}>
+    <div className={nativeOpened ? 'app-shell editor-shell' : 'app-shell'}>
       <a className="skip-link" href="#main">
         {t('본문으로 이동')}
       </a>
@@ -1286,252 +933,6 @@ export function App() {
           )}
           {...(nativeReview ? { focusedReview: nativeReview } : {})}
         />
-      ) : opened ? (
-        <main id="main" className="editor" inert={workspaceSwitchPending.current}>
-          <div className="editor-heading">
-            <div className="project-title" role="group" aria-label={t('프로젝트 이동')}>
-              <Button className="gallery-return" onClick={leave}>
-                {t('← 갤러리')}
-              </Button>
-              <span className="navigation-divider" aria-hidden="true" />
-              <h1 title={opened.project.name}>{opened.project.name}</h1>
-              <div className="editor-path-host" ref={setPathHost} />
-            </div>
-            <div className="editor-toolbar-host" ref={setToolbarHost} />
-            <div className="save-controls" role="group" aria-label={t('변경 기록과 동기화')}>
-              <Button
-                aria-label={t('실행 취소')}
-                title={t('실행 취소 (Ctrl+Z / ⌘Z)')}
-                disabled={busy || designReadOnly || !sync?.canUndo}
-                onClick={() => restoreHistory('undo')}
-              >
-                ↶
-              </Button>
-              <Button
-                aria-label={t('다시 실행')}
-                title={t('다시 실행 (Ctrl+Shift+Z / ⌘⇧Z)')}
-                disabled={busy || designReadOnly || !sync?.canRedo}
-                onClick={() => restoreHistory('redo')}
-              >
-                ↷
-              </Button>
-              <span
-                role="status"
-                className={`save-state ${sync?.status === 'action-needed' ? 'failed' : ''}`}
-              >
-                {sync?.status === 'syncing'
-                  ? t('◌ 동기화 중')
-                  : sync?.status === 'offline'
-                    ? t('○ 오프라인')
-                    : sync?.status === 'action-needed'
-                      ? t('! 확인 필요')
-                      : t('✓ 동기화됨')}
-              </span>
-              <SyncHistoryPanel
-                readOnly={designReadOnly}
-                snapshot={sync}
-                activeOperationId={historyAction}
-                notice={historyNotice}
-                onRestore={(operationId) => {
-                  void restoreDeletion(operationId);
-                }}
-                onReapply={(operationId) => {
-                  void resolvePendingEdit('reapply', operationId);
-                }}
-                onDiscard={(operationId) => {
-                  void resolvePendingEdit('discard', operationId);
-                }}
-              />
-            </div>
-          </div>
-          {user && (
-            <div ref={nativeUpgradeEntryRef}>
-              <NativeUpgradeButton
-                key={`upgrade:${user.id}:${opened.project.id}`}
-                userId={user.id}
-                projectId={opened.project.id}
-                workspaceId={opened.project.workspaceId}
-                canUpgrade={!designReadOnly}
-                busy={busy}
-                prepare={async () => {
-                  await prepareProjectExport(opened.project.id);
-                  return (
-                    currentExportIdentity.current.userId === user.id &&
-                    currentExportIdentity.current.projectId === opened.project.id
-                  );
-                }}
-                onUpgraded={async (snapshot) => {
-                  if (
-                    currentExportIdentity.current.userId !== user.id ||
-                    currentExportIdentity.current.projectId !== snapshot.project.id
-                  )
-                    return;
-                  await open(snapshot.project.id);
-                }}
-              />
-            </div>
-          )}
-          {projectWorkspace?.status === 'archived' && (
-            <div className="notice">
-              {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}
-            </div>
-          )}
-          {projectWorkspace?.status === 'active' && projectWorkspace.role === 'viewer' && (
-            <div className="notice">
-              {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
-            </div>
-          )}
-          {opened.project.status === 'archived' && (
-            <div className="notice">
-              {t('보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.')}
-            </div>
-          )}
-          {(sync?.storageFailure || sync?.error) && (
-            <div className="notice error" role="alert">
-              {t(sync.storageFailure ?? sync.error ?? '')}
-            </div>
-          )}
-          <div
-            className="review-workspace"
-            onCompositionStartCapture={() => {
-              autosave.current.composing = true;
-              if (autosave.current.timer) clearTimeout(autosave.current.timer);
-            }}
-            onCompositionEndCapture={() => {
-              autosave.current.composing = false;
-              queueMicrotask(scheduleAutosave);
-            }}
-            onBlurCapture={() => {
-              queueMicrotask(() => {
-                void flushAutosave();
-              });
-            }}
-          >
-            <Canvas
-              key={opened.project.id}
-              document={opened.document}
-              databaseKind={opened.project.databaseKind ?? 'postgresql'}
-              onRequestNativeUpgrade={() => {
-                if (designReadOnly) return;
-                const entry = nativeUpgradeEntryRef.current;
-                entry?.scrollIntoView({ block: 'center' });
-                entry?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus();
-              }}
-              onExportProject={async () => {
-                await flushAutosave();
-                await runtime.current?.prepareToLeave();
-                if (latestSync.current?.pending.length || latestSync.current?.storageFailure)
-                  throw new Error(t('변경 내용이 저장된 뒤 다시 내보내 주세요.'));
-                await exportProjectFile(opened.project.id);
-              }}
-              onExportDDL={() =>
-                openProjectDDL(opened.project.id, opened.project.databaseRevision ?? 0, (id) => {
-                  const tableId =
-                    opened.document.tables?.find((item) => item.id === id)?.id ??
-                    opened.document.columns?.find((item) => item.id === id)?.tableId ??
-                    opened.document.keys?.find((item) => item.id === id)?.tableId ??
-                    opened.document.tableRelations?.find((item) => item.id === id)?.sourceTableId;
-                  const node = opened.document.layout.nodes.find(
-                    (item) => item.objectId === (tableId ?? id),
-                  );
-                  setFocusTarget({
-                    viewId: node?.viewId ?? '__tables__',
-                    objectId: tableId ?? id,
-                    x: node?.x ?? 0,
-                    y: node?.y ?? 0,
-                    nonce: Date.now(),
-                  });
-                })
-              }
-              toolbarHost={toolbarHost}
-              pathHost={pathHost}
-              panelToggle={
-                <Button
-                  className="panel-toggle"
-                  aria-label={commentsOpen ? t('핀 패널 숨기기') : t('핀 패널 열기')}
-                  title={commentsOpen ? t('핀 패널 숨기기') : t('핀 패널 열기')}
-                  aria-pressed={commentsOpen}
-                  onClick={() => {
-                    setDraftTarget(undefined);
-                    setCommentsOpen((v) => !v);
-                  }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                    <rect x="3" y="4" width="14" height="9" rx="2.5" />
-                    <path d="M7 13v3.2L10.6 13" />
-                  </svg>
-                </Button>
-              }
-              onChange={edit}
-              onPreviewChange={previewEdit}
-              readOnly={designReadOnly}
-              personalReadOnly={personalReadOnly}
-              onContextChange={setCanvasContext}
-              {...(!personalReadOnly
-                ? {
-                    onCreatePin: (context: CommentContext) => {
-                      setCanvasContext(context);
-                      setFocusTarget(undefined);
-                      setDraftTarget({ ...context, selectedObjectId: null, nonce: Date.now() });
-                      setCommentsOpen(true);
-                    },
-                  }
-                : {})}
-              {...(focusTarget ? { focusTarget } : {})}
-              pins={
-                <CommentPins
-                  memberColors={Object.fromEntries([
-                    ...members.map((member) => [member.id, member.color ?? '#4169e1']),
-                    [user.id, user.color],
-                  ])}
-                  threads={threads}
-                  document={opened.document}
-                  viewId={canvasContext.viewId}
-                  {...(canvasContext.visibleObjectIds
-                    ? { visibleObjectIds: canvasContext.visibleObjectIds }
-                    : {})}
-                  onOpen={focusThread}
-                />
-              }
-            />
-            <div
-              data-open={commentsOpen}
-              data-resizing={resizingComments}
-              aria-hidden={!commentsOpen}
-              inert={!commentsOpen}
-              className="comments-container"
-              style={{ '--comments-panel-width': commentsPanelWidth + 'px' } as CSSProperties}
-            >
-              {commentsOpen && (
-                <PinPanelResizer
-                  width={commentsPanelWidth}
-                  onWidthChange={resizeCommentsPanel}
-                  onResizingChange={setResizingComments}
-                />
-              )}
-              <CommentsPanel
-                readOnly={personalReadOnly}
-                workspaceId={opened.project.workspaceId}
-                onMembers={setMembers}
-                currentUserColor={user.color}
-                key={opened.project.id}
-                projectId={opened.project.id}
-                userId={user.id}
-                document={opened.document}
-                context={canvasContext}
-                {...(draftTarget ? { draftTarget } : {})}
-                activeThreadId={focusTarget?.threadId ?? null}
-                onThreads={setThreads}
-                onNavigate={focusThread}
-                onClose={() => {
-                  setDraftTarget(undefined);
-                  setCommentsOpen(false);
-                }}
-                onCancelPinDraft={() => setDraftTarget(undefined)}
-              />
-            </div>
-          </div>
-        </main>
       ) : (
         <ProjectGallery
           key={workspaceId}
@@ -1612,7 +1013,7 @@ export function App() {
               setDDLExport(null);
             }}
             objectName={(id) => {
-              const doc = opened?.document ?? nativeOpened?.document;
+              const doc = nativeOpened?.document;
               const item =
                 doc?.tables?.find((item) => item.id === id) ??
                 doc?.columns?.find((item) => item.id === id);
