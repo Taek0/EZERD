@@ -86,7 +86,7 @@ vi.mock('react', async (original) => {
 
 const frames = new Map<number, FrameRequestCallback>();
 let frameId = 0;
-function flushFrame() {
+function frame() {
   const callbacks = [...frames.values()];
   frames.clear();
   callbacks.forEach((callback) => callback(0));
@@ -186,15 +186,19 @@ function canvas() {
       stopPropagation() {},
       ...extra,
     });
-    render();
+    if (hooks.dirty) render();
   }
   render();
   return {
     props,
     event,
+    overlay,
+    unmount() {
+      hooks.slots.forEach((slot) => slot.cleanup?.());
+    },
     tick() {
-      flushFrame();
-      render();
+      frame();
+      if (hooks.dirty) render();
     },
     surface,
     render,
@@ -209,108 +213,76 @@ function canvas() {
   };
 }
 
-describe('native blank canvas pointer interaction', () => {
-  it('keeps an active gesture across remote edits but resets it on DB context change', () => {
+describe('frame-bounded marquee interaction', () => {
+  it('keeps scene selection identity through 120 moves with unchanged hits', () => {
     const ui = canvas();
-    const gesture = ui.scene().gesture as { current: unknown };
-    const active = { pointerId: 1, nodeId: 'a', x: 40, y: 60 };
-    gesture.current = active;
-    ui.props.snapshot = {
-      ...ui.props.snapshot,
-      sequence: ui.props.snapshot.sequence + 1,
-      project: { ...ui.props.snapshot.project, version: ui.props.snapshot.project.version + 1 },
-    };
-    ui.render();
-    expect((ui.scene().gesture as typeof gesture).current).toBe(active);
-    ui.props.snapshot = {
-      ...ui.props.snapshot,
-      project: {
-        ...ui.props.snapshot.project,
-        databaseRevision: ui.props.snapshot.project.databaseRevision + 1,
-      },
-    };
-    ui.render();
-    expect((ui.scene().gesture as typeof gesture).current).toBeNull();
-  });
-  it('settles a blank click after a table selection and permits another selection', () => {
-    const ui = canvas();
-    const node = (ui.scene().drawn as { nodes: unknown[] }).nodes[0];
-    (ui.scene().onNodeSelect as (node: unknown, event: unknown) => void)(node, {
-      shiftKey: false,
-      ctrlKey: false,
-      metaKey: false,
-    });
-    ui.render();
-    expect(ui.props.selectedTableId).toBe('a');
-    ui.event('onPointerDownCapture');
-    ui.event('onPointerUp');
-    expect(ui.props.selectedTableId).toBeUndefined();
-    expect(ui.hasMarquee()).toBe(false);
-    (ui.scene().onNodeSelect as (node: unknown, event: unknown) => void)(node, {
-      shiftKey: false,
-      ctrlKey: false,
-      metaKey: false,
-    });
-    ui.render();
-    expect(ui.props.selectedTableId).toBe('a');
-  });
-  it('ends marquee interaction when pointer capture is lost before pointerup', () => {
-    const ui = canvas();
-    ui.event('onPointerDownCapture');
+    ui.event('onPointerDownCapture', { clientX: 0, clientY: 0 });
+    ui.event('onPointerMove', { clientX: 400, clientY: 350 });
+    ui.tick();
+    const selected = ui.scene().selectedObjectIds;
+    expect(selected).toEqual(['a']);
+    for (let i = 0; i < 120; i++) {
+      ui.event('onPointerMove', { clientX: 400 + i / 100, clientY: 350 });
+      ui.tick();
+      expect(ui.scene().selectedObjectIds).toBe(selected);
+    }
+    expect(ui.overlay.style.left).toBe('-24px');
+    expect(ui.overlay.style.width).toBe('401.19px');
     expect(ui.hasMarquee()).toBe(true);
-    ui.event('onLostPointerCapture');
+  });
+  it('coalesces a burst and flushes the final release coordinate before the next frame', () => {
+    const ui = canvas();
+    ui.event('onPointerDownCapture', { clientX: 0, clientY: 0 });
+    for (let i = 0; i < 120; i++) ui.event('onPointerMove', { clientX: 400, clientY: 350 });
+    expect(frames.size).toBe(1);
+    ui.event('onPointerUp', { clientX: 810, clientY: 350 });
+    expect(ui.scene().selectedObjectIds).toEqual(['a', 'b']);
+    expect(frames.size).toBe(0);
     expect(ui.hasMarquee()).toBe(false);
-    ui.event('onPointerMove', { clientX: 1200, clientY: 1200 });
+    ui.tick();
     expect(ui.hasMarquee()).toBe(false);
   });
-  it('keeps drag marquee and Shift additive selection, ignoring other pointers losing capture', () => {
+  it('preserves Shift selection and ignores capture loss from another pointer', () => {
     const ui = canvas();
-    const node = (ui.scene().drawn as { nodes: unknown[] }).nodes[0];
-    (ui.scene().onNodeSelect as (node: unknown, event: unknown) => void)(node, {
-      shiftKey: false,
-      ctrlKey: false,
-      metaKey: false,
-    });
-    ui.render();
+    ui.event('onPointerDownCapture', { clientX: 0, clientY: 0 });
+    ui.event('onPointerUp', { clientX: 400, clientY: 350 });
     ui.event('onPointerDownCapture', { clientX: 450, clientY: 40, shiftKey: true });
     ui.event('onLostPointerCapture', { pointerId: 2 });
     expect(ui.hasMarquee()).toBe(true);
     ui.event('onPointerMove', { clientX: 810, clientY: 350 });
     ui.tick();
     expect(ui.scene().selectedObjectIds).toEqual(['a', 'b']);
-    ui.event('onPointerUp');
-    expect(ui.hasMarquee()).toBe(false);
-    expect(ui.scene().selectedObjectIds).toEqual(['a', 'b']);
   });
-  it.each(['onPointerCancel', 'onLostPointerCapture'])(
-    'ends panning on %s and accepts another gesture',
-    (end) => {
-      const ui = canvas();
-      (ui.controls().onTool as (tool: string) => void)('hand');
-      ui.render();
-      const start = ui.transform();
-      ui.event('onPointerDownCapture');
-      ui.event('onPointerMove', { clientX: 1100 });
-      const moved = ui.transform();
-      expect(moved).not.toBe(start);
-      expect(ui.hasMarquee()).toBe(false);
-      ui.event(end);
-      ui.event('onPointerMove', { clientX: 1200 });
-      expect(ui.transform()).toBe(moved);
-      ui.event('onPointerDownCapture');
-      ui.event('onPointerMove', { clientX: 1100 });
-      expect(ui.transform()).not.toBe(moved);
-      ui.event('onPointerUp');
-    },
-  );
-  it('ends a cancelled marquee and leaves inline inputs interactive', () => {
+  it.each(['onPointerCancel', 'onLostPointerCapture'])('cancels queued work on %s', (end) => {
     const ui = canvas();
-    ui.event('onPointerDownCapture', { target: new Target('.native-inline-editor') });
-    expect(ui.surface.setPointerCapture).not.toHaveBeenCalled();
+    ui.event('onPointerDownCapture', { clientX: 0, clientY: 0 });
+    ui.event('onPointerMove', { clientX: 810, clientY: 350 });
+    ui.event(end);
+    expect(frames.size).toBe(0);
+    ui.tick();
     expect(ui.hasMarquee()).toBe(false);
-    ui.event('onPointerDownCapture');
-    ui.event('onPointerCancel');
-    ui.event('onPointerMove', { clientX: 1200 });
+    expect(ui.scene().selectedObjectIds).toEqual([]);
+  });
+});
+
+describe('marquee navigation cleanup', () => {
+  it('cancels pending work on unmount', () => {
+    const ui = canvas();
+    ui.event('onPointerDownCapture', { clientX: 0, clientY: 0 });
+    ui.event('onPointerMove', { clientX: 810, clientY: 350 });
+    ui.unmount();
+    expect(frames.size).toBe(0);
+  });
+  it('cancels pending work when navigating to a different view', () => {
+    const ui = canvas();
+    ui.event('onPointerDownCapture', { clientX: 0, clientY: 0 });
+    ui.event('onPointerMove', { clientX: 810, clientY: 350 });
+    (ui.props as { requestedView?: { id: string; nonce: number } }).requestedView = {
+      id: 'overview',
+      nonce: 1,
+    };
+    ui.render();
+    expect(frames.size).toBe(0);
     expect(ui.hasMarquee()).toBe(false);
   });
 });

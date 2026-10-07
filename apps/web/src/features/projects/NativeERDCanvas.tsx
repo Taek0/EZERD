@@ -3,6 +3,7 @@ import type { CommentContext } from '../comments/CommentsPanel.js';
 import { pinPosition, reviewCanvasView, type ReviewTarget } from '../comments/comments-state.js';
 import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { selectionRect, intersectingObjects } from '../canvas/canvas-selection.js';
+import { createSelectionFrame, retainSelection } from '../canvas/selection-frame.js';
 import {
   toolShortcutInputSelector,
   toolShortcutOverlaySelector,
@@ -700,7 +701,20 @@ function NativeCanvasWorkspace({
   const selectedObjectsRef = useRef(selectedObjectIds);
   selectedObjectsRef.current = selectedObjectIds;
   const groupOrigins = useRef<NodeLayout[] | null>(null);
-  const [marquee, setMarquee] = useState<ReturnType<typeof selectionRect> | null>(null);
+  const marqueeElement = useRef<HTMLDivElement>(null);
+  function setMarquee(rect: ReturnType<typeof selectionRect> | null) {
+    const element = marqueeElement.current;
+    if (!element) return;
+    element.hidden = !rect;
+    if (rect) {
+      Object.assign(element.style, {
+        left: rect.x + 'px',
+        top: rect.y + 'px',
+        width: rect.width + 'px',
+        height: rect.height + 'px',
+      });
+    }
+  }
   const marqueeGesture = useRef<{
     pointerId: number;
     start: { x: number; y: number };
@@ -1055,6 +1069,20 @@ function NativeCanvasWorkspace({
     () => selectedObjectIds.filter((id) => scene.nodes.some((node) => node.objectId === id)),
     [selectedObjectIds, scene],
   );
+  const applyMarqueePoint = useCommittedEvent((point: { x: number; y: number }) => {
+    const box = marqueeGesture.current;
+    if (!box) return;
+    const rect = selectionRect(box.start, canvasPoint(point.x, point.y));
+    setMarquee(rect);
+    if (blankSelection && (rect.width || rect.height)) setBlankSelection(false);
+    const next = [...new Set([...box.initial, ...intersectingObjects(rect, drawn.nodes)])];
+    // Avoid even scheduling a React update when only the rectangle changed.
+    if (retainSelection(selectedObjectsRef.current, next) === selectedObjectsRef.current) return;
+    selectedObjectsRef.current = next;
+    setSelectedObjectIds((previous) => retainSelection(previous, next));
+  });
+  const [marqueeFrame] = useState(() => createSelectionFrame(applyMarqueePoint));
+  useEffect(() => () => marqueeFrame.cancel(), [marqueeFrame]);
   const scopeCallback = useRef(onCanvasScopeChange);
   scopeCallback.current = onCanvasScopeChange;
   useEffect(
@@ -1123,6 +1151,7 @@ function NativeCanvasWorkspace({
     setConnectPointer(null);
     setSelectedObjectIds([]);
     setSelectedNode(null);
+    marqueeFrame.cancel();
     setMarquee(null);
     marqueeGesture.current = null;
     groupOrigins.current = null;
@@ -2504,6 +2533,7 @@ function NativeCanvasWorkspace({
               )
             ) {
               event.currentTarget.setPointerCapture(event.pointerId);
+              marqueeFrame.cancel();
               const start = canvasPoint(event.clientX, event.clientY);
               marqueeGesture.current = {
                 pointerId: event.pointerId,
@@ -2535,12 +2565,7 @@ function NativeCanvasWorkspace({
           if (connection) setConnectPointer(canvasPoint(event.clientX, event.clientY));
           const box = marqueeGesture.current;
           if (box?.pointerId === event.pointerId) {
-            const rect = selectionRect(box.start, canvasPoint(event.clientX, event.clientY));
-            setMarquee(rect);
-            if (rect.width || rect.height) setBlankSelection(false);
-            setSelectedObjectIds([
-              ...new Set([...box.initial, ...intersectingObjects(rect, drawn.nodes)]),
-            ]);
+            marqueeFrame.schedule({ x: event.clientX, y: event.clientY });
             return;
           }
           const pan = panGesture.current;
@@ -2554,7 +2579,11 @@ function NativeCanvasWorkspace({
         }}
         onPointerUp={(event) => {
           if (marqueeGesture.current?.pointerId === event.pointerId) {
+            // Release may arrive before the scheduled frame; include its final position.
+            marqueeFrame.schedule({ x: event.clientX, y: event.clientY });
+            marqueeFrame.flush();
             marqueeGesture.current = null;
+            marqueeFrame.cancel();
             setMarquee(null);
             if (event.currentTarget.hasPointerCapture(event.pointerId))
               event.currentTarget.releasePointerCapture(event.pointerId);
@@ -2569,6 +2598,7 @@ function NativeCanvasWorkspace({
         onPointerCancel={() => {
           panGesture.current = null;
           marqueeGesture.current = null;
+          marqueeFrame.cancel();
           setMarquee(null);
           groupOrigins.current = null;
           spacePan.current = false;
@@ -2576,6 +2606,7 @@ function NativeCanvasWorkspace({
         onLostPointerCapture={(event) => {
           if (panGesture.current?.pointerId === event.pointerId) panGesture.current = null;
           if (marqueeGesture.current?.pointerId === event.pointerId) {
+            marqueeFrame.cancel();
             marqueeGesture.current = null;
             setMarquee(null);
           }
@@ -2616,6 +2647,7 @@ function NativeCanvasWorkspace({
             setConnection(null);
             setConnectPointer(null);
             setMenu(null);
+            marqueeFrame.cancel();
             setMarquee(null);
             marqueeGesture.current = null;
             setSelectedObjectIds([]);
@@ -2786,19 +2818,13 @@ function NativeCanvasWorkspace({
               }
             />
           </div>
-          {marquee && (
-            <div
-              className="canvas-selection-box"
-              data-export-hidden="true"
-              style={{
-                left: marquee.x,
-                top: marquee.y,
-                width: marquee.width,
-                height: marquee.height,
-                borderWidth: 1 / camera.zoom,
-              }}
-            />
-          )}
+          <div
+            ref={marqueeElement}
+            className="canvas-selection-box"
+            data-export-hidden="true"
+            hidden
+            style={{ borderWidth: 1 / camera.zoom }}
+          />
           {connection &&
             connectPointer &&
             (() => {
