@@ -61,6 +61,8 @@
   flex-shrink: 0;
 }
 .native-editor-workspace .native-erd-surface {
+  /* Camera navigation must not accumulate native scroll offsets. */
+  overflow: clip;
   flex: 1;
   height: auto;
   min-height: 0;
