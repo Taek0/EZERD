@@ -2,7 +2,8 @@ import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeERDCanvas, NativeCanvasActions, NativeCanvasInputForm } from './NativeERDCanvas.js';
 import { NativeCanvasScene } from './NativeCanvasScene.js';
-import { NativeCameraControls } from './NativeCanvasToolbar.js';
+import { NativeCameraControls, NativeCanvasToolbar } from './NativeCanvasToolbar.js';
+import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
 import {
   clipboardActor,
   clipboardSnapshot,
@@ -19,6 +20,11 @@ import {
   type NodeLayout,
 } from '@ezerd/model';
 import { nativeInlineKey } from './native-inline-edit.js';
+import * as editorDrafts from './native-editor-draft.js';
+import {
+  nativeTableCreationPreview,
+  withNativeTableCreationPreviews,
+} from './native-table-creation-preview.js';
 import {
   readLocalTableClipboard,
   rememberTableClipboard,
@@ -261,6 +267,184 @@ function canvas(authenticated = false) {
 }
 
 describe('native canvas clipboard storage integration', () => {
+  it.each([1, 2])('keeps a newly created table visible with %s selected domains', (count) => {
+    const ui = canvas(true);
+    const toolbar = () => nodes(ui.render()).find((node) => node.type === NativeCanvasToolbar)!;
+    const filter = { domainIds: count === 1 ? ['d'] : ['d', 'other'], unassigned: false };
+    (toolbar().props.onFilter as (filter: unknown) => void)(filter);
+    (toolbar().props.onCreate as (kind: string) => void)('table');
+    expect(toolbar().props.filter).toEqual(count === 1 ? filter : null);
+    const add = vi
+      .mocked(ui.props.onSave)
+      .mock.calls[0]![0].find((command) => command.type === 'add_table');
+    expect(add?.type === 'add_table' && add.value.domainId).toBe(count === 1 ? 'd' : null);
+  });
+  it('renders and selects the parent create preview before ACK without changing the snapshot or later selection', async () => {
+    const ui = canvas(true);
+    const snapshot = structuredClone(ui.props.snapshot);
+    let acknowledge!: (value: boolean) => void;
+    let created = '';
+    ui.props.onSave = vi.fn((commands) => {
+      const preview = nativeTableCreationPreview(ui.props.document, commands, 'create-operation')!;
+      created = preview.table.id;
+      ui.props.document = withNativeTableCreationPreviews(ui.props.document, [preview]);
+      ui.props.optimisticSourceDocument = ui.props.document;
+      ui.props.selectedTableId = created;
+      return new Promise<boolean>((resolve) => {
+        acknowledge = resolve;
+      });
+    });
+    const toolbar = nodes(ui.render()).find((node) => node.type === NativeCanvasToolbar)!;
+    (toolbar.props.onCreate as (kind: string) => void)('table');
+    ui.render();
+    expect(
+      (ui.scene().drawn as { nodes: NodeLayout[] }).nodes.some((node) => node.objectId === created),
+    ).toBe(true);
+    expect(
+      (ui.scene().sharedSource as NativeDesignDocument).tables?.some(
+        (table) => table.id === created,
+      ),
+    ).toBe(true);
+    expect(ui.scene().selectedTableId).toBe(created);
+    expect(ui.props.snapshot).toEqual(snapshot);
+    const other = (ui.scene().drawn as { nodes: NodeLayout[] }).nodes.find(
+      (node) => node.objectId !== created,
+    )!;
+    (ui.scene().onNodeSelect as (node: NodeLayout, event: unknown) => void)(other, {
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+    });
+    ui.render();
+    acknowledge(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    ui.render();
+    expect(ui.scene().selectedTableId).not.toBe(created);
+  });
+  it('creates an empty table directly from the toolbar', async () => {
+    const ui = canvas(true);
+    const toolbar = nodes(ui.render()).find((node) => node.type === NativeCanvasToolbar)!;
+    (toolbar.props.onCreate as (kind: string) => void)('table');
+    await Promise.resolve();
+    expect(ui.props.onSave).toHaveBeenCalledOnce();
+    const commands = vi.mocked(ui.props.onSave).mock.calls[0]![0];
+    const add = commands.find((command) => command.type === 'add_table');
+    expect(add?.type === 'add_table' && add.value.logical.name).toBe('');
+    expect(add?.type === 'add_table' && add.value.physical.name).toBe('');
+  });
+  it('opens the app column menu for a name/type input right click but preserves editing keys', () => {
+    const ui = canvas(true);
+    const document = ui.props.document;
+    const table = document.tables![0]!;
+    const onSelect = vi.fn();
+    const wrapper = NativeCanvasTableRows({ document, table, mode: 'logical', onSelect });
+    const tree = (wrapper.type as (props: typeof wrapper.props) => unknown)(wrapper.props);
+    const row = {
+      getAttribute: () => document.columns!.find((column) => column.tableId === table.id)!.id,
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+    };
+    const target = new Target('input');
+    target.closest = ((selector: string) =>
+      selector === '[data-column-id]'
+        ? row
+        : selector.includes('input')
+          ? target
+          : null) as typeof target.closest;
+    const event = {
+      target,
+      clientX: 40,
+      clientY: 50,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    const handler = nodes(tree).find((node) => typeof node.props.onContextMenu === 'function')!;
+    (handler.props.onContextMenu as (event: unknown) => void)(event);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledOnce();
+    event.preventDefault.mockClear();
+    (handler.props.onKeyDownCapture as (event: unknown) => void)({ ...event, key: 'ContextMenu' });
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+  it('renders 100 moves immediately with one final archive write and one server request', async () => {
+    vi.useFakeTimers();
+    const store = vi.spyOn(editorDrafts, 'storeNativeEditorDraft');
+    try {
+      const ui = canvas(true);
+      const actions = () => (ui.scene().actions as { current: NativeSceneActions }).current;
+      const drawn = () => (ui.scene().drawn as { nodes: NodeLayout[] }).nodes;
+      const node = drawn()[0]!;
+      actions().begin(
+        {
+          button: 0,
+          pointerId: 1,
+          clientX: 0,
+          clientY: 0,
+          target: new Target(),
+          currentTarget: ui.surface,
+        } as never,
+        node,
+      );
+      ui.render();
+      store.mockClear();
+      for (let x = 1; x <= 100; x++) {
+        actions().preserve(node, node.x + x, node.y);
+        ui.render();
+        expect(drawn().find((item) => item.id === node.id)?.x).toBe(node.x + x);
+      }
+      expect(store).not.toHaveBeenCalled();
+      expect(ui.props.onSave).not.toHaveBeenCalled();
+      await actions().savePlacement();
+      expect(store).toHaveBeenCalledOnce();
+      expect(ui.props.onSave).toHaveBeenCalledOnce();
+      vi.runAllTimers();
+      expect(store).toHaveBeenCalledOnce();
+    } finally {
+      store.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+  it('switches tools outside surface focus while protecting editors, IME and handled keys', () => {
+    const listeners = new Map<string, (event: unknown) => void>();
+    vi.stubGlobal('window', {
+      addEventListener: (name: string, listener: (event: unknown) => void) =>
+        listeners.set(name, listener),
+      removeEventListener: (name: string) => listeners.delete(name),
+    });
+    const ui = canvas();
+    const key = (extra: Record<string, unknown> = {}) => {
+      const event = {
+        key: 'h',
+        code: 'KeyH',
+        target: new Target(),
+        preventDefault: vi.fn(),
+        ...extra,
+      };
+      listeners.get('keydown')!(event);
+      ui.render();
+      return event;
+    };
+    key();
+    expect(ui.controls().tool).toBe('hand');
+    key({ key: 'ㅍ', code: 'KeyV' });
+    expect(ui.controls().tool).toBe('select');
+    // Escape restores focus to the non-editing inline span.
+    key({ target: new Target('[data-inline-cell]') });
+    expect(ui.controls().tool).toBe('hand');
+    key({ key: 'v', code: 'KeyV', target: new Target('[data-inline-cell]') });
+    expect(ui.controls().tool).toBe('select');
+    for (const extra of [
+      { target: new Target('input') },
+      { target: new Target('textarea') },
+      { isComposing: true },
+      { keyCode: 229 },
+      { defaultPrevented: true },
+      { ctrlKey: true },
+    ]) {
+      expect(key(extra).preventDefault).not.toHaveBeenCalled();
+      expect(ui.controls().tool).toBe('select');
+    }
+  });
   it.each(['select', 'hand'])(
     'ignores a portal option in %s mode without capturing its pointer',
     (tool) => {
@@ -663,7 +847,10 @@ describe('native blank canvas pointer interaction', () => {
       return saving;
     }
     const earlier = drag(first.x + 80, first.y + 30);
+    const firstRequest = vi.mocked(ui.props.onSave).mock.calls[0]!;
+    const immutableRequest = structuredClone(firstRequest);
     const later = drag(first.x + 160, first.y + 60);
+    expect(firstRequest).toEqual(immutableRequest);
     expect(ui.props.onSave).toHaveBeenCalledTimes(2);
     acknowledgements[0]!(true);
     await earlier;

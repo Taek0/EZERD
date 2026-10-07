@@ -1,10 +1,12 @@
 import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
+import { createPlacementPersistence } from './native-placement-persistence.js';
 import type { CommentContext } from '../comments/CommentsPanel.js';
 import { pinPosition, reviewCanvasView, type ReviewTarget } from '../comments/comments-state.js';
 import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { selectionRect, intersectingObjects } from '../canvas/canvas-selection.js';
 import { createSelectionFrame, retainSelection } from '../canvas/selection-frame.js';
 import {
+  canvasToolShortcut,
   toolShortcutInputSelector,
   toolShortcutOverlaySelector,
 } from '../canvas/canvas-tool-shortcuts.js';
@@ -588,6 +590,7 @@ export function NativeERDCanvas(props: ComponentProps<typeof NativeCanvasWorkspa
 }
 function NativeCanvasWorkspace({
   document,
+  optimisticSourceDocument,
   snapshot,
   userId,
   editable,
@@ -628,6 +631,8 @@ function NativeCanvasWorkspace({
   selectionHost,
 }: {
   document: NativeDesignDocument;
+  /** Parent-owned validated create preview; snapshot remains the save/ACK baseline. */
+  optimisticSourceDocument?: NativeDesignDocument;
   snapshot: ProjectDocumentState;
   userId?: string;
   editable: boolean;
@@ -970,7 +975,8 @@ function NativeCanvasWorkspace({
     };
   }, [userId, privateIdentity, snapshot.project.id]);
   const sharedSource =
-    snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document;
+    optimisticSourceDocument ??
+    (snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document);
   const storedBase = useMemo(
     () =>
       personal
@@ -1082,6 +1088,42 @@ function NativeCanvasWorkspace({
     !!draft &&
     (draft.expected.databaseRevision !== snapshot.project.databaseRevision ||
       (isPrivate && String(personal?.version ?? '') !== draft.values.personalVersion));
+  const placementPersistence = useMemo(
+    () =>
+      createPlacementPersistence<NativeEditorDraft>(
+        storeNativeEditorDraft,
+        () => {
+          setStorageError('');
+          if (!isPrivate) setSharedStorageFailure(false);
+        },
+        (error) => {
+          setError(message(error));
+          setStorageError(message(error));
+          if (!isPrivate) setSharedStorageFailure(true);
+        },
+      ),
+    [userId, snapshot.project.id, snapshot.project.databaseRevision, inputKey, isPrivate],
+  );
+  useLayoutEffect(
+    () => () => {
+      placementPersistence.flush();
+    },
+    [placementPersistence],
+  );
+  useEffect(() => {
+    placementPersistence.flush();
+  }, [placementPersistence, selectedNode, selectedTableId, selectedDomainId]);
+  useEffect(() => {
+    const flush = () => {
+      placementPersistence.flush();
+    };
+    globalThis.document?.addEventListener('visibilitychange', flush);
+    if (typeof window !== 'undefined') window.addEventListener?.('pagehide', flush);
+    return () => {
+      globalThis.document?.removeEventListener('visibilitychange', flush);
+      if (typeof window !== 'undefined') window.removeEventListener?.('pagehide', flush);
+    };
+  }, [placementPersistence]);
   useEffect(() => {
     gesture.current = null;
     if (!userId) {
@@ -1324,10 +1366,8 @@ function NativeCanvasWorkspace({
       };
       draftRef.current = next;
       setDraft(next);
-      storeNativeEditorDraft(next);
+      placementPersistence.enqueue(next);
       setError('');
-      setStorageError('');
-      if (!isPrivate) setSharedStorageFailure(false);
     } catch (error) {
       setError(message(error));
       setStorageError(message(error));
@@ -1412,10 +1452,8 @@ function NativeCanvasWorkspace({
     draftRef.current = next;
     setDraft(next);
     try {
-      storeNativeEditorDraft(next);
+      placementPersistence.enqueue(next);
       setError('');
-      setStorageError('');
-      if (!isPrivate) setSharedStorageFailure(false);
     } catch (error) {
       setError(message(error));
       setStorageError(message(error));
@@ -1483,6 +1521,7 @@ function NativeCanvasWorkspace({
   }
   async function savePlacement() {
     groupOrigins.current = null;
+    if (!placementPersistence.flush()) return;
     const current = draftRef.current;
     if (!userId || !current || !placementEditable || allBusy || stale || storageError) return;
     try {
@@ -1723,10 +1762,8 @@ function NativeCanvasWorkspace({
           },
         ];
       else {
-        if (isPrivate) {
-          onCreate?.('table');
-          return;
-        }
+        if (!editable) return;
+        if (isPrivate) navigateView(TABLES_VIEW_ID);
         const owner = base.domains.some((d) => d.id === effectiveView)
           ? effectiveView
           : domainFilter?.domainIds.length === 1 && !domainFilter.unassigned
@@ -1734,7 +1771,11 @@ function NativeCanvasWorkspace({
             : null;
         const table = createNativeTable(sharedSource.database, id, owner);
         table.scope = mode;
-        table.logical.name = t('새 테이블');
+        if (
+          domainFilter &&
+          (owner ? !domainFilter.domainIds.includes(owner) : !domainFilter.unassigned)
+        )
+          applyDomainFilter(null);
         commands = [
           { type: 'add_table', value: table },
           {
@@ -1746,11 +1787,12 @@ function NativeCanvasWorkspace({
           },
         ];
       }
-      if (await saveCommands(commands)) {
+      const saving = saveCommands(commands);
+      // Parent selects tables only after durable enqueue succeeds, before ACK.
+      if ((await saving) && kind !== 'table') {
         setBlankSelection(false);
         setSelectedObjectIds([id]);
-        if (kind === 'table') onSelect(id);
-        else if (kind === 'domain') onSelectDomain?.(id);
+        if (kind === 'domain') onSelectDomain?.(id);
       }
     } catch (error) {
       setError(message(error));
@@ -2023,6 +2065,25 @@ function NativeCanvasWorkspace({
       userId ? { userId, snapshot, busy: allBusy || placementDraftBlocked, onSave } : undefined,
     [userId, snapshot, allBusy, placementDraftBlocked, onSave],
   );
+  const switchCanvasTool = useCommittedEvent((event: KeyboardEvent) => {
+    const next = canvasToolShortcut(event, {
+      editing:
+        event.keyCode === 229 ||
+        (event.target instanceof Element &&
+          !!event.target.closest(`${toolShortcutInputSelector},.native-inline-editor`)),
+      overlayOpen: !!globalThis.document?.querySelector(toolShortcutOverlaySelector),
+      dragging: !!gesture.current || !!panGesture.current || !!marqueeGesture.current,
+    });
+    if (next) {
+      event.preventDefault();
+      setTool(next);
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    window.addEventListener('keydown', switchCanvasTool);
+    return () => window.removeEventListener('keydown', switchCanvasTool);
+  }, [switchCanvasTool]);
   const canvasSaveRef = useRef(saveCanvasCommand);
   useLayoutEffect(() => {
     canvasSaveRef.current = saveCanvasCommand;
@@ -2151,14 +2212,16 @@ function NativeCanvasWorkspace({
             {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
           />
         )}
-        <MemoNativeCanvasStyleEditor
-          document={sharedSource}
-          editable={editable}
-          {...(selectedTableId ? { selectedTableId } : {})}
-          {...(selectedDomainId ? { selectedDomainId } : {})}
-          {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
-          {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
-        />
+        {recoverySelection?.style && (
+          <MemoNativeCanvasStyleEditor
+            document={sharedSource}
+            editable={editable}
+            {...(selectedTableId ? { selectedTableId } : {})}
+            {...(selectedDomainId ? { selectedDomainId } : {})}
+            {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
+            {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
+          />
+        )}
         {recoveryWaiting && (
           <p role="status">
             {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
@@ -2735,6 +2798,7 @@ function NativeCanvasWorkspace({
             event.currentTarget.releasePointerCapture(event.pointerId);
         }}
         onPointerCancel={() => {
+          placementPersistence.flush();
           panGesture.current = null;
           marqueeGesture.current = null;
           marqueeFrame.cancel();
@@ -2743,6 +2807,7 @@ function NativeCanvasWorkspace({
           spacePan.current = false;
         }}
         onLostPointerCapture={(event) => {
+          placementPersistence.flush();
           if (panGesture.current?.pointerId === event.pointerId) panGesture.current = null;
           if (marqueeGesture.current?.pointerId === event.pointerId) {
             marqueeFrame.cancel();
@@ -2771,13 +2836,12 @@ function NativeCanvasWorkspace({
         onKeyDownCapture={(event) => {
           if (
             event.target instanceof Element &&
-            event.target.closest(
-              '.native-inline-editor,input,textarea,select,[contenteditable=true]',
-            )
+            event.target.closest(`${toolShortcutInputSelector},.native-inline-editor`)
           )
             return;
           if (
             event.nativeEvent.isComposing ||
+            event.keyCode === 229 ||
             event.repeat ||
             globalThis.document?.querySelector(toolShortcutOverlaySelector)
           )
@@ -2875,14 +2939,14 @@ function NativeCanvasWorkspace({
             event.preventDefault();
             spacePan.current = true;
           }
-          if (event.key.toLowerCase() === 'h') setTool('hand');
-          if (event.key.toLowerCase() === 'v') setTool('select');
+          switchCanvasTool(event.nativeEvent);
         }}
         onKeyUpCapture={(event) => {
           if (event.code === 'Space') spacePan.current = false;
         }}
         onBlurCapture={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            placementPersistence.flush();
             spacePan.current = false;
             panGesture.current = null;
           }

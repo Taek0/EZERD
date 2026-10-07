@@ -125,7 +125,7 @@ describe('native common style/domain relation UI and geometry', () => {
     expect(html).toContain('marker-start');
     expect(html).toContain('Tracks');
   });
-  it('integrates readonly PNG/domain/style menu and shows native common rows without write forms', () => {
+  it('integrates readonly PNG/domain rows and existing styling without the redundant card section', () => {
     const source = decorationFixture(),
       snapshot = decorationSnapshot(source),
       before = structuredClone(source);
@@ -141,8 +141,9 @@ describe('native common style/domain relation UI and geometry', () => {
         onReload() {},
       }),
     );
-    for (const text of ['PNG 내보내기', '카드 표시', '도메인 관계', 'ORIGINAL_TYPE', 'NOT NULL'])
+    for (const text of ['PNG 내보내기', '도메인 관계', 'ORIGINAL_TYPE', 'NOT NULL'])
       expect(html).toContain(text);
+    expect(html).not.toContain('카드 표시');
     expect(html).not.toContain('새 도메인 관계');
     expect(html).not.toContain('type="submit"');
     expect(html).toContain('border-color:#c8d0de');
@@ -173,5 +174,26 @@ describe('native common style/domain relation UI and geometry', () => {
     );
     expect(privateHtml).toContain('개인 화면을 불러온 뒤 PNG를 내보내 주세요.');
     expect(privateHtml).toContain('disabled=""');
+  });
+  it('keeps explicit style recovery available without granting readonly users write access', () => {
+    const document = decorationFixture();
+    const onSave = vi.fn(async () => true);
+    const html = renderToStaticMarkup(
+      createElement(NativeERDCanvas, {
+        document,
+        snapshot: decorationSnapshot(document),
+        editable: false,
+        busy: false,
+        mode: 'physical',
+        recoverySelection: { style: `table:${document.tables![0]!.id}` },
+        onSave,
+        onSelect() {},
+        onReload() {},
+      }),
+    );
+    expect(html).toContain('카드 표시');
+    expect(html).toContain('조회 전용');
+    expect(html).not.toContain('type="submit"');
+    expect(onSave).not.toHaveBeenCalled();
   });
 });
