@@ -17,7 +17,12 @@ import type { NativeDesignDocument } from '@ezerd/model';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProjectEntry } from './project-entry.js';
 import type { Thread, NativeSyncOperationResult } from '@ezerd/contracts';
-import { getDatabaseProfile, moveNativeTableDomain, nativeColumnTypeDisplay } from '@ezerd/model';
+import {
+  getDatabaseProfile,
+  moveNativeTableDomain,
+  nativeColumnTypeDisplay,
+  planNativeDeletion,
+} from '@ezerd/model';
 import {
   Button,
   IconButton,
@@ -76,6 +81,8 @@ import { NativeTableRelationInspector } from './NativeTableRelationInspector.js'
 import { NativeEnumDialog } from './NativeEnumDialog.js';
 
 registerTranslations({
+  '연결된 제약 또는 표현식을 확인한 뒤 컬럼을 삭제해 주세요.':
+    'Review dependent constraints or expressions before deleting this column.',
   '적용되지 않은 저장 요청을 보관했습니다.': 'Unapplied save requests have been preserved.',
   '보관된 저장 요청': 'Preserved save request',
   '보관된 편집 {count}개': '{count} preserved edits',
@@ -448,6 +455,7 @@ export function NativeProjectView({
     target: string,
     tableId?: string,
   ) {
+    if (action === 'delete' && deleteColumnTarget(target)) return;
     if (action === 'patch') {
       try {
         const [collection, id] = JSON.parse(target) as [string, string];
@@ -469,6 +477,7 @@ export function NativeProjectView({
     setCreateRequest((previous) => ({ action, target, nonce: (previous?.nonce ?? 0) + 1 }));
   }
   function requestAction(action: string, target: string, values?: Record<string, string>) {
+    if (action === 'delete' && deleteColumnTarget(target)) return;
     if (action === 'enums') {
       setInspectorOpen(true);
       setInspectorTab('properties');
@@ -541,6 +550,48 @@ export function NativeProjectView({
       ...(values ? { values } : {}),
       nonce: (previous?.nonce ?? 0) + 1,
     }));
+  }
+  function deleteColumnTarget(target: string): boolean {
+    let parts: unknown;
+    try {
+      parts = JSON.parse(target);
+    } catch {
+      return false;
+    }
+    if (!Array.isArray(parts) || parts[0] !== 'columns' || typeof parts[1] !== 'string')
+      return false;
+    if (!editable || !userId || !doc) return true;
+    const id = parts[1];
+    if (!doc.columns?.some((column) => column.id === id)) return true;
+    try {
+      const plan = planNativeDeletion(doc, [{ collection: 'columns', id }], {
+        cascadeGeneratedColumns: false,
+      });
+      if (plan.blockers.length) {
+        setSaveError(t('연결된 제약 또는 표현식을 확인한 뒤 컬럼을 삭제해 주세요.'));
+        return true;
+      }
+      void save(
+        [
+          {
+            type: 'delete_objects',
+            targets: [{ collection: 'columns', id }],
+            cascadeGeneratedColumns: false,
+          },
+        ],
+        {
+          version: snapshot.project.version,
+          sequence: snapshot.sequence,
+          databaseRevision: snapshot.project.databaseRevision,
+        },
+      ).then((accepted) => {
+        if (accepted && currentEditor())
+          setEditingColumn((current) => (current === id ? null : current));
+      });
+    } catch (error) {
+      setSaveError(message(error));
+    }
+    return true;
   }
   const durableState = useNativeDurableState(userId ?? '', snapshot.project.id);
   const dirty = useNativeExportBlocked(userId ?? '', snapshot.project.id);

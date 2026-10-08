@@ -4,6 +4,7 @@ import { createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model'
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import { NativeProjectView } from './NativeProjectView.js';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
+import { clipboardSnapshot } from './native-clipboard-test-fixtures.js';
 import type { NativePendingSave, NativeWebCommand } from './native-save.js';
 
 const io = vi.hoisted(() => ({
@@ -218,6 +219,68 @@ afterEach(() => {
 });
 
 describe('native project asynchronous pending calls', () => {
+  it('deletes a column directly without opening the deletion confirmation inspector', async () => {
+    const state = clipboardSnapshot();
+    const ui = mount(state);
+    await flush();
+    (
+      ui.canvas().props.onRequestStructure as (
+        action: string,
+        target: string,
+        table: string,
+      ) => void
+    )('delete', JSON.stringify(['columns', 'cb']), 'b');
+    expect(io.enqueue).toHaveBeenCalledWith(
+      'actor-a',
+      expect.anything(),
+      [
+        {
+          type: 'delete_objects',
+          targets: [{ collection: 'columns', id: 'cb' }],
+          cascadeGeneratedColumns: false,
+        },
+      ],
+      expect.anything(),
+      undefined,
+    );
+    expect(
+      ui
+        .render()
+        .some(
+          (node) =>
+            (node.props.initialSelection as { action?: string } | undefined)?.action === 'delete',
+        ),
+    ).toBe(false);
+  });
+  it('keeps column deletion reference guards without requiring a review checkbox', async () => {
+    const state = clipboardSnapshot();
+    if (state.sourceDocument.schemaVersion !== 2) throw Error('native');
+    const column = state.sourceDocument.columns!.find((item) => item.id === 'cb')!;
+    state.sourceDocument.columns!.push({
+      ...column,
+      id: 'dependent',
+      physical: {
+        ...column.physical,
+        generation: {
+          kind: 'computed',
+          database: 'postgresql',
+          storage: 'stored',
+          expression: { kind: 'column', columnId: 'cb' },
+        },
+      },
+    });
+    const ui = mount(state);
+    await flush();
+    (
+      ui.canvas().props.onRequestStructure as (
+        action: string,
+        target: string,
+        table: string,
+      ) => void
+    )('delete', JSON.stringify(['columns', 'cb']), 'b');
+    expect(io.enqueue).not.toHaveBeenCalled();
+    expect(ui.render().some((node) => node.props.role === 'alert')).toBe(true);
+  });
   it('starts transmission after the input event and uses a confirmed ACK without reopening the document', async () => {
     const acknowledged = vi.fn(() => true);
     const ui = mount(snapshot(), 'actor-a', undefined, acknowledged);
