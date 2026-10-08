@@ -96,6 +96,33 @@ function ack(operationId: string, status = 'accepted') {
   };
 }
 describe('native pending save and property draft durability', () => {
+  it('claims an existing operation verbatim and keeps its payload immutable during transmission', async () => {
+    const store = storage(),
+      commands = structuredClone([
+        { ...command, patch: { physical: { comment: 'intermediate' } } },
+        command,
+      ]),
+      pending = await stageNativeSave(
+        userId,
+        snapshot(),
+        commands,
+        store,
+        undefined,
+        undefined,
+        other,
+      ),
+      original = structuredClone(pending),
+      api = vi.fn().mockResolvedValue(ack(pending.request.operationId));
+    expect(pending.request.commands).toEqual(commands);
+    expect(pending.request.operationId).toBe(other);
+    expect(await loadNativePending(userId, projectId, store)).toEqual(pending);
+    commands[1]!.patch.physical.comment = 'later mutation';
+    expect(await loadNativePending(userId, projectId, store)).toEqual(original);
+    await sendNativePending(pending, store, api as typeof request);
+    expect(JSON.parse(api.mock.calls[0]![1].body as string)).toEqual(original.request);
+    expect(await loadNativePending(userId, projectId, store)).toBeNull();
+  });
+
   it('actual staged ACK removes only origin and preserves identical recovered property input plus another writer', async () => {
     const store = storage(),
       archive = nativeDraftArchive(store);

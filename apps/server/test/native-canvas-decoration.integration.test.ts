@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import pg from 'pg';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { nativeSyncOperationResultSchema } from '@ezerd/contracts';
-import type { DatabaseKind } from '@ezerd/model';
+import { createNativeColumn, createNativeTable, type DatabaseKind } from '@ezerd/model';
 import { decorationFixture } from '../../web/src/features/projects/native-canvas-decoration-test-fixtures.js';
 import { AppModule } from '../src/app.module.js';
 import { configureApplication } from '../src/application.js';
@@ -393,6 +393,148 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           },
         }),
       ).toMatchObject({ status: 409, data: { code: 'database.context-changed' } });
+    });
+    it('reports invalid SQLite input then persists five tables with columns, keys, FK and placement beside legacy data', async () => {
+      const id = await fresh('sqlite');
+      const source = (await state(id)).sourceDocument;
+      source.enums = [{ id: 'legacy-enum', name: 'State', schema: 'public', values: ['active'] }];
+      source.columns[0].physical.type.original = {
+        name: 'enum',
+        enumId: 'legacy-enum',
+        isArray: false,
+      };
+      await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
+        id,
+        JSON.stringify(source),
+      ]);
+      const before = await state(id);
+      expect(before.native.issues.map((issue: { code: string }) => issue.code)).toEqual(
+        expect.arrayContaining([
+          'legacy.namespace-unresolved',
+          'legacy.type-unresolved',
+          'legacy.default-unresolved',
+          'legacy.enum-context-mismatch',
+        ]),
+      );
+      const tables = ['categories', 'products', 'customers', 'orders', 'order_items'].map(
+        (name) => {
+          const value = createNativeTable(source.database, randomUUID());
+          value.logical.name = name;
+          value.physical.name = name;
+          return value;
+        },
+      );
+      const bad = structuredClone(tables[0]!);
+      bad.physical.namespace = { kind: 'none' } as never;
+      const failed = await client.callTool({
+        name: 'apply_native_project_changes',
+        arguments: {
+          projectId: id,
+          ...(await input(id, [
+            {
+              type: 'add_table',
+              value: bad,
+              placement: { viewId: '__tables__', x: 1500, y: 180, width: 400, height: 260 },
+            },
+          ])),
+        },
+      });
+      expect(failed.isError).toBe(true);
+      const error = JSON.parse((failed.content as Array<{ text: string }>)[0]!.text);
+      expect(error).toMatchObject({ status: 400, code: 'native.command-invalid' });
+      expect(error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: ['commands', 0, 'value', 'physical', 'namespace'] }),
+          expect.objectContaining({ path: ['commands', 0], keys: ['placement'] }),
+        ]),
+      );
+      expect(await state(id)).toEqual(before);
+
+      const columns = tables.map((table) => {
+        const value = createNativeColumn(source.database, table, randomUUID());
+        value.physical.name = 'id';
+        value.physical.nullable = false;
+        return value;
+      });
+      const commands = tables.flatMap((table, index) => [
+        { type: 'add_table', value: table },
+        { type: 'add_column', value: columns[index] },
+        {
+          type: 'add_key',
+          value: {
+            id: randomUUID(),
+            tableId: table.id,
+            scope: 'physical',
+            kind: 'primary',
+            name: `pk_${table.physical.name}`,
+            columnIds: [columns[index]!.id],
+          },
+        },
+        {
+          type: 'add_table_reference',
+          tableId: table.id,
+          viewId: '__tables__',
+          placement: { x: 1500 + index * 440, y: 180, width: 400, height: 260 },
+        },
+      ]);
+      const args = {
+        projectId: id,
+        ...(await input(id, [
+          ...commands,
+          {
+            type: 'add_foreign_key',
+            value: {
+              id: randomUUID(),
+              sourceTableId: tables[1]!.id,
+              targetTableId: tables[0]!.id,
+              scope: 'physical',
+              logical: { name: '', cardinality: 'one-to-many', required: false },
+              physical: {
+                name: 'fk_products_category',
+                sourceColumnIds: [columns[1]!.id],
+                targetColumnIds: [columns[0]!.id],
+                onDelete: 'NO ACTION',
+                onUpdate: 'NO ACTION',
+              },
+            },
+          },
+        ])),
+      };
+      const call = () => client.callTool({ name: 'apply_native_project_changes', arguments: args });
+      const saved = await call();
+      expect(saved.isError, JSON.stringify(saved.content)).not.toBe(true);
+      expect(saved.structuredContent).toMatchObject({ status: 'accepted' });
+      const current = await state(id);
+      expect(current.sourceDocument.tables).toHaveLength(
+        before.sourceDocument.tables.length + tables.length,
+      );
+      expect(current.sourceDocument.tables).toEqual(
+        expect.arrayContaining([...before.sourceDocument.tables, ...tables]),
+      );
+      expect(current.sourceDocument.columns).toHaveLength(
+        before.sourceDocument.columns.length + columns.length,
+      );
+      expect(current.sourceDocument.columns).toEqual(
+        expect.arrayContaining([...before.sourceDocument.columns, ...columns]),
+      );
+      expect(current.sourceDocument.keys).toHaveLength(5);
+      expect(current.sourceDocument.tableRelations).toHaveLength(1);
+      expect(current.sourceDocument.enums).toEqual(before.sourceDocument.enums);
+      for (const [index, table] of tables.entries())
+        expect(
+          current.sourceDocument.layout.nodes.find(
+            (node: { objectId: string }) => node.objectId === table.id,
+          ),
+        ).toMatchObject({
+          viewId: '__tables__',
+          x: 1500 + index * 440,
+          y: 180,
+          width: 400,
+          height: 260,
+        });
+      expect(current.native.issues).toEqual(before.native.issues);
+      expect((await call()).structuredContent).toEqual(saved.structuredContent);
+      expect(await state(id)).toEqual(current);
     });
     it('consumes both new command families through the registered MCP tool', async () => {
       const id = await fresh('mysql'),

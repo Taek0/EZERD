@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { isValidElement, type ReactElement } from 'react';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeClipboardMenu } from './native-clipboard.js';
@@ -12,7 +13,11 @@ import { Textarea } from '../../components/ui/index.js';
 
 const hooks = vi.hoisted(() => ({
   active: null as null | {
-    slots: { value?: unknown; deps?: readonly unknown[]; cleanup?: (() => void) | undefined }[];
+    slots: {
+      value?: unknown;
+      deps?: readonly unknown[] | undefined;
+      cleanup?: (() => void) | undefined;
+    }[];
     cursor: number;
     effects: (() => void)[];
   },
@@ -24,8 +29,21 @@ vi.mock('../../shared/i18n/index.js', () => ({
 }));
 vi.mock('react', async (original) => {
   const react = await original<typeof import('react')>();
+  function effectHook(effect: () => void | (() => void), deps?: readonly unknown[]) {
+    const active = hooks.active!,
+      slot = (active.slots[active.cursor++] ??= {});
+    if (!deps || !slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
+      active.effects.push(() => {
+        slot.cleanup?.();
+        slot.cleanup = effect() || undefined;
+      });
+      slot.deps = deps;
+    }
+  }
   return {
     ...react,
+    useLayoutEffect: effectHook,
+    useEffect: effectHook,
     useState(initial: unknown) {
       const active = hooks.active!,
         index = active.cursor++,
@@ -42,17 +60,6 @@ vi.mock('react', async (original) => {
     useRef(initial: unknown) {
       const active = hooks.active!;
       return (active.slots[active.cursor++] ??= { value: { current: initial } }).value;
-    },
-    useEffect(effect: () => void | (() => void), deps: readonly unknown[]) {
-      const active = hooks.active!,
-        slot = (active.slots[active.cursor++] ??= {});
-      if (!slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
-        active.effects.push(() => {
-          slot.cleanup?.();
-          slot.cleanup = effect() || undefined;
-        });
-        slot.deps = deps;
-      }
     },
   };
 });
@@ -82,6 +89,7 @@ function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   return [tree, ...nodes(tree.props.children)];
 }
 function menu(save = vi.fn(async () => true)) {
+  const state = { busy: false };
   const snapshot = clipboardSnapshot(),
     menuRoot = root(),
     pasteRoot = root(),
@@ -92,7 +100,7 @@ function menu(save = vi.fn(async () => true)) {
         snapshot,
         userId: clipboardActor,
         editable: true,
-        busy: false,
+        busy: state.busy,
         onSave: save,
         selectedTableId: 'a',
       }),
@@ -111,6 +119,7 @@ function menu(save = vi.fn(async () => true)) {
     );
   };
   return {
+    state,
     snapshot,
     renderMenu,
     renderForm,
@@ -137,6 +146,7 @@ const flush = async () => {
   await Promise.resolve();
 };
 beforeEach(() => {
+  vi.useFakeTimers();
   const values = new Map<string, string>();
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => values.get(key) ?? null,
@@ -145,8 +155,44 @@ beforeEach(() => {
   });
   vi.stubGlobal('navigator', {});
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 describe('native clipboard menu real callback consumption without DOM', () => {
+  it('preserves reviewed input while externally busy and does not autosave a recovered draft on mount', async () => {
+    const ui = menu();
+    ui.renderForm();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(ui.save).not.toHaveBeenCalled();
+    text(ui.renderForm(), JSON.stringify(clipboardCommand().clipboard));
+    click(ui.renderForm(), '새 ID와 이름 검토');
+    ui.renderForm();
+    ui.state.busy = true;
+    const busyForm = ui.renderForm();
+    expect(nodes(busyForm).find((node) => node.type === 'fieldset')!.props.disabled).toBe(true);
+    const draft = loadNativeEditorDraft(
+      clipboardActor,
+      ui.snapshot.project.id,
+      'canvas:clipboard:paste',
+    )!;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(ui.save).not.toHaveBeenCalled();
+    expect(loadNativeEditorDraft(clipboardActor, ui.snapshot.project.id, draft.key)).toEqual(draft);
+    ui.unmount();
+    await flush();
+    expect(ui.save).not.toHaveBeenCalled();
+    const recovered = menu();
+    recovered.renderForm();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(recovered.save).not.toHaveBeenCalled();
+    expect(loadNativeEditorDraft(clipboardActor, recovered.snapshot.project.id, draft.key)).toEqual(
+      draft,
+    );
+    recovered.unmount();
+    await flush();
+    expect(recovered.save).not.toHaveBeenCalled();
+  });
   it('copies a reviewed shared fragment to the manual textarea when device clipboard is unavailable', async () => {
     const ui = menu();
     click(ui.renderMenu(), '테이블 복사');
@@ -177,18 +223,14 @@ describe('native clipboard menu real callback consumption without DOM', () => {
       ui = menu(save);
     const sourceText = JSON.stringify(clipboardCommand().clipboard);
     text(ui.renderForm(), sourceText);
-    let form = ui.renderForm();
-    (nodes(form).find((node) => node.type === 'form')!.props.onSubmit as (event: unknown) => void)({
-      preventDefault() {},
-    });
-    await flush();
+    ui.renderForm();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(save).not.toHaveBeenCalled();
     click(ui.renderForm(), '새 ID와 이름 검토');
-    form = ui.renderForm();
-    (nodes(form).find((node) => node.type === 'form')!.props.onSubmit as (event: unknown) => void)({
-      preventDefault() {},
-    });
-    await flush();
+    ui.renderForm();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS - 1);
+    expect(save).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
     expect(save).toHaveBeenCalledTimes(1);
     const sent = save.mock.calls[0] as unknown as [
       unknown[],
@@ -203,15 +245,19 @@ describe('native clipboard menu real callback consumption without DOM', () => {
       ui.snapshot.project.id,
       'canvas:clipboard:paste',
     )!;
-    expect(sent[2].revision).not.toBe(before.revision);
+    expect(sent[2].revision).toBe(before.revision);
     text(ui.renderForm(), sourceText + ' ');
     const newer = loadNativeEditorDraft(clipboardActor, ui.snapshot.project.id, before.key)!;
     expect(newer.revision).not.toBe(before.revision);
     resolve(true);
     await flush();
-    expect(loadNativeEditorDraft(clipboardActor, ui.snapshot.project.id, before.key)).toEqual(
-      newer,
-    );
+    ui.renderForm();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+    expect(loadNativeEditorDraft(clipboardActor, ui.snapshot.project.id, before.key)).toEqual({
+      ...newer,
+      before: before.values,
+    });
+    expect(save).toHaveBeenCalledTimes(1);
     ui.unmount();
   });
   it('does not let a late Clipboard API read overwrite typed input or an unmounted actor/project form', async () => {

@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { isValidElement, type ReactElement } from 'react';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeEditorForm } from './native-editor-form.js';
@@ -5,7 +6,11 @@ import { clipboardActor, clipboardSnapshot } from './native-clipboard-test-fixtu
 import { loadNativeEditorDraft } from './native-editor-draft.js';
 const hooks = vi.hoisted(() => ({
   active: null as null | {
-    slots: { value?: unknown; deps?: readonly unknown[]; cleanup?: (() => void) | undefined }[];
+    slots: {
+      value?: unknown;
+      deps?: readonly unknown[] | undefined;
+      cleanup?: (() => void) | undefined;
+    }[];
     cursor: number;
     effects: (() => void)[];
   },
@@ -47,6 +52,21 @@ vi.mock('react', async (original) => {
         slot.deps = deps;
       }
     },
+    useLayoutEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
+      const active = hooks.active!,
+        slot = (active.slots[active.cursor++] ??= {});
+      if (
+        !deps ||
+        !slot.deps ||
+        deps.some((value, index) => !Object.is(value, slot.deps![index]))
+      ) {
+        active.effects.push(() => {
+          slot.cleanup?.();
+          slot.cleanup = effect() || undefined;
+        });
+        slot.deps = deps;
+      }
+    },
   };
 });
 function root() {
@@ -75,6 +95,7 @@ function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   return [tree, ...nodes(tree.props.children)];
 }
 beforeEach(() => {
+  vi.useFakeTimers();
   const values = new Map<string, string>();
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => values.get(key) ?? null,
@@ -83,7 +104,10 @@ beforeEach(() => {
   });
   vi.stubGlobal('navigator', {});
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 describe('continuous form editing during queued saves', () => {
   it('sends a return to the original value after an earlier edit, and old ACK does not erase it', async () => {
     const snapshot = clipboardSnapshot();
@@ -112,31 +136,36 @@ describe('continuous form editing during queued saves', () => {
           },
         }),
       );
-    const submit = () =>
-      (
-        nodes(render()).find((node) => node.type === 'form')!.props.onSubmit as (
-          event: unknown,
-        ) => void
-      )({ preventDefault() {} });
     render();
     change('name', 'B');
-    submit();
+    render();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+    render();
     expect(save).toHaveBeenCalledTimes(1);
     const firstAck = resolve;
     render();
     change('name', 'A');
-    submit();
+    render();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+    render();
+    expect(save).toHaveBeenCalledTimes(1);
+    firstAck(true);
+    await vi.advanceTimersByTimeAsync(0);
+    render();
+    expect(
+      loadNativeEditorDraft(clipboardActor, snapshot.project.id, 'test:continuous')?.values.name,
+    ).toBe('A');
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     expect(save).toHaveBeenCalledTimes(2);
     expect((save.mock.calls[1] as unknown as [unknown])[0]).toEqual([
       { type: 'patch_table', id: 'a', patch: { logical: { name: 'A' } } },
     ]);
-    firstAck(true);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
     expect(
       loadNativeEditorDraft(clipboardActor, snapshot.project.id, 'test:continuous')?.values.name,
     ).toBe('A');
     resolve(true);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
     view.unmount();
   });
 });

@@ -1,3 +1,4 @@
+import { useNativeLogicalMode } from './NativeLogicalMode.js';
 import type { NativeDesignDocument, NativeTableRelation } from '@ezerd/model';
 import { useEffect, useRef } from 'react';
 import { Button } from '../../components/ui/index.js';
@@ -20,6 +21,7 @@ export function NativeTableRelationInspector({
   defaultOpen?: boolean;
 }) {
   const { t } = useI18n();
+  const { enabled: logicalEnabled } = useNativeLogicalMode();
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (context && defaultOpen)
@@ -27,11 +29,11 @@ export function NativeTableRelationInspector({
   }, [relation.id, !!context, defaultOpen]);
   const table = (id: string) =>
     document.tables?.find((item) => item.id === id)?.physical.name ||
-    document.tables?.find((item) => item.id === id)?.logical.name ||
+    (logicalEnabled && document.tables?.find((item) => item.id === id)?.logical.name) ||
     id;
   const column = (id: string) =>
     document.columns?.find((item) => item.id === id)?.physical.name ||
-    document.columns?.find((item) => item.id === id)?.logical.name ||
+    (logicalEnabled && document.columns?.find((item) => item.id === id)?.logical.name) ||
     id;
   const endpoint = (side: 'targetCardinality' | 'sourceCardinality') => {
     const value = relation.logical[side] ?? {
@@ -47,9 +49,10 @@ export function NativeTableRelationInspector({
     };
     return `${value.min}..${value.max === 'many' ? 'N' : '1'}`;
   };
+  if (!logicalEnabled && relation.scope === 'logical') return null;
   return (
     <PanelSection
-      title={`${table(relation.targetTableId)} (PK) → ${table(relation.sourceTableId)} (FK) · ${relation.logical.name}`}
+      title={`${table(relation.targetTableId)} (PK) → ${table(relation.sourceTableId)} (FK)${logicalEnabled ? ` · ${relation.logical.name}` : ''}`}
       defaultOpen={defaultOpen}
     >
       <div className="table-relation-summary">
@@ -75,16 +78,20 @@ export function NativeTableRelationInspector({
         </div>
       ) : (
         <>
-          <strong>{relation.logical.name}</strong>
-          <p className="native-domain-description">{relation.logical.description || '—'}</p>
-          <dl className="native-options">
-            <dt>{t('출발 끝점 (PK)')}</dt>
-            <dd>{endpoint('targetCardinality')}</dd>
-            <dt>{t('대상 끝점 (FK)')}</dt>
-            <dd>{endpoint('sourceCardinality')}</dd>
-            <dt>{t('관계 필수')}</dt>
-            <dd>{t(relation.logical.required ? '필수' : '선택')}</dd>
-          </dl>
+          {logicalEnabled && (
+            <>
+              <strong>{relation.logical.name}</strong>
+              <p className="native-domain-description">{relation.logical.description || '—'}</p>
+              <dl className="native-options">
+                <dt>{t('출발 끝점 (PK)')}</dt>
+                <dd>{endpoint('targetCardinality')}</dd>
+                <dt>{t('대상 끝점 (FK)')}</dt>
+                <dd>{endpoint('sourceCardinality')}</dd>
+                <dt>{t('관계 필수')}</dt>
+                <dd>{t(relation.logical.required ? '필수' : '선택')}</dd>
+              </dl>
+            </>
+          )}
           {relation.physical && (
             <p>
               {relation.physical.name} · ON DELETE {relation.physical.onDelete} · ON UPDATE{' '}

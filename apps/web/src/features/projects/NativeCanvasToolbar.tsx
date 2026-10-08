@@ -1,3 +1,5 @@
+import { useNativeLogicalMode } from './NativeLogicalMode.js';
+import './native-main-integration.css';
 import { NativeDomainFilter, type NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { memo, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -6,6 +8,8 @@ import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 
 registerTranslations({
   '더 보기': 'More',
+  '논리 설계 켜기': 'Enable logical design',
+  '논리 설계 끄기': 'Disable logical design',
   '설계 확인 항목': 'Design issues',
   '보관된 입력 복구': 'Recover preserved input',
   '전체 테이블': 'All tables',
@@ -76,8 +80,6 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   editable,
   noteEditable,
   disabled,
-  mode,
-  onMode,
   inspectorOpen,
   onToggleInspector,
   exportControl,
@@ -85,6 +87,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   panelToggle,
 }: NativeCanvasToolbarProps) {
   const { t } = useI18n();
+  const logicalMode = useNativeLogicalMode();
   const filteredNames = filter
     ? [
         ...(domains ?? [])
@@ -230,53 +233,37 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               />
             ))}
         </div>
-        {(onOpenIssues || onOpenRecovery) && (
-          <>
-            <span className="toolbar-divider" aria-hidden="true" />
-            <div className="toolbar-group" role="group" aria-label={t('캔버스 작업')}>
-              <Dropdown
-                label={t('캔버스 작업')}
-                trigger={
-                  <IconButton aria-label={t('더 보기')} title={t('더 보기')}>
-                    ⋯
-                  </IconButton>
-                }
-                items={[
-                  ...(onOpenIssues
-                    ? [{ id: 'design-issues', label: t('설계 확인 항목'), onAction: onOpenIssues }]
-                    : []),
-                  ...(onOpenRecovery
-                    ? [{ id: 'recovery', label: t('보관된 입력 복구'), onAction: onOpenRecovery }]
-                    : []),
-                ]}
-              />
-            </div>
-          </>
-        )}
-        {onMode && (
-          <div className="toolbar-group" role="group" aria-label={t('모델 보기')}>
-            <Button
-              disabled={disabled}
-              aria-pressed={mode === 'physical'}
-              onClick={() => onMode('physical')}
-            >
-              {t('물리')}
-            </Button>
-            <Button
-              disabled={disabled}
-              aria-pressed={mode === 'logical'}
-              onClick={() => onMode('logical')}
-            >
-              {t('논리')}
-            </Button>
+        <>
+          <span className="toolbar-divider" aria-hidden="true" />
+          <div className="toolbar-group" role="group" aria-label={t('캔버스 작업')}>
+            <Dropdown
+              label={t('캔버스 작업')}
+              trigger={
+                <IconButton aria-label={t('더 보기')} title={t('더 보기')}>
+                  ⋯
+                </IconButton>
+              }
+              items={[
+                {
+                  id: 'logical-design',
+                  label: t(logicalMode.enabled ? '논리 설계 끄기' : '논리 설계 켜기'),
+                  onAction: () => logicalMode.onEnabledChange(!logicalMode.enabled),
+                },
+                ...(onOpenIssues
+                  ? [{ id: 'design-issues', label: t('설계 확인 항목'), onAction: onOpenIssues }]
+                  : []),
+                ...(onOpenRecovery
+                  ? [{ id: 'recovery', label: t('보관된 입력 복구'), onAction: onOpenRecovery }]
+                  : []),
+              ]}
+            />
           </div>
-        )}
+        </>
         <div
           className="toolbar-group panel-toggles"
           role="group"
           aria-label={t('협업과 속성 패널')}
         >
-          {panelToggle}
           {onToggleInspector && (
             <IconButton
               className="inspector-toggle panel-toggle"
@@ -293,6 +280,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               </svg>
             </IconButton>
           )}
+          {panelToggle}
         </div>
       </div>
     </div>

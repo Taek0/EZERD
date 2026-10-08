@@ -58,6 +58,40 @@ function editor(key: string): NativeDraftArchiveEntry {
   };
 }
 describe('native recovery source routing', () => {
+  it.each(['index', 'check'] as const)(
+    'routes acknowledged %s input to the same creation session only for its owner',
+    (kind) => {
+      const doc = fixture();
+      const item = kind === 'index' ? doc.indexes![0]! : doc.checks![0]!;
+      item.scope = 'physical';
+      const input = editor(
+        kind === 'index'
+          ? `advanced:index:${item.tableId}:new`
+          : `advanced:expression:${item.tableId}:check:new`,
+      );
+      input.draft.before = { id: item.id };
+      input.draft.values = { id: item.id };
+      const before = structuredClone({ doc, input });
+      expect(nativeDraftRecoveryTarget(doc, input)).toEqual({
+        kind: 'advanced',
+        tableId: item.tableId,
+        selection: `${kind}:new`,
+        personal: false,
+      });
+      expect({ doc, input }).toEqual(before);
+      item.scope = 'logical';
+      expect(nativeDraftRecoveryTarget(doc, input)).toBeNull();
+      item.scope = 'physical';
+      item.tableId = 'another-table';
+      expect(nativeDraftRecoveryTarget(doc, input)).toBeNull();
+      item.tableId = before.doc.tables![0]!.id;
+      input.draft.values.id = 'tampered';
+      expect(nativeDraftRecoveryTarget(doc, input)).toBeNull();
+      input.draft.before = { id: doc.columns![0]!.id };
+      input.draft.values = { id: doc.columns![0]!.id };
+      expect(nativeDraftRecoveryTarget(doc, input)).toBeNull();
+    },
+  );
   it('routes note/domain inspector and text drafts only to their actual view', () => {
     const doc = fixture();
     const shared = editor('canvas:description:__tables__:n');

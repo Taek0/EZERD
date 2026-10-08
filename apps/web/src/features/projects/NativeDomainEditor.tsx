@@ -1,7 +1,7 @@
 import { PanelSection } from '../../shared/editor/panel.js';
 import { DomainColorPicker } from '../domains/DomainColorPicker.js';
 import { Button } from '../../components/ui/index.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   nativeDomainCommandSchema,
   type NativeDomainCommand,
@@ -282,7 +282,7 @@ export function NativeDomainEditor({
     snapshot.sourceDocument.schemaVersion === 2;
   const target = document.domains.find((domain) => domain.id === targetDomain);
   const table = document.tables?.find((table) => table.id === targetTable);
-  const formKey = `${userId}:${snapshot.project.id}:${action}:${action === 'move' ? targetTable : action === 'create' ? 'project' : targetDomain}:${snapshot.project.version}:${snapshot.sequence}:${snapshot.project.databaseRevision}`;
+  const formKey = `${userId}:${snapshot.project.id}:${action}:${action === 'move' ? targetTable : action === 'create' ? 'project' : targetDomain}`;
   return (
     <PanelSection
       className="native-property-editor"
@@ -402,7 +402,7 @@ export function NativeDomainEditor({
   );
 }
 
-function NativeDomainForm({
+export function NativeDomainForm({
   context,
   document,
   action,
@@ -429,7 +429,23 @@ function NativeDomainForm({
       return { id: nativeDurableId(), nodeId: nativeDurableId() };
     }
   });
-  const domain = document.domains.find((domain) => domain.id === id);
+  const [created, setCreated] = useState(false);
+  const creationAccepted = useRef(false);
+  const effectiveId = action === 'create' ? seeds.id : id;
+  const domain = document.domains.find((domain) => domain.id === effectiveId);
+  if (action === 'create' && domain) creationAccepted.current = true;
+  const effectiveAction = action === 'create' && domain ? 'edit' : action;
+  const formContext: NativeEditorContext = {
+    ...context,
+    onSave: async (commands, expected, draft) => {
+      const accepted = await context.onSave(commands, expected, draft);
+      if (accepted && commands.some((command) => command.type === 'add_domain')) {
+        creationAccepted.current = true;
+        setCreated(true);
+      }
+      return accepted;
+    },
+  };
   const table = document.tables?.find((table) => table.id === id);
   const initial = {
     id: action === 'create' ? seeds.id : id,
@@ -449,16 +465,31 @@ function NativeDomainForm({
     edit: '도메인 수정',
     delete: '도메인 삭제',
     move: '테이블 소속 이동',
-  }[action];
+  }[effectiveAction];
   return (
     <NativeEditorForm
-      context={context}
+      context={formContext}
       title={t(title)}
       draftKey={key}
       initial={initial}
+      disabled={() => action === 'create' && (created || creationAccepted.current) && !domain}
       build={(values, before) => {
         try {
-          return nativeDomainUICommands(document, context.snapshot, action, id, values, before);
+          return nativeDomainUICommands(
+            document,
+            context.snapshot,
+            effectiveAction,
+            effectiveId,
+            values,
+            action === 'create' && domain
+              ? {
+                  ...before,
+                  name: domain.name,
+                  description: domain.description,
+                  color: domain.color ?? '',
+                }
+              : before,
+          );
         } catch (error) {
           const code = error instanceof Error ? error.message : '';
           throw new Error(
@@ -517,7 +548,7 @@ function NativeDomainForm({
                 <small>{t('색상 없음')}: —</small>
               </>
             )}
-            {action === 'create' && (
+            {effectiveAction === 'create' && (
               <>
                 <NativeEditorField
                   label="X"

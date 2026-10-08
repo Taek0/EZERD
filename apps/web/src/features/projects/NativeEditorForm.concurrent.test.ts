@@ -1,3 +1,5 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
+vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enabled: true }) }));
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeEditorForm } from './native-editor-form.js';
@@ -90,6 +92,7 @@ function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   return [tree, ...nodes(tree.props.children)];
 }
 beforeEach(() => {
+  vi.useFakeTimers();
   hooks.cursor = 0;
   hooks.dirty = false;
   hooks.slots = [];
@@ -112,6 +115,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   hooks.slots.forEach((slot) => slot.cleanup?.());
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 function editor(kind: 'generic' | 'property') {
@@ -188,9 +192,9 @@ function editor(kind: 'generic' | 'property') {
       change(next);
       render();
     },
-    submit() {
-      const form = nodes(tree).find((node) => node.type === 'form')!;
-      (form.props.onSubmit as (event: unknown) => void)({ preventDefault() {} });
+    async settleDebounce() {
+      render();
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
       render();
     },
     unrelatedSnapshot() {
@@ -203,8 +207,7 @@ function editor(kind: 'generic' | 'property') {
     },
     async accept(index: number) {
       completions[index]!.resolve(true);
-      await Promise.resolve();
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
       render();
     },
     render,
@@ -215,14 +218,14 @@ for (const kind of ['generic', 'property'] as const) {
     it('preserves a return to the original value through an unrelated snapshot and earlier ACK', async () => {
       const ui = editor(kind);
       ui.change('B');
-      ui.submit();
+      await ui.settleDebounce();
       expect(ui.onSave).toHaveBeenCalledTimes(1);
       ui.change('A');
       ui.unrelatedSnapshot();
       expect(ui.value()).toBe('A');
       await ui.accept(0);
       expect(ui.value()).toBe('A');
-      ui.submit();
+      await ui.settleDebounce();
       expect(ui.onSave).toHaveBeenCalledTimes(2);
       expect(ui.onSave.mock.calls[1]![0]).toMatchObject([{ patch: { physical: { name: 'A' } } }]);
       await ui.accept(1);
@@ -230,12 +233,12 @@ for (const kind of ['generic', 'property'] as const) {
     it('keeps newer input editable and preserves it after an older save finishes', async () => {
       const ui = editor(kind);
       ui.change('B');
-      ui.submit();
+      await ui.settleDebounce();
       ui.change('C');
       ui.unrelatedSnapshot();
       await ui.accept(0);
       expect(ui.value()).toBe('C');
-      ui.submit();
+      await ui.settleDebounce();
       expect(ui.onSave).toHaveBeenCalledTimes(2);
       expect(ui.onSave.mock.calls[1]![0]).toMatchObject([{ patch: { physical: { name: 'C' } } }]);
       await ui.accept(1);

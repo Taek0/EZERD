@@ -40,7 +40,6 @@ try {
         ? process.argv.slice(2)
         : [
             'apps/server/test/api.integration.test.ts',
-            'apps/server/test/autosync.integration.test.ts',
             'apps/server/test/mcp.integration.test.ts',
             'apps/server/test/workspace.integration.test.ts',
             'apps/server/test/workspace-domain.integration.test.ts',

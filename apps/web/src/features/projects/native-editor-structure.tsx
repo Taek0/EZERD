@@ -1,5 +1,6 @@
+import { useNativeLogicalMode } from './NativeLogicalMode.js';
 import { PanelSection } from '../../shared/editor/panel.js';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { nativeEditorCommandSchema } from '@ezerd/contracts';
 import {
   createNativeTable,
@@ -217,7 +218,65 @@ export function nativeStructureCommands(
   table: NativeTable | undefined,
   action: NativeStructureAction,
   values: Record<string, string>,
+  before?: Record<string, string>,
 ): NativeWebCommand[] {
+  // The durable create identity becomes an edit identity after the first ACK.
+  const collection = (
+    {
+      table: 'tables',
+      column: 'columns',
+      key: 'keys',
+      index: 'indexes',
+      check: 'checks',
+      enum: 'enums',
+      foreignKey: 'tableRelations',
+    } as const
+  )[action];
+  const existing = document[collection]?.find((item) => item.id === values.id);
+  if (existing) {
+    const changed = (key: string) => !before || values[key] !== before[key];
+    if (action === 'table' || action === 'column') {
+      const patch = {
+        ...(changed('scope') ? { scope: values.scope } : {}),
+        ...(changed('name') ? { physical: { name: values.name ?? '' } } : {}),
+        ...(changed('logicalName') ? { logical: { name: values.logicalName ?? '' } } : {}),
+      };
+      const commands: NativeWebCommand[] = Object.keys(patch).length
+        ? [
+            nativeEditorCommandSchema.parse({
+              type: action === 'table' ? 'patch_table' : 'patch_column',
+              id: existing.id,
+              patch,
+            }),
+          ]
+        : [];
+      if (
+        action === 'table' &&
+        changed('domainId') &&
+        'domainId' in existing &&
+        existing.domainId !== (values.domainId || null)
+      )
+        commands.push({
+          type: 'move_table_domain',
+          tableId: existing.id,
+          targetDomainId: values.domainId || null,
+        });
+      return commands;
+    }
+    const constraintCollection = collection as
+      'keys' | 'indexes' | 'checks' | 'enums' | 'tableRelations';
+    const baseline = nativeConstraintInitial(document, constraintCollection, existing.id);
+    return nativeConstraintCommands(
+      document,
+      constraintCollection,
+      existing.id,
+      {
+        ...baseline,
+        ...Object.fromEntries(Object.entries(values).filter(([key]) => changed(key))),
+      },
+      baseline,
+    );
+  }
   const policy = nativeEditorPolicy(document, table);
   if (action !== 'table' && action !== 'enum' && !table)
     throw new Error('document.owner-table-not-found');
@@ -419,7 +478,7 @@ export function nativeStructureCommands(
   return [parsed];
 }
 
-function NativeCreateForm({
+export function NativeCreateForm({
   context,
   document,
   table,
@@ -433,15 +492,53 @@ function NativeCreateForm({
   initialValues?: Record<string, string>;
 }) {
   const { t } = useI18n();
+  const { enabled: logicalEnabled } = useNativeLogicalMode();
   const policy = nativeEditorPolicy(document, table);
   // IDs belong to the durable input; retries do not regenerate objects.
   const [id] = useState(() => nativeDurableId());
+  const acceptedDocument = useRef<NativeDesignDocument | null>(null);
+  const collection = (
+    {
+      table: 'tables',
+      column: 'columns',
+      key: 'keys',
+      index: 'indexes',
+      check: 'checks',
+      enum: 'enums',
+      foreignKey: 'tableRelations',
+    } as const
+  )[action];
+  const creationContext: NativeEditorContext = {
+    ...context,
+    onSave: async (commands, expected, draft) => {
+      const saved = await context.onSave(commands, expected, draft);
+      if (saved) {
+        const created = commands.find(
+          (command) => command.type.startsWith('add_') && 'value' in command,
+        );
+        if (created && 'value' in created) {
+          acceptedDocument.current = {
+            ...document,
+            [collection]: [...(document[collection] ?? []), created.value],
+          };
+        }
+        const derived = commands.find((command) => command.type === 'create_foreign_key');
+        if (derived?.type === 'create_foreign_key') {
+          const { type: _type, ...input } = derived;
+          acceptedDocument.current = createNativeForeignKeyFromPrimaryKey(document, input);
+        }
+      }
+      return saved;
+    },
+  };
   const initial = {
     scope:
       action === 'table'
-        ? 'logical'
+        ? logicalEnabled
+          ? 'logical'
+          : 'physical'
         : action === 'column'
-          ? table?.scope === 'physical'
+          ? table?.scope === 'physical' || !logicalEnabled
             ? 'physical'
             : 'logical'
           : 'physical',
@@ -478,7 +575,7 @@ function NativeCreateForm({
   }[action];
   return (
     <NativeEditorForm
-      context={context}
+      context={creationContext}
       draftKey={`create:${action}:${table?.id ?? 'project'}`}
       title={t(title)}
       initial={initial}
@@ -499,7 +596,17 @@ function NativeCreateForm({
               : action;
         return !policy.feature(feature as Parameters<typeof policy.feature>[0]).usable;
       }}
-      build={(values) => nativeStructureCommands(document, table, action, values)}
+      build={(values, before) =>
+        nativeStructureCommands(
+          document[collection]?.some((item) => item.id === values.id)
+            ? document
+            : (acceptedDocument.current ?? document),
+          table,
+          action,
+          values,
+          before,
+        )
+      }
     >
       {(values, change) => {
         const feature =
@@ -532,7 +639,7 @@ function NativeCreateForm({
         );
         return (
           <>
-            {['table', 'column'].includes(action) && (
+            {logicalEnabled && ['table', 'column'].includes(action) && (
               <>
                 <p>
                   {t(
@@ -563,7 +670,8 @@ function NativeCreateForm({
             )}
             <fieldset disabled={disabled}>
               {field('name', '물리 이름')}
-              {['table', 'column', 'foreignKey'].includes(action) &&
+              {logicalEnabled &&
+                ['table', 'column', 'foreignKey'].includes(action) &&
                 field('logicalName', '논리 이름')}
               {action === 'table' &&
                 field('domainId', '도메인', [
@@ -1331,6 +1439,7 @@ export function NativeConstraintForm({
   id: string;
 }) {
   const { t } = useI18n();
+  const { enabled: logicalEnabled } = useNativeLogicalMode();
   const item = document[collection]?.find((item) => item.id === id)!;
   const tableId =
     'tableId' in item ? item.tableId : 'sourceTableId' in item ? item.sourceTableId : '';
@@ -1500,52 +1609,59 @@ export function NativeConstraintForm({
             )}
             {collection === 'tableRelations' && 'targetTableId' in item && (
               <>
-                {field('logicalName', '관계명', false)}
-                {field('logicalDescription', '관계 설명', false, undefined, true)}
-                {relationValues.sourceCardinality === 'fallback' &&
-                  relationValues.targetCardinality === 'fallback' &&
-                  field('cardinality', '카디널리티', false, [
-                    { value: 'one-to-one', label: '1 : 1' },
-                    { value: 'one-to-many', label: '1 : N' },
-                    { value: 'many-to-many', label: 'N : M' },
-                  ])}
-                {(['targetCardinality', 'sourceCardinality'] as const).map((side) => {
-                  const fallback =
-                    side === 'sourceCardinality'
-                      ? { min: 0, max: relationValues.cardinality === 'one-to-one' ? 1 : 'many' }
-                      : {
-                          min: relationValues.required === 'true' ? 1 : 0,
-                          max: relationValues.cardinality === 'many-to-many' ? 'many' : 1,
-                        };
-                  return field(
-                    side,
-                    side === 'targetCardinality' ? '출발 끝점 (PK)' : '대상 끝점 (FK)',
-                    false,
-                    [
-                      ...(values[side] === 'fallback'
-                        ? [
-                            {
-                              value: 'fallback',
-                              label: `${t('기본값')} · ${fallback.min}..${fallback.max === 'many' ? 'N' : '1'}`,
-                            },
-                          ]
-                        : []),
-                      { value: '0:1', label: '0..1' },
-                      { value: '1:1', label: '1' },
-                      { value: '0:many', label: '0..N' },
-                      { value: '1:many', label: '1..N' },
-                    ],
-                  );
-                })}
-                {relationValues.targetCardinality === 'fallback' && (
-                  <label className="table-check">
-                    <Checkbox
-                      checked={relationValues.required === 'true'}
-                      aria-label={t('관계 필수')}
-                      onChange={(event) => change('required', String(event.target.checked))}
-                    />
-                    {t('관계 필수')}
-                  </label>
+                {logicalEnabled && (
+                  <>
+                    {field('logicalName', '관계명', false)}
+                    {field('logicalDescription', '관계 설명', false, undefined, true)}
+                    {relationValues.sourceCardinality === 'fallback' &&
+                      relationValues.targetCardinality === 'fallback' &&
+                      field('cardinality', '카디널리티', false, [
+                        { value: 'one-to-one', label: '1 : 1' },
+                        { value: 'one-to-many', label: '1 : N' },
+                        { value: 'many-to-many', label: 'N : M' },
+                      ])}
+                    {(['targetCardinality', 'sourceCardinality'] as const).map((side) => {
+                      const fallback =
+                        side === 'sourceCardinality'
+                          ? {
+                              min: 0,
+                              max: relationValues.cardinality === 'one-to-one' ? 1 : 'many',
+                            }
+                          : {
+                              min: relationValues.required === 'true' ? 1 : 0,
+                              max: relationValues.cardinality === 'many-to-many' ? 'many' : 1,
+                            };
+                      return field(
+                        side,
+                        side === 'targetCardinality' ? '출발 끝점 (PK)' : '대상 끝점 (FK)',
+                        false,
+                        [
+                          ...(values[side] === 'fallback'
+                            ? [
+                                {
+                                  value: 'fallback',
+                                  label: `${t('기본값')} · ${fallback.min}..${fallback.max === 'many' ? 'N' : '1'}`,
+                                },
+                              ]
+                            : []),
+                          { value: '0:1', label: '0..1' },
+                          { value: '1:1', label: '1' },
+                          { value: '0:many', label: '0..N' },
+                          { value: '1:many', label: '1..N' },
+                        ],
+                      );
+                    })}
+                    {relationValues.targetCardinality === 'fallback' && (
+                      <label className="table-check">
+                        <Checkbox
+                          checked={relationValues.required === 'true'}
+                          aria-label={t('관계 필수')}
+                          onChange={(event) => change('required', String(event.target.checked))}
+                        />
+                        {t('관계 필수')}
+                      </label>
+                    )}
+                  </>
                 )}
                 <AnimatedDetails className="table-relation-advanced">
                   <summary>{t('고급 설정 · 테이블, FK 매핑')}</summary>
@@ -1676,6 +1792,7 @@ export function NativeStructureEditor({
   table,
   initialSelection,
   focused = false,
+  defaultOpen,
   initialValues,
 }: {
   context: NativeEditorContext;
@@ -1684,6 +1801,7 @@ export function NativeStructureEditor({
   initialSelection?: { action: NativeStructureAction | 'patch' | 'delete'; target: string };
   /** A contextual inspector action; keeps the same durable form and command policy. */
   focused?: boolean;
+  defaultOpen?: boolean;
   initialValues?: Record<string, string>;
 }) {
   const { t } = useI18n();
@@ -1718,7 +1836,7 @@ export function NativeStructureEditor({
   );
   const selected = objects.find((item) => JSON.stringify([item.collection, item.id]) === target);
   const create = !['patch', 'delete'].includes(action);
-  const mountingKey = `${context.userId}:${context.snapshot.project.id}:${context.snapshot.project.version}:${context.snapshot.sequence}:${context.snapshot.project.databaseRevision}`;
+  const mountingKey = `${context.userId}:${context.snapshot.project.id}:${context.snapshot.project.databaseRevision}`;
   return (
     <PanelSection
       className="native-property-editor"
@@ -1739,7 +1857,7 @@ export function NativeStructureEditor({
             )[action]
           : '구조 편집',
       )}
-      defaultOpen={!!initialSelection}
+      defaultOpen={defaultOpen ?? !!initialSelection}
     >
       {!focused && (
         <NativeEditorField

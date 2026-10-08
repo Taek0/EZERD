@@ -176,12 +176,20 @@ export function nativeDraftRecoveryTarget(
     }
   }
   for (const table of tables) {
+    // An advanced creation session continues editing the accepted object under
+    // its original draft key. Opening the form never arms autosave.
+    const continuedAdvancedCreation = (items: { id: string; tableId: string; scope: string }[]) =>
+      draft.values.id === draft.before.id &&
+      items.some(
+        (item) =>
+          item.id === draft.before.id && item.tableId === table.id && item.scope !== 'logical',
+      );
     if (key === `advanced:index:${table.id}:new`)
-      return freshCreation()
+      return freshCreation() || continuedAdvancedCreation(doc.indexes ?? [])
         ? { kind: 'advanced', tableId: table.id, selection: 'index:new', personal: false }
         : null;
     if (key === `advanced:expression:${table.id}:check:new`)
-      return freshCreation()
+      return freshCreation() || continuedAdvancedCreation(doc.checks ?? [])
         ? { kind: 'advanced', tableId: table.id, selection: 'check:new', personal: false }
         : null;
     for (const index of doc.indexes ?? []) {

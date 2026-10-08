@@ -1,3 +1,4 @@
+import { useNativeAutosave, requiresNativeConfirmation } from './use-native-autosave.js';
 import {
   useEffect,
   useLayoutEffect,
@@ -10,11 +11,11 @@ import type { ProjectDocumentState } from '@ezerd/contracts';
 import { Button, Input, Select, Textarea } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { message } from '../../shared/api/client.js';
+import { nativeEditorConditionText, nativeEditorErrorCode } from './native-editor-diagnostic.js';
 import {
   loadNativeEditorDraft,
   storeNativeEditorDraft,
   discardNativeEditorDraft,
-  resetNativeEditorDraft,
   rebaseNativeEditorDraft,
   type NativeEditorDraft,
   type NativeEditorDraftRef,
@@ -36,12 +37,12 @@ export interface NativeEditorContext {
   onSave: NativeEditorSave;
 }
 registerTranslations({
+  '삭제 실행 확인': 'Confirm deletion',
   '입력 보관 다시 시도': 'Retry preserving input',
   '입력은 이 탭의 메모리에 보관되었습니다. 탭을 닫기 전에 보관을 다시 시도해 주세요.':
     'Input is preserved in this tab’s memory. Retry preserving it before closing the tab.',
   '최신 내용': 'Latest values',
-  '입력 초기화': 'Reset input',
-  'DB 설정이 변경되었습니다. 입력을 확인하고 초기화해 주세요.':
+  'DB 설정이 변경되었습니다. 보관된 입력과 최신 내용을 확인해 주세요.':
     'Database context changed. Review and reset this input.',
   '미검증 기능은 새로 사용할 수 없습니다. 현재 값은 보존됩니다.':
     'Unverified features cannot be added. Current values are preserved.',
@@ -103,8 +104,8 @@ export function NativeEditorForm({
   const [storageError, setStorageError] = useState(loaded.error);
   const [outstanding, setOutstanding] = useState(0);
   const [ackSequence, setAckSequence] = useState(-1);
-  const observedSequence = useRef(snapshot.sequence);
-  observedSequence.current = snapshot.sequence;
+  const observed = useRef({ sequence: snapshot.sequence, initial });
+  observed.current = { sequence: snapshot.sequence, initial };
   const [error, setError] = useState('');
   const dirty = [...new Set([...Object.keys(draft.values), ...Object.keys(draft.before)])].some(
     (key) => draft.values[key] !== draft.before[key],
@@ -133,7 +134,11 @@ export function NativeEditorForm({
         current.expected.sequence === expected.sequence
       )
         return;
-      const next = rebaseNativeEditorDraft(current, expected, initial);
+      const next = rebaseNativeEditorDraft(
+        current,
+        expected,
+        draftKey.startsWith('create:') ? current.before : initial,
+      );
       const changed = Object.keys(next.values).some((key) => next.values[key] !== next.before[key]);
       if (changed) persist(next);
       else {
@@ -151,12 +156,43 @@ export function NativeEditorForm({
     outstanding,
     ackSequence,
   ]);
-  async function submit() {
-    if (!dirty || context.busy || stale || blocked || storageError) return;
+  const [confirmation, setConfirmation] = useState(false);
+  const autosave = useNativeAutosave({
+    blocked:
+      context.busy ||
+      stale ||
+      blocked ||
+      !!storageError ||
+      !dirty ||
+      outstanding > 0 ||
+      (draftKey.startsWith('create:') && ackSequence >= snapshot.sequence),
+    getBlocked: (draining) =>
+      (!draining && context.busy) ||
+      !!storageError ||
+      currentDraft.current.expected.databaseRevision !== snapshot.project.databaseRevision ||
+      (typeof disabled === 'function' ? disabled(currentDraft.current.values) : disabled),
+    save: (draining) => submit(false, draining),
+  });
+  async function submit(confirmed = false, draining = false) {
+    const draft = currentDraft.current;
+    const dirty = Object.keys(draft.values).some((key) => draft.values[key] !== draft.before[key]);
+    if (
+      !dirty ||
+      (!draining && (outstanding || context.busy)) ||
+      draft.expected.databaseRevision !== snapshot.project.databaseRevision ||
+      (typeof disabled === 'function' ? disabled(draft.values) : disabled) ||
+      storageError
+    )
+      return;
     setError('');
     let queued = false;
     try {
       const commands = build(draft.values, draft.before);
+      if (requiresNativeConfirmation(commands) && !confirmed) {
+        setConfirmation(true);
+        return;
+      }
+      setConfirmation(false);
       if (!commands.length) return;
       try {
         storeNativeEditorDraft(draft);
@@ -170,29 +206,42 @@ export function NativeEditorForm({
         key: draft.key,
         revision: draft.revision,
       });
-      const baseline = { ...draft, revision: nativeDurableId(), before: { ...draft.values } };
-      persist(baseline);
       const saved = await completion;
-      if (saved) setAckSequence(observedSequence.current);
-      if (!saved && currentDraft.current.revision === baseline.revision) persist(draft);
-      if (saved && currentDraft.current.revision === baseline.revision) {
-        discardNativeEditorDraft(userId, snapshot.project.id, baseline);
-        const next = { ...draft, before: { ...draft.values } };
-        currentDraft.current = next;
-        setDraft(next);
+      if (saved) {
+        const reflected = Object.keys(draft.values).every(
+          (key) =>
+            draft.values[key] === draft.before[key] ||
+            observed.current.initial[key] === draft.values[key],
+        );
+        setAckSequence(
+          draftKey.startsWith('create:') || reflected
+            ? draft.expected.sequence
+            : observed.current.sequence,
+        );
+        const current = currentDraft.current;
+        const next = { ...current, before: { ...draft.values } };
+        if (current.revision === draft.revision) {
+          discardNativeEditorDraft(userId, snapshot.project.id, draft);
+          currentDraft.current = next;
+          setDraft(next);
+        } else persist(next);
       }
     } catch (error) {
-      setError(message(error));
+      setError(
+        error instanceof Error && error.name === 'ZodError'
+          ? nativeEditorConditionText(nativeEditorErrorCode(error))
+          : message(error),
+      );
     } finally {
       if (queued) setOutstanding((count) => count - 1);
     }
   }
   return (
     <form
+      {...autosave.compositionProps}
       className="native-property-editor inspector-fields"
       onSubmit={(event) => {
         event.preventDefault();
-        void submit();
       }}
     >
       <fieldset disabled={context.busy}>
@@ -215,7 +264,7 @@ export function NativeEditorForm({
             <p>
               {t(
                 changedContext
-                  ? 'DB 설정이 변경되었습니다. 입력을 확인하고 초기화해 주세요.'
+                  ? 'DB 설정이 변경되었습니다. 보관된 입력과 최신 내용을 확인해 주세요.'
                   : '저장 기준이 변경되었습니다. 보관된 입력을 최신 내용과 비교해 주세요.',
               )}
             </p>
@@ -247,6 +296,8 @@ export function NativeEditorForm({
           </div>
         )}
         {children(draft.values, (field, value) => {
+          setConfirmation(false);
+          autosave.markChanged();
           const current = currentDraft.current;
           persist({
             ...current,
@@ -254,30 +305,15 @@ export function NativeEditorForm({
             values: { ...current.values, [field]: value },
           });
         })}
-        {blocked && <p>{t('미검증 기능은 새로 사용할 수 없습니다. 현재 값은 보존됩니다.')}</p>}
-        <Button
-          variant="primary"
-          type="submit"
-          disabled={!dirty || context.busy || stale || blocked || !!storageError}
-        >
-          {t('저장 요청')}
-        </Button>
-        <Button
-          onClick={() => {
-            try {
-              resetNativeEditorDraft(userId, snapshot.project.id, draft.key);
-              const next = fresh();
-              currentDraft.current = next;
-              setDraft(next);
-              setStorageError('');
-              setError('');
-            } catch (error) {
-              setStorageError(message(error));
-            }
-          }}
-        >
-          {t('입력 초기화')}
-        </Button>
+        {blocked && <p>{t('입력 내용을 확인해 주세요. 현재 입력은 보관됩니다.')}</p>}
+        {confirmation && (
+          <Button
+            disabled={context.busy || stale || !!storageError}
+            onClick={() => void submit(true)}
+          >
+            {t('삭제 실행 확인')}
+          </Button>
+        )}
       </fieldset>
     </form>
   );

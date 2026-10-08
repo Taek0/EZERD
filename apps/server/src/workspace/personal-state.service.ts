@@ -1,3 +1,4 @@
+import { legacyApiRetired } from '../shared/legacy-api-retired.js';
 import {
   BadRequestException,
   ConflictException,
@@ -7,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import {
-  designDocumentSchema,
   personalStateSchema,
   personalStateSnapshotSchema,
   nativeStoredDesignDocumentSchema,
@@ -173,6 +173,7 @@ export class PersonalStateService {
           databaseKind: project.databaseKind ?? 'postgresql',
         }),
       );
+      if (document.schemaVersion !== 2) throw legacyApiRetired();
       const database = resolveProjectDatabaseState({
         ...project,
         databaseKind: project.databaseKind ?? 'postgresql',
@@ -210,10 +211,7 @@ export class PersonalStateService {
       const candidate = mergeStoredPersonalState(document, nextState.data);
       if (diffSharedDocument(document, candidate).length)
         throw new BadRequestException('개인 화면 요청에서 공유 문서를 변경할 수 없습니다.');
-      const valid =
-        candidate.schemaVersion === 1
-          ? designDocumentSchema.safeParse(candidate)
-          : nativeStoredDesignDocumentSchema.safeParse(candidate);
+      const valid = nativeStoredDesignDocumentSchema.safeParse(candidate);
       if (!valid.success)
         throw new BadRequestException('개인 화면의 문서 구조나 크기가 올바르지 않습니다.');
       if (

@@ -10,15 +10,12 @@ import {
 import { and, asc, desc, eq, gt, ilike, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
-  designDocumentSchema,
-  importProjectSchema,
   projectTransferSchema,
   type ProjectTransfer,
   projectDatabaseCapabilitiesSchema,
   projectDocumentStateSchema,
 } from '@ezerd/contracts';
 import {
-  diagnoseDocument,
   defaultDatabaseContext,
   resolveProjectDatabaseState,
   hasPhysicalDatabaseDesign,
@@ -113,10 +110,7 @@ export class WorkspaceService {
             databaseKind: context.kind,
             name,
             databaseProfileId: context.profileId,
-            // The JSONB row annotation remains v1 for older clients; the factory supplies v2.
-            document: sharedDocument(
-              createEmptyNativeDocument(context),
-            ) as unknown as ProjectRow['document'],
+            document: sharedDocument(createEmptyNativeDocument(context)),
             databaseRevision: 0,
           })
           .returning();
@@ -132,50 +126,13 @@ export class WorkspaceService {
   }
 
   async exportProject(actorId: string, id: string): Promise<ProjectTransfer> {
-    const snapshot = await this.getProject(actorId, id);
+    const snapshot = await this.readLegacyExportDocument(actorId, id);
     return projectTransferSchema.parse({
       format: 'ezerd-project',
       formatVersion: 1,
       exportedAt: new Date().toISOString(),
       project: { name: snapshot.project.name, databaseKind: snapshot.project.databaseKind },
       document: snapshot.document,
-    });
-  }
-
-  importProject(actorId: string, raw: unknown) {
-    const parsed = importProjectSchema.safeParse(raw);
-    if (!parsed.success)
-      throw new BadRequestException('프로젝트 파일 형식, 버전 또는 크기를 확인해 주세요.');
-    const { transfer: input, workspaceId } = parsed.data;
-    const document = normalizeServerDocument(input.document);
-    if (!designDocumentSchema.safeParse(document).success)
-      throw new BadRequestException(
-        '전체 캔버스를 포함한 설계 데이터의 구조나 크기를 확인해 주세요.',
-      );
-    const issue = diagnoseDocument(document)[0];
-    if (issue) throw new BadRequestException(`설계 데이터를 확인해 주세요: ${issue.message}`);
-    return operation(async () => {
-      // One row contains the whole design: insertion is atomic, with fresh DB defaults.
-      return this.access.runWorkspace(actorId, workspaceId, 'createProject', async (tx) => {
-        const [row] = await tx
-          .insert(projects)
-          .values({
-            name: input.project.name,
-            databaseKind: input.project.databaseKind ?? 'postgresql',
-            databaseProfileId: defaultDatabaseContext(input.project.databaseKind ?? 'postgresql')
-              .profileId,
-            workspaceId,
-            document,
-          })
-          .returning();
-        await tx.insert(workspaceAuditEvents).values({
-          workspaceId,
-          actorId,
-          action: 'project.imported',
-          details: { projectId: row!.id, name: row!.name },
-        });
-        return project(row!);
-      });
     });
   }
 
@@ -251,18 +208,10 @@ export class WorkspaceService {
     });
   }
 
-  getProject(actorId: string, id: string) {
+  private readLegacyExportDocument(actorId: string, id: string) {
     return this.readProject(actorId, id, (row) => ({
       project: project(row),
       document: normalizeServerDocument(row.document),
-    }));
-  }
-
-  getProjectState(actorId: string, id: string) {
-    return this.readProject(actorId, id, (row) => ({
-      project: project(row),
-      document: normalizeServerDocument(row.document),
-      syncSequence: row.syncSequence,
     }));
   }
 

@@ -231,7 +231,12 @@ export function NativeHistoryControls({
           onOpenChange={(open) => (open ? onHistory() : onCloseHistory())}
         >
           <Button disabled={busy}>{t('히스토리')}</Button>
-          <UntitledPopover className="native-history-popover" placement="bottom end" offset={8}>
+          <UntitledPopover
+            className="native-history-popover"
+            placement="bottom end"
+            offset={8}
+            maxHeight={620}
+          >
             <Dialog aria-label={t('히스토리')}>
               <NativeHistoryDialog
                 embedded

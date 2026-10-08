@@ -14,7 +14,6 @@ const result = spawnSync(
     vitest,
     'run',
     'apps/server/test/api.integration.test.ts',
-    'apps/server/test/autosync.integration.test.ts',
     'apps/server/test/mcp.integration.test.ts',
   ],
   {

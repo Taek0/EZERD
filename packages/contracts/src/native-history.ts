@@ -4,8 +4,9 @@ import {
   databaseRevisionSchema,
   projectDatabaseStateSchema,
 } from './database-state.js';
-import { nativeSyncOperationResultSchema, syncOperationResultReadSchema } from './native-sync.js';
-import { syncChangeSchema } from './sync.js';
+import { nativeSyncOperationResultSchema } from './native-sync.js';
+import { syncOperationResultReadSchema } from './sync-read.js';
+import { syncChangeSchema } from './sync-base.js';
 
 const counter = z.number().int().nonnegative().max(2147483647);
 export const nativeHistoryQuerySchema = z.strictObject({

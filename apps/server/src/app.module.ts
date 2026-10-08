@@ -7,7 +7,7 @@ import { WorkspaceController } from './workspace/workspace.controller.js';
 import { SessionController, SessionService } from './identity/session.js';
 import { SyncController } from './sync/sync.controller.js';
 import { SyncGateway } from './sync/sync.gateway.js';
-import { SyncService } from './sync/sync.service.js';
+import { SyncRetentionService } from './sync/sync-retention.service.js';
 import { WorkspaceService } from './workspace/workspace.service.js';
 import { RateLimitService } from './shared/rate-limit.service.js';
 import { McpTokenController } from './mcp/mcp-token.controller.js';
@@ -63,7 +63,7 @@ import { NativeCancellationController } from './sync/native-cancellation.control
     DatabaseService,
     SessionService,
     SyncGateway,
-    SyncService,
+    SyncRetentionService,
     NativeSyncService,
     NativeUpgradeService,
     NativeTransferService,

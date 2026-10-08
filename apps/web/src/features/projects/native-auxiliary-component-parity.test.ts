@@ -1,4 +1,5 @@
-import { createElement } from 'react';
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
+import { createElement, isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
@@ -15,8 +16,89 @@ import {
 import { loadNativeEditorDraft, storeNativeEditorDraft } from './native-editor-draft.js';
 import { requestFingerprint } from '@ezerd/model';
 import { setLocale } from '../../shared/i18n/index.js';
+import { NativeEditorForm } from './native-editor-form.js';
+import { DomainColorPicker } from '../domains/DomainColorPicker.js';
 
-vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker() {} }));
+const hooks = vi.hoisted(() => ({
+  active: null as null | {
+    slots: {
+      value?: unknown;
+      deps?: readonly unknown[] | undefined;
+      cleanup?: (() => void) | undefined;
+    }[];
+    cursor: number;
+    effects: (() => void)[];
+  },
+}));
+vi.mock('react', async (original) => {
+  const react = await original<typeof import('react')>();
+  function effectHook(effect: () => void | (() => void), deps?: readonly unknown[]) {
+    const active = hooks.active!,
+      slot = (active.slots[active.cursor++] ??= {});
+    if (!deps || !slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
+      active.effects.push(() => {
+        slot.cleanup?.();
+        slot.cleanup = effect() || undefined;
+      });
+      slot.deps = deps;
+    }
+  }
+  return {
+    ...react,
+    useState(initial: unknown) {
+      if (!hooks.active) return react.useState(initial);
+      const slot = (hooks.active.slots[hooks.active.cursor++] ??= {
+        value: typeof initial === 'function' ? initial() : initial,
+      });
+      return [
+        slot.value,
+        (value: unknown) => {
+          slot.value = typeof value === 'function' ? value(slot.value) : value;
+        },
+      ];
+    },
+    useRef(initial: unknown) {
+      if (!hooks.active) return react.useRef(initial);
+      return (hooks.active.slots[hooks.active.cursor++] ??= { value: { current: initial } }).value;
+    },
+    useEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
+      return hooks.active ? effectHook(effect, deps) : react.useEffect(effect, deps);
+    },
+    useLayoutEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
+      return hooks.active ? effectHook(effect, deps) : react.useLayoutEffect(effect, deps);
+    },
+    useSyncExternalStore(...args: Parameters<typeof react.useSyncExternalStore>) {
+      return hooks.active ? args[1]() : react.useSyncExternalStore(...args);
+    },
+  };
+});
+function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
+  if (Array.isArray(tree)) return tree.flatMap(nodes);
+  if (!isValidElement<Record<string, unknown>>(tree)) return [];
+  return [tree, ...nodes(tree.props.children)];
+}
+function root() {
+  const state: NonNullable<typeof hooks.active> = { slots: [], cursor: 0, effects: [] };
+  return {
+    render<T>(render: () => T): T {
+      hooks.active = state;
+      state.cursor = 0;
+      try {
+        const tree = render();
+        state.effects.splice(0).forEach((effect) => effect());
+        return tree;
+      } finally {
+        hooks.active = null;
+      }
+    },
+    unmount() {
+      state.slots.forEach((slot) => slot.cleanup?.());
+    },
+  };
+}
+
+const exportBlocker = vi.hoisted(() => vi.fn());
+vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker: exportBlocker }));
 beforeEach(() => {
   const values = new Map<string, string>();
   vi.stubGlobal('localStorage', {
@@ -26,7 +108,11 @@ beforeEach(() => {
   });
   setLocale('ko');
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+  exportBlocker.mockClear();
+});
 function fixture() {
   const document = decorationFixture();
   const snapshot = decorationSnapshot(document);
@@ -40,6 +126,92 @@ function fixture() {
 }
 
 describe('native auxiliary original UI compositions', () => {
+  it('autosaves a palette callback once, keeping dirty export blocked until its ACK', async () => {
+    vi.useFakeTimers();
+    const { document, context } = fixture(),
+      original = structuredClone(document);
+    let acknowledge!: (value: boolean) => void;
+    context.onSave = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const editor = root(),
+      form = root();
+    const render = () => {
+      const tree = editor.render(() =>
+        NativeCanvasStyleEditor({
+          document,
+          context,
+          editable: true,
+          selectedNoteId: 'n',
+        }),
+      );
+      const element = nodes(tree).find((node) => node.type === NativeEditorForm)!;
+      return form.render(() =>
+        NativeEditorForm(element.props as Parameters<typeof NativeEditorForm>[0]),
+      );
+    };
+    render();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(context.onSave).not.toHaveBeenCalled();
+    const palette = nodes(render()).find((node) => node.type === DomainColorPicker)!;
+    (palette.props.onChange as (value: string) => void)('#112233');
+    render();
+    expect(exportBlocker).toHaveBeenLastCalledWith(
+      decorationUserId,
+      context.snapshot.project.id,
+      true,
+      false,
+      'editor:canvas:style:note:n',
+    );
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS - 1);
+    expect(context.onSave).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    render();
+    const draft = loadNativeEditorDraft(
+      decorationUserId,
+      context.snapshot.project.id,
+      'canvas:style:note:n',
+    )!;
+    expect(context.onSave).toHaveBeenCalledExactlyOnceWith(
+      [
+        {
+          type: 'patch_canvas_style',
+          target: { kind: 'note', id: 'n' },
+          patch: { color: '#112233' },
+        },
+      ],
+      { version: 7, sequence: 10, databaseRevision: 3 },
+      { key: draft.key, revision: draft.revision },
+    );
+    expect(draft.values.color).toBe('#112233');
+    expect(exportBlocker).toHaveBeenLastCalledWith(
+      decorationUserId,
+      context.snapshot.project.id,
+      true,
+      false,
+      'editor:canvas:style:note:n',
+    );
+    acknowledge(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    render();
+    expect(
+      loadNativeEditorDraft(decorationUserId, context.snapshot.project.id, draft.key),
+    ).toBeNull();
+    expect(exportBlocker).toHaveBeenLastCalledWith(
+      decorationUserId,
+      context.snapshot.project.id,
+      false,
+      false,
+      'editor:canvas:style:note:n',
+    );
+    expect(context.onSave).toHaveBeenCalledTimes(1);
+    expect(document).toEqual(original);
+    form.unmount();
+    editor.unmount();
+  });
   it.each([
     ['note', '#FFF3C4'],
     ['domain', '#8993A3'],

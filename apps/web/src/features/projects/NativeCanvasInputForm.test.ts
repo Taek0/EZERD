@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeCanvasInputForm, type NativeCanvasSubmit } from './NativeCanvasInputForm.js';
@@ -144,6 +145,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -275,8 +277,8 @@ describe('native canvas form gesture-submit registration', () => {
     expect(save).not.toHaveBeenCalled();
     ui.unmount();
     await replacement();
-    expect(save).not.toHaveBeenCalled();
-    expect(ui.draft()?.values.route).toBe('3');
+    // The invalidated registration does nothing; pending valid input is flushed by cleanup.
+    expect(save).toHaveBeenCalledTimes(1);
   });
 
   it('does not bypass durable storage failure or command validation', async () => {
@@ -469,7 +471,7 @@ describe('native canvas form gesture-submit registration', () => {
     },
   );
 
-  it('does not silently refresh a recovered clean draft until explicit reset', () => {
+  it('preserves recovered clean input without exposing a reset action', () => {
     const ui = fixture();
     const recovered = {
       userId: decorationUserId,
@@ -487,16 +489,7 @@ describe('native canvas form gesture-submit registration', () => {
     const tree = ui.render();
     expect(ui.values().route).toBe('saved');
     expect(ui.draft()).toEqual(recovered);
-    const reset = nodes(tree).find((node) => node.props.children === '입력 초기화')!;
-    (reset.props.onClick as () => void)();
-    ui.render();
-    expect(ui.values().route).toBe('current');
-    expect(ui.draft()).toBeNull();
-    ui.snapshot.sequence++;
-    ui.props.initial = { ...ui.props.initial, route: 'newer clean' };
-    ui.render();
-    ui.render();
-    expect(ui.values().route).toBe('newer clean');
+    expect(nodes(tree).some((node) => node.props.children === '입력 초기화')).toBe(false);
     ui.unmount();
   });
 
@@ -534,6 +527,87 @@ describe('native canvas form gesture-submit registration', () => {
     ui.render();
     expect(ui.values().route).toBe('saved');
     expect(ui.draft()).toEqual(evidence);
+    ui.unmount();
+  });
+});
+
+describe('canvas automatic saving', () => {
+  it('debounces user input, waits for busy and IME, and never retries rejected input', async () => {
+    vi.useFakeTimers();
+    const save = vi.fn(async () => false);
+    const ui = fixture(save);
+    ui.render();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).not.toHaveBeenCalled();
+    ui.props.context.busy = true;
+    ui.change('route', '1');
+    ui.render();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).not.toHaveBeenCalled();
+    ui.props.context.busy = false;
+    let tree = ui.render();
+    (nodes(tree).find((n) => n.type === 'form')!.props.onCompositionStart as () => void)();
+    ui.change('route', '12');
+    ui.render();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).not.toHaveBeenCalled();
+    (nodes(tree).find((n) => n.type === 'form')!.props.onCompositionEnd as () => void)();
+    ui.render();
+    expect(save).not.toHaveBeenCalled();
+    // The max-wait deadline elapsed during IME; save only after composition ends.
+    await vi.advanceTimersByTimeAsync(0);
+    ui.render();
+    expect(save).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    ui.render();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(ui.draft()?.values.route).toBe('12');
+    ui.change('route', '13');
+    ui.render();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+    expect(save).toHaveBeenCalledTimes(2);
+    ui.unmount();
+  });
+  it('requires a separate confirmation for destructive commands and cancels pending saves on unmount', async () => {
+    vi.useFakeTimers();
+    const save = vi.fn(async () => true);
+    const ui = fixture(save);
+    ui.props.build = () => [{ type: 'delete_note', id: 'note' }];
+    ui.render();
+    ui.change('route', '1');
+    ui.render();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+    const tree = ui.render();
+    expect(save).not.toHaveBeenCalled();
+    const confirmation = nodes(tree).find((n) => n.props.children === '삭제 실행 확인')!;
+    await (confirmation.props.onClick as () => Promise<void>)();
+    expect(save).toHaveBeenCalledTimes(1);
+    ui.change('route', '2');
+    ui.render();
+    ui.unmount();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('canvas accepted values', () => {
+  it('keeps acknowledged input visible and autosaves subsequent input without blur', async () => {
+    vi.useFakeTimers();
+    const save = vi.fn(async () => true);
+    const ui = fixture(save);
+    ui.render();
+    ui.change('route', '10');
+    ui.render();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+    ui.render();
+    expect(ui.values().route).toBe('10');
+    expect(ui.draft()).toBeNull();
+    ui.change('route', '11');
+    ui.render();
+    await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+    ui.render();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(ui.values().route).toBe('11');
     ui.unmount();
   });
 });

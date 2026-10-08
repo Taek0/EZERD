@@ -54,10 +54,13 @@ pnpm dev
 | --- | --- |
 | `pnpm check` | 포맷·타입 검사, 단위 테스트, 전체 빌드 |
 | `pnpm test` / `pnpm test:integration` | 단위 테스트 / PostgreSQL 기반 통합 테스트 |
+| `pnpm test:regression` | 빌드 후 전체 DB 통합 테스트를 두 종류의 임시 DB에서 실행 |
 | `pnpm build` | 공유 패키지·서버·웹 빌드 |
 | `pnpm format` / `pnpm format:check` | 코드 포맷 적용 / 검사 |
 | `pnpm db:generate` / `pnpm db:migrate` | 마이그레이션 생성 / 적용 |
 | `pnpm host:start` | 빌드·마이그레이션 후 LAN 서비스 실행 |
+
+최종 자동 검증은 `pnpm check`와 `pnpm test:regression`으로 실행합니다. 회귀 검증은 로컬 PostgreSQL과 임시 DB 생성 권한이 필요하며, 생성한 테스트 DB는 실행 후 정리합니다. 기존 개발 DB의 사용자 문서를 변경하지 않습니다.
 
 통합 테스트는 설정된 DB를 사용합니다. 전체 명령은 [package.json](./package.json)에서 확인할 수 있습니다.
 

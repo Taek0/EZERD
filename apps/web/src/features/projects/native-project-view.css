@@ -246,14 +246,34 @@
   cursor: pointer;
 }
 .native-inspector-resize {
+  position: relative;
   cursor: col-resize;
   background: var(--canvas-bg);
   touch-action: none;
 }
-.native-inspector-resize:hover,
-.native-inspector-resize:focus-visible {
+.native-inspector-resize::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: transparent;
+}
+.native-inspector-resize:hover::after,
+.native-inspector-resize:focus-visible::after {
   background: var(--accent);
+}
+.native-inspector-resize:focus-visible {
   outline: none;
+}
+
+/* Reserve the same space for 10%, 100% and the maximum zoom. */
+.native-camera-controls > .ui-button:not(.ui-icon-button) {
+  width: calc(4ch + 24px);
+  min-width: calc(4ch + 24px);
+  flex: 0 0 calc(4ch + 24px);
+  font-variant-numeric: tabular-nums;
 }
 .native-editor-workspace.inspector-closed .native-editor-inspector {
   opacity: 0;

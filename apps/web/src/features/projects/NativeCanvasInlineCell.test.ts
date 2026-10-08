@@ -1,3 +1,4 @@
+import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactElement, type FunctionComponent } from 'react';
 import { createNativeColumn, createNativeTable, type DatabaseKind } from '@ezerd/model';
@@ -208,6 +209,216 @@ beforeEach(() => {
 });
 
 describe('native inline cell lifecycle', () => {
+  it('does not overwrite a replacement cell revision when an unmount drain runs', async () => {
+    vi.useFakeTimers();
+    const ui = mount();
+    try {
+      ui.begin();
+      ui.change('old cell');
+      const previous = ui.stored()!;
+      ui.unmount();
+      storeNativeEditorDraft({
+        ...previous,
+        revision: '00000000-0000-4000-8000-000000000077',
+        values: { value: 'replacement cell' },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(ui.props.context.onSave).not.toHaveBeenCalled();
+      expect(ui.stored()?.values.value).toBe('replacement cell');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps rejected unmount input durable without retrying automatically', async () => {
+    vi.useFakeTimers();
+    const props = fixture();
+    props.context.onSave = vi.fn().mockResolvedValue(false);
+    const ui = mount(props);
+    try {
+      ui.begin();
+      ui.change('rejected');
+      ui.unmount();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(props.context.onSave).toHaveBeenCalledOnce();
+      expect(ui.stored()?.values.value).toBe('rejected');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it.each(['name', 'comment'] as const)(
+    'drains %s on unmount before debounce without blur',
+    async (field) => {
+      vi.useFakeTimers();
+      const props = fixture();
+      props.target.field = field;
+      const ui = mount(props);
+      try {
+        ui.begin();
+        ui.change('leaving cell');
+        ui.unmount();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(props.context.onSave).toHaveBeenCalledOnce();
+        expect(props.context.onSave).toHaveBeenCalledWith(
+          [{ type: 'patch_column', id: 'c', patch: { physical: { [field]: 'leaving cell' } } }],
+          expect.anything(),
+          expect.anything(),
+        );
+        expect(ui.stored()).toBeNull();
+        expect(ui.focus).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it('blur saves immediately and unmount does not send the same revision twice', async () => {
+    vi.useFakeTimers();
+    const ui = mount();
+    try {
+      ui.begin();
+      ui.change('leaving now');
+      call(ui.field(), 'onBlur');
+      ui.unmount();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(ui.props.context.onSave).toHaveBeenCalledOnce();
+      expect(ui.stored()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('drains later typing after the in-flight autosave ACK without mounting again', async () => {
+    vi.useFakeTimers();
+    const props = fixture();
+    let accept!: (saved: boolean) => void;
+    props.context.onSave = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            accept = resolve;
+          }),
+      )
+      .mockResolvedValue(true);
+    const ui = mount(props);
+    try {
+      ui.begin();
+      ui.change('first');
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+      ui.render();
+      ui.change('last before leaving');
+      ui.unmount();
+      expect(props.context.onSave).toHaveBeenCalledOnce();
+      accept(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(props.context.onSave).toHaveBeenCalledTimes(2);
+      expect(props.context.onSave).toHaveBeenLastCalledWith(
+        [{ type: 'patch_column', id: 'c', patch: { physical: { name: 'last before leaving' } } }],
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(ui.stored()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it.each(['ime', 'query', 'busy', 'databaseRevision'] as const)(
+    'preserves %s input rather than draining invalid work on unmount',
+    async (guard) => {
+      vi.useFakeTimers();
+      const props = fixture();
+      if (guard === 'query') props.target.field = 'format';
+      const ui = mount(props);
+      try {
+        ui.begin();
+        if (guard === 'ime') call(ui.root(), 'onCompositionStart');
+        if (guard === 'query') {
+          call(ui.field(), 'onQueryChange', 'unfinished');
+          ui.render();
+        } else ui.change('unfinished');
+        if (guard === 'busy') ui.render({ ...props, context: { ...props.context, busy: true } });
+        if (guard === 'databaseRevision') {
+          const snapshot = structuredClone(props.context.snapshot);
+          snapshot.project.databaseRevision++;
+          ui.render({ ...props, context: { ...props.context, snapshot } });
+        }
+        ui.unmount();
+        await vi.advanceTimersByTimeAsync(500);
+        expect(props.context.onSave).not.toHaveBeenCalled();
+        expect(ui.stored()?.values[guard === 'query' ? 'query' : 'value']).toBe('unfinished');
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it('keeps accepting input after an unchanged debounce and saves no reverted value', async () => {
+    vi.useFakeTimers();
+    const ui = mount();
+    try {
+      ui.begin();
+      ui.change('temporary');
+      ui.change('label');
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+      ui.render();
+      expect(ui.props.context.onSave).not.toHaveBeenCalled();
+      ui.change('next');
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+      ui.render();
+      expect(ui.props.context.onSave).toHaveBeenCalledOnce();
+      expect(ui.field().props.value).toBe('next');
+    } finally {
+      ui.unmount();
+      vi.useRealTimers();
+    }
+  });
+  it.each(['name', 'comment'] as const)(
+    'autosaves %s without blur and keeps typing after ACK',
+    async (field) => {
+      vi.useFakeTimers();
+      const props = fixture();
+      props.target.field = field;
+      const ui = mount(props);
+      try {
+        ui.begin();
+        ui.change('first');
+        await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+        ui.render();
+        expect(props.context.onSave).toHaveBeenCalledOnce();
+        expect(ui.field().props.value).toBe('first');
+        expect(ui.focus).not.toHaveBeenCalled();
+        ui.change('second');
+        await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+        ui.render();
+        expect(props.context.onSave).toHaveBeenCalledTimes(2);
+        expect(props.context.onSave).toHaveBeenLastCalledWith(
+          [{ type: 'patch_column', id: 'c', patch: { physical: { [field]: 'second' } } }],
+          expect.anything(),
+          expect.anything(),
+        );
+        expect(ui.field().props.value).toBe('second');
+      } finally {
+        ui.unmount();
+        vi.useRealTimers();
+      }
+    },
+  );
+  it('defers autosave during IME', async () => {
+    vi.useFakeTimers();
+    const ui = mount();
+    try {
+      ui.begin();
+      call(ui.root(), 'onCompositionStart');
+      ui.change('조합');
+      await vi.advanceTimersByTimeAsync(500);
+      expect(ui.props.context.onSave).not.toHaveBeenCalled();
+      call(ui.root(), 'onCompositionEnd');
+      ui.render();
+      await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
+      expect(ui.props.context.onSave).toHaveBeenCalledOnce();
+      ui.render();
+    } finally {
+      ui.unmount();
+      vi.useRealTimers();
+    }
+  });
   it.each([false, true])(
     'submits later edits after an ACK or another writer advances the shared baseline (%s)',
     async (remoteChange) => {
@@ -463,17 +674,19 @@ describe('native inline cell lifecycle', () => {
     expect(props.context.onSave).toHaveBeenCalledOnce();
     expect(ui.focus).toHaveBeenCalledOnce();
     ui.begin();
-    class TestInput {
-      value = 'unfinished type';
-    }
-    vi.stubGlobal('HTMLInputElement', TestInput);
-    call(ui.root(), 'onInputCapture', { target: new TestInput() });
+    call(ui.field(), 'onQueryChange', 'unfinished type');
     ui.render();
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(props.context.onSave).toHaveBeenCalledOnce();
+    vi.useRealTimers();
     call(ui.field(), 'onEditEnd', 'blur');
     await flush();
     ui.render();
     expect(props.context.onSave).toHaveBeenCalledOnce();
     expect(ui.stored()?.values.query).toBe('unfinished type');
+    ui.begin();
+    expect(ui.field().props.query).toBe('unfinished type');
   });
   it('hands off nuanced types to advanced format without replacing existing advanced drafts', async () => {
     const props = fixture('mysql');

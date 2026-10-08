@@ -1,4 +1,4 @@
-import type { ModelScope, ViewMode } from './document.js';
+import type { ModelScope, ViewMode } from './document-base.js';
 
 export interface ModelIdentity {
   id: string;
@@ -20,6 +20,7 @@ export function canExportPhysical(scope: ModelScope, parentScope: ModelScope = '
 }
 
 export * from './document.js';
+export type { StoredDesignDocument } from './stored-document.js';
 export * from './postgres.js';
 export * from './layout.js';
 export * from './sync.js';

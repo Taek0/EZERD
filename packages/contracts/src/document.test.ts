@@ -4,7 +4,6 @@ import {
   usernameInputSchema,
   createProjectSchema,
   updateProjectSchema,
-  saveDocumentSchema,
 } from './index.js';
 const empty = () => ({
   schemaVersion: 1,
@@ -62,14 +61,7 @@ describe('API input boundaries', () => {
       updateProjectSchema.safeParse({ expectedVersion: 0, name: 'x', document: empty() }).success,
     ).toBe(false);
   });
-  it('requires nonnegative integer save version and supported document format', () => {
-    expect(saveDocumentSchema.safeParse({ expectedVersion: 0, document: empty() }).success).toBe(
-      true,
-    );
-    expect(saveDocumentSchema.safeParse({ document: empty() }).success).toBe(false);
-    expect(saveDocumentSchema.safeParse({ expectedVersion: -1, document: empty() }).success).toBe(
-      false,
-    );
+  it('rejects unsupported document format', () => {
     expect(designDocumentSchema.safeParse({ ...empty(), schemaVersion: 2 }).success).toBe(false);
   });
   it('allows unfinished names but rejects ambiguous identities', () => {

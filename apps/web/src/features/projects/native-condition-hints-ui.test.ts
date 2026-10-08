@@ -1,4 +1,5 @@
-import { createElement } from 'react';
+vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enabled: true }) }));
+import { createElement, isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -16,6 +17,86 @@ import { NativeOrderedColumns } from './native-editor-structure.js';
 import { nativeKeyColumnPolicies, nativeLiteralPolicy } from './native-editor-option-policy.js';
 import { NativeFormatEditor, nativeFormatInitial } from './native-editor-format.js';
 import { loadNativeEditorDraft, storeNativeEditorDraft } from './native-editor-draft.js';
+import { NativeEditorField, NativeEditorForm } from './native-editor-form.js';
+import { nativeEditorExportBlocked } from './native-export-state.js';
+
+const hooks = vi.hoisted(() => ({
+  active: null as null | {
+    slots: {
+      value?: unknown;
+      deps?: readonly unknown[] | undefined;
+      cleanup?: (() => void) | undefined;
+    }[];
+    cursor: number;
+    effects: (() => void)[];
+  },
+}));
+vi.mock('react', async (original) => {
+  const react = await original<typeof import('react')>();
+  function effectHook(effect: () => void | (() => void), deps?: readonly unknown[]) {
+    const active = hooks.active!,
+      slot = (active.slots[active.cursor++] ??= {});
+    if (!deps || !slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
+      active.effects.push(() => {
+        slot.cleanup?.();
+        slot.cleanup = effect() || undefined;
+      });
+      slot.deps = deps;
+    }
+  }
+  return {
+    ...react,
+    useState(initial: unknown) {
+      if (!hooks.active) return react.useState(initial);
+      const slot = (hooks.active.slots[hooks.active.cursor++] ??= {
+        value: typeof initial === 'function' ? initial() : initial,
+      });
+      return [
+        slot.value,
+        (value: unknown) => {
+          slot.value = typeof value === 'function' ? value(slot.value) : value;
+        },
+      ];
+    },
+    useRef(initial: unknown) {
+      if (!hooks.active) return react.useRef(initial);
+      return (hooks.active.slots[hooks.active.cursor++] ??= { value: { current: initial } }).value;
+    },
+    useEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
+      return hooks.active ? effectHook(effect, deps) : react.useEffect(effect, deps);
+    },
+    useLayoutEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
+      return hooks.active ? effectHook(effect, deps) : react.useLayoutEffect(effect, deps);
+    },
+    useSyncExternalStore(...args: Parameters<typeof react.useSyncExternalStore>) {
+      return hooks.active ? args[1]() : react.useSyncExternalStore(...args);
+    },
+  };
+});
+function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
+  if (Array.isArray(tree)) return tree.flatMap(nodes);
+  if (!isValidElement<Record<string, unknown>>(tree)) return [];
+  return [tree, ...nodes(tree.props.children)];
+}
+function root() {
+  const state: NonNullable<typeof hooks.active> = { slots: [], cursor: 0, effects: [] };
+  return {
+    render<T>(render: () => T): T {
+      hooks.active = state;
+      state.cursor = 0;
+      try {
+        const tree = render();
+        state.effects.splice(0).forEach((effect) => effect());
+        return tree;
+      } finally {
+        hooks.active = null;
+      }
+    },
+    unmount() {
+      state.slots.forEach((slot) => slot.cleanup?.());
+    },
+  };
+}
 
 function fixture(kind: DatabaseKind = 'postgresql') {
   const database = defaultDatabaseContext(kind);
@@ -41,6 +122,7 @@ function fixture(kind: DatabaseKind = 'postgresql') {
 afterEach(() => {
   setLocale('ko');
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const keyConditions = [
@@ -164,7 +246,8 @@ describe('native key and bounded literal condition hints', () => {
     },
   ])(
     'renders the actual $type bounded limitation while retaining the blocked raw draft',
-    ({ type, array, value, code }) => {
+    async ({ type, array, value, code }) => {
+      vi.useFakeTimers();
       setLocale('ko');
       const f = fixture();
       f.column.physical.type = {
@@ -229,9 +312,39 @@ describe('native key and bounded literal condition hints', () => {
       const html = renderToStaticMarkup(createElement(NativeFormatEditor, { ...f, context }));
       expect(html).toContain(nativeEditorConditionText(code));
       expect(html).not.toContain(code);
-      expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+      expect(html).not.toContain('type="submit"');
       expect(loadNativeEditorDraft(draft.userId, draft.projectId, draft.key)).toEqual(draft);
       expect(f.document).toEqual(original);
+      expect(context.onSave).not.toHaveBeenCalled();
+      const editor = root(),
+        form = root();
+      const render = () => {
+        const element = editor.render(() => NativeFormatEditor({ ...f, context }));
+        return form.render(() => NativeEditorForm(element.props));
+      };
+      render();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(context.onSave).not.toHaveBeenCalled();
+      // Arm autosave through a real field callback while retaining the invalid literal.
+      const field = nodes(render()).find(
+        (node) => node.type === NativeEditorField && node.props.label === '값',
+      )!;
+      expect(field).toBeDefined();
+      (field.props.onChange as (value: string) => void)(value);
+      render();
+      await vi.advanceTimersByTimeAsync(1000);
+      render();
+      expect(context.onSave).not.toHaveBeenCalled();
+      const retained = loadNativeEditorDraft(draft.userId, draft.projectId, draft.key)!;
+      expect(retained.revision).not.toBe(draft.revision);
+      expect(retained.values.defaultValue).toBe(value);
+      expect(retained.values.defaultChoice).toBe('literal:typedText');
+      expect(retained.before).toEqual(before);
+      expect(nativeEditorExportBlocked(draft.userId, draft.projectId)).toBe(true);
+      expect(f.document).toEqual(original);
+      form.unmount();
+      editor.unmount();
+      await vi.advanceTimersByTimeAsync(1000);
       expect(context.onSave).not.toHaveBeenCalled();
     },
   );

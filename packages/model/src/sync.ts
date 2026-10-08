@@ -479,20 +479,6 @@ function stable(value: unknown): string {
     .join(',')}}`;
 }
 
-/** Returns whether a stored change changes either value or property existence. */
-export function isEffectiveChange(change: {
-  before: unknown;
-  after: unknown;
-  beforeExists?: boolean | undefined;
-  afterExists?: boolean | undefined;
-}): boolean {
-  const beforeExists = change.beforeExists !== false;
-  const afterExists = change.afterExists !== false;
-  if (beforeExists !== afterExists) return true;
-  if (!beforeExists) return false;
-  return stable(change.before) !== stable(change.after);
-}
-
 /** Canonical, hash-free request identity; server-authenticated actor data is intentionally absent. */
 export function requestFingerprint(request: unknown): string {
   return stable(request);
@@ -537,13 +523,6 @@ export function findFieldVersionConflicts(
   return guardedPaths
     .map(normalizeSyncPath)
     .filter((path) => hasNewerOverlap(path, operation.baseSequence, versions));
-}
-
-export function canApplyOperation(
-  operation: Pick<DocumentOperation, 'kind' | 'baseSequence' | 'changes' | 'dependencyPaths'>,
-  versions: FieldVersions,
-): boolean {
-  return findFieldVersionConflicts(operation, versions).length === 0;
 }
 
 function locate(container: unknown, segment: string): unknown {
@@ -721,23 +700,6 @@ export function findInverseConflicts(
   return [
     ...new Set(candidates.filter((path) => hasNewerOverlap(path, acceptedSequence, versions))),
   ];
-}
-
-export function canApplyInverse(
-  changes: readonly DocumentChange[],
-  acceptedSequence: number,
-  versions: FieldVersions,
-  dependencyPaths: readonly string[] = [],
-): boolean {
-  return findInverseConflicts(changes, acceptedSequence, versions, dependencyPaths).length === 0;
-}
-
-/** An ACK removes exactly its operation, preserving edits queued after it. */
-export function retainPendingOperations<T extends { operationId: string }>(
-  pending: readonly T[],
-  acknowledgedOperationId: string,
-): T[] {
-  return pending.filter((operation) => operation.operationId !== acknowledgedOperationId);
 }
 
 export function isDeletionChange(change: DocumentChange): boolean {

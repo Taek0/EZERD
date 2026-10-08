@@ -1,3 +1,7 @@
+import './native-property-editor.css';
+import { SearchType } from '../../components/ui/SearchType.js';
+import { useNativeLogicalMode } from './NativeLogicalMode.js';
+import type { ReactNode } from 'react';
 import {
   nativeColumnTypeSchema,
   nativeColumnPatchSchema,
@@ -29,6 +33,7 @@ import {
 import {
   nativeEditorPolicy,
   nativeTypeChoice,
+  nativeTypeOptionLabel,
   nativeTypeCurrentLabel,
   nativeTypeReady,
   nativeTypeParameterRules,
@@ -62,6 +67,7 @@ import {
 } from './native-editor-option-policy.js';
 
 registerTranslations({
+  'NULL · 기본값 · 배열 차원': 'Nullability, default and array dimensions',
   '형식·DB 옵션 편집': 'Edit type and database options',
   '현재 값': 'Current values',
   엔진: 'Engine',
@@ -85,8 +91,8 @@ registerTranslations({
   '현재값 유지': 'Keep current value',
   '환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.':
     'Verify the environment, then remove this default or recover with a verified value.',
-  '완성된 입력과 제품 검증이 필요합니다. 초안은 원문으로 보관됩니다.':
-    'Complete input and product verification are required. The draft retains its original text.',
+  '입력 내용을 확인해 주세요. 초안은 원문으로 보관됩니다.':
+    'Review the input. The draft retains its original text.',
   '기본값 함수': 'Default function',
   '기본값 식 변경': 'Change default expression',
   '인자 입력 필요': 'Arguments are required',
@@ -599,14 +605,18 @@ export function NativeFormatEditor({
   table,
   column,
   mode,
+  afterType,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table: NativeTable;
   column?: NativeColumn;
   mode?: 'physical' | 'logical';
+  afterType?: ReactNode;
 }) {
   const { t } = useI18n();
+  const { enabled: logicalEnabled } = useNativeLogicalMode();
+  if (!logicalEnabled) mode = 'physical';
   const policy = nativeEditorPolicy(document, table, column);
   const blocked = (id: Parameters<typeof policy.feature>[0]) => !policy.feature(id).usable;
   const reason = (code: string | undefined) =>
@@ -620,7 +630,7 @@ export function NativeFormatEditor({
   return (
     <NativeEditorForm
       context={context}
-      title={t(mode === 'logical' ? '논리 속성 · 추가 속성' : '형식·DB 옵션 편집')}
+      title=""
       draftKey={`format:${column ? 'column' : 'table'}:${column?.id ?? table.id}`}
       initial={nativeFormatInitial(table, column)}
       disabled={(values) => !!nativeFormatDraftIssue(document, table, column, values)}
@@ -744,7 +754,7 @@ export function NativeFormatEditor({
         const choices: { value: string; label: string; disabled: boolean }[] = policy.types.map(
           (item) => ({
             value: item.definition.id,
-            label: `${item.definition.id}${item.usable ? '' : ` · ${reason(item.code)}`}`,
+            label: `${nativeTypeOptionLabel(item.definition.id)}${item.usable ? '' : ` · ${reason(item.code)}`}`,
             disabled: !item.usable,
           }),
         );
@@ -853,7 +863,11 @@ export function NativeFormatEditor({
             !defaultFunctions.some((item) => item.productUsable),
         });
         if (originalDefault.kind === 'legacyExpression')
-          defaults.push({ value: 'legacyExpression', label: t('현재 원문 유지'), disabled: false });
+          defaults.push({
+            value: 'legacyExpression',
+            label: t('현재 원문 유지'),
+            disabled: false,
+          });
         const currentDefaultDecision =
           originalDefault.kind === 'expression'
             ? nativeBuiltinDefaultPolicy(document, table, column, originalDefault.expression)
@@ -861,12 +875,21 @@ export function NativeFormatEditor({
         const issue = nativeFormatDraftIssue(document, table, column, values);
         return (
           <>
-            <p>
-              {t('현재 값')}: {nativeTypeCurrentLabel(column, document)} ·{' '}
-              {nativeDefaultDisplay(column.physical.defaultValue, document)} ·{' '}
-              {nativeGenerationDisplay(column.physical.generation, document)}
-            </p>
-            {field('typeChoice', '타입', false, choices)}
+            <div className="native-property-type-field">
+              <span>{t('타입')}</span>
+              <SearchType
+                label={t('타입')}
+                value={values.typeChoice ?? ''}
+                disabled={context.busy}
+                options={choices.filter(
+                  (choice) => !choice.disabled || choice.value === values.typeChoice,
+                )}
+                onValueChange={(value) => {
+                  if (choices.some((choice) => choice.value === value && !choice.disabled))
+                    change('typeChoice', value);
+                }}
+              />
+            </div>
             {Object.entries(nativeTypeParameterRules(values.typeChoice ?? '')).map(([key, rule]) =>
               key === 'srid' ? (
                 <NativeSridParameterField
@@ -896,15 +919,6 @@ export function NativeFormatEditor({
                 </div>
               ),
             )}
-            {(document.database.kind === 'postgresql' || values.array) && (
-              <>
-                {field('array', '배열 차원', !arrayPolicy.usable)}
-                <p>
-                  {t('배열 차원은 1부터 6까지 입력하세요. 배열을 제거하려면 비워 두세요.')}
-                  {arrayPolicy.code ? condition(arrayPolicy.code) : ''}
-                </p>
-              </>
-            )}
             {values.typeChoice?.startsWith('mysql:') &&
               ['mysql:enum', 'mysql:set'].includes(values.typeChoice) && (
                 <NativeLabelFields
@@ -923,167 +937,182 @@ export function NativeFormatEditor({
                 {column.physical.type.name} ({column.physical.type.numericArguments.join(', ')})
               </p>
             )}
-            {field('nullable', 'NULL', false, bool)}
-            {field('defaultChoice', '기본값', typeChanged, defaults)}
-            {currentDefaultDecision.category === 'environment' && (
-              <p role="status">
-                {t('환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.')}
-                {condition(currentDefaultDecision.code)}
+            {afterType}
+            <PanelSection title={t('NULL · 기본값 · 배열 차원')} defaultOpen={false}>
+              <p>
+                {nativeDefaultDisplay(column.physical.defaultValue, document)} ·{' '}
+                {nativeGenerationDisplay(column.physical.generation, document)}
               </p>
-            )}
-            {originalDefault.kind === 'expression' && !currentDefaultDecision.engineAllowed && (
-              <p role="status">
-                {t('현재 원문 유지')}
-                {condition(currentDefaultDecision.code)}
-              </p>
-            )}
-            {values.defaultChoice?.startsWith('literal:') &&
-              field(
-                'defaultValue',
-                '값',
-                typeChanged,
-                values.defaultChoice === 'literal:boolean' ? bool : undefined,
+              {field('nullable', 'NULL', false, bool)}
+              {field('defaultChoice', '기본값', typeChanged, defaults)}
+              {currentDefaultDecision.category === 'environment' && (
+                <p role="status">
+                  {t('환경 확인 후 기본값을 제거하거나 검증된 값으로 복구하세요.')}
+                  {condition(currentDefaultDecision.code)}
+                </p>
               )}
-            {issue && (
-              <p role="alert">
-                {t('완성된 입력과 제품 검증이 필요합니다. 초안은 원문으로 보관됩니다.')}
-                {condition(issue)}
-              </p>
-            )}
-            {values.defaultChoice === 'expression' && (
-              <>
-                {field('defaultExpressionMode', '기본값 식 변경', typeChanged, [
-                  { value: 'preserve', label: t('현재 원문 유지') },
-                  {
-                    value: 'replace',
-                    label: t('수정'),
-                    disabled: !defaultFunctions.some((item) => item.productUsable),
-                  },
-                ])}
-                {field(
-                  'defaultFunction',
-                  '기본값 함수',
-                  typeChanged || values.defaultExpressionMode === 'preserve',
-                  [
-                    { value: '', label: '—' },
-                    ...defaultFunctions.map((item) => ({
-                      value: item.id,
-                      label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')}${condition(item.code)}`,
-                      disabled: item.requiresArguments || !item.productUsable,
-                    })),
-                  ],
-                )}
-              </>
-            )}
-            {field('generationChoice', '생성', typeChanged, generationChoices)}
-            {values.generationChoice === 'identity' && (
-              <>
-                {field(
-                  'identityMode',
-                  'Identity',
+              {originalDefault.kind === 'expression' && !currentDefaultDecision.engineAllowed && (
+                <p role="status">
+                  {t('현재 원문 유지')}
+                  {condition(currentDefaultDecision.code)}
+                </p>
+              )}
+              {values.defaultChoice?.startsWith('literal:') &&
+                field(
+                  'defaultValue',
+                  '값',
                   typeChanged,
-                  ['always', 'byDefault'].map((value) => ({ value, label: value })),
+                  values.defaultChoice === 'literal:boolean' ? bool : undefined,
                 )}
-                {nativeIdentityFields.map((name) => (
-                  <div key={name}>
-                    {field(
-                      `identity:${name}`,
-                      name === 'cache'
-                        ? 'Identity cache (1…2147483647)'
-                        : `Identity ${name}${name === 'cycle' ? '' : ' (integer token ≤100)'}`,
-                      typeChanged,
-                      name === 'cycle' ? [{ value: '', label: '—' }, ...bool] : undefined,
-                    )}
-                  </div>
-                ))}
-              </>
-            )}
-            {values.generationChoice?.startsWith('computed:') && (
-              <>
-                {field(
-                  'generationExpressionMode',
-                  '생성 식 변경',
-                  typeChanged ||
-                    blocked(
-                      values.generationChoice === 'computed:stored'
-                        ? 'generatedStored'
-                        : 'generatedVirtual',
-                    ),
-                  [
-                    { value: 'preserve', label: t('현재 값') },
-                    { value: 'compare', label: t('수정') },
-                  ],
-                )}
-                {values.generationExpressionMode !== 'preserve' && (
-                  <NativeExpressionFields
-                    values={values}
-                    change={change}
-                    columns={(document.columns ?? []).filter(
-                      (item) => item.tableId === table.id && item.id !== column.id,
-                    )}
-                    disabled={
-                      typeChanged ||
+              {issue && (
+                <p role="alert">
+                  {t('입력 내용을 확인해 주세요. 초안은 원문으로 보관됩니다.')}
+                  {condition(issue)}
+                </p>
+              )}
+              {values.defaultChoice === 'expression' && (
+                <>
+                  {field('defaultExpressionMode', '기본값 식 변경', typeChanged, [
+                    { value: 'preserve', label: t('현재 원문 유지') },
+                    {
+                      value: 'replace',
+                      label: t('수정'),
+                      disabled: !defaultFunctions.some((item) => item.productUsable),
+                    },
+                  ])}
+                  {field(
+                    'defaultFunction',
+                    '기본값 함수',
+                    typeChanged || values.defaultExpressionMode === 'preserve',
+                    [
+                      { value: '', label: '—' },
+                      ...defaultFunctions.map((item) => ({
+                        value: item.id,
+                        label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')}${condition(item.code)}`,
+                        disabled: item.requiresArguments || !item.productUsable,
+                      })),
+                    ],
+                  )}
+                </>
+              )}
+              {(document.database.kind === 'postgresql' || values.array) && (
+                <>
+                  {field('array', '배열 차원', !arrayPolicy.usable)}
+                  <p>
+                    {t('배열 차원은 1부터 6까지 입력하세요. 배열을 제거하려면 비워 두세요.')}
+                    {arrayPolicy.code ? condition(arrayPolicy.code) : ''}
+                  </p>
+                </>
+              )}
+              {field('generationChoice', '생성', typeChanged, generationChoices)}
+              {values.generationChoice === 'identity' && (
+                <>
+                  {field(
+                    'identityMode',
+                    'Identity',
+                    typeChanged,
+                    ['always', 'byDefault'].map((value) => ({ value, label: value })),
+                  )}
+                  {nativeIdentityFields.map((name) => (
+                    <div key={name}>
+                      {field(
+                        `identity:${name}`,
+                        name === 'cache'
+                          ? 'Identity cache (1…2147483647)'
+                          : `Identity ${name}${name === 'cycle' ? '' : ' (integer token ≤100)'}`,
+                        typeChanged,
+                        name === 'cycle' ? [{ value: '', label: '—' }, ...bool] : undefined,
+                      )}
+                    </div>
+                  ))}
+                </>
+              )}
+              {values.generationChoice?.startsWith('computed:') && (
+                <>
+                  {field(
+                    'generationExpressionMode',
+                    '생성 식 변경',
+                    typeChanged ||
                       blocked(
                         values.generationChoice === 'computed:stored'
                           ? 'generatedStored'
                           : 'generatedVirtual',
-                      )
-                    }
-                  />
-                )}
-              </>
-            )}
-            {typeChanged &&
-              field(
-                'confirmTypeReset',
-                '타입 변경 시 기존 기본값·생성 규칙·ON UPDATE 제거를 확인했습니다.',
-                false,
-                bool,
+                      ),
+                    [
+                      { value: 'preserve', label: t('현재 값') },
+                      { value: 'compare', label: t('수정') },
+                    ],
+                  )}
+                  {values.generationExpressionMode !== 'preserve' && (
+                    <NativeExpressionFields
+                      values={values}
+                      change={change}
+                      columns={(document.columns ?? []).filter(
+                        (item) => item.tableId === table.id && item.id !== column.id,
+                      )}
+                      disabled={
+                        typeChanged ||
+                        blocked(
+                          values.generationChoice === 'computed:stored'
+                            ? 'generatedStored'
+                            : 'generatedVirtual',
+                        )
+                      }
+                    />
+                  )}
+                </>
               )}
-            {field('charset', 'Charset', blocked('charset'))}
-            {field(
-              'collation',
-              'Collation',
-              blocked('collation'),
-              document.database.kind === 'sqlite'
-                ? [
-                    { value: '', label: '—' },
-                    ...['BINARY', 'NOCASE', 'RTRIM'].map((value) => ({ value, label: value })),
-                  ]
-                : undefined,
-            )}
-            {column.physical.options.database === 'mysql' && column.physical.options.onUpdate && (
-              <>
-                <p>
-                  ON UPDATE {nativeExpressionDisplay(column.physical.options.onUpdate, document)}
-                </p>
-                {field('removeOnUpdate', 'ON UPDATE 제거', false, bool)}
-              </>
-            )}
-            {document.database.kind === 'mysql' && (
-              <>
-                {field('onUpdateMode', 'ON UPDATE 설정', typeChanged, [
-                  { value: 'preserve', label: t('현재 원문 유지') },
-                  { value: 'none', label: 'none' },
-                  {
-                    value: 'function',
-                    label: t('ON UPDATE 함수'),
-                    disabled: !onUpdateFunctions.some((item) => item.productUsable),
-                  },
-                ])}
-                {values.onUpdateMode === 'function' &&
-                  field('onUpdateFunction', 'ON UPDATE 함수', typeChanged, [
-                    { value: '', label: '—' },
-                    ...onUpdateFunctions.map((item) => ({
-                      value: item.id,
-                      label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')}${condition(item.code)}`,
-                      disabled: item.requiresArguments || !item.productUsable,
-                    })),
+              {typeChanged &&
+                field(
+                  'confirmTypeReset',
+                  '타입 변경 시 기존 기본값·생성 규칙·ON UPDATE 제거를 확인했습니다.',
+                  false,
+                  bool,
+                )}
+              {field('charset', 'Charset', blocked('charset'))}
+              {field(
+                'collation',
+                'Collation',
+                blocked('collation'),
+                document.database.kind === 'sqlite'
+                  ? [
+                      { value: '', label: '—' },
+                      ...['BINARY', 'NOCASE', 'RTRIM'].map((value) => ({ value, label: value })),
+                    ]
+                  : undefined,
+              )}
+              {column.physical.options.database === 'mysql' && column.physical.options.onUpdate && (
+                <>
+                  <p>
+                    ON UPDATE {nativeExpressionDisplay(column.physical.options.onUpdate, document)}
+                  </p>
+                  {field('removeOnUpdate', 'ON UPDATE 제거', false, bool)}
+                </>
+              )}
+              {document.database.kind === 'mysql' && (
+                <>
+                  {field('onUpdateMode', 'ON UPDATE 설정', typeChanged, [
+                    { value: 'preserve', label: t('현재 원문 유지') },
+                    { value: 'none', label: 'none' },
+                    {
+                      value: 'function',
+                      label: t('ON UPDATE 함수'),
+                      disabled: !onUpdateFunctions.some((item) => item.productUsable),
+                    },
                   ])}
-              </>
-            )}
-            {metadata}
-            <p>{t('미검증 기능은 새로 사용할 수 없습니다. 현재 값은 보존됩니다.')}</p>
+                  {values.onUpdateMode === 'function' &&
+                    field('onUpdateFunction', 'ON UPDATE 함수', typeChanged, [
+                      { value: '', label: '—' },
+                      ...onUpdateFunctions.map((item) => ({
+                        value: item.id,
+                        label: `${item.id.split(':')[1]} · ${t(item.requiresArguments ? '인자 입력 필요' : item.engineAllowed ? '엔진에서 허용' : '입력·타입 조건에 맞지 않음')}${condition(item.code)}`,
+                        disabled: item.requiresArguments || !item.productUsable,
+                      })),
+                    ])}
+                </>
+              )}
+              {metadata}
+            </PanelSection>
           </>
         );
       }}

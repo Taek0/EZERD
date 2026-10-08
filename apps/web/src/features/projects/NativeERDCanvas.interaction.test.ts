@@ -1,13 +1,34 @@
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NativeERDCanvas } from './NativeERDCanvas.js';
+import { NativeERDCanvas, NativeCanvasActions, NativeCanvasInputForm } from './NativeERDCanvas.js';
 import { NativeCanvasScene } from './NativeCanvasScene.js';
-import { NativeCameraControls } from './NativeCanvasToolbar.js';
-import { clipboardActor, clipboardSnapshot } from './native-clipboard-test-fixtures.js';
+import { NativeCameraControls, NativeCanvasToolbar } from './NativeCanvasToolbar.js';
+import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
+import {
+  clipboardActor,
+  clipboardSnapshot,
+  clipboardFixture,
+} from './native-clipboard-test-fixtures.js';
 import { IDBFactory } from 'fake-indexeddb';
 import { getNativeDurableQueue } from './native-durable-queue.js';
 import type { NativeSceneActions } from './NativeCanvasScene.js';
-import { extractPersonalState, type NodeLayout } from '@ezerd/model';
+import {
+  extractPersonalState,
+  createNativeColumn,
+  addTableReference,
+  type NativeDesignDocument,
+  type NodeLayout,
+} from '@ezerd/model';
+import { nativeInlineKey } from './native-inline-edit.js';
+import * as editorDrafts from './native-editor-draft.js';
+import {
+  nativeTableCreationPreview,
+  withNativeTableCreationPreviews,
+} from './native-table-creation-preview.js';
+import {
+  readLocalTableClipboard,
+  rememberTableClipboard,
+} from '../../shared/clipboard/table-clipboard-store.js';
 const personalApi = vi.hoisted(() => vi.fn());
 
 // Run the actual component's event handlers and effect dependency graph without a browser.
@@ -100,6 +121,7 @@ function flushFrame() {
   callbacks.forEach((callback) => callback(0));
 }
 class Target {
+  parentElement: unknown;
   constructor(private selector = '') {}
   closest(selector: string) {
     return this.selector && selector.split(',').includes(this.selector) ? this : null;
@@ -111,6 +133,7 @@ function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   return [tree, ...nodes(tree.props.children)];
 }
 beforeEach(() => {
+  rememberTableClipboard('');
   personalApi.mockReset().mockImplementation(() => new Promise(() => {}));
   const storage = new Map<string, string>();
   vi.stubGlobal('localStorage', {
@@ -137,6 +160,7 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
 });
 afterEach(async () => {
+  rememberTableClipboard('');
   hooks.slots.forEach((slot) => slot.cleanup?.());
   await getNativeDurableQueue().close();
   vi.unstubAllGlobals();
@@ -188,11 +212,19 @@ function canvas(authenticated = false) {
   }
   const captured = new Set<number>();
   const surface = {
+    contains(target: unknown): boolean {
+      let current = target;
+      while (current instanceof Target) current = current.parentElement;
+      return current === surface;
+    },
     setPointerCapture: vi.fn((id: number) => captured.add(id)),
     hasPointerCapture: (id: number) => captured.has(id),
     releasePointerCapture: vi.fn((id: number) => captured.delete(id)),
   };
   function event(name: string, extra: Record<string, unknown> = {}) {
+    const eventTarget = extra.target ?? new Target();
+    if (eventTarget instanceof Target && !eventTarget.parentElement)
+      eventTarget.parentElement = surface;
     const target = nodes(tree).find(
       (node) => typeof node.props.onPointerDownCapture === 'function',
     )!;
@@ -202,7 +234,7 @@ function canvas(authenticated = false) {
       clientX: 1000,
       clientY: 1000,
       shiftKey: false,
-      target: new Target(),
+      target: eventTarget,
       currentTarget: surface,
       preventDefault() {},
       stopPropagation() {},
@@ -233,6 +265,471 @@ function canvas(authenticated = false) {
     hasMarquee: () => !overlay.hidden,
   };
 }
+
+describe('native canvas clipboard storage integration', () => {
+  it.each([1, 2])('keeps a newly created table visible with %s selected domains', (count) => {
+    const ui = canvas(true);
+    const toolbar = () => nodes(ui.render()).find((node) => node.type === NativeCanvasToolbar)!;
+    const filter = { domainIds: count === 1 ? ['d'] : ['d', 'other'], unassigned: false };
+    (toolbar().props.onFilter as (filter: unknown) => void)(filter);
+    (toolbar().props.onCreate as (kind: string) => void)('table');
+    expect(toolbar().props.filter).toEqual(count === 1 ? filter : null);
+    const add = vi
+      .mocked(ui.props.onSave)
+      .mock.calls[0]![0].find((command) => command.type === 'add_table');
+    expect(add?.type === 'add_table' && add.value.domainId).toBe(count === 1 ? 'd' : null);
+  });
+  it('renders and selects the parent create preview before ACK without changing the snapshot or later selection', async () => {
+    const ui = canvas(true);
+    const snapshot = structuredClone(ui.props.snapshot);
+    let acknowledge!: (value: boolean) => void;
+    let created = '';
+    ui.props.onSave = vi.fn((commands) => {
+      const preview = nativeTableCreationPreview(ui.props.document, commands, 'create-operation')!;
+      created = preview.table.id;
+      ui.props.document = withNativeTableCreationPreviews(ui.props.document, [preview]);
+      ui.props.optimisticSourceDocument = ui.props.document;
+      ui.props.selectedTableId = created;
+      return new Promise<boolean>((resolve) => {
+        acknowledge = resolve;
+      });
+    });
+    const toolbar = nodes(ui.render()).find((node) => node.type === NativeCanvasToolbar)!;
+    (toolbar.props.onCreate as (kind: string) => void)('table');
+    ui.render();
+    expect(
+      (ui.scene().drawn as { nodes: NodeLayout[] }).nodes.some((node) => node.objectId === created),
+    ).toBe(true);
+    expect(
+      (ui.scene().sharedSource as NativeDesignDocument).tables?.some(
+        (table) => table.id === created,
+      ),
+    ).toBe(true);
+    expect(ui.scene().selectedTableId).toBe(created);
+    expect(ui.props.snapshot).toEqual(snapshot);
+    const other = (ui.scene().drawn as { nodes: NodeLayout[] }).nodes.find(
+      (node) => node.objectId !== created,
+    )!;
+    (ui.scene().onNodeSelect as (node: NodeLayout, event: unknown) => void)(other, {
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+    });
+    ui.render();
+    acknowledge(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    ui.render();
+    expect(ui.scene().selectedTableId).not.toBe(created);
+  });
+  it('creates an empty table directly from the toolbar', async () => {
+    const ui = canvas(true);
+    const toolbar = nodes(ui.render()).find((node) => node.type === NativeCanvasToolbar)!;
+    (toolbar.props.onCreate as (kind: string) => void)('table');
+    await Promise.resolve();
+    expect(ui.props.onSave).toHaveBeenCalledOnce();
+    const commands = vi.mocked(ui.props.onSave).mock.calls[0]![0];
+    const add = commands.find((command) => command.type === 'add_table');
+    expect(add?.type === 'add_table' && add.value.logical.name).toBe('');
+    expect(add?.type === 'add_table' && add.value.physical.name).toBe('');
+  });
+  it('opens the app column menu for a name/type input right click but preserves editing keys', () => {
+    const ui = canvas(true);
+    const document = ui.props.document;
+    const table = document.tables![0]!;
+    const onSelect = vi.fn();
+    const wrapper = NativeCanvasTableRows({ document, table, mode: 'logical', onSelect });
+    const tree = (wrapper.type as (props: typeof wrapper.props) => unknown)(wrapper.props);
+    const row = {
+      getAttribute: () => document.columns!.find((column) => column.tableId === table.id)!.id,
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+    };
+    const target = new Target('input');
+    target.closest = ((selector: string) =>
+      selector === '[data-column-id]'
+        ? row
+        : selector.includes('input')
+          ? target
+          : null) as typeof target.closest;
+    const event = {
+      target,
+      clientX: 40,
+      clientY: 50,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    const handler = nodes(tree).find((node) => typeof node.props.onContextMenu === 'function')!;
+    (handler.props.onContextMenu as (event: unknown) => void)(event);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledOnce();
+    event.preventDefault.mockClear();
+    (handler.props.onKeyDownCapture as (event: unknown) => void)({ ...event, key: 'ContextMenu' });
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+  it('renders 100 moves immediately with one final archive write and one server request', async () => {
+    vi.useFakeTimers();
+    const store = vi.spyOn(editorDrafts, 'storeNativeEditorDraft');
+    try {
+      const ui = canvas(true);
+      const actions = () => (ui.scene().actions as { current: NativeSceneActions }).current;
+      const drawn = () => (ui.scene().drawn as { nodes: NodeLayout[] }).nodes;
+      const node = drawn()[0]!;
+      actions().begin(
+        {
+          button: 0,
+          pointerId: 1,
+          clientX: 0,
+          clientY: 0,
+          target: new Target(),
+          currentTarget: ui.surface,
+        } as never,
+        node,
+      );
+      ui.render();
+      store.mockClear();
+      for (let x = 1; x <= 100; x++) {
+        actions().preserve(node, node.x + x, node.y);
+        ui.render();
+        expect(drawn().find((item) => item.id === node.id)?.x).toBe(node.x + x);
+      }
+      expect(store).not.toHaveBeenCalled();
+      expect(ui.props.onSave).not.toHaveBeenCalled();
+      await actions().savePlacement();
+      expect(store).toHaveBeenCalledOnce();
+      expect(ui.props.onSave).toHaveBeenCalledOnce();
+      vi.runAllTimers();
+      expect(store).toHaveBeenCalledOnce();
+    } finally {
+      store.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+  it('switches tools outside surface focus while protecting editors, IME and handled keys', () => {
+    const listeners = new Map<string, (event: unknown) => void>();
+    vi.stubGlobal('window', {
+      addEventListener: (name: string, listener: (event: unknown) => void) =>
+        listeners.set(name, listener),
+      removeEventListener: (name: string) => listeners.delete(name),
+    });
+    const ui = canvas();
+    const key = (extra: Record<string, unknown> = {}) => {
+      const event = {
+        key: 'h',
+        code: 'KeyH',
+        target: new Target(),
+        preventDefault: vi.fn(),
+        ...extra,
+      };
+      listeners.get('keydown')!(event);
+      ui.render();
+      return event;
+    };
+    key();
+    expect(ui.controls().tool).toBe('hand');
+    key({ key: 'ㅍ', code: 'KeyV' });
+    expect(ui.controls().tool).toBe('select');
+    // Escape restores focus to the non-editing inline span.
+    key({ target: new Target('[data-inline-cell]') });
+    expect(ui.controls().tool).toBe('hand');
+    key({ key: 'v', code: 'KeyV', target: new Target('[data-inline-cell]') });
+    expect(ui.controls().tool).toBe('select');
+    for (const extra of [
+      { target: new Target('input') },
+      { target: new Target('textarea') },
+      { isComposing: true },
+      { keyCode: 229 },
+      { defaultPrevented: true },
+      { ctrlKey: true },
+    ]) {
+      expect(key(extra).preventDefault).not.toHaveBeenCalled();
+      expect(ui.controls().tool).toBe('select');
+    }
+  });
+  it.each(['select', 'hand'])(
+    'ignores a portal option in %s mode without capturing its pointer',
+    (tool) => {
+      const ui = canvas();
+      (ui.controls().onTool as (tool: string) => void)(tool);
+      ui.render();
+      const start = ui.transform();
+      const portalOption = new Target();
+      portalOption.parentElement = {}; // Body portal, outside the canvas DOM subtree.
+      ui.event('onPointerDownCapture', { target: portalOption });
+      ui.event('onPointerMove', { target: portalOption, clientX: 1200 });
+      expect(ui.surface.setPointerCapture).not.toHaveBeenCalled();
+      expect(ui.hasMarquee()).toBe(false);
+      expect(ui.transform()).toBe(start);
+      // Normal canvas descendants remain interactive after the ignored portal event.
+      ui.event('onPointerDownCapture');
+      expect(ui.surface.setPointerCapture).toHaveBeenCalledOnce();
+      expect(ui.hasMarquee()).toBe(tool === 'select');
+      ui.event('onPointerMove', { clientX: 1100 });
+      if (tool === 'hand') expect(ui.transform()).not.toBe(start);
+      ui.event('onPointerUp');
+    },
+  );
+  it.each([false, true])(
+    'updates reference coordinates after add ACK (private=%s), including delayed snapshots',
+    async (privateView) => {
+      const snapshot = clipboardSnapshot();
+      const document = clipboardFixture();
+      const viewId = privateView ? 'combined' : '__tables__';
+      if (privateView) document.views = [{ id: viewId, name: 'Combined', domainIds: ['d'] }];
+      document.layout.nodes = document.layout.nodes.filter((node) => node.viewId !== viewId);
+      const props: Parameters<typeof NativeCanvasActions>[0] = {
+        document,
+        source: document,
+        snapshot,
+        userId: clipboardActor,
+        viewId,
+        busy: false,
+        sharedEditable: true,
+        initialSelection: { action: 'reference', target: 'a' },
+        onSave: vi.fn(async () => true),
+        onSharedSave: vi.fn(async () => true),
+      };
+      const render = () => {
+        hooks.cursor = 0;
+        const tree = NativeCanvasActions(props);
+        hooks.layouts.splice(0).forEach((effect) => effect());
+        return nodes(tree).find((node) => node.type === NativeCanvasInputForm)!.props as Parameters<
+          typeof NativeCanvasInputForm
+        >[0];
+      };
+      let form = render();
+      const values: Record<string, string> = { ...form.initial, x: '70', y: '80' };
+      const first = form.build(values);
+      expect(first[0]?.type).toBe('add_table_reference');
+      const expected = {
+        version: snapshot.project.version,
+        sequence: snapshot.sequence,
+        databaseRevision: snapshot.project.databaseRevision,
+      };
+      expect(
+        await form.context.onSave(first, expected, {
+          key: form.draftKey,
+          revision: clipboardActor,
+        }),
+      ).toBe(true);
+      form = render();
+      const nodeId = privateView
+        ? addTableReference(document, 'a', viewId, { x: 70, y: 80 }).layout.nodes.find(
+            (node) => node.objectId === 'a' && node.viewId === viewId,
+          )!.id
+        : values.id;
+      expect(form.build({ ...values, x: '120' })).toEqual([
+        { type: 'update_node_layout', nodeId, patch: { x: 120, y: 80 } },
+      ]);
+      const updated = addTableReference(document, 'a', viewId, { x: 70, y: 80 });
+      updated.layout.nodes = updated.layout.nodes.map((node) =>
+        node.objectId === 'a' && node.viewId === viewId ? { ...node, id: nodeId! } : node,
+      );
+      props.document = updated;
+      form = render();
+      expect(form.initial).toMatchObject({ x: '70', y: '80' });
+      expect(form.build({ ...values, y: '200' })).toEqual([
+        { type: 'update_node_layout', nodeId, patch: { x: 70, y: 200 } },
+      ]);
+      props.document = document;
+      form = render();
+      expect(form.build(values)[0]?.type).toBe('add_table_reference');
+    },
+  );
+  it('does not remember a rejected reference creation', async () => {
+    const snapshot = clipboardSnapshot(),
+      document = clipboardFixture();
+    document.layout.nodes = [];
+    hooks.cursor = 0;
+    const tree = NativeCanvasActions({
+      document,
+      source: document,
+      snapshot,
+      userId: clipboardActor,
+      viewId: 'd',
+      busy: false,
+      sharedEditable: true,
+      initialSelection: { action: 'reference', target: 'a' },
+      onSave: vi.fn(async () => false),
+      onSharedSave: vi.fn(async () => false),
+    });
+    const form = nodes(tree).find((node) => node.type === NativeCanvasInputForm)!
+      .props as Parameters<typeof NativeCanvasInputForm>[0];
+    const expected = {
+      version: snapshot.project.version,
+      sequence: snapshot.sequence,
+      databaseRevision: snapshot.project.databaseRevision,
+    };
+    await form.context.onSave(form.build(form.initial), expected, {
+      key: form.draftKey,
+      revision: clipboardActor,
+    });
+    expect(form.build({ ...form.initial, x: '100' })[0]?.type).toBe('add_table_reference');
+  });
+  it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+    'creates native %s column types over HTTP without randomUUID',
+    async (kind) => {
+      const ui = canvas(true);
+      const document = clipboardFixture(kind);
+      ui.props.document = document;
+      if (ui.props.snapshot.native?.status === 'available')
+        ui.props.snapshot.native.document = document;
+      const random = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+      vi.stubGlobal('crypto', { getRandomValues: random });
+      ui.render();
+      await (ui.scene().onAddColumn as (id: string) => Promise<void>)('a');
+      ui.render();
+      const column = (ui.scene().base as NativeDesignDocument).columns!.at(-1)!;
+      expect(column).toEqual(
+        createNativeColumn(document.database, document.tables![0]!, column.id),
+      );
+      expect(column.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(column.physical.type).toMatchObject({ database: kind, kind: 'builtin' });
+    },
+  );
+  it('adds a blank card column immediately, preserves DB defaults and focuses its name', async () => {
+    const ui = canvas(true);
+    let accept!: (saved: boolean) => void;
+    ui.props.onSave = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          accept = resolve;
+        }),
+    );
+    ui.render();
+    const save = (ui.scene().onAddColumn as (id: string) => Promise<void>)('a');
+    const tree = ui.render();
+    const base = ui.scene().base as NativeDesignDocument;
+    const column = base.columns!.at(-1)!;
+    expect(column).toEqual(
+      createNativeColumn(
+        base.database,
+        base.tables!.find((table) => table.id === 'a')!,
+        column.id,
+      ),
+    );
+    expect(column.logical.name).toBe('');
+    expect(ui.props.onSave).toHaveBeenCalledWith(
+      [{ type: 'add_column', value: column }],
+      expect.anything(),
+    );
+    const focus = vi.fn();
+    const world = nodes(tree).find(
+      (node) => node.props.className === 'native-erd-world canvas-world',
+    )!;
+    (world.props.ref as (element: unknown) => void)({
+      querySelectorAll: () => [
+        {
+          dataset: {
+            inlineKey: nativeInlineKey({
+              tableId: 'a',
+              columnId: column.id,
+              mode: 'logical',
+              field: 'name',
+            }),
+          },
+          focus,
+        },
+      ],
+    });
+    ui.render();
+    expect(focus).toHaveBeenCalledOnce();
+    accept(false);
+    await save;
+    ui.render();
+    expect(
+      (ui.scene().base as NativeDesignDocument).columns?.some((item) => item.id === column.id),
+    ).toBe(false);
+  });
+  function selectTable(ui: ReturnType<typeof canvas>, id: string) {
+    const scene = ui.scene();
+    const node = (scene.drawn as { nodes: NodeLayout[] }).nodes.find(
+      (item) => item.objectId === id,
+    )!;
+    (
+      scene.onNodeSelect as (
+        node: NodeLayout,
+        event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+      ) => void
+    )(node, { shiftKey: false, ctrlKey: false, metaKey: false });
+    ui.render();
+  }
+  function copiedCanvas() {
+    const ui = canvas();
+    selectTable(ui, 'a');
+    const setData = vi.fn();
+    ui.event('onCopy', { clipboardData: { setData } });
+    expect(setData).toHaveBeenCalledWith('text/plain', readLocalTableClipboard());
+    expect(JSON.parse(readLocalTableClipboard())).toMatchObject({
+      format: 'ezerd/tables',
+      formatVersion: 2,
+      document: { schemaVersion: 2 },
+    });
+    return ui;
+  }
+
+  it('uses the last copied Native text for keyboard paste while leaving source and text inputs unchanged', () => {
+    const ui = copiedCanvas();
+    const source = structuredClone(ui.props.snapshot.sourceDocument);
+    const first = readLocalTableClipboard();
+    selectTable(ui, 'b');
+    ui.event('onCopy', { clipboardData: { setData: vi.fn() } });
+    const text = readLocalTableClipboard();
+    expect(text).not.toBe(first);
+    expect(JSON.parse(text).document.tables.map((table: { id: string }) => table.id)).toEqual([
+      'b',
+    ]);
+    ui.event('onKeyDownCapture', { key: 'v', ctrlKey: true, nativeEvent: { isComposing: false } });
+    expect(ui.props.onSave).toHaveBeenCalledWith(
+      [expect.objectContaining({ type: 'paste_native_clipboard', clipboard: JSON.parse(text) })],
+      expect.objectContaining({
+        version: ui.props.snapshot.project.version,
+        sequence: ui.props.snapshot.sequence,
+      }),
+    );
+    expect(ui.props.snapshot.sourceDocument).toEqual(source);
+    vi.mocked(ui.props.onSave).mockClear();
+    ui.event('onCopy', { target: new Target('input'), clipboardData: { setData: vi.fn() } });
+    ui.event('onKeyDownCapture', {
+      target: new Target('input'),
+      key: 'v',
+      ctrlKey: true,
+      nativeEvent: { isComposing: false },
+    });
+    expect(readLocalTableClipboard()).toBe(text);
+    expect(ui.props.onSave).not.toHaveBeenCalled();
+    ui.props.editable = false;
+    ui.render();
+    ui.event('onKeyDownCapture', { key: 'v', ctrlKey: true, nativeEvent: { isComposing: false } });
+    expect(ui.props.onSave).not.toHaveBeenCalled();
+  });
+
+  it('falls back to copied Native text when the context menu cannot read the device clipboard', async () => {
+    const ui = copiedCanvas();
+    const text = readLocalTableClipboard();
+    const readText = vi.fn(async () => {
+      throw Error('permission denied');
+    });
+    vi.stubGlobal('navigator', { clipboard: { readText } });
+    vi.stubGlobal('window', { innerWidth: 1600, innerHeight: 1000 });
+    ui.event('onContextMenu');
+    const items = nodes(ui.render()).flatMap((node) =>
+      Array.isArray(node.props.items)
+        ? (node.props.items as { id: string; onAction?: () => void }[])
+        : [],
+    );
+    const paste = items.find((item) => item.id === 'paste-tables');
+    expect(paste).toBeDefined();
+    paste!.onAction!();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(readText).toHaveBeenCalledTimes(1);
+    expect(ui.props.onSave).toHaveBeenCalledWith(
+      [expect.objectContaining({ type: 'paste_native_clipboard', clipboard: JSON.parse(text) })],
+      expect.any(Object),
+    );
+    expect(readLocalTableClipboard()).toBe(text);
+  });
+});
 
 describe('native blank canvas pointer interaction', () => {
   it.each([
@@ -350,7 +847,10 @@ describe('native blank canvas pointer interaction', () => {
       return saving;
     }
     const earlier = drag(first.x + 80, first.y + 30);
+    const firstRequest = vi.mocked(ui.props.onSave).mock.calls[0]!;
+    const immutableRequest = structuredClone(firstRequest);
     const later = drag(first.x + 160, first.y + 60);
+    expect(firstRequest).toEqual(immutableRequest);
     expect(ui.props.onSave).toHaveBeenCalledTimes(2);
     acknowledgements[0]!(true);
     await earlier;

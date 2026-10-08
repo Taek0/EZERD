@@ -1,10 +1,12 @@
 import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
+import { createPlacementPersistence } from './native-placement-persistence.js';
 import type { CommentContext } from '../comments/CommentsPanel.js';
 import { pinPosition, reviewCanvasView, type ReviewTarget } from '../comments/comments-state.js';
 import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { selectionRect, intersectingObjects } from '../canvas/canvas-selection.js';
 import { createSelectionFrame, retainSelection } from '../canvas/selection-frame.js';
 import {
+  canvasToolShortcut,
   toolShortcutInputSelector,
   toolShortcutOverlaySelector,
 } from '../canvas/canvas-tool-shortcuts.js';
@@ -22,7 +24,10 @@ import {
   readNativeClipboard,
 } from './native-clipboard-helpers.js';
 import { nativeClipboardMessage } from './native-clipboard.js';
-import { rememberTableClipboard, readLocalTableClipboard } from '../canvas/table-clipboard.js';
+import {
+  rememberTableClipboard,
+  readLocalTableClipboard,
+} from '../../shared/clipboard/table-clipboard-store.js';
 import { ConfirmProvider, useConfirm } from '../../components/ui/ConfirmProvider.js';
 import { nativeCanvasDeleteCommands } from './native-canvas-delete.js';
 import { createPortal } from 'react-dom';
@@ -32,6 +37,7 @@ import { NativeSelectedObjectInspector } from './NativeSelectedObjectInspector.j
 export { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
 import { NativeRelationEditor } from './NativeRelationEditor.js';
 import { NativeCanvasInlineEditor, type NativeInlineTarget } from './NativeCanvasInlineEditor.js';
+import { nativeInlineKey } from './native-inline-edit.js';
 import {
   memo,
   useCallback,
@@ -77,6 +83,8 @@ import {
   nativeDefaultDisplay,
   nativeGenerationDisplay,
   createNativeTable,
+  createNativeColumn,
+  type NativeColumn,
   type NativeDesignDocument,
   type NodeLayout,
   type Viewport,
@@ -139,7 +147,6 @@ registerTranslations({
   화면: 'View',
   '배치 저장': 'Save placement',
   '미저장 배치가 있습니다.': 'There is an unsaved placement.',
-  '배치 입력 초기화': 'Reset placement input',
   '배치의 저장 기준이 변경되었습니다. 입력을 보관했습니다.':
     'The placement revision changed. Your input is preserved.',
   '노드 선택 후 방향키로 이동하고 Enter로 저장합니다.':
@@ -583,6 +590,7 @@ export function NativeERDCanvas(props: ComponentProps<typeof NativeCanvasWorkspa
 }
 function NativeCanvasWorkspace({
   document,
+  optimisticSourceDocument,
   snapshot,
   userId,
   editable,
@@ -623,6 +631,8 @@ function NativeCanvasWorkspace({
   selectionHost,
 }: {
   document: NativeDesignDocument;
+  /** Parent-owned validated create preview; snapshot remains the save/ACK baseline. */
+  optimisticSourceDocument?: NativeDesignDocument;
   snapshot: ProjectDocumentState;
   userId?: string;
   editable: boolean;
@@ -830,13 +840,20 @@ function NativeCanvasWorkspace({
   const panGesture = useRef<{ pointerId: number; x: number; y: number; camera: Viewport } | null>(
     null,
   );
-  const addColumnFromCard = useCallback(
-    (tableId: string) => {
-      onSelect(tableId);
-      onCreate?.('column');
-    },
-    [onSelect, onCreate],
-  );
+  const cardIdentity = JSON.stringify([
+    userId,
+    snapshot.project.id,
+    snapshot.project.databaseRevision,
+  ]);
+  const cardIdentityRef = useRef(cardIdentity);
+  useLayoutEffect(() => {
+    cardIdentityRef.current = cardIdentity;
+  }, [cardIdentity]);
+  const [cardColumns, setCardColumns] = useState<{ identity: string; column: NativeColumn }[]>([]);
+  const [cardFocus, setCardFocus] = useState<{
+    identity: string;
+    target: NativeInlineTarget;
+  } | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [selectedDomainRelation, setSelectedDomainRelation] = useState<string | null>(null);
   const [camera, commitCamera] = useState<Viewport>({
@@ -958,7 +975,8 @@ function NativeCanvasWorkspace({
     };
   }, [userId, privateIdentity, snapshot.project.id]);
   const sharedSource =
-    snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document;
+    optimisticSourceDocument ??
+    (snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document);
   const storedBase = useMemo(
     () =>
       personal
@@ -996,16 +1014,43 @@ function NativeCanvasWorkspace({
   }, [storedBase, snapshot.sequence, snapshot.project.databaseRevision]);
   useEffect(() => setSubmittedNodes([]), [userId, snapshot.project.id]);
   const base = useMemo(() => {
-    if (!submittedNodes.length) return storedBase;
+    const columns = cardColumns.filter(
+      (entry) =>
+        entry.identity === cardIdentity &&
+        !storedBase.columns?.some((column) => column.id === entry.column.id),
+    );
+    if (!submittedNodes.length && !columns.length) return storedBase;
     const pending = new Map(submittedNodes.map(({ node }) => [node.id, node]));
     return {
       ...storedBase,
+      columns: [...(storedBase.columns ?? []), ...columns.map((entry) => entry.column)],
       layout: {
         ...storedBase.layout,
         nodes: storedBase.layout.nodes.map((node) => pending.get(node.id) ?? node),
       },
     };
-  }, [storedBase, submittedNodes]);
+  }, [storedBase, submittedNodes, cardColumns, cardIdentity]);
+  useEffect(() => {
+    setCardColumns((entries) => {
+      const remaining = entries.filter(
+        (entry) =>
+          entry.identity === cardIdentity &&
+          !storedBase.columns?.some((column) => column.id === entry.column.id),
+      );
+      return remaining.length === entries.length ? entries : remaining;
+    });
+  }, [storedBase.columns, cardIdentity]);
+  useLayoutEffect(() => {
+    if (!cardFocus || cardFocus.identity !== cardIdentity || !worldElement) return;
+    const key = nativeInlineKey(cardFocus.target);
+    const cell = Array.from(worldElement.querySelectorAll<HTMLElement>('[data-inline-key]')).find(
+      (element) => element.dataset.inlineKey === key,
+    );
+    if (cell) {
+      cell.focus();
+      setCardFocus(null);
+    }
+  }, [cardFocus, cardIdentity, worldElement, base]);
   const effectiveView =
     viewId === TABLES_VIEW_ID ||
     viewId === 'overview' ||
@@ -1043,6 +1088,42 @@ function NativeCanvasWorkspace({
     !!draft &&
     (draft.expected.databaseRevision !== snapshot.project.databaseRevision ||
       (isPrivate && String(personal?.version ?? '') !== draft.values.personalVersion));
+  const placementPersistence = useMemo(
+    () =>
+      createPlacementPersistence<NativeEditorDraft>(
+        storeNativeEditorDraft,
+        () => {
+          setStorageError('');
+          if (!isPrivate) setSharedStorageFailure(false);
+        },
+        (error) => {
+          setError(message(error));
+          setStorageError(message(error));
+          if (!isPrivate) setSharedStorageFailure(true);
+        },
+      ),
+    [userId, snapshot.project.id, snapshot.project.databaseRevision, inputKey, isPrivate],
+  );
+  useLayoutEffect(
+    () => () => {
+      placementPersistence.flush();
+    },
+    [placementPersistence],
+  );
+  useEffect(() => {
+    placementPersistence.flush();
+  }, [placementPersistence, selectedNode, selectedTableId, selectedDomainId]);
+  useEffect(() => {
+    const flush = () => {
+      placementPersistence.flush();
+    };
+    globalThis.document?.addEventListener('visibilitychange', flush);
+    if (typeof window !== 'undefined') window.addEventListener?.('pagehide', flush);
+    return () => {
+      globalThis.document?.removeEventListener('visibilitychange', flush);
+      if (typeof window !== 'undefined') window.removeEventListener?.('pagehide', flush);
+    };
+  }, [placementPersistence]);
   useEffect(() => {
     gesture.current = null;
     if (!userId) {
@@ -1285,10 +1366,8 @@ function NativeCanvasWorkspace({
       };
       draftRef.current = next;
       setDraft(next);
-      storeNativeEditorDraft(next);
+      placementPersistence.enqueue(next);
       setError('');
-      setStorageError('');
-      if (!isPrivate) setSharedStorageFailure(false);
     } catch (error) {
       setError(message(error));
       setStorageError(message(error));
@@ -1373,10 +1452,8 @@ function NativeCanvasWorkspace({
     draftRef.current = next;
     setDraft(next);
     try {
-      storeNativeEditorDraft(next);
+      placementPersistence.enqueue(next);
       setError('');
-      setStorageError('');
-      if (!isPrivate) setSharedStorageFailure(false);
     } catch (error) {
       setError(message(error));
       setStorageError(message(error));
@@ -1444,6 +1521,7 @@ function NativeCanvasWorkspace({
   }
   async function savePlacement() {
     groupOrigins.current = null;
+    if (!placementPersistence.flush()) return;
     const current = draftRef.current;
     if (!userId || !current || !placementEditable || allBusy || stale || storageError) return;
     try {
@@ -1684,10 +1762,8 @@ function NativeCanvasWorkspace({
           },
         ];
       else {
-        if (isPrivate) {
-          onCreate?.('table');
-          return;
-        }
+        if (!editable) return;
+        if (isPrivate) navigateView(TABLES_VIEW_ID);
         const owner = base.domains.some((d) => d.id === effectiveView)
           ? effectiveView
           : domainFilter?.domainIds.length === 1 && !domainFilter.unassigned
@@ -1695,7 +1771,11 @@ function NativeCanvasWorkspace({
             : null;
         const table = createNativeTable(sharedSource.database, id, owner);
         table.scope = mode;
-        table.logical.name = t('새 테이블');
+        if (
+          domainFilter &&
+          (owner ? !domainFilter.domainIds.includes(owner) : !domainFilter.unassigned)
+        )
+          applyDomainFilter(null);
         commands = [
           { type: 'add_table', value: table },
           {
@@ -1707,11 +1787,12 @@ function NativeCanvasWorkspace({
           },
         ];
       }
-      if (await saveCommands(commands)) {
+      const saving = saveCommands(commands);
+      // Parent selects tables only after durable enqueue succeeds, before ACK.
+      if ((await saving) && kind !== 'table') {
         setBlankSelection(false);
         setSelectedObjectIds([id]);
-        if (kind === 'table') onSelect(id);
-        else if (kind === 'domain') onSelectDomain?.(id);
+        if (kind === 'domain') onSelectDomain?.(id);
       }
     } catch (error) {
       setError(message(error));
@@ -1785,7 +1866,7 @@ function NativeCanvasWorkspace({
     if (!ids.length || (cut && !editable)) return;
     try {
       const copied = copyNativeClipboard(snapshot, ids);
-      rememberTableClipboard(copied.text, true);
+      rememberTableClipboard(copied.text);
       if (transfer) transfer.setData('text/plain', copied.text);
       else void navigator.clipboard?.writeText(copied.text).catch(() => {});
       if (cut) void deleteSelection(ids);
@@ -1873,6 +1954,40 @@ function NativeCanvasWorkspace({
     }),
     [userId, snapshot, allBusy, placementDraftBlocked, editable, onSave],
   );
+  const addColumnFromCard = useCallback(
+    async (tableId: string) => {
+      if (!userId || !editable || allBusy || placementDraftBlocked) return;
+      const table = base.tables?.find((item) => item.id === tableId);
+      if (!table) return;
+      const column = createNativeColumn(base.database, table, nativeDurableId());
+      setCardColumns((entries) => [...entries, { identity: cardIdentity, column }]);
+      setCardFocus({
+        identity: cardIdentity,
+        target: { tableId, columnId: column.id, mode, field: 'name' },
+      });
+      onSelect(tableId, column.id);
+      try {
+        const saved = await onSave([{ type: 'add_column', value: column }], expected(snapshot));
+        if (!saved)
+          setCardColumns((entries) => entries.filter((entry) => entry.column.id !== column.id));
+      } catch (failure) {
+        setCardColumns((entries) => entries.filter((entry) => entry.column.id !== column.id));
+        if (cardIdentityRef.current === cardIdentity) setError(message(failure));
+      }
+    },
+    [
+      userId,
+      editable,
+      allBusy,
+      placementDraftBlocked,
+      base,
+      cardIdentity,
+      mode,
+      onSelect,
+      onSave,
+      snapshot,
+    ],
+  );
   const routeSave = async (
     commands: CanvasCommand[],
     expectation: ReturnType<typeof expected>,
@@ -1950,6 +2065,25 @@ function NativeCanvasWorkspace({
       userId ? { userId, snapshot, busy: allBusy || placementDraftBlocked, onSave } : undefined,
     [userId, snapshot, allBusy, placementDraftBlocked, onSave],
   );
+  const switchCanvasTool = useCommittedEvent((event: KeyboardEvent) => {
+    const next = canvasToolShortcut(event, {
+      editing:
+        event.keyCode === 229 ||
+        (event.target instanceof Element &&
+          !!event.target.closest(`${toolShortcutInputSelector},.native-inline-editor`)),
+      overlayOpen: !!globalThis.document?.querySelector(toolShortcutOverlaySelector),
+      dragging: !!gesture.current || !!panGesture.current || !!marqueeGesture.current,
+    });
+    if (next) {
+      event.preventDefault();
+      setTool(next);
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    window.addEventListener('keydown', switchCanvasTool);
+    return () => window.removeEventListener('keydown', switchCanvasTool);
+  }, [switchCanvasTool]);
   const canvasSaveRef = useRef(saveCanvasCommand);
   useLayoutEffect(() => {
     canvasSaveRef.current = saveCanvasCommand;
@@ -2078,14 +2212,16 @@ function NativeCanvasWorkspace({
             {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
           />
         )}
-        <MemoNativeCanvasStyleEditor
-          document={sharedSource}
-          editable={editable}
-          {...(selectedTableId ? { selectedTableId } : {})}
-          {...(selectedDomainId ? { selectedDomainId } : {})}
-          {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
-          {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
-        />
+        {recoverySelection?.style && (
+          <MemoNativeCanvasStyleEditor
+            document={sharedSource}
+            editable={editable}
+            {...(selectedTableId ? { selectedTableId } : {})}
+            {...(selectedDomainId ? { selectedDomainId } : {})}
+            {...(recoverySelection?.style ? { initialSelection: recoverySelection.style } : {})}
+            {...(sharedEditorContext ? { context: sharedEditorContext } : {})}
+          />
+        )}
         {recoveryWaiting && (
           <p role="status">
             {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
@@ -2381,17 +2517,6 @@ function NativeCanvasWorkspace({
           >
             {t('배치 저장')}
           </Button>
-          <Button
-            disabled={allBusy}
-            onClick={() => {
-              if (!userId) return;
-              discardNativeEditorDraft(userId, snapshot.project.id, draft);
-              draftRef.current = null;
-              setDraft(null);
-            }}
-          >
-            {t('배치 입력 초기화')}
-          </Button>
         </div>
       )}
       {personalPending && (
@@ -2569,6 +2694,8 @@ function NativeCanvasWorkspace({
           void pasteSelection(text);
         }}
         onPointerDownCapture={(event) => {
+          // React portals retain ancestry, but their options are not canvas space.
+          if (!event.currentTarget.contains(event.target as Node)) return;
           setMenu(null);
           setRelationMenu(null);
           if (
@@ -2671,6 +2798,7 @@ function NativeCanvasWorkspace({
             event.currentTarget.releasePointerCapture(event.pointerId);
         }}
         onPointerCancel={() => {
+          placementPersistence.flush();
           panGesture.current = null;
           marqueeGesture.current = null;
           marqueeFrame.cancel();
@@ -2679,6 +2807,7 @@ function NativeCanvasWorkspace({
           spacePan.current = false;
         }}
         onLostPointerCapture={(event) => {
+          placementPersistence.flush();
           if (panGesture.current?.pointerId === event.pointerId) panGesture.current = null;
           if (marqueeGesture.current?.pointerId === event.pointerId) {
             marqueeFrame.cancel();
@@ -2707,13 +2836,12 @@ function NativeCanvasWorkspace({
         onKeyDownCapture={(event) => {
           if (
             event.target instanceof Element &&
-            event.target.closest(
-              '.native-inline-editor,input,textarea,select,[contenteditable=true]',
-            )
+            event.target.closest(`${toolShortcutInputSelector},.native-inline-editor`)
           )
             return;
           if (
             event.nativeEvent.isComposing ||
+            event.keyCode === 229 ||
             event.repeat ||
             globalThis.document?.querySelector(toolShortcutOverlaySelector)
           )
@@ -2811,14 +2939,14 @@ function NativeCanvasWorkspace({
             event.preventDefault();
             spacePan.current = true;
           }
-          if (event.key.toLowerCase() === 'h') setTool('hand');
-          if (event.key.toLowerCase() === 'v') setTool('select');
+          switchCanvasTool(event.nativeEvent);
         }}
         onKeyUpCapture={(event) => {
           if (event.code === 'Space') spacePan.current = false;
         }}
         onBlurCapture={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            placementPersistence.flush();
             spacePan.current = false;
             panGesture.current = null;
           }
@@ -2885,7 +3013,11 @@ function NativeCanvasWorkspace({
               gesture={gesture}
               actions={sceneActions}
               onOpenDomain={navigateView}
-              onAddColumn={editable ? addColumnFromCard : undefined}
+              onAddColumn={
+                userId && editable && !allBusy && !placementDraftBlocked
+                  ? addColumnFromCard
+                  : undefined
+              }
               resizeEnabled={placementEditable && !allBusy && !stale}
               onEdit={userId && editable ? openInline : undefined}
               {...(userId && editable ? { editorContext: inlineContext } : {})}
@@ -3281,7 +3413,7 @@ function NativeCanvasWorkspace({
   );
 }
 
-function NativeCanvasActions({
+export function NativeCanvasActions({
   document,
   source,
   snapshot,
@@ -3308,10 +3440,32 @@ function NativeCanvasActions({
   const [action, setAction] = useState(initialSelection?.action ?? 'note');
   const [target, setTarget] = useState(initialSelection?.target ?? '');
   const [id] = useState(() => nativeDurableId());
+  // An ACK can precede the refreshed document. Keep only references that have not
+  // appeared in that document yet; once observed, deletion must not resurrect them.
+  const referenceScope = JSON.stringify([
+    userId,
+    snapshot.project.id,
+    snapshot.project.databaseRevision,
+  ]);
+  const acceptedReferences = useRef(new Map<string, string>());
+  const referenceDocument = useRef(document);
+  const referenceKey = (tableId: string, targetView: string) =>
+    JSON.stringify([referenceScope, tableId, targetView]);
+  useLayoutEffect(() => {
+    referenceDocument.current = document;
+    for (const node of document.layout.nodes)
+      acceptedReferences.current.delete(referenceKey(node.objectId, node.viewId));
+  }, [document.layout.nodes, referenceScope]);
   const isPrivate = privateView(document, viewId),
     placementView = viewFor(document, viewId);
   const note = document.notes.find((note) => note.id === target);
   const view = document.views?.find((view) => view.id === target);
+  const referenceNode =
+    action === 'reference'
+      ? document.layout.nodes.find(
+          (node) => node.objectId === target && node.viewId === placementView,
+        )
+      : undefined;
   const context = {
     userId,
     snapshot,
@@ -3319,16 +3473,44 @@ function NativeCanvasActions({
     affectsSharedDocument: !isPrivate && !['view', 'view-edit', 'view-delete'].includes(action),
     onSave: async (commands: CanvasCommand[], exp: ReturnType<typeof expected>, ref?: DraftRef) => {
       if (!commands.length) return false;
+      const rememberReferences = () => {
+        for (const command of commands) {
+          if (command.type !== 'add_table_reference') continue;
+          if (
+            referenceDocument.current.layout.nodes.some(
+              (node) => node.objectId === command.tableId && node.viewId === command.viewId,
+            )
+          )
+            continue;
+          // Personal saves derive IDs with the same model operation as the server.
+          const nodeId =
+            !isPrivate && 'nodeId' in command && command.nodeId
+              ? command.nodeId
+              : addTableReference(
+                  document,
+                  command.tableId,
+                  command.viewId,
+                  command.placement,
+                ).layout.nodes.find(
+                  (node) => node.objectId === command.tableId && node.viewId === command.viewId,
+                )!.id;
+          acceptedReferences.current.set(referenceKey(command.tableId, command.viewId), nodeId);
+        }
+      };
       if (!isPrivate && !['view', 'view-edit', 'view-delete'].includes(action)) {
         if (!sharedEditable) return false;
-        return onSharedSave(
+        const saved = await onSharedSave(
           commands.map((command) => nativeEditorCommandSchema.parse(command)),
           exp,
           ref,
         );
+        if (saved) rememberReferences();
+        return saved;
       }
       const command = nativePersonalCanvasCommandSchema.parse(commands[0]);
-      return onSave(command, ref);
+      const saved = await onSave(command, ref);
+      if (saved) rememberReferences();
+      return saved;
     },
   };
   return (
@@ -3393,8 +3575,8 @@ function NativeCanvasActions({
           name: view?.name ?? '',
           domains: view?.domainIds.join('\n') ?? '',
           text: note?.text ?? '',
-          x: '40',
-          y: '40',
+          x: String(referenceNode?.x ?? 40),
+          y: String(referenceNode?.y ?? 40),
           confirm: 'false',
         }}
         disabled={
@@ -3404,15 +3586,25 @@ function NativeCanvasActions({
         }
         build={(values) => {
           let command: unknown;
-          if (action === 'reference')
-            command = {
-              type: 'add_table_reference',
-              tableId: target,
-              viewId: placementView,
-              nodeId: values.id,
-              placement: { x: Number(values.x), y: Number(values.y) },
-            };
-          else if (action === 'remove-reference') {
+          if (action === 'reference') {
+            const nodeId =
+              document.layout.nodes.find(
+                (node) => node.objectId === target && node.viewId === placementView,
+              )?.id ?? acceptedReferences.current.get(referenceKey(target, placementView));
+            command = nodeId
+              ? {
+                  type: 'update_node_layout',
+                  nodeId,
+                  patch: { x: Number(values.x), y: Number(values.y) },
+                }
+              : {
+                  type: 'add_table_reference',
+                  tableId: target,
+                  viewId: placementView,
+                  nodeId: values.id,
+                  placement: { x: Number(values.x), y: Number(values.y) },
+                };
+          } else if (action === 'remove-reference') {
             if (values.confirm !== 'true') throw new Error('deletion.review-required');
             const node = document.layout.nodes.find(
               (node) => node.objectId === target && node.viewId === placementView,

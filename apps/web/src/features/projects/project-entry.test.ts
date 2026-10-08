@@ -28,43 +28,37 @@ function snapshot(native = false) {
   };
 }
 describe('versioned editor entry boundary', () => {
-  it('keeps source-v1 on the old canonical editor even when the preview has native legacy diagnostics', () => {
-    const state = snapshot();
-    const source = state.sourceDocument as ReturnType<typeof createEmptyDocument>;
-    source.tables = [
-      {
-        id: 't',
-        domainId: null,
-        scope: 'physical',
-        logical: { name: '', definition: '' },
-        physical: { name: 't', schema: 'public', comment: '' },
-        customProperties: { common: {}, logical: {}, physical: {} },
-      },
-    ];
-    source.columns = [
-      {
-        id: 'c',
-        tableId: 't',
-        scope: 'physical',
-        logical: { name: '', definition: '', semanticType: '', required: false },
-        physical: {
-          name: 'c',
-          type: { name: ' FLOAT4 ', isArray: false },
-          nullable: true,
-          defaultExpression: null,
-          comment: '',
-        },
-        customProperties: { common: {}, logical: {}, physical: {} },
-      },
-    ];
-    const before = structuredClone(state);
-    const entry = projectEntry(state);
-    expect(entry.kind).toBe('legacy');
-    if (entry.kind !== 'legacy') throw new Error('Expected legacy');
-    expect(entry.value.document.schemaVersion).toBe(1);
-    expect(entry.value.document.columns![0]!.physical.type.name).toBe('real');
-    expect(entry.value.document.layout.nodes[0]!.viewId).toBe('__tables__');
-    expect(state).toEqual(before);
+  it('rejects source-v1 even with an available native preview without mutating the source', () => {
+    for (const status of ['available', 'unavailable'] as const) {
+      for (const projectStatus of ['active', 'archived'] as const) {
+        const state = snapshot();
+        state.project.status = projectStatus;
+        const input =
+          status === 'available'
+            ? state
+            : {
+                ...state,
+                native: { status: 'unavailable', code: 'document.native-preview-invalid' },
+              };
+        const before = structuredClone(input);
+        expect(() => projectEntry(input)).toThrow('v1 프로젝트');
+        expect(input).toEqual(before);
+      }
+    }
+  });
+  it('rejects a fetched v1 project without starting any write or sync transport', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify(snapshot()), { status: 200 }));
+    vi.stubGlobal('fetch', fetcher);
+    try {
+      await expect(loadProjectEntry('legacy-id')).rejects.toThrow('v1 프로젝트');
+      expect(fetcher.mock.calls.length).toBe(2);
+      for (const [url, init] of fetcher.mock.calls as unknown as [string, RequestInit][]) {
+        expect(url).toMatch(/\/(document-state|personal-state)$/);
+        expect(init.method ?? 'GET').toBe('GET');
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
   it('never projects source-v2 into a v1 document, including when preview/DB context is unavailable', () => {
     const state = snapshot(true);

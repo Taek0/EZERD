@@ -22,12 +22,12 @@ registerTranslations({
   아래로: 'Move down',
   '각 값의 빈 문자열·개행·공백과 순서는 그대로 저장됩니다.':
     'Empty strings, line breaks, whitespace and order are retained for each value.',
-  '보관된 값 목록 초안을 읽을 수 없습니다. 원문은 보존됩니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.':
-    'The archived value-list draft cannot be read. Its original is preserved. Reset input or retry preserving it.',
+  '보관된 값 목록 초안을 읽을 수 없습니다. 원문은 보존됩니다. 보관 내용을 확인해 주세요.':
+    'The archived value-list draft cannot be read. Its original is preserved. Review the archived input.',
   '값 목록 변경을 적용할 수 없습니다. 기존 초안은 유지됩니다.':
     'The value-list change cannot be applied. The existing draft is preserved.',
-  '기존 줄 형식 초안을 보존했습니다. 자동으로 값을 분리하지 않습니다. 보관 내용을 확인한 뒤 입력 초기화로 최신 값에서 다시 편집하세요.':
-    'The old line-based draft is preserved. Values are not split automatically. Review the archived input, then reset input to edit the latest values.',
+  '기존 줄 형식 초안을 보존했습니다. 자동으로 값을 분리하지 않습니다. 보관 내용을 확인해 주세요.':
+    'The old line-based draft is preserved. Values are not split automatically. Review the archived input.',
 });
 export function NativeLabelFields({
   value,
@@ -48,7 +48,7 @@ export function NativeLabelFields({
     return (
       <p role="alert">
         {t(
-          '기존 줄 형식 초안을 보존했습니다. 자동으로 값을 분리하지 않습니다. 보관 내용을 확인한 뒤 입력 초기화로 최신 값에서 다시 편집하세요.',
+          '기존 줄 형식 초안을 보존했습니다. 자동으로 값을 분리하지 않습니다. 보관 내용을 확인해 주세요.',
         )}
       </p>
     );
@@ -58,9 +58,7 @@ export function NativeLabelFields({
   } catch {
     return (
       <p role="alert">
-        {t(
-          '보관된 값 목록 초안을 읽을 수 없습니다. 원문은 보존됩니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.',
-        )}
+        {t('보관된 값 목록 초안을 읽을 수 없습니다. 원문은 보존됩니다. 보관 내용을 확인해 주세요.')}
       </p>
     );
   }

@@ -445,7 +445,10 @@ function NativeCanvasColumnMenu({
   const open = (event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => {
     if (
       !(event.target instanceof Element) ||
-      event.target.closest('input,textarea,select,[contenteditable="true"]')
+      ('key' in event &&
+        event.target.closest(
+          'input,textarea,select,[contenteditable]:not([contenteditable="false"])',
+        ))
     )
       return;
     const row = event.target.closest<HTMLElement>('[data-column-id]');

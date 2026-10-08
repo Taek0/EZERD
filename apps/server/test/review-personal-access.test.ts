@@ -373,12 +373,37 @@ describe('review membership boundaries', () => {
   });
 });
 
+function nativeStore() {
+  const fixture = store();
+  const native = createEmptyNativeDocument(defaultDatabaseContext('postgresql'));
+  fixture.rows.set(projects, [
+    [
+      {
+        ...project,
+        document: native,
+        databaseKind: 'postgresql',
+        databaseProfileId: 'postgresql-18-v1',
+        databaseRevision: 0,
+      },
+    ],
+  ]);
+  return {
+    ...fixture,
+    native,
+    context: {
+      expectedDatabaseRevision: 0,
+      expectedProjectVersion: project.version,
+      expectedSyncSequence: project.syncSequence,
+    },
+  };
+}
+
 describe('personal state membership boundaries', () => {
   it('rejects attempts to change shared global placements through the viewer personal API', async () => {
-    const fixture = store();
+    const fixture = nativeStore();
     fixture.rows.set(projectPersonalStates, [[]]);
     const state = {
-      ...extractPersonalState(project.document),
+      ...extractPersonalState(fixture.native),
       nodes: [
         {
           id: 'global',
@@ -391,9 +416,9 @@ describe('personal state membership boundaries', () => {
         },
       ],
     };
-    await expect(fixture.personal.save(project.id, actor, 0, state)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      fixture.personal.save(project.id, actor, 0, state, fixture.context),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(fixture.writes).toEqual([]);
   });
 
@@ -414,14 +439,16 @@ describe('personal state membership boundaries', () => {
   });
 
   it('allows viewer personal layout writes without changing the shared document', async () => {
-    const fixture = store();
+    const fixture = nativeStore();
     fixture.rows.set(projectPersonalStates, [[]]);
-    const original = structuredClone(project.document);
+    const original = structuredClone(fixture.native);
     const state = {
-      ...extractPersonalState(project.document),
+      ...extractPersonalState(fixture.native),
       viewports: [{ viewId: 'overview', x: 12, y: 0, zoom: 1 }],
     };
-    await expect(fixture.personal.save(project.id, actor, 0, state)).resolves.toMatchObject({
+    await expect(
+      fixture.personal.save(project.id, actor, 0, state, fixture.context),
+    ).resolves.toMatchObject({
       version: 1,
       state,
     });
@@ -431,7 +458,7 @@ describe('personal state membership boundaries', () => {
         value: expect.objectContaining({ projectId: project.id, userId: actor.id, state }),
       },
     ]);
-    expect(project.document).toEqual(original);
+    expect(fixture.native).toEqual(original);
   });
 
   it('keeps a native trusted current detached from callback mutations when validating personal references', async () => {
@@ -472,13 +499,15 @@ describe('personal state membership boundaries', () => {
     expect(fixture.writes).toEqual([]);
   });
   it('persists a global viewport without changing shared card placements', async () => {
-    const fixture = store();
+    const fixture = nativeStore();
     fixture.rows.set(projectPersonalStates, [[]]);
     const state = {
-      ...extractPersonalState(project.document),
+      ...extractPersonalState(fixture.native),
       viewports: [{ viewId: TABLES_VIEW_ID, x: 12, y: 34, zoom: 0.8 }],
     };
-    await expect(fixture.personal.save(project.id, actor, 0, state)).resolves.toMatchObject({
+    await expect(
+      fixture.personal.save(project.id, actor, 0, state, fixture.context),
+    ).resolves.toMatchObject({
       version: 1,
       state,
     });

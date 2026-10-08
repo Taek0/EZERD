@@ -1,3 +1,12 @@
+import { NativeDesignDetails } from './NativeDesignDetails.js';
+import {
+  nativeTableCreationPreview,
+  nativeTableCreationReflected,
+  withNativeTableCreationPreviews,
+  type NativeTableCreationPreview,
+} from './native-table-creation-preview.js';
+import { NativeLogicalModeProvider } from './NativeLogicalMode.js';
+import './native-main-integration.css';
 import { Dialog, Modal, ModalOverlay } from 'react-aria-components';
 import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
 import { NativeHistoryControls } from './NativeHistoryControls.js';
@@ -8,13 +17,7 @@ import type { NativeDesignDocument } from '@ezerd/model';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProjectEntry } from './project-entry.js';
 import type { Thread, NativeSyncOperationResult } from '@ezerd/contracts';
-import {
-  getDatabaseProfile,
-  nativeColumnTypeDisplay,
-  nativeDefaultDisplay,
-  nativeExpressionDisplay,
-  nativeGenerationDisplay,
-} from '@ezerd/model';
+import { getDatabaseProfile, moveNativeTableDomain, nativeColumnTypeDisplay } from '@ezerd/model';
 import {
   Button,
   IconButton,
@@ -86,6 +89,7 @@ registerTranslations({
   '설계 조회': 'Design overview',
   속성: 'Properties',
   도메인: 'Domains',
+  '소속 도메인': 'Domain membership',
   '프로젝트 정보': 'Project information',
   '속성 패널': 'Inspector',
   '속성 패널 너비': 'Inspector width',
@@ -136,7 +140,75 @@ registerTranslations({
     'Save was rejected. Keep your input and check the latest design.',
 });
 
+/** Keep the acknowledged domain visible until the parent receives the saved document. */
+export function NativeTableDomainSelect({
+  document,
+  tableId,
+  editable,
+  onSave,
+}: {
+  document: NativeDesignDocument;
+  tableId: string;
+  editable: boolean;
+  onSave: (commands: NativeWebCommand[]) => Promise<boolean>;
+}) {
+  const { t } = useI18n();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const inFlight = useRef(false);
+  const table = document.tables?.find((item) => item.id === tableId);
+  async function change(value: string) {
+    const targetDomainId = value || null;
+    if (!editable || !table || inFlight.current || table.domainId === targetDomainId) return;
+    inFlight.current = true;
+    setSaving(true);
+    setError('');
+    try {
+      moveNativeTableDomain(document, tableId, targetDomainId);
+      await onSave([{ type: 'move_table_domain', tableId, targetDomainId }]);
+    } catch (error) {
+      setError(message(error));
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="native-property-editor inspector-fields">
+      <label>
+        {t('소속 도메인')}
+        <Select
+          aria-label={t('소속 도메인')}
+          value={table?.domainId ?? ''}
+          disabled={!editable || !table || saving}
+          onValueChange={change}
+          renderOptionLeading={(id) => (
+            <span
+              className="native-domain-option-dot"
+              aria-hidden="true"
+              style={{
+                backgroundColor:
+                  document.domains.find((domain) => domain.id === id)?.color ?? '#8993a3',
+              }}
+            />
+          )}
+        >
+          <option value="">{t('미소속')}</option>
+          {document.domains.map((domain) => (
+            <option key={domain.id} value={domain.id}>
+              {domain.name || domain.id}
+            </option>
+          ))}
+        </Select>
+      </label>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+}
+
 /** Native data and commands stay outside the v1 editor/runtime. */
+const emptyTablePreviews: NativeTableCreationPreview[] = [];
+
 export function NativeProjectView({
   entry,
   onLeave,
@@ -168,13 +240,64 @@ export function NativeProjectView({
   workspaceRole?: 'owner' | 'admin' | 'editor' | 'reviewer' | 'viewer';
 }) {
   const { t } = useI18n();
-  const { snapshot, document: doc } = entry;
+  const { snapshot, document: acknowledgedDocument } = entry;
+  const previewIdentity = JSON.stringify([
+    userId,
+    snapshot.project.id,
+    snapshot.project.databaseRevision,
+  ]);
+  const [tablePreviews, setTablePreviews] = useState<{
+    identity: string;
+    entries: NativeTableCreationPreview[];
+  }>({ identity: previewIdentity, entries: [] });
+  const previews =
+    tablePreviews.identity === previewIdentity ? tablePreviews.entries : emptyTablePreviews;
+  // Preserve document identity across unrelated renders while an ACK is delayed.
+  const previewCache = useRef<{
+    source: typeof acknowledgedDocument;
+    raw: typeof snapshot.sourceDocument;
+    previews: NativeTableCreationPreview[];
+    document: NativeDesignDocument | null;
+    shared: NativeDesignDocument | null;
+  } | null>(null);
+  if (
+    !previewCache.current ||
+    previewCache.current.source !== acknowledgedDocument ||
+    previewCache.current.raw !== snapshot.sourceDocument ||
+    previewCache.current.previews !== previews
+  ) {
+    previewCache.current = {
+      source: acknowledgedDocument,
+      raw: snapshot.sourceDocument,
+      previews,
+      document: acknowledgedDocument
+        ? withNativeTableCreationPreviews(acknowledgedDocument, previews)
+        : null,
+      shared:
+        snapshot.sourceDocument.schemaVersion === 2
+          ? withNativeTableCreationPreviews(snapshot.sourceDocument, previews)
+          : null,
+    };
+  }
+  const doc = previewCache.current.document;
+  useEffect(() => {
+    setTablePreviews((current) => {
+      if (current.identity !== previewIdentity) return { identity: previewIdentity, entries: [] };
+      const entries = current.entries.filter(
+        (preview) =>
+          !acknowledgedDocument || !nativeTableCreationReflected(acknowledgedDocument, preview),
+      );
+      return entries.length === current.entries.length ? current : { ...current, entries };
+    });
+  }, [previewIdentity, acknowledgedDocument]);
   const profile = getDatabaseProfile({
     kind: snapshot.project.databaseKind,
     profileId: snapshot.project.databaseProfileId,
   });
   const [domain, setDomain] = useState('*');
-  const [mode, setMode] = useState<'physical' | 'logical'>('physical');
+  const [logicalEnabled, setLogicalEnabled] = useState(false);
+  const [requestedMode, setMode] = useState<'physical' | 'logical'>('physical');
+  const mode = logicalEnabled ? requestedMode : 'physical';
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(doc?.tables?.[0]?.id ?? null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
@@ -184,7 +307,6 @@ export function NativeProjectView({
   const [enumOpen, setEnumOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [editingConstraint, setEditingConstraint] = useState<string | null>(null);
-  const [domainAction, setDomainAction] = useState<'move' | null>(null);
   const [pending, setPending] = useState<NativePendingSave | null>(null);
   const [operationState, setOperationState] = useState({ saving: false, pendingBlocked: !!userId });
   const { saving, pendingBlocked } = operationState;
@@ -308,7 +430,6 @@ export function NativeProjectView({
   function toolbarCreate(kind: 'table' | 'domain' | 'enum' | 'column') {
     leaveRecoveredSelection();
     setInspectorOpen(true);
-    setDomainAction(null);
     if (kind === 'enum') {
       setEnumOpen(true);
       return;
@@ -467,7 +588,13 @@ export function NativeProjectView({
     setSearch('');
     const tableId = 'tableId' in target ? target.tableId : undefined;
     const table = activeDocument.current?.tables?.find((item) => item.id === tableId);
-    setMode(table?.scope === 'logical' ? 'logical' : 'physical');
+    const column =
+      'columnId' in target
+        ? activeDocument.current?.columns?.find((item) => item.id === target.columnId)
+        : undefined;
+    const recoveringLogical = table?.scope === 'logical' || column?.scope === 'logical';
+    if (recoveringLogical) setLogicalEnabled(true);
+    setMode(recoveringLogical ? 'logical' : 'physical');
     setSelected(tableId ?? null);
     setEditingColumn('columnId' in target ? (target.columnId ?? null) : null);
     setSelectedDomain(target.kind === 'domain' ? (target.domainId ?? null) : null);
@@ -673,6 +800,33 @@ export function NativeProjectView({
         (item) => item.pending.request.operationId === operationId,
       );
       if (!intent) throw Error('native.pending-changed');
+      const preview = activeDocument.current
+        ? nativeTableCreationPreview(
+            activeDocument.current,
+            intent.pending.request.commands,
+            operationId,
+          )
+        : null;
+      if (preview) {
+        setTablePreviews((current) => ({
+          identity: previewIdentity,
+          entries: [
+            ...(current.identity === previewIdentity
+              ? current.entries.filter((item) => item.operationId !== operationId)
+              : []),
+            preview,
+          ],
+        }));
+        setSelected(preview.table.id);
+        setSelectedTableRelation(null);
+        setSelectedDomain(null);
+        setEditingColumn(null);
+        setCreateRequest(null);
+        setInspectorOpen(true);
+        setInspectorTab('properties');
+        setSearch('');
+        setDomain('*');
+      }
       const completion = new Promise<boolean>((resolve) => {
         const current = saveWaiters.current.get(operationId);
         saveWaiters.current.set(operationId, {
@@ -681,7 +835,15 @@ export function NativeProjectView({
         });
       });
       scheduleFlush();
-      return await completion;
+      const accepted = await completion;
+      if (!accepted && preview && currentEditor()) {
+        setTablePreviews((current) => ({
+          ...current,
+          entries: current.entries.filter((item) => item.operationId !== operationId),
+        }));
+        setSelected((current) => (current === preview.table.id ? null : current));
+      }
+      return accepted;
     } catch (error) {
       if (currentEditor()) setSaveError(message(error));
       return false;
@@ -749,7 +911,7 @@ export function NativeProjectView({
     (note) => note.id === canvasScope?.selectedObjectId,
   );
   const selectedRelation = doc?.tableRelations?.find(
-    (relation) => relation.id === selectedTableRelation,
+    (relation) => relation.id === selectedTableRelation && visible(relation.scope),
   );
   const selectedRows = doc && selectedTable ? nativeTableCanvasRows(doc, selectedTable, mode) : [];
   const tableName = (id: string) => {
@@ -757,7 +919,7 @@ export function NativeProjectView({
     return (
       (mode === 'physical' ? table?.physical.name : table?.logical.name) ||
       table?.physical.name ||
-      table?.logical.name ||
+      (logicalEnabled && table?.logical.name) ||
       t('이름 없는 테이블')
     );
   };
@@ -766,7 +928,7 @@ export function NativeProjectView({
       ? doc?.columns?.find((column) => column.id === id)?.physical.name
       : doc?.columns?.find((column) => column.id === id)?.logical.name) ||
     doc?.columns?.find((column) => column.id === id)?.physical.name ||
-    doc?.columns?.find((column) => column.id === id)?.logical.name ||
+    (logicalEnabled && doc?.columns?.find((column) => column.id === id)?.logical.name) ||
     id;
   const matches = (...values: (string | undefined)[]) => nativeInspectorMatches(search, ...values);
   const filteredDomainRelations = (doc?.domainRelations ?? []).filter((relation) =>
@@ -945,12 +1107,6 @@ export function NativeProjectView({
       databaseRevision: snapshot.project.databaseRevision,
     });
   }
-  const options = selectedTable?.physical.options;
-  function moveInspectorColumn(id: string, step: number) {
-    const index = selectedRows.findIndex((row) => row.column.id === id),
-      target = selectedRows[index + step]?.column.id;
-    if (target) reorderColumns(id, target);
-  }
   useEffect(() => {
     if (focusedReview) {
       focusIssue(focusedReview.objectId);
@@ -958,1552 +1114,1358 @@ export function NativeProjectView({
     }
   }, [focusedReview?.id]);
   return (
-    <main id="main" className="editor native-project-view">
-      {enumOpen && doc && (
-        <NativeEnumDialog
-          document={doc}
-          {...(editable
-            ? { context: { userId: userId!, snapshot, busy: editorBusy, onSave: save } }
-            : {})}
-          onClose={() => setEnumOpen(false)}
-        />
-      )}
-      <div className="editor-heading">
-        <div className="project-title" role="group" aria-label={t('프로젝트 이동')}>
-          <Button className="gallery-return" onClick={onLeave}>
-            {t('← 갤러리')}
-          </Button>
-          <span className="navigation-divider" aria-hidden="true" />
-          <h1 title={snapshot.project.name}>{snapshot.project.name}</h1>
-          <div className="editor-path-host" ref={setPathHost} />
-          <div className="native-project-context" aria-label={t('프로젝트 정보')}>
-            <span>
-              {snapshot.project.databaseKind === 'postgresql'
-                ? 'PostgreSQL'
-                : snapshot.project.databaseKind === 'mysql'
-                  ? 'MySQL'
-                  : 'SQLite'}
+    <NativeLogicalModeProvider
+      enabled={logicalEnabled}
+      onEnabledChange={(enabled) => {
+        setLogicalEnabled(enabled);
+        setMode(enabled ? 'logical' : 'physical');
+      }}
+    >
+      <main id="main" className="editor native-project-view">
+        {enumOpen && doc && (
+          <NativeEnumDialog
+            document={doc}
+            {...(editable
+              ? { context: { userId: userId!, snapshot, busy: editorBusy, onSave: save } }
+              : {})}
+            onClose={() => setEnumOpen(false)}
+          />
+        )}
+        <div className="editor-heading">
+          <div className="project-title" role="group" aria-label={t('프로젝트 이동')}>
+            <Button className="gallery-return" onClick={onLeave}>
+              {t('← 갤러리')}
+            </Button>
+            <span className="navigation-divider" aria-hidden="true" />
+            <h1 title={snapshot.project.name}>{snapshot.project.name}</h1>
+            <div className="editor-path-host" ref={setPathHost} />
+            <div className="native-project-context" aria-label={t('프로젝트 정보')}>
+              <span>
+                {snapshot.project.databaseKind === 'postgresql'
+                  ? 'PostgreSQL'
+                  : snapshot.project.databaseKind === 'mysql'
+                    ? 'MySQL'
+                    : 'SQLite'}
+              </span>
+              <span>
+                {t('목표 DB 버전')}: {profile.targetVersion}
+              </span>
+              <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
+            </div>
+          </div>
+          <div className="editor-toolbar-host" ref={setToolbarHost} />
+          <div className="save-controls" role="group" aria-label={t('변경 기록과 동기화')}>
+            <span
+              className={`save-state${saveStatus === 'attention' ? ' failed' : ''}`}
+              role="status"
+            >
+              {t(
+                saveStatus === 'saving'
+                  ? '◌ 저장 확인 중…'
+                  : saveStatus === 'offline'
+                    ? '○ 오프라인'
+                    : saveStatus === 'attention'
+                      ? '! 확인 필요'
+                      : saveStatus === 'draft'
+                        ? '○ 보관된 입력'
+                        : '✓ 저장 기준 확인됨',
+              )}
             </span>
-            <span>
-              {t('목표 DB 버전')}: {profile.targetVersion}
-            </span>
-            <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
+            {userId && (
+              <NativeHistoryControls
+                key={`history-controls:${userId}:${snapshot.project.id}`}
+                userId={userId}
+                snapshot={snapshot}
+                disabled={!editable || editorBusy}
+                onReload={onReload}
+                onHistory={() => setHistoryOpen(true)}
+                historyOpen={historyOpen}
+                onCloseHistory={() => setHistoryOpen(false)}
+              />
+            )}
           </div>
         </div>
-        <div className="editor-toolbar-host" ref={setToolbarHost} />
-        <div className="save-controls" role="group" aria-label={t('변경 기록과 동기화')}>
-          <span
-            className={`save-state${saveStatus === 'attention' ? ' failed' : ''}`}
-            role="status"
-          >
-            {t(
-              saveStatus === 'saving'
-                ? '◌ 저장 확인 중…'
-                : saveStatus === 'offline'
-                  ? '○ 오프라인'
-                  : saveStatus === 'attention'
-                    ? '! 확인 필요'
-                    : saveStatus === 'draft'
-                      ? '○ 보관된 입력'
-                      : '✓ 저장 기준 확인됨',
-            )}
-          </span>
-          {userId && (
-            <NativeHistoryControls
-              key={`history-controls:${userId}:${snapshot.project.id}`}
-              userId={userId}
-              snapshot={snapshot}
-              disabled={!editable || editorBusy}
-              onReload={onReload}
-              onHistory={() => setHistoryOpen(true)}
-              historyOpen={historyOpen}
-              onCloseHistory={() => setHistoryOpen(false)}
-            />
-          )}
-        </div>
-      </div>
-      {workspaceStatus === 'archived' && (
-        <div className="notice" role="status">
-          {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}
-        </div>
-      )}
-      {workspaceStatus !== 'archived' &&
-        (workspaceRole === 'viewer' || (!canEdit && canPersonalEdit)) && (
+        {workspaceStatus === 'archived' && (
           <div className="notice" role="status">
-            {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
+            {t('이 워크스페이스는 보관되어 있습니다. 소유자가 복원하면 다시 편집할 수 있습니다.')}
           </div>
         )}
-      {snapshot.project.status === 'archived' && (
-        <div className="notice" role="status">
-          {t('보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.')}
-        </div>
-      )}
-      <ModalOverlay
-        isOpen={issuesOpen}
-        onOpenChange={setIssuesOpen}
-        isDismissable
-        className="native-issues-overlay"
-      >
-        <Modal className="native-issues-modal">
-          <Dialog aria-label={t('설계 확인 항목')} className="native-issues-dialog">
-            <div className="native-issues-header">
-              <h2>{t('설계 확인 항목')}</h2>
-              <IconButton aria-label={t('닫기')} onClick={() => setIssuesOpen(false)}>
-                ×
-              </IconButton>
+        {workspaceStatus !== 'archived' &&
+          (workspaceRole === 'viewer' || (!canEdit && canPersonalEdit)) && (
+            <div className="notice" role="status">
+              {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
             </div>
-            {snapshot.native.status === 'available' && snapshot.native.issues.length > 0 ? (
-              <ul>
-                {snapshot.native.issues.map((issue, index) => (
-                  <li key={`${issue.code}-${index}`}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIssuesOpen(false);
-                        focusIssue(issue.objectId);
-                      }}
-                    >
-                      {issue.objectId && doc?.tables?.some((table) => table.id === issue.objectId)
-                        ? `${tableName(issue.objectId)}: `
-                        : ''}
-                      {t(
-                        issue.code.startsWith('legacy.')
-                          ? '기존 타입 또는 기본값을 확인해 주세요.'
-                          : issue.category === 'incomplete'
-                            ? '물리 설계를 완성해 주세요.'
-                            : issue.category === 'unsupported'
-                              ? '지원하지 않는 설정입니다.'
-                              : '설정이나 연결 대상을 확인해 주세요.',
-                      )}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="panel-note">{t('확인이 필요한 설계 항목이 없습니다.')}</p>
-            )}
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
-      {draftRecoveryOpen && userId && (
-        <NativeDraftRecoveryPanel
-          key={`draft-recovery:${userId}:${snapshot.project.id}:${generation}`}
-          userId={userId}
-          projectId={snapshot.project.id}
-          currentExpected={{
-            version: snapshot.project.version,
-            sequence: snapshot.sequence,
-            databaseRevision: snapshot.project.databaseRevision,
-          }}
-          isActorCurrent={recoveryActorCurrent}
-          isObjectAvailable={(input) => !!nativeDraftRecoveryTarget(activeDocument.current, input)}
-          canRecover={canRecoverDraft}
-          onClose={() => setDraftRecoveryOpen(false)}
-          onRecovered={openRecoveredDraft}
-        />
-      )}
-      {saveError && (
-        <p className="notice error" role="alert">
-          {saveError}
-        </p>
-      )}
-      {draftRecoveryOpen && userId && (pendingBlocked || durableState === 'unknown') && (
-        <Button disabled={saving} onClick={() => void loadPending()}>
-          {t('저장 결과 확인')}
-        </Button>
-      )}
-      {draftRecoveryOpen && pending && (
-        <div className="notice native-pending" role="status">
-          <p>{t('미확인 또는 미적용 저장 요청이 있습니다.')}</p>
-          <Button onClick={() => void recover()} disabled={saving}>
-            {t(saving ? '저장 확인 중…' : '저장 결과 확인')}
-          </Button>
-          <Button disabled={saving} onClick={() => void discardPending()}>
-            {t('요청 취소 확정')}
-          </Button>
-        </div>
-      )}
-      {draftRecoveryOpen && rejectedIntents.length > 0 && (
-        <section className="notice native-pending native-rejected-recovery">
-          <p>{t('적용되지 않은 저장 요청을 보관했습니다.')}</p>
-          {rejectedIntents.map(({ key, pending: rejected }) => (
-            <details key={key}>
-              <summary>
-                {t('보관된 편집 {count}개', { count: rejected.request.commands.length })}
-              </summary>
-              <details>
-                <summary>{t('원본 보기')}</summary>
-                <Textarea
-                  readOnly
-                  aria-label={t('보관된 저장 요청')}
-                  value={JSON.stringify(rejected.request.commands, null, 2)}
-                />
-              </details>
-              <Button
-                onClick={() => {
-                  try {
-                    localStorage.removeItem(key);
-                    setRejectedIntents((items) => items.filter((item) => item.key !== key));
-                  } catch (error) {
-                    setSaveError(message(error));
-                  }
-                }}
-              >
-                {t('보관 요청 삭제')}
-              </Button>
-            </details>
-          ))}
-        </section>
-      )}
-      {!doc ? (
-        <p className="notice error" role="alert">
-          {t(
-            snapshot.native.status === 'unavailable' &&
-              snapshot.native.code === 'database.context-changed'
-              ? 'DB 설정과 저장된 설계의 종류가 다릅니다.'
-              : '설계의 구조 또는 크기를 확인해 주세요.',
           )}
-        </p>
-      ) : (
-        <>
-          <div className="review-workspace native-review-workspace">
-            <div
-              className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}${stackedInspector ? ' inspector-stacked' : ''}`}
-              ref={workspaceRef}
-              data-resizing={resizingInspector}
-              style={{
-                gridTemplateColumns: stackedInspector
-                  ? 'minmax(0,1fr)'
-                  : inspectorOpen
-                    ? `minmax(0,1fr) 6px ${panelWidth}px`
-                    : 'minmax(0,1fr) 0px 0px',
-              }}
-            >
-              <NativeERDCanvas
-                key={`${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
-                document={doc}
-                snapshot={snapshot}
-                {...(userId ? { userId } : {})}
-                editable={editable}
-                personalEditable={
-                  !!userId && canPersonalEdit && snapshot.project.status === 'active'
-                }
-                busy={editorBusy}
-                recoveryBusy={recoveryBusy}
-                onSave={save}
-                onReload={onReload}
-                {...{
-                  onCanvasScopeChange: receiveCanvasScope,
-                  toolbarHost,
-                  pathHost,
-                  panelToggle,
-                  selectionHost: selectedNote ? noteSelectionHost : domainSelectionHost,
-                  ...(editingColumn ? { selectedColumnId: editingColumn } : {}),
-                  ...(requestedView ? { requestedView } : {}),
-                }}
-                {...(projectActions
-                  ? {
-                      renderExportActions: (png: {
-                        run: () => Promise<void>;
-                        disabled: boolean;
-                        busy: boolean;
-                      }) => projectActions(focusIssue, png),
-                    }
-                  : {})}
-                pinMode={pinMode}
-                reviewFocus={reviewFocus}
-                onReviewContext={(context, source) => {
-                  setReviewContext(context);
-                  setReviewDocument(source);
-                }}
-                onCreatePin={(context) => {
-                  if (!canPersonalEdit || !userId || snapshot.project.status !== 'active') return;
-                  setReviewContext(context);
-                  setDraftPin({ ...context, nonce: Date.now() });
-                  setReviewFocus(null);
-                  setPinMode(false);
-                  setCommentsOpen(true);
-                }}
-                pins={
-                  userId && reviewDocument ? (
-                    <CommentPins
-                      threads={threads}
-                      document={reviewDocument}
-                      viewId={reviewContext.viewId}
-                      {...(reviewContext.visibleObjectIds
-                        ? { visibleObjectIds: reviewContext.visibleObjectIds }
-                        : {})}
-                      memberColors={Object.fromEntries(
-                        members.map((member) => [member.id, member.color ?? '#4169e1']),
-                      )}
-                      onOpen={focusThread}
-                    />
-                  ) : undefined
-                }
-
-                mode={mode}
-                inspectorHost={canvasSettingsHost}
-                inspectorOpen={inspectorOpen}
-                onToggleInspector={() => setInspectorOpen((value) => !value)}
-                onOpenIssues={() => setIssuesOpen(true)}
-                recoveryOpen={draftRecoveryOpen}
-                {...(userId
-                  ? { onOpenRecovery: () => setDraftRecoveryOpen((value) => !value) }
-                  : {})}
-                onCreate={toolbarCreate}
-                {...{ onRequestStructure: requestStructure, onRequestAction: requestAction }}
-                onModeChange={setMode}
-                onViewChange={(id) => {
-                  setCanvasView(id);
-                  setDomainRelationCreation(null);
-                  setSelected(null);
-                  setSelectedDomain(null);
-                  setEditingColumn(null);
-                  setEditingConstraint(null);
-                  setCreateRequest(null);
-                  setSearch('');
-                  setDomain('*');
-                  setInspectorTab(id === 'overview' ? 'domains' : 'properties');
-                }}
-                {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
-                {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
-                {...(recovered?.kind === 'canvas'
-                  ? { recoverySelection: recovered.selection }
-                  : {})}
-                onSelectDomain={(id) => {
-                  leaveRecoveredSelection();
-                  setSelectedDomain(id);
-                  setInspectorOpen(true);
-                  setInspectorTab('domains');
-                  setDomainCreation(0);
-                  setDomainAction(null);
-                  setSelectedDomainRelation(null);
-                }}
-                onSelect={(tableId, columnId) => {
-                  leaveRecoveredSelection();
-                  setSelectedDomain(null);
-                  setSelected(tableId);
-                  setCreateRequest(null);
-                  setEditingConstraint(null);
-                  setInspectorOpen(true);
-                  setInspectorTab('properties');
-                  setEditingColumn(columnId ?? null);
-                  setDomain('*');
-                  setSearch('');
-                }}
-              />
-              <div
-                className="native-inspector-resize"
-                role="separator"
-                aria-label={t('속성 패널 너비')}
-                aria-orientation="vertical"
-                aria-valuenow={Math.round(panelWidth)}
-                aria-valuemin={panelBounds.min}
-                aria-valuemax={panelBounds.max}
-                tabIndex={inspectorOpen && !stackedInspector ? 0 : -1}
-                hidden={!inspectorOpen || stackedInspector}
-                onPointerDown={(event) => {
-                  if (event.button !== 0) return;
-                  event.preventDefault();
-                  setResizingInspector(true);
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  resize.current = {
-                    pointer: event.pointerId,
-                    x: event.clientX,
-                    width: panelWidth,
-                  };
-                }}
-                onPointerMove={(event) => {
-                  const active = resize.current;
-                  if (active?.pointer !== event.pointerId) return;
-                  setInspectorWidth(
-                    clampInspectorWidth(active.width + active.x - event.clientX, workspaceWidth),
-                  );
-                }}
-                onPointerUp={(event) => {
-                  resize.current = null;
-                  setResizingInspector(false);
-                  if (event.currentTarget.hasPointerCapture(event.pointerId))
-                    event.currentTarget.releasePointerCapture(event.pointerId);
-                }}
-                onPointerCancel={() => {
-                  resize.current = null;
-                  setResizingInspector(false);
-                }}
-                onLostPointerCapture={() => {
-                  resize.current = null;
-                  setResizingInspector(false);
-                }}
-                onKeyDown={(event) => {
-                  const next =
-                    event.key === 'Home'
-                      ? panelBounds.min
-                      : event.key === 'End'
-                        ? panelBounds.max
-                        : event.key === 'ArrowLeft'
-                          ? panelWidth + (event.shiftKey ? 40 : 10)
-                          : event.key === 'ArrowRight'
-                            ? panelWidth - (event.shiftKey ? 40 : 10)
-                            : null;
-                  if (next !== null) {
-                    event.preventDefault();
-                    setInspectorWidth(clampInspectorWidth(next, workspaceWidth));
-                  }
-                }}
-              />
-              <aside
-                className="native-editor-inspector inspector-shell inspector"
-                aria-label={t('속성 패널')}
-                id="native-canvas-inspector"
-                inert={!inspectorOpen}
-                aria-hidden={!inspectorOpen}
-              >
-                <div className="inspector-topbar">
-                  <div className="inspector-place">
-                    <span>
-                      {canvasView === 'overview' || canvasView === '__tables__' ? 'VIEW' : 'DOMAIN'}
-                    </span>
-                    <strong title={currentViewName}>{currentViewName}</strong>
-                  </div>
-                  {(selectedTable ||
-                    selectedDomain ||
-                    selectedNote ||
-                    selectedRelation ||
-                    selectedDomainRelation) && (
-                    <div className="inspector-selection">
-                      <span className="selection-kind">
-                        {t(
-                          selectedNote
-                            ? '메모'
-                            : selectedRelation || selectedDomainRelation
-                              ? '관계'
-                              : selectedDomain
-                                ? '도메인'
-                                : '테이블',
-                        )}
-                      </span>
-                      <strong>
-                        {selectedNote
-                          ? selectedNote.text.slice(0, 80) || t('메모')
-                          : selectedRelation
-                            ? selectedRelation.logical.name ||
-                              selectedRelation.physical?.name ||
-                              t('관계')
-                            : selectedDomainRelation
-                              ? doc.domainRelations.find(
-                                  (relation) => relation.id === selectedDomainRelation,
-                                )?.name
-                              : selectedDomain
-                                ? doc.domains.find((item) => item.id === selectedDomain)?.name
-                                : tableName(selectedTable!.id)}
-                      </strong>
-                      <IconButton
-                        aria-label={t('선택 해제')}
+        {snapshot.project.status === 'archived' && (
+          <div className="notice" role="status">
+            {t('보관한 프로젝트입니다. 갤러리에서 복원하면 편집할 수 있습니다.')}
+          </div>
+        )}
+        <ModalOverlay
+          isOpen={issuesOpen}
+          onOpenChange={setIssuesOpen}
+          isDismissable
+          className="native-issues-overlay"
+        >
+          <Modal className="native-issues-modal">
+            <Dialog aria-label={t('설계 확인 항목')} className="native-issues-dialog">
+              <div className="native-issues-header">
+                <h2>{t('설계 확인 항목')}</h2>
+                <IconButton aria-label={t('닫기')} onClick={() => setIssuesOpen(false)}>
+                  ×
+                </IconButton>
+              </div>
+              {snapshot.native.status === 'available' && snapshot.native.issues.length > 0 ? (
+                <ul>
+                  {snapshot.native.issues.map((issue, index) => (
+                    <li key={`${issue.code}-${index}`}>
+                      <button
+                        type="button"
                         onClick={() => {
-                          leaveRecoveredSelection();
-                          setSelected(null);
-                          setSelectedDomain(null);
-                          setEditingColumn(null);
-                          setSelectedDomainRelation(null);
-                          setSelectedTableRelation(null);
+                          setIssuesOpen(false);
+                          focusIssue(issue.objectId);
                         }}
                       >
-                        ×
-                      </IconButton>
-                    </div>
-                  )}
-                  <div className="inspector-tabs" role="group" aria-label={t('패널 보기 전환')}>
-                    <TabButton
-                      selected={inspectorTab === 'properties' || inspectorTab === 'domains'}
-                      onClick={() =>
-                        setInspectorTab(canvasView === 'overview' ? 'domains' : 'properties')
+                        {issue.objectId && doc?.tables?.some((table) => table.id === issue.objectId)
+                          ? `${tableName(issue.objectId)}: `
+                          : ''}
+                        {t(
+                          issue.code.startsWith('legacy.')
+                            ? '기존 타입 또는 기본값을 확인해 주세요.'
+                            : issue.category === 'incomplete'
+                              ? '물리 설계를 완성해 주세요.'
+                              : issue.category === 'unsupported'
+                                ? '지원하지 않는 설정입니다.'
+                                : '설정이나 연결 대상을 확인해 주세요.',
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="panel-note">{t('확인이 필요한 설계 항목이 없습니다.')}</p>
+              )}
+            </Dialog>
+          </Modal>
+        </ModalOverlay>
+        {draftRecoveryOpen && userId && (
+          <NativeDraftRecoveryPanel
+            key={`draft-recovery:${userId}:${snapshot.project.id}:${generation}`}
+            userId={userId}
+            projectId={snapshot.project.id}
+            currentExpected={{
+              version: snapshot.project.version,
+              sequence: snapshot.sequence,
+              databaseRevision: snapshot.project.databaseRevision,
+            }}
+            isActorCurrent={recoveryActorCurrent}
+            isObjectAvailable={(input) =>
+              !!nativeDraftRecoveryTarget(activeDocument.current, input)
+            }
+            canRecover={canRecoverDraft}
+            onClose={() => setDraftRecoveryOpen(false)}
+            onRecovered={openRecoveredDraft}
+          />
+        )}
+        {saveError && (
+          <p className="notice error" role="alert">
+            {saveError}
+          </p>
+        )}
+        {draftRecoveryOpen && userId && (pendingBlocked || durableState === 'unknown') && (
+          <Button disabled={saving} onClick={() => void loadPending()}>
+            {t('저장 결과 확인')}
+          </Button>
+        )}
+        {draftRecoveryOpen && pending && (
+          <div className="notice native-pending" role="status">
+            <p>{t('미확인 또는 미적용 저장 요청이 있습니다.')}</p>
+            <Button onClick={() => void recover()} disabled={saving}>
+              {t(saving ? '저장 확인 중…' : '저장 결과 확인')}
+            </Button>
+            <Button disabled={saving} onClick={() => void discardPending()}>
+              {t('요청 취소 확정')}
+            </Button>
+          </div>
+        )}
+        {draftRecoveryOpen && rejectedIntents.length > 0 && (
+          <section className="notice native-pending native-rejected-recovery">
+            <p>{t('적용되지 않은 저장 요청을 보관했습니다.')}</p>
+            {rejectedIntents.map(({ key, pending: rejected }) => (
+              <details key={key}>
+                <summary>
+                  {t('보관된 편집 {count}개', { count: rejected.request.commands.length })}
+                </summary>
+                <details>
+                  <summary>{t('원본 보기')}</summary>
+                  <Textarea
+                    readOnly
+                    aria-label={t('보관된 저장 요청')}
+                    value={JSON.stringify(rejected.request.commands, null, 2)}
+                  />
+                </details>
+                <Button
+                  onClick={() => {
+                    try {
+                      localStorage.removeItem(key);
+                      setRejectedIntents((items) => items.filter((item) => item.key !== key));
+                    } catch (error) {
+                      setSaveError(message(error));
+                    }
+                  }}
+                >
+                  {t('보관 요청 삭제')}
+                </Button>
+              </details>
+            ))}
+          </section>
+        )}
+        {!doc ? (
+          <p className="notice error" role="alert">
+            {t(
+              snapshot.native.status === 'unavailable' &&
+                snapshot.native.code === 'database.context-changed'
+                ? 'DB 설정과 저장된 설계의 종류가 다릅니다.'
+                : '설계의 구조 또는 크기를 확인해 주세요.',
+            )}
+          </p>
+        ) : (
+          <>
+            <div className="review-workspace native-review-workspace">
+              <div
+                className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}${stackedInspector ? ' inspector-stacked' : ''}`}
+                ref={workspaceRef}
+                data-resizing={resizingInspector}
+                style={{
+                  gridTemplateColumns: stackedInspector
+                    ? 'minmax(0,1fr)'
+                    : inspectorOpen
+                      ? `minmax(0,1fr) 6px ${panelWidth}px`
+                      : 'minmax(0,1fr) 0px 0px',
+                }}
+              >
+                <NativeERDCanvas
+                  key={`${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
+                  document={doc}
+                  {...(previews.length && previewCache.current.shared
+                    ? { optimisticSourceDocument: previewCache.current.shared }
+                    : {})}
+                  snapshot={snapshot}
+                  {...(userId ? { userId } : {})}
+                  editable={editable}
+                  personalEditable={
+                    !!userId && canPersonalEdit && snapshot.project.status === 'active'
+                  }
+                  busy={editorBusy}
+                  recoveryBusy={recoveryBusy}
+                  onSave={save}
+                  onReload={onReload}
+                  {...{
+                    onCanvasScopeChange: receiveCanvasScope,
+                    toolbarHost,
+                    pathHost,
+                    panelToggle,
+                    selectionHost: selectedNote ? noteSelectionHost : domainSelectionHost,
+                    ...(editingColumn ? { selectedColumnId: editingColumn } : {}),
+                    ...(requestedView ? { requestedView } : {}),
+                  }}
+                  {...(projectActions
+                    ? {
+                        renderExportActions: (png: {
+                          run: () => Promise<void>;
+                          disabled: boolean;
+                          busy: boolean;
+                        }) => projectActions(focusIssue, png),
                       }
-                    >
-                      {t('속성')}
-                    </TabButton>
-                    <TabButton
-                      selected={inspectorTab === 'tables'}
-                      onClick={() => setInspectorTab('tables')}
-                    >
-                      {t('목록')}{' '}
-                      <span className="panel-count">
-                        {canvasView === 'overview' ? doc.domains.length : tables.length}
-                      </span>
-                    </TabButton>
-                  </div>
-                </div>
-                <div
-                  className="native-canvas-settings-host"
-                  hidden={inspectorTab === 'tables'}
-                  ref={setCanvasSettingsHost}
+                    : {})}
+                  pinMode={pinMode}
+                  reviewFocus={reviewFocus}
+                  onReviewContext={(context, source) => {
+                    setReviewContext(context);
+                    setReviewDocument(source);
+                  }}
+                  onCreatePin={(context) => {
+                    if (!canPersonalEdit || !userId || snapshot.project.status !== 'active') return;
+                    setReviewContext(context);
+                    setDraftPin({ ...context, nonce: Date.now() });
+                    setReviewFocus(null);
+                    setPinMode(false);
+                    setCommentsOpen(true);
+                  }}
+                  pins={
+                    userId && reviewDocument ? (
+                      <CommentPins
+                        threads={threads}
+                        document={reviewDocument}
+                        viewId={reviewContext.viewId}
+                        {...(reviewContext.visibleObjectIds
+                          ? { visibleObjectIds: reviewContext.visibleObjectIds }
+                          : {})}
+                        memberColors={Object.fromEntries(
+                          members.map((member) => [member.id, member.color ?? '#4169e1']),
+                        )}
+                        onOpen={focusThread}
+                      />
+                    ) : undefined
+                  }
+
+                  mode={mode}
+                  inspectorHost={canvasSettingsHost}
+                  inspectorOpen={inspectorOpen}
+                  onToggleInspector={() => setInspectorOpen((value) => !value)}
+                  onOpenIssues={() => setIssuesOpen(true)}
+                  recoveryOpen={draftRecoveryOpen}
+                  {...(userId
+                    ? { onOpenRecovery: () => setDraftRecoveryOpen((value) => !value) }
+                    : {})}
+                  onCreate={toolbarCreate}
+                  {...{ onRequestStructure: requestStructure, onRequestAction: requestAction }}
+                  onModeChange={setMode}
+                  onViewChange={(id) => {
+                    setCanvasView(id);
+                    setDomainRelationCreation(null);
+                    setSelected(null);
+                    setSelectedDomain(null);
+                    setEditingColumn(null);
+                    setEditingConstraint(null);
+                    setCreateRequest(null);
+                    setSearch('');
+                    setDomain('*');
+                    setInspectorTab(id === 'overview' ? 'domains' : 'properties');
+                  }}
+                  {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
+                  {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
+                  {...(recovered?.kind === 'canvas'
+                    ? { recoverySelection: recovered.selection }
+                    : {})}
+                  onSelectDomain={(id) => {
+                    leaveRecoveredSelection();
+                    setSelectedDomain(id);
+                    setInspectorOpen(true);
+                    setInspectorTab('domains');
+                    setDomainCreation(0);
+                    setSelectedDomainRelation(null);
+                  }}
+                  onSelect={(tableId, columnId) => {
+                    leaveRecoveredSelection();
+                    setSelectedDomain(null);
+                    setSelected(tableId);
+                    setCreateRequest(null);
+                    setEditingConstraint(null);
+                    setInspectorOpen(true);
+                    setInspectorTab('properties');
+                    setEditingColumn(columnId ?? null);
+                    setDomain('*');
+                    setSearch('');
+                  }}
                 />
                 <div
-                  className="native-inspector-panel"
-                  role="tabpanel"
-                  id={`${snapshot.project.id}-domains`}
-                  aria-label={t('도메인')}
-                  hidden={inspectorTab !== 'domains'}
+                  className="native-inspector-resize"
+                  role="separator"
+                  aria-label={t('속성 패널 너비')}
+                  aria-orientation="vertical"
+                  aria-valuenow={Math.round(panelWidth)}
+                  aria-valuemin={panelBounds.min}
+                  aria-valuemax={panelBounds.max}
+                  tabIndex={inspectorOpen && !stackedInspector ? 0 : -1}
+                  hidden={!inspectorOpen || stackedInspector}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    setResizingInspector(true);
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    resize.current = {
+                      pointer: event.pointerId,
+                      x: event.clientX,
+                      width: panelWidth,
+                    };
+                  }}
+                  onPointerMove={(event) => {
+                    const active = resize.current;
+                    if (active?.pointer !== event.pointerId) return;
+                    setInspectorWidth(
+                      clampInspectorWidth(active.width + active.x - event.clientX, workspaceWidth),
+                    );
+                  }}
+                  onPointerUp={(event) => {
+                    resize.current = null;
+                    setResizingInspector(false);
+                    if (event.currentTarget.hasPointerCapture(event.pointerId))
+                      event.currentTarget.releasePointerCapture(event.pointerId);
+                  }}
+                  onPointerCancel={() => {
+                    resize.current = null;
+                    setResizingInspector(false);
+                  }}
+                  onLostPointerCapture={() => {
+                    resize.current = null;
+                    setResizingInspector(false);
+                  }}
+                  onKeyDown={(event) => {
+                    const next =
+                      event.key === 'Home'
+                        ? panelBounds.min
+                        : event.key === 'End'
+                          ? panelBounds.max
+                          : event.key === 'ArrowLeft'
+                            ? panelWidth + (event.shiftKey ? 40 : 10)
+                            : event.key === 'ArrowRight'
+                              ? panelWidth - (event.shiftKey ? 40 : 10)
+                              : null;
+                    if (next !== null) {
+                      event.preventDefault();
+                      setInspectorWidth(clampInspectorWidth(next, workspaceWidth));
+                    }
+                  }}
+                />
+                <aside
+                  className="native-editor-inspector inspector-shell inspector"
+                  aria-label={t('속성 패널')}
+                  id="native-canvas-inspector"
+                  inert={!inspectorOpen}
+                  aria-hidden={!inspectorOpen}
                 >
-                  {!selectedDomain && (
-                    <>
-                      <div className="panel-empty">
-                        <strong>{t('도메인 맵')}</strong>
-                        <p>
-                          {t('카드를 선택하면 이름·설명·색상과 연결된 관계를 여기에서 편집합니다.')}
-                        </p>
-                      </div>
-                      <div className="panel-summary">
-                        <span>
-                          {t('도메인')} {doc.domains.length}
-                        </span>
-                        <span>
-                          {t('관계')} {doc.domainRelations.length}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                  <NativeDomainEditor
-                    key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${domainCreation}:action:${domainAction ?? ''}`}
-                    document={doc}
-                    snapshot={snapshot}
-                    {...(userId ? { userId } : {})}
-                    editable={editable}
-                    busy={editorBusy}
-                    onSave={save}
-                    {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
-                    {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
-                    {...(recovered?.kind === 'domain'
-                      ? { initialAction: recovered.action }
-                      : domainCreation
-                        ? { initialAction: 'create' as const }
-                        : domainAction
-                          ? { initialAction: domainAction }
-                          : {})}
-                    onSelectDomain={(id) => {
-                      leaveRecoveredSelection();
-                      setSelectedDomain(id);
-                      setInspectorOpen(true);
-                      setInspectorTab('domains');
-                      setDomainCreation(0);
-                    }}
-                  />
-                  {(canvasView === 'overview' || selectedDomainRelation) && (
-                    <NativeDomainRelationEditor
-                      allowCreate={canvasView === 'overview'}
-                      key={`domain-relation:${selectedDomainRelation ?? ''}:create:${domainRelationCreation ?? ''}`}
-                      document={doc}
-                      editable={editable}
-                      {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
-                      {...(domainRelationCreation
-                        ? {
-                            initialAction: 'create' as const,
-                            sourceDomainId: domainRelationCreation,
-                          }
-                        : {})}
-                      {...(userId
-                        ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
-                        : {})}
-                    />
-                  )}
-                  <div
-                    ref={setDomainSelectionHost}
-                    className="native-selection-host"
-                    data-node-id={selectedCanvasNode?.id}
-                  />
-                  {selectedDomain && (
-                    <>
-                      <div className="actions">
-                        <Button onClick={() => openDomain(selectedDomain)}>
-                          {t('도메인 열기')}
-                        </Button>
-                        {canvasView === 'overview' && (
-                          <Button
-                            disabled={!editable || editorBusy}
-                            onClick={() => requestAction('createDomainRelation', selectedDomain)}
-                          >
-                            {t('+ 도메인 관계')}
-                          </Button>
-                        )}
-                      </div>
-                      <PanelSection
-                        title={t('연결된 도메인 관계')}
-                        count={
-                          doc.domainRelations.filter(
-                            (relation) =>
-                              relation.sourceDomainId === selectedDomain ||
-                              relation.targetDomainId === selectedDomain,
-                          ).length
-                        }
-                        defaultOpen
-                      >
-                        <PanelList empty={t('표시할 관계가 없습니다.')}>
-                          {doc.domainRelations
-                            .filter(
-                              (relation) =>
-                                relation.sourceDomainId === selectedDomain ||
-                                relation.targetDomainId === selectedDomain,
-                            )
-                            .map((relation) => (
-                              <PanelRow
-                                key={relation.id}
-                                title={relation.name}
-                                meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
-                                active={selectedDomainRelation === relation.id}
-                                onSelect={() => requestAction('domainRelation', relation.id)}
-                              />
-                            ))}
-                        </PanelList>
-                      </PanelSection>
-                    </>
-                  )}
-                </div>
-                <div className="native-project-content" aria-label={t('설계 조회')}>
-                  <aside
-                    className="native-table-nav native-inspector-panel"
-                    role="tabpanel"
-                    id={`${snapshot.project.id}-tables`}
-                    aria-label={t('테이블')}
-                    hidden={inspectorTab !== 'tables'}
-                  >
-                    <label>
-                      {t('현재 화면 검색')}
-                      <Input
-                        aria-label={t('현재 화면 검색')}
-                        placeholder={t(
-                          canvasView === 'overview' ? '도메인·관계 검색' : '테이블·관계 검색',
-                        )}
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                      />
-                    </label>
-                    <Select
-                      aria-label={t('전체 도메인')}
-                      value={domain}
-                      onValueChange={setDomain}
-                      renderOptionLeading={(id) => {
-                        const item = doc.domains.find((candidate) => candidate.id === id);
-                        return item ? (
-                          <span
-                            className="native-domain-option-dot"
-                            style={{ backgroundColor: item.color ?? '#8993a3' }}
-                            aria-hidden="true"
-                          />
-                        ) : null;
-                      }}
-                    >
-                      <option value="*">{t('전체 도메인')}</option>
-                      <option value="">{t('미소속')}</option>
-                      {doc.domains.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </Select>
-                    <div className="native-mode">
-                      <Button
-                        aria-pressed={mode === 'physical'}
-                        onClick={() => setMode('physical')}
-                      >
-                        {t('물리')}
-                      </Button>
-                      <Button aria-pressed={mode === 'logical'} onClick={() => setMode('logical')}>
-                        {t('논리')}
-                      </Button>
+                  <div className="inspector-topbar">
+                    <div className="inspector-place">
+                      <span>
+                        {canvasView === 'overview' || canvasView === '__tables__'
+                          ? 'VIEW'
+                          : 'DOMAIN'}
+                      </span>
+                      <strong title={currentViewName}>{currentViewName}</strong>
                     </div>
-                    <PanelSection
-                      title={t(canvasView === 'overview' ? '도메인' : '테이블')}
-                      defaultOpen
-                      count={canvasView === 'overview' ? doc.domains.length : tables.length}
-                    >
-                      <PanelList
-                        empty={t(
-                          canvasView === 'overview'
-                            ? '표시할 도메인이 없습니다.'
-                            : '선택한 범위에 테이블이 없습니다.',
-                        )}
-                      >
-                        {canvasView === 'overview'
-                          ? doc.domains
-                              .filter((item) => matches(item.name, item.description))
-                              .map((item) => (
-                                <PanelRow
-                                  key={item.id}
-                                  title={item.name}
-                                  accent={item.color ?? '#8993a3'}
-                                  active={selectedDomain === item.id}
-                                  meta={t('관계 {count}개', {
-                                    count: doc.domainRelations.filter(
-                                      (relation) =>
-                                        relation.sourceDomainId === item.id ||
-                                        relation.targetDomainId === item.id,
-                                    ).length,
-                                  })}
-                                  onSelect={() => {
-                                    leaveRecoveredSelection();
-                                    setSelectedDomain(item.id);
-                                    setInspectorTab('domains');
-                                  }}
-                                  action={
-                                    <Button
-                                      disabled={editorBusy}
-                                      onClick={() => openDomain(item.id)}
-                                    >
-                                      {t('열기')}
-                                    </Button>
-                                  }
-                                />
-                              ))
-                          : tables.map((table) => (
-                              <PanelRow
-                                key={table.id}
-                                title={tableName(table.id)}
-                                active={selectedTable?.id === table.id}
-                                accent={
-                                  table.color ??
-                                  doc.domains.find((item) => item.id === table.domainId)?.color ??
-                                  '#8993a3'
-                                }
-                                meta={t('컬럼 {count}개', {
-                                  count: (doc.columns ?? []).filter(
-                                    (item) => item.tableId === table.id && visible(item.scope),
-                                  ).length,
-                                })}
-                                badge={
-                                  canvasView === '__tables__'
-                                    ? (doc.domains.find((item) => item.id === table.domainId)
-                                        ?.name ?? t('미지정'))
-                                    : table.domainId === canvasView
-                                      ? undefined
-                                      : t('참조')
-                                }
-                                onSelect={() => {
-                                  leaveRecoveredSelection();
-                                  setSelected(table.id);
-                                  setEditingColumn(null);
-                                  setCreateRequest(null);
-                                  setInspectorTab('properties');
-                                  setSelectedDomain(null);
-                                }}
-                              />
-                            ))}
-                      </PanelList>
-                    </PanelSection>
-                    <PanelSection
-                      title={t(canvasView === 'overview' ? '도메인 관계' : '테이블 관계')}
-                      count={
-                        canvasView === 'overview'
-                          ? filteredDomainRelations.length
-                          : filteredTableRelations.length
-                      }
-                      defaultOpen={false}
-                    >
-                      <PanelList empty={t('표시할 관계가 없습니다.')}>
-                        {canvasView === 'overview'
-                          ? filteredDomainRelations.map((relation) => (
-                              <PanelRow
-                                key={relation.id}
-                                title={relation.name}
-                                meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
-                                onSelect={() => requestAction('domainRelation', relation.id)}
-                              />
-                            ))
-                          : filteredTableRelations.map((relation) => (
-                              <PanelRow
-                                key={relation.id}
-                                title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
-                                meta={relation.physical?.name || relation.logical.name}
-                                badge={relation.physical ? 'FK' : undefined}
-                                onSelect={() =>
-                                  requestStructure(
-                                    'patch',
-                                    JSON.stringify(['tableRelations', relation.id]),
-                                    relation.sourceTableId,
-                                  )
-                                }
-                              />
-                            ))}
-                      </PanelList>
-                    </PanelSection>
-                  </aside>
-                  <section
-                    className="native-table-detail native-inspector-panel"
-                    role="tabpanel"
-                    id={`${snapshot.project.id}-properties`}
-                    aria-label={t('속성')}
-                    hidden={inspectorTab !== 'properties'}
-                    aria-live="polite"
-                  >
-                    {selectedNote && (
-                      <div
-                        ref={setNoteSelectionHost}
-                        className="native-selection-host"
-                        data-node-id={selectedCanvasNode?.id}
-                        data-selection-kind="note"
-                        data-object-id={selectedNote.id}
-                      />
-                    )}
-                    {selectedRelation && (
-                      <NativeTableRelationInspector
-                        document={doc}
-                        relation={selectedRelation}
-                        {...(editable
-                          ? {
-                              context: {
-                                userId: userId!,
-                                snapshot,
-                                busy: editorBusy,
-                                onSave: save,
-                              },
-                              onDelete: () =>
-                                requestStructure(
-                                  'delete',
-                                  JSON.stringify(['tableRelations', selectedRelation.id]),
-                                  selectedRelation.sourceTableId,
-                                ),
-                            }
-                          : {})}
-                      />
-                    )}
-                    {editable && recovered?.kind === 'advanced' && selectedTable && (
-                      <NativeAdvancedEditor
-                        key={`advanced-recovery:${recoveryEpoch}`}
-                        context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
-                        document={doc}
-                        table={selectedTable}
-                        initialSelection={recovered.selection}
-                      />
-                    )}
-                    {editable &&
-                      recovered?.kind !== 'advanced' &&
-                      (createRequest || recovered?.kind === 'structure') && (
-                        <div
-                          className="native-contextual-editor"
-                          key={`structure:${createRequest?.nonce ?? 0}:${recoveryEpoch}`}
+                    {(selectedTable ||
+                      selectedDomain ||
+                      selectedNote ||
+                      selectedRelation ||
+                      selectedDomainRelation) && (
+                      <div className="inspector-selection">
+                        <span className="selection-kind">
+                          {t(
+                            selectedNote
+                              ? '메모'
+                              : selectedRelation || selectedDomainRelation
+                                ? '관계'
+                                : selectedDomain
+                                  ? '도메인'
+                                  : '테이블',
+                          )}
+                        </span>
+                        <strong>
+                          {selectedNote
+                            ? selectedNote.text.slice(0, 80) || t('메모')
+                            : selectedRelation
+                              ? (logicalEnabled && selectedRelation.logical.name) ||
+                                selectedRelation.physical?.name ||
+                                t('관계')
+                              : selectedDomainRelation
+                                ? doc.domainRelations.find(
+                                    (relation) => relation.id === selectedDomainRelation,
+                                  )?.name
+                                : selectedDomain
+                                  ? doc.domains.find((item) => item.id === selectedDomain)?.name
+                                  : tableName(selectedTable!.id)}
+                        </strong>
+                        <IconButton
+                          aria-label={t('선택 해제')}
+                          onClick={() => {
+                            leaveRecoveredSelection();
+                            setSelected(null);
+                            setSelectedDomain(null);
+                            setEditingColumn(null);
+                            setSelectedDomainRelation(null);
+                            setSelectedTableRelation(null);
+                          }}
                         >
-                          <NativeStructureEditor
-                            focused
-                            {...(createRequest?.values
-                              ? { initialValues: createRequest.values }
-                              : {})}
-                            key={`${userId}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${createRequest?.nonce ?? 0}`}
-                            context={{
-                              userId: userId!,
-                              snapshot,
-                              busy: editorBusy,
-                              onSave: save,
-                            }}
-                            document={doc}
-                            {...(recovered?.kind === 'structure'
-                              ? {
-                                  initialSelection: recovered.selection,
-                                  ...(recovered.tableId &&
-                                  doc.tables?.find((table) => table.id === recovered.tableId)
-                                    ? {
-                                        table: doc.tables.find(
-                                          (table) => table.id === recovered.tableId,
-                                        )!,
-                                      }
-                                    : {}),
-                                }
-                              : createRequest
-                                ? {
-                                    initialSelection: {
-                                      action: createRequest.action,
-                                      target: createRequest.target ?? '',
-                                    },
-                                    ...(selectedTable ? { table: selectedTable } : {}),
-                                  }
-                                : selectedTable
-                                  ? { table: selectedTable }
-                                  : {})}
-                          />
-                          <Button
-                            onClick={() => {
-                              leaveRecoveredSelection();
-                              setCreateRequest(null);
-                            }}
-                          >
-                            {t('편집 닫기')}
-                          </Button>
-                        </div>
-                      )}
-                    {focusedReview && (
-                      <section aria-label={t('리뷰')}>
-                        <h3>{t('리뷰')}</h3>
-                        {focusedReview.messages.map((item) => (
-                          <p key={item.id}>{item.body}</p>
-                        ))}
-                      </section>
+                          ×
+                        </IconButton>
+                      </div>
                     )}
-                    {!selectedTable && !createRequest && !selectedNote && !selectedRelation && (
+                    <div className="inspector-tabs" role="group" aria-label={t('패널 보기 전환')}>
+                      <TabButton
+                        selected={inspectorTab === 'properties' || inspectorTab === 'domains'}
+                        onClick={() =>
+                          setInspectorTab(canvasView === 'overview' ? 'domains' : 'properties')
+                        }
+                      >
+                        {t('속성')}
+                      </TabButton>
+                      <TabButton
+                        selected={inspectorTab === 'tables'}
+                        onClick={() => setInspectorTab('tables')}
+                      >
+                        {t('목록')}{' '}
+                        <span className="panel-count">
+                          {canvasView === 'overview' ? doc.domains.length : tables.length}
+                        </span>
+                      </TabButton>
+                    </div>
+                  </div>
+                  <div
+                    className="native-canvas-settings-host"
+                    hidden={inspectorTab === 'tables'}
+                    ref={setCanvasSettingsHost}
+                  />
+                  <div
+                    className="native-inspector-panel"
+                    role="tabpanel"
+                    id={`${snapshot.project.id}-domains`}
+                    aria-label={t('도메인')}
+                    hidden={inspectorTab !== 'domains'}
+                  >
+                    {!selectedDomain && (
                       <>
                         <div className="panel-empty">
-                          <strong>{currentViewName}</strong>
+                          <strong>{t('도메인 맵')}</strong>
                           <p>
-                            {t('테이블을 선택하면 이름·컬럼·연결된 관계를 여기에서 편집합니다.')}
+                            {t(
+                              '카드를 선택하면 이름·설명·색상과 연결된 관계를 여기에서 편집합니다.',
+                            )}
                           </p>
                         </div>
                         <div className="panel-summary">
                           <span>
-                            {t('테이블')} {outline.tables.length}
+                            {t('도메인')} {doc.domains.length}
                           </span>
                           <span>
-                            {t('관계')} {outline.relations.length}
+                            {t('관계')} {doc.domainRelations.length}
                           </span>
-                          <span>ENUM {(doc.enums ?? []).length}</span>
                         </div>
-                        {editable && (
-                          <NativeStructureEditor
-                            focused
-                            key={`new-table:${userId}:${snapshot.project.id}:${recoveryEpoch}`}
-                            context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
-                            document={doc}
-                            initialSelection={{ action: 'table', target: '' }}
-                          />
-                        )}
                       </>
                     )}
-                    {selectedTable && (
+                    <NativeDomainEditor
+                      key={`domains:${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${domainCreation}`}
+                      document={doc}
+                      snapshot={snapshot}
+                      {...(userId ? { userId } : {})}
+                      editable={editable}
+                      busy={editorBusy}
+                      onSave={save}
+                      {...(selectedDomain ? { selectedDomainId: selectedDomain } : {})}
+                      {...(selectedTable ? { selectedTableId: selectedTable.id } : {})}
+                      {...(recovered?.kind === 'domain'
+                        ? { initialAction: recovered.action }
+                        : domainCreation
+                          ? { initialAction: 'create' as const }
+                          : {})}
+                      onSelectDomain={(id) => {
+                        leaveRecoveredSelection();
+                        setSelectedDomain(id);
+                        setInspectorOpen(true);
+                        setInspectorTab('domains');
+                        setDomainCreation(0);
+                      }}
+                    />
+                    {(canvasView === 'overview' || selectedDomainRelation) && (
+                      <NativeDomainRelationEditor
+                        allowCreate={canvasView === 'overview'}
+                        key={`domain-relation:${selectedDomainRelation ?? ''}:create:${domainRelationCreation ?? ''}`}
+                        document={doc}
+                        editable={editable}
+                        {...(selectedDomainRelation ? { selectedId: selectedDomainRelation } : {})}
+                        {...(domainRelationCreation
+                          ? {
+                              initialAction: 'create' as const,
+                              sourceDomainId: domainRelationCreation,
+                            }
+                          : {})}
+                        {...(userId
+                          ? { context: { userId, snapshot, busy: editorBusy, onSave: save } }
+                          : {})}
+                      />
+                    )}
+                    <div
+                      ref={setDomainSelectionHost}
+                      className="native-selection-host"
+                      data-node-id={selectedCanvasNode?.id}
+                    />
+                    {selectedDomain && (
                       <>
-                        <PanelSection title={t('기본 정보')} defaultOpen>
-                          <p className="panel-note">
-                            {t('도메인')}:{' '}
-                            {doc.domains.find((item) => item.id === selectedTable.domainId)?.name ??
-                              t('미지정')}
-                          </p>
-                          {editable && (
+                        <div className="actions">
+                          <Button onClick={() => openDomain(selectedDomain)}>
+                            {t('도메인 열기')}
+                          </Button>
+                          {canvasView === 'overview' && (
                             <Button
-                              disabled={editorBusy}
-                              onClick={() => {
-                                leaveRecoveredSelection();
-                                setSelectedDomain(null);
-                                setDomainAction('move');
-                                setInspectorTab('domains');
-                              }}
+                              disabled={!editable || editorBusy}
+                              onClick={() => requestAction('createDomainRelation', selectedDomain)}
                             >
-                              {t('테이블 소속 이동')}
+                              {t('+ 도메인 관계')}
                             </Button>
                           )}
-                          {editable ? (
-                            <>
-                              <NativePropertyEditor
-                                key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
-                                table={selectedTable}
-                                mode={mode}
-                                userId={userId!}
-                                snapshot={snapshot}
-                                busy={editorBusy}
-                                onSave={save}
-                              />
-                            </>
-                          ) : (
-                            <>
-                              <strong>{tableName(selectedTable.id)}</strong>
-                              <p>
-                                {mode === 'physical'
-                                  ? selectedTable.physical.comment
-                                  : selectedTable.logical.definition}
-                              </p>
-                            </>
-                          )}
-                        </PanelSection>
+                        </div>
                         <PanelSection
-                          title={t('컬럼')}
+                          title={t('연결된 도메인 관계')}
                           count={
-                            (doc.columns ?? []).filter(
-                              (column) =>
-                                column.tableId === selectedTable.id && visible(column.scope),
+                            doc.domainRelations.filter(
+                              (relation) =>
+                                relation.sourceDomainId === selectedDomain ||
+                                relation.targetDomainId === selectedDomain,
                             ).length
                           }
                           defaultOpen
                         >
-                          <PanelList empty={t('컬럼이 없습니다.')}>
-                            {(doc.columns ?? [])
+                          <PanelList empty={t('표시할 관계가 없습니다.')}>
+                            {doc.domainRelations
                               .filter(
-                                (column) =>
-                                  column.tableId === selectedTable.id && visible(column.scope),
+                                (relation) =>
+                                  relation.sourceDomainId === selectedDomain ||
+                                  relation.targetDomainId === selectedDomain,
                               )
-                              .map((column, index) => (
-                                <Fragment key={column.id}>
+                              .map((relation) => (
+                                <PanelRow
+                                  key={relation.id}
+                                  title={relation.name}
+                                  meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
+                                  active={selectedDomainRelation === relation.id}
+                                  onSelect={() => requestAction('domainRelation', relation.id)}
+                                />
+                              ))}
+                          </PanelList>
+                        </PanelSection>
+                      </>
+                    )}
+                  </div>
+                  <div className="native-project-content" aria-label={t('설계 조회')}>
+                    <aside
+                      className="native-table-nav native-inspector-panel"
+                      role="tabpanel"
+                      id={`${snapshot.project.id}-tables`}
+                      aria-label={t('테이블')}
+                      hidden={inspectorTab !== 'tables'}
+                    >
+                      <label>
+                        {t('현재 화면 검색')}
+                        <Input
+                          aria-label={t('현재 화면 검색')}
+                          placeholder={t(
+                            canvasView === 'overview' ? '도메인·관계 검색' : '테이블·관계 검색',
+                          )}
+                          value={search}
+                          onChange={(event) => setSearch(event.target.value)}
+                        />
+                      </label>
+                      <Select
+                        aria-label={t('전체 도메인')}
+                        value={domain}
+                        onValueChange={setDomain}
+                        renderOptionLeading={(id) => {
+                          const item = doc.domains.find((candidate) => candidate.id === id);
+                          return item ? (
+                            <span
+                              className="native-domain-option-dot"
+                              style={{ backgroundColor: item.color ?? '#8993a3' }}
+                              aria-hidden="true"
+                            />
+                          ) : null;
+                        }}
+                      >
+                        <option value="*">{t('전체 도메인')}</option>
+                        <option value="">{t('미소속')}</option>
+                        {doc.domains.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </Select>
+                      <PanelSection
+                        title={t(canvasView === 'overview' ? '도메인' : '테이블')}
+                        defaultOpen
+                        count={canvasView === 'overview' ? doc.domains.length : tables.length}
+                      >
+                        <PanelList
+                          empty={t(
+                            canvasView === 'overview'
+                              ? '표시할 도메인이 없습니다.'
+                              : '선택한 범위에 테이블이 없습니다.',
+                          )}
+                        >
+                          {canvasView === 'overview'
+                            ? doc.domains
+                                .filter((item) => matches(item.name, item.description))
+                                .map((item) => (
                                   <PanelRow
-                                    className={
-                                      columnDrop === column.id
-                                        ? 'table-column-drop'
-                                        : columnDrag === column.id
-                                          ? 'table-column-dragging'
-                                          : ''
-                                    }
-                                    drag={{
-                                      draggable: editable && !editorBusy,
-                                      onDragStart: (event) => {
-                                        draggingColumn.current = column.id;
-                                        setColumnDrag(column.id);
-                                        event.dataTransfer.effectAllowed = 'move';
-                                        event.dataTransfer.setData('text/plain', column.id);
-                                      },
-                                      onDragOver: (event) => {
-                                        if (editable && !editorBusy && draggingColumn.current) {
-                                          event.preventDefault();
-                                          event.dataTransfer.dropEffect = 'move';
-                                          setColumnDrop(column.id);
-                                        }
-                                      },
-                                      onDrop: (event) => {
-                                        event.preventDefault();
-                                        if (draggingColumn.current)
-                                          reorderColumns(draggingColumn.current, column.id);
-                                        draggingColumn.current = null;
-                                        setColumnDrag(null);
-                                        setColumnDrop(null);
-                                      },
-                                      onDragEnd: () => {
-                                        draggingColumn.current = null;
-                                        setColumnDrag(null);
-                                        setColumnDrop(null);
-                                      },
-                                      onDragLeave: () => setColumnDrop(null),
-                                    }}
-                                    action={
-                                      <button
-                                        type="button"
-                                        className="column-drag-handle"
-                                        aria-label={t('컬럼 순서 변경')}
-                                        title={t('드래그하거나 위/아래 방향키로 순서 변경')}
-                                        disabled={!editable || editorBusy}
-                                        onKeyDown={(event) => {
-                                          const step =
-                                            event.key === 'ArrowUp'
-                                              ? -1
-                                              : event.key === 'ArrowDown'
-                                                ? 1
-                                                : 0;
-                                          if (!step) return;
-                                          event.preventDefault();
-                                          const peers = (doc.columns ?? []).filter(
-                                            (item) => item.tableId === selectedTable.id,
-                                          );
-                                          const target =
-                                            peers[
-                                              peers.findIndex((item) => item.id === column.id) +
-                                                step
-                                            ];
-                                          if (target) reorderColumns(column.id, target.id);
-                                        }}
-                                      >
-                                        ⠿
-                                      </button>
-                                    }
-                                    title={`${index + 1}. ${columnName(column.id)}`}
-                                    meta={
-                                      mode === 'physical'
-                                        ? nativeColumnTypeDisplay(column.physical.type, doc.enums)
-                                        : column.logical.semanticType
-                                    }
-                                    badge={
-                                      selectedRows.find((row) => row.column.id === column.id)
-                                        ?.keys || undefined
-                                    }
-                                    active={editingColumn === column.id}
-                                    expanded={editingColumn === column.id}
-                                    controls={`native-column-${column.id}`}
+                                    key={item.id}
+                                    title={item.name}
+                                    accent={item.color ?? '#8993a3'}
+                                    active={selectedDomain === item.id}
+                                    meta={t('관계 {count}개', {
+                                      count: doc.domainRelations.filter(
+                                        (relation) =>
+                                          relation.sourceDomainId === item.id ||
+                                          relation.targetDomainId === item.id,
+                                      ).length,
+                                    })}
                                     onSelect={() => {
                                       leaveRecoveredSelection();
-                                      setEditingColumn(
-                                        editingColumn === column.id ? null : column.id,
-                                      );
+                                      setSelectedDomain(item.id);
+                                      setInspectorTab('domains');
                                     }}
+                                    action={
+                                      <Button
+                                        disabled={editorBusy}
+                                        onClick={() => openDomain(item.id)}
+                                      >
+                                        {t('열기')}
+                                      </Button>
+                                    }
                                   />
-                                  <PanelListDetail
-                                    open={editingColumn === column.id}
-                                    id={`native-column-${column.id}`}
-                                  >
-                                    {editable ? (
-                                      <>
-                                        <NativePropertyEditor
-                                          key={`${column.id}:${recoveryEpoch}`}
-                                          table={selectedTable}
-                                          column={column}
-                                          mode={mode}
-                                          userId={userId!}
-                                          snapshot={snapshot}
-                                          busy={editorBusy}
-                                          onSave={save}
-                                        />
-                                        <div className="actions native-column-actions">
-                                          <IconButton
-                                            aria-label={t('컬럼 위로')}
-                                            disabled={editorBusy || index === 0}
-                                            onClick={() => moveInspectorColumn(column.id, -1)}
-                                          >
-                                            ↑
-                                          </IconButton>
-                                          <IconButton
-                                            aria-label={t('컬럼 아래로')}
-                                            disabled={
-                                              editorBusy || index === selectedRows.length - 1
-                                            }
-                                            onClick={() => moveInspectorColumn(column.id, 1)}
-                                          >
-                                            ↓
-                                          </IconButton>
+                                ))
+                            : tables.map((table) => (
+                                <PanelRow
+                                  key={table.id}
+                                  title={tableName(table.id)}
+                                  active={selectedTable?.id === table.id}
+                                  accent={
+                                    table.color ??
+                                    doc.domains.find((item) => item.id === table.domainId)?.color ??
+                                    '#8993a3'
+                                  }
+                                  meta={t('컬럼 {count}개', {
+                                    count: (doc.columns ?? []).filter(
+                                      (item) => item.tableId === table.id && visible(item.scope),
+                                    ).length,
+                                  })}
+                                  badge={
+                                    canvasView === '__tables__'
+                                      ? (doc.domains.find((item) => item.id === table.domainId)
+                                          ?.name ?? t('미지정'))
+                                      : table.domainId === canvasView
+                                        ? undefined
+                                        : t('참조')
+                                  }
+                                  onSelect={() => {
+                                    leaveRecoveredSelection();
+                                    setSelected(table.id);
+                                    setEditingColumn(null);
+                                    setCreateRequest(null);
+                                    setInspectorTab('properties');
+                                    setSelectedDomain(null);
+                                  }}
+                                />
+                              ))}
+                        </PanelList>
+                      </PanelSection>
+                      <PanelSection
+                        title={t(canvasView === 'overview' ? '도메인 관계' : '테이블 관계')}
+                        count={
+                          canvasView === 'overview'
+                            ? filteredDomainRelations.length
+                            : filteredTableRelations.length
+                        }
+                        defaultOpen={false}
+                      >
+                        <PanelList empty={t('표시할 관계가 없습니다.')}>
+                          {canvasView === 'overview'
+                            ? filteredDomainRelations.map((relation) => (
+                                <PanelRow
+                                  key={relation.id}
+                                  title={relation.name}
+                                  meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
+                                  onSelect={() => requestAction('domainRelation', relation.id)}
+                                />
+                              ))
+                            : filteredTableRelations.map((relation) => (
+                                <PanelRow
+                                  key={relation.id}
+                                  title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
+                                  meta={
+                                    relation.physical?.name ||
+                                    (logicalEnabled ? relation.logical.name : '')
+                                  }
+                                  badge={relation.physical ? 'FK' : undefined}
+                                  onSelect={() =>
+                                    requestStructure(
+                                      'patch',
+                                      JSON.stringify(['tableRelations', relation.id]),
+                                      relation.sourceTableId,
+                                    )
+                                  }
+                                />
+                              ))}
+                        </PanelList>
+                      </PanelSection>
+                    </aside>
+                    <section
+                      className="native-table-detail native-inspector-panel"
+                      role="tabpanel"
+                      id={`${snapshot.project.id}-properties`}
+                      aria-label={t('속성')}
+                      hidden={inspectorTab !== 'properties'}
+                      aria-live="polite"
+                    >
+                      {selectedNote && (
+                        <div
+                          ref={setNoteSelectionHost}
+                          className="native-selection-host"
+                          data-node-id={selectedCanvasNode?.id}
+                          data-selection-kind="note"
+                          data-object-id={selectedNote.id}
+                        />
+                      )}
+                      {selectedRelation && (
+                        <NativeTableRelationInspector
+                          document={doc}
+                          relation={selectedRelation}
+                          {...(editable
+                            ? {
+                                context: {
+                                  userId: userId!,
+                                  snapshot,
+                                  busy: editorBusy,
+                                  onSave: save,
+                                },
+                                onDelete: () =>
+                                  requestStructure(
+                                    'delete',
+                                    JSON.stringify(['tableRelations', selectedRelation.id]),
+                                    selectedRelation.sourceTableId,
+                                  ),
+                              }
+                            : {})}
+                        />
+                      )}
+                      {editable && recovered?.kind === 'advanced' && selectedTable && (
+                        <NativeAdvancedEditor
+                          key={`advanced-recovery:${recoveryEpoch}`}
+                          context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
+                          document={doc}
+                          table={selectedTable}
+                          initialSelection={recovered.selection}
+                        />
+                      )}
+                      {editable &&
+                        recovered?.kind !== 'advanced' &&
+                        (createRequest || recovered?.kind === 'structure') && (
+                          <div
+                            className="native-contextual-editor"
+                            key={`structure:${createRequest?.nonce ?? 0}:${recoveryEpoch}`}
+                          >
+                            <NativeStructureEditor
+                              focused
+                              {...(createRequest?.values
+                                ? { initialValues: createRequest.values }
+                                : {})}
+                              key={`${userId}:${snapshot.project.id}:recovery:${recoveryEpoch}:create:${createRequest?.nonce ?? 0}`}
+                              context={{
+                                userId: userId!,
+                                snapshot,
+                                busy: editorBusy,
+                                onSave: save,
+                              }}
+                              document={doc}
+                              {...(recovered?.kind === 'structure'
+                                ? {
+                                    initialSelection: recovered.selection,
+                                    ...(recovered.tableId &&
+                                    doc.tables?.find((table) => table.id === recovered.tableId)
+                                      ? {
+                                          table: doc.tables.find(
+                                            (table) => table.id === recovered.tableId,
+                                          )!,
+                                        }
+                                      : {}),
+                                  }
+                                : createRequest
+                                  ? {
+                                      initialSelection: {
+                                        action: createRequest.action,
+                                        target: createRequest.target ?? '',
+                                      },
+                                      ...(selectedTable ? { table: selectedTable } : {}),
+                                    }
+                                  : selectedTable
+                                    ? { table: selectedTable }
+                                    : {})}
+                            />
+                            <Button
+                              onClick={() => {
+                                leaveRecoveredSelection();
+                                setCreateRequest(null);
+                              }}
+                            >
+                              {t('편집 닫기')}
+                            </Button>
+                          </div>
+                        )}
+                      {focusedReview && (
+                        <section aria-label={t('리뷰')}>
+                          <h3>{t('리뷰')}</h3>
+                          {focusedReview.messages.map((item) => (
+                            <p key={item.id}>{item.body}</p>
+                          ))}
+                        </section>
+                      )}
+                      {!selectedTable && !createRequest && !selectedNote && !selectedRelation && (
+                        <>
+                          <div className="panel-empty">
+                            <strong>{currentViewName}</strong>
+                            <p>
+                              {t('테이블을 선택하면 이름·컬럼·연결된 관계를 여기에서 편집합니다.')}
+                            </p>
+                          </div>
+                          <div className="panel-summary">
+                            <span>
+                              {t('테이블')} {outline.tables.length}
+                            </span>
+                            <span>
+                              {t('관계')} {outline.relations.length}
+                            </span>
+                            <span>ENUM {(doc.enums ?? []).length}</span>
+                          </div>
+                          {editable && (
+                            <NativeStructureEditor
+                              focused
+                              defaultOpen={false}
+                              key={`new-table:${userId}:${snapshot.project.id}:${recoveryEpoch}`}
+                              context={{
+                                userId: userId!,
+                                snapshot,
+                                busy: editorBusy,
+                                onSave: save,
+                              }}
+                              document={doc}
+                              initialSelection={{ action: 'table', target: '' }}
+                            />
+                          )}
+                        </>
+                      )}
+                      {selectedTable && (
+                        <>
+                          <PanelSection title={t('기본 정보')} defaultOpen>
+                            <NativeTableDomainSelect
+                              key={`${userId}:${snapshot.project.id}:${selectedTable.id}`}
+                              document={doc}
+                              tableId={selectedTable.id}
+                              editable={editable}
+                              onSave={(commands) =>
+                                save(commands, {
+                                  version: snapshot.project.version,
+                                  sequence: snapshot.sequence,
+                                  databaseRevision: snapshot.project.databaseRevision,
+                                })
+                              }
+                            />
+                            {editable ? (
+                              <>
+                                <NativePropertyEditor
+                                  key={`${userId}:${snapshot.project.id}:${selectedTable.id}:table:${snapshot.project.databaseRevision}:recovery:${recoveryEpoch}`}
+                                  table={selectedTable}
+                                  mode={mode}
+                                  userId={userId!}
+                                  snapshot={snapshot}
+                                  busy={editorBusy}
+                                  onSave={save}
+                                />
+                              </>
+                            ) : (
+                              <>
+                                <strong>{tableName(selectedTable.id)}</strong>
+                                <p>
+                                  {mode === 'physical'
+                                    ? selectedTable.physical.comment
+                                    : selectedTable.logical.definition}
+                                </p>
+                              </>
+                            )}
+                          </PanelSection>
+                          <PanelSection
+                            title={t('컬럼')}
+                            count={
+                              (doc.columns ?? []).filter(
+                                (column) =>
+                                  column.tableId === selectedTable.id && visible(column.scope),
+                              ).length
+                            }
+                            defaultOpen
+                          >
+                            <PanelList empty={t('컬럼이 없습니다.')}>
+                              {(doc.columns ?? [])
+                                .filter(
+                                  (column) =>
+                                    column.tableId === selectedTable.id && visible(column.scope),
+                                )
+                                .map((column, index) => (
+                                  <Fragment key={column.id}>
+                                    <PanelRow
+                                      className={
+                                        columnDrop === column.id
+                                          ? 'table-column-drop'
+                                          : columnDrag === column.id
+                                            ? 'table-column-dragging'
+                                            : ''
+                                      }
+                                      drag={{
+                                        draggable: editable && !editorBusy,
+                                        onDragStart: (event) => {
+                                          draggingColumn.current = column.id;
+                                          setColumnDrag(column.id);
+                                          event.dataTransfer.effectAllowed = 'move';
+                                          event.dataTransfer.setData('text/plain', column.id);
+                                        },
+                                        onDragOver: (event) => {
+                                          if (editable && !editorBusy && draggingColumn.current) {
+                                            event.preventDefault();
+                                            event.dataTransfer.dropEffect = 'move';
+                                            setColumnDrop(column.id);
+                                          }
+                                        },
+                                        onDrop: (event) => {
+                                          event.preventDefault();
+                                          if (draggingColumn.current)
+                                            reorderColumns(draggingColumn.current, column.id);
+                                          draggingColumn.current = null;
+                                          setColumnDrag(null);
+                                          setColumnDrop(null);
+                                        },
+                                        onDragEnd: () => {
+                                          draggingColumn.current = null;
+                                          setColumnDrag(null);
+                                          setColumnDrop(null);
+                                        },
+                                        onDragLeave: () => setColumnDrop(null),
+                                      }}
+                                      action={
+                                        <button
+                                          type="button"
+                                          className="column-drag-handle"
+                                          aria-label={t('컬럼 순서 변경')}
+                                          title={t('드래그하거나 위/아래 방향키로 순서 변경')}
+                                          disabled={!editable || editorBusy}
+                                          onKeyDown={(event) => {
+                                            const step =
+                                              event.key === 'ArrowUp'
+                                                ? -1
+                                                : event.key === 'ArrowDown'
+                                                  ? 1
+                                                  : 0;
+                                            if (!step) return;
+                                            event.preventDefault();
+                                            const peers = (doc.columns ?? []).filter(
+                                              (item) => item.tableId === selectedTable.id,
+                                            );
+                                            const target =
+                                              peers[
+                                                peers.findIndex((item) => item.id === column.id) +
+                                                  step
+                                              ];
+                                            if (target) reorderColumns(column.id, target.id);
+                                          }}
+                                        >
+                                          ⠿
+                                        </button>
+                                      }
+                                      title={`${index + 1}. ${columnName(column.id)}`}
+                                      meta={
+                                        mode === 'physical'
+                                          ? nativeColumnTypeDisplay(column.physical.type, doc.enums)
+                                          : column.logical.semanticType
+                                      }
+                                      badge={
+                                        selectedRows.find((row) => row.column.id === column.id)
+                                          ?.keys || undefined
+                                      }
+                                      active={editingColumn === column.id}
+                                      expanded={editingColumn === column.id}
+                                      controls={`native-column-${column.id}`}
+                                      onSelect={() => {
+                                        leaveRecoveredSelection();
+                                        setEditingColumn(
+                                          editingColumn === column.id ? null : column.id,
+                                        );
+                                      }}
+                                    />
+                                    <PanelListDetail
+                                      open={editingColumn === column.id}
+                                      id={`native-column-${column.id}`}
+                                    >
+                                      {editable ? (
+                                        <>
+                                          <NativePropertyEditor
+                                            key={`${column.id}:${recoveryEpoch}`}
+                                            table={selectedTable}
+                                            column={column}
+                                            mode={mode}
+                                            userId={userId!}
+                                            snapshot={snapshot}
+                                            busy={editorBusy}
+                                            onSave={save}
+                                          />
+                                          <div className="actions native-column-actions">
+                                            <Button
+                                              variant="danger"
+                                              disabled={editorBusy}
+                                              onClick={() =>
+                                                requestStructure(
+                                                  'delete',
+                                                  JSON.stringify(['columns', column.id]),
+                                                  selectedTable.id,
+                                                )
+                                              }
+                                            >
+                                              {t('컬럼 삭제')}
+                                            </Button>
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <p>
+                                          {column.physical.comment ||
+                                            (logicalEnabled && column.logical.definition) ||
+                                            '—'}
+                                        </p>
+                                      )}
+                                    </PanelListDetail>
+                                  </Fragment>
+                                ))}
+                            </PanelList>
+                            {editable && (
+                              <Button
+                                disabled={editorBusy}
+                                onClick={() =>
+                                  setCreateRequest((previous) => ({
+                                    action: 'column',
+                                    nonce: (previous?.nonce ?? 0) + 1,
+                                  }))
+                                }
+                              >
+                                {t('컬럼 추가')} ›
+                              </Button>
+                            )}
+                          </PanelSection>
+                          <PanelSection
+                            title={t('키 · PK / UNIQUE')}
+                            count={
+                              (doc.keys ?? []).filter((item) => item.tableId === selectedTable.id)
+                                .length
+                            }
+                          >
+                            <PanelList empty={t('키가 없습니다.')}>
+                              {(doc.keys ?? [])
+                                .filter(
+                                  (key) => key.tableId === selectedTable.id && visible(key.scope),
+                                )
+                                .map((key) => (
+                                  <Fragment key={key.id}>
+                                    <PanelRow
+                                      title={key.name || (key.kind === 'primary' ? 'PK' : 'UNIQUE')}
+                                      meta={`${key.columnIds.map(columnName).join(', ')}${key.deferrable ? ` · DEFERRABLE ${key.deferrable.initially}` : ''}${key.nullsNotDistinct ? ' · NULLS NOT DISTINCT' : ''}`}
+                                      badge={key.kind === 'primary' ? 'PK' : 'UNIQUE'}
+                                      active={editingConstraint === key.id}
+                                      expanded={editingConstraint === key.id}
+                                      controls={`native-key-${key.id}`}
+                                      onSelect={() =>
+                                        setEditingConstraint(
+                                          editingConstraint === key.id ? null : key.id,
+                                        )
+                                      }
+                                    />
+                                    <PanelListDetail
+                                      id={`native-key-${key.id}`}
+                                      open={editingConstraint === key.id}
+                                    >
+                                      {editable && (
+                                        <>
+                                          <NativeStructureEditor
+                                            focused
+                                            context={{
+                                              userId: userId!,
+                                              snapshot,
+                                              busy: editorBusy,
+                                              onSave: save,
+                                            }}
+                                            document={doc}
+                                            table={selectedTable}
+                                            initialSelection={{
+                                              action: 'patch',
+                                              target: JSON.stringify(['keys', key.id]),
+                                            }}
+                                          />
                                           <Button
                                             variant="danger"
                                             disabled={editorBusy}
                                             onClick={() =>
                                               requestStructure(
                                                 'delete',
-                                                JSON.stringify(['columns', column.id]),
+                                                JSON.stringify(['keys', key.id]),
                                                 selectedTable.id,
                                               )
                                             }
                                           >
-                                            {t('컬럼 삭제')}
+                                            {t('키 삭제')}
                                           </Button>
-                                          <Button onClick={() => setEditingColumn(null)}>
-                                            {t('편집 닫기')}
-                                          </Button>
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <p>
-                                        {column.physical.comment ||
-                                          column.logical.definition ||
-                                          '—'}
-                                      </p>
-                                    )}
-                                  </PanelListDetail>
-                                </Fragment>
-                              ))}
-                          </PanelList>
-                          {editable && (
-                            <Button
-                              disabled={editorBusy}
-                              onClick={() =>
-                                setCreateRequest((previous) => ({
-                                  action: 'column',
-                                  nonce: (previous?.nonce ?? 0) + 1,
-                                }))
-                              }
-                            >
-                              {t('컬럼 추가')} ›
-                            </Button>
-                          )}
-                        </PanelSection>
-                        <PanelSection
-                          title={t('키 · PK / UNIQUE')}
-                          count={
-                            (doc.keys ?? []).filter((item) => item.tableId === selectedTable.id)
-                              .length
-                          }
-                        >
-                          <PanelList empty={t('키가 없습니다.')}>
-                            {(doc.keys ?? [])
-                              .filter(
-                                (key) => key.tableId === selectedTable.id && visible(key.scope),
-                              )
-                              .map((key) => (
-                                <Fragment key={key.id}>
-                                  <PanelRow
-                                    title={key.name || (key.kind === 'primary' ? 'PK' : 'UNIQUE')}
-                                    meta={`${key.columnIds.map(columnName).join(', ')}${key.deferrable ? ` · DEFERRABLE ${key.deferrable.initially}` : ''}${key.nullsNotDistinct ? ' · NULLS NOT DISTINCT' : ''}`}
-                                    badge={key.kind === 'primary' ? 'PK' : 'UNIQUE'}
-                                    active={editingConstraint === key.id}
-                                    expanded={editingConstraint === key.id}
-                                    controls={`native-key-${key.id}`}
-                                    onSelect={() =>
-                                      setEditingConstraint(
-                                        editingConstraint === key.id ? null : key.id,
-                                      )
-                                    }
-                                  />
-                                  <PanelListDetail
-                                    id={`native-key-${key.id}`}
-                                    open={editingConstraint === key.id}
-                                  >
-                                    {editable && (
-                                      <>
-                                        <NativeStructureEditor
-                                          focused
-                                          context={{
-                                            userId: userId!,
-                                            snapshot,
-                                            busy: editorBusy,
-                                            onSave: save,
-                                          }}
-                                          document={doc}
-                                          table={selectedTable}
-                                          initialSelection={{
-                                            action: 'patch',
-                                            target: JSON.stringify(['keys', key.id]),
-                                          }}
-                                        />
-                                        <Button
-                                          variant="danger"
-                                          disabled={editorBusy}
-                                          onClick={() =>
-                                            requestStructure(
-                                              'delete',
-                                              JSON.stringify(['keys', key.id]),
-                                              selectedTable.id,
-                                            )
-                                          }
-                                        >
-                                          {t('키 삭제')}
-                                        </Button>
-                                      </>
-                                    )}
-                                  </PanelListDetail>
-                                </Fragment>
-                              ))}
-                          </PanelList>
-                          {editable && (
-                            <Button
-                              disabled={
-                                editorBusy ||
-                                !(doc.columns ?? []).some(
-                                  (item) =>
-                                    item.tableId === selectedTable.id && item.scope !== 'logical',
-                                )
-                              }
-                              onClick={() => requestStructure('key', '', selectedTable.id)}
-                            >
-                              {t('+ 키 추가')}
-                            </Button>
-                          )}
-                        </PanelSection>
-                        <PanelSection
-                          title={t('테이블 관계')}
-                          count={
-                            (doc.tableRelations ?? []).filter(
-                              (item) =>
-                                item.sourceTableId === selectedTable.id ||
-                                item.targetTableId === selectedTable.id,
-                            ).length
-                          }
-                        >
-                          <PanelList empty={t('표시할 관계가 없습니다.')}>
-                            {(doc.tableRelations ?? [])
-                              .filter(
-                                (relation) =>
-                                  visible(relation.scope) &&
-                                  (relation.sourceTableId === selectedTable.id ||
-                                    relation.targetTableId === selectedTable.id),
-                              )
-                              .map((relation) => (
-                                <Fragment key={relation.id}>
-                                  <PanelRow
-                                    title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
-                                    meta={`${relation.logical.name}${relation.physical ? ` · ${relation.physical.name}` : ''}`}
-                                    badge={relation.physical ? 'FK' : undefined}
-                                    active={editingConstraint === relation.id}
-                                    expanded={editingConstraint === relation.id}
-                                    controls={`native-related-${relation.id}`}
-                                    onSelect={() =>
-                                      setEditingConstraint(
-                                        editingConstraint === relation.id ? null : relation.id,
-                                      )
-                                    }
-                                  />
-                                  <PanelListDetail
-                                    id={`native-related-${relation.id}`}
-                                    open={editingConstraint === relation.id}
-                                  >
-                                    <NativeTableRelationInspector
-                                      document={doc}
-                                      relation={relation}
-                                      {...(editable
-                                        ? {
-                                            context: {
-                                              userId: userId!,
-                                              snapshot,
-                                              busy: editorBusy,
-                                              onSave: save,
-                                            },
-                                            onDelete: () =>
-                                              requestStructure(
-                                                'delete',
-                                                JSON.stringify(['tableRelations', relation.id]),
-                                                selectedTable.id,
-                                              ),
-                                          }
-                                        : {})}
-                                    />
-                                  </PanelListDetail>
-                                </Fragment>
-                              ))}
-                          </PanelList>
-                          {editable && (
-                            <Button
-                              disabled={editorBusy}
-                              onClick={() => requestStructure('foreignKey', '', selectedTable.id)}
-                            >
-                              {t('+ 테이블 관계 추가')}
-                            </Button>
-                          )}
-                        </PanelSection>
-                        {editable && recovered?.kind !== 'advanced' && (
-                          <NativeAdvancedEditor
-                            key={`advanced:${userId}:${snapshot.project.id}:${selectedTable.id}`}
-                            context={{ userId: userId!, snapshot, busy: editorBusy, onSave: save }}
-                            document={doc}
-                            table={selectedTable}
-                          />
-                        )}
-                        <PanelSection title={t('상세 설계 정보')}>
-                          <p>
-                            {mode === 'physical'
-                              ? selectedTable.physical.comment
-                              : selectedTable.logical.definition}
-                          </p>
-                          {mode === 'physical' && (
-                            <dl className="native-options">
-                              <dt>{t('DB 옵션')}</dt>
-                              <dd>
-                                {selectedTable.physical.namespace.kind === 'postgresSchema'
-                                  ? selectedTable.physical.namespace.name || 'public'
-                                  : selectedTable.physical.namespace.kind === 'legacyNamespace'
-                                    ? selectedTable.physical.namespace.original
-                                    : ''}
-                                {options?.database === 'mysql'
-                                  ? ` InnoDB ${options.charset ?? ''} ${options.collation ?? ''}`
-                                  : options?.database === 'sqlite'
-                                    ? `${options.strict ? ' STRICT' : ''}${options.withoutRowid ? ' WITHOUT ROWID' : ''}`
-                                    : ''}
-                              </dd>
-                            </dl>
-                          )}
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>{t('컬럼')}</th>
-                                <th>{mode === 'physical' ? t('타입') : t('의미 타입')}</th>
-                                <th>{mode === 'physical' ? 'NULL' : t('필수')}</th>
-                                {mode === 'physical' ? (
-                                  <>
-                                    <th>{t('기본값')}</th>
-                                    <th>{t('생성')}</th>
-                                    <th>{t('DB 옵션')}</th>
-                                  </>
-                                ) : null}
-                                <th>{t('설명')}</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(doc.columns ?? [])
-                                .filter(
-                                  (column) =>
-                                    column.tableId === selectedTable.id && visible(column.scope),
-                                )
-                                .map((column) => (
-                                  <tr key={column.id} data-object-id={column.id}>
-                                    <th scope="row">
-                                      {mode === 'physical'
-                                        ? column.physical.name || column.logical.name
-                                        : column.logical.name || column.physical.name}
-                                    </th>
-                                    <td>
-                                      {mode === 'physical'
-                                        ? nativeColumnTypeDisplay(
-                                            column.physical.type,
-                                            doc.enums,
-                                          ) || t('타입 없음')
-                                        : column.logical.semanticType}
-                                    </td>
-                                    <td>
-                                      {mode === 'physical'
-                                        ? column.physical.nullable
-                                          ? 'NULL'
-                                          : 'NOT NULL'
-                                        : column.logical.required
-                                          ? '✓'
-                                          : ''}
-                                    </td>
-                                    {mode === 'physical' ? (
-                                      <>
-                                        <td>
-                                          {nativeDefaultDisplay(column.physical.defaultValue, doc)}
-                                        </td>
-                                        <td>
-                                          {nativeGenerationDisplay(column.physical.generation, doc)}
-                                        </td>
-                                        <td>
-                                          {column.physical.options.database === 'mysql'
-                                            ? `${column.physical.options.charset ?? ''} ${column.physical.options.collation ?? ''}${column.physical.options.onUpdate ? ` ON UPDATE ${nativeExpressionDisplay(column.physical.options.onUpdate, doc)}` : ''}`
-                                            : (column.physical.options.collation ?? '')}
-                                        </td>
-                                      </>
-                                    ) : null}
-                                    <td>
-                                      {mode === 'physical'
-                                        ? column.physical.comment
-                                        : column.logical.definition}
-                                      <details>
-                                        <summary>{t('추가 속성')}</summary>
-                                        {Object.entries(column.customProperties.common).map(
-                                          ([key, value]) => (
-                                            <p key={`common-${key}`}>
-                                              {key}: {value}
-                                            </p>
-                                          ),
-                                        )}
-                                        {Object.entries(column.customProperties[mode]).map(
-                                          ([key, value]) => (
-                                            <p key={key}>
-                                              {key}: {value}
-                                            </p>
-                                          ),
-                                        )}
-                                      </details>
-                                    </td>
-                                  </tr>
+                                        </>
+                                      )}
+                                    </PanelListDetail>
+                                  </Fragment>
                                 ))}
-                            </tbody>
-                          </table>
-                          <details>
-                            <summary>{t('추가 속성')}</summary>
-                            {Object.entries(selectedTable.customProperties.common).map(
-                              ([key, value]) => (
-                                <p key={`common-${key}`}>
-                                  {key}: {value}
-                                </p>
-                              ),
+                            </PanelList>
+                            {editable && (
+                              <Button
+                                disabled={
+                                  editorBusy ||
+                                  !(doc.columns ?? []).some(
+                                    (item) =>
+                                      item.tableId === selectedTable.id && item.scope !== 'logical',
+                                  )
+                                }
+                                onClick={() => requestStructure('key', '', selectedTable.id)}
+                              >
+                                {t('+ 키 추가')}
+                              </Button>
                             )}
-                            {Object.entries(selectedTable.customProperties[mode]).map(
-                              ([key, value]) => (
-                                <p key={key}>
-                                  {key}: {value}
-                                </p>
-                              ),
+                          </PanelSection>
+                          <PanelSection
+                            title={t('테이블 관계')}
+                            count={
+                              (doc.tableRelations ?? []).filter(
+                                (item) =>
+                                  item.sourceTableId === selectedTable.id ||
+                                  item.targetTableId === selectedTable.id,
+                              ).length
+                            }
+                          >
+                            <PanelList empty={t('표시할 관계가 없습니다.')}>
+                              {(doc.tableRelations ?? [])
+                                .filter(
+                                  (relation) =>
+                                    visible(relation.scope) &&
+                                    (relation.sourceTableId === selectedTable.id ||
+                                      relation.targetTableId === selectedTable.id),
+                                )
+                                .map((relation) => (
+                                  <Fragment key={relation.id}>
+                                    <PanelRow
+                                      title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
+                                      meta={
+                                        logicalEnabled
+                                          ? `${relation.logical.name}${relation.physical ? ` · ${relation.physical.name}` : ''}`
+                                          : (relation.physical?.name ?? '')
+                                      }
+                                      badge={relation.physical ? 'FK' : undefined}
+                                      active={editingConstraint === relation.id}
+                                      expanded={editingConstraint === relation.id}
+                                      controls={`native-related-${relation.id}`}
+                                      onSelect={() =>
+                                        setEditingConstraint(
+                                          editingConstraint === relation.id ? null : relation.id,
+                                        )
+                                      }
+                                    />
+                                    <PanelListDetail
+                                      id={`native-related-${relation.id}`}
+                                      open={editingConstraint === relation.id}
+                                    >
+                                      <NativeTableRelationInspector
+                                        document={doc}
+                                        relation={relation}
+                                        {...(editable
+                                          ? {
+                                              context: {
+                                                userId: userId!,
+                                                snapshot,
+                                                busy: editorBusy,
+                                                onSave: save,
+                                              },
+                                              onDelete: () =>
+                                                requestStructure(
+                                                  'delete',
+                                                  JSON.stringify(['tableRelations', relation.id]),
+                                                  selectedTable.id,
+                                                ),
+                                            }
+                                          : {})}
+                                      />
+                                    </PanelListDetail>
+                                  </Fragment>
+                                ))}
+                            </PanelList>
+                            {editable && (
+                              <Button
+                                disabled={editorBusy}
+                                onClick={() => requestStructure('foreignKey', '', selectedTable.id)}
+                              >
+                                {t('+ 테이블 관계 추가')}
+                              </Button>
                             )}
-                          </details>
-
-                          <h3>{t('인덱스')}</h3>
-                          <ul>
-                            {(doc.indexes ?? [])
-                              .filter(
-                                (index) =>
-                                  index.tableId === selectedTable.id && visible(index.scope),
-                              )
-                              .map((index) => (
-                                <li key={index.id}>
-                                  {index.unique ? 'UNIQUE ' : ''}
-                                  {index.name} (
-                                  {index.parts
-                                    .map(
-                                      (part) =>
-                                        `${nativeExpressionDisplay(part.expression, doc)} ${part.direction.toUpperCase()}${part.prefixLength !== undefined ? ` (${part.prefixLength})` : ''}`,
-                                    )
-                                    .join(', ')}
-                                  ) ·{' '}
-                                  {index.options.database === 'postgresql'
-                                    ? index.options.method
-                                    : index.options.database === 'mysql'
-                                      ? index.options.kind
-                                      : 'SQLite'}
-                                  {'predicate' in index.options && index.options.predicate
-                                    ? ` WHERE ${nativeExpressionDisplay(index.options.predicate, doc)}`
-                                    : ''}
-                                  {index.options.database === 'postgresql' &&
-                                  index.options.includeColumnIds?.length
-                                    ? ` INCLUDE (${index.options.includeColumnIds.map(columnName).join(', ')})`
-                                    : ''}
-                                  {index.options.database === 'postgresql' &&
-                                  index.options.nullsNotDistinct
-                                    ? ' NULLS NOT DISTINCT'
-                                    : ''}
-                                  {index.options.database === 'mysql' && index.options.invisible
-                                    ? ' INVISIBLE'
-                                    : ''}
-                                </li>
-                              ))}
-                          </ul>
-                          <h3>CHECK</h3>
-                          <ul>
-                            {(doc.checks ?? [])
-                              .filter(
-                                (check) =>
-                                  check.tableId === selectedTable.id && visible(check.scope),
-                              )
-                              .map((check) => (
-                                <li key={check.id}>
-                                  {check.name}: {nativeExpressionDisplay(check.expression, doc)}
-                                </li>
-                              ))}
-                          </ul>
-                          <h3>ENUM</h3>
-                          <ul>
-                            {(doc.enums ?? []).map((item) => (
-                              <li key={item.id}>
-                                {item.schema ? `${item.schema}.` : ''}
-                                {item.name}:{' '}
-                                {item.values.map((value) => JSON.stringify(value)).join(', ')}
-                              </li>
-                            ))}
-                          </ul>
-                        </PanelSection>
-                      </>
-                    )}
-                    {editable && selectedTable && (
-                      <Button
-                        variant="danger"
-                        disabled={editorBusy}
-                        className="danger"
-                        onClick={() =>
-                          setCreateRequest((previous) => ({
-                            action: 'delete',
-                            target: JSON.stringify(['tables', selectedTable.id]),
-                            nonce: (previous?.nonce ?? 0) + 1,
-                          }))
-                        }
-                      >
-                        {t('테이블 삭제')}
-                      </Button>
-                    )}
-                  </section>
-                </div>
-              </aside>
-            </div>
-            {userId && reviewDocument && (
-              <div
-                data-open={commentsOpen}
-                data-resizing={commentsResizing}
-                aria-hidden={!commentsOpen}
-                inert={!commentsOpen}
-                className="comments-container"
-                style={{ '--comments-panel-width': `${commentsWidth}px` } as CSSProperties}
-              >
-                {commentsOpen && (
-                  <PinPanelResizer
-                    width={commentsWidth}
-                    onWidthChange={setCommentsWidth}
-                    onResizingChange={setCommentsResizing}
-                  />
-                )}
-                <CommentsPanel
-                  key={`${userId}:${snapshot.project.id}`}
-                  readOnly={!canPersonalEdit || snapshot.project.status !== 'active'}
-                  workspaceId={snapshot.project.workspaceId}
-                  projectId={snapshot.project.id}
-                  userId={userId}
-                  document={reviewDocument}
-                  context={reviewContext}
-                  activeThreadId={reviewFocus?.id ?? null}
-                  onThreads={setThreads}
-                  onMembers={setMembers}
-                  onNavigate={focusThread}
-                  onClose={() => {
-                    setCommentsOpen(false);
-                    setDraftPin(null);
-                    setPinMode(false);
-                  }}
-                  onCancelPinDraft={() => setDraftPin(null)}
-                  {...(draftPin ? { draftTarget: draftPin } : {})}
-                />
+                          </PanelSection>
+                          {editable && recovered?.kind !== 'advanced' && (
+                            <NativeAdvancedEditor
+                              key={`advanced:${userId}:${snapshot.project.id}:${selectedTable.id}`}
+                              context={{
+                                userId: userId!,
+                                snapshot,
+                                busy: editorBusy,
+                                onSave: save,
+                              }}
+                              document={doc}
+                              table={selectedTable}
+                            />
+                          )}
+                          <NativeDesignDetails document={doc} table={selectedTable} mode={mode} />
+                        </>
+                      )}
+                      {editable && selectedTable && (
+                        <Button
+                          variant="danger"
+                          disabled={editorBusy}
+                          className="danger"
+                          onClick={() =>
+                            setCreateRequest((previous) => ({
+                              action: 'delete',
+                              target: JSON.stringify(['tables', selectedTable.id]),
+                              nonce: (previous?.nonce ?? 0) + 1,
+                            }))
+                          }
+                        >
+                          {t('테이블 삭제')}
+                        </Button>
+                      )}
+                    </section>
+                  </div>
+                </aside>
               </div>
-            )}
-          </div>
-        </>
-      )}
-    </main>
+              {userId && reviewDocument && (
+                <div
+                  data-open={commentsOpen}
+                  data-resizing={commentsResizing}
+                  aria-hidden={!commentsOpen}
+                  inert={!commentsOpen}
+                  className="comments-container"
+                  style={{ '--comments-panel-width': `${commentsWidth}px` } as CSSProperties}
+                >
+                  {commentsOpen && (
+                    <PinPanelResizer
+                      width={commentsWidth}
+                      onWidthChange={setCommentsWidth}
+                      onResizingChange={setCommentsResizing}
+                    />
+                  )}
+                  <CommentsPanel
+                    key={`${userId}:${snapshot.project.id}`}
+                    readOnly={!canPersonalEdit || snapshot.project.status !== 'active'}
+                    workspaceId={snapshot.project.workspaceId}
+                    projectId={snapshot.project.id}
+                    userId={userId}
+                    document={reviewDocument}
+                    context={reviewContext}
+                    activeThreadId={reviewFocus?.id ?? null}
+                    onThreads={setThreads}
+                    onMembers={setMembers}
+                    onNavigate={focusThread}
+                    onClose={() => {
+                      setCommentsOpen(false);
+                      setDraftPin(null);
+                      setPinMode(false);
+                    }}
+                    onCancelPinDraft={() => setDraftPin(null)}
+                    {...(draftPin ? { draftTarget: draftPin } : {})}
+                  />
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </main>
+    </NativeLogicalModeProvider>
   );
 }

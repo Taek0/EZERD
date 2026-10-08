@@ -22,6 +22,7 @@
     "host:serve": "node scripts/host-lan.mjs",
     "test:ddl": "pnpm build:shared && pnpm --filter @ezerd/server build && node scripts/verify-postgres-export.mjs",
     "test:integration": "pnpm --filter @ezerd/server test:integration",
+    "test:regression": "pnpm build && node apps/server/scripts/test-regression.mjs",
     "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build",
     "db:up": "docker compose up -d --wait postgres",
     "db:stop": "docker compose stop postgres",

@@ -47,6 +47,7 @@ registerTranslations({
   '동작 필터': 'Action filter',
   '{shown} / {total}개': '{shown} / {total}',
   '일치하는 이력이 없습니다.': 'No matching history.',
+  '최근 편집 순': 'Newest first',
 });
 export function NativeHistoryChanges({ lines }: { lines: readonly string[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -107,7 +108,10 @@ export function NativeHistoryDialog({
   const active = useRef(true);
   const filterId = useId();
   const [filter, setFilter] = useState<NativeHistoryFilter>('all');
-  const history = filterNativeHistory(page?.history ?? [], filter);
+  // Presentation only: preserve the server's ascending page/cursor and undo ordering.
+  const history = [...filterNativeHistory(page?.history ?? [], filter)].sort(
+    (a, b) => b.sequence - a.sequence,
+  );
   async function load(since = 0) {
     const next = await fetchNativeHistory(snapshot.project.id, since);
     setPage((old) =>
@@ -218,8 +222,9 @@ export function NativeHistoryDialog({
           })}
         </span>
       </div>
+      <p className="native-history-order">{t('최근 편집 순')}</p>
       {page && history.length === 0 && <p>{t('일치하는 이력이 없습니다.')}</p>}
-      <ol>
+      <ol className="native-history-list" aria-label={t('설계 이력')} tabIndex={0}>
         {history.map((entry) => {
           const own = entry.result.actor.id === userId,
             native = entry.format === 'native',
@@ -235,7 +240,7 @@ export function NativeHistoryDialog({
             nativeEditorExportBlocked(userId, snapshot.project.id);
           const deleted = entry.changes.some((change) => change.afterExists === false);
           return (
-            <li key={entry.operationId}>
+            <li key={entry.operationId} value={entry.sequence}>
               <span>
                 {entry.sequence} · {entry.result.actor.username} ·{' '}
                 {new Date(entry.result.createdAt).toLocaleString()} ·{' '}
@@ -277,7 +282,7 @@ export function NativeHistoryDialog({
   ) : (
     <dialog
       ref={dialog}
-      className="project-ddl-dialog"
+      className="project-ddl-dialog native-history-dialog"
       aria-labelledby="native-history-title"
       onCancel={(event) => {
         event.preventDefault();
