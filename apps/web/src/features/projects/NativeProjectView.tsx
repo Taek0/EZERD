@@ -425,6 +425,7 @@ export function NativeProjectView({
     setPinMode(false);
     setCommentsOpen(true);
   }
+  const [routeInspectorHost, setRouteInspectorHost] = useState<HTMLDivElement | null>(null);
   const [canvasSettingsHost, setCanvasSettingsHost] = useState<HTMLDivElement | null>(null);
   const [createRequest, setCreateRequest] = useState<{
     action: NonNullable<Parameters<typeof NativeStructureEditor>[0]['initialSelection']>['action'];
@@ -1462,6 +1463,8 @@ export function NativeProjectView({
 
                   mode={mode}
                   inspectorHost={canvasSettingsHost}
+                  routeInspectorHost={routeInspectorHost}
+                  routeInspectorActive={inspectorOpen && inspectorTab === 'properties'}
                   inspectorOpen={inspectorOpen}
                   onToggleInspector={() => setInspectorOpen((value) => !value)}
                   onOpenIssues={() => setIssuesOpen(true)}
@@ -1954,6 +1957,7 @@ export function NativeProjectView({
                           data-object-id={selectedNote.id}
                         />
                       )}
+                      <div ref={setRouteInspectorHost} className="native-route-inspector-host" />
                       {selectedRelation && (
                         <NativeTableRelationInspector
                           document={doc}

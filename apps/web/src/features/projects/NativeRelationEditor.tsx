@@ -8,6 +8,7 @@ import {
   type ComponentProps,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { PanelSection } from '../../shared/editor/panel.js';
 import { relationLayoutSchema } from '@ezerd/contracts';
 import type { NativeDesignDocument, RelationLayout } from '@ezerd/model';
 import { NativeCanvasInputForm } from './NativeCanvasInputForm.js';
@@ -177,6 +178,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
   world,
   context,
   personalVersion,
+  active = true,
   onClose,
 }: {
   document: NativeDesignDocument;
@@ -186,27 +188,15 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
   world: HTMLDivElement | null;
   context: Context;
   personalVersion: number | undefined;
+  active?: boolean;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const [dragging, setDragging] = useState(false);
-  const active = useRef(true);
+  const [open, setOpen] = useState(true);
   useEffect(() => {
-    active.current = true;
-    return () => {
-      active.current = false;
-    };
-  }, []);
-  const saveContext = useMemo(
-    () => ({
-      ...context,
-      onSave: async (...args: Parameters<Context['onSave']>) => {
-        const saved = await context.onSave(...args);
-        return saved;
-      },
-    }),
-    [context, onClose],
-  );
+    if (!active) setDragging(false);
+  }, [active]);
   const submit = useRef<() => Promise<void>>(async () => {});
   const registerSubmit = useMemo(
     () => (save: () => Promise<void>) => {
@@ -220,11 +210,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
   ) ?? { viewId, relationId, offset: 0 };
   if (!scene.relations.some((item) => item.relation.id === relationId)) return null;
   return (
-    <aside
-      className="native-inline-editor native-route-editor"
-      onWheel={(event) => event.stopPropagation()}
-      role="dialog"
-      aria-label={t('관계선 경로 편집')}
+    <div
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.stopPropagation();
@@ -232,153 +218,164 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
         }
       }}
     >
-      <div className="native-inline-heading">
-        <strong>{t('관계선 경로 편집')}</strong>
-        <Button onClick={onClose}>{t('닫기')}</Button>
-      </div>
-      <p>{t('드래그를 놓거나 방향키로 이동하면 저장됩니다.')}</p>
-      <NativeCanvasInputForm
-        key={nativeRouteKey(viewId, relationId)}
-        context={saveContext}
+      <PanelSection
+        className="native-route-editor"
         title={t('관계선 경로 편집')}
-        draftKey={nativeRouteKey(viewId, relationId)}
-        initial={{
-          route: JSON.stringify(existing),
-          reset: 'false',
-          personalVersion: String(personalVersion ?? ''),
-        }}
-        disabled={false}
-        pauseAutosave={dragging}
-        onSubmitReady={registerSubmit}
-        build={(values) => {
-          if (values.personalVersion !== String(personalVersion ?? ''))
-            throw Error(t('개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.'));
-          return [
-            nativeRouteCommand(
-              document,
-              viewId,
-              relationId,
-              values.route ?? '',
-              values.reset === 'true',
-            ),
-          ];
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setDragging(false);
         }}
       >
-        {(values, change) => {
-          const parsed = (() => {
-            try {
-              return relationLayoutSchema.safeParse(JSON.parse(values.route ?? ''));
-            } catch {
-              return null;
-            }
-          })();
-          const raw = (() => {
-            try {
-              return JSON.parse(values.route ?? '');
-            } catch {
-              return null;
-            }
-          })();
-          const editableAnchor = (key: 'sourceAnchor' | 'targetAnchor') => {
-            const anchor = raw?.[key];
-            return anchor && ['left', 'right', 'top', 'bottom'].includes(anchor.side)
-              ? { side: anchor.side, ratio: typeof anchor.ratio === 'number' ? anchor.ratio : 0.5 }
-              : existing[key];
-          };
-          const route: RelationLayout = parsed?.success
-            ? parsed.data
-            : {
-                ...existing,
-                offset: typeof raw?.offset === 'number' ? raw.offset : existing.offset,
-                sourceAnchor: editableAnchor('sourceAnchor'),
-                targetAnchor: editableAnchor('targetAnchor'),
-              };
-          const mismatch = values.personalVersion !== String(personalVersion ?? '');
-          return (
-            <>
-              {mismatch && (
-                <p role="alert">
-                  {t('개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.')}
-                </p>
-              )}
-              {!parsed?.success && <p role="alert">{t('경로 입력을 확인해 주세요.')}</p>}
-              {parsed?.success && route && world && (
-                <RouteHandles
-                  scene={scene}
-                  relationId={relationId}
-                  route={values.reset === 'true' ? { viewId, relationId, offset: 0 } : route}
-                  world={world}
-                  disabled={context.busy || mismatch}
-                  onDraggingChange={setDragging}
-                  onComplete={() => {
-                    void submit.current();
-                  }}
-                  change={(next) => {
-                    change('reset', 'false');
-                    change('route', JSON.stringify(next));
-                  }}
-                />
-              )}
-              {route && (
-                <>
-                  <NativeEditorField
-                    label="간격"
-                    type="number"
-                    value={String(route.offset)}
-                    onChange={(value) => {
+        <p className="panel-note">{t('드래그를 놓거나 방향키로 이동하면 저장됩니다.')}</p>
+        <NativeCanvasInputForm
+          key={nativeRouteKey(viewId, relationId)}
+          context={context}
+          title={t('관계선 경로 편집')}
+          draftKey={nativeRouteKey(viewId, relationId)}
+          initial={{
+            route: JSON.stringify(existing),
+            reset: 'false',
+            personalVersion: String(personalVersion ?? ''),
+          }}
+          disabled={false}
+          pauseAutosave={dragging && open && active}
+          onSubmitReady={registerSubmit}
+          build={(values) => {
+            if (values.personalVersion !== String(personalVersion ?? ''))
+              throw Error(t('개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.'));
+            return [
+              nativeRouteCommand(
+                document,
+                viewId,
+                relationId,
+                values.route ?? '',
+                values.reset === 'true',
+              ),
+            ];
+          }}
+        >
+          {(values, change) => {
+            const parsed = (() => {
+              try {
+                return relationLayoutSchema.safeParse(JSON.parse(values.route ?? ''));
+              } catch {
+                return null;
+              }
+            })();
+            const raw = (() => {
+              try {
+                return JSON.parse(values.route ?? '');
+              } catch {
+                return null;
+              }
+            })();
+            const editableAnchor = (key: 'sourceAnchor' | 'targetAnchor') => {
+              const anchor = raw?.[key];
+              return anchor && ['left', 'right', 'top', 'bottom'].includes(anchor.side)
+                ? {
+                    side: anchor.side,
+                    ratio: typeof anchor.ratio === 'number' ? anchor.ratio : 0.5,
+                  }
+                : existing[key];
+            };
+            const route: RelationLayout = parsed?.success
+              ? parsed.data
+              : {
+                  ...existing,
+                  offset: typeof raw?.offset === 'number' ? raw.offset : existing.offset,
+                  sourceAnchor: editableAnchor('sourceAnchor'),
+                  targetAnchor: editableAnchor('targetAnchor'),
+                };
+            const mismatch = values.personalVersion !== String(personalVersion ?? '');
+            return (
+              <>
+                {mismatch && (
+                  <p role="alert">
+                    {t('개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.')}
+                  </p>
+                )}
+                {!parsed?.success && <p role="alert">{t('경로 입력을 확인해 주세요.')}</p>}
+                {open && active && parsed?.success && route && world && (
+                  <RouteHandles
+                    scene={scene}
+                    relationId={relationId}
+                    route={values.reset === 'true' ? { viewId, relationId, offset: 0 } : route}
+                    world={world}
+                    disabled={context.busy || mismatch}
+                    onDraggingChange={setDragging}
+                    onComplete={() => {
+                      void submit.current();
+                    }}
+                    change={(next) => {
                       change('reset', 'false');
-                      change('route', JSON.stringify({ ...route, offset: Number(value) }));
+                      change('route', JSON.stringify(next));
                     }}
                   />
-                  {(['sourceAnchor', 'targetAnchor'] as const).map((key, index) => (
-                    <div key={key}>
-                      <NativeEditorField
-                        label={index === 0 ? '출발 연결점' : '도착 연결점'}
-                        value={route[key]?.side ?? 'auto'}
-                        choices={['auto', 'left', 'right', 'top', 'bottom'].map((value) => ({
-                          value,
-                          label: value,
-                        }))}
-                        onChange={(side) => {
-                          change('reset', 'false');
-                          change(
-                            'route',
-                            JSON.stringify({
-                              ...route,
-                              [key]:
-                                side === 'auto'
-                                  ? undefined
-                                  : { side, ratio: route[key]?.ratio ?? 0.5 },
-                            }),
-                          );
-                        }}
-                      />
-                      {route[key] && (
+                )}
+                {route && (
+                  <>
+                    <NativeEditorField
+                      label="간격"
+                      type="number"
+                      value={String(route.offset)}
+                      onChange={(value) => {
+                        change('reset', 'false');
+                        change('route', JSON.stringify({ ...route, offset: Number(value) }));
+                      }}
+                    />
+                    {(['sourceAnchor', 'targetAnchor'] as const).map((key, index) => (
+                      <div key={key} className="native-route-anchor">
                         <NativeEditorField
-                          label="위치 (0–1)"
-                          type="number"
-                          value={String(route[key]!.ratio)}
-                          onChange={(value) =>
+                          label={index === 0 ? '출발 연결점' : '도착 연결점'}
+                          value={route[key]?.side ?? 'auto'}
+                          choices={['auto', 'left', 'right', 'top', 'bottom'].map((value) => ({
+                            value,
+                            label: value,
+                          }))}
+                          onChange={(side) => {
+                            change('reset', 'false');
                             change(
                               'route',
                               JSON.stringify({
                                 ...route,
-                                [key]: { ...route[key], ratio: Number(value) },
+                                [key]:
+                                  side === 'auto'
+                                    ? undefined
+                                    : { side, ratio: route[key]?.ratio ?? 0.5 },
                               }),
-                            )
-                          }
+                            );
+                          }}
                         />
-                      )}
-                    </div>
-                  ))}
-                </>
-              )}
-              <Button onClick={() => change('reset', 'true')}>{t('자동 경로로 복원')}</Button>
-              {values.reset === 'true' && <p role="status">{t('자동 경로로 복원')}</p>}
-            </>
-          );
-        }}
-      </NativeCanvasInputForm>
-    </aside>
+                        {route[key] && (
+                          <NativeEditorField
+                            label="위치 (0–1)"
+                            type="number"
+                            value={String(route[key]!.ratio)}
+                            onChange={(value) =>
+                              change(
+                                'route',
+                                JSON.stringify({
+                                  ...route,
+                                  [key]: { ...route[key], ratio: Number(value) },
+                                }),
+                              )
+                            }
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )}
+                <Button className="native-route-reset" onClick={() => change('reset', 'true')}>
+                  {t('자동 경로로 복원')}
+                </Button>
+                {values.reset === 'true' && <p role="status">{t('자동 경로로 복원')}</p>}
+              </>
+            );
+          }}
+        </NativeCanvasInputForm>
+      </PanelSection>
+    </div>
   );
 });

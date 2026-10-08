@@ -570,3 +570,33 @@
     transform: translateY(0) scale(1);
   }
 }
+
+.native-route-inspector-host:empty {
+  display: none;
+}
+.native-route-editor .native-route-anchor {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.native-route-reset {
+  width: 100%;
+}
+.table-relation-original pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.table-relation-advanced .panel-section-body {
+  display: grid;
+  gap: 10px;
+}

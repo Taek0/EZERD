@@ -1506,10 +1506,12 @@ export function NativeConstraintForm({
         return (
           <>
             {collection !== 'tableRelations' && field('name', '이름', false)}
-            <AnimatedDetails>
-              <summary>{t('원본 속성')}</summary>
-              <pre>{JSON.stringify(item, null, 2)}</pre>
-            </AnimatedDetails>
+            {collection !== 'tableRelations' && (
+              <AnimatedDetails>
+                <summary>{t('원본 속성')}</summary>
+                <pre>{JSON.stringify(item, null, 2)}</pre>
+              </AnimatedDetails>
+            )}
             {disabled && (
               <p>
                 {t('미구현 또는 실행 검증 미완료')} ({policy.feature(feature).code})
@@ -1663,16 +1665,6 @@ export function NativeConstraintForm({
                     )}
                   </>
                 )}
-                <AnimatedDetails className="table-relation-advanced">
-                  <summary>{t('고급 설정 · 테이블, FK 매핑')}</summary>
-                  <NativeRelationMappingFields
-                    document={document}
-                    id={id}
-                    values={relationValues}
-                    change={change}
-                    disabled={disabled || context.busy}
-                  />
-                </AnimatedDetails>
                 {relationValues.physicalMode !== 'none' && (
                   <>
                     {field('name', 'FK 이름', false)}
@@ -1688,6 +1680,21 @@ export function NativeConstraintForm({
                     {field('onUpdate', 'ON UPDATE', disabled, actions(document))}
                   </>
                 )}
+                <PanelSection className="table-relation-original" title={t('원본 속성')}>
+                  <pre tabIndex={0}>{JSON.stringify(item, null, 2)}</pre>
+                </PanelSection>
+                <PanelSection
+                  className="table-relation-advanced"
+                  title={t('고급 설정 · 테이블, FK 매핑')}
+                >
+                  <NativeRelationMappingFields
+                    document={document}
+                    id={id}
+                    values={relationValues}
+                    change={change}
+                    disabled={disabled || context.busy}
+                  />
+                </PanelSection>
               </>
             )}
           </>

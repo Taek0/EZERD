@@ -606,6 +606,8 @@ function NativeCanvasWorkspace({
   onSelectDomain: onSelectDomainFromParent,
   recoverySelection,
   inspectorHost,
+  routeInspectorHost,
+  routeInspectorActive = true,
   recoveryOpen = false,
   inspectorOpen,
   onToggleInspector: onToggleInspectorFromParent,
@@ -650,6 +652,8 @@ function NativeCanvasWorkspace({
   onSelectDomain?: (domainId: string) => void;
   recoverySelection?: NativeCanvasRecoverySelection;
   inspectorHost?: HTMLElement | null;
+  routeInspectorHost?: HTMLElement | null;
+  routeInspectorActive?: boolean;
   recoveryOpen?: boolean;
   inspectorOpen?: boolean;
   onToggleInspector?: () => void;
@@ -808,8 +812,8 @@ function NativeCanvasWorkspace({
     [userId, snapshot.project.id, recoverySelection?.inline],
   );
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
-  const [worldElement, setWorldElement] = useState<HTMLDivElement | null>(null);
   const closeRoute = useCallback(() => setSelectedRelationId(null), []);
+  const [worldElement, setWorldElement] = useState<HTMLDivElement | null>(null);
   useEffect(
     () => setSelectedRelationId(recoverySelection?.routeId ?? null),
     [userId, snapshot.project.id, viewId, recoverySelection?.routeId],
@@ -2191,6 +2195,21 @@ function NativeCanvasWorkspace({
     ],
     [base.domains, base.views, locale],
   );
+  const routeEditor =
+    selectedRelationId && userId && (placementEditable || recoverySelection?.routeId) ? (
+      <NativeRelationEditor
+        key={`${userId}:${snapshot.project.id}:${effectiveView}:${selectedRelationId}`}
+        document={base}
+        scene={drawn}
+        viewId={drawn.viewId}
+        relationId={selectedRelationId}
+        world={worldElement}
+        context={routeContext}
+        personalVersion={isPrivate ? personal?.version : undefined}
+        active={routeInspectorActive}
+        onClose={closeRoute}
+      />
+    ) : null;
   const auxiliary = (
     <>
       <div className="native-canvas-settings">
@@ -3135,19 +3154,6 @@ function NativeCanvasWorkspace({
               </aside>
             );
           })()}
-        {selectedRelationId && userId && (placementEditable || recoverySelection?.routeId) && (
-          <NativeRelationEditor
-            key={`${userId}:${snapshot.project.id}:${effectiveView}:${selectedRelationId}`}
-            document={base}
-            scene={drawn}
-            viewId={drawn.viewId}
-            relationId={selectedRelationId}
-            world={worldElement}
-            context={routeContext}
-            personalVersion={isPrivate ? personal?.version : undefined}
-            onClose={closeRoute}
-          />
-        )}
         <div className="native-canvas-hint canvas-hint" role={connection ? 'status' : undefined}>
           {connection
             ? t(
@@ -3408,6 +3414,11 @@ function NativeCanvasWorkspace({
             : []
         }
       />
+      {routeInspectorHost === undefined
+        ? routeEditor
+        : routeInspectorHost
+          ? createPortal(routeEditor, routeInspectorHost)
+          : null}
       {inspectorHost === undefined
         ? auxiliary
         : inspectorHost

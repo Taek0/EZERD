@@ -1119,4 +1119,49 @@ describe('native blank canvas pointer interaction', () => {
       expect(createPin).not.toHaveBeenCalled();
     },
   );
+  it('keeps the route form mounted while toggling its sidebar section and hides inactive handles', () => {
+    const ui = canvas(true);
+    (ui.scene().onSelectRelation as (id: string) => void)('fk');
+    const props = nodes(ui.render()).find((node) => node.type === NativeRelationEditor)!.props;
+    hooks.slots = [];
+    hooks.effects = [];
+    const component = (
+      NativeRelationEditor as unknown as {
+        type: (props: Record<string, unknown>) => ReactElement<Record<string, unknown>>;
+      }
+    ).type;
+    const render = (active = true) => {
+      hooks.cursor = 0;
+      return component({ ...props, world: {}, active });
+    };
+    const form = (tree: unknown) =>
+      nodes(tree).find((node) => node.type === NativeCanvasInputForm)!;
+    const handles = (tree: unknown) => {
+      const input = form(tree);
+      return nodes((input.props.children as Function)(input.props.initial, () => {})).find(
+        (node) => typeof node.type === 'function' && node.type.name === 'RouteHandles',
+      );
+    };
+    const initial = render();
+    const draftKey = form(initial).props.draftKey;
+    expect(handles(initial)).toBeDefined();
+    (handles(initial)!.props.onDraggingChange as Function)(true);
+    expect(form(render()).props.pauseAutosave).toBe(true);
+    (
+      (initial.props.children as ReactElement<Record<string, unknown>>).props
+        .onOpenChange as Function
+    )(false);
+    const closed = render();
+    expect(form(closed).props.draftKey).toBe(draftKey);
+    expect(form(closed).props.pauseAutosave).toBe(false);
+    expect(handles(closed)).toBeUndefined();
+    (
+      (closed.props.children as ReactElement<Record<string, unknown>>).props
+        .onOpenChange as Function
+    )(true);
+    expect(handles(render())).toBeDefined();
+    (handles(render())!.props.onDraggingChange as Function)(true);
+    expect(handles(render(false))).toBeUndefined();
+    expect(form(render(false)).props.pauseAutosave).toBe(false);
+  });
 });

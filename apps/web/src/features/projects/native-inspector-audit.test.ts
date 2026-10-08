@@ -335,6 +335,23 @@ describe('native inspector audit semantics', () => {
     expect(domain).toContain('↔');
     expect(domain).not.toContain('<form');
   });
+  it('keeps source properties and FK activation accessible for logical-only relationships', () => {
+    const f = fixture();
+    f.relation.scope = 'logical';
+    f.relation.physical = null;
+    const html = renderToStaticMarkup(
+      createElement(NativeConstraintForm, {
+        document: f.document,
+        context: f.context,
+        collection: 'tableRelations',
+        id: 'r',
+      }),
+    );
+    expect(html).toContain('table-relation-original');
+    expect(html).toContain('table-relation-advanced');
+    expect(html).toContain('물리 FK');
+    expect(html).not.toContain('ON UPDATE');
+  });
   it.each(['default', 'off'] as const)(
     'keeps physical relationship controls and hides logical semantics in %s mode without rewriting data',
     (mode) => {
@@ -366,6 +383,11 @@ describe('native inspector audit semantics', () => {
         'ON UPDATE',
       ])
         expect(form).toContain(label);
+      expect(form.indexOf('원본 속성')).toBeGreaterThan(form.indexOf('ON UPDATE'));
+      expect(form.indexOf('고급 설정 · 테이블, FK 매핑')).toBeGreaterThan(
+        form.indexOf('원본 속성'),
+      );
+      expect(form).toContain('table-relation-original');
       const readonly = render(
         createElement(NativeTableRelationInspector, {
           document: f.document,
@@ -378,7 +400,7 @@ describe('native inspector audit semantics', () => {
       expect(readonly).not.toContain('&lt;Korean 설명&gt;');
       // The collapsed original-source audit intentionally retains logical data.
       // OFF hides logical editors, not the lossless recovery/audit payload.
-      expect(form.match(/<pre>[\s\S]*?<\/pre>/)?.[0]).toContain('&lt;Korean 설명&gt;');
+      expect(form.match(/<pre[^>]*>[\s\S]*?<\/pre>/)?.[0]).toContain('&lt;Korean 설명&gt;');
       for (const html of [form, readonly]) {
         for (const label of ['관계 설명', '출발 끝점 (PK)', '대상 끝점 (FK)', '0..N'])
           expect(html).not.toContain(label);
