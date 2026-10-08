@@ -8,7 +8,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   MAX_DOCUMENT_BYTES,
@@ -51,6 +51,11 @@ import type { AuthenticatedUser } from '../identity/session.js';
 import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
 import { SyncGateway } from './sync.gateway.js';
 import { readNativeHistoryCancellation } from './native-cancellation-record.js';
+import {
+  projectChanges,
+  projectChangesInputSchema,
+  type ProjectChangesInput,
+} from '../mcp/mcp-native-changes.js';
 
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const BASELINE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -181,6 +186,70 @@ export class NativeHistoryService {
     @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
     @Inject(SyncGateway) private readonly gateway: SyncGateway,
   ) {}
+
+  /** Bounded read projection: do not hydrate ledger ACK documents or deletion snapshots. */
+  async changes(projectId: string, raw: ProjectChangesInput, user: AuthenticatedUser) {
+    const input = projectChangesInputSchema.parse(raw);
+    if (input.projectId !== projectId)
+      throw new BadRequestException({ code: 'history.project-mismatch' });
+    return this.database.db.transaction(
+      async (tx) => {
+        await this.access.requireProject(user.id, projectId, 'read', tx);
+        const [project] = await tx
+          .select({
+            id: projects.id,
+            version: projects.version,
+            syncSequence: projects.syncSequence,
+            databaseKind: projects.databaseKind,
+            databaseProfileId: projects.databaseProfileId,
+            databaseRevision: projects.databaseRevision,
+            schemaVersion: sql<unknown>`${projects.document}->'schemaVersion'`,
+          })
+          .from(projects)
+          .where(eq(projects.id, projectId));
+        if (!project) throw new NotFoundException({ code: 'history.project-not-found' });
+        const untilSequence = input.untilSequence ?? project.syncSequence;
+        const rows = await tx
+          .select({
+            operationId: syncOperations.operationId,
+            sequence: syncOperations.sequence,
+            result: sql<unknown>`jsonb_build_object(
+          'protocolVersion', ${syncOperations.result}->'protocolVersion',
+          'status', ${syncOperations.result}->'status',
+          'databaseRevision', ${syncOperations.result}->'databaseRevision',
+          'reasonCode', ${syncOperations.result}->'reasonCode')`,
+            changes: sql<unknown>`case when jsonb_typeof(${syncOperations.changes}) = 'array' then
+          (select coalesce(jsonb_agg(jsonb_build_object(
+            'path', item->'path', 'beforeExists', item->'beforeExists',
+            'afterExists', item->'afterExists') order by ordinal), '[]'::jsonb)
+          from jsonb_array_elements(${syncOperations.changes}) with ordinality as entries(item, ordinal))
+          else null end`,
+          })
+          .from(syncOperations)
+          .where(
+            and(
+              eq(syncOperations.projectId, projectId),
+              gt(syncOperations.sequence, input.since),
+              lte(syncOperations.sequence, untilSequence),
+            ),
+          )
+          .orderBy(asc(syncOperations.sequence))
+          .limit(input.limit + 1);
+        return projectChanges(
+          {
+            projectId,
+            version: project.version,
+            sequence: project.syncSequence,
+            schemaVersion: project.schemaVersion,
+            database: resolveProjectDatabaseState(project),
+          },
+          input,
+          rows,
+        );
+      },
+      { isolationLevel: 'repeatable read', accessMode: 'read only' },
+    );
+  }
 
   history(
     projectId: string,

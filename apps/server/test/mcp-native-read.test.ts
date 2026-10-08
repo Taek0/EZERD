@@ -6,6 +6,12 @@ import {
   type NativeDesignDocument,
 } from '@ezerd/model';
 import {
+  assertNativeQueryVersion,
+  batchTableDetails,
+  batchTableDetailsInputSchema,
+  batchTableDetailsMetadataSchema,
+  listTablesInputSchema,
+  projectViewInputSchema,
   listTables,
   listViewRelations,
   projectSummary,
@@ -126,6 +132,95 @@ function fixture(kind: 'postgresql' | 'mysql' | 'sqlite' = 'postgresql'): Native
 }
 
 describe('native MCP scoped queries', () => {
+  it('returns ordered unique batch details and rejects missing IDs and excessive batches atomically', () => {
+    const state = fixture();
+    const result = batchTableDetails(state, {
+      projectId: state.project.id,
+      tableIds: ['b', 'a', 'b'],
+    });
+    expect(result.tables.map((item) => item.table.id)).toEqual(['b', 'a']);
+    expect(result).toMatchObject({ syncSequence: 12, databaseRevision: 4 });
+    expect(result.tables[1]!.relations).toEqual(state.document.tableRelations);
+    expect(
+      result.tables.every((item) => item.nodes.every((node) => node.viewId !== 'hidden')),
+    ).toBe(true);
+    expect(() =>
+      batchTableDetails(state, { projectId: state.project.id, tableIds: ['a', 'missing'] }),
+    ).toThrow('테이블을 찾을 수 없습니다.');
+    expect(
+      batchTableDetailsInputSchema.safeParse({ projectId: state.project.id, tableIds: [] }).success,
+    ).toBe(false);
+    expect(
+      batchTableDetailsInputSchema.safeParse({
+        projectId: state.project.id,
+        tableIds: Array(21).fill('a'),
+      }).success,
+    ).toBe(false);
+    expect(() => z.toJSONSchema(batchTableDetailsMetadataSchema)).not.toThrow();
+  });
+
+  it('requires paired pagination versions and detects sequence or database changes with HTTP 409', () => {
+    const state = fixture();
+    const version = { expectedSequence: 12, expectedDatabaseRevision: 4 };
+    expect(() => assertNativeQueryVersion(state, version)).not.toThrow();
+    for (const changed of [
+      { ...version, expectedSequence: 13 },
+      { ...version, expectedDatabaseRevision: 5 },
+    ]) {
+      try {
+        assertNativeQueryVersion(state, changed);
+        expect.fail('Expected version conflict');
+      } catch (error) {
+        expect((error as { getStatus(): number }).getStatus()).toBe(409);
+      }
+    }
+    expect(
+      listTablesInputSchema.safeParse({ projectId: state.project.id, expectedSequence: 12 })
+        .success,
+    ).toBe(false);
+    expect(
+      projectViewInputSchema.safeParse({
+        projectId: state.project.id,
+        viewId: 'sales',
+        expectedDatabaseRevision: 4,
+      }).success,
+    ).toBe(false);
+    expect(() =>
+      listTables(state, {
+        projectId: state.project.id,
+        search: '',
+        limit: 1,
+        ...version,
+        expectedSequence: 11,
+      }),
+    ).toThrow('프로젝트 버전이 변경되었습니다.');
+  });
+
+  it('refreshes indexes for mutable documents and safely reuses fully frozen documents across actors', () => {
+    const state = fixture();
+    expect(projectSummary(state).domains[0]!.tableCount).toBe(2);
+    expect(tableDetails(state, 'a').table.logical.name).toBe('Logical a');
+    state.document.tables![0]!.domainId = 'other';
+    state.document.tables![0]!.logical.name = 'Changed';
+    expect(projectSummary(state).domains[0]!.tableCount).toBe(1);
+    expect(tableDetails(state, 'a').table.logical.name).toBe('Changed');
+    const freeze = (value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+      Object.values(value).forEach(freeze);
+      Object.freeze(value);
+    };
+    freeze(state.document);
+    expect(tableDetails(state, 'a').nodes.some((node) => node.viewId === 'mine')).toBe(true);
+    const otherActor = { ...state, personalViewIds: [] };
+    expect(tableDetails(otherActor, 'a').nodes.some((node) => node.viewId === 'mine')).toBe(false);
+    expect(
+      batchTableDetails(otherActor, {
+        projectId: state.project.id,
+        tableIds: ['a'],
+      }).tables[0]!.nodes.some((node) => node.viewId === 'mine'),
+    ).toBe(false);
+  });
+
   it('includes v2 concurrency context and counts without full definitions or other actor views', () => {
     const result = projectSummary(fixture());
     expect(result).toMatchObject({

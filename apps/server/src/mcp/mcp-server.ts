@@ -78,8 +78,14 @@ import {
   viewRelationsSchema,
   nativeViewSelection,
   nativeViewNodes,
+  batchTableDetailsInputSchema,
+  batchTableDetailsSchema,
+  batchTableDetailsMetadataSchema,
+  batchTableDetails,
+  assertNativeQueryVersion,
 } from './mcp-native-read.js';
 import { mcpSchemaMetadata } from './mcp-schema-metadata.js';
+import { projectChangesInputSchema, projectChangesSchema } from './mcp-native-changes.js';
 
 const idSchema = z.uuid();
 const TIMEOUT_MS = 60_000;
@@ -210,6 +216,7 @@ export class McpServerFactory {
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
           ' active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
           'Native 프로젝트 탐색은 get_project_summary로 시작하고, 배치 전 get_project_view의 모든 페이지로 최신 배치를 확인하세요. 화면 관계는 list_view_relations로 조회하세요. __tables__와 도메인 필터는 공유 좌표를 사용하며 반환된 노드 ID로 apply_native_project_changes를 호출하세요. 자신의 개인 결합 화면은 apply_personal_changes로 변경하고 카메라는 get_personal_state로 조회하세요. 테이블 컬럼·키·인덱스·CHECK·관계는 get_table_details로 확인합니다. 전체 원본이 필요한 경우에만 get_project_document_state 또는 같은 응답을 제공하는 get_project를 사용하세요. ' +
+          '여러 테이블 상세는 get_tables_details로 최대 20개씩 묶어 조회하세요. 목록의 다음 페이지에는 첫 응답의 syncSequence/databaseRevision을 expectedSequence/expectedDatabaseRevision으로 함께 전달하고 변경 오류가 나면 처음부터 다시 조회하세요. get_project_changes로 since 이후 변경 경로·대상 ID를 확인할 수 있으며 resyncRequired이면 전체 원본을 다시 읽으세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
           '같은 뷰의 카드 경계와 콘텐츠에 필요한 크기를 고려해 서로 겹치지 않게 배치하고 최소 40px 간격을 두세요. ' +
@@ -383,10 +390,12 @@ export class McpServerFactory {
         outputSchema: projectViewSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, viewId, limit, cursor }) =>
-        invoke('get_project_view', async () =>
-          projectView(await projectState(projectId, { viewId }), viewId, limit, cursor),
-        ),
+      (input) =>
+        invoke('get_project_view', async () => {
+          const state = await projectState(input.projectId, { viewId: input.viewId });
+          assertNativeQueryVersion(state, input);
+          return projectView(state, input.viewId, input.limit, input.cursor);
+        }),
     );
     server.registerTool(
       'list_view_relations',
@@ -397,10 +406,12 @@ export class McpServerFactory {
         outputSchema: viewRelationsSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, viewId, limit, cursor }) =>
-        invoke('list_view_relations', async () =>
-          listViewRelations(await projectState(projectId, { viewId }), viewId, limit, cursor),
-        ),
+      (input) =>
+        invoke('list_view_relations', async () => {
+          const state = await projectState(input.projectId, { viewId: input.viewId });
+          assertNativeQueryVersion(state, input);
+          return listViewRelations(state, input.viewId, input.limit, input.cursor);
+        }),
     );
     server.registerTool(
       'get_personal_state',
@@ -431,6 +442,36 @@ export class McpServerFactory {
       ({ projectId, tableId, includePersonal }) =>
         invoke('get_table_details', async () =>
           tableDetails(await projectState(projectId, { includePersonal }), tableId),
+        ),
+    );
+    server.registerTool(
+      'get_tables_details',
+      {
+        description:
+          '최대 20개 테이블 ID의 Native 상세를 한 번에 조회합니다. ID 중복은 제거하며 없는 대상이 있으면 전체 요청을 거부합니다. 공유 조회이며 expectedSequence/expectedDatabaseRevision으로 동일 버전을 확인할 수 있습니다.',
+        inputSchema: batchTableDetailsInputSchema,
+        outputSchema: batchTableDetailsMetadataSchema.meta(
+          mcpSchemaMetadata(batchTableDetailsSchema),
+        ),
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      (input) =>
+        invoke('get_tables_details', async () =>
+          batchTableDetails(await projectState(input.projectId), input),
+        ),
+    );
+    server.registerTool(
+      'get_project_changes',
+      {
+        description:
+          'since 이후 공유 Native 변경의 경로·대상 ID·삭제 ID를 최대 100건씩 조회합니다. 값·전체 문서·삭제 스냅샷은 반환하지 않습니다. 다음 페이지는 nextCursor의 since/untilSequence/databaseRevision을 그대로 전달하세요. resyncRequired=true이면 변경 목록을 적용하지 말고 전체 문서를 다시 조회하세요.',
+        inputSchema: projectChangesInputSchema,
+        outputSchema: projectChangesSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      (input) =>
+        invoke('get_project_changes', async () =>
+          this.nativeHistory.changes(input.projectId, input, user),
         ),
     );
     server.registerTool(

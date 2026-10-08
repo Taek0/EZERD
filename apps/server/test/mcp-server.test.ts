@@ -118,7 +118,7 @@ describe('MCP server tools', () => {
     try {
       const tools = await client.listTools();
       const jsonValidator = new AjvJsonSchemaValidator();
-      expect(tools.tools).toHaveLength(50);
+      expect(tools.tools).toHaveLength(52);
       for (const tool of tools.tools) {
         expect(() => jsonValidator.getValidator(tool.inputSchema), tool.name).not.toThrow();
         expect(tool.outputSchema, tool.name).toBeDefined();
@@ -168,6 +168,8 @@ describe('MCP server tools', () => {
         'list_view_relations',
         'get_personal_state',
         'get_table_details',
+        'get_tables_details',
+        'get_project_changes',
         'list_review_threads',
         'get_review_thread',
         'list_notifications',

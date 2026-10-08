@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { z } from 'zod';
 import {
   databaseContextSchema,
@@ -25,6 +25,17 @@ import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas
 
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const objectId = z.string().trim().min(1).max(160);
+const queryVersionShape = {
+  expectedSequence: sequence.optional(),
+  expectedDatabaseRevision: databaseRevisionSchema.optional(),
+};
+function pairedQueryVersion(input: NativeQueryVersion) {
+  return (input.expectedSequence === undefined) === (input.expectedDatabaseRevision === undefined);
+}
+export type NativeQueryVersion = {
+  expectedSequence?: number | undefined;
+  expectedDatabaseRevision?: number | undefined;
+};
 const collections = nativeStoredDesignDocumentSchema.in.shape;
 const tableSummarySchema = nativeStoredTableSchema
   .pick({ id: true, domainId: true, scope: true, color: true })
@@ -62,13 +73,19 @@ export const projectSummarySchema = baseSchema.extend({
   domains: z.array(domainSummarySchema),
   views: z.array(viewSummarySchema),
 });
-export const listTablesInputSchema = z.strictObject({
-  projectId: z.uuid(),
-  domainId: objectId.nullable().optional(),
-  search: z.string().trim().max(120).default(''),
-  cursor: objectId.optional(),
-  limit: z.number().int().min(1).max(100).default(50),
-});
+export const listTablesInputSchema = z
+  .strictObject({
+    ...queryVersionShape,
+    projectId: z.uuid(),
+    domainId: objectId.nullable().optional(),
+    search: z.string().trim().max(120).default(''),
+    cursor: objectId.optional(),
+    limit: z.number().int().min(1).max(100).default(50),
+  })
+  .refine(
+    pairedQueryVersion,
+    'expectedSequence와 expectedDatabaseRevision을 함께 지정해야 합니다.',
+  );
 export const tableListSchema = baseSchema.extend({
   tables: z.array(tableSummarySchema),
   nextCursor: objectId.nullable(),
@@ -96,12 +113,18 @@ export const projectViewSchema = baseSchema.extend({
   relationLayouts: z.array(relationLayoutSchema),
   viewport: viewportSchema.nullable(),
 });
-export const projectViewInputSchema = z.strictObject({
-  projectId: z.uuid(),
-  viewId: objectId,
-  cursor: objectId.optional(),
-  limit: z.number().int().min(1).max(100).default(50),
-});
+export const projectViewInputSchema = z
+  .strictObject({
+    ...queryVersionShape,
+    projectId: z.uuid(),
+    viewId: objectId,
+    cursor: objectId.optional(),
+    limit: z.number().int().min(1).max(100).default(50),
+  })
+  .refine(
+    pairedQueryVersion,
+    'expectedSequence와 expectedDatabaseRevision을 함께 지정해야 합니다.',
+  );
 export const viewRelationsInputSchema = projectViewInputSchema;
 export const viewRelationsSchema = baseSchema.extend({
   view: viewSummarySchema,
@@ -144,6 +167,44 @@ export const tableDetailsMetadataSchema = tableDetailsSchema.extend({
   indexes: z.array(nativeRecordMetadataSchema),
   checks: z.array(nativeRecordMetadataSchema),
 });
+export const batchTableDetailsInputSchema = z
+  .strictObject({
+    projectId: z.uuid(),
+    tableIds: z.array(objectId).min(1).max(20),
+    ...queryVersionShape,
+  })
+  .refine(
+    pairedQueryVersion,
+    'expectedSequence와 expectedDatabaseRevision을 함께 지정해야 합니다.',
+  );
+export const batchTableDetailsSchema = baseSchema.extend({
+  tables: z
+    .array(
+      tableDetailsSchema.omit({
+        protocolVersion: true,
+        schemaVersion: true,
+        project: true,
+        syncSequence: true,
+        database: true,
+        databaseRevision: true,
+      }),
+    )
+    .max(20),
+});
+export const batchTableDetailsMetadataSchema = baseSchema.extend({
+  tables: z
+    .array(
+      tableDetailsMetadataSchema.omit({
+        protocolVersion: true,
+        schemaVersion: true,
+        project: true,
+        syncSequence: true,
+        database: true,
+        databaseRevision: true,
+      }),
+    )
+    .max(20),
+});
 
 export type NativeProjectState = {
   project: z.infer<typeof baseSchema.shape.project>;
@@ -151,6 +212,69 @@ export type NativeProjectState = {
   syncSequence: number;
   personalViewIds?: readonly string[];
 };
+export function assertNativeQueryVersion(state: NativeProjectState, input: NativeQueryVersion) {
+  if (!pairedQueryVersion(input)) {
+    throw new ConflictException(
+      'expectedSequence와 expectedDatabaseRevision을 함께 지정해야 합니다.',
+    );
+  }
+  if (
+    input.expectedSequence !== undefined &&
+    (input.expectedSequence !== state.syncSequence ||
+      input.expectedDatabaseRevision !== state.project.databaseRevision)
+  ) {
+    throw new ConflictException('프로젝트 버전이 변경되었습니다. 첫 페이지부터 다시 조회하세요.');
+  }
+}
+
+function groupBy<T>(items: readonly T[], key: (item: T) => string | null) {
+  const result = new Map<string | null, T[]>();
+  for (const item of items) {
+    const id = key(item);
+    const group = result.get(id);
+    if (group) group.push(item);
+    else result.set(id, [item]);
+  }
+  return result;
+}
+function buildIndexes(document: NativeDesignDocument) {
+  const relations = new Map<string | null, NonNullable<NativeDesignDocument['tableRelations']>>();
+  for (const relation of document.tableRelations ?? []) {
+    for (const id of new Set([relation.sourceTableId, relation.targetTableId])) {
+      const group = relations.get(id);
+      if (group) group.push(relation);
+      else relations.set(id, [relation]);
+    }
+  }
+  return {
+    tables: new Map((document.tables ?? []).map((item) => [item.id, item])),
+    tableOrder: new Map((document.tables ?? []).map((item, index) => [item.id, index])),
+    domains: new Map(document.domains.map((item) => [item.id, item])),
+    tablesByDomain: groupBy(document.tables ?? [], (item) => item.domainId),
+    columns: groupBy(document.columns ?? [], (item) => item.tableId),
+    keys: groupBy(document.keys ?? [], (item) => item.tableId),
+    indexes: groupBy(document.indexes ?? [], (item) => item.tableId),
+    checks: groupBy(document.checks ?? [], (item) => item.tableId),
+    nodes: groupBy(document.layout.nodes, (item) => item.objectId),
+    relations,
+  };
+}
+const immutableIndexes = new WeakMap<NativeDesignDocument, ReturnType<typeof buildIndexes>>();
+function deeplyFrozen(value: unknown): boolean {
+  return (
+    value === null ||
+    typeof value !== 'object' ||
+    (Object.isFrozen(value) && Object.values(value).every(deeplyFrozen))
+  );
+}
+function readIndexes(document: NativeDesignDocument) {
+  const cached = immutableIndexes.get(document);
+  if (cached) return cached;
+  const result = buildIndexes(document);
+  // A frozen root alone does not make its arrays or native records immutable.
+  if (deeplyFrozen(document)) immutableIndexes.set(document, result);
+  return result;
+}
 
 function base(state: NativeProjectState) {
   return {
@@ -219,6 +343,7 @@ function page<T extends { id: string }>(items: T[], limit: number, cursor?: stri
 }
 export function projectSummary(state: NativeProjectState) {
   const document = state.document;
+  const indexes = readIndexes(document);
   const allowedViews = new Set(views(state).map((item) => item.id));
   return projectSummarySchema.parse({
     ...base(state),
@@ -237,7 +362,7 @@ export function projectSummary(state: NativeProjectState) {
     domains: document.domains.map((domain) => ({
       id: domain.id,
       name: domain.name,
-      tableCount: document.tables?.filter((table) => table.domainId === domain.id).length ?? 0,
+      tableCount: indexes.tablesByDomain.get(domain.id)?.length ?? 0,
     })),
     views: views(state),
   });
@@ -246,6 +371,7 @@ export function listTables(
   state: NativeProjectState,
   input: z.infer<typeof listTablesInputSchema>,
 ) {
+  assertNativeQueryVersion(state, input);
   const search = input.search.toLocaleLowerCase();
   const filtered = (state.document.tables ?? []).filter(
     (table) =>
@@ -369,17 +495,20 @@ export function listViewRelations(
     nextCursor: result.nextCursor,
   });
 }
-export function tableDetails(state: NativeProjectState, tableId: string) {
+function indexedTableDetails(
+  state: NativeProjectState,
+  tableId: string,
+  indexes: ReturnType<typeof buildIndexes>,
+  allowedLayouts: ReadonlySet<string>,
+) {
   const document = state.document;
-  const table = document.tables?.find((item) => item.id === tableId);
+  const table = indexes.tables.get(tableId);
   if (!table) throw new NotFoundException('테이블을 찾을 수 없습니다.');
-  const domain = document.domains.find((item) => item.id === table.domainId);
+  const domain = table.domainId === null ? undefined : indexes.domains.get(table.domainId);
   if (table.domainId !== null && !domain)
     throw new NotFoundException('테이블의 도메인을 찾을 수 없습니다.');
-  const columns = (document.columns ?? []).filter((column) => column.tableId === tableId);
-  const relations = (document.tableRelations ?? []).filter(
-    (relation) => relation.sourceTableId === tableId || relation.targetTableId === tableId,
-  );
+  const columns = indexes.columns.get(tableId) ?? [];
+  const relations = indexes.relations.get(tableId) ?? [];
   const relatedIds = new Set(
     relations.flatMap((relation) => [relation.sourceTableId, relation.targetTableId]),
   );
@@ -394,11 +523,7 @@ export function tableDetails(state: NativeProjectState, tableId: string) {
           : [];
     }),
   );
-  const allowedLayouts = new Set(
-    views(state).map((item) => nativeViewSelection(state, item.id).layoutViewId),
-  );
-  return tableDetailsSchema.parse({
-    ...base(state),
+  return {
     table,
     domain: domain
       ? {
@@ -414,16 +539,42 @@ export function tableDetails(state: NativeProjectState, tableId: string) {
       defaultValue: nativeDefaultDisplay(column.physical.defaultValue, document),
       generation: nativeGenerationDisplay(column.physical.generation, document),
     })),
-    keys: (document.keys ?? []).filter((key) => key.tableId === tableId),
-    indexes: (document.indexes ?? []).filter((index) => index.tableId === tableId),
-    checks: (document.checks ?? []).filter((check) => check.tableId === tableId),
+    keys: indexes.keys.get(tableId) ?? [],
+    indexes: indexes.indexes.get(tableId) ?? [],
+    checks: indexes.checks.get(tableId) ?? [],
     relations,
-    relatedTables: (document.tables ?? [])
-      .filter((item) => relatedIds.has(item.id))
-      .map(tableSummary),
+    relatedTables: [...relatedIds]
+      .filter((id) => indexes.tables.has(id))
+      .sort((a, b) => indexes.tableOrder.get(a)! - indexes.tableOrder.get(b)!)
+      .map((id) => tableSummary(indexes.tables.get(id)!)),
     enums: (document.enums ?? []).filter((item) => enumIds.has(item.id)),
-    nodes: document.layout.nodes.filter(
-      (node) => node.objectId === tableId && allowedLayouts.has(node.viewId),
+    nodes: (indexes.nodes.get(tableId) ?? []).filter((node) => allowedLayouts.has(node.viewId)),
+  };
+}
+function allowedTableLayouts(state: NativeProjectState) {
+  return new Set(
+    views(state).map(
+      (item) => sharedCanvasSelection(state.document, item.id, state.personalViewIds)!.layoutViewId,
     ),
+  );
+}
+export function tableDetails(state: NativeProjectState, tableId: string) {
+  return tableDetailsSchema.parse({
+    ...base(state),
+    ...indexedTableDetails(state, tableId, readIndexes(state.document), allowedTableLayouts(state)),
   });
+}
+/** Ordered unique IDs; a missing table rejects the complete batch. */
+export function batchTableDetails(
+  state: NativeProjectState,
+  input: z.infer<typeof batchTableDetailsInputSchema>,
+) {
+  const parsed = batchTableDetailsInputSchema.parse(input);
+  assertNativeQueryVersion(state, parsed);
+  const indexes = readIndexes(state.document);
+  const allowedLayouts = allowedTableLayouts(state);
+  const tables = [...new Set(parsed.tableIds)].map((id) =>
+    indexedTableDetails(state, id, indexes, allowedLayouts),
+  );
+  return batchTableDetailsSchema.parse({ ...base(state), tables });
 }

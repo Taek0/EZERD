@@ -466,7 +466,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       };
       try {
         // Real consumers discover schemas first, enabling SDK validation of every output below.
-        expect((await a.instance.listTools()).tools).toHaveLength(50);
+        expect((await a.instance.listTools()).tools).toHaveLength(52);
         await b.instance.listTools();
         const created = await call(a, 'create_project', {
           workspaceId,
@@ -617,7 +617,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(50);
+      expect(listedTools.tools).toHaveLength(52);
       for (const name of [
         'apply_project_changes',
         'get_project_history',
@@ -1201,6 +1201,47 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: { projectId, tableId: 'orders' },
       });
       expect(details.structuredContent).toHaveProperty('table.logical.name', 'Orders renamed');
+      const batch = await a.instance.callTool({
+        name: 'get_tables_details',
+        arguments: {
+          projectId,
+          tableIds: ['orders', 'users', 'orders'],
+          expectedSequence: 3,
+          expectedDatabaseRevision: 0,
+        },
+      });
+      expect(batch.isError).not.toBe(true);
+      expect(batch.structuredContent).toHaveProperty('tables.length', 2);
+      expect(batch.structuredContent).toHaveProperty(
+        'tables.0.table.logical.name',
+        'Orders renamed',
+      );
+      const stalePage = await a.instance.callTool({
+        name: 'get_project_view',
+        arguments: {
+          projectId,
+          viewId: '__tables__',
+          expectedSequence: 2,
+          expectedDatabaseRevision: 0,
+        },
+      });
+      expect(stalePage.isError).toBe(true);
+      const delta = await a.instance.callTool({
+        name: 'get_project_changes',
+        arguments: { projectId, since: 2, limit: 1, databaseRevision: 0 },
+      });
+      expect(delta.isError).not.toBe(true);
+      expect(delta.structuredContent).toMatchObject({
+        resyncRequired: false,
+        sequence: 3,
+        untilSequence: 3,
+        nextCursor: null,
+      });
+      expect(delta.structuredContent).toHaveProperty('changedObjects.0', {
+        collection: 'tables',
+        id: 'orders',
+      });
+      expect(delta.structuredContent).not.toHaveProperty('document');
       const layout = await a.instance.callTool({
         name: 'apply_personal_changes',
         arguments: {
