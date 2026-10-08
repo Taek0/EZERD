@@ -137,7 +137,7 @@ describe('MCP server tools', () => {
       expect(client.getInstructions()).toContain('구조적 계층');
       expect(client.getInstructions()).toContain('비연결 카드 내부를 관통');
       expect(client.getInstructions()).toContain('동일한 구간에 포개지지 않게');
-      expect(client.getInstructions()).toContain('diagnose_layout은 카드 진단');
+      expect(client.getInstructions()).toContain('coverage.complete');
       expect(client.getInstructions()).toContain('남은 교차를 보고');
       expect(client.getInstructions()).toContain('겹침을 확인하고 수정');
       expect(tools.tools.map((tool) => tool.name)).toEqual([
@@ -332,6 +332,11 @@ describe('MCP workspace authorization', () => {
   };
   async function connected(overrides: Record<string, unknown> = {}) {
     const workspace = {
+      getNativeQueryState: vi.fn(async (_actorId: string, _projectId: string) => ({
+        project: { ...project, databaseProfileId: 'postgresql-18-v1', databaseRevision: 0 },
+        syncSequence: 0,
+        document: createEmptyNativeDocument(defaultDatabaseContext('postgresql')),
+      })),
       getProjectState: vi.fn(async () => ({ project, document, syncSequence: 0 })),
       getVersionedProjectState: vi.fn(async () => {
         const native = createEmptyNativeDocument(defaultDatabaseContext('postgresql'));
@@ -946,7 +951,10 @@ describe('MCP workspace authorization', () => {
           })
         ).isError,
       ).not.toBe(true);
-      expect(harness.workspace.getVersionedProjectState).toHaveBeenCalledWith(actor.id, project.id);
+      expect(harness.workspace.getNativeQueryState).toHaveBeenCalledWith(actor.id, project.id);
+      harness.workspace.getNativeQueryState.mockRejectedValue(
+        new ForbiddenException('공간 접근 권한이 없습니다.'),
+      );
       harness.workspace.getVersionedProjectState.mockRejectedValue(
         new ForbiddenException('공간 접근 권한이 없습니다.'),
       );
@@ -980,6 +988,61 @@ describe('MCP workspace authorization', () => {
         arguments: { projectId: project.id },
       });
       expect(harness.nativeHistory.history).toHaveBeenCalledWith(project.id, 0, 25, actor);
+    } finally {
+      await harness.close();
+    }
+  });
+  it('uses lightweight shared reads without fetching personal state or detailed previews', async () => {
+    const harness = await connected();
+    try {
+      harness.personal.get.mockRejectedValue(new Error('personal unavailable'));
+      for (const [name, extra] of [
+        ['get_project_summary', {}],
+        ['list_tables', {}],
+        ['get_project_view', { viewId: '__tables__' }],
+        ['list_view_relations', { viewId: '__tables__' }],
+        ['diagnose_layout', { viewId: '__tables__', mode: 'physical' }],
+      ] as const) {
+        const result = await harness.client.callTool({
+          name,
+          arguments: { projectId: project.id, ...extra },
+        });
+        expect(result.isError, name).not.toBe(true);
+        if (name === 'diagnose_layout')
+          expect(result.structuredContent).toHaveProperty('coverage.modes', ['physical']);
+      }
+      expect(harness.workspace.getNativeQueryState).toHaveBeenCalledTimes(5);
+      expect(harness.workspace.getVersionedProjectState).not.toHaveBeenCalled();
+      expect(harness.personal.get).not.toHaveBeenCalled();
+      expect(
+        (
+          await harness.client.callTool({
+            name: 'get_project_summary',
+            arguments: { projectId: project.id, includePersonal: true },
+          })
+        ).isError,
+      ).toBe(true);
+      expect(harness.personal.get).toHaveBeenCalledOnce();
+    } finally {
+      await harness.close();
+    }
+  });
+  it('refuses to combine a private snapshot with a different shared version', async () => {
+    const harness = await connected();
+    try {
+      harness.personal.get.mockResolvedValue({
+        projectVersion: 9,
+        syncSequence: 9,
+        databaseRevision: 0,
+        state: { views: [], notes: [], nodes: [], viewports: [], relations: [] },
+      } as never);
+      const result = await harness.client.callTool({
+        name: 'get_project_summary',
+        arguments: { projectId: project.id, includePersonal: true },
+      });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain('document.read-context-changed');
+      expect(harness.workspace.getNativeQueryState).toHaveBeenCalledTimes(2);
     } finally {
       await harness.close();
     }

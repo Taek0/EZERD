@@ -1083,7 +1083,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       ).toEqual(saved.structuredContent);
       const ownSummary = await a.instance.callTool({
         name: 'get_project_summary',
-        arguments: { projectId },
+        arguments: { projectId, includePersonal: true },
       });
       expect(
         (ownSummary.structuredContent as { views: Array<{ id: string }> }).views,

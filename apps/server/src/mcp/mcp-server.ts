@@ -221,35 +221,43 @@ export class McpServerFactory {
           '배치는 먼저 핵심/상위→하위/종속의 계층과 도메인 구역을 정하고, 카드 크기와 간격을 확정한 뒤 관계선 경로를 정리하는 순서로 진행하세요. ' +
           '카드끼리의 중첩과 관계선이 비연결 카드 내부를 관통하는 경로는 허용하지 마세요. 연결된 카드도 올바른 연결 지점에서만 접촉하며 내부를 우회 경로로 사용하지 마세요. ' +
           '관계선끼리 동일한 구간에 포개지지 않게 경로를 분리하고, 관계의 의미와 연결 컬럼을 유지하세요. 교차를 완전히 제거할 수 없는 그래프에서는 포개진 구간 없이 구분 가능한 교차로 최소화하고 남은 교차를 보고하세요. ' +
-          '경로 검증은 카드 사각형과 각 선분 좌표의 교차·관통 및 선분끼리 겹치는 구간을 계산하세요. diagnose_layout은 카드 진단이므로 관계선까지 충돌이 없다는 근거로 사용하지 마세요. 자동 경로 좌표가 없으면 경로를 명시하거나 검증하지 못한 부분을 보고하세요. ' +
+          '경로 검증은 diagnose_layout으로 카드 사각형과 테이블 관계선의 교차·관통·겹침을 점검하세요. mode 기본값은 physical이며 논리 화면은 logical을 지정하세요. coverage.complete가 false이면 limitations와 skippedRoutes를 확인하고 미검증 경로를 충돌 없음으로 보고하지 마세요. 도메인 관계 등 지원 범위 밖의 경로는 별도 좌표로 확인하거나 미검증으로 보고하세요. ' +
           '컬럼/설명 추가로 카드 크기가 커지는 경우에도 인접 카드와의 겹침을 다시 확인하세요. ' +
           '기존 사용자의 배치를 불필요하게 바꾸지 말고 빈 공간을 우선 사용하며, 자동 배치는 요청받은 범위에만 적용하세요. ' +
-          '작업 후 get_project_document_state로 결과를 재조회해 같은 좌표 계산으로 겹침을 확인하고 수정하세요. 좌표를 생략해 모든 객체를 같은 위치에 생성하지 마세요.',
+          '작업 후 get_project_view와 list_view_relations로 변경한 화면을 재조회하고 diagnose_layout의 검사 범위를 확인해 겹침을 확인하고 수정하세요. 전체 원본이 필요한 경우에만 get_project_document_state를 사용하세요. 좌표를 생략해 모든 객체를 같은 위치에 생성하지 마세요.',
       },
     );
     const invoke = <T>(tool: string, callback: () => Promise<T>) =>
       this.invoke(tool, user, tokenId, requestId, callback);
-    const projectState = async (projectId: string) => {
-      const [shared, personal] = await Promise.all([
-        this.workspace.getVersionedProjectState(user.id, projectId),
-        this.personal.get(projectId, user),
-      ]);
-      const state = projectDocumentStateSchema.parse(shared);
-      if (state.sourceDocument.schemaVersion !== 2)
+    const projectState = async (
+      projectId: string,
+      options: { viewId?: string | undefined; includePersonal?: boolean } = {},
+    ) => {
+      let shared = await this.workspace.getNativeQueryState(user.id, projectId);
+      const { viewId } = options;
+      const needsPersonal =
+        options.includePersonal ||
+        (viewId &&
+          viewId !== 'overview' &&
+          viewId !== TABLES_VIEW_ID &&
+          !shared.document.domains.some((domain) => domain.id === viewId));
+      if (!needsPersonal) return { ...shared, personalViewIds: [] as string[] };
+      const personal = await this.personal.get(projectId, user);
+      const matches = () =>
+        (personal.projectVersion === undefined ||
+          personal.projectVersion === shared.project.version) &&
+        (personal.syncSequence === undefined || personal.syncSequence === shared.syncSequence) &&
+        (personal.databaseRevision === undefined ||
+          personal.databaseRevision === shared.project.databaseRevision);
+      if (!matches()) shared = await this.workspace.getNativeQueryState(user.id, projectId);
+      if (!matches())
         throw new ConflictException({
-          code: 'document.native-upgrade-required',
-          message:
-            '이 조회 도구는 native v2 설계를 사용합니다. get_project_document_state로 원본을 확인하고 명시적으로 변환해 주세요.',
-        });
-      if (state.native.status !== 'available')
-        throw new ConflictException({
-          code: state.native.code,
-          message: '현재 DB 설정과 native 문서를 확인해 주세요.',
+          code: 'document.read-context-changed',
+          message: '조회 중 설계가 변경되었습니다. 다시 조회해 주세요.',
         });
       return {
-        project: state.project,
-        syncSequence: state.sequence,
-        document: mergeStoredPersonalState(state.sourceDocument, personal.state),
+        ...shared,
+        document: mergeStoredPersonalState(shared.document, personal.state),
         personalViewIds: personal.state.views.map((view) => view.id),
       };
     };
@@ -341,13 +349,18 @@ export class McpServerFactory {
       'get_project_summary',
       {
         description:
-          '전체 설계 문서 없이 Native v2 프로젝트의 DB 컨텍스트·버전·객체 개수와 화면·도메인 목록을 조회합니다.',
-        inputSchema: z.strictObject({ projectId: idSchema }),
+          'Native v2 공유 설계의 DB 컨텍스트·버전·객체 개수와 화면·도메인 목록을 조회합니다. 자신의 개인 화면 목록도 필요하면 includePersonal=true를 지정하세요.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          includePersonal: z.boolean().default(false),
+        }),
         outputSchema: projectSummarySchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId }) =>
-        invoke('get_project_summary', async () => projectSummary(await projectState(projectId))),
+      ({ projectId, includePersonal }) =>
+        invoke('get_project_summary', async () =>
+          projectSummary(await projectState(projectId, { includePersonal })),
+        ),
     );
     server.registerTool(
       'list_tables',
@@ -372,7 +385,7 @@ export class McpServerFactory {
       },
       ({ projectId, viewId, limit, cursor }) =>
         invoke('get_project_view', async () =>
-          projectView(await projectState(projectId), viewId, limit, cursor),
+          projectView(await projectState(projectId, { viewId }), viewId, limit, cursor),
         ),
     );
     server.registerTool(
@@ -386,7 +399,7 @@ export class McpServerFactory {
       },
       ({ projectId, viewId, limit, cursor }) =>
         invoke('list_view_relations', async () =>
-          listViewRelations(await projectState(projectId), viewId, limit, cursor),
+          listViewRelations(await projectState(projectId, { viewId }), viewId, limit, cursor),
         ),
     );
     server.registerTool(
@@ -405,14 +418,19 @@ export class McpServerFactory {
     server.registerTool(
       'get_table_details',
       {
-        description: '한 테이블의 컬럼·키·연결 관계·배치 정보를 조회합니다.',
-        inputSchema: z.strictObject({ projectId: idSchema, tableId: z.string().min(1).max(160) }),
+        description:
+          '한 테이블의 컬럼·키·연결 관계·공유 배치를 조회합니다. 자신의 개인 화면 배치도 필요하면 includePersonal=true를 지정하세요.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          tableId: z.string().min(1).max(160),
+          includePersonal: z.boolean().default(false),
+        }),
         outputSchema: tableDetailsMetadataSchema.meta(mcpSchemaMetadata(tableDetailsSchema)),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, tableId }) =>
+      ({ projectId, tableId, includePersonal }) =>
         invoke('get_table_details', async () =>
-          tableDetails(await projectState(projectId), tableId),
+          tableDetails(await projectState(projectId, { includePersonal }), tableId),
         ),
     );
     server.registerTool(
@@ -641,15 +659,14 @@ export class McpServerFactory {
       'diagnose_layout',
       {
         description:
-          '저장 좌표와 실제 렌더링 카드 크기로 화면의 카드 겹침·40px 미만 간격·테이블 자동 확장을 진단합니다. 결과는 배치를 자동 변경하지 않습니다.',
+          'Native 카드 겹침·40px 미만 간격·자동 확장과 테이블 관계선의 카드 관통·선분 겹침·교차를 좌표로 진단합니다. mode 기본 physical, 논리 화면은 logical을 지정하세요. 자동/수동 경로를 공유 라우터로 재구성하며 coverage의 검사 한도·미검증 경로를 반드시 확인하세요. 도메인 관계 경로는 별도 검증이 필요합니다. 배치는 변경하지 않습니다.',
         inputSchema: layoutDiagnosisInputSchema,
         outputSchema: layoutDiagnosisSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, viewId, limit }) =>
+      ({ projectId, viewId, limit, mode }) =>
         invoke('diagnose_layout', async () => {
-          const state = await projectState(projectId);
-          if (viewId) projectView(state, viewId);
+          const state = await projectState(projectId, { viewId });
           const nodes = viewId
             ? nativeViewNodes(state, viewId)
             : state.document.layout.nodes.filter(
@@ -659,6 +676,7 @@ export class McpServerFactory {
             { ...state.document, layout: { ...state.document.layout, nodes } },
             viewId ? nativeViewSelection(state, viewId).layoutViewId : undefined,
             limit,
+            mode,
           );
         }),
     );
