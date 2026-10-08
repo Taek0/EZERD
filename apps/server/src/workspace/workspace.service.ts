@@ -48,8 +48,12 @@ import type { ProjectRow } from '../db/schema.js';
 import { projectPreview } from './project-preview.js';
 import { nextAutomaticProjectName } from './project-name.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
+import { NativeQueryCache } from '../mcp/native-query-cache.js';
+import type { NativeProjectState } from '../mcp/mcp-native-read.js';
 
-function project(row: ProjectRow): Project {
+function project(
+  row: Omit<ProjectRow, 'document'> & { document?: ProjectRow['document'] },
+): Project {
   const database = resolveProjectDatabaseState({
     ...row,
     databaseKind: row.databaseKind ?? 'postgresql',
@@ -82,6 +86,8 @@ async function operation<T>(callback: () => Promise<T>): Promise<T> {
 
 @Injectable()
 export class WorkspaceService {
+  private readonly nativeQueryCache = new NativeQueryCache();
+
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
@@ -244,6 +250,63 @@ export class WorkspaceService {
             : { status: 'unavailable', code: result.code },
       });
     });
+  }
+
+  /** MCP queries need a validated native source, without full preview/diagnostic construction. */
+  getNativeQueryState(actorId: string, id: string): Promise<NativeProjectState> {
+    return operation(() =>
+      this.access.runProject(actorId, id, 'read', async (tx) => {
+        // Authorization and the current head are checked even when the source is cached.
+        // Both reads share the access service's repeatable-read snapshot.
+        const [head] = await tx
+          .select({
+            id: projects.id,
+            workspaceId: projects.workspaceId,
+            name: projects.name,
+            databaseKind: projects.databaseKind,
+            databaseProfileId: projects.databaseProfileId,
+            databaseRevision: projects.databaseRevision,
+            status: projects.status,
+            version: projects.version,
+            syncSequence: projects.syncSequence,
+            createdAt: projects.createdAt,
+            updatedAt: projects.updatedAt,
+          })
+          .from(projects)
+          .where(eq(projects.id, id));
+        if (!head) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+        const database = resolveProjectDatabaseState(head);
+        const key = JSON.stringify([
+          head.id,
+          head.workspaceId,
+          head.createdAt.toISOString(),
+          head.updatedAt.toISOString(),
+          head.version,
+          head.syncSequence,
+          database.revision,
+          database.kind,
+          database.profileId,
+        ]);
+        let document = this.nativeQueryCache.get(key);
+        if (!document) {
+          const [source] = await tx
+            .select({ document: projects.document })
+            .from(projects)
+            .where(eq(projects.id, id));
+          if (!source) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+          document = this.nativeQueryCache.parse(key, source.document, database);
+        }
+        return {
+          project: {
+            ...project(head),
+            databaseProfileId: database.profileId,
+            databaseRevision: database.revision,
+          },
+          syncSequence: head.syncSequence,
+          document,
+        };
+      }),
+    );
   }
 
   private async missingOrConflict(id: string): Promise<never> {
