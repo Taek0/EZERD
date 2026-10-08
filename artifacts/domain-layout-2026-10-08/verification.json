@@ -1,0 +1,51 @@
+{
+  "cardIntersections": 0,
+  "curveCrossings": 1,
+  "nodes": [
+    {
+      "x": 80,
+      "y": 400,
+      "id": "node-auth",
+      "width": 320,
+      "height": 240,
+      "viewId": "overview",
+      "objectId": "auth"
+    },
+    {
+      "x": 580,
+      "y": 880,
+      "id": "node:6b9ee6c3-d607-4cc9-97a7-d236499ec4f4",
+      "width": 320,
+      "height": 240,
+      "viewId": "overview",
+      "objectId": "6b9ee6c3-d607-4cc9-97a7-d236499ec4f4"
+    },
+    {
+      "x": 1080,
+      "y": 400,
+      "id": "node-project",
+      "width": 320,
+      "height": 240,
+      "viewId": "overview",
+      "objectId": "project"
+    },
+    {
+      "x": 1580,
+      "y": 80,
+      "id": "node-review",
+      "width": 320,
+      "height": 240,
+      "viewId": "overview",
+      "objectId": "review"
+    },
+    {
+      "x": 1580,
+      "y": 880,
+      "id": "node-sync",
+      "width": 320,
+      "height": 240,
+      "viewId": "overview",
+      "objectId": "sync"
+    }
+  ]
+}
