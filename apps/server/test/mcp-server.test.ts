@@ -135,6 +135,10 @@ describe('MCP server tools', () => {
       expect(client.getInstructions()).toContain('x·y·width·height');
       expect(client.getInstructions()).toContain('불필요한 폭·높이·빈 공간을 줄여');
       expect(client.getInstructions()).toContain('구조적 계층');
+      expect(client.getInstructions()).toContain('비연결 카드 내부를 관통');
+      expect(client.getInstructions()).toContain('동일한 구간에 포개지지 않게');
+      expect(client.getInstructions()).toContain('diagnose_layout은 카드 진단');
+      expect(client.getInstructions()).toContain('남은 교차를 보고');
       expect(client.getInstructions()).toContain('겹침을 확인하고 수정');
       expect(tools.tools.map((tool) => tool.name)).toEqual([
         'whoami',
