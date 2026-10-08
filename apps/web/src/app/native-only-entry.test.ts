@@ -58,7 +58,6 @@ it('keeps legacy editor and sync entry points outside the application runtime gr
     'shared/clipboard/table-clipboard-store.ts',
     'features/canvas/inspector-state.ts',
     'features/relations/relation-routing.ts',
-    'features/relations/obstacle-queries.ts',
     'features/domains/domain-relations.ts',
     'features/domains/DomainDescription.tsx',
     'features/domains/DomainColorPicker.tsx',
