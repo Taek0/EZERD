@@ -10,6 +10,7 @@ import {
   moveNativeLabel,
   removeNativeLabel,
   nativeLabelsForCommand,
+  nativeLabelsFromLines,
 } from './native-label-draft.js';
 import { NativeLabelFields } from './NativeLabelFields.js';
 import { advancedFixture } from './native-advanced-test-fixtures.js';
@@ -35,6 +36,59 @@ afterEach(() => {
 });
 const originals = ['', 'line\nbreak', 'CR\rLF\r\n', ' leading', '😀', 'x\"\\\t'];
 describe('exact ordered label drafts and consumers', () => {
+  it('parses bulk paste in order, ignoring blank separators without trimming labels', () => {
+    expect(
+      parseNativeLabels(nativeLabelsFromLines(' first \r\n\r\nsecond\nthird\rfourth\r\n')),
+    ).toEqual([' first ', 'second', 'third', 'fourth']);
+    expect(parseNativeLabels(nativeLabelsFromLines(' \nfirst\nfirst'))).toEqual([
+      ' ',
+      'first',
+      'first',
+    ]);
+    expect(parseNativeLabels(nativeLabelsFromLines('\r\n\n'))).toEqual([]);
+    expect(parseNativeLabels(nativeLabelsFromLines(''))).toEqual([]);
+    expect(() => nativeLabelsFromLines(Array(1001).fill('value').join('\n'))).toThrow();
+  });
+  it.each(['ko', 'en'] as const)(
+    'renders one bulk textarea for ordinary values in %s',
+    (locale) => {
+      setLocale(locale);
+      const change = vi.fn();
+      const html = renderToStaticMarkup(
+        createElement(NativeLabelFields, {
+          value: serializeNativeLabels(['first', ' second ']),
+          onChange: change,
+        }),
+      );
+      expect((html.match(/<textarea/g) ?? []).length).toBe(1);
+      expect(html).toContain('first\n second ');
+      expect(html).toContain(locale === 'ko' ? '값 목록 (한 줄에 하나)' : 'Values (one per line)');
+      expect(change).not.toHaveBeenCalled();
+    },
+  );
+  it('uses the same bulk arrays in ENUM creation and editing commands', () => {
+    const f = advancedFixture();
+    f.document.enums = [{ id: 'e', name: 'state', schema: '', values: ['old'] }];
+    const raw = nativeLabelsFromLines('new\r\nother\r\n');
+    const before = nativeConstraintInitial(f.document, 'enums', 'e');
+    expect(
+      nativeStructureCommands(f.document, undefined, 'enum', {
+        id: 'fresh',
+        name: 'fresh',
+        schema: '',
+        enumLabelsJSON: raw,
+      }),
+    ).toMatchObject([{ type: 'add_enum', value: { values: ['new', 'other'] } }]);
+    expect(
+      nativeConstraintCommands(
+        f.document,
+        'enums',
+        'e',
+        { ...before, enumLabelsJSON: raw },
+        before,
+      ),
+    ).toEqual([{ type: 'patch_enum', id: 'e', patch: { values: ['new', 'other'] } }]);
+  });
   it('roundtrips exact raw arrays and distinguishes no labels from one empty label', () => {
     const raw = serializeNativeLabels(originals);
     expect(parseNativeLabels(raw)).toEqual(originals);
@@ -102,8 +156,17 @@ describe('exact ordered label drafts and consumers', () => {
     const html = renderToStaticMarkup(
       createElement(NativeLabelFields, { value: raw, onChange: vi.fn(), maxItems: 64 }),
     );
-    expect((html.match(/<textarea/g) ?? []).length).toBe(65);
-    expect(html).toMatch(/disabled=""[^>]*>[\s\S]*?값 추가/);
+    expect((html.match(/<textarea/g) ?? []).length).toBe(1);
+    expect(html).toMatch(/disabled=""[^>]*>[\s\S]*?빈 문자열 추가/);
+    expect(parseNativeLabels(raw)).toHaveLength(65);
+    expect(
+      parseNativeLabels(
+        nativeLabelsFromLines(Array.from({ length: 64 }, (_, i) => String(i)).join('\n'), 64),
+      ),
+    ).toHaveLength(64);
+    expect(() => nativeLabelsFromLines(parseNativeLabels(raw).join('\n'), 64)).toThrow(
+      'native.labels-draft-invalid',
+    );
     expect(parseNativeLabels(raw)).toHaveLength(65);
   });
   it('prepares exact PG ENUM add/patch and leaves malformed unchanged fields/source intact on rename', () => {

@@ -22,6 +22,13 @@ export function serializeNativeLabels(labels: readonly string[]): string {
   parseNativeLabels(raw);
   return raw;
 }
+/** Blank separator lines are ignored; nonempty labels retain whitespace, duplicates and order. */
+export function nativeLabelsFromLines(text: string, maxItems = nativeLabelLimit): string {
+  const labels = text.split(/\r\n|\r|\n/).filter((label) => label !== '');
+  if (labels.length > Math.min(nativeLabelLimit, maxItems))
+    throw Error('native.labels-draft-invalid');
+  return serializeNativeLabels(labels);
+}
 export function changeNativeLabel(raw: string, index: number, value: string): string {
   const labels = parseNativeLabels(raw);
   if (!Number.isInteger(index) || index < 0 || index >= labels.length)

@@ -198,8 +198,9 @@ it.each([false, true])(
       loadNativeEditorDraft(context.userId, context.snapshot.project.id, 'create:enum:project')
         ?.values,
     ).toMatchObject({ name: 'qa_status', enumLabelsJSON: '[]' });
-    click('값 추가');
-    const inputPath = field('값 1').path;
+    const bulkLabel = '값 목록 (한 줄에 하나)';
+    change(bulkLabel, 'draft');
+    const inputPath = field(bulkLabel).path;
     const instance = states.get(
       nodes.find(({ element }) => element.type === NativeCreateForm)!.path,
     );
@@ -208,20 +209,29 @@ it.each([false, true])(
     expect(saves).toHaveLength(1);
     expect(saves[0]![0]).toMatchObject({
       type: 'add_enum',
-      value: { name: 'qa_status', values: [''] },
+      value: { name: 'qa_status', values: ['draft'] },
     });
-    if (duringAck) change('값 1', 'pending');
+    if (duringAck) {
+      change(bulkLabel, 'draft\n');
+      expect(field(bulkLabel).element.props.value).toBe('draft\n');
+      expect(field(bulkLabel).path).toBe(inputPath);
+      change(bulkLabel, 'draft\npending');
+      expect(
+        loadNativeEditorDraft(context.userId, context.snapshot.project.id, 'create:enum:project')
+          ?.values.enumLabelsJSON,
+      ).toBe('["draft","pending"]');
+    }
     await vi.advanceTimersByTimeAsync(800);
     accept.shift()!();
     await vi.advanceTimersByTimeAsync(0);
     render();
     expect(field('물리 이름').element.props.value).toBe('qa_status');
-    expect(field('값 1').element.props.value).toBe(duringAck ? 'pending' : '');
-    expect(field('값 1').path).toBe(inputPath);
+    expect(field(bulkLabel).element.props.value).toBe(duringAck ? 'draft\npending' : 'draft');
+    expect(field(bulkLabel).path).toBe(inputPath);
     expect(states.get(nodes.find(({ element }) => element.type === NativeCreateForm)!.path)).toBe(
       instance,
     );
-    change('값 1', 'ready');
+    change(bulkLabel, 'draft\nready');
     await vi.advanceTimersByTimeAsync(NATIVE_AUTOSAVE_QUIET_WINDOW_MS);
     render();
     const created = saves[0]![0];
@@ -230,12 +240,12 @@ it.each([false, true])(
     expect(saves[1]![0]).toMatchObject({
       type: 'patch_enum',
       id: created.value.id,
-      patch: { values: ['ready'] },
+      patch: { values: ['draft', 'ready'] },
     });
     accept.shift()!();
     await vi.advanceTimersByTimeAsync(0);
     render();
-    expect(field('값 1').element.props.value).toBe('ready');
-    expect(field('값 1').path).toBe(inputPath);
+    expect(field(bulkLabel).element.props.value).toBe('draft\nready');
+    expect(field(bulkLabel).path).toBe(inputPath);
   },
 );
