@@ -63,6 +63,7 @@ describe('exact ordered label drafts and consumers', () => {
       expect((html.match(/<textarea/g) ?? []).length).toBe(1);
       expect(html).toContain('first\n second ');
       expect(html).toContain(locale === 'ko' ? '값 목록 (한 줄에 하나)' : 'Values (one per line)');
+      expect(html).not.toContain(locale === 'ko' ? '값별 편집' : 'Edit individual values');
       expect(change).not.toHaveBeenCalled();
     },
   );
@@ -146,6 +147,7 @@ describe('exact ordered label drafts and consumers', () => {
       expect(html).toContain('line\nbreak');
       expect(html).toContain(locale === 'ko' ? '빈 문자열' : 'Empty string');
       expect(html).toContain(locale === 'ko' ? '값 2개' : '2 values');
+      expect(html).not.toContain(locale === 'ko' ? '여러 줄로 일괄 입력' : 'Enter values in bulk');
       expect(html).toContain('<fieldset disabled="">');
       expect(html).not.toContain('[&quot;');
       expect(change).not.toHaveBeenCalled();

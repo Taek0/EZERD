@@ -20,8 +20,6 @@ registerTranslations({
   '값 추가': 'Add value',
   '빈 문자열 추가': 'Add empty string',
   '값 목록 (한 줄에 하나)': 'Values (one per line)',
-  '값별 편집': 'Edit individual values',
-  '여러 줄로 일괄 입력': 'Enter values in bulk',
   '한 줄에 하나씩 입력하거나 붙여넣으세요. 빈 줄은 건너뛰며 값의 공백과 순서는 그대로 저장됩니다.':
     'Enter or paste one value per line. Blank lines are skipped; whitespace within values and order are preserved.',
   '전체 입력을 지우면 값 목록이 비워집니다. 빈 값 하나는 빈 문자열 추가로 입력하세요.':
@@ -93,9 +91,6 @@ export function NativeLabelFields({
       {requiresIndividual && (
         <p>{t('빈 문자열이나 개행을 포함한 값은 값별 편집으로 보존됩니다.')}</p>
       )}
-      <Button disabled={disabled || requiresIndividual} onClick={() => setIndividual(!individual)}>
-        {t(showIndividual ? '여러 줄로 일괄 입력' : '값별 편집')}
-      </Button>
       {showIndividual ? (
         <>
           <p>{t('각 값의 빈 문자열·개행·공백과 순서는 그대로 저장됩니다.')}</p>
