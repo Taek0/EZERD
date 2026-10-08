@@ -35,6 +35,7 @@ export function NativeCanvasInputForm({
   build,
   children,
   onSubmitReady,
+  pauseAutosave = false,
 }: {
   context: {
     userId: string;
@@ -57,6 +58,7 @@ export function NativeCanvasInputForm({
     change: (field: string, value: string) => void,
   ) => ReactNode;
   onSubmitReady?: (submit: NativeCanvasSubmit) => void;
+  pauseAutosave?: boolean;
 }) {
   const { t } = useI18n();
   const currentExpected = expected(context.snapshot);
@@ -118,8 +120,9 @@ export function NativeCanvasInputForm({
   }
   const [confirmation, setConfirmation] = useState(false);
   const autosave = useNativeAutosave({
-    blocked: context.busy || stale || disabled || !!storageError,
-    getBlocked: (draining) => (!draining && context.busy) || stale || disabled || !!storageError,
+    blocked: pauseAutosave || context.busy || stale || disabled || !!storageError,
+    getBlocked: (draining) =>
+      pauseAutosave || (!draining && context.busy) || stale || disabled || !!storageError,
     save: (draining) => handleSubmit(false, draining),
   });
   async function handleSubmit(confirmed = false, draining = false) {
@@ -132,6 +135,7 @@ export function NativeCanvasInputForm({
       submitting.current.has(captured.revision)
     )
       return;
+    autosave.markSubmitted();
     if (
       context.affectsSharedDocument &&
       (captured.expected.version !== currentExpected.version ||

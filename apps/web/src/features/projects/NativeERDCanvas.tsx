@@ -2698,6 +2698,10 @@ function NativeCanvasWorkspace({
           if (!event.currentTarget.contains(event.target as Node)) return;
           setMenu(null);
           setRelationMenu(null);
+          // Route handles are portalled into the world, outside the editor's DOM subtree.
+          // Let their own pointer capture run before canvas selection, panning or pin creation.
+          if (event.target instanceof Element && event.target.closest('.native-route-controls'))
+            return;
           if (
             pinMode &&
             event.button === 0 &&

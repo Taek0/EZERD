@@ -1,4 +1,12 @@
-import { memo, useEffect, useMemo, useRef, type PointerEvent, type ComponentProps } from 'react';
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ComponentProps,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { relationLayoutSchema } from '@ezerd/contracts';
 import type { NativeDesignDocument, RelationLayout } from '@ezerd/model';
@@ -33,6 +41,7 @@ function RouteHandles({
   change,
   disabled,
   onComplete,
+  onDraggingChange,
 }: {
   scene: NativeRouteScene;
   relationId: string;
@@ -41,6 +50,7 @@ function RouteHandles({
   change: (route: RelationLayout) => void;
   disabled: boolean;
   onComplete: () => void;
+  onDraggingChange: (dragging: boolean) => void;
 }) {
   const { t } = useI18n();
   const drag = useRef<{
@@ -100,6 +110,7 @@ function RouteHandles({
               route,
               points: geometry.points,
             };
+            onDraggingChange(true);
           }}
           onPointerMove={(event) => {
             const d = drag.current;
@@ -111,6 +122,7 @@ function RouteHandles({
           onPointerUp={(event) => {
             if (drag.current?.pointerId === event.pointerId) {
               drag.current = null;
+              onDraggingChange(false);
               if (event.currentTarget.hasPointerCapture(event.pointerId))
                 event.currentTarget.releasePointerCapture(event.pointerId);
               onComplete();
@@ -118,9 +130,11 @@ function RouteHandles({
           }}
           onPointerCancel={() => {
             drag.current = null;
+            onDraggingChange(false);
           }}
           onLostPointerCapture={() => {
             drag.current = null;
+            onDraggingChange(false);
           }}
           onKeyDown={(event) => {
             if (disabled) return;
@@ -175,6 +189,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const [dragging, setDragging] = useState(false);
   const active = useRef(true);
   useEffect(() => {
     active.current = true;
@@ -233,6 +248,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
           personalVersion: String(personalVersion ?? ''),
         }}
         disabled={false}
+        pauseAutosave={dragging}
         onSubmitReady={registerSubmit}
         build={(values) => {
           if (values.personalVersion !== String(personalVersion ?? ''))
@@ -293,6 +309,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
                   route={values.reset === 'true' ? { viewId, relationId, offset: 0 } : route}
                   world={world}
                   disabled={context.busy || mismatch}
+                  onDraggingChange={setDragging}
                   onComplete={() => {
                     void submit.current();
                   }}

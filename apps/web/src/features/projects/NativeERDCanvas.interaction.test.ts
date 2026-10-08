@@ -2,6 +2,7 @@ import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeERDCanvas, NativeCanvasActions, NativeCanvasInputForm } from './NativeERDCanvas.js';
 import { NativeCanvasScene } from './NativeCanvasScene.js';
+import { NativeRelationEditor } from './NativeRelationEditor.js';
 import { NativeCameraControls, NativeCanvasToolbar } from './NativeCanvasToolbar.js';
 import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
 import {
@@ -212,6 +213,7 @@ function canvas(authenticated = false) {
   }
   const captured = new Set<number>();
   const surface = {
+    getBoundingClientRect: () => ({ left: 0, top: 0 }),
     contains(target: unknown): boolean {
       let current = target;
       while (current instanceof Target) current = current.parentElement;
@@ -1035,4 +1037,45 @@ describe('native blank canvas pointer interaction', () => {
     ui.event('onPointerMove', { clientX: 1200 });
     expect(ui.hasMarquee()).toBe(false);
   });
+  it.each(
+    ['select', 'hand', 'space', 'pin'].flatMap((mode) =>
+      [false, true].map((filtered) => ({ mode, filtered })),
+    ),
+  )(
+    'leaves route gestures to the editor ($mode, domain filter=$filtered)',
+    ({ mode, filtered }) => {
+      const ui = canvas(true);
+      const createPin = vi.fn();
+      if (filtered) {
+        const toolbar = nodes(ui.render()).find((node) => node.type === NativeCanvasToolbar)!;
+        (toolbar.props.onFilter as (filter: unknown) => void)({
+          domainIds: ['d'],
+          unassigned: false,
+        });
+      }
+      if (mode === 'hand') (ui.controls().onTool as (tool: string) => void)('hand');
+      if (mode === 'space')
+        ui.event('onKeyDownCapture', {
+          key: ' ',
+          code: 'Space',
+          nativeEvent: { key: ' ', code: 'Space' },
+        });
+      if (mode === 'pin') {
+        ui.props.pinMode = true;
+        ui.props.onCreatePin = createPin;
+      }
+      (ui.scene().onSelectRelation as (id: string) => void)('fk');
+      ui.render();
+      const editor = () => nodes(ui.render()).find((node) => node.type === NativeRelationEditor);
+      expect(editor()?.props.relationId).toBe('fk');
+      const transform = ui.transform();
+      ui.event('onPointerDownCapture', { target: new Target('.native-route-controls') });
+      ui.event('onPointerMove', { clientX: 1100, clientY: 1100 });
+      expect(editor()?.props.relationId).toBe('fk');
+      expect(ui.surface.setPointerCapture).not.toHaveBeenCalled();
+      expect(ui.hasMarquee()).toBe(false);
+      expect(ui.transform()).toBe(transform);
+      expect(createPin).not.toHaveBeenCalled();
+    },
+  );
 });

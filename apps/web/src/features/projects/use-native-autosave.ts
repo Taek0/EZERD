@@ -85,6 +85,11 @@ export function useNativeAutosave({
     return () => clearTimeout(timer);
   }, [revision, blocked, composing, saving, delay, maxWait]);
   return {
+    markSubmitted: () => {
+      // An explicit gesture/form submit consumes the same pending edit as a timer flush.
+      state.current.attempted = state.current.revision;
+      state.current.firstChangedAt = null;
+    },
     markChanged: () => {
       state.current.firstChangedAt ??= Date.now();
       state.current.lastChangedAt = Date.now();

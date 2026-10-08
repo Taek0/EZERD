@@ -151,6 +151,44 @@ afterEach(() => {
 });
 
 describe('native canvas form gesture-submit registration', () => {
+  it('preserves a long route drag beyond max-wait and submits only its final input on release', async () => {
+    vi.useFakeTimers();
+    const save = vi.fn(async (..._args: unknown[]) => true);
+    const ui = fixture(save);
+    ui.props.pauseAutosave = true;
+    ui.render();
+    for (const value of ['10', '20', '30']) {
+      ui.change('route', value);
+      ui.render();
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(save).not.toHaveBeenCalled();
+      expect(ui.draft()?.values.route).toBe(value);
+    }
+    ui.props.pauseAutosave = false;
+    // Pointer-up submits immediately, before React commits the resumed autosave state.
+    await ui.submit();
+    ui.render();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]?.[0]).toEqual([
+      {
+        type: 'upsert_relation_layout',
+        value: { viewId: '__tables__', relationId: 'r', offset: 30 },
+      },
+    ]);
+  });
+  it('retains interrupted drag input without draining it on unmount', async () => {
+    vi.useFakeTimers();
+    const ui = fixture();
+    ui.props.pauseAutosave = true;
+    ui.render();
+    ui.change('route', '42');
+    ui.render();
+    ui.unmount();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(ui.onSave).not.toHaveBeenCalled();
+    expect(ui.draft()?.values.route).toBe('42');
+  });
   it('submits another revision of the same route while its earlier save is in flight', async () => {
     const acknowledgements: ((saved: boolean) => void)[] = [];
     const save = vi.fn(() => new Promise<boolean>((resolve) => acknowledgements.push(resolve)));
