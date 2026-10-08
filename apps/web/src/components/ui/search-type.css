@@ -1,0 +1,16 @@
+.ui-search-type {
+  width: 100%;
+  min-width: 0;
+}
+.ui-search-type .ui-search-type-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin-inline-start: 10px;
+  color: var(--ui-control-muted);
+  pointer-events: none;
+}
+.ui-search-type .ui-search-type-icon + .ui-input {
+  flex: 1 1 0;
+  padding-inline-start: 8px;
+}

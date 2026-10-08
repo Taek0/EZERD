@@ -6,6 +6,7 @@ import { ComboBox, Group, Input, ListBox } from 'react-aria-components';
 import { UntitledPopover, UntitledSelectItem } from './untitled.js';
 import { useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
+import './search-type.css';
 export function SearchType({
   value,
   onValueChange,
@@ -72,7 +73,14 @@ export function SearchType({
     >
       <Group className="ui-input-group">
         {showSearchIcon && (
-          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+          <svg
+            className="ui-search-type-icon"
+            aria-hidden="true"
+            width="16"
+            height="16"
+            viewBox="0 0 20 20"
+            fill="none"
+          >
             <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.6" />
             <path d="m13 13 4 4" stroke="currentColor" strokeWidth="1.6" />
           </svg>

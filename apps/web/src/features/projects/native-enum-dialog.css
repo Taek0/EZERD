@@ -5,6 +5,14 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow:
+    0 24px 64px #202d4540,
+    inset 0 1px 0 #ffffffd9;
+}
+.native-enum-dialog::backdrop {
+  background: #202d4559;
 }
 .native-enum-dialog[open] {
   display: flex;
@@ -38,6 +46,9 @@
   padding: 18px 20px;
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+  align-items: flex-start;
+  gap: 16px;
+  background: var(--ui-control-bg);
 }
 .native-enum-dialog .enum-dialog-head h2 {
   margin: 0;
@@ -95,23 +106,40 @@
   font-size: 13px;
 }
 .native-enum-dialog .table-enum-item[data-selected] {
-  border-color: var(--accent);
+  border-color: var(--ui-brand-200);
+  background: var(--ui-brand-50);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .native-enum-dialog .table-enum-item {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--ui-control-bg);
   padding: 12px;
 }
 .native-enum-dialog .table-enum-item > summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px 12px;
+  list-style: none;
+}
+.native-enum-dialog .table-enum-item > summary::-webkit-details-marker {
+  display: none;
+}
+.native-enum-disclosure {
+  color: var(--muted);
+}
+.native-enum-dialog .table-enum-item[open] .native-enum-disclosure {
+  transform: rotate(90deg);
+}
+.native-enum-dialog .table-enum-item > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
 }
 .native-enum-dialog .table-enum-item > summary small {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   color: var(--muted);
   font-size: 12px;
 }
@@ -122,20 +150,24 @@
   min-width: 24px;
   padding: 2px 7px;
   border-radius: 20px;
-  background: var(--surface-raised, #eff8ff);
-  color: var(--muted);
+  background: var(--ui-brand-100);
+  color: var(--ui-brand-800);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .native-enum-dialog .table-enum-values span {
   border: 1px solid var(--line);
   white-space: pre-wrap;
+  background: var(--ui-control-bg);
+  color: var(--ink);
 }
 .native-enum-editor {
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 12px;
+  background: var(--ui-control-bg);
+  box-shadow: var(--ui-product-raised);
 }
 .native-enum-editor-head {
   display: flex;
@@ -145,6 +177,7 @@
   margin-bottom: 12px;
   border-bottom: 1px solid var(--line);
   padding-bottom: 12px;
+  color: var(--button-primary-text);
 }
 .native-enum-editor-head p {
   margin: 0;
@@ -152,7 +185,10 @@
   overflow-wrap: anywhere;
 }
 .native-enum-editor[data-deleting] {
-  border-inline-start: 3px solid var(--danger, #b42318);
+  border-inline-start: 3px solid var(--ui-danger);
+}
+.native-enum-editor[data-deleting] .native-enum-editor-head {
+  color: var(--ui-danger);
 }
 .native-enum-dialog .native-property-editor {
   border: 0;
@@ -169,13 +205,20 @@
 }
 /* Scope the shared value editor's layout to this dialog, preserving its validation. */
 .native-enum-dialog .native-property-editor fieldset fieldset:has(> legend) {
-  min-height: 180px;
+  min-height: 100px;
   max-height: min(400px, 45dvh);
   overflow: auto;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   overscroll-behavior: contain;
+  background: var(--surface);
+}
+.native-enum-dialog .native-property-editor legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: var(--font-weight-label);
 }
 .native-enum-dialog .native-property-editor fieldset fieldset:has(> legend) > div {
   display: grid;
@@ -206,6 +249,8 @@
   display: grid;
   gap: 6px;
   min-width: 0;
+  font-size: 12px;
+  color: var(--ui-control-secondary);
 }
 .native-enum-dialog .native-property-editor input,
 .native-enum-dialog .native-property-editor textarea {
@@ -217,6 +262,8 @@
   padding: 12px 20px;
   border-top: 1px solid var(--line);
   flex-shrink: 0;
+  justify-content: flex-end;
+  background: var(--ui-control-bg);
 }
 @media (max-width: 480px) {
   .native-enum-dialog > .enum-dialog-head,

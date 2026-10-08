@@ -213,6 +213,16 @@ export function NativeEnumDialog({
                 data-selected={selected === item.id || undefined}
               >
                 <summary>
+                  <svg
+                    className="native-enum-disclosure"
+                    aria-hidden="true"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                  >
+                    <path d="m7 4 6 6-6 6" stroke="currentColor" strokeWidth="1.6" />
+                  </svg>
                   <strong>
                     {item.schema ? `${item.schema}.` : ''}
                     {item.name}
