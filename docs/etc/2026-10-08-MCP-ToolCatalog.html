@@ -1,0 +1,304 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>EZERD MCP 도구 목록</title>
+<style>body{font-family:system-ui,sans-serif;max-width:1100px;margin:48px auto;padding:0 24px;background:#f5f7fa;color:#18283a}input{box-sizing:border-box;width:100%;padding:16px;font-size:16px;border:1px solid #abc;border-radius:10px}article{background:white;border:1px solid #dbe2ea;border-radius:12px;padding:20px;margin:16px 0}h2{font-size:19px;overflow-wrap:anywhere;color:#135d89}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;line-height:1.65;font-size:14px}summary{cursor:pointer}</style>
+<h1>EZERD MCP 도구 목록</h1><p>2026-10-08 · 현재 Codex 대화의 도구 50개 · 정적 스냅샷</p><p>열람용 목록입니다. 실제 호출 기능은 없습니다. unknown은 노출된 호출 선언의 표현입니다.</p><label for="search">이름·설명 검색</label><input id="search" type="search" placeholder="table, workspace, 프로젝트"><p id="count" aria-live="polite"></p><details><summary>공통 서버 안내</summary><pre>get_project_database_capabilities로 DB/profile/revision과 usable 기능을 확인하고 get_project_document_state로 원본을 조회하세요. 원본 schemaVersion 2만 apply_native_project_changes로 편집합니다. v1 전용 조회·편집·이력 도구는 종료되었습니다. v1 원본 조회와 파일 가져오기·내보내기·upgrade는 호환 목적으로 유지합니다. get_personal_state/apply_personal_changes는 자신의 개인 캔버스만 다룹니다. EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며 active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. Native 프로젝트 탐색은 get_project_summary로 시작하고, 배치 전 get_project_view의 모든 페이지로 최신 배치를 확인하세요. 화면 관계는 list_view_relations로 조회하세요. __tables__와 도메인 필터는 공유 좌표를 사용하며 반환된 노드 ID로 apply_native_project_changes를 호출하세요. 자신의 개인 결합 화면은 apply_personal_changes로 변경하고 카메라는 get_personal_state로 조회하세요. 테이블 컬럼·키·인덱스·CHECK·관계는 get_table_details로 확인합니다. 전체 원본이 필요한 경우에만 get_project_document_state 또는 같은 응답을 제공하는 get_project를 사용하세요. 배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. 같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. 같은 뷰의 카드 경계와 콘텐츠에 필요한 크기를 고려해 서로 겹치지 않게 배치하고 최소 40px 간격을 두세요. 테이블 카드는 이름·타입·컬럼 내용이 잘리지 않는 범위에서 불필요한 폭·높이·빈 공간을 줄여 콘텐츠에 맞는 크기로 지정하세요. 핵심/상위 테이블과 종속/하위 테이블의 구조적 계층이 읽히도록 단계별로 정렬하고, 같은 계층의 카드 크기와 간격을 일관되게 맞추세요. 객체 관계를 쉽게 읽을 수 있도록 연결된 객체는 가까이, 같은 도메인/업무 묶음은 같은 구역에 배치하세요. 도메인의 흐름 방향과 테이블 PK→FK 방향이 왼쪽에서 오른쪽 또는 위에서 아래로 일관되게 보이도록 계층을 구성하세요. 순환 관계는 무리한 일렬 배치 대신 관련 객체를 묶고, 관계선 교차와 불필요하게 긴 연결을 최소화하세요. 배치는 먼저 핵심/상위→하위/종속의 계층과 도메인 구역을 정하고, 카드 크기와 간격을 확정한 뒤 관계선 경로를 정리하는 순서로 진행하세요. 카드끼리의 중첩과 관계선이 비연결 카드 내부를 관통하는 경로는 허용하지 마세요. 연결된 카드도 올바른 연결 지점에서만 접촉하며 내부를 우회 경로로 사용하지 마세요. 관계선끼리 동일한 구간에 포개지지 않게 경로를 분리하고, 관계의 의미와 연결 컬럼을 유지하세요. 교차를 완전히 제거할 수 없는 그래프에서는 포개진 구간 없이 구분 가능한 교차로 최소화하고 남은 교차를 보고하세요. 경로 검증은 카드 사각형과 각 선분 좌표의 교차·관통 및 선분끼리 겹치는 구간을 계산하세요. diagnose_layout은 카드 진단이므로 관계선까지 충돌이 없다는 근거로 사용하지 마세요. 자동 경로 좌표가 없으면 경로를 명시하거나 검증하지 못한 부분을 보고하세요. 컬럼/설명 추가로 카드 크기가 커지는 경우에도 인접 카드와의 겹침을 다시 확인하세요. 기존 사용자의 배치를 불필요하게 바꾸지 말고 빈 공간을 우선 사용하며, 자동 배치는 요청받은 범위에만 적용하세요. 작업 후 get_project_document_state로 결과를 재조회해 같은 좌표 계산으로 겹침을 확인하고 수정하세요. 좌표를 생략해 모든 객체를 같은 위치에 생성하지 마세요.</pre></details><main>
+<article><h2>accept_workspace_invitation</h2><pre>인증된 사용자에게 온 유효한 공간 초대를 수락하고 멤버로 참여합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__accept_workspace_invitation(args: { invitationId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; expiresAt: string; id: string; invitedBy: string; invitedUserId: string; role: "owner" | "editor" | "viewer"; status: "pending" | "accepted" | "declined" | "cancelled" | "expired"; updatedAt: string; username: string; workspaceId: string; workspaceName: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>apply_native_project_changes</h2><pre>schemaVersion 2로 저장된 프로젝트의 native 객체 추가·부분 수정·삭제 및 PK 기반 FK 생성을 수행합니다. 명령별 입력 스키마를 따르세요. add_table은 {type:"add_table",value:NativeTable}이며 컬럼과 placement를 포함하지 않습니다. SQLite 테이블의 physical.namespace는 {kind:"sqliteMain"}, options는 {database:"sqlite",strict:false,withoutRowid:false}입니다. 배치는 같은 commands 배열에 {type:"add_table_reference",tableId:"새 테이블 ID",viewId:"__tables__",placement:{x:1500,y:180,width:400,height:260}}를 추가하세요. 컬럼은 별도 add_column 명령입니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 기존 legacy 원문을 그대로 보존하는 관계없는 신규 객체 추가는 허용합니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__apply_native_project_changes(args: { clientId: string; commands: Array&lt;unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown | unknown&gt;; expectedDatabaseRevision: number; expectedSequence: number; expectedVersion: number; groupId: string; includeDocument?: boolean; operationId: string; projectId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>apply_personal_changes</h2><pre>native 프로젝트에서 인증된 사용자 자신의 결합 화면·참조 테이블·개인 배치·뷰포트·관계 경로·메모를 개인 버전 기준으로 변경합니다. native 신규 쓰기는 get_personal_state의 databaseRevision/projectVersion/syncSequence를 expectedDatabaseRevision/expectedProjectVersion/expectedSyncSequence로 함께 전달합니다. 기존 operation 재생은 같은 원문을 유지합니다. 공유 설계·DB 문맥·물리 타입은 변경하지 않습니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__apply_personal_changes(args: { commands: Array&lt;{ type: "upsert_combined_view"; value: { domainIds: Array&lt;string&gt;; id: string; name: string; }; } | { id: string; type: "delete_combined_view"; } | { id: string; patch: { domainIds?: Array&lt;string&gt;; name?: string; }; type: "patch_combined_view"; } | { type: "set_viewport"; value: { viewId: string; x: number; y: number; zoom: number; }; } | { placement: { height?: number; width?: number; x: number; y: number; }; tableId: string; type: "add_table_reference"; viewId: string; } | { nodeId: string; type: "remove_table_reference"; } | { nodeId: string; patch: { height?: number; width?: number; x?: number; y?: number; }; type: "update_node_layout"; } | { type: "upsert_relation_layout"; value: { bend?: { x: number; y: number; }; offset: number; relationId: string; sourceAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; targetAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; viewId: string; waypoints?: Array&lt;{ x: number; y: number; }&gt;; }; } | { relationId: string; type: "delete_relation_layout"; viewId: string; } | { placement?: { x: number; y: number; }; type: "upsert_note"; value: { color?: string; id: string; text: string; viewId: string; }; } | { id: string; type: "delete_note"; } | { id: string; patch: { color?: string | null; text?: string; }; type: "patch_note"; }&gt;; expectedDatabaseRevision?: number; expectedProjectVersion?: number; expectedSyncSequence?: number; expectedVersion: number; operationId: string; projectId: string; }): Promise&lt;CallToolResult&lt;{ databaseRevision?: number; projectVersion: number; state: { nodes: Array&lt;{ height: number; id: string; objectId: string; viewId: string; width: number; x: number; y: number; }&gt;; notes: Array&lt;{ color?: string; id: string; text: string; viewId: string; }&gt;; relations: Array&lt;{ bend?: { x: number; y: number; }; offset: number; relationId: string; sourceAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; targetAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; viewId: string; waypoints?: Array&lt;{ x: number; y: number; }&gt;; }&gt;; viewports: Array&lt;{ viewId: string; x: number; y: number; zoom: number; }&gt;; views: Array&lt;{ domainIds: Array&lt;string&gt;; id: string; name: string; }&gt;; }; syncSequence: number; version: number; }&gt;&gt;; };
+```</pre></article>
+<article><h2>cancel_native_project_request</h2><pre>보관한 원래 native operation/command/upgrade/history 요청을 서버에서 취소 확정합니다. 이미 처리된 같은 actor/fingerprint 요청은 원문 결과를 반환하고 미기록 요청은 취소 마커로 늦은 쓰기를 막습니다. request는 전송했던 원문 전체이며 최신 문서나 새 operationId로 바꾸지 마세요.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__cancel_native_project_request(args: { kind: "protocol-operation"; projectId: string; request: { clientId: string; groupId: string; operationId: string; [key: string]: unknown; }; } | { kind: "native-command"; projectId: string; request: { clientId: string; groupId: string; operationId: string; [key: string]: unknown; }; } | { kind: "native-upgrade"; projectId: string; request: { clientId: string; operationId: string; [key: string]: unknown; }; } | { kind: "history-undo"; projectId: string; request: { clientId: string; groupId: string; operationId: string; [key: string]: unknown; }; sourceOperationId: string; } | { kind: "history-restore"; projectId: string; request: { clientId: string; groupId: string; operationId: string; [key: string]: unknown; }; sourceOperationId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>cancel_workspace_invitation</h2><pre>owner가 공간의 대기 중인 초대를 취소합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__cancel_workspace_invitation(args: { invitationId: string; workspaceId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; expiresAt: string; id: string; invitedBy: string; invitedUserId: string; role: "owner" | "editor" | "viewer"; status: "pending" | "accepted" | "declined" | "cancelled" | "expired"; updatedAt: string; username: string; workspaceId: string; workspaceName: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>create_project</h2><pre>새 EZERD 프로젝트를 생성합니다. 이름 생략/공백은 워크스페이스에서 새 프로젝트 및 증가하는 숫자로 자동 지정합니다. formatVersion: 2 또는 생략은 선택 databaseKind/default profile의 빈 native 설계를 만들며 get_project_document_state 및 apply_native_project_changes로 조회/편집합니다. 새 프로젝트는 native 설계만 지원합니다. native 생성은 미검증 DB 기능의 사용 가능 상태를 켜지 않습니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__create_project(args: { databaseKind?: "postgresql" | "mysql" | "sqlite"; formatVersion?: 2; name?: string; workspaceId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; databaseKind: "postgresql" | "mysql" | "sqlite"; databaseProfileId?: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; databaseRevision?: number; id: string; name: string; preview?: { relationCount: number; tableCount: number; tables: Array&lt;{ columns: Array&lt;{ name: string; primaryKey: boolean; type: string; }&gt;; name: string; }&gt;; }; status: "active" | "archived"; updatedAt: string; version: number; workspaceId: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>create_review_thread</h2><pre>프로젝트 화면에 리뷰 핀과 첫 메시지를 생성합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__create_review_thread(args: { projectId: string; thread: { body: string; mentionIds: Array&lt;string&gt;; objectId: string | null; viewId: string; x: number; y: number; }; }): Promise&lt;CallToolResult&lt;{ createdAt: string; id: string; messages: Array&lt;{ authorId: string; body: string; createdAt: string; id: string; mentionIds: Array&lt;string&gt;; threadId: string; }&gt;; objectId: string | null; projectId: string; resolved: boolean; updatedAt: string; viewId: string; x: number; y: number; }&gt;&gt;; };
+```</pre></article>
+<article><h2>create_workspace</h2><pre>인증된 사용자를 owner로 지정하여 새 공간을 생성합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__create_workspace(args: { name: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; id: string; name: string; role: "owner" | "editor" | "viewer"; status: "active" | "archived"; updatedAt: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>create_workspace_invitation</h2><pre>owner가 앱 내부 사용자명으로 공간 초대를 생성합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__create_workspace_invitation(args: { invitation: { role?: "owner" | "editor" | "viewer"; username: string; }; workspaceId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; expiresAt: string; id: string; invitedBy: string; invitedUserId: string; role: "owner" | "editor" | "viewer"; status: "pending" | "accepted" | "declined" | "cancelled" | "expired"; updatedAt: string; username: string; workspaceId: string; workspaceName: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>decline_workspace_invitation</h2><pre>인증된 사용자에게 온 공간 초대를 거절합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__decline_workspace_invitation(args: { invitationId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; expiresAt: string; id: string; invitedBy: string; invitedUserId: string; role: "owner" | "editor" | "viewer"; status: "pending" | "accepted" | "declined" | "cancelled" | "expired"; updatedAt: string; username: string; workspaceId: string; workspaceName: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>delete_project</h2><pre>보관된 프로젝트의 최신 버전을 영구 삭제합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__delete_project(args: { delete: { expectedVersion: number; }; projectId: string; }): Promise&lt;CallToolResult&lt;{ deleted: true; id: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>delete_review_thread</h2><pre>최신 expectedUpdatedAt을 기준으로 리뷰 핀과 답글을 삭제합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__delete_review_thread(args: { delete: { expectedUpdatedAt: string; }; threadId: string; }): Promise&lt;CallToolResult&lt;{ deleted: true; id: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>delete_workspace</h2><pre>owner가 프로젝트가 없는 공간을 영구 삭제합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__delete_workspace(args: { workspaceId: string; }): Promise&lt;CallToolResult&lt;{ deleted: true; }&gt;&gt;; };
+```</pre></article>
+<article><h2>diagnose_layout</h2><pre>저장 좌표와 실제 렌더링 카드 크기로 화면의 카드 겹침·40px 미만 간격·테이블 자동 확장을 진단합니다. 결과는 배치를 자동 변경하지 않습니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__diagnose_layout(args: { limit?: number; projectId: string; viewId?: string; }): Promise&lt;CallToolResult&lt;{ diagnostics: Array&lt;{ code: "card-expanded" | "card-overlap" | "card-gap-too-small"; message: string; objectId: string; otherObjectId?: string; viewId: string; x: number; y: number; }&gt;; truncated: boolean; }&gt;&gt;; };
+```</pre></article>
+<article><h2>diagnose_project</h2><pre>Native 문서의 DB별 구조·타입·기능 진단을 objectId/path/category/severity와 함께 반환합니다. 원본 v1은 먼저 명시적으로 변환해야 합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__diagnose_project(args: { projectId: string; }): Promise&lt;CallToolResult&lt;{ diagnostics: Array&lt;{ category: "unsupported" | "invalid" | "incomplete" | "environment"; code: string; objectId: string | null; params: { [key: string]: string | number | boolean; }; path: string; severity: "error" | "warning"; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>export_project</h2><pre>프로젝트의 공유 원본과 Native 미리보기를 버전 2 전송 파일로 내보냅니다. 기존 v1 원본도 손실 없이 포함합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__export_project(args: { projectId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>export_project_ddl</h2><pre>같은 서버 snapshot의 DB/profile/revision과 version/sequence를 기준으로 프로젝트 전체 물리 설계를 SQL로 내보냅니다. 화면·도메인·선택 상태를 필터로 사용하지 않습니다. canExport=false이면 SQL은 비어 있고 objectId/path 진단을 확인해야 합니다. native 타입/기능은 readiness 검사까지 통과해야 하며 v1 MySQL/SQLite의 PG 타입은 재해석하지 않습니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__export_project_ddl(args: { projectId: string; }): Promise&lt;CallToolResult&lt;{ canExport: boolean; database: { kind: "postgresql" | "mysql" | "sqlite"; profileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; revision: number; }; documentSchemaVersion: 1 | 2; encoding: "UTF-8"; filename: string; issues: Array&lt;{ category: "unsupported" | "invalid" | "incomplete" | "environment"; code: string; objectId: string | null; params: { [key: string]: string | number | boolean; }; path: string; severity: "error" | "warning"; }&gt;; projectId: string; projectName: string; sequence: number; sql: string; version: number; }&gt;&gt;; };
+```</pre></article>
+<article><h2>get_native_project_baseline</h2><pre>native 이력 보상에 사용할 현재 서버 baseline을 발급합니다. 설계 권한과 최신 version/sequence/databaseRevision이 필요합니다. clientId를 보관하고 응답의 baseline 좌표를 undo/restore 요청에 그대로 사용하세요.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_native_project_baseline(args: { clientId: string; expected: { databaseRevision: number; sequence: number; version: number; }; projectId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>get_native_project_history</h2><pre>native 이력과 legacy/upgrade 경계를 sequence 순서로 조회합니다. 원본 변경·삭제 증거를 반환하며 native 보상은 자신의 accepted native 작업에 한정됩니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_native_project_history(args: { limit?: number; projectId: string; since?: number; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>get_personal_state</h2><pre>인증된 사용자 자신의 결합 화면, 화면 배치·뷰포트와 개인 메모를 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_personal_state(args: { projectId: string; }): Promise&lt;CallToolResult&lt;{ databaseRevision?: number; projectVersion: number; state: { nodes: Array&lt;{ height: number; id: string; objectId: string; viewId: string; width: number; x: number; y: number; }&gt;; notes: Array&lt;{ color?: string; id: string; text: string; viewId: string; }&gt;; relations: Array&lt;{ bend?: { x: number; y: number; }; offset: number; relationId: string; sourceAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; targetAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; viewId: string; waypoints?: Array&lt;{ x: number; y: number; }&gt;; }&gt;; viewports: Array&lt;{ viewId: string; x: number; y: number; zoom: number; }&gt;; views: Array&lt;{ domainIds: Array&lt;string&gt;; id: string; name: string; }&gt;; }; syncSequence: number; version: number; }&gt;&gt;; };
+```</pre></article>
+<article><h2>get_project</h2><pre>프로젝트의 버전별 원본과 native 상태를 조회합니다. get_project_document_state와 동일한 공유 문서 응답이며 개인 화면은 포함하지 않습니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_project(args: { projectId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>get_project_database_capabilities</h2><pre>프로젝트의 DB 종류·프로필·변경 번호와 native v2 타입/옵션·기능을 조회합니다. supportedByEngine은 엔진 규칙이며 usable만 실제 사용 가능한 기능입니다. native 저장/preview는 get_project_document_state로 읽고 native 편집은 apply_native_project_changes를 사용합니다. 기능 적용 시 객체별 조건을 다시 검증해야 합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_project_database_capabilities(args: { projectId: string; }): Promise&lt;CallToolResult&lt;{ assumptions: Array&lt;string&gt;; capabilityScope: "native-v2"; database: { kind: "postgresql" | "mysql" | "sqlite"; profileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; revision: number; }; defaultTypeId: string; defaultTypeParameters: { [key: string]: string | number | boolean; }; documentSchemaVersion: 1 | 2; features: Array&lt;{ availability: "specified" | "implemented" | "verified"; id: "table" | "column" | "primaryKey" | "unique" | "foreignKey" | "array" | "serial" | "identity" | "autoIncrement" | "rowid" | "enumType" | "enumColumn" | "setColumn" | "schema" | "tableComment" | "columnComment" | "index" | "partialIndex" | "expressionIndex" | "includedIndexColumns" | "nullsNotDistinct" | "fullTextIndex" | "spatialIndex" | "indexMethod" | "check" | "generatedStored" | "generatedVirtual" | "collation" | "charset" | "srid" | "deferrableForeignKey" | "strictTable" | "withoutRowid"; requiresObjectValidation: true; supportedByEngine: boolean; usable: boolean; }&gt;; projectId: string; sequence: number; targetVersion: string; types: Array&lt;{ aliases: Array&lt;string&gt;; array: boolean; availability: "specified" | "implemented" | "verified"; category: "integer" | "decimal" | "floating" | "string" | "binary" | "boolean" | "temporal" | "interval" | "uuid" | "json" | "xml" | "bit" | "money" | "geometry" | "network" | "search" | "range" | "multirange" | "object-reference" | "snapshot" | "value-list" | "dynamic"; deprecated: boolean; id: string; parameters: { [key: string]: { kind: "integer"; max: number; min: number; required?: boolean; } | { kind: "boolean"; } | { kind: "choice"; values: Array&lt;string&gt;; }; }; sqlName: string; sqliteAffinity?: "integer" | "text" | "blob" | "real" | "numeric"; sqliteStrict: boolean; usable: boolean; }&gt;; version: number; }&gt;&gt;; };
+```</pre></article>
+<article><h2>get_project_document_state</h2><pre>같은 저장 snapshot의 프로젝트 DB/profile/revision·version·sequence, 원본 sourceDocument와 별도 native preview/진단을 읽습니다. preview available은 편집·DDL 기능이 usable이라는 뜻이 아닙니다. 공유 문서 조회이며 개인 상태를 합치거나 baseline을 발급하지 않습니다. 전체 문서가 필요한 경우 사용하세요.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_project_document_state(args: { projectId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>get_project_summary</h2><pre>전체 설계 문서 없이 Native v2 프로젝트의 DB 컨텍스트·버전·객체 개수와 화면·도메인 목록을 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_project_summary(args: { projectId: string; }): Promise&lt;CallToolResult&lt;{ counts: { checks: number; columns: number; domainRelations: number; domains: number; enums: number; indexes: number; keys: number; notes: number; tableRelations: number; tables: number; }; database: { kind: "postgresql" | "mysql" | "sqlite"; profileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; }; databaseRevision: number; domains: Array&lt;{ id: string; name: string; tableCount: number; }&gt;; project: { createdAt: string; databaseKind: "postgresql" | "mysql" | "sqlite"; databaseProfileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; databaseRevision: number; id: string; name: string; preview?: { relationCount: number; tableCount: number; tables: Array&lt;{ columns: Array&lt;{ name: string; primaryKey: boolean; type: string; }&gt;; name: string; }&gt;; }; status: "active" | "archived"; updatedAt: string; version: number; workspaceId: string; }; protocolVersion: 2; schemaVersion: 2; syncSequence: number; views: Array&lt;{ domainIds: Array&lt;string&gt;; id: string; kind: "overview" | "tables" | "domain" | "combined"; name: string; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>get_project_view</h2><pre>Native v2 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. __tables__와 도메인 필터는 공유 좌표를 사용하며 자신의 개인 화면만 별도 배치·메모·경로를 반환합니다. 테이블 컬럼은 get_table_details로 조회하세요.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_project_view(args: { cursor?: string; limit?: number; projectId: string; viewId: string; }): Promise&lt;CallToolResult&lt;{ database: { kind: "postgresql" | "mysql" | "sqlite"; profileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; }; databaseRevision: number; domainRelations: Array&lt;{ id: string; name: string; sourceDomainId: string; targetDomainId: string; }&gt;; domains: Array&lt;{ color?: string; id: string; name: string; }&gt;; nextCursor: string | null; nodes: Array&lt;{ height: number; id: string; objectId: string; viewId: string; width: number; x: number; y: number; }&gt;; notes: Array&lt;{ color?: string; id: string; text: string; viewId: string; }&gt;; project: { createdAt: string; databaseKind: "postgresql" | "mysql" | "sqlite"; databaseProfileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; databaseRevision: number; id: string; name: string; preview?: { relationCount: number; tableCount: number; tables: Array&lt;{ columns: Array&lt;{ name: string; primaryKey: boolean; type: string; }&gt;; name: string; }&gt;; }; status: "active" | "archived"; updatedAt: string; version: number; workspaceId: string; }; protocolVersion: 2; relationLayouts: Array&lt;{ bend?: { x: number; y: number; }; offset: number; relationId: string; sourceAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; targetAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; viewId: string; waypoints?: Array&lt;{ x: number; y: number; }&gt;; }&gt;; schemaVersion: 2; syncSequence: number; tableRelations: Array&lt;{ id: string; name: string; scope: "both" | "logical" | "physical"; sourceTableId: string; targetTableId: string; }&gt;; tables: Array&lt;{ color?: string; domainId: string | null; id: string; logicalName: string; physicalName: string; scope: "both" | "logical" | "physical"; }&gt;; totalNodes: number; view: { domainIds: Array&lt;string&gt;; id: string; kind: "overview" | "tables" | "domain" | "combined"; name: string; }; viewport: { viewId: string; x: number; y: number; zoom: number; } | null; }&gt;&gt;; };
+```</pre></article>
+<article><h2>get_review_thread</h2><pre>리뷰 핀 한 개와 모든 답글을 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_review_thread(args: { threadId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; id: string; messages: Array&lt;{ authorId: string; body: string; createdAt: string; id: string; mentionIds: Array&lt;string&gt;; threadId: string; }&gt;; objectId: string | null; projectId: string; resolved: boolean; updatedAt: string; viewId: string; x: number; y: number; }&gt;&gt;; };
+```</pre></article>
+<article><h2>get_table_details</h2><pre>한 테이블의 컬럼·키·연결 관계·배치 정보를 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_table_details(args: { projectId: string; tableId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>get_workspace</h2><pre>공간과 인증된 사용자의 현재 역할을 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__get_workspace(args: { workspaceId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; id: string; name: string; role: "owner" | "editor" | "viewer"; status: "active" | "archived"; updatedAt: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>import_project</h2><pre>버전 1·2 파일을 새 Native v2 프로젝트로 가져옵니다. v1 타입·기본값 원문은 서버 변환 정책에 따라 보존하며, 결과 진단은 get_project_document_state로 확인하세요.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__import_project(args: { transfer: unknown; workspaceId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; databaseKind: "postgresql" | "mysql" | "sqlite"; databaseProfileId?: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; databaseRevision?: number; id: string; name: string; preview?: { relationCount: number; tableCount: number; tables: Array&lt;{ columns: Array&lt;{ name: string; primaryKey: boolean; type: string; }&gt;; name: string; }&gt;; }; status: "active" | "archived"; updatedAt: string; version: number; workspaceId: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>leave_workspace</h2><pre>인증된 사용자가 공간에서 탈퇴합니다. 마지막 owner의 탈퇴는 거부됩니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__leave_workspace(args: { workspaceId: string; }): Promise&lt;CallToolResult&lt;{ removed: true; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_my_workspace_invitations</h2><pre>인증된 사용자에게 온 공간 초대를 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_my_workspace_invitations(args: {}): Promise&lt;CallToolResult&lt;{ invitations: Array&lt;{ createdAt: string; expiresAt: string; id: string; invitedBy: string; invitedUserId: string; role: "owner" | "editor" | "viewer"; status: "pending" | "accepted" | "declined" | "cancelled" | "expired"; updatedAt: string; username: string; workspaceId: string; workspaceName: string; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_notifications</h2><pre>인증된 사용자 자신의 알림을 최대 100개씩 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_notifications(args: { cursor?: string; limit?: number; unreadOnly?: boolean; }): Promise&lt;CallToolResult&lt;{ nextCursor: string | null; notifications: Array&lt;{ createdAt: string; id: string; projectId: string; read: boolean; threadId: string; userId: string; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_projects</h2><pre>상태와 이름 검색어로 EZERD 프로젝트를 최대 100개씩 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_projects(args: { cursor?: string; limit?: number; search?: string; status?: "active" | "archived"; workspaceId?: string; }): Promise&lt;CallToolResult&lt;{ nextCursor: string | null; projects: Array&lt;{ createdAt: string; databaseKind: "postgresql" | "mysql" | "sqlite"; databaseProfileId?: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; databaseRevision?: number; id: string; name: string; preview?: { relationCount: number; tableCount: number; tables: Array&lt;{ columns: Array&lt;{ name: string; primaryKey: boolean; type: string; }&gt;; name: string; }&gt;; }; status: "active" | "archived"; updatedAt: string; version: number; workspaceId: string; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_review_threads</h2><pre>프로젝트의 리뷰 핀 요약을 최대 100개씩 조회합니다. 답글은 get_review_thread로 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_review_threads(args: { cursor?: string; limit?: number; projectId: string; }): Promise&lt;CallToolResult&lt;{ nextCursor: string | null; threads: Array&lt;{ createdAt: string; id: string; objectId: string | null; projectId: string; resolved: boolean; updatedAt: string; viewId: string; x: number; y: number; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_tables</h2><pre>테이블 이름과 ID를 도메인·검색어로 좁혀 최대 100개씩 조회합니다. domainId를 생략하면 전체, null이면 미소속 테이블을 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_tables(args: { cursor?: string; domainId?: string | null; limit?: number; projectId: string; search?: string; }): Promise&lt;CallToolResult&lt;{ database: { kind: "postgresql" | "mysql" | "sqlite"; profileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; }; databaseRevision: number; nextCursor: string | null; project: { createdAt: string; databaseKind: "postgresql" | "mysql" | "sqlite"; databaseProfileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; databaseRevision: number; id: string; name: string; preview?: { relationCount: number; tableCount: number; tables: Array&lt;{ columns: Array&lt;{ name: string; primaryKey: boolean; type: string; }&gt;; name: string; }&gt;; }; status: "active" | "archived"; updatedAt: string; version: number; workspaceId: string; }; protocolVersion: 2; schemaVersion: 2; syncSequence: number; tables: Array&lt;{ color?: string; domainId: string | null; id: string; logicalName: string; physicalName: string; scope: "both" | "logical" | "physical"; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_view_relations</h2><pre>Native v2 화면에 보이는 도메인·테이블 관계와 경로를 최대 100개씩 조회합니다. native 논리·물리 대응관계 및 DB 옵션을 유지하며 도메인 필터는 공유 경로, 자신의 개인 화면은 개인 경로를 반환합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_view_relations(args: { cursor?: string; limit?: number; projectId: string; viewId: string; }): Promise&lt;CallToolResult&lt;{ database: { kind: "postgresql" | "mysql" | "sqlite"; profileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; }; databaseRevision: number; nextCursor: string | null; project: { createdAt: string; databaseKind: "postgresql" | "mysql" | "sqlite"; databaseProfileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; databaseRevision: number; id: string; name: string; preview?: { relationCount: number; tableCount: number; tables: Array&lt;{ columns: Array&lt;{ name: string; primaryKey: boolean; type: string; }&gt;; name: string; }&gt;; }; status: "active" | "archived"; updatedAt: string; version: number; workspaceId: string; }; protocolVersion: 2; relations: Array&lt;{ id: string; kind: "domain" | "table"; layout: { bend?: { x: number; y: number; }; offset: number; relationId: string; sourceAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; targetAnchor?: { ratio: number; side: "left" | "right" | "top" | "bottom"; }; viewId: string; waypoints?: Array&lt;{ x: number; y: number; }&gt;; } | null; name: string; scope?: "both" | "logical" | "physical"; sourceId: string; targetId: string; }&gt;; schemaVersion: 2; syncSequence: number; view: { domainIds: Array&lt;string&gt;; id: string; kind: "overview" | "tables" | "domain" | "combined"; name: string; }; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_workspace_invitations</h2><pre>owner가 공간의 초대 상태를 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_workspace_invitations(args: { workspaceId: string; }): Promise&lt;CallToolResult&lt;{ invitations: Array&lt;{ createdAt: string; expiresAt: string; id: string; invitedBy: string; invitedUserId: string; role: "owner" | "editor" | "viewer"; status: "pending" | "accepted" | "declined" | "cancelled" | "expired"; updatedAt: string; username: string; workspaceId: string; workspaceName: string; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_workspace_members</h2><pre>공간의 현재 멤버와 역할을 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_workspace_members(args: { workspaceId: string; }): Promise&lt;CallToolResult&lt;{ members: Array&lt;{ color: string; joinedAt: string; role: "owner" | "editor" | "viewer"; userId: string; username: string; workspaceId: string; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>list_workspaces</h2><pre>인증된 사용자가 현재 멤버인 공간과 자신의 역할을 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__list_workspaces(args: {}): Promise&lt;CallToolResult&lt;{ workspaces: Array&lt;{ createdAt: string; id: string; name: string; role: "owner" | "editor" | "viewer"; status: "active" | "archived"; updatedAt: string; }&gt;; }&gt;&gt;; };
+```</pre></article>
+<article><h2>remove_workspace_member</h2><pre>owner가 공간 멤버를 제거합니다. 마지막 owner의 제거는 거부됩니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__remove_workspace_member(args: { userId: string; workspaceId: string; }): Promise&lt;CallToolResult&lt;{ removed: true; }&gt;&gt;; };
+```</pre></article>
+<article><h2>reply_review_thread</h2><pre>기존 리뷰 핀에 인증된 사용자 명의로 답글을 추가합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__reply_review_thread(args: { message: { body: string; mentionIds: Array&lt;string&gt;; }; threadId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; id: string; messages: Array&lt;{ authorId: string; body: string; createdAt: string; id: string; mentionIds: Array&lt;string&gt;; threadId: string; }&gt;; objectId: string | null; projectId: string; resolved: boolean; updatedAt: string; viewId: string; x: number; y: number; }&gt;&gt;; };
+```</pre></article>
+<article><h2>restore_native_project_deletion</h2><pre>같은 actor의 native 삭제 이력에서 입증된 객체를 새 ID로 복원합니다. 이전 native baseline 좌표나 클라이언트 snapshot을 신뢰하지 않습니다. 현재 baseline 좌표를 사용하고 요청 재생에는 동일 request를 사용하세요.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__restore_native_project_deletion(args: { projectId: string; request: { baselineId: string; baselineIssuedAt: string; clientId: string; database: { kind: "postgresql" | "mysql" | "sqlite"; profileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; }; databaseRevision: number; expectedSequence: number; expectedVersion: number; groupId: string; operationId: string; }; sourceOperationId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>undo_native_project_operation</h2><pre>같은 actor의 accepted native 작업을 서버 이력 출처와 현재 충돌 규칙에 따라 실행 취소합니다. get_native_project_baseline의 현재 좌표가 필요하며 전송한 request를 보관해 응답 유실 시 동일 요청을 재생하세요.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__undo_native_project_operation(args: { projectId: string; request: { baselineId: string; baselineIssuedAt: string; clientId: string; database: { kind: "postgresql" | "mysql" | "sqlite"; profileId: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; }; databaseRevision: number; expectedSequence: number; expectedVersion: number; groupId: string; operationId: string; }; sourceOperationId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>update_notification</h2><pre>인증된 사용자 자신의 알림 읽음 상태를 변경합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__update_notification(args: { notificationId: string; update: { read: boolean; }; }): Promise&lt;CallToolResult&lt;{ createdAt: string; id: string; projectId: string; read: boolean; threadId: string; userId: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>update_project</h2><pre>최신 expectedVersion을 기준으로 프로젝트 이름 또는 보관 상태를 변경합니다. DB 종류·프로필 변환은 이 메타데이터 변경 도구에서 제공하지 않습니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__update_project(args: { projectId: string; update: { expectedVersion: number; name?: string; status?: "active" | "archived"; }; }): Promise&lt;CallToolResult&lt;{ createdAt: string; databaseKind: "postgresql" | "mysql" | "sqlite"; databaseProfileId?: "postgresql-18-v1" | "mysql-8.4-innodb-v1" | "sqlite-3.45-v1"; databaseRevision?: number; id: string; name: string; preview?: { relationCount: number; tableCount: number; tables: Array&lt;{ columns: Array&lt;{ name: string; primaryKey: boolean; type: string; }&gt;; name: string; }&gt;; }; status: "active" | "archived"; updatedAt: string; version: number; workspaceId: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>update_review_thread</h2><pre>리뷰 핀의 해결 상태를 변경합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__update_review_thread(args: { threadId: string; update: { resolved: boolean; }; }): Promise&lt;CallToolResult&lt;{ createdAt: string; id: string; messages: Array&lt;{ authorId: string; body: string; createdAt: string; id: string; mentionIds: Array&lt;string&gt;; threadId: string; }&gt;; objectId: string | null; projectId: string; resolved: boolean; updatedAt: string; viewId: string; x: number; y: number; }&gt;&gt;; };
+```</pre></article>
+<article><h2>update_workspace</h2><pre>owner가 공간 이름 또는 보관 상태를 변경합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__update_workspace(args: { update: { name?: string; status?: "active" | "archived"; }; workspaceId: string; }): Promise&lt;CallToolResult&lt;{ createdAt: string; id: string; name: string; role: "owner" | "editor" | "viewer"; status: "active" | "archived"; updatedAt: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>update_workspace_member</h2><pre>owner가 멤버 역할을 변경합니다. 마지막 owner의 강등은 거부됩니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__update_workspace_member(args: { update: { role: "owner" | "editor" | "viewer"; }; userId: string; workspaceId: string; }): Promise&lt;CallToolResult&lt;{ color: string; joinedAt: string; role: "owner" | "editor" | "viewer"; userId: string; username: string; workspaceId: string; }&gt;&gt;; };
+```</pre></article>
+<article><h2>upgrade_project_document</h2><pre>v1 저장 문서를 프로젝트 DB의 native 형식으로 명시 업그레이드합니다. operationId/clientId와 최신 version/sequence/databaseRevision이 필수이며 원본과 migration 진단을 이력에 보존합니다. MySQL/SQLite v1의 PG 타입과 unknown 값은 legacy로 유지합니다. 응답 뒤 get_project_document_state로 진단을 확인하고 apply_native_project_changes로 안전한 편집을 진행하세요.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__upgrade_project_document(args: { clientId: string; expectedDatabaseRevision: number; expectedSequence: number; expectedVersion: number; operationId: string; projectId: string; }): Promise&lt;CallToolResult&gt;; };
+```</pre></article>
+<article><h2>whoami</h2><pre>현재 MCP 토큰으로 인증된 사용자 ID, 이름과 색상을 조회합니다.
+
+exec tool declaration:
+```ts
+declare const tools: { mcp__ezerd__whoami(args: {}): Promise&lt;CallToolResult&lt;{ color: string; userId: string; username: string; }&gt;&gt;; };
+```</pre></article>
+</main><script>const input=document.querySelector('#search');const cards=[...document.querySelectorAll('article')];function filter(){const q=input.value.toLocaleLowerCase();let n=0;for(const card of cards){card.hidden=!card.textContent.toLocaleLowerCase().includes(q);if(!card.hidden)n++;}document.querySelector('#count').textContent=n+' / '+cards.length+'개 도구';}input.addEventListener('input',filter);filter();</script></html>
