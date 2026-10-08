@@ -10,6 +10,7 @@ import {
 import { loadNativeEditorDraft } from './native-editor-draft.js';
 import { ApiError, body, request } from '../../shared/api/client.js';
 import { captureNativeActorApi } from './native-actor-api.js';
+import { markNativeLocalOperation } from './native-local-operations.js';
 import { requestFingerprint } from '@ezerd/model';
 import {
   nativeDraftArchive,
@@ -405,6 +406,7 @@ export async function sendNativePending(
     void queue.renewTransmission(entry, token).catch(() => {});
   }, 5000);
   try {
+    markNativeLocalOperation(pending.userId, pending.projectId, pending.request.operationId);
     const result = nativeSyncOperationResultSchema.parse(
       await actorApi(
         `/api/projects/${encodeURIComponent(pending.projectId)}/native-sync/commands`,

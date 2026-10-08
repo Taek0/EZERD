@@ -2232,7 +2232,12 @@ function NativeCanvasWorkspace({
           !recoveryWaiting &&
           recoverySelection?.action && (
             <MemoNativeCanvasActions
-              key={`${effectiveView}:${snapshot.project.version}:${snapshot.sequence}:${personal?.version ?? ''}`}
+              key={JSON.stringify([
+                userId,
+                snapshot.project.id,
+                snapshot.project.databaseRevision,
+                effectiveView,
+              ])}
               document={base}
               source={sharedSource}
               snapshot={snapshot}

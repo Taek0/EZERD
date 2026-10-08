@@ -910,6 +910,23 @@ describe('native blank canvas pointer interaction', () => {
     expect(drawn().find((node) => node.id === first.id)?.x).toBe(first.x + 80);
     expect(drawn().find((node) => node.id === second.id)?.x).toBe(second.x + 50);
     const activeGesture = (ui.scene().gesture as { current: unknown }).current;
+    const camera = ui.transform();
+    // Remote property updates preserve submitted placement and the active drag.
+    const remoteDocument = structuredClone(ui.props.document);
+    remoteDocument.tables![0]!.physical.name = 'remote_table_name';
+    ui.props.document = remoteDocument;
+    ui.props.snapshot = {
+      ...ui.props.snapshot,
+      sourceDocument: remoteDocument,
+      native: { status: 'available', document: remoteDocument, migrationIssues: [], issues: [] },
+      sequence: ui.props.snapshot.sequence + 1,
+      project: { ...ui.props.snapshot.project, version: ui.props.snapshot.project.version + 1 },
+    };
+    ui.render();
+    expect((ui.scene().gesture as { current: unknown }).current).toBe(activeGesture);
+    expect(ui.transform()).toBe(camera);
+    expect(drawn().find((node) => node.id === first.id)?.x).toBe(first.x + 80);
+    expect(drawn().find((node) => node.id === second.id)?.x).toBe(second.x + 50);
     ui.props.document = {
       ...ui.props.document,
       layout: {
@@ -955,6 +972,30 @@ describe('native blank canvas pointer interaction', () => {
     };
     ui.render();
     expect((ui.scene().gesture as typeof gesture).current).toBeNull();
+  });
+  it('keeps the recovered action editor mounted across shared snapshots', () => {
+    const ui = canvas(true);
+    ui.props.recoverySelection = { action: { action: 'reference', target: 'a' } };
+    const action = () =>
+      nodes(ui.render()).find(
+        (node) => node.props.initialSelection === ui.props.recoverySelection?.action,
+      )!;
+    const original = action();
+    expect(original).toBeDefined();
+    ui.props.snapshot = {
+      ...ui.props.snapshot,
+      sequence: ui.props.snapshot.sequence + 1,
+      project: { ...ui.props.snapshot.project, version: ui.props.snapshot.project.version + 1 },
+    };
+    expect(action().key).toBe(original.key);
+    ui.props.snapshot = {
+      ...ui.props.snapshot,
+      project: {
+        ...ui.props.snapshot.project,
+        databaseRevision: ui.props.snapshot.project.databaseRevision + 1,
+      },
+    };
+    expect(action().key).not.toBe(original.key);
   });
   it('settles a blank click after a table selection and permits another selection', () => {
     const ui = canvas();

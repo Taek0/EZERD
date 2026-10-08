@@ -454,6 +454,29 @@ describe('native inline cell lifecycle', () => {
       expect(vi.mocked(props.context.onSave).mock.calls[1]![1].sequence).toBe(snapshot.sequence);
     },
   );
+  it('preserves active inline text and mount identity when another property changes remotely', async () => {
+    const props = fixture();
+    const ui = mount(props);
+    ui.begin();
+    ui.change('local_column_name');
+    const original = NativeCanvasInlineCell(props) as ReactElement;
+    const document = structuredClone(props.document);
+    document.tables![0]!.physical.name = 'remote_table_name';
+    const snapshot = structuredClone(props.context.snapshot);
+    snapshot.sequence++;
+    snapshot.project.version++;
+    snapshot.sourceDocument = document;
+    snapshot.native = { status: 'available', document, migrationIssues: [], issues: [] };
+    const next = { ...props, document, context: { ...props.context, snapshot } };
+    expect((NativeCanvasInlineCell(next) as ReactElement).key).toBe(original.key);
+    ui.render(next);
+    expect(ui.field().props.value).toBe('local_column_name');
+    call(ui.field(), 'onBlur');
+    await flush();
+    ui.render();
+    expect(props.context.onSave).toHaveBeenCalledOnce();
+    expect(vi.mocked(props.context.onSave).mock.calls[0]![1].sequence).toBe(snapshot.sequence);
+  });
   it('edits and submits the same cell repeatedly before ACK without losing the latest draft', async () => {
     const acknowledgements: ((saved: boolean) => void)[] = [];
     const props = fixture();

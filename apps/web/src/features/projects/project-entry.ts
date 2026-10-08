@@ -45,13 +45,17 @@ export function projectEntry(snapshotInput: unknown, personalInput: unknown = nu
     personalUnavailable: !merged.success,
   };
 }
-export async function loadProjectEntry(id: string, signal?: AbortSignal): Promise<ProjectEntry> {
+export async function loadProjectEntry(
+  id: string,
+  signal?: AbortSignal,
+  api: typeof request = request,
+): Promise<ProjectEntry> {
   const [snapshot, personal] = await Promise.all([
-    request(`/api/projects/${encodeURIComponent(id)}/document-state`, {
+    api(`/api/projects/${encodeURIComponent(id)}/document-state`, {
       cache: 'no-store',
       ...(signal && { signal }),
     }),
-    request(`/api/projects/${encodeURIComponent(id)}/personal-state`, {
+    api(`/api/projects/${encodeURIComponent(id)}/personal-state`, {
       cache: 'no-store',
       ...(signal && { signal }),
     }).catch(() => null),

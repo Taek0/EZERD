@@ -49,6 +49,9 @@ import {
 import { loadProjectEntry, type ProjectEntry } from '../features/projects/project-entry.js';
 import { NativeProjectView } from '../features/projects/NativeProjectView.js';
 import { NativeBackgroundRefresh } from '../features/projects/native-background-refresh.js';
+import { startNativeSyncSubscription } from '../features/projects/native-sync-subscription.js';
+import { isNativeLocalOperation } from '../features/projects/native-local-operations.js';
+import { captureNativeActorApi } from '../features/projects/native-actor-api.js';
 import { nativeEntryAfterAck } from '../features/projects/native-ack-entry.js';
 import { NativeProjectActions } from '../features/projects/NativeProjectActions.js';
 import { ProjectDDLDialog } from '../features/projects/ProjectDDLDialog.js';
@@ -244,9 +247,16 @@ export function App() {
   const nativeNavigationGeneration = useRef(0);
   const nativeRefreshIdentity = useRef('');
   nativeRefreshIdentity.current = JSON.stringify([user?.id, session?.token]);
+  const nativeSession = useRef({ user, session });
+  nativeSession.current = { user, session };
   const nativeBackgroundRefresh = useRef<NativeBackgroundRefresh | null>(null);
   if (!nativeBackgroundRefresh.current) {
     nativeBackgroundRefresh.current = new NativeBackgroundRefresh({
+      load: (projectId) => {
+        const actor = nativeSession.current.user;
+        if (!actor) return Promise.reject(Error('native.actor-session-unavailable'));
+        return loadProjectEntry(projectId, undefined, captureNativeActorApi(actor.id));
+      },
       current: () =>
         nativeCurrent.current
           ? {
@@ -259,7 +269,13 @@ export function App() {
         startTransition(() => setNativeOpened(entry));
         setWorkspaceId(entry.snapshot.project.workspaceId);
       },
-      error: (cause) => setError(message(cause)),
+      error: (cause) => {
+        if (cause instanceof ApiError && [401, 403, 404].includes(cause.status)) {
+          closeProject();
+          setRefresh((value) => value + 1);
+        }
+        setError(message(cause));
+      },
     });
   }
   function closeProject() {
@@ -274,6 +290,107 @@ export function App() {
     setNativeOpened(entry);
     setWorkspaceId(entry.snapshot.project.workspaceId);
   }
+  const [nativeSocketEpoch, setNativeSocketEpoch] = useState(0);
+  const [nativeAccessChecking, setNativeAccessChecking] = useState(false);
+  useEffect(() => {
+    if (!user || !session || !nativeOpened || nativeOpened.snapshot.project.status !== 'active')
+      return;
+    setNativeAccessChecking(false);
+    const projectId = nativeOpened.snapshot.project.id;
+    const identity = nativeRefreshIdentity.current;
+    const generation = nativeNavigationGeneration.current;
+    let active = true;
+    let stop = () => {};
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const current = () =>
+      active &&
+      identity === nativeRefreshIdentity.current &&
+      generation === nativeNavigationGeneration.current &&
+      nativeCurrent.current?.snapshot.project.id === projectId;
+    const recheck = async () => {
+      if (!current()) return;
+      setNativeAccessChecking(true);
+      setRefresh((value) => value + 1);
+      try {
+        const actorApi = captureNativeActorApi(user.id);
+        const spaces = await actorApi<Workspace[]>('/api/workspaces');
+        if (!current()) return;
+        setWorkspaces(spaces);
+        setWorkspacesLoaded(true);
+        if (
+          !spaces.some((space) => space.id === nativeCurrent.current?.snapshot.project.workspaceId)
+        ) {
+          closeProject();
+          setError(t('워크스페이스 접근 권한이 변경되었습니다.'));
+          return;
+        }
+        await nativeBackgroundRefresh.current?.refresh();
+        if (current() && nativeCurrent.current?.snapshot.project.status === 'active') {
+          setNativeAccessChecking(false);
+          setNativeSocketEpoch((value) => value + 1);
+        }
+      } catch (cause) {
+        if (!current()) return;
+        if (cause instanceof ApiError && [401, 403, 404].includes(cause.status)) {
+          closeProject();
+          if (cause.status === 401) {
+            setSession(null);
+            setUser(null);
+          }
+          setError(message(cause));
+        } else retry = setTimeout(() => void recheck(), 5000);
+      }
+    };
+    const expiresIn = Date.parse(session.expiresAt) - Date.now();
+    if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+      setSession(null);
+      closeProject();
+      return;
+    }
+    stop = startNativeSyncSubscription({
+      projectId,
+      workspaceId: nativeOpened.snapshot.project.workspaceId,
+      token: session.token,
+      getCurrentHead: () => ({
+        sequence: nativeCurrent.current?.snapshot.sequence ?? 0,
+        databaseRevision: nativeCurrent.current?.snapshot.project.databaseRevision ?? 0,
+      }),
+      refresh: async () => {
+        if (current()) await nativeBackgroundRefresh.current?.refresh();
+      },
+      accessChanged: () => {
+        void recheck();
+      },
+      isOwnOperation: (id) => isNativeLocalOperation(user.id, projectId, id),
+    });
+    let expiry: ReturnType<typeof setTimeout>;
+    const checkExpiry = () => {
+      const remaining = Date.parse(session.expiresAt) - Date.now();
+      if (remaining > 0) {
+        expiry = setTimeout(checkExpiry, Math.min(remaining, 2147483647));
+        return;
+      }
+      stop();
+      if (current()) {
+        setSession(null);
+        closeProject();
+      }
+    };
+    expiry = setTimeout(checkExpiry, Math.min(expiresIn, 2147483647));
+    return () => {
+      active = false;
+      stop();
+      clearTimeout(expiry);
+      if (retry) clearTimeout(retry);
+    };
+  }, [
+    user?.id,
+    session?.token,
+    session?.expiresAt,
+    nativeOpened?.snapshot.project.id,
+    nativeOpened?.snapshot.project.status,
+    nativeSocketEpoch,
+  ]);
   async function visitNotification(notification: Notification): Promise<boolean> {
     if (gallery.current && !(await gallery.current.flush())) return false;
     if (busy) return false;
@@ -905,8 +1022,8 @@ export function App() {
           }}
           busy={busy}
           userId={user.id}
-          canEdit={permissions.edit}
-          canPersonalEdit={permissions.personal}
+          canEdit={permissions.edit && !nativeAccessChecking}
+          canPersonalEdit={permissions.personal && !nativeAccessChecking}
           {...(projectWorkspace
             ? { workspaceStatus: projectWorkspace.status, workspaceRole: projectWorkspace.role }
             : {})}

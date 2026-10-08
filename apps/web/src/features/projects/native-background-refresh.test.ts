@@ -15,6 +15,28 @@ function entry(sequence = 1) {
   return result;
 }
 describe('native background refresh', () => {
+  it('does not rerender unchanged fallback snapshots and retains unchanged table identities', async () => {
+    let current = { identity: 'one', entry: entry(1) };
+    const unchanged = structuredClone(current.entry);
+    const changed = structuredClone(current.entry);
+    changed.snapshot.sequence++;
+    changed.snapshot.project.version++;
+    const tables = current.entry.document!.tables;
+    const apply = vi.fn((value) => {
+      current = { ...current, entry: value };
+    });
+    const refresh = new NativeBackgroundRefresh({
+      current: () => current,
+      load: vi.fn().mockResolvedValueOnce(unchanged).mockResolvedValueOnce(changed),
+      apply,
+      error: vi.fn(),
+    });
+    await refresh.refresh();
+    expect(apply).not.toHaveBeenCalled();
+    await refresh.refresh();
+    expect(apply).toHaveBeenCalledOnce();
+    expect(current.entry.document!.tables).toBe(tables);
+  });
   it('keeps the current editor present during a slow refresh and applies the new snapshot directly', async () => {
     const before = entry(),
       after = entry(2),
@@ -35,7 +57,7 @@ describe('native background refresh', () => {
     wait.resolve(after);
     await pending;
     expect(apply).toHaveBeenCalledExactlyOnceWith(after);
-    expect(current.entry).toBe(after);
+    expect(current.entry).toEqual(after);
   });
   it('coalesces repeated ACK refreshes and fetches once more for the latest state', async () => {
     const wait = nativeTestDeferred<ReturnType<typeof entry>>();
