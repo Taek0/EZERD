@@ -206,7 +206,7 @@ export function NativeDomainRelationEditor({
           {(action === 'create' ? allowCreate && document.domains.length > 0 : !!relation) && (
             <div ref={formHost}>
               <NativeDomainRelationForm
-                key={`${action}:${target}:${context.snapshot.project.version}:${context.snapshot.sequence}:${context.snapshot.project.databaseRevision}`}
+                key={`${context.userId}:${context.snapshot.project.id}:${action}:${action === 'create' ? 'new' : target}`}
                 document={document}
                 context={context}
                 action={action}
@@ -221,7 +221,7 @@ export function NativeDomainRelationEditor({
     </PanelSection>
   );
 }
-function NativeDomainRelationForm({
+export function NativeDomainRelationForm({
   document,
   context,
   action,
@@ -251,10 +251,23 @@ function NativeDomainRelationForm({
       return nativeDurableId();
     }
   });
-  const relation =
-    action === 'create'
-      ? undefined
-      : document.domainRelations.find((relation) => relation.id === id);
+  const [created, setCreated] = useState(false);
+  const creationAccepted = useRef(false);
+  const effectiveId = action === 'create' ? seed : id;
+  const relation = document.domainRelations.find((relation) => relation.id === effectiveId);
+  if (action === 'create' && relation) creationAccepted.current = true;
+  const effectiveAction = action === 'create' && relation ? 'edit' : action;
+  const formContext: NativeEditorContext = {
+    ...context,
+    onSave: async (commands, expected, draft) => {
+      const accepted = await context.onSave(commands, expected, draft);
+      if (accepted && commands.some((command) => command.type === 'add_domain_relation')) {
+        creationAccepted.current = true;
+        setCreated(true);
+      }
+      return accepted;
+    },
+  };
   const review = requestFingerprint({
     id,
     version: context.snapshot.project.version,
@@ -263,9 +276,16 @@ function NativeDomainRelationForm({
   });
   return (
     <NativeEditorForm
-      context={context}
-      title={t(action === 'create' ? '연결 추가' : action === 'edit' ? '연결 수정' : '연결 삭제')}
+      context={formContext}
+      title={t(
+        effectiveAction === 'create'
+          ? '연결 추가'
+          : effectiveAction === 'edit'
+            ? '연결 수정'
+            : '연결 삭제',
+      )}
       draftKey={key}
+      disabled={() => action === 'create' && (created || creationAccepted.current) && !relation}
       initial={{
         id: seed,
         name: relation?.name ?? '',
@@ -280,7 +300,14 @@ function NativeDomainRelationForm({
       }}
       build={(values, before) => {
         try {
-          return nativeDomainRelationCommands(document, context, action, id, values, before);
+          return nativeDomainRelationCommands(
+            document,
+            context,
+            effectiveAction,
+            effectiveId,
+            values,
+            action === 'create' && relation ? { ...before, ...relation } : before,
+          );
         } catch (error) {
           throw Error(
             t(

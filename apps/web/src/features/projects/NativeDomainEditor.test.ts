@@ -351,7 +351,8 @@ describe('domain forms and overview static UI', () => {
       }),
     );
     expect(crypto.randomUUID).toBeUndefined();
-    expect(html).toContain('type="submit"');
+    expect(html).toContain('<form class="native-property-editor inspector-fields">');
+    expect(html).not.toContain('type="submit"');
     expect(getRandomValues).toHaveBeenCalled();
     const ids = getRandomValues.mock.results.map((result, index) => {
       if (result.type !== 'return' || !(result.value instanceof Uint8Array))
@@ -412,7 +413,7 @@ describe('domain forms and overview static UI', () => {
     };
     const clean = renderToStaticMarkup(createElement(NativeDomainEditor, props));
     expect(clean).toContain('<fieldset disabled=""');
-    expect(clean.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+    expect(clean).not.toContain('type="submit"');
     const draft = {
       userId,
       projectId,
@@ -430,15 +431,15 @@ describe('domain forms and overview static UI', () => {
     expect(changed).toContain('Unsaved domain');
     expect(changed).not.toContain('저장 기준이 변경되었습니다.');
     expect(loadNativeEditorDraft(userId, projectId, draft.key)).toEqual(draft);
-    expect(changed.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).not.toContain('disabled=""');
+    expect(changed).toContain('<fieldset>');
+    expect(changed).not.toContain('type="submit"');
     f.snapshot.project.databaseRevision++;
     const changedDatabase = renderToStaticMarkup(
       createElement(NativeDomainEditor, { ...props, busy: false }),
     );
     expect(changedDatabase).toContain('DB 설정이 변경되었습니다.');
-    expect(changedDatabase.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain(
-      'disabled=""',
-    );
+    expect(changedDatabase).toContain('Unsaved domain');
+    expect(loadNativeEditorDraft(userId, projectId, draft.key)).toEqual(draft);
   });
   it('shows table/FK/key/cascaded-column impact and human blocker labels', () => {
     setLocale('ko');

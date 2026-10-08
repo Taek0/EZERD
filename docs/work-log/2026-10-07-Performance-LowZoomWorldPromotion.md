@@ -27,3 +27,7 @@ NativeERDCanvas의 world에 배율과 관계없이 willChange:'auto'를 지정�
 - 원본 문서는 조회만 했고 실제 localhost:3001/main은 수정하지 않았다. raw snapshot은 Git 제외 artifacts에만 남기며 생성 번들/public에 포함하지 않는다.
 
 [실제 Chrome 관측·복제 환경](2026-10-07-Performance-ActualChromeFixture.md) · [계획](../planning/2026-10-07-Performance-ChromeHoverAudit.md)
+
+## 제품 PR 독립 검증
+
+최신 origin/main 63a0d72 기반 codex/native-world-promotion-fix에 제품 수정·회귀 테스트 5개 및 관련 문서만 선별했다. pnpm format / pnpm check 통과: 230개 파일·2,832개 테스트, 27개 파일·506개 조건부 skip, 타입·서버/웹 빌드 통과. 기존 bundle 경고 유지. 개인 뷰 배너 등 main 변경은 유지했으며 실제 문서 스냅샷·진단 서버/fixture는 제외했다.

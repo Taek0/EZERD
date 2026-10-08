@@ -24,7 +24,3 @@ export const projectTransferSchema = z
       ctx.addIssue({ code: 'custom', message: '프로젝트 파일은 2 MB까지 가져올 수 있습니다.' });
   });
 export type ProjectTransfer = z.infer<typeof projectTransferSchema>;
-export const importProjectSchema = z.strictObject({
-  workspaceId: z.uuid(),
-  transfer: projectTransferSchema,
-});

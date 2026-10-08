@@ -5,6 +5,7 @@ import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WorkspaceService } from '../src/workspace/workspace.service.js';
+import { NativeTransferService } from '../src/workspace/native-transfer.service.js';
 import { WorkspaceAccessService } from '../src/workspace/workspace-access.service.js';
 import { readConfig } from '../src/config.js';
 import type { DatabaseService } from '../src/db/database.service.js';
@@ -14,6 +15,7 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
   () => {
     let pool: pg.Pool;
     let service: WorkspaceService;
+    let transferService: NativeTransferService;
     const actorId = randomUUID();
     const workspaceId = randomUUID();
     const otherWorkspaceId = randomUUID();
@@ -24,6 +26,7 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
       pool = new pg.Pool({ connectionString: url });
       const database = { db: drizzle(pool) } as unknown as DatabaseService;
       service = new WorkspaceService(database, new WorkspaceAccessService(database));
+      transferService = new NativeTransferService(database, new WorkspaceAccessService(database));
       await pool.query('INSERT INTO users(id, username, pin_hash) VALUES ($1,$2,$3)', [
         actorId,
         `gallery_${actorId.slice(0, 16)}`,
@@ -87,11 +90,16 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
       });
       expect(updated.databaseKind).toBe('sqlite');
       const transfer = await service.exportProject(actorId, created.id);
-      const imported = await service.importProject(actorId, { workspaceId, transfer });
-      expect(imported.databaseKind).toBe('sqlite');
+      const imported = await transferService.importProject(actorId, { workspaceId, transfer });
+      expect(imported.project.databaseKind).toBe('sqlite');
+      expect(
+        (await pool.query('SELECT document FROM projects WHERE id=$1', [imported.project.id]))
+          .rows[0].document.schemaVersion,
+      ).toBe(2);
       const legacy = { ...transfer, project: { name: 'Legacy' } };
       expect(
-        (await service.importProject(actorId, { workspaceId, transfer: legacy })).databaseKind,
+        (await transferService.importProject(actorId, { workspaceId, transfer: legacy })).project
+          .databaseKind,
       ).toBe('postgresql');
       await service.updateProject(actorId, created.id, { expectedVersion: 1, status: 'archived' });
       await expect(

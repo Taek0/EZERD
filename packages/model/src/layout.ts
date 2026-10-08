@@ -1,5 +1,5 @@
-import type { DesignDocument, NodeLayout } from './document.js';
-import { TABLES_VIEW_ID } from './document.js';
+import type { DocumentBase, NodeLayout } from './document-base.js';
+import { TABLES_VIEW_ID } from './document-base.js';
 
 const HORIZONTAL_GAP = 100;
 const VERTICAL_GAP = 64;
@@ -7,7 +7,7 @@ const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /** Manual, deterministic flow layout; only placements in the requested view change. */
 type LayoutDocument = Pick<
-  DesignDocument,
+  DocumentBase,
   'domains' | 'views' | 'domainRelations' | 'notes' | 'layout'
 > & {
   tables?: { id: string }[] | undefined;

@@ -8,7 +8,7 @@ import {
 } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TABLES_VIEW_ID } from '@ezerd/model';
-import { Canvas } from '../src/features/canvas/Canvas.js';
+
 import { NativeERDCanvas } from '../src/features/projects/NativeERDCanvas.js';
 import { ConfirmProvider } from '../src/components/ui/ConfirmProvider.js';
 import { createPerformanceFixture, fixtureFingerprint } from '../src/shared/performance/fixture.js';
@@ -43,7 +43,7 @@ const stats = (values: number[]) => {
   };
 };
 function Compare() {
-  const [editor, setEditor] = useState('legacy');
+  const [editor, setEditor] = useState('native');
   const [variant, setVariant] = useState('baseline');
   const [count, setCount] = useState(50);
   const [epoch, setEpoch] = useState(0);
@@ -281,7 +281,9 @@ function Compare() {
             setOutput('');
           }}
         >
-          <option value="legacy">Legacy v1</option>
+          <option value="legacy" disabled>
+            Legacy v1 (removed from main)
+          </option>
           <option value="native">Native v2</option>
         </select>
         <select
@@ -349,12 +351,9 @@ function Compare() {
       <div ref={area} onWheelCapture={captureRealWheel} className={`comparison-editor ${variant}`}>
         <Profiler id="canvas" onRender={profile}>
           {editor === 'legacy' ? (
-            <Canvas
-              key={`${editor}-${variant}-${count}-${epoch}`}
-              document={fixture.legacy}
-              onChange={noop}
-              readOnly={true}
-            />
+            <p role="status">
+              Legacy renderer was removed from main. Use archived builds for historical comparisons.
+            </p>
           ) : (
             <NativeERDCanvas
               key={`${editor}-${variant}-${count}-${epoch}`}

@@ -15,7 +15,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { DesignDocument, PersonalState, DatabaseProfileId } from '@ezerd/model';
+import type { StoredDesignDocument, PersonalState, DatabaseProfileId } from '@ezerd/model';
 import type { ProjectDatabaseChangeResult } from '@ezerd/contracts';
 import { sql } from 'drizzle-orm';
 
@@ -56,7 +56,7 @@ export const projects = pgTable(
     version: integer('version').notNull().default(0),
     syncSequence: integer('sync_sequence').notNull().default(0),
     document: jsonb('document')
-      .$type<DesignDocument>()
+      .$type<StoredDesignDocument>()
       .notNull()
       .default({
         schemaVersion: 1,
@@ -399,7 +399,7 @@ export const syncClientBaselines = pgTable(
     lastSuccessfulSyncAt: timestamp('last_successful_sync_at', { withTimezone: true }).notNull(),
     lastSequence: integer('last_sequence').notNull(),
     databaseRevision: integer('database_revision').notNull().default(0),
-    document: jsonb('document').$type<DesignDocument>().notNull(),
+    document: jsonb('document').$type<StoredDesignDocument>().notNull(),
   },
   (table) => [
     unique('sync_client_baselines_id_unique').on(table.projectId, table.baselineId),

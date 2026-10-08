@@ -1,3 +1,4 @@
+import { legacyApiRetired } from '../shared/legacy-api-retired.js';
 import { createHash } from 'node:crypto';
 import {
   BadRequestException,
@@ -7,7 +8,6 @@ import {
   Delete,
   ForbiddenException,
   Get,
-  GoneException,
   Headers,
   HttpException,
   Inject,
@@ -173,15 +173,6 @@ export class WorkspaceController {
     return this.workspace.listProjects(actor.id, input);
   }
 
-  @Post('projects/import')
-  async importProject(
-    @Headers('authorization') authorization: string | undefined,
-    @Body() body: unknown,
-  ) {
-    const actor = await requireSession(this.sessions, authorization);
-    return this.workspace.importProject(actor.id, body);
-  }
-
   @Get('projects/:id/export')
   async exportProject(
     @Headers('authorization') authorization: string | undefined,
@@ -198,7 +189,7 @@ export class WorkspaceController {
   ) {
     const actor = await requireSession(this.sessions, authorization);
     const id = parse(idSchema, rawId);
-    return this.workspace.getProject(actor.id, id);
+    throw legacyApiRetired();
   }
 
   @Get('projects/:id/document-state')
@@ -281,6 +272,6 @@ export class WorkspaceController {
   ) {
     await requireSession(this.sessions, authorization);
     parse(idSchema, rawId);
-    throw new GoneException('전체 문서 교체 API는 종료되었습니다. 동기화 작업 API를 사용해주세요.');
+    throw legacyApiRetired();
   }
 }

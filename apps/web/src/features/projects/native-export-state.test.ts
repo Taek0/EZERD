@@ -9,9 +9,9 @@ import {
   assertNativeDurableReady,
 } from './native-export-state.js';
 import {
+  discardNativeEditorDraft,
   storeNativeEditorDraft,
   loadNativeEditorDraft,
-  resetNativeEditorDraft,
 } from './native-editor-draft.js';
 afterEach(() => vi.unstubAllGlobals());
 describe('native draft blocker survives editor lifetime', () => {
@@ -95,7 +95,8 @@ describe('native draft blocker survives editor lifetime', () => {
     target.dispatchEvent(blocked);
     expect(blocked.defaultPrevented).toBe(true);
     failing = false;
-    resetNativeEditorDraft(userId, projectId, key);
+    storeNativeEditorDraft(draft);
+    discardNativeEditorDraft(userId, projectId, draft);
     expect(nativeEditorExportBlocked(userId, projectId)).toBe(false);
     const ready = new Event('beforeunload', { cancelable: true });
     target.dispatchEvent(ready);
@@ -139,7 +140,7 @@ describe('native draft blocker survives editor lifetime', () => {
     expect(loadNativeEditorDraft(userId, projectId, key)).toEqual(input);
     storeNativeEditorDraft(input);
     expect(nativeEditorStorageFailed(userId, projectId)).toBe(false);
-    resetNativeEditorDraft(userId, projectId, key);
+    discardNativeEditorDraft(userId, projectId, input);
   });
   it('storage unknown cannot be treated as a ready empty project', async () => {
     vi.stubGlobal('indexedDB', undefined);

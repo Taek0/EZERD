@@ -1,6 +1,8 @@
 import { z } from 'zod';
-import { nativeSyncOperationResultSchema, syncOperationResultReadSchema } from './native-sync.js';
-import type { NativeSyncOperationResult, SyncOperationResultRead } from './native-sync.js';
+import { nativeSyncOperationResultSchema } from './native-sync.js';
+import { syncOperationResultReadSchema } from './sync-read.js';
+import type { NativeSyncOperationResult } from './native-sync.js';
+import type { SyncOperationResultRead } from './sync-read.js';
 
 // Baseline + candidate + diff may duplicate the bounded design. Match the REST envelope budget.
 export const MAX_NATIVE_CANCELLATION_BYTES = 8_000_000;

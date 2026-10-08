@@ -1,3 +1,4 @@
+import { useNativeAutosave, requiresNativeConfirmation } from './use-native-autosave.js';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   NativeEditorCommand,
@@ -34,6 +35,7 @@ export function NativeCanvasInputForm({
   build,
   children,
   onSubmitReady,
+  pauseAutosave = false,
 }: {
   context: {
     userId: string;
@@ -56,6 +58,7 @@ export function NativeCanvasInputForm({
     change: (field: string, value: string) => void,
   ) => ReactNode;
   onSubmitReady?: (submit: NativeCanvasSubmit) => void;
+  pauseAutosave?: boolean;
 }) {
   const { t } = useI18n();
   const currentExpected = expected(context.snapshot);
@@ -115,16 +118,24 @@ export function NativeCanvasInputForm({
       setStorageError(message(error));
     }
   }
-  async function handleSubmit() {
+  const [confirmation, setConfirmation] = useState(false);
+  const autosave = useNativeAutosave({
+    blocked: pauseAutosave || context.busy || stale || disabled || !!storageError,
+    getBlocked: (draining) =>
+      pauseAutosave || (!draining && context.busy) || stale || disabled || !!storageError,
+    save: (draining) => handleSubmit(false, draining),
+  });
+  async function handleSubmit(confirmed = false, draining = false) {
     let captured = latest.current;
     if (
-      context.busy ||
+      (!draining && context.busy) ||
       stale ||
       disabled ||
       storageError ||
       submitting.current.has(captured.revision)
     )
       return;
+    autosave.markSubmitted();
     if (
       context.affectsSharedDocument &&
       (captured.expected.version !== currentExpected.version ||
@@ -137,6 +148,11 @@ export function NativeCanvasInputForm({
     setError('');
     try {
       const commands = build(captured.values);
+      if (requiresNativeConfirmation(commands) && !confirmed) {
+        setConfirmation(true);
+        return;
+      }
+      setConfirmation(false);
       try {
         storeNativeEditorDraft(captured);
       } catch (error) {
@@ -147,7 +163,12 @@ export function NativeCanvasInputForm({
         discardNativeEditorDraft(context.userId, context.snapshot.project.id, captured);
         if (latest.current.revision === captured.revision) {
           recoveryInput.current = false;
-          const next = fresh();
+          const next = {
+            ...captured,
+            revision: nativeDurableId(),
+            before: { ...captured.values },
+            values: { ...captured.values },
+          };
           latest.current = next;
           setDraft(next);
         }
@@ -202,10 +223,10 @@ export function NativeCanvasInputForm({
   }, [onSubmitReady]);
   return (
     <form
+      {...autosave.compositionProps}
       className="native-property-editor"
       onSubmit={(event) => {
         event.preventDefault();
-        void handleSubmit();
       }}
     >
       <fieldset disabled={context.busy}>
@@ -244,6 +265,8 @@ export function NativeCanvasInputForm({
           </div>
         )}
         {children(draft.values, (field, value) => {
+          setConfirmation(false);
+          autosave.markChanged();
           const current = latest.current;
           preserve({
             ...current,
@@ -251,22 +274,14 @@ export function NativeCanvasInputForm({
             values: { ...current.values, [field]: value },
           });
         })}
-        <Button type="submit" disabled={context.busy || stale || disabled || !!storageError}>
-          {t('저장 요청')}
-        </Button>
-        <Button
-          disabled={!!storageError}
-          onClick={() => {
-            discardNativeEditorDraft(context.userId, context.snapshot.project.id, draft);
-            recoveryInput.current = false;
-            const next = fresh();
-            latest.current = next;
-            setDraft(next);
-            setError('');
-          }}
-        >
-          {t('입력 초기화')}
-        </Button>
+        {confirmation && (
+          <Button
+            disabled={context.busy || stale || !!storageError}
+            onClick={() => void handleSubmit(true)}
+          >
+            {t('삭제 실행 확인')}
+          </Button>
+        )}
       </fieldset>
     </form>
   );

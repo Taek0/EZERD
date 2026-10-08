@@ -7,6 +7,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import pg from 'pg';
+import { createNativeColumn, createNativeTable, defaultDatabaseContext } from '@ezerd/model';
 
 describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integration', () => {
   let app: NestExpressApplication;
@@ -279,9 +280,25 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       await seedLegacyProject(pool, projectId);
       expect(project.workspaceId).toBe(id);
       expect((await call(b, 'list_projects', { workspaceId: id })).projects).toHaveLength(1);
-      await call(b, 'get_project_summary', { projectId });
+      await call(b, 'get_project_document_state', { projectId });
       const transfer = await call(b, 'export_project', { projectId });
-      expect(transfer.project).toEqual({ name: project.name, databaseKind: 'postgresql' });
+      expect(transfer.project).toMatchObject({ name: project.name, databaseKind: 'postgresql' });
+      expect(transfer).toMatchObject({ formatVersion: 2, sourceDocument: { schemaVersion: 1 } });
+      const imported = await call(a, 'import_project', { workspaceId: id, transfer });
+      projects.push(imported.id);
+      const importedState = await call(a, 'get_project_document_state', { projectId: imported.id });
+      expect(importedState.sourceDocument.schemaVersion).toBe(2);
+      const nativeFile = await call(a, 'export_project', { projectId: imported.id });
+      expect(nativeFile).toMatchObject({ formatVersion: 2, sourceDocument: { schemaVersion: 2 } });
+      const archivedImport = await call(a, 'update_project', {
+        projectId: imported.id,
+        update: { expectedVersion: imported.version, status: 'archived' },
+      });
+      await call(a, 'delete_project', {
+        projectId: imported.id,
+        delete: { expectedVersion: archivedImport.version },
+      });
+      projects.splice(projects.indexOf(imported.id), 1);
       expect(
         (
           await b.instance.callTool({
@@ -327,9 +344,22 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
           mentionIds: [],
         },
       });
+      const source = await call(a, 'get_project_document_state', { projectId });
+      await call(a, 'upgrade_project_document', {
+        projectId,
+        operationId: randomUUID(),
+        clientId: randomUUID(),
+        expectedVersion: source.project.version,
+        expectedSequence: source.sequence,
+        expectedDatabaseRevision: source.project.databaseRevision,
+      });
+      const own = await call(b, 'get_personal_state', { projectId });
       await call(b, 'apply_personal_changes', {
         projectId,
-        expectedVersion: 0,
+        expectedVersion: own.version,
+        expectedDatabaseRevision: own.databaseRevision,
+        expectedProjectVersion: own.projectVersion,
+        expectedSyncSequence: own.syncSequence,
         operationId: randomUUID(),
         commands: [{ type: 'set_viewport', value: { viewId: 'overview', x: 10, y: 0, zoom: 1 } }],
       });
@@ -352,7 +382,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
           })
         ).isError,
       ).toBe(true);
-      await call(b, 'get_project', { projectId });
+      await call(b, 'get_project_document_state', { projectId });
       await call(a, 'update_workspace', {
         workspaceId: id,
         update: { status: 'active', name: 'Renamed space' },
@@ -368,9 +398,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       ).toBe('editor');
       await call(a, 'remove_workspace_member', { workspaceId: id, userId: userB.id });
       for (const name of [
-        'get_project',
-        'get_project_summary',
-        'get_project_history',
+        'get_project_document_state',
+        'get_native_project_history',
         'list_review_threads',
         'get_personal_state',
         'export_project',
@@ -401,7 +430,11 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       ).toBe(true);
       const archived = await call(a, 'update_project', {
         projectId,
-        update: { expectedVersion: 0, status: 'archived' },
+        update: {
+          expectedVersion: (await call(a, 'get_project_document_state', { projectId })).project
+            .version,
+          status: 'archived',
+        },
       });
       await call(a, 'delete_project', { projectId, delete: { expectedVersion: archived.version } });
       projects.splice(projects.indexOf(projectId), 1);
@@ -413,6 +446,168 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     }
   });
 
+  it.each(['postgresql', 'mysql', 'sqlite'] as const)(
+    'runs %s Native design, DDL, reviews, notifications and personal state through discovered MCP tools',
+    async (kind) => {
+      const tokenA = await issue(userA.session, `native-${kind}-owner`);
+      const tokenB = await issue(userB.session, `native-${kind}-member`);
+      const a = client(tokenA.token),
+        b = client(tokenB.token);
+      await a.instance.connect(a.transport);
+      await b.instance.connect(b.transport);
+      const call = async (
+        connection: typeof a,
+        name: string,
+        args: Record<string, unknown> = {},
+      ) => {
+        const result = await connection.instance.callTool({ name, arguments: args });
+        expect(result.isError, `${name}: ${JSON.stringify(result.content)}`).not.toBe(true);
+        return result.structuredContent as Record<string, any>;
+      };
+      try {
+        // Real consumers discover schemas first, enabling SDK validation of every output below.
+        expect((await a.instance.listTools()).tools).toHaveLength(52);
+        await b.instance.listTools();
+        const created = await call(a, 'create_project', {
+          workspaceId,
+          name: `MCP ${kind} native`,
+          databaseKind: kind,
+        });
+        const projectId = created.id as string;
+        projects.push(projectId);
+        const state = await call(a, 'get_project_document_state', { projectId });
+        expect(state.sourceDocument).toMatchObject({ schemaVersion: 2, database: { kind } });
+        expect(await call(a, 'get_project_database_capabilities', { projectId })).toMatchObject({
+          documentSchemaVersion: 2,
+        });
+        const database = defaultDatabaseContext(kind);
+        const table = createNativeTable(database, randomUUID());
+        table.logical.name = 'Records';
+        table.physical.name = 'records';
+        const column = createNativeColumn(database, table, randomUUID());
+        column.logical.name = 'ID';
+        column.physical.name = 'id';
+        const operationId = randomUUID();
+        const saved = await call(a, 'apply_native_project_changes', {
+          projectId,
+          operationId,
+          groupId: operationId,
+          clientId: randomUUID(),
+          expectedVersion: state.project.version,
+          expectedSequence: state.sequence,
+          expectedDatabaseRevision: state.project.databaseRevision,
+          includeDocument: true,
+          commands: [
+            { type: 'add_table', value: table },
+            { type: 'add_column', value: column },
+            {
+              type: 'add_table_reference',
+              tableId: table.id,
+              viewId: '__tables__',
+              placement: { x: 1500, y: 180, width: 400, height: 260 },
+            },
+          ],
+        });
+        expect(saved.status).toBe('accepted');
+        const ddl = await call(a, 'export_project_ddl', { projectId });
+        expect(ddl.canExport, JSON.stringify(ddl.issues)).toBe(true);
+        expect(ddl.sql).toContain('records');
+        expect(ddl.sql).toContain('id');
+        const file = await call(a, 'export_project', { projectId });
+        expect(file.sourceDocument.tables).toEqual([table]);
+        const thread = await call(a, 'create_review_thread', {
+          projectId,
+          thread: {
+            viewId: '__tables__',
+            objectId: table.id,
+            x: 1550,
+            y: 210,
+            body: 'Please review',
+            mentionIds: [userB.id],
+          },
+        });
+        const replied = await call(b, 'reply_review_thread', {
+          threadId: thread.id,
+          message: {
+            body: 'Reviewed',
+            mentionIds: [userA.id],
+          },
+        });
+        expect(replied.messages).toHaveLength(2);
+        expect((await call(a, 'get_review_thread', { threadId: thread.id })).messages).toEqual(
+          replied.messages,
+        );
+        expect((await call(a, 'list_review_threads', { projectId })).threads).toEqual(
+          expect.arrayContaining([expect.objectContaining({ id: thread.id })]),
+        );
+        const inbox = await call(b, 'list_notifications', { unreadOnly: true });
+        const notice = inbox.notifications.find(
+          (row: { threadId: string }) => row.threadId === thread.id,
+        );
+        expect(notice).toBeDefined();
+        expect(
+          (
+            await a.instance.callTool({
+              name: 'update_notification',
+              arguments: { notificationId: notice.id, update: { read: true } },
+            })
+          ).isError,
+        ).toBe(true);
+        expect(
+          await call(b, 'update_notification', {
+            notificationId: notice.id,
+            update: { read: true },
+          }),
+        ).toMatchObject({ read: true, userId: userB.id });
+        const resolved = await call(a, 'update_review_thread', {
+          threadId: thread.id,
+          update: { resolved: true },
+        });
+        expect(resolved.resolved).toBe(true);
+        expect(
+          await call(a, 'delete_review_thread', {
+            threadId: thread.id,
+            delete: { expectedUpdatedAt: resolved.updatedAt },
+          }),
+        ).toEqual({ id: thread.id, deleted: true });
+        const personal = await call(b, 'get_personal_state', { projectId });
+        const changedPersonal = await call(b, 'apply_personal_changes', {
+          projectId,
+          operationId: randomUUID(),
+          expectedVersion: personal.version,
+          expectedDatabaseRevision: personal.databaseRevision,
+          expectedProjectVersion: personal.projectVersion,
+          expectedSyncSequence: personal.syncSequence,
+          commands: [
+            { type: 'set_viewport', value: { viewId: '__tables__', x: 50, y: 30, zoom: 1 } },
+          ],
+        });
+        expect(changedPersonal.state.viewports).toEqual([
+          { viewId: '__tables__', x: 50, y: 30, zoom: 1 },
+        ]);
+        expect((await call(a, 'get_native_project_history', { projectId })).history).toEqual(
+          expect.arrayContaining([expect.objectContaining({ operationId, format: 'native' })]),
+        );
+        const current = await call(a, 'get_project_document_state', { projectId });
+        expect(current.sourceDocument).toEqual(saved.document);
+        const archived = await call(a, 'update_project', {
+          projectId,
+          update: { expectedVersion: current.project.version, status: 'archived' },
+        });
+        expect(
+          await call(a, 'delete_project', {
+            projectId,
+            delete: { expectedVersion: archived.version },
+          }),
+        ).toEqual({ id: projectId, deleted: true });
+        projects.splice(projects.indexOf(projectId), 1);
+      } finally {
+        await a.instance.close();
+        await b.instance.close();
+      }
+    },
+  );
+
   it('executes every MCP tool with concurrency, replay and actor protections', async () => {
     const tokenA = await issue(userA.session, 'tool actor A');
     const tokenB = await issue(userB.session, 'tool actor B');
@@ -422,7 +617,22 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(54);
+      expect(listedTools.tools).toHaveLength(52);
+      for (const name of [
+        'apply_project_changes',
+        'get_project_history',
+        'undo_project_operation',
+        'restore_project_deletion',
+      ]) {
+        expect(
+          listedTools.tools.some((tool) => tool.name === name),
+          name,
+        ).toBe(false);
+        expect(
+          (await a.instance.callTool({ name, arguments: { projectId: randomUUID() } })).isError,
+          name,
+        ).toBe(true);
+      }
       for (const name of ['get_project_database_capabilities', 'get_project_document_state'])
         expect(listedTools.tools.find((tool) => tool.name === name)).toMatchObject({
           annotations: { readOnlyHint: true, destructiveHint: false },
@@ -435,7 +645,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       const project = created.structuredContent as { id: string; version: number };
       projects.push(project.id);
-      await seedLegacyProject(pool, project.id);
       const opened = await a.instance.callTool({
         name: 'get_project',
         arguments: { projectId: project.id },
@@ -443,7 +652,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect(opened.isError).not.toBe(true);
       expect(opened.structuredContent).toMatchObject({
         project: { id: project.id },
-        syncSequence: 0,
+        protocolVersion: 2,
+        sequence: 0,
       });
       expect(opened.structuredContent).not.toHaveProperty('personalViewIds');
       const capabilities = await a.instance.callTool({
@@ -453,7 +663,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect(capabilities.isError).not.toBe(true);
       expect(capabilities.structuredContent).toMatchObject({
         database: { kind: 'postgresql', profileId: 'postgresql-18-v1', revision: 0 },
-        documentSchemaVersion: 1,
+        documentSchemaVersion: 2,
         capabilityScope: 'native-v2',
       });
       const versioned = await a.instance.callTool({
@@ -461,10 +671,11 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: { projectId: project.id },
       });
       expect(versioned.isError).not.toBe(true);
+      expect(opened.structuredContent).toEqual(versioned.structuredContent);
       expect(versioned.structuredContent).toMatchObject({
         protocolVersion: 2,
         sequence: 0,
-        sourceDocument: { schemaVersion: 1 },
+        sourceDocument: { schemaVersion: 2 },
         native: { status: 'available', document: { schemaVersion: 2 } },
       });
       const prematureNative = await a.instance.callTool({
@@ -509,22 +720,27 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         projectId: project.id,
         expectedVersion: 1,
         expectedSequence: 0,
+        expectedDatabaseRevision: 0,
         operationId: addOperation,
         groupId: randomUUID(),
         clientId: randomUUID(),
         commands: [
-          { type: 'upsert_domain', value: { id: 'sales', name: 'Sales', description: '' } },
+          {
+            type: 'add_domain',
+            value: { id: 'sales', name: 'Sales', description: '' },
+            placement: { x: 0, y: 0 },
+          },
         ],
       };
       const applied = await a.instance.callTool({
-        name: 'apply_project_changes',
+        name: 'apply_native_project_changes',
         arguments: applyArguments,
       });
       expect(applied.isError).not.toBe(true);
       expect((applied.structuredContent as { actor: { id: string } }).actor.id).toBe(userA.id);
       expect(applied.structuredContent).not.toHaveProperty('document');
       const appliedWithDocument = await a.instance.callTool({
-        name: 'apply_project_changes',
+        name: 'apply_native_project_changes',
         arguments: { ...applyArguments, includeDocument: true },
       });
       expect(appliedWithDocument.isError).not.toBe(true);
@@ -532,7 +748,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect(
         (
           await a.instance.callTool({
-            name: 'apply_project_changes',
+            name: 'apply_native_project_changes',
             arguments: applyArguments,
           })
         ).structuredContent,
@@ -540,13 +756,14 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect(
         (
           await a.instance.callTool({
-            name: 'apply_project_changes',
+            name: 'apply_native_project_changes',
             arguments: {
               ...applyArguments,
               commands: [
                 {
-                  type: 'upsert_domain',
-                  value: { id: 'sales', name: 'Changed replay', description: '' },
+                  type: 'patch_domain',
+                  id: 'sales',
+                  patch: { name: 'Changed replay' },
                 },
               ],
             },
@@ -556,7 +773,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect(
         (
           await a.instance.callTool({
-            name: 'apply_project_changes',
+            name: 'apply_native_project_changes',
             arguments: { ...applyArguments, operationId: randomUUID() },
           })
         ).isError,
@@ -566,7 +783,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         name: 'diagnose_project',
         arguments: { projectId: project.id },
       });
-      expect(diagnosis.structuredContent).toEqual({ diagnostics: [] });
+      expect(diagnosis.structuredContent).toMatchObject({
+        diagnostics: [expect.objectContaining({ code: 'ddl.incomplete-model', path: '/tables' })],
+      });
       const summary = await a.instance.callTool({
         name: 'get_project_summary',
         arguments: { projectId: project.id },
@@ -574,6 +793,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect(summary.structuredContent).toMatchObject({
         counts: { domains: 1 },
         syncSequence: 1,
+        schemaVersion: 2,
       });
       expect(summary.structuredContent).not.toHaveProperty('document');
       const view = await a.instance.callTool({
@@ -587,24 +807,48 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       expect(tables.structuredContent).toMatchObject({ tables: [], nextCursor: null });
       const history = await a.instance.callTool({
-        name: 'get_project_history',
+        name: 'get_native_project_history',
         arguments: { projectId: project.id, since: 0 },
       });
       expect((history.structuredContent as { history: unknown[] }).history.length).toBeGreaterThan(
         0,
       );
       expect(history.structuredContent).not.toHaveProperty('history.0.document');
-      expect(history.structuredContent).not.toHaveProperty('history.0.changes');
+      expect(history.structuredContent).toHaveProperty('history.0.changes');
 
+      const baselineClientId = randomUUID();
+      const baseline = await a.instance.callTool({
+        name: 'get_native_project_baseline',
+        arguments: {
+          projectId: project.id,
+          clientId: baselineClientId,
+          expected: { version: 2, sequence: 1, databaseRevision: 0 },
+        },
+      });
+      expect(baseline.isError).not.toBe(true);
+      const head = baseline.structuredContent as {
+        baselineId: string;
+        baselineIssuedAt: string;
+        projectVersion: number;
+        sequence: number;
+        database: unknown;
+        databaseRevision: number;
+      };
       const undoRequest = {
         operationId: randomUUID(),
         groupId: randomUUID(),
-        clientId: randomUUID(),
+        clientId: baselineClientId,
+        baselineId: head.baselineId,
+        baselineIssuedAt: head.baselineIssuedAt,
+        expectedVersion: head.projectVersion,
+        expectedSequence: head.sequence,
+        database: head.database,
+        databaseRevision: head.databaseRevision,
       };
       expect(
         (
           await b.instance.callTool({
-            name: 'undo_project_operation',
+            name: 'undo_native_project_operation',
             arguments: {
               projectId: project.id,
               sourceOperationId: addOperation,
@@ -614,23 +858,41 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         ).isError,
       ).toBe(true);
       const undone = await a.instance.callTool({
-        name: 'undo_project_operation',
+        name: 'undo_native_project_operation',
         arguments: { projectId: project.id, sourceOperationId: addOperation, request: undoRequest },
       });
-      expect(undone.isError).not.toBe(true);
-      const restored = await a.instance.callTool({
-        name: 'restore_project_deletion',
+      expect(undone.isError, JSON.stringify(undone)).not.toBe(true);
+      const restoreHeadResult = await a.instance.callTool({
+        name: 'get_native_project_baseline',
         arguments: {
           projectId: project.id,
-          deletedOperationId: undoRequest.operationId,
-          request: { operationId: randomUUID(), groupId: randomUUID(), clientId: randomUUID() },
+          clientId: baselineClientId,
+          expected: { version: 3, sequence: 2, databaseRevision: 0 },
         },
       });
-      expect(restored.isError).not.toBe(true);
-      expect(restored.structuredContent).not.toHaveProperty('result.document');
+      const restoreHead = restoreHeadResult.structuredContent as typeof head;
+      const restored = await a.instance.callTool({
+        name: 'restore_native_project_deletion',
+        arguments: {
+          projectId: project.id,
+          sourceOperationId: undoRequest.operationId,
+          request: {
+            ...undoRequest,
+            operationId: randomUUID(),
+            groupId: randomUUID(),
+            baselineId: restoreHead.baselineId,
+            baselineIssuedAt: restoreHead.baselineIssuedAt,
+            expectedVersion: restoreHead.projectVersion,
+            expectedSequence: restoreHead.sequence,
+          },
+        },
+      });
+      expect(restored.isError, JSON.stringify(restored)).not.toBe(true);
+      expect(restored.structuredContent).toHaveProperty('result.document.schemaVersion', 2);
+      expect(restored.structuredContent).toHaveProperty('identityMap.0');
       const historyPage = await a.instance.callTool({
-        name: 'get_project_history',
-        arguments: { projectId: project.id, since: 0, limit: 1, includeChanges: true },
+        name: 'get_native_project_history',
+        arguments: { projectId: project.id, since: 0, limit: 1 },
       });
       expect(historyPage.structuredContent).toHaveProperty('nextSince', 1);
       expect(historyPage.structuredContent).toHaveProperty('history.0.changes');
@@ -753,7 +1015,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     expect(created.status).toBe(201);
     const projectId = created.data.id as string;
     projects.push(projectId);
-    await seedLegacyProject(pool, projectId);
     const tokenA = await issue(userA.session, 'personal A');
     const tokenB = await issue(userB.session, 'personal B');
     const a = client(tokenA.token);
@@ -762,16 +1023,21 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const shared = await a.instance.callTool({
-        name: 'apply_project_changes',
+        name: 'apply_native_project_changes',
         arguments: {
           projectId,
           expectedVersion: 0,
           expectedSequence: 0,
+          expectedDatabaseRevision: 0,
           operationId: randomUUID(),
           groupId: randomUUID(),
           clientId: randomUUID(),
           commands: [
-            { type: 'upsert_domain', value: { id: 'sales', name: 'Sales', description: '' } },
+            {
+              type: 'add_domain',
+              value: { id: 'sales', name: 'Sales', description: '' },
+              placement: { x: 0, y: 0 },
+            },
           ],
         },
       });
@@ -785,6 +1051,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       const operationId = randomUUID();
       const command = {
         projectId,
+        expectedDatabaseRevision: 0,
+        expectedProjectVersion: 1,
+        expectedSyncSequence: 1,
         expectedVersion: 0,
         operationId,
         commands: [
@@ -814,7 +1083,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       ).toEqual(saved.structuredContent);
       const ownSummary = await a.instance.callTool({
         name: 'get_project_summary',
-        arguments: { projectId },
+        arguments: { projectId, includePersonal: true },
       });
       expect(
         (ownSummary.structuredContent as { views: Array<{ id: string }> }).views,
@@ -845,6 +1114,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         'PUT',
         {
           expectedVersion: 1,
+          expectedDatabaseRevision: 0,
+          expectedProjectVersion: 1,
+          expectedSyncSequence: 1,
           state: {
             ...web.data.state,
             viewports: [
@@ -862,29 +1134,39 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect(
         (await api(`/projects/${projectId}/personal-state`, 'GET', undefined, userB.session)).data,
       ).toMatchObject({ version: 0, state: { views: [] } });
-      const properties = { common: {}, logical: {}, physical: {} };
-      const table = (id: string) => ({
-        id,
-        domainId: 'sales',
-        scope: 'both',
-        logical: { name: id, definition: '' },
-        physical: { name: id, schema: 'public', comment: '' },
-        customProperties: properties,
-      });
+      const table = (id: string) => {
+        const value = createNativeTable(defaultDatabaseContext('postgresql'), id, 'sales');
+        value.logical.name = id;
+        value.physical.name = id;
+        return value;
+      };
       const tablesAdded = await a.instance.callTool({
-        name: 'apply_project_changes',
+        name: 'apply_native_project_changes',
         arguments: {
           projectId,
           expectedVersion: 1,
           expectedSequence: 1,
+          expectedDatabaseRevision: 0,
           operationId: randomUUID(),
           groupId: randomUUID(),
           clientId: randomUUID(),
           commands: [
-            { type: 'upsert_table', value: table('orders'), placement: { x: 0, y: 0 } },
-            { type: 'upsert_table', value: table('users'), placement: { x: 300, y: 0 } },
+            { type: 'add_table', value: table('orders') },
             {
-              type: 'upsert_table_relation',
+              type: 'add_table_reference',
+              tableId: 'orders',
+              viewId: 'sales',
+              placement: { x: 0, y: 0 },
+            },
+            { type: 'add_table', value: table('users') },
+            {
+              type: 'add_table_reference',
+              tableId: 'users',
+              viewId: 'sales',
+              placement: { x: 300, y: 0 },
+            },
+            {
+              type: 'add_foreign_key',
               value: {
                 id: 'orders-users',
                 sourceTableId: 'orders',
@@ -899,11 +1181,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       expect(tablesAdded.isError).not.toBe(true);
       const renamedTable = await a.instance.callTool({
-        name: 'apply_project_changes',
+        name: 'apply_native_project_changes',
         arguments: {
           projectId,
           expectedVersion: 2,
           expectedSequence: 2,
+          expectedDatabaseRevision: 0,
           operationId: randomUUID(),
           groupId: randomUUID(),
           clientId: randomUUID(),
@@ -918,11 +1201,55 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: { projectId, tableId: 'orders' },
       });
       expect(details.structuredContent).toHaveProperty('table.logical.name', 'Orders renamed');
+      const batch = await a.instance.callTool({
+        name: 'get_tables_details',
+        arguments: {
+          projectId,
+          tableIds: ['orders', 'users', 'orders'],
+          expectedSequence: 3,
+          expectedDatabaseRevision: 0,
+        },
+      });
+      expect(batch.isError).not.toBe(true);
+      expect(batch.structuredContent).toHaveProperty('tables.length', 2);
+      expect(batch.structuredContent).toHaveProperty(
+        'tables.0.table.logical.name',
+        'Orders renamed',
+      );
+      const stalePage = await a.instance.callTool({
+        name: 'get_project_view',
+        arguments: {
+          projectId,
+          viewId: '__tables__',
+          expectedSequence: 2,
+          expectedDatabaseRevision: 0,
+        },
+      });
+      expect(stalePage.isError).toBe(true);
+      const delta = await a.instance.callTool({
+        name: 'get_project_changes',
+        arguments: { projectId, since: 2, limit: 1, databaseRevision: 0 },
+      });
+      expect(delta.isError).not.toBe(true);
+      expect(delta.structuredContent).toMatchObject({
+        resyncRequired: false,
+        sequence: 3,
+        untilSequence: 3,
+        nextCursor: null,
+      });
+      expect(delta.structuredContent).toHaveProperty('changedObjects.0', {
+        collection: 'tables',
+        id: 'orders',
+      });
+      expect(delta.structuredContent).not.toHaveProperty('document');
       const layout = await a.instance.callTool({
         name: 'apply_personal_changes',
         arguments: {
           projectId,
           expectedVersion: 2,
+          expectedDatabaseRevision: 0,
+          expectedProjectVersion: 3,
+          expectedSyncSequence: 3,
           operationId: randomUUID(),
           commands: [
             {
@@ -965,6 +1292,24 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       expect((personalView.structuredContent as { tables: unknown[] }).tables).toHaveLength(2);
       expect(personalView.structuredContent).toHaveProperty('relationLayouts.0.offset', 12);
+      expect(personalView.structuredContent).toMatchObject({
+        protocolVersion: 2,
+        schemaVersion: 2,
+      });
+      const sharedState = await a.instance.callTool({
+        name: 'get_project',
+        arguments: { projectId },
+      });
+      expect(sharedState.isError).not.toBe(true);
+      expect(sharedState.structuredContent).toHaveProperty('sourceDocument.schemaVersion', 2);
+      expect(sharedState.structuredContent).not.toHaveProperty('personalViewIds');
+      const source = (
+        sharedState.structuredContent as {
+          sourceDocument: { views: Array<{ id: string }>; notes: Array<{ id: string }> };
+        }
+      ).sourceDocument;
+      expect((source.views ?? []).some((view) => view.id === 'sales-view')).toBe(false);
+      expect((source.notes ?? []).some((note) => note.id === 'private-note')).toBe(false);
       const viewRelations = await a.instance.callTool({
         name: 'list_view_relations',
         arguments: { projectId, viewId: 'sales-view' },
@@ -986,6 +1331,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: {
           projectId,
           expectedVersion: 3,
+          expectedDatabaseRevision: 0,
+          expectedProjectVersion: 3,
+          expectedSyncSequence: 3,
           operationId: randomUUID(),
           commands: [
             { type: 'patch_combined_view', id: 'sales-view', patch: { name: 'Renamed view' } },
@@ -1003,6 +1351,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: {
           projectId,
           expectedVersion: 4,
+          expectedDatabaseRevision: 0,
+          expectedProjectVersion: 3,
+          expectedSyncSequence: 3,
           operationId: randomUUID(),
           commands: [
             { type: 'delete_relation_layout', relationId: 'orders-users', viewId: 'sales-view' },
@@ -1027,7 +1378,8 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       });
       expect(transfer.structuredContent).toMatchObject({
         format: 'ezerd-project',
-        document: { domains: [{ id: 'sales' }] },
+        formatVersion: 2,
+        sourceDocument: { schemaVersion: 2, domains: [{ id: 'sales' }] },
       });
       const imported = await a.instance.callTool({
         name: 'import_project',
@@ -1042,7 +1394,10 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         arguments: { projectId: importedId },
       });
       expect(importedDocument.isError, JSON.stringify(importedDocument)).not.toBe(true);
-      expect(importedDocument.structuredContent).toHaveProperty('document.tables.0.id', 'orders');
+      expect(importedDocument.structuredContent).toHaveProperty(
+        'sourceDocument.tables.0.logical.name',
+        'Orders renamed',
+      );
     } finally {
       await a.instance.close();
       await b.instance.close();

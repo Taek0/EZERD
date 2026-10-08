@@ -11,7 +11,6 @@ import {
 } from '@ezerd/model';
 import { databaseContextSchema } from './database-state.js';
 import { nativeStoredDesignDocumentSchema } from './native-document.js';
-import { rawStoredDesignDocumentSchema } from './workspace.js';
 
 export const MAX_TABLE_CLIPBOARD_BYTES = 2_000_000;
 export const nativeClipboardByteLength = (value: string) => {
@@ -145,27 +144,6 @@ export const nativeTableClipboardSchema = z
     if (error) ctx.addIssue({ code: 'custom', path: ['document'], message: error });
   });
 export type NativeTableClipboard = z.infer<typeof nativeTableClipboardSchema>;
-export const tableClipboardReadSchema = z.union([
-  z
-    .strictObject({ format: z.literal('ezerd/tables-v1'), document: rawStoredDesignDocumentSchema })
-    .refine(
-      (file) => bytes(JSON.stringify(file)) <= MAX_TABLE_CLIPBOARD_BYTES,
-      'clipboard.size-limit',
-    ),
-  nativeTableClipboardSchema,
-]);
-export function parseTableClipboardRead(
-  text: string,
-): z.infer<typeof tableClipboardReadSchema> | null {
-  if (text.length > MAX_TABLE_CLIPBOARD_BYTES || bytes(text) > MAX_TABLE_CLIPBOARD_BYTES)
-    return null;
-  try {
-    const parsed = tableClipboardReadSchema.safeParse(JSON.parse(text));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Copies complete selected tables without cloning collaboration/private view state. */
 export function copyNativeTableClipboard(

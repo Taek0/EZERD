@@ -1,178 +1,53 @@
-export type ModelScope = 'both' | 'logical' | 'physical';
-export type ViewMode = ModelScope;
-export const TABLES_VIEW_ID = '__tables__';
-export interface CustomProperties {
-  common: Record<string, string>;
-  logical: Record<string, string>;
-  physical: Record<string, string>;
-}
-export interface Table {
-  canvasDisplay?:
-    { showNullable?: boolean | undefined; showComment?: boolean | undefined } | undefined;
-  id: string;
-  domainId: string | null;
-  color?: string | undefined;
-  scope: ModelScope;
-  logical: { name: string; definition: string };
+import { createEmptyDocumentBase, TABLES_VIEW_ID } from './document-base.js';
+import type {
+  ModelScope,
+  ProjectEnum,
+  TableKey,
+  TableRelation,
+  Domain,
+  DomainRelation,
+  Note,
+  Position,
+  NodeLayout,
+  Viewport,
+  CombinedView,
+  RelationLayout,
+  DocumentBase,
+  TableBase,
+  ColumnBase,
+  CanvasDocument,
+  TableCanvasDocument,
+} from './document-base.js';
+import type { LegacyPhysicalType } from './legacy-physical-type.js';
+export * from './document-base.js';
+export type { LegacyPhysicalType } from './legacy-physical-type.js';
+
+export interface Table extends TableBase {
   physical: { name: string; schema: string; comment: string };
-  customProperties: CustomProperties;
 }
-export interface ProjectEnum {
-  id: string;
-  name: string;
-  schema: string;
-  values: string[];
-}
-export interface RelationCardinality {
-  min: 0 | 1;
-  max: 1 | 'many';
-}
-export interface Column {
-  id: string;
-  tableId: string;
-  scope: ModelScope;
-  logical: { name: string; definition: string; semanticType: string; required: boolean };
+
+export interface Column extends ColumnBase {
   physical: {
     name: string;
-    type: {
-      name: string;
-      enumId?: string | undefined;
-      length?: number | undefined;
-      precision?: number | undefined;
-      scale?: number | undefined;
-      isArray: boolean;
-    };
+    type: LegacyPhysicalType;
     nullable: boolean;
     defaultExpression: string | null;
     comment: string;
   };
-  customProperties: CustomProperties;
 }
-export interface TableKey {
-  id: string;
-  tableId: string;
-  scope: ModelScope;
-  kind: 'primary' | 'unique';
-  name: string;
-  columnIds: string[];
-}
-export type ReferentialAction = 'NO ACTION' | 'RESTRICT' | 'CASCADE' | 'SET NULL' | 'SET DEFAULT';
-export interface TableRelation {
-  id: string;
-  sourceTableId: string;
-  targetTableId: string;
-  scope: ModelScope;
-  logical: {
-    name: string;
-    cardinality: 'one-to-one' | 'one-to-many' | 'many-to-many';
-    required: boolean;
-    description?: string | undefined;
-    sourceCardinality?: RelationCardinality | undefined;
-    targetCardinality?: RelationCardinality | undefined;
-  };
-  physical: null | {
-    name: string;
-    sourceColumnIds: string[];
-    targetColumnIds: string[];
-    onDelete: ReferentialAction;
-    onUpdate: ReferentialAction;
-  };
-}
-export interface Domain {
-  id: string;
-  name: string;
-  description: string;
-  color?: string | undefined;
-}
-export interface DomainRelation {
-  id: string;
-  sourceDomainId: string;
-  targetDomainId: string;
-  name: string;
-  direction: 'forward' | 'both';
-  description: string;
-}
-export interface Note {
-  id: string;
-  viewId: string;
-  text: string;
-  color?: string | undefined;
-}
-export interface Position {
-  x: number;
-  y: number;
-}
-export interface NodeLayout extends Position {
-  id: string;
-  objectId: string;
-  viewId: string;
-  width: number;
-  height: number;
-}
-export interface Viewport extends Position {
-  viewId: string;
-  zoom: number;
-}
-export interface CombinedView {
-  id: string;
-  name: string;
-  domainIds: string[];
-}
-export interface RelationAnchor {
-  side: 'left' | 'right' | 'top' | 'bottom';
-  ratio: number;
-}
-export interface RelationLayout {
-  relationId: string;
-  viewId: string;
-  offset: number;
-  bend?: Position | undefined;
-  sourceAnchor?: RelationAnchor | undefined;
-  targetAnchor?: RelationAnchor | undefined;
-  waypoints?: Position[] | undefined;
-}
-export interface DesignDocument {
-  views?: CombinedView[] | undefined;
+
+export interface DesignDocument extends DocumentBase {
   schemaVersion: 1;
-  domains: Domain[];
-  domainRelations: DomainRelation[];
-  notes: Note[];
-  enums?: ProjectEnum[] | undefined;
   tables?: Table[] | undefined;
   columns?: Column[] | undefined;
   keys?: TableKey[] | undefined;
   tableRelations?: TableRelation[] | undefined;
-  layout: { nodes: NodeLayout[]; viewports: Viewport[]; relations?: RelationLayout[] | undefined };
 }
-/** Canvas commands only inspect ownership/identity, never a database's physical payload. */
-export interface CanvasDocument extends Pick<
-  DesignDocument,
-  'domains' | 'domainRelations' | 'notes' | 'views' | 'layout'
-> {
-  schemaVersion?: 1 | 2;
-  tables?: readonly { id: string; domainId: string | null }[] | undefined;
-  columns?: readonly { id: string }[] | undefined;
-  keys?: readonly { id: string }[] | undefined;
-  enums?: readonly { id: string }[] | undefined;
-  indexes?: readonly { id: string }[] | undefined;
-  checks?: readonly { id: string }[] | undefined;
-  tableRelations?:
-    readonly { id: string; sourceTableId: string; targetTableId: string }[] | undefined;
-}
+
 export function createEmptyDocument(): DesignDocument {
-  return {
-    schemaVersion: 1,
-    domains: [],
-    domainRelations: [],
-    notes: [],
-    layout: { nodes: [], viewports: [{ viewId: 'overview', x: 0, y: 0, zoom: 1 }] },
-  };
+  return { schemaVersion: 1, ...createEmptyDocumentBase() };
 }
-/** Adds deterministic shared placements to legacy documents without changing existing layouts. */
-export interface TableCanvasDocument {
-  tables?: readonly { id: string; domainId: string | null }[] | undefined;
-  layout: DesignDocument['layout'];
-}
+/** Adds deterministic shared placements without changing existing layouts. */
 export function ensureTableCanvasLayout<T extends TableCanvasDocument>(
   doc: T,
   options: { nodeId?: (tableId: string) => string } = {},
@@ -908,10 +783,6 @@ export function upsertKey(doc: DesignDocument, key: TableKey): DesignDocument {
   };
 }
 
-export function removeKey(doc: DesignDocument, id: string): DesignDocument {
-  return { ...doc, ...(doc.keys && { keys: doc.keys.filter((key) => key.id !== id) }) };
-}
-
 export function upsertTableRelation(doc: DesignDocument, relation: TableRelation): DesignDocument {
   requireObject(doc.tables?.find((table) => table.id === relation.sourceTableId));
   requireObject(doc.tables?.find((table) => table.id === relation.targetTableId));
@@ -922,21 +793,6 @@ export function upsertTableRelation(doc: DesignDocument, relation: TableRelation
     tableRelations: exists
       ? doc.tableRelations!.map((item) => (item.id === relation.id ? cloneModel(relation) : item))
       : [...(doc.tableRelations ?? []), cloneModel(relation)],
-  };
-}
-
-export function removeTableRelation(doc: DesignDocument, id: string): DesignDocument {
-  return {
-    ...doc,
-    ...(doc.tableRelations && {
-      tableRelations: doc.tableRelations.filter((relation) => relation.id !== id),
-    }),
-    layout: {
-      ...doc.layout,
-      ...(doc.layout.relations && {
-        relations: doc.layout.relations.filter((route) => route.relationId !== id),
-      }),
-    },
   };
 }
 

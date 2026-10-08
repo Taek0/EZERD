@@ -53,7 +53,6 @@ export function measurementPlugin(
     'tableCardSize',
     'relationGeometry',
     'layoutDomainRelations',
-    'Canvas',
     'NativeERDCanvas',
     'NativeCanvasWorkspace',
     'NativeProjectView',
@@ -76,7 +75,8 @@ export function measurementPlugin(
       let names: string[] = [];
       if (/\/packages\/model\/(dist|src)\/table-geometry\.(js|ts)$/.test(path))
         names = ['tableCardMetrics', 'tableCardSize'];
-      if (path.endsWith('/features/relations/relation-routing.ts')) names = ['relationGeometry'];
+      if (/\/packages\/model\/(dist|src)\/relation-routing\.(js|ts)$/.test(path))
+        names = ['relationGeometry'];
       if (path.endsWith('/features/domains/domain-relations.ts')) names = ['layoutDomainRelations'];
       if (path.endsWith('/features/canvas/Canvas.tsx'))
         names = ['Canvas', 'moveViewport', 'applyCameraFrame', 'preview', 'move', 'finish'];
@@ -95,7 +95,10 @@ export function measurementPlugin(
       if (/\/packages\/model\/(dist|src)\/database\/display\.(js|ts)$/.test(path))
         names = ['nativeColumnTypeDisplay'];
       if (!names.length) return;
-      const result = instrumentFunctions(source, names, path.split('/').at(-1)!, collectorPath);
+      const label = names.includes('relationGeometry')
+        ? 'relation-routing.ts'
+        : path.split('/').at(-1)!;
+      const result = instrumentFunctions(source, names, label, collectorPath);
       result?.found.forEach((name) => seen.add(name));
       return result ? { code: result.code, map: null } : undefined;
     },

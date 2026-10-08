@@ -1,3 +1,4 @@
+import './native-property-editor.css';
 import { useRef, useState } from 'react';
 import type { NativeColumn, NativeDesignDocument } from '@ezerd/model';
 import { Checkbox } from '../../components/ui/index.js';
@@ -7,6 +8,7 @@ import { nativeDurableId } from './native-durable-queue.js';
 import { nativeEditorConditionText } from './native-editor-diagnostic.js';
 import type { NativeEditorContext } from './native-editor-form.js';
 registerTranslations({
+  '기본 키(PK)': 'Primary key (PK)',
   '이 PK를 참조하는 FK가 있습니다. 관계의 참조 키를 먼저 변경하세요.':
     'This primary key is referenced by a foreign key. Change the referenced key first.',
   '자동 증가 컬럼을 지원하는 키가 필요합니다. 다른 키를 먼저 준비하세요.':
@@ -48,10 +50,10 @@ export function NativePrimaryKeyControl({
             ? nativeEditorConditionText(preview.code)
             : '';
   return (
-    <div className="table-column-flags">
-      <label className="table-check" title={reason}>
+    <div className="native-primary-key-control">
+      <label className="native-primary-key-label" title={reason}>
         <Checkbox
-          aria-label={t('기본 키 (PK)')}
+          aria-label={t('기본 키(PK)')}
           checked={checked}
           disabled={context.busy || sending || !!preview.code}
           onChange={async (event) => {
@@ -80,7 +82,7 @@ export function NativePrimaryKeyControl({
             }
           }}
         />
-        {t('기본 키 (PK)')}
+        {t('기본 키(PK)')}
       </label>
       {reason && (
         <p className="field-help" role="status">

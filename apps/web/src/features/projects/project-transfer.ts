@@ -8,12 +8,10 @@ import {
   type NativeDesignDocument,
 } from '@ezerd/model';
 import {
-  projectTransferSchema,
   MAX_PROJECT_TRANSFER_BYTES,
   nativeTransferReadSchema,
   importNativeProjectSchema,
   nativeTransferImportResultSchema,
-  projectSchema,
   type NativeTransferRead,
   type Project,
 } from '@ezerd/contracts';
@@ -132,27 +130,18 @@ export async function importProjectTransfer(
   );
   if ('native' in transfer && transfer.native.status === 'unavailable')
     throw new Error(transfer.native.code);
-  let project: Project;
-  if (transfer.formatVersion === 1) {
-    // Preserve the existing v1 endpoint, including its structural contract and server adapter.
-    projectTransferSchema.parse(transfer);
-    project = projectSchema.parse(
-      await api('/api/projects/import', body('POST', { workspaceId, transfer })),
-    );
-  } else {
-    const input = importNativeProjectSchema.parse({ workspaceId, transfer });
-    // Contract validation must not replace raw aliases/identifiers in the uploaded evidence.
-    const result = nativeTransferImportResultSchema.parse(
-      await api('/api/projects/native-transfer/import', body('POST', { ...input, transfer })),
-    );
-    project = result.project;
-  }
+  const input = importNativeProjectSchema.parse({ workspaceId, transfer });
+  // Send the raw source evidence for both file versions; the server derives the v2 document.
+  const result = nativeTransferImportResultSchema.parse(
+    await api('/api/projects/native-transfer/import', body('POST', { ...input, transfer })),
+  );
+  const project = result.project;
   assertCurrent();
   const database = resolveProjectDatabaseState(project);
   if (
     project.workspaceId !== workspaceId ||
-    (transfer.formatVersion === 2 &&
-      (project.databaseProfileId === undefined || project.databaseRevision === undefined)) ||
+    project.databaseProfileId === undefined ||
+    project.databaseRevision === undefined ||
     database.kind !== (transfer.project.databaseKind ?? 'postgresql') ||
     (transfer.formatVersion === 2 && database.profileId !== transfer.project.databaseProfileId)
   )

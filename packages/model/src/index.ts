@@ -1,4 +1,4 @@
-import type { ModelScope, ViewMode } from './document.js';
+import type { ModelScope, ViewMode } from './document-base.js';
 
 export interface ModelIdentity {
   id: string;
@@ -20,6 +20,7 @@ export function canExportPhysical(scope: ModelScope, parentScope: ModelScope = '
 }
 
 export * from './document.js';
+export type { StoredDesignDocument } from './stored-document.js';
 export * from './postgres.js';
 export * from './layout.js';
 export * from './sync.js';
@@ -34,3 +35,6 @@ export type {
   NativeDatabaseConversionMapping,
   NativeDatabaseConversionPlan,
 } from './database/conversion.js';
+export * from './native-table-canvas.js';
+export * from './relation-routing.js';
+export { createPathClear } from './relation-obstacle-queries.js';

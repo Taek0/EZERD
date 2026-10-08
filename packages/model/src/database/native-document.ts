@@ -1,12 +1,13 @@
 import {
-  createEmptyDocument,
-  type Column,
-  type DesignDocument,
-  type Table,
+  createEmptyDocumentBase,
+  type DocumentBase,
+  type TableBase,
+  type ColumnBase,
   type TableKey,
   type TableRelation,
   type ModelScope,
-} from '../document.js';
+} from '../document-base.js';
+import type { LegacyPhysicalType } from '../legacy-physical-type.js';
 import type { DatabaseContext, DatabaseTypeId } from './definitions.js';
 import { getDatabaseProfile } from './profiles.js';
 
@@ -153,7 +154,7 @@ export type NativeColumnType =
   | ({ kind: 'builtin'; database: 'sqlite' } & SqliteBuiltinSpec)
   | { kind: 'declared'; database: 'sqlite'; name: string; numericArguments: string[] }
   | { kind: 'untyped'; database: 'sqlite' }
-  | { kind: 'legacy'; source: 'document-v1'; original: Column['physical']['type'] };
+  | { kind: 'legacy'; source: 'document-v1'; original: LegacyPhysicalType };
 
 export type NativeLiteral =
   | {
@@ -247,7 +248,7 @@ export type NativeColumnOptions =
   | { database: 'postgresql'; collation?: string }
   | { database: 'mysql'; charset?: string; collation?: string; onUpdate?: NativeExpression }
   | { database: 'sqlite'; collation?: 'BINARY' | 'NOCASE' | 'RTRIM' };
-export interface NativeTable extends Omit<Table, 'physical'> {
+export interface NativeTable extends TableBase {
   physical: {
     name: string;
     namespace: NativeNamespace;
@@ -255,7 +256,7 @@ export interface NativeTable extends Omit<Table, 'physical'> {
     options: NativeTableOptions;
   };
 }
-export interface NativeColumn extends Omit<Column, 'physical'> {
+export interface NativeColumn extends ColumnBase {
   physical: {
     name: string;
     type: NativeColumnType;
@@ -298,10 +299,7 @@ export interface NativeTableKey extends TableKey {
 export interface NativeTableRelation extends TableRelation {
   deferrable?: { initially: 'immediate' | 'deferred' };
 }
-export interface NativeDesignDocument extends Omit<
-  DesignDocument,
-  'schemaVersion' | 'tables' | 'columns' | 'keys' | 'tableRelations'
-> {
+export interface NativeDesignDocument extends DocumentBase {
   schemaVersion: 2;
   database: DatabaseContext;
   tables?: NativeTable[] | undefined;
@@ -314,14 +312,7 @@ export interface NativeDesignDocument extends Omit<
 
 export function createEmptyNativeDocument(database: DatabaseContext): NativeDesignDocument {
   getDatabaseProfile(database);
-  const {
-    tables: _tables,
-    columns: _columns,
-    keys: _keys,
-    tableRelations: _relations,
-    ...empty
-  } = createEmptyDocument();
-  return { ...empty, schemaVersion: 2, database: { ...database } };
+  return { schemaVersion: 2, ...createEmptyDocumentBase(), database: { ...database } };
 }
 
 /** Remapping column references is shared by copy/paste, restore and future migrations. */

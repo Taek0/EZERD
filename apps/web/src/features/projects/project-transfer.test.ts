@@ -13,6 +13,10 @@ import {
   transferWorkspace,
 } from './native-transfer-test-fixtures.js';
 import { ApiError } from '../../shared/api/client.js';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ProjectTransferSummary } from './ProjectTransfer.js';
+import { setLocale } from '../../shared/i18n/index.js';
 
 const document = addNote(
   addDomain(createEmptyDocument(), { id: 'domain', name: '', description: '' }, { x: 1, y: 2 }),
@@ -27,6 +31,22 @@ const file = {
   document,
 };
 describe('project file selection', () => {
+  it('explains Native conversion for legacy source in both file envelope versions', () => {
+    setLocale('en');
+    try {
+      for (const input of [file, transferEnvelope(transferState('postgresql', 1))]) {
+        const html = renderToStaticMarkup(
+          createElement(ProjectTransferSummary, {
+            file: parseProjectTransfer(JSON.stringify(input)),
+          }),
+        );
+        expect(html).toContain('Native v2 project');
+        expect(html).toContain('retain their original values');
+      }
+    } finally {
+      setLocale('ko');
+    }
+  });
   it('preserves a valid design including unfinished names, layout, notes, and identities', () => {
     expect(parseProjectTransfer(JSON.stringify(file))).toEqual(file);
   });
@@ -117,9 +137,14 @@ describe('versioned JSON transfer', () => {
     const input = JSON.parse(String(api.mock.calls[0]?.[1]?.body));
     expect(input.transfer).toEqual({ ...native, project: { ...native.project, name: 'Renamed' } });
   });
-  it('keeps the legacy endpoint and defaults compatible for a format1 file', async () => {
+  it('imports format1 through the Native endpoint with the default PostgreSQL context', async () => {
     const project = transferState().project;
-    const api = vi.fn(async (_url: string, _init?: RequestInit) => project);
+    const api = vi.fn(async (_url: string, _init?: RequestInit) => ({
+      project,
+      sequence: 0,
+      migrationIssues: [],
+      issues: [],
+    }));
     await expect(
       importProjectTransfer(
         parseProjectTransfer(JSON.stringify(file)),
@@ -131,7 +156,8 @@ describe('versioned JSON transfer', () => {
         },
       ),
     ).resolves.toEqual(project);
-    expect(api.mock.calls[0]?.[0]).toBe('/api/projects/import');
+    expect(api.mock.calls[0]?.[0]).toBe('/api/projects/native-transfer/import');
+    expect(JSON.parse(String(api.mock.calls[0]?.[1]?.body)).transfer.document).toEqual(document);
   });
   it('retains source evidence after a server-denied native import response', async () => {
     const native = transferEnvelope(transferState('mysql'));

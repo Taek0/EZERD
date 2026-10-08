@@ -23,6 +23,7 @@ import {
 } from './native-save.js';
 import { registerNativeExportBlocker, clearNativeExportBlocker } from './native-export-state.js';
 import { requestFingerprint } from '@ezerd/model';
+import { coalesceNativeSaveCommands } from './native-save-coalescing.js';
 
 type Storage = Pick<globalThis.Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'>;
 const prefix = (user: string, project: string) =>
@@ -120,6 +121,8 @@ export function enqueueNativeSave(
   editorDraft?: NativeEditorDraftRef,
   storage: Storage = localStorage,
 ): string {
+  // Canonicalize once before identity/storage. Never rewrite an existing intent or claimed request.
+  commands = coalesceNativeSaveCommands(commands);
   const intents = nativeSaveIntents(user, snapshot.project.id, storage);
   const identical = intents
     .slice(-1)

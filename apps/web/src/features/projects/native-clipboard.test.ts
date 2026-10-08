@@ -282,7 +282,7 @@ describe('native clipboard live preparation and menu', () => {
     );
     expect(html).toContain('붙여넣을 내용');
     expect(html).toContain('<fieldset disabled=""');
-    expect(html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0]).toContain('disabled=""');
+    expect(html).not.toContain('type="submit"');
     expect(save).not.toHaveBeenCalled();
   });
 });

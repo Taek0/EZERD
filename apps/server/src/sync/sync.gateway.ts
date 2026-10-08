@@ -12,11 +12,33 @@ import { LanAccessService } from '../network/network-access.js';
 import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
 import { WorkspaceEventsService } from '../workspace/workspace-events.service.js';
 
+/** Opt-in invalidation clients need ordering metadata, not a second full document/changes copy. */
+export function nativeNotification(message: unknown): unknown {
+  if (!message || typeof message !== 'object') return message;
+  const envelope = message as { type?: unknown; projectId?: unknown; event?: unknown };
+  if (envelope.type !== 'operation' || !envelope.event || typeof envelope.event !== 'object')
+    return message;
+  const event = envelope.event as Record<string, unknown>;
+  if (event.protocolVersion !== 2) return message;
+  return {
+    type: envelope.type,
+    projectId: envelope.projectId,
+    event: {
+      protocolVersion: 2,
+      operationId: event.operationId,
+      sequence: event.sequence,
+      databaseRevision: event.databaseRevision,
+      status: event.status,
+    },
+  };
+}
+
 type Client = {
   socket: WebSocket;
   actor: AuthenticatedUser;
   token: string;
   projects: Map<string, string>;
+  notificationsOnly: Set<string>;
   authenticatedAt: number;
 };
 @Injectable()
@@ -77,14 +99,21 @@ export class SyncGateway implements OnApplicationShutdown {
       actor,
       token,
       projects: new Map(),
+      notificationsOnly: new Set(),
       authenticatedAt: Date.now(),
     };
     this.clients.add(client);
     socket.on('message', (data) => {
       try {
-        const message = JSON.parse(data.toString()) as { type?: unknown; projectId?: unknown };
+        const message = JSON.parse(data.toString()) as {
+          type?: unknown;
+          projectId?: unknown;
+          notificationsOnly?: unknown;
+        };
         if (message.type === 'subscribe' && typeof message.projectId === 'string')
-          void this.subscribe(client, message.projectId).catch(() => this.close(client));
+          void this.subscribe(client, message.projectId, message.notificationsOnly === true).catch(
+            () => this.close(client),
+          );
         else this.send(client, { type: 'error', message: '지원하지 않는 실시간 메시지입니다.' });
       } catch {
         this.send(client, { type: 'error', message: '실시간 메시지 형식을 확인해주세요.' });
@@ -93,7 +122,11 @@ export class SyncGateway implements OnApplicationShutdown {
     socket.on('close', () => this.clients.delete(client));
     socket.on('error', () => this.clients.delete(client));
   }
-  private async subscribe(client: Client, projectId: string): Promise<void> {
+  private async subscribe(
+    client: Client,
+    projectId: string,
+    notificationsOnly = false,
+  ): Promise<void> {
     const access = await this.access.requireProject(client.actor.id, projectId, 'read');
     const [project] = await this.database.db
       .select({
@@ -111,6 +144,8 @@ export class SyncGateway implements OnApplicationShutdown {
       });
     if (!this.clients.has(client)) return;
     client.projects.set(projectId, access.workspaceId);
+    if (notificationsOnly) client.notificationsOnly.add(projectId);
+    else client.notificationsOnly.delete(projectId);
     // A membership change can have committed while the first check was in flight.
     await this.access.requireProject(client.actor.id, projectId, 'read');
     this.send(client, {
@@ -134,7 +169,10 @@ export class SyncGateway implements OnApplicationShutdown {
       if (!client.projects.has(projectId)) continue;
       try {
         await this.access.requireProject(client.actor.id, projectId, 'read');
-        this.send(client, message);
+        this.send(
+          client,
+          client.notificationsOnly.has(projectId) ? nativeNotification(message) : message,
+        );
       } catch {
         this.close(client);
       }

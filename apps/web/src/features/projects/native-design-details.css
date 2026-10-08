@@ -1,0 +1,48 @@
+.native-design-details {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.native-design-columns {
+  display: grid;
+  gap: 10px;
+}
+.native-design-column {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+.native-design-column header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.native-design-column header span {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.native-design-details dl {
+  margin: 8px 0;
+}
+.native-design-details dt {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 8px;
+}
+.native-design-details dd {
+  margin: 2px 0 8px;
+  white-space: pre-wrap;
+}
+.native-design-details summary {
+  cursor: pointer;
+  padding-block: 6px;
+}
+.native-design-details h3 {
+  margin-top: 18px;
+  font-size: 12px;
+}
+.native-design-details li {
+  margin-block: 8px;
+}

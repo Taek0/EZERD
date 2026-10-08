@@ -1,5 +1,5 @@
 import { canonicalPostgresTypeName } from './postgres-types.js';
-import type { Column, DesignDocument, ModelScope, NodeLayout } from './document.js';
+import type { Column, DesignDocument, ModelScope } from './document.js';
 
 export function columnTypeDisplay(
   type: Column['physical']['type'],
@@ -81,14 +81,4 @@ export function tableCardSize(doc: DesignDocument, tableId: string, width = 480,
 export function basicCardSize(kind: 'domain' | 'table' | 'note', width: number, height: number) {
   const min = kind === 'domain' ? [240, 210] : kind === 'table' ? [280, 220] : [160, 110];
   return { width: Math.max(min[0]!, width), height: Math.max(min[1]!, height) };
-}
-
-export function effectiveCardSize(doc: DesignDocument, node: NodeLayout) {
-  if (doc.tables?.some((table) => table.id === node.objectId))
-    return tableCardSize(doc, node.objectId, node.width, node.height);
-  return basicCardSize(
-    doc.domains.some((domain) => domain.id === node.objectId) ? 'domain' : 'note',
-    node.width,
-    node.height,
-  );
 }

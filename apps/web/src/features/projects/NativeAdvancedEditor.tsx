@@ -1,10 +1,12 @@
-import { memo, useMemo, useState } from 'react';
+import './native-advanced-editor.css';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
-import { PanelSection, PanelList, PanelRow } from '../../shared/editor/panel.js';
+import { PanelSection } from '../../shared/editor/panel.js';
 import type { NativeDesignDocument, NativeTable, NativeIndex } from '@ezerd/model';
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import { nativeDurableId } from './native-durable-queue.js';
+import { loadNativeEditorDraft } from './native-editor-draft.js';
 import {
   NativeEditorForm,
   NativeEditorField,
@@ -32,6 +34,8 @@ import { nativeEditorConditionText, nativeEditorErrorCode } from './native-edito
 registerTranslations({
   '고급 인덱스·식 편집': 'Advanced index and expression editing',
   '고급 편집 대상': 'Advanced editing target',
+  '생성하려는 항목 선택': 'Select an item to create',
+  '선택한 항목 편집': 'Edit the selected item',
   '새 고급 인덱스': 'New advanced index',
   '새 복합 CHECK': 'New compound CHECK',
   '기본값 식': 'Default expression',
@@ -54,13 +58,18 @@ registerTranslations({
   '현재 저장 경로 검증 미완료': 'Verification of the current saving path is incomplete',
   '현재 원문을 유지합니다.': 'The current original is preserved.',
   '입력 또는 조합을 지원하지 않음': 'Input or combination is unsupported',
-  '고급 초안을 보존했습니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.':
-    'The advanced draft was preserved. Reset input or retry preserving it.',
+  '고급 초안을 보존했습니다. 이 초안은 저장할 수 없으며 원문은 유지됩니다.':
+    'The advanced draft was preserved. This draft cannot be saved; its original text is retained.',
   '고급 편집은 현재 DB의 물리 테이블에서만 가능합니다.':
     'Advanced editing is available only for a physical table in the current database.',
   '현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.':
     'The recovery target was not found in the current design. The archived draft is retained.',
   범위: 'Scope',
+  '항목 종류': 'Item kind',
+  '편집 대상': 'Editing target',
+  '핵심 설정': 'Core settings',
+  인덱스: 'Index',
+  'CHECK 조건': 'CHECK constraint',
 });
 function NativeAdvancedStatus({ status }: { status: NativeAdvancedCandidate }) {
   const { t } = useI18n();
@@ -92,8 +101,52 @@ function NativeAdvancedStatus({ status }: { status: NativeAdvancedCandidate }) {
     </div>
   );
 }
+/** Keep the legacy recovery key, including the identity of a recovered creation. */
+function useAdvancedCreationIdentity(context: NativeEditorContext, draftKey: string) {
+  return useState(() => {
+    try {
+      const draft = loadNativeEditorDraft(context.userId, context.snapshot.project.id, draftKey);
+      if (draft?.before.id)
+        return {
+          id: draft.before.id,
+          existing: !!draft.before.originalJSON && draft.before.originalJSON !== 'null',
+        };
+    } catch {
+      // NativeEditorForm presents storage/recovery errors and blocks saving.
+    }
+    return { id: nativeDurableId(), existing: false };
+  })[0];
+}
+
+/** Advanced forms predate create: keys. Give them the same ACK/document barrier
+ * without renaming archived draft keys or arming autosave on mount. */
+function useAdvancedCreationContext(
+  context: NativeEditorContext,
+  creating: boolean,
+  existing: boolean,
+) {
+  const [ackSequence, setAckSequence] = useState(-1);
+  const [wasExisting, setWasExisting] = useState(existing);
+  useEffect(() => {
+    if (existing) setWasExisting(true);
+  }, [existing]);
+  const save = useCommittedEvent(context.onSave);
+  const onSave: NativeEditorContext['onSave'] = async (commands, expected, draft) => {
+    const accepted = await save(commands, expected, draft);
+    if (accepted && creating) setAckSequence(expected.sequence);
+    return accepted;
+  };
+  return {
+    acknowledged: wasExisting || ackSequence >= 0,
+    waitingForDocument: creating && context.snapshot.sequence <= ackSequence,
+    context: {
+      ...context,
+      onSave,
+    },
+  };
+}
 export function NativeAdvancedIndexForm({
-  context,
+  context: providedContext,
   document,
   table,
   index,
@@ -106,12 +159,19 @@ export function NativeAdvancedIndexForm({
   readOnly?: boolean;
 }) {
   const { t } = useI18n();
-  const [newId] = useState(nativeDurableId);
-  const id = index?.id ?? newId;
+  const draftKey = `advanced:index:${table.id}:${index?.id ?? 'new'}`;
+  const identity = useAdvancedCreationIdentity(providedContext, draftKey);
+  const id = index?.id ?? identity.id;
+  const current = document.indexes?.find((item) => item.id === id && item.tableId === table.id);
+  const { context, acknowledged, waitingForDocument } = useAdvancedCreationContext(
+    providedContext,
+    !index,
+    identity.existing || !!current,
+  );
   const initial = {
     id,
-    indexDraftJSON: JSON.stringify(nativeIndexDraft(document, table, index)),
-    originalJSON: JSON.stringify(index ?? null),
+    indexDraftJSON: JSON.stringify(nativeIndexDraft(document, table, current)),
+    originalJSON: JSON.stringify(current ?? null),
   };
   function evaluate(
     values: Record<string, string>,
@@ -121,7 +181,8 @@ export function NativeAdvancedIndexForm({
       const persistedId = values.id ?? '';
       if (
         values.id !== before.id ||
-        (index && persistedId !== index.id) ||
+        persistedId !== id ||
+        ((index || acknowledged) && !current) ||
         values.originalJSON !== before.originalJSON ||
         JSON.stringify(document.indexes?.find((i) => i.id === persistedId) ?? null) !==
           before.originalJSON
@@ -132,7 +193,7 @@ export function NativeAdvancedIndexForm({
         table,
         persistedId,
         readNativeIndexDraft(values.indexDraftJSON ?? ''),
-        !!index,
+        !!current,
       );
     } catch (error) {
       return {
@@ -148,10 +209,10 @@ export function NativeAdvancedIndexForm({
     <fieldset disabled={readOnly || context.busy}>
       <NativeEditorForm
         context={context}
-        draftKey={`advanced:index:${table.id}:${index?.id ?? 'new'}`}
+        draftKey={draftKey}
         title={t(index ? '인덱스 키 식' : '새 고급 인덱스')}
         initial={initial}
-        disabled={(values) => readOnly || !evaluate(values).usable}
+        disabled={(values) => readOnly || waitingForDocument || !evaluate(values).usable}
         build={(values, before) => nativeAdvancedCommands(evaluate(values, before), readOnly)}
       >
         {(values, change) => {
@@ -161,7 +222,7 @@ export function NativeAdvancedIndexForm({
           } catch (error) {
             return (
               <p role="alert">
-                {t('고급 초안을 보존했습니다. 입력 초기화 또는 보관 다시 시도를 사용하세요.')} (
+                {t('고급 초안을 보존했습니다. 이 초안은 저장할 수 없으며 원문은 유지됩니다.')} (
                 {nativeEditorConditionText(nativeEditorErrorCode(error, 'index.draft-invalid'))})
               </p>
             );
@@ -190,7 +251,11 @@ export function NativeAdvancedIndexForm({
                 ]}
               />
               {draft.parts.map((part, position) => (
-                <fieldset key={position} disabled={readOnly || context.busy}>
+                <fieldset
+                  className="native-advanced-key"
+                  key={position}
+                  disabled={readOnly || context.busy}
+                >
                   <legend>
                     {t('인덱스 키 식')} {position + 1}
                   </legend>
@@ -231,7 +296,7 @@ export function NativeAdvancedIndexForm({
                                 : p,
                             ),
                           },
-                          index?.id,
+                          current?.id,
                         ).allowed,
                     }))}
                     disabled={readOnly || context.busy}
@@ -251,40 +316,42 @@ export function NativeAdvancedIndexForm({
                       }
                     />
                   )}
-                  <Button
-                    disabled={readOnly || context.busy || position === 0}
-                    onClick={() => {
-                      const parts = [...draft.parts];
-                      [parts[position - 1], parts[position]] = [
-                        parts[position]!,
-                        parts[position - 1]!,
-                      ];
-                      update({ ...draft, parts });
-                    }}
-                  >
-                    {t('위로')}
-                  </Button>
-                  <Button
-                    disabled={readOnly || context.busy || position === draft.parts.length - 1}
-                    onClick={() => {
-                      const parts = [...draft.parts];
-                      [parts[position + 1], parts[position]] = [
-                        parts[position]!,
-                        parts[position + 1]!,
-                      ];
-                      update({ ...draft, parts });
-                    }}
-                  >
-                    {t('아래로')}
-                  </Button>
-                  <Button
-                    disabled={readOnly || context.busy}
-                    onClick={() =>
-                      update({ ...draft, parts: draft.parts.filter((_, i) => position !== i) })
-                    }
-                  >
-                    {t('제거')}
-                  </Button>
+                  <div className="native-advanced-actions">
+                    <Button
+                      disabled={readOnly || context.busy || position === 0}
+                      onClick={() => {
+                        const parts = [...draft.parts];
+                        [parts[position - 1], parts[position]] = [
+                          parts[position]!,
+                          parts[position - 1]!,
+                        ];
+                        update({ ...draft, parts });
+                      }}
+                    >
+                      {t('위로')}
+                    </Button>
+                    <Button
+                      disabled={readOnly || context.busy || position === draft.parts.length - 1}
+                      onClick={() => {
+                        const parts = [...draft.parts];
+                        [parts[position + 1], parts[position]] = [
+                          parts[position]!,
+                          parts[position + 1]!,
+                        ];
+                        update({ ...draft, parts });
+                      }}
+                    >
+                      {t('아래로')}
+                    </Button>
+                    <Button
+                      disabled={readOnly || context.busy}
+                      onClick={() =>
+                        update({ ...draft, parts: draft.parts.filter((_, i) => position !== i) })
+                      }
+                    >
+                      {t('제거')}
+                    </Button>
+                  </div>
                 </fieldset>
               ))}
               <Button
@@ -316,7 +383,7 @@ export function NativeAdvancedIndexForm({
                 table={table}
                 value={draft}
                 onChange={update}
-                indexId={index?.id}
+                indexId={current?.id}
                 disabled={readOnly || context.busy}
               />
               <NativeAdvancedStatus status={evaluate(values)} />
@@ -328,7 +395,7 @@ export function NativeAdvancedIndexForm({
   );
 }
 export function NativeAdvancedExpressionForm({
-  context,
+  context: providedContext,
   document,
   table,
   target: providedTarget,
@@ -341,27 +408,47 @@ export function NativeAdvancedExpressionForm({
   readOnly?: boolean;
 }) {
   const { t } = useI18n();
-  const [createdId] = useState(nativeDurableId);
-  const target =
-    providedTarget.kind === 'check' && providedTarget.create
-      ? { ...providedTarget, id: createdId }
-      : providedTarget;
+  const creating = providedTarget.kind === 'check' && providedTarget.create;
+  const key =
+    providedTarget.kind === 'check'
+      ? creating
+        ? 'new'
+        : providedTarget.id
+      : providedTarget.columnId;
+  const draftKey = `advanced:expression:${table.id}:${providedTarget.kind}:${key}`;
+  const identity = useAdvancedCreationIdentity(providedContext, draftKey);
+  const createdId = identity.id;
+  const exists = !!document.checks?.some(
+    (check) => check.id === createdId && check.tableId === table.id,
+  );
+  const { context, acknowledged, waitingForDocument } = useAdvancedCreationContext(
+    providedContext,
+    creating,
+    identity.existing || exists,
+  );
+  const target = creating
+    ? { kind: 'check' as const, id: createdId, create: !exists }
+    : providedTarget;
   const initial = nativeExpressionInitial(document, table, target);
+  // A creation session remains in replacement mode after its first ACK so that
+  // rebasing an expression edited in flight cannot silently switch to preserve.
+  if (creating) initial.mode = 'replace';
   const column =
     target.kind === 'check' ? undefined : document.columns?.find((c) => c.id === target.columnId);
   const title =
     target.kind === 'check' ? '새 복합 CHECK' : target.kind === 'default' ? '기본값 식' : '생성 식';
-  const key = target.kind === 'check' ? (target.create ? 'new' : target.id) : target.columnId;
   const evaluate = (values: Record<string, string>, before: Record<string, string> = initial) =>
-    nativeExpressionCandidate(document, table, target, values, before);
+    creating && acknowledged && target.kind === 'check' && target.create
+      ? { allowed: false, usable: false, preserved: false, issues: [], code: 'check.not-found' }
+      : nativeExpressionCandidate(document, table, target, values, before);
   return (
     <fieldset disabled={readOnly || context.busy}>
       <NativeEditorForm
         context={context}
-        draftKey={`advanced:expression:${table.id}:${target.kind}:${key}`}
+        draftKey={draftKey}
         title={t(title)}
         initial={initial}
-        disabled={(values) => readOnly || !evaluate(values).usable}
+        disabled={(values) => readOnly || waitingForDocument || !evaluate(values).usable}
         build={(values, before) => nativeAdvancedCommands(evaluate(values, before), readOnly)}
       >
         {(values, change) => (
@@ -502,10 +589,19 @@ function NativeAdvancedEditorContent({
     } else if (kind === 'check') target = { kind: 'check', id, create: false };
     else if (kind === 'default' || kind === 'computed') target = { kind, columnId: id };
   }
-  const mountingKey = `${context.userId}:${context.snapshot.project.id}:${table.id}:${selected}:${context.snapshot.project.databaseRevision}:${context.snapshot.project.version}:${context.snapshot.sequence}:${recoveryRevision ?? ''}`;
+  const kindOf = (value: string): string => {
+    if (value.endsWith(':new')) return value.split(':')[0]!;
+    try {
+      return (JSON.parse(value) as string[])[0] ?? '';
+    } catch {
+      return '';
+    }
+  };
+  const selectedKind = kindOf(selected);
+  const mountingKey = `${context.userId}:${context.snapshot.project.id}:${table.id}:${selected}:${context.snapshot.project.databaseRevision}:${recoveryRevision ?? ''}`;
   return (
     <PanelSection
-      className="native-property-editor"
+      className="native-property-editor native-advanced-editor"
       title={t('고급 인덱스·식 편집')}
       defaultOpen={!!initialSelection}
     >
@@ -515,37 +611,58 @@ function NativeAdvancedEditorContent({
           {t('현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.')}
         </p>
       )}
-      <PanelList empty={t('편집할 항목이 없습니다.')}>
-        {choices.map((choice) => (
-          <PanelRow
-            key={choice.value}
-            title={choice.label}
-            active={selected === choice.value}
-            onSelect={() => {
-              if (!context.busy) setSelected(choice.value);
-            }}
-          />
-        ))}
-      </PanelList>
-      {isIndex && selectionValid && (
-        <NativeAdvancedIndexForm
-          key={mountingKey}
-          context={context}
-          document={document}
-          table={table}
-          {...(index ? { index } : {})}
-          readOnly={readonly}
+      <div className="native-advanced-selection">
+        <NativeEditorField
+          label="항목 종류"
+          value={selectedKind}
+          disabled={context.busy}
+          choices={[
+            { value: 'index', label: t('인덱스') },
+            { value: 'check', label: t('CHECK 조건') },
+            { value: 'default', label: t('기본값 식') },
+            { value: 'computed', label: t('생성 식') },
+          ].map((choice) => ({
+            ...choice,
+            disabled: !choices.some((item) => kindOf(item.value) === choice.value),
+          }))}
+          onChange={(kind) => {
+            const next = choices.find((choice) => kindOf(choice.value) === kind);
+            if (!context.busy && next) setSelected(next.value);
+          }}
         />
-      )}
-      {target && selectionValid && (
-        <NativeAdvancedExpressionForm
-          key={mountingKey}
-          context={context}
-          document={document}
-          table={table}
-          target={target}
-          readOnly={readonly}
+        <NativeEditorField
+          label="편집 대상"
+          value={selected}
+          disabled={context.busy}
+          choices={choices.filter((choice) => kindOf(choice.value) === selectedKind)}
+          onChange={(value) => {
+            if (!context.busy) setSelected(value);
+          }}
         />
+      </div>
+      {selectionValid && (
+        <PanelSection title={t('핵심 설정')} defaultOpen>
+          {isIndex && selectionValid && (
+            <NativeAdvancedIndexForm
+              key={mountingKey}
+              context={context}
+              document={document}
+              table={table}
+              {...(index ? { index } : {})}
+              readOnly={readonly}
+            />
+          )}
+          {target && selectionValid && (
+            <NativeAdvancedExpressionForm
+              key={mountingKey}
+              context={context}
+              document={document}
+              table={table}
+              target={target}
+              readOnly={readonly}
+            />
+          )}
+        </PanelSection>
       )}
     </PanelSection>
   );

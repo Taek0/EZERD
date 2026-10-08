@@ -10,6 +10,7 @@ import {
 import { loadNativeEditorDraft } from './native-editor-draft.js';
 import { ApiError, body, request } from '../../shared/api/client.js';
 import { captureNativeActorApi } from './native-actor-api.js';
+import { markNativeLocalOperation } from './native-local-operations.js';
 import { requestFingerprint } from '@ezerd/model';
 import {
   nativeDraftArchive,
@@ -289,22 +290,6 @@ export function discardNativeDraft(
   if (entry) archive.discard(userId, projectId, entry);
   forgetNativeMemoryDraft(key, storage);
 }
-export function resetNativeDraft(
-  userId: string,
-  projectId: string,
-  kind: 'table' | 'column',
-  objectId: string,
-  storage?: Storage,
-): void {
-  const key = draftKey(userId, projectId, kind, objectId);
-  nativeDraftArchive(storage).reset(
-    userId,
-    projectId,
-    'property',
-    nativePropertyArchiveKey(kind, objectId),
-  );
-  forgetNativeMemoryDraft(key, storage);
-}
 /** Explicit user review preserves only edited fields; other users' newer fields are inherited. */
 export function rebaseNativeDraft(
   draft: NativePropertyDraft,
@@ -421,6 +406,7 @@ export async function sendNativePending(
     void queue.renewTransmission(entry, token).catch(() => {});
   }, 5000);
   try {
+    markNativeLocalOperation(pending.userId, pending.projectId, pending.request.operationId);
     const result = nativeSyncOperationResultSchema.parse(
       await actorApi(
         `/api/projects/${encodeURIComponent(pending.projectId)}/native-sync/commands`,

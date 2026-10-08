@@ -1,10 +1,10 @@
 import { afterEach, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createEmptyDocument } from '@ezerd/model';
+import { createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model';
 import { setLocale } from '../../shared/i18n/index.js';
-import { SyncHistoryContent } from './sync-history-panel.js';
-import { describeChanges, describeDeletedValues } from './sync-history-labels.js';
+import { NativeHistoryChanges } from '../projects/NativeHistoryDialog.js';
+import { describeChanges } from '../projects/native-history-labels.js';
 import { ProjectImportButton } from '../projects/ProjectTransfer.js';
 import { parseProjectTransfer } from '../projects/project-transfer.js';
 import { McpConnectionPanel } from '../mcp/McpConnectionPanel.js';
@@ -14,9 +14,11 @@ afterEach(() => setLocale('ko'));
 
 it('renders auxiliary panels in English and switches back to Korean', () => {
   setLocale('en');
-  expect(renderToStaticMarkup(createElement(SyncHistoryContent, { snapshot: null }))).toContain(
-    'No unapplied edits.',
-  );
+  expect(
+    renderToStaticMarkup(
+      createElement(NativeHistoryChanges, { lines: ['one', 'two', 'three', 'four'] }),
+    ),
+  ).toContain('Show more changes');
   expect(
     renderToStaticMarkup(
       createElement(ProjectImportButton, { workspaceId: 'workspace', onImported: () => {} }),
@@ -43,13 +45,16 @@ it('renders auxiliary panels in English and switches back to Korean', () => {
 });
 
 it('localizes history labels while preserving user-authored names and descriptions', () => {
-  const document = createEmptyDocument();
+  const document = createEmptyNativeDocument(defaultDatabaseContext('postgresql'));
   const note = { id: 'n', viewId: 'overview', text: '사용자가 작성한 내용' };
   document.notes = [note];
   const change = { path: '/notes/n', before: note, after: null };
   setLocale('en');
   expect(describeChanges([change], document)).toEqual(['Note ‘사용자가 작성한 내용’ deleted']);
-  expect(describeDeletedValues(change, document)).toContain('Description: 사용자가 작성한 내용');
+  const markup = renderToStaticMarkup(
+    createElement(NativeHistoryChanges, { lines: describeChanges([change], document) }),
+  );
+  expect(markup).toContain('사용자가 작성한 내용');
   expect(describeChanges([{ path: '/notes/@move/n', before: 1, after: 0 }], document)).toEqual([
     'Note reordered',
   ]);

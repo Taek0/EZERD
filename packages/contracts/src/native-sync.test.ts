@@ -1,3 +1,4 @@
+import { syncEventReadSchema, syncOperationInputReadSchema } from './sync-read.js';
 import { describe, it, expect } from 'vitest';
 import {
   createEmptyDocument,
@@ -8,8 +9,6 @@ import {
 import {
   nativeSyncOperationInputSchema,
   nativeSyncOperationResultSchema,
-  syncEventReadSchema,
-  syncOperationInputReadSchema,
   nativeSyncSnapshotSchema,
 } from './native-sync.js';
 import { syncOperationInputSchema } from './sync.js';
@@ -54,6 +53,29 @@ const result = {
   document,
 };
 describe('native sync transport preparation', () => {
+  it('preserves shared defaults, change presence checks and path limits in the Native envelope', () => {
+    const { dependencyPaths: _paths, ...withoutPaths } = input;
+    expect(nativeSyncOperationInputSchema.parse(withoutPaths).dependencyPaths).toEqual([]);
+    for (const changes of [
+      [],
+      [...metadata.changes, ...metadata.changes],
+      [{ path: '/domains/d/name', after: 'new' }],
+      [{ path: '/domains/d/name', before: 'old' }],
+      [{ path: '/domains//name', before: null, after: null }],
+      Array.from({ length: 1001 }, (_, i) => ({
+        path: `/domains/d${i}/name`,
+        before: '',
+        after: 'n',
+      })),
+    ])
+      expect(nativeSyncOperationInputSchema.safeParse({ ...input, changes }).success).toBe(false);
+    expect(
+      nativeSyncOperationInputSchema.safeParse({
+        ...input,
+        changes: [{ path: '/domains/d/name', before: undefined, after: null }],
+      }).success,
+    ).toBe(true);
+  });
   it('preserves v1 and v2 raw requests without injecting revision defaults', () => {
     const old = {
       ...metadata,

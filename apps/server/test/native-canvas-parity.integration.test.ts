@@ -329,7 +329,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         const after = await state(id);
         expect(after.sourceDocument.tables.map((t: any) => t.id)).toEqual(['hidden']);
         expect(after.sourceDocument.columns.map((c: any) => c.tableId)).toEqual(['hidden']);
-        expect((await api(`/projects/${id}`)).status).toBe(409);
+        expect((await api(`/projects/${id}`)).status).toBe(410);
       },
     );
   },

@@ -293,6 +293,32 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     });
 
     it.each(kinds)(
+      '%s compatibility import creates a Native project with exact raw audit evidence',
+      async (kind) => {
+        const original = transfer(fixture(), kind),
+          before = structuredClone(original);
+        const result = await request('/projects/import', 'POST', {
+          workspaceId,
+          transfer: original,
+        });
+        expect(result.status).toBe(201);
+        const saved = await row(result.data.id);
+        expect(saved.document.schemaVersion).toBe(2);
+        expect(saved.document.database.kind).toBe(kind);
+        const state = await request(`/projects/${result.data.id}/document-state`);
+        expect(state.status).toBe(200);
+        expect(state.data.sourceDocument).toEqual(saved.document);
+        const evidence = (
+          await pool.query(
+            "SELECT details FROM workspace_audit_events WHERE workspace_id=$1 AND details->>'projectId'=$2",
+            [workspaceId, result.data.id],
+          )
+        ).rows[0].details;
+        expect(evidence.importProvenance.sourceDocument).toEqual(original.document);
+        expect(original).toEqual(before);
+      },
+    );
+    it.each(kinds)(
       '%s v1 legacy ENUM imports and native2 roundtrips in a new project namespace with exact raw evidence',
       async (kind) => {
         const source = await imported(kind),

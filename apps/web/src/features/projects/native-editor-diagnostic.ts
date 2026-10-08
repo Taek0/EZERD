@@ -11,6 +11,12 @@ export function nativeEditorErrorCode(cause: unknown, fallback = 'native.input-i
         if (!issue || typeof issue !== 'object' || issue.code !== 'too_small') continue;
         const path: unknown = issue.path;
         if (!Array.isArray(path)) continue;
+        if (
+          path.length === 2 &&
+          (path[0] === 'value' || path[0] === 'patch') &&
+          path[1] === 'values'
+        )
+          return 'enum.values-required';
         if (path.at(-1) === 'columnId') return 'expression.column-required';
         if (path.at(-1) === 'parts') return 'index.key-parts-required';
       }
@@ -23,6 +29,8 @@ export function nativeEditorErrorCode(cause: unknown, fallback = 'native.input-i
 }
 
 registerTranslations({
+  '값을 하나 이상 추가해 주세요. 입력한 내용은 유지됩니다.':
+    'Add at least one value. Your input is preserved.',
   '이 타입의 기본값 형식을 확인하세요. 원문 초안은 유지됩니다.':
     'Check the default value format for this type. The original draft is preserved.',
   '이 타입에서 검증된 기본값 문법만 지원합니다. 원문은 유지됩니다.':
@@ -112,6 +120,7 @@ registerTranslations({
 });
 
 const conditions: Record<string, string> = {
+  'enum.values-required': '값을 하나 이상 추가해 주세요. 입력한 내용은 유지됩니다.',
   'default.literal-format-invalid': '이 타입의 기본값 형식을 확인하세요. 원문 초안은 유지됩니다.',
   'default.literal-not-supported':
     '이 타입에서 검증된 기본값 문법만 지원합니다. 원문은 유지됩니다.',

@@ -1,6 +1,7 @@
-import type { Column, DesignDocument } from './document.js';
+import type { DesignDocument } from './document.js';
+import type { LegacyPhysicalType } from './legacy-physical-type.js';
 
-export type PhysicalType = Column['physical']['type'];
+export type PhysicalType = LegacyPhysicalType;
 export interface PhysicalTypeIssue {
   path: 'length' | 'precision' | 'scale' | 'isArray';
   message: string;

@@ -1,5 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
+import { NativeCancellationService } from '../src/sync/native-cancellation.service.js';
 import { describe, expect, it, vi } from 'vitest';
 import { McpServerFactory } from '../src/mcp/mcp-server.js';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
@@ -77,8 +79,6 @@ describe('MCP server tools', () => {
       create: vi.fn(async () => reviewThread),
     };
     const logger = { write: vi.fn(async () => undefined) };
-    const sync = { history: vi.fn(async () => []) };
-    const documents = { apply: vi.fn() };
     const personal = {
       get: vi.fn(async () => ({
         version: 0,
@@ -98,8 +98,6 @@ describe('MCP server tools', () => {
       workspace as never,
       reviews as never,
       logger as never,
-      sync as never,
-      documents as never,
       personal as never,
       { apply: vi.fn() } as never,
       {} as never,
@@ -108,6 +106,7 @@ describe('MCP server tools', () => {
       { exportProject: vi.fn() } as never,
       { history: vi.fn(), compensate: vi.fn() } as never,
       { baseline: vi.fn() } as never,
+      { importProject: vi.fn(), exportProject: vi.fn() } as never,
       { cancel: vi.fn() } as never,
     );
     const actor = { id: crypto.randomUUID(), username: 'actor', color: '#4169e1' };
@@ -118,6 +117,17 @@ describe('MCP server tools', () => {
     await client.connect(clientTransport as never);
     try {
       const tools = await client.listTools();
+      const jsonValidator = new AjvJsonSchemaValidator();
+      expect(tools.tools).toHaveLength(52);
+      for (const tool of tools.tools) {
+        expect(() => jsonValidator.getValidator(tool.inputSchema), tool.name).not.toThrow();
+        expect(tool.outputSchema, tool.name).toBeDefined();
+        expect(tool.annotations, tool.name).toMatchObject({
+          readOnlyHint: expect.any(Boolean),
+          destructiveHint: expect.any(Boolean),
+          openWorldHint: false,
+        });
+      }
       expect(client.getInstructions()).toContain('최소 40px');
       expect(client.getInstructions()).toContain('PK→FK 방향');
       expect(client.getInstructions()).toContain('관계선 교차');
@@ -125,10 +135,11 @@ describe('MCP server tools', () => {
       expect(client.getInstructions()).toContain('x·y·width·height');
       expect(client.getInstructions()).toContain('불필요한 폭·높이·빈 공간을 줄여');
       expect(client.getInstructions()).toContain('구조적 계층');
+      expect(client.getInstructions()).toContain('비연결 카드 내부를 관통');
+      expect(client.getInstructions()).toContain('동일한 구간에 포개지지 않게');
+      expect(client.getInstructions()).toContain('coverage.complete');
+      expect(client.getInstructions()).toContain('남은 교차를 보고');
       expect(client.getInstructions()).toContain('겹침을 확인하고 수정');
-      expect(
-        tools.tools.find((tool) => tool.name === 'apply_project_changes')?.description,
-      ).toContain('겹침 없이');
       expect(tools.tools.map((tool) => tool.name)).toEqual([
         'whoami',
         'create_workspace',
@@ -157,6 +168,8 @@ describe('MCP server tools', () => {
         'list_view_relations',
         'get_personal_state',
         'get_table_details',
+        'get_tables_details',
+        'get_project_changes',
         'list_review_threads',
         'get_review_thread',
         'list_notifications',
@@ -172,13 +185,9 @@ describe('MCP server tools', () => {
         'delete_review_thread',
         'diagnose_project',
         'diagnose_layout',
-        'apply_project_changes',
         'upgrade_project_document',
         'apply_native_project_changes',
         'apply_personal_changes',
-        'get_project_history',
-        'undo_project_operation',
-        'restore_project_deletion',
         'get_native_project_baseline',
         'get_native_project_history',
         'undo_native_project_operation',
@@ -229,6 +238,20 @@ describe('MCP server tools', () => {
         native: { status: 'available', document: { schemaVersion: 2 } },
       });
       expect(workspace.getVersionedProjectState).toHaveBeenCalledWith(actor.id, project.id);
+      const snapshot = await client.callTool({
+        name: 'get_project',
+        arguments: { projectId: project.id },
+      });
+      expect(snapshot.isError).not.toBe(true);
+      expect(snapshot.structuredContent).toEqual(versioned.structuredContent);
+      expect(workspace.getProjectState).not.toHaveBeenCalled();
+      for (const name of [
+        'apply_project_changes',
+        'get_project_history',
+        'undo_project_operation',
+        'restore_project_deletion',
+      ])
+        expect(tools.tools.some((tool) => tool.name === name)).toBe(false);
       expect(tools.tools.find((tool) => tool.name === 'get_project_document_state')).toMatchObject({
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
         outputSchema: { type: 'object' },
@@ -311,8 +334,24 @@ describe('MCP workspace authorization', () => {
   };
   async function connected(overrides: Record<string, unknown> = {}) {
     const workspace = {
+      getNativeQueryState: vi.fn(async (_actorId: string, _projectId: string) => ({
+        project: { ...project, databaseProfileId: 'postgresql-18-v1', databaseRevision: 0 },
+        syncSequence: 0,
+        document: createEmptyNativeDocument(defaultDatabaseContext('postgresql')),
+      })),
       getProjectState: vi.fn(async () => ({ project, document, syncSequence: 0 })),
+      getVersionedProjectState: vi.fn(async () => {
+        const native = createEmptyNativeDocument(defaultDatabaseContext('postgresql'));
+        return {
+          protocolVersion: 2,
+          project: { ...project, databaseProfileId: 'postgresql-18-v1', databaseRevision: 0 },
+          sequence: 0,
+          sourceDocument: native,
+          native: { status: 'available', document: native, migrationIssues: [], issues: [] },
+        };
+      }),
       createProject: vi.fn(async () => project),
+      updateProject: vi.fn(async () => project),
       importProject: vi.fn(async () => project),
       ...(overrides.workspace as object),
     };
@@ -339,28 +378,49 @@ describe('MCP workspace authorization', () => {
       listPage: vi.fn(async () => ({ threads: [], nextCursor: null })),
       getThread: vi.fn(),
     };
-    const sync = { historyPage: vi.fn(async () => ({ history: [], nextSince: null })) };
+    const nativeHistory = {
+      history: vi.fn(async () => ({ history: [], nextSince: null })),
+      compensate: vi.fn(),
+    };
     const personal = {
       get: vi.fn(async () => ({
         state: { views: [], notes: [], nodes: [], viewports: [], relations: [] },
       })),
     };
     const auth = { assertActiveToken: vi.fn(async () => undefined) };
+    const transfers = (overrides.transfer ?? {
+      importProject: vi.fn(async () => ({ project, sequence: 0, migrationIssues: [], issues: [] })),
+      exportProject: vi.fn(async () => {
+        const state = await workspace.getVersionedProjectState();
+        return {
+          format: 'ezerd-project',
+          formatVersion: 2,
+          exportedAt: now,
+          project: {
+            name: project.name,
+            databaseKind: project.databaseKind,
+            databaseProfileId: 'postgresql-18-v1',
+          },
+          source: { projectId: project.id, version: 0, sequence: 0, databaseRevision: 0 },
+          sourceDocument: state.sourceDocument,
+          native: state.native,
+        };
+      }),
+    }) as { importProject: ReturnType<typeof vi.fn>; exportProject: ReturnType<typeof vi.fn> };
     const factory = new McpServerFactory(
       workspace as never,
       reviews as never,
       { write: vi.fn(async () => undefined) } as never,
-      sync as never,
-      {} as never,
       personal as never,
       { apply: vi.fn() } as never,
       spaces as never,
       auth as never,
       { upgrade: vi.fn() } as never,
       { exportProject: vi.fn() } as never,
-      { history: vi.fn(), compensate: vi.fn() } as never,
+      nativeHistory as never,
       { baseline: vi.fn() } as never,
-      { cancel: vi.fn() } as never,
+      transfers as never,
+      (overrides.cancellation ?? { cancel: vi.fn() }) as never,
     );
     const server = factory.create(actor, tokenId, crypto.randomUUID());
     const client = new Client({ name: 'authorization-test', version: '1.0.0' });
@@ -373,9 +433,10 @@ describe('MCP workspace authorization', () => {
       workspace,
       spaces,
       reviews,
-      sync,
+      nativeHistory,
       personal,
       auth,
+      transfers,
       close: async () => {
         await client.close();
         await server.close();
@@ -383,6 +444,228 @@ describe('MCP workspace authorization', () => {
     };
   }
 
+  it('publishes all three import envelopes, guarded expressions and cancellation identities without rewriting raw inputs', async () => {
+    const harness = await connected();
+    try {
+      const tools = (await harness.client.listTools()).tools;
+      const validator = new AjvJsonSchemaValidator();
+      const importTool = tools.find((tool) => tool.name === 'import_project')!;
+      const validate = validator.getValidator(importTool.inputSchema);
+      const native = createEmptyNativeDocument(defaultDatabaseContext('sqlite'));
+      const files = [
+        {
+          format: 'ezerd-project',
+          formatVersion: 1,
+          exportedAt: now,
+          project: { name: ' Raw legacy ' },
+          document,
+        },
+        {
+          format: 'ezerd-project',
+          formatVersion: 2,
+          exportedAt: now,
+          project: {
+            name: ' Native ',
+            databaseKind: 'sqlite',
+            databaseProfileId: 'sqlite-3.45-v1',
+          },
+          document: native,
+        },
+        {
+          format: 'ezerd-project',
+          formatVersion: 2,
+          exportedAt: now,
+          project: {
+            name: ' Native ',
+            databaseKind: 'sqlite',
+            databaseProfileId: 'sqlite-3.45-v1',
+          },
+          source: { projectId: project.id, version: 1, sequence: 1, databaseRevision: 0 },
+          sourceDocument: native,
+          native: { status: 'available', document: native, migrationIssues: [], issues: [] },
+        },
+      ];
+      for (const file of files)
+        expect(validate({ workspaceId: space.id, transfer: file }).valid).toBe(true);
+      expect(
+        validate({ workspaceId: space.id, transfer: { format: 'ezerd-project', formatVersion: 2 } })
+          .valid,
+      ).toBe(false);
+      const changes = tools.find((tool) => tool.name === 'apply_native_project_changes')!;
+      expect(JSON.stringify(changes.inputSchema)).toContain('ezerd_mcp_expression');
+      expect(JSON.stringify(changes.inputSchema)).toContain('sqlite:current_timestamp');
+      const input = {
+        projectId: project.id,
+        operationId: crypto.randomUUID(),
+        clientId: crypto.randomUUID(),
+        groupId: crypto.randomUUID(),
+        expectedVersion: 0,
+        expectedSequence: 0,
+        expectedDatabaseRevision: 0,
+        commands: [
+          {
+            type: 'add_check',
+            value: {
+              id: 'check',
+              tableId: 'table',
+              name: 'positive',
+              scope: 'physical',
+              expression: {
+                kind: 'binary',
+                operator: '>',
+                left: { kind: 'column', columnId: 'column' },
+                right: { kind: 'literal', literalType: 'number', value: '0' },
+              },
+            },
+          },
+        ],
+      };
+      const validateChanges = validator.getValidator(changes.inputSchema);
+      expect(validateChanges(input).valid).toBe(true);
+      input.commands[0]!.value.expression.right.value = 0 as never;
+      expect(validateChanges(input).valid).toBe(false);
+      const cancellation = tools.find((tool) => tool.name === 'cancel_native_project_request')!;
+      const validateCancellation = validator.getValidator(cancellation.inputSchema);
+      const request = JSON.parse(
+        `{"operationId":"${project.id}","groupId":"${project.id}","clientId":"${project.id}","__proto__":{"raw":" value "}}`,
+      );
+      const original = JSON.stringify(request);
+      expect(
+        validateCancellation({ projectId: project.id, kind: 'native-command', request }).valid,
+      ).toBe(true);
+      expect(
+        validateCancellation({ projectId: project.id, kind: 'history-undo', request }).valid,
+      ).toBe(false);
+      expect(
+        validateCancellation({
+          projectId: project.id,
+          kind: 'native-upgrade',
+          request: {
+            operationId: project.id,
+            clientId: project.id,
+          },
+        }).valid,
+      ).toBe(true);
+      expect(JSON.stringify(request)).toBe(original);
+      expect(
+        JSON.stringify(tools.find((tool) => tool.name === 'export_project')!.outputSchema),
+      ).toContain('sourceDocument');
+      expect(
+        JSON.stringify(
+          tools.find((tool) => tool.name === 'get_native_project_history')!.outputSchema,
+        ),
+      ).toContain('recordedAck');
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('returns a recorded v1 cancellation ACK verbatim without requiring protocolVersion', async () => {
+    const operationId = crypto.randomUUID();
+    const result = {
+      operationId,
+      groupId: crypto.randomUUID(),
+      sequence: 1,
+      status: 'accepted',
+      actor: { id: actor.id, username: ' historical actor ', color: '#4169e1' },
+      changedPaths: ['/domains/legacy'],
+      createdAt: now,
+      nextBaseline: { baselineId: crypto.randomUUID(), baseSequence: 1, baselineIssuedAt: now },
+    };
+    const cancellation = { cancel: vi.fn(async () => ({ outcome: 'recorded', result })) };
+    const harness = await connected({ cancellation });
+    try {
+      await harness.client.listTools();
+      const response = await harness.client.callTool({
+        name: 'cancel_native_project_request',
+        arguments: {
+          projectId: project.id,
+          kind: 'protocol-operation',
+          request: {
+            operationId,
+            groupId: result.groupId,
+            clientId: crypto.randomUUID(),
+          },
+        },
+      });
+      expect(response.isError, JSON.stringify(response.content)).not.toBe(true);
+      expect(response.structuredContent).toEqual({ outcome: 'recorded', result });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('returns cancellation input errors with field paths before accessing the database', async () => {
+    const transaction = vi.fn();
+    const cancellation = new NativeCancellationService(
+      { db: { transaction } } as never,
+      {} as never,
+    );
+    const harness = await connected({ cancellation });
+    try {
+      for (const [input, path] of [
+        [{ kind: 'native-command', request: { operationId: 'invalid' } }, ['request']],
+        [
+          {
+            kind: 'history-undo',
+            request: { operationId: project.id, groupId: project.id, clientId: project.id },
+          },
+          ['sourceOperationId'],
+        ],
+      ] as const) {
+        const result = await harness.client.callTool({
+          name: 'cancel_native_project_request',
+          arguments: { projectId: project.id, ...input },
+        });
+        expect(result.isError).toBe(true);
+        const error = JSON.parse((result.content as Array<{ text: string }>)[0]!.text);
+        expect(error).toMatchObject({ status: 400, code: 'native.cancellation-input-invalid' });
+        expect(error.issues).toEqual(expect.arrayContaining([expect.objectContaining({ path })]));
+      }
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('passes raw v1 evidence and compact v2 input through the Native transfer service', async () => {
+    const transfer = { importProject: vi.fn(async () => ({ project })), exportProject: vi.fn() };
+    const harness = await connected({ transfer });
+    try {
+      for (const version of [1, 2]) {
+        const raw = {
+          format: 'ezerd-project',
+          formatVersion: version,
+          exportedAt: now,
+          project: {
+            name: ' Raw file ',
+            ...(version === 2
+              ? { databaseKind: 'postgresql', databaseProfileId: 'postgresql-18-v1' }
+              : {}),
+          },
+          document:
+            version === 1
+              ? {
+                  ...document,
+                  domains: [{ id: 'domain', name: '  原文  ', description: ' trailing ' }],
+                }
+              : createEmptyNativeDocument(defaultDatabaseContext('postgresql')),
+        };
+        const result = await harness.client.callTool({
+          name: 'import_project',
+          arguments: { workspaceId: space.id, transfer: raw },
+        });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toEqual(project);
+        expect(transfer.importProject).toHaveBeenLastCalledWith(actor.id, {
+          workspaceId: space.id,
+          transfer: raw,
+        });
+      }
+    } finally {
+      await harness.close();
+    }
+  });
   it('binds every workspace lifecycle tool to the token actor and validated identifiers', async () => {
     const harness = await connected();
     const cases: Array<[string, string, Record<string, unknown>, unknown[]]> = [
@@ -473,9 +756,9 @@ describe('MCP workspace authorization', () => {
     const read = vi.fn(async () => state);
     const harness = await connected({ workspace: { getVersionedProjectState: read } });
     try {
-      const call = () =>
+      const call = (name = 'get_project_document_state') =>
         harness.client.callTool({
-          name: 'get_project_document_state',
+          name,
           arguments: { projectId: project.id },
         });
       expect((await call()).isError).not.toBe(true);
@@ -503,6 +786,10 @@ describe('MCP workspace authorization', () => {
       expect(result.isError).toBe(true);
       expect(result.structuredContent).toBeUndefined();
       expect(JSON.stringify(result)).not.toContain('RAW_SQL_SECRET');
+      const snapshot = await call('get_project');
+      expect(snapshot.isError).toBe(true);
+      expect(snapshot.structuredContent).toBeUndefined();
+      expect(JSON.stringify(snapshot)).not.toContain('RAW_SQL_SECRET');
       expect(harness.workspace.getProjectState).not.toHaveBeenCalled();
     } finally {
       await harness.close();
@@ -533,7 +820,7 @@ describe('MCP workspace authorization', () => {
       await harness.close();
     }
   });
-  it('documents and forwards explicit native creation while preserving omitted legacy input', async () => {
+  it('documents and forwards native creation with optional format version', async () => {
     const harness = await connected();
     try {
       const tool = (await harness.client.listTools()).tools.find(
@@ -595,6 +882,66 @@ describe('MCP workspace authorization', () => {
     }
   });
 
+  it('rejects database changes through project metadata updates', async () => {
+    const harness = await connected();
+    try {
+      const result = await harness.client.callTool({
+        name: 'update_project',
+        arguments: { projectId: project.id, update: { expectedVersion: 0, databaseKind: 'mysql' } },
+      });
+      expect(result.isError).toBe(true);
+      expect(harness.workspace.updateProject).not.toHaveBeenCalled();
+      const empty = await harness.client.callTool({
+        name: 'update_project',
+        arguments: { projectId: project.id, update: { expectedVersion: 0 } },
+      });
+      expect(empty.isError).toBe(true);
+      expect(harness.workspace.updateProject).not.toHaveBeenCalled();
+      const renamed = await harness.client.callTool({
+        name: 'update_project',
+        arguments: { projectId: project.id, update: { expectedVersion: 0, name: 'Renamed' } },
+      });
+      expect(renamed.isError).not.toBe(true);
+      expect(harness.workspace.updateProject).toHaveBeenCalledWith(actor.id, project.id, {
+        expectedVersion: 0,
+        name: 'Renamed',
+      });
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('exports native source and forwards a versioned import through the validated transfer service', async () => {
+    const harness = await connected();
+    try {
+      const exported = await harness.client.callTool({
+        name: 'export_project',
+        arguments: { projectId: project.id },
+      });
+      expect(exported.isError).not.toBe(true);
+      expect(exported.structuredContent).toMatchObject({
+        formatVersion: 2,
+        sourceDocument: { schemaVersion: 2 },
+        native: { status: 'available', document: { schemaVersion: 2 } },
+      });
+      expect(harness.transfers.exportProject).toHaveBeenCalledWith(actor.id, project.id);
+      const input = { workspaceId: space.id, transfer: exported.structuredContent };
+      const imported = await harness.client.callTool({ name: 'import_project', arguments: input });
+      expect(imported.isError).not.toBe(true);
+      expect(imported.structuredContent).toEqual(project);
+      expect(harness.transfers.importProject).toHaveBeenCalledWith(actor.id, input);
+      const spoofed = await harness.client.callTool({
+        name: 'import_project',
+        arguments: { ...input, actorId: member.userId },
+      });
+      expect(spoofed.isError).toBe(true);
+      expect(harness.transfers.importProject).toHaveBeenCalledTimes(1);
+      expect(harness.workspace.importProject).not.toHaveBeenCalled();
+    } finally {
+      await harness.close();
+    }
+  });
+
   it('rechecks membership for snapshot helpers and passes the actor to review and history reads', async () => {
     const harness = await connected();
     try {
@@ -606,8 +953,11 @@ describe('MCP workspace authorization', () => {
           })
         ).isError,
       ).not.toBe(true);
-      expect(harness.workspace.getProjectState).toHaveBeenCalledWith(actor.id, project.id);
-      harness.workspace.getProjectState.mockRejectedValue(
+      expect(harness.workspace.getNativeQueryState).toHaveBeenCalledWith(actor.id, project.id);
+      harness.workspace.getNativeQueryState.mockRejectedValue(
+        new ForbiddenException('공간 접근 권한이 없습니다.'),
+      );
+      harness.workspace.getVersionedProjectState.mockRejectedValue(
         new ForbiddenException('공간 접근 권한이 없습니다.'),
       );
       for (const [name, args] of [
@@ -636,10 +986,65 @@ describe('MCP workspace authorization', () => {
       await harness.client.callTool({ name: 'get_review_thread', arguments: { threadId } });
       expect(harness.reviews.getThread).toHaveBeenCalledWith(threadId, actor.id);
       await harness.client.callTool({
-        name: 'get_project_history',
+        name: 'get_native_project_history',
         arguments: { projectId: project.id },
       });
-      expect(harness.sync.historyPage).toHaveBeenCalledWith(actor.id, project.id, 0, 50);
+      expect(harness.nativeHistory.history).toHaveBeenCalledWith(project.id, 0, 25, actor);
+    } finally {
+      await harness.close();
+    }
+  });
+  it('uses lightweight shared reads without fetching personal state or detailed previews', async () => {
+    const harness = await connected();
+    try {
+      harness.personal.get.mockRejectedValue(new Error('personal unavailable'));
+      for (const [name, extra] of [
+        ['get_project_summary', {}],
+        ['list_tables', {}],
+        ['get_project_view', { viewId: '__tables__' }],
+        ['list_view_relations', { viewId: '__tables__' }],
+        ['diagnose_layout', { viewId: '__tables__', mode: 'physical' }],
+      ] as const) {
+        const result = await harness.client.callTool({
+          name,
+          arguments: { projectId: project.id, ...extra },
+        });
+        expect(result.isError, name).not.toBe(true);
+        if (name === 'diagnose_layout')
+          expect(result.structuredContent).toHaveProperty('coverage.modes', ['physical']);
+      }
+      expect(harness.workspace.getNativeQueryState).toHaveBeenCalledTimes(5);
+      expect(harness.workspace.getVersionedProjectState).not.toHaveBeenCalled();
+      expect(harness.personal.get).not.toHaveBeenCalled();
+      expect(
+        (
+          await harness.client.callTool({
+            name: 'get_project_summary',
+            arguments: { projectId: project.id, includePersonal: true },
+          })
+        ).isError,
+      ).toBe(true);
+      expect(harness.personal.get).toHaveBeenCalledOnce();
+    } finally {
+      await harness.close();
+    }
+  });
+  it('refuses to combine a private snapshot with a different shared version', async () => {
+    const harness = await connected();
+    try {
+      harness.personal.get.mockResolvedValue({
+        projectVersion: 9,
+        syncSequence: 9,
+        databaseRevision: 0,
+        state: { views: [], notes: [], nodes: [], viewports: [], relations: [] },
+      } as never);
+      const result = await harness.client.callTool({
+        name: 'get_project_summary',
+        arguments: { projectId: project.id, includePersonal: true },
+      });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain('document.read-context-changed');
+      expect(harness.workspace.getNativeQueryState).toHaveBeenCalledTimes(2);
     } finally {
       await harness.close();
     }

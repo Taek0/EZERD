@@ -1,4 +1,3 @@
-import { seedLegacyProject } from './legacy-project-fixture.js';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
@@ -7,7 +6,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
 import { WebSocket } from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addDomain, deriveOperationChanges } from '@ezerd/model';
+import { addNativeDomain, deriveOperationChanges } from '@ezerd/model';
 import { transferProjects, preservationSnapshot } from '../scripts/workspace-transfer.mjs';
 
 describe.runIf(process.env.EZERD_DB_TEST === '1')(
@@ -50,14 +49,22 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     }
     async function operation(who: string) {
       const clientId = randomUUID();
-      const baseline = await api(`/projects/${projectId}/sync-baseline`, 'POST', { clientId }, who);
+      const baseline = await api(
+        `/projects/${projectId}/native-sync/baseline`,
+        'POST',
+        { clientId },
+        who,
+      );
       expect(baseline.status).toBe(201);
-      const document = addDomain(
+      const document = addNativeDomain(
         baseline.data.document,
         { id: randomUUID(), name: 'New domain', description: '' },
         { x: 10, y: 20 },
       );
       return {
+        protocolVersion: 2,
+        database: baseline.data.database,
+        databaseRevision: baseline.data.databaseRevision,
         operationId: randomUUID(),
         groupId: randomUUID(),
         clientId,
@@ -129,7 +136,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       await enroll('viewer', 'viewer');
       const project = await api('/projects', 'POST', { name: 'Secured project', workspaceId });
       expect(project.status).toBe(201);
-      await seedLegacyProject(pool, project.data.id);
       projectId = project.data.id;
     });
     afterAll(async () => {
@@ -163,12 +169,12 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     it('requires authentication and scopes every project read to membership', async () => {
       for (const path of [
         '/projects',
-        `/projects/${projectId}`,
-        `/projects/${projectId}/export`,
+        `/projects/${projectId}/document-state`,
+        `/projects/${projectId}/native-transfer`,
         `/projects/${projectId}/threads`,
         `/projects/${projectId}/personal-state`,
-        `/projects/${projectId}/history`,
-        `/projects/${projectId}/events`,
+        `/projects/${projectId}/native-history`,
+        `/projects/${projectId}/native-sync/events`,
       ]) {
         expect((await api(path, 'GET', undefined, 'none')).status, path).toBe(401);
         if (path !== '/projects')
@@ -185,10 +191,20 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     });
 
     it('allows viewer review and personal state while denying design and project management', async () => {
-      const op = await operation('viewer');
-      expect((await api(`/projects/${projectId}/operations`, 'POST', op, 'viewer')).status).toBe(
-        403,
-      );
+      const op = await operation('owner');
+      expect(
+        (
+          await api(
+            `/projects/${projectId}/native-sync/baseline`,
+            'POST',
+            { clientId: randomUUID() },
+            'viewer',
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (await api(`/projects/${projectId}/native-sync/operations`, 'POST', op, 'viewer')).status,
+      ).toBe(403);
       expect(
         (
           await api(
@@ -202,8 +218,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(
         (await api('/projects', 'POST', { name: 'Denied', workspaceId }, 'viewer')).status,
       ).toBe(403);
-      const transfer = (await api(`/projects/${projectId}/export`, 'GET', undefined, 'viewer'))
-        .data;
+      const transfer = (
+        await api(`/projects/${projectId}/native-transfer`, 'GET', undefined, 'viewer')
+      ).data;
       expect(
         (await api('/projects/import', 'POST', { workspaceId, transfer }, 'viewer')).status,
       ).toBe(403);
@@ -222,12 +239,20 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           await api(
             `/projects/${projectId}/personal-state`,
             'PUT',
-            { expectedVersion: personal.data.version, state },
+            {
+              expectedVersion: personal.data.version,
+              expectedDatabaseRevision: personal.data.databaseRevision,
+              expectedProjectVersion: personal.data.projectVersion,
+              expectedSyncSequence: personal.data.syncSequence,
+              state,
+            },
             'viewer',
           )
         ).status,
       ).toBe(200);
-      expect((await api(`/projects/${projectId}`)).data.document.domains).toEqual([]);
+      expect(
+        (await api(`/projects/${projectId}/document-state`)).data.sourceDocument.domains,
+      ).toEqual([]);
       const pin = await api(
         `/projects/${projectId}/threads`,
         'POST',
@@ -281,16 +306,24 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       ).toHaveLength(1);
     });
 
-    it('permits editor design edits but denies owner-only project deletion and enforces permissions before replay', async () => {
+    it('permits editor writes, preserves readable ACK replay, and denies new writes after downgrade', async () => {
       const op = await operation('editor');
-      const accepted = await api(`/projects/${projectId}/operations`, 'POST', op, 'editor');
+      const accepted = await api(
+        `/projects/${projectId}/native-sync/operations`,
+        'POST',
+        op,
+        'editor',
+      );
       expect(accepted.data.status).toBe('accepted');
       expect(
         (
           await api(
             `/projects/${projectId}`,
             'DELETE',
-            { expectedVersion: (await api(`/projects/${projectId}`)).data.project.version },
+            {
+              expectedVersion: (await api(`/projects/${projectId}/document-state`)).data.project
+                .version,
+            },
             'editor',
           )
         ).status,
@@ -302,15 +335,43 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           })
         ).status,
       ).toBe(200);
-      expect((await api(`/projects/${projectId}/operations`, 'POST', op, 'editor')).status).toBe(
-        403,
+      const beforeReplay = (await api(`/projects/${projectId}/document-state`)).data;
+      const replay = await api(
+        `/projects/${projectId}/native-sync/operations`,
+        'POST',
+        op,
+        'editor',
       );
+      expect(replay.status).toBe(201);
+      expect(replay.data).toEqual(accepted.data);
+      expect((await api(`/projects/${projectId}/document-state`)).data).toEqual(beforeReplay);
       expect(
         (
           await api(
-            `/projects/${projectId}/operations/${op.operationId}/undo`,
+            `/projects/${projectId}/native-sync/operations`,
             'POST',
-            { operationId: randomUUID(), groupId: randomUUID(), clientId: randomUUID() },
+            { ...op, operationId: randomUUID() },
+            'editor',
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await api(
+            `/projects/${projectId}/native-history/${op.operationId}/undo`,
+            'POST',
+            {
+              operationId: randomUUID(),
+              groupId: randomUUID(),
+              clientId: op.clientId,
+              baselineId: accepted.data.nextBaseline.baselineId,
+              baselineIssuedAt: accepted.data.nextBaseline.baselineIssuedAt,
+              expectedVersion: (await api(`/projects/${projectId}/document-state`)).data.project
+                .version,
+              expectedSequence: accepted.data.sequence,
+              database: op.database,
+              databaseRevision: op.databaseRevision,
+            },
             'editor',
           )
         ).status,
@@ -346,9 +407,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       const editorClosed = once(editor.socket, 'close');
       await api(`/workspaces/${workspaceId}/members/${accounts.editor!.id}`, 'DELETE');
       expect((await editorClosed)[0]).toBe(1008);
-      expect((await api(`/projects/${projectId}/history`, 'GET', undefined, 'editor')).status).toBe(
-        403,
-      );
+      expect(
+        (await api(`/projects/${projectId}/native-history`, 'GET', undefined, 'editor')).status,
+      ).toBe(403);
       expect(
         (await api(`/users/${accounts.editor!.id}/notifications`, 'GET', undefined, 'editor')).data,
       ).toEqual([]);
@@ -363,9 +424,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         (await api(`/workspaces/${workspaceId}`, 'PATCH', { status: 'archived' })).status,
       ).toBe(200);
       expect((await closed)[0]).toBe(1008);
-      expect((await api(`/projects/${projectId}/export`, 'GET', undefined, 'viewer')).status).toBe(
-        200,
-      );
+      expect(
+        (await api(`/projects/${projectId}/native-transfer`, 'GET', undefined, 'viewer')).status,
+      ).toBe(200);
       expect((await api('/projects', 'POST', { name: 'Denied', workspaceId })).status).toBe(403);
       const personal = (
         await api(`/projects/${projectId}/personal-state`, 'GET', undefined, 'viewer')
@@ -433,10 +494,13 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(revoked.status).toBe(201);
       expect(revoked.data).toEqual({ revoked: true });
       expect((await closed)[0]).toBe(1008);
-      expect((await api(`/projects/${projectId}`, 'GET', undefined, 'viewer')).status).toBe(401);
-      expect((await api(`/projects/${projectId}`, 'GET', undefined, 'secondViewer')).status).toBe(
-        200,
-      );
+      expect(
+        (await api(`/projects/${projectId}/document-state`, 'GET', undefined, 'viewer')).status,
+      ).toBe(401);
+      expect(
+        (await api(`/projects/${projectId}/document-state`, 'GET', undefined, 'secondViewer'))
+          .status,
+      ).toBe(200);
       expect(other.socket.readyState).toBe(WebSocket.OPEN);
     });
 

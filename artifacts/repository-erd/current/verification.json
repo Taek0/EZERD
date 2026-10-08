@@ -1,0 +1,34 @@
+{
+  "tables": 19,
+  "columns": 142,
+  "keys": 24,
+  "foreignKeys": 28,
+  "enums": 5,
+  "schemaDifferences": [],
+  "spacingViolations": 0,
+  "undersized": 0,
+  "hierarchyViolations": 0,
+  "cardIntersections": 0,
+  "labelIntersections": 0,
+  "labelLineIntersections": 12,
+  "privateMatches": true,
+  "geometry": {
+    "overlapPixels": 0,
+    "nearParallelPixels": 0,
+    "labels": 0,
+    "labelLines": 12,
+    "crossings": 68,
+    "length": 59877,
+    "cardIntersections": 0,
+    "labelCollisions": 0
+  },
+  "canvas": {
+    "x": -456,
+    "y": -113,
+    "width": 5345,
+    "height": 3267,
+    "scale": 2
+  },
+  "aspectRatio": 1.64,
+  "nativeIssues": []
+}

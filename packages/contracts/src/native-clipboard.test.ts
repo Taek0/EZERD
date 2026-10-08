@@ -11,7 +11,6 @@ import {
 import {
   copyNativeTableClipboard,
   nativeTableClipboardSchema,
-  parseTableClipboardRead,
   planNativeTablePaste,
 } from './native-clipboard.js';
 
@@ -246,7 +245,7 @@ describe('native table clipboard consumer preparation', () => {
       'clipboard.selection-invalid',
     );
   });
-  it('keeps v1 data readable without guessing a source database or normalizing legacy aliases', () => {
+  it('rejects v1 clipboard data without guessing a database or normalizing its aliases', () => {
     const old = createEmptyDocument();
     old.columns = [
       {
@@ -264,10 +263,10 @@ describe('native table clipboard consumer preparation', () => {
         customProperties: properties,
       },
     ];
-    const text = JSON.stringify({ format: 'ezerd/tables-v1', document: old });
-    expect(parseTableClipboardRead(text)).toEqual(JSON.parse(text));
-    expect(nativeTableClipboardSchema.safeParse(JSON.parse(text)).success).toBe(false);
-    expect(parseTableClipboardRead('{')).toBeNull();
+    const payload = { format: 'ezerd/tables-v1', document: old };
+    const original = structuredClone(payload);
+    expect(nativeTableClipboardSchema.safeParse(payload).success).toBe(false);
+    expect(payload).toEqual(original);
   });
   it('rejects another engine/profile, missing fragment references, private payloads and new legacy copies', () => {
     const source = fixture();
@@ -289,10 +288,10 @@ describe('native table clipboard consumer preparation', () => {
     ).toBe(false);
     const bad = structuredClone(clipboard);
     bad.document.indexes![0]!.parts[0]!.expression = { kind: 'column', columnId: 'external' };
-    expect(parseTableClipboardRead(JSON.stringify(bad))).toBeNull();
+    expect(nativeTableClipboardSchema.safeParse(bad).success).toBe(false);
     const privatePayload = structuredClone(clipboard);
     privatePayload.document.notes = [{ id: 'note', viewId: '__tables__', text: 'private' }];
-    expect(parseTableClipboardRead(JSON.stringify(privatePayload))).toBeNull();
+    expect(nativeTableClipboardSchema.safeParse(privatePayload).success).toBe(false);
     const legacy = structuredClone(source);
     legacy.columns![0]!.physical.type = {
       kind: 'legacy',
@@ -413,7 +412,7 @@ describe('native table clipboard consumer preparation', () => {
     expect(() => copyNativeTableClipboard(sqlite, ['p'])).toThrow('type.strict-not-supported');
   });
   it('checks UTF-8/envelope limits and full merged document capacity before exposing a candidate', () => {
-    expect(parseTableClipboardRead('🙂'.repeat(500_001))).toBeNull();
+    // Raw UTF-8 and malformed JSON limits are exercised by the live readNativeClipboard tests.
     const source = fixture();
     source.tables![0]!.physical.comment = 'x'.repeat(10_000);
     const clipboard = file(source);

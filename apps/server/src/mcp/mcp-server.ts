@@ -1,4 +1,4 @@
-import { HttpException, Inject, Injectable } from '@nestjs/common';
+import { ConflictException, HttpException, Inject, Injectable } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
@@ -10,12 +10,10 @@ import {
   deleteProjectSchema,
   deleteThreadSchema,
   notificationSchema,
-  projectDocumentSchema,
-  projectTransferSchema,
+  versionedProjectTransferSchema,
   personalStateSnapshotSchema,
   projectQuerySchema,
   projectSchema,
-  syncOperationResultSchema,
   threadSchema,
   updateProjectSchema,
   updateNotificationSchema,
@@ -36,16 +34,15 @@ import {
   nativeHistoryQuerySchema,
   nativeHistoryPageSchema,
   nativeSyncSnapshotSchema,
-  nativeCancellationInputSchema,
   nativeCancellationResultSchema,
+  nativeCancellationInputSchema,
+  importNativeProjectSchema,
 } from '@ezerd/contracts';
-import { diagnoseDocument, mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
-import { sharedCanvasNodes, sharedCanvasSelection } from '../shared/table-canvas-view.js';
+import { mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { ReviewService } from '../review/review.service.js';
 import { WorkspaceService } from '../workspace/workspace.service.js';
 import { SpaceService } from '../workspace/space.service.js';
-import { SyncService } from '../sync/sync.service.js';
 import { McpLogger } from './logging.js';
 import { McpAuthService } from './mcp-auth.service.js';
 import { NativeUpgradeService } from '../workspace/native-upgrade.service.js';
@@ -53,7 +50,7 @@ import { NativeDDLService } from '../workspace/native-ddl.service.js';
 import { NativeHistoryService } from '../sync/native-history.service.js';
 import { NativeSyncService } from '../sync/native-sync.service.js';
 import { NativeCancellationService } from '../sync/native-cancellation.service.js';
-import { applyProjectChangesSchema, McpDocumentService } from './mcp-document.service.js';
+import { NativeTransferService } from '../workspace/native-transfer.service.js';
 import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
   applyNativeProjectChangesMetadataSchema,
@@ -74,17 +71,21 @@ import {
   projectViewInputSchema,
   projectViewSchema,
   tableDetails,
+  tableDetailsMetadataSchema,
   tableDetailsSchema,
   tableListSchema,
   viewRelationsInputSchema,
   viewRelationsSchema,
-} from './mcp-read.js';
-import {
-  historyInputSchema,
-  historyPageSchema,
-  operationResult,
-  projectHistory,
-} from './mcp-response.js';
+  nativeViewSelection,
+  nativeViewNodes,
+  batchTableDetailsInputSchema,
+  batchTableDetailsSchema,
+  batchTableDetailsMetadataSchema,
+  batchTableDetails,
+  assertNativeQueryVersion,
+} from './mcp-native-read.js';
+import { mcpSchemaMetadata } from './mcp-schema-metadata.js';
+import { projectChangesInputSchema, projectChangesSchema } from './mcp-native-changes.js';
 
 const idSchema = z.uuid();
 const TIMEOUT_MS = 60_000;
@@ -97,44 +98,85 @@ function nativeHistoryResult(raw: unknown) {
   nativeHistoryCommandResultSchema.parse(raw);
   return structuredClone(raw) as z.infer<typeof nativeHistoryCommandResultSchema>;
 }
-const projectStateSchema = projectDocumentSchema.extend({
-  syncSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-});
 // SDK JSON Schema metadata cannot express custom raw/AST validation; the handler parses the full contract.
 const documentBodySchema = z
   .object({ schemaVersion: z.union([z.literal(1), z.literal(2)]) })
   .passthrough();
-const versionedProjectOutputSchema = z.strictObject({
-  protocolVersion: z.literal(2),
-  project: projectDocumentStateSchema.shape.project,
-  sequence: projectDocumentStateSchema.shape.sequence,
-  sourceDocument: documentBodySchema,
-  native: z.discriminatedUnion('status', [
-    z.strictObject({
-      status: z.literal('available'),
-      document: z.object({ schemaVersion: z.literal(2) }).passthrough(),
-      migrationIssues: z.array(
-        z.strictObject({ code: z.string(), objectId: z.string(), path: z.string() }),
-      ),
-      issues: z.array(databaseIssueSchema),
-    }),
-    z.strictObject({
-      status: z.literal('unavailable'),
-      code: z.enum(['database.context-changed', 'document.native-preview-invalid']),
-    }),
-  ]),
-});
-const commandRequestSchema = z.strictObject({
-  operationId: idSchema,
-  groupId: idSchema,
-  clientId: idSchema,
-});
-const diagnosticSchema = z.strictObject({
-  code: z.string(),
-  objectId: z.string(),
-  message: z.string(),
-});
+const versionedProjectOutputSchema = z
+  .strictObject({
+    protocolVersion: z.literal(2),
+    project: projectDocumentStateSchema.shape.project,
+    sequence: projectDocumentStateSchema.shape.sequence,
+    sourceDocument: documentBodySchema,
+    native: z.discriminatedUnion('status', [
+      z.strictObject({
+        status: z.literal('available'),
+        document: z.object({ schemaVersion: z.literal(2) }).passthrough(),
+        migrationIssues: z.array(
+          z.strictObject({ code: z.string(), objectId: z.string(), path: z.string() }),
+        ),
+        issues: z.array(databaseIssueSchema),
+      }),
+      z.strictObject({
+        status: z.literal('unavailable'),
+        code: z.enum(['database.context-changed', 'document.native-preview-invalid']),
+      }),
+    ]),
+  })
+  .meta(mcpSchemaMetadata(projectDocumentStateSchema));
+const nativeOperationOutputSchema = z
+  .strictObject({
+    ...nativeSyncOperationResultSchema.shape,
+    document: z
+      .object({ schemaVersion: z.literal(2) })
+      .passthrough()
+      .optional(),
+  })
+  .meta(mcpSchemaMetadata(nativeSyncOperationResultSchema));
+const importProjectMetadataSchema = z
+  .strictObject({
+    workspaceId: idSchema,
+    // Structural metadata only; keep the exact file for server provenance/budget validation.
+    transfer: z
+      .object({
+        format: z.literal('ezerd-project'),
+        formatVersion: z.union([z.literal(1), z.literal(2)]),
+      })
+      .passthrough(),
+  })
+  .meta(mcpSchemaMetadata(importNativeProjectSchema));
+const cancellationOptions = nativeCancellationInputSchema.options.map((option) =>
+  z.strictObject({ projectId: idSchema, ...option.shape }),
+);
+const cancellationMetadataSchema = z
+  .strictObject({
+    projectId: idSchema,
+    kind: z.enum([
+      'protocol-operation',
+      'native-command',
+      'native-upgrade',
+      'history-undo',
+      'history-restore',
+    ]),
+    sourceOperationId: idSchema.optional(),
+    request: z.unknown(),
+  })
+  .meta(
+    mcpSchemaMetadata(
+      z.discriminatedUnion('kind', [cancellationOptions[0]!, ...cancellationOptions.slice(1)]),
+    ),
+  );
 const pageLimit = z.number().int().min(1).max(100).default(50);
+const updateNativeProjectMetadataSchema = z
+  .strictObject({
+    expectedVersion: updateProjectSchema.shape.expectedVersion,
+    name: updateProjectSchema.shape.name,
+    status: updateProjectSchema.shape.status,
+  })
+  .refine(
+    (value) => value.name !== undefined || value.status !== undefined,
+    '프로젝트 변경 항목이 필요합니다.',
+  );
 const listProjectsInputSchema = projectQuerySchema.extend({
   limit: pageLimit,
   cursor: z.string().min(1).max(500).optional(),
@@ -151,8 +193,6 @@ export class McpServerFactory {
     @Inject(WorkspaceService) private readonly workspace: WorkspaceService,
     @Inject(ReviewService) private readonly reviews: ReviewService,
     @Inject(McpLogger) private readonly logger: McpLogger,
-    @Inject(SyncService) private readonly sync: SyncService,
-    @Inject(McpDocumentService) private readonly documents: McpDocumentService,
     @Inject(McpPersonalService) private readonly personal: McpPersonalService,
     @Inject(McpNativeDocumentService) private readonly nativeDocuments: McpNativeDocumentService,
     @Inject(SpaceService) private readonly spaces: SpaceService,
@@ -161,6 +201,7 @@ export class McpServerFactory {
     @Inject(NativeDDLService) private readonly nativeDDL: NativeDDLService,
     @Inject(NativeHistoryService) private readonly nativeHistory: NativeHistoryService,
     @Inject(NativeSyncService) private readonly nativeSync: NativeSyncService,
+    @Inject(NativeTransferService) private readonly transfer: NativeTransferService,
     @Inject(NativeCancellationService)
     private readonly nativeCancellation: NativeCancellationService,
   ) {}
@@ -171,10 +212,11 @@ export class McpServerFactory {
       {
         capabilities: { tools: {} },
         instructions:
-          'get_project_database_capabilities로 현재 DB/profile/revision과 실제 usable 기능을 확인하세요. get_project_document_state의 원본 schemaVersion이 2이면 apply_native_project_changes로 현재 native 형식을 보존해 편집합니다. preview available은 upgrade/타입 usable 판정이 아니며 schemaVersion 1의 공유 편집은 apply_project_changes를 사용합니다. 아직 usable이 아닌 새 타입·기능은 native 입력에서도 거부됩니다. get_personal_state/apply_personal_changes는 자신의 개인 캔버스만 다룹니다. ' +
+          'get_project_database_capabilities로 DB/profile/revision과 usable 기능을 확인하고 get_project_document_state로 원본을 조회하세요. 원본 schemaVersion 2만 apply_native_project_changes로 편집합니다. v1 전용 조회·편집·이력 도구는 종료되었습니다. v1 원본 조회와 파일 가져오기·내보내기·upgrade는 호환 목적으로 유지합니다. get_personal_state/apply_personal_changes는 자신의 개인 캔버스만 다룹니다. ' +
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
           ' active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
-          'v1 프로젝트 탐색은 get_project_summary로 시작하고, 배치 작업 전에는 get_project_view의 모든 페이지로 대상 뷰의 최신 배치를 확인하세요. 화면의 관계는 list_view_relations로 조회하세요. 테이블 캔버스 __tables__ 및 도메인 필터는 공유 좌표를 사용하므로 반환된 공유 노드 ID로 apply_project_changes를 사용하세요. 자신의 개인 결합 화면은 개인 배치·메모·관계 경로를 반환하며 apply_personal_changes로 변경하세요. 개인 상태와 카메라는 get_personal_state로 조회합니다. 테이블 컬럼·키·관계가 필요할 때 get_table_details를 사용하세요. v1 전체 스냅샷이 필요한 경우에만 get_project를 사용하세요. ' +
+          'Native 프로젝트 탐색은 get_project_summary로 시작하고, 배치 전 get_project_view의 모든 페이지로 최신 배치를 확인하세요. 화면 관계는 list_view_relations로 조회하세요. __tables__와 도메인 필터는 공유 좌표를 사용하며 반환된 노드 ID로 apply_native_project_changes를 호출하세요. 자신의 개인 결합 화면은 apply_personal_changes로 변경하고 카메라는 get_personal_state로 조회하세요. 테이블 컬럼·키·인덱스·CHECK·관계는 get_table_details로 확인합니다. 전체 원본이 필요한 경우에만 get_project_document_state 또는 같은 응답을 제공하는 get_project를 사용하세요. ' +
+          '여러 테이블 상세는 get_tables_details로 최대 20개씩 묶어 조회하세요. 목록의 다음 페이지에는 첫 응답의 syncSequence/databaseRevision을 expectedSequence/expectedDatabaseRevision으로 함께 전달하고 변경 오류가 나면 처음부터 다시 조회하세요. get_project_changes로 since 이후 변경 경로·대상 ID를 확인할 수 있으며 resyncRequired이면 전체 원본을 다시 읽으세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
           '같은 뷰의 카드 경계와 콘텐츠에 필요한 크기를 고려해 서로 겹치지 않게 배치하고 최소 40px 간격을 두세요. ' +
@@ -182,35 +224,50 @@ export class McpServerFactory {
           '핵심/상위 테이블과 종속/하위 테이블의 구조적 계층이 읽히도록 단계별로 정렬하고, 같은 계층의 카드 크기와 간격을 일관되게 맞추세요. ' +
           '객체 관계를 쉽게 읽을 수 있도록 연결된 객체는 가까이, 같은 도메인/업무 묶음은 같은 구역에 배치하세요. ' +
           '도메인의 흐름 방향과 테이블 PK→FK 방향이 왼쪽에서 오른쪽 또는 위에서 아래로 일관되게 보이도록 계층을 구성하세요. ' +
-          '순환 관계는 무리한 일렬 배치 대신 관련 객체를 묶고, 관계선 교차·카드 관통·불필요하게 긴 연결을 최소화하세요. ' +
+          '순환 관계는 무리한 일렬 배치 대신 관련 객체를 묶고, 관계선 교차와 불필요하게 긴 연결을 최소화하세요. ' +
+          '배치는 먼저 핵심/상위→하위/종속의 계층과 도메인 구역을 정하고, 카드 크기와 간격을 확정한 뒤 관계선 경로를 정리하는 순서로 진행하세요. ' +
+          '카드끼리의 중첩과 관계선이 비연결 카드 내부를 관통하는 경로는 허용하지 마세요. 연결된 카드도 올바른 연결 지점에서만 접촉하며 내부를 우회 경로로 사용하지 마세요. ' +
+          '관계선끼리 동일한 구간에 포개지지 않게 경로를 분리하고, 관계의 의미와 연결 컬럼을 유지하세요. 교차를 완전히 제거할 수 없는 그래프에서는 포개진 구간 없이 구분 가능한 교차로 최소화하고 남은 교차를 보고하세요. ' +
+          '경로 검증은 diagnose_layout으로 카드 사각형과 테이블 관계선의 교차·관통·겹침을 점검하세요. mode 기본값은 physical이며 논리 화면은 logical을 지정하세요. coverage.complete가 false이면 limitations와 skippedRoutes를 확인하고 미검증 경로를 충돌 없음으로 보고하지 마세요. 도메인 관계 등 지원 범위 밖의 경로는 별도 좌표로 확인하거나 미검증으로 보고하세요. ' +
           '컬럼/설명 추가로 카드 크기가 커지는 경우에도 인접 카드와의 겹침을 다시 확인하세요. ' +
           '기존 사용자의 배치를 불필요하게 바꾸지 말고 빈 공간을 우선 사용하며, 자동 배치는 요청받은 범위에만 적용하세요. ' +
-          '작업 후 get_project_view로 결과를 재조회해 같은 좌표 계산으로 겹침을 확인하고 수정하세요. 좌표를 생략해 모든 객체를 같은 위치에 생성하지 마세요.',
+          '작업 후 get_project_view와 list_view_relations로 변경한 화면을 재조회하고 diagnose_layout의 검사 범위를 확인해 겹침을 확인하고 수정하세요. 전체 원본이 필요한 경우에만 get_project_document_state를 사용하세요. 좌표를 생략해 모든 객체를 같은 위치에 생성하지 마세요.',
       },
     );
     const invoke = <T>(tool: string, callback: () => Promise<T>) =>
       this.invoke(tool, user, tokenId, requestId, callback);
-    const projectState = async (projectId: string) => {
-      const [shared, personal] = await Promise.all([
-        this.workspace.getProjectState(user.id, projectId),
-        this.personal.get(projectId, user),
-      ]);
+    const projectState = async (
+      projectId: string,
+      options: { viewId?: string | undefined; includePersonal?: boolean } = {},
+    ) => {
+      let shared = await this.workspace.getNativeQueryState(user.id, projectId);
+      const { viewId } = options;
+      const needsPersonal =
+        options.includePersonal ||
+        (viewId &&
+          viewId !== 'overview' &&
+          viewId !== TABLES_VIEW_ID &&
+          !shared.document.domains.some((domain) => domain.id === viewId));
+      if (!needsPersonal) return { ...shared, personalViewIds: [] as string[] };
+      const personal = await this.personal.get(projectId, user);
+      const matches = () =>
+        (personal.projectVersion === undefined ||
+          personal.projectVersion === shared.project.version) &&
+        (personal.syncSequence === undefined || personal.syncSequence === shared.syncSequence) &&
+        (personal.databaseRevision === undefined ||
+          personal.databaseRevision === shared.project.databaseRevision);
+      if (!matches()) shared = await this.workspace.getNativeQueryState(user.id, projectId);
+      if (!matches())
+        throw new ConflictException({
+          code: 'document.read-context-changed',
+          message: '조회 중 설계가 변경되었습니다. 다시 조회해 주세요.',
+        });
       return {
         ...shared,
         document: mergeStoredPersonalState(shared.document, personal.state),
         personalViewIds: personal.state.views.map((view) => view.id),
       };
     };
-    const requireAccepted = <
-      T extends { status: 'accepted' | 'rejected'; reason?: string | undefined },
-    >(
-      result: T,
-    ) => {
-      if (result.status === 'rejected')
-        throw new HttpException(result.reason ?? '작업이 동시성 규칙에 따라 거부되었습니다.', 409);
-      return result;
-    };
-
     this.registerWorkspaceTools(server, user, invoke);
 
     server.registerTool(
@@ -237,15 +294,16 @@ export class McpServerFactory {
       'get_project',
       {
         description:
-          'v1 프로젝트 메타데이터와 현재 설계 문서를 조회합니다. native 저장 또는 원본/native preview는 get_project_document_state로 조회하세요.',
+          '프로젝트의 버전별 원본과 native 상태를 조회합니다. get_project_document_state와 동일한 공유 문서 응답이며 개인 화면은 포함하지 않습니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
-        outputSchema: projectStateSchema,
+        outputSchema: versionedProjectOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId }) =>
         invoke('get_project', async () => {
-          const { personalViewIds: _personalViewIds, ...snapshot } = await projectState(projectId);
-          return projectStateSchema.parse(snapshot);
+          return projectDocumentStateSchema.parse(
+            await this.workspace.getVersionedProjectState(user.id, projectId),
+          );
         }),
     );
     server.registerTool(
@@ -298,13 +356,18 @@ export class McpServerFactory {
       'get_project_summary',
       {
         description:
-          '전체 설계 문서 없이 v1 프로젝트 버전, 객체 개수와 화면·도메인 목록을 조회합니다.',
-        inputSchema: z.strictObject({ projectId: idSchema }),
+          'Native v2 공유 설계의 DB 컨텍스트·버전·객체 개수와 화면·도메인 목록을 조회합니다. 자신의 개인 화면 목록도 필요하면 includePersonal=true를 지정하세요.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          includePersonal: z.boolean().default(false),
+        }),
         outputSchema: projectSummarySchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId }) =>
-        invoke('get_project_summary', async () => projectSummary(await projectState(projectId))),
+      ({ projectId, includePersonal }) =>
+        invoke('get_project_summary', async () =>
+          projectSummary(await projectState(projectId, { includePersonal })),
+        ),
     );
     server.registerTool(
       'list_tables',
@@ -322,29 +385,33 @@ export class McpServerFactory {
       'get_project_view',
       {
         description:
-          'v1 프로젝트 한 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. 전체 테이블 화면 __tables__와 도메인 필터는 공유 좌표를 사용합니다. 인증된 사용자의 개인 결합 화면은 자신의 배치·메모·관계 경로를 반환합니다. 테이블 컬럼은 포함하지 않습니다. native 설계는 get_project_document_state 및 get_personal_state로 조회하세요.',
+          'Native v2 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. __tables__와 도메인 필터는 공유 좌표를 사용하며 자신의 개인 화면만 별도 배치·메모·경로를 반환합니다. 테이블 컬럼은 get_table_details로 조회하세요.',
         inputSchema: projectViewInputSchema,
         outputSchema: projectViewSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, viewId, limit, cursor }) =>
-        invoke('get_project_view', async () =>
-          projectView(await projectState(projectId), viewId, limit, cursor),
-        ),
+      (input) =>
+        invoke('get_project_view', async () => {
+          const state = await projectState(input.projectId, { viewId: input.viewId });
+          assertNativeQueryVersion(state, input);
+          return projectView(state, input.viewId, input.limit, input.cursor);
+        }),
     );
     server.registerTool(
       'list_view_relations',
       {
         description:
-          'v1 프로젝트 한 화면에 실제로 보이는 도메인·테이블 관계와 관계선 경로를 최대 100개씩 조회합니다. 도메인 필터는 공유 캔버스 경로를, 자신의 개인 결합 화면은 자신의 관계 경로를 반환합니다.',
+          'Native v2 화면에 보이는 도메인·테이블 관계와 경로를 최대 100개씩 조회합니다. native 논리·물리 대응관계 및 DB 옵션을 유지하며 도메인 필터는 공유 경로, 자신의 개인 화면은 개인 경로를 반환합니다.',
         inputSchema: viewRelationsInputSchema,
         outputSchema: viewRelationsSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, viewId, limit, cursor }) =>
-        invoke('list_view_relations', async () =>
-          listViewRelations(await projectState(projectId), viewId, limit, cursor),
-        ),
+      (input) =>
+        invoke('list_view_relations', async () => {
+          const state = await projectState(input.projectId, { viewId: input.viewId });
+          assertNativeQueryVersion(state, input);
+          return listViewRelations(state, input.viewId, input.limit, input.cursor);
+        }),
     );
     server.registerTool(
       'get_personal_state',
@@ -362,14 +429,49 @@ export class McpServerFactory {
     server.registerTool(
       'get_table_details',
       {
-        description: '한 테이블의 컬럼·키·연결 관계·배치 정보를 조회합니다.',
-        inputSchema: z.strictObject({ projectId: idSchema, tableId: z.string().min(1).max(160) }),
-        outputSchema: tableDetailsSchema,
+        description:
+          '한 테이블의 컬럼·키·연결 관계·공유 배치를 조회합니다. 자신의 개인 화면 배치도 필요하면 includePersonal=true를 지정하세요.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          tableId: z.string().min(1).max(160),
+          includePersonal: z.boolean().default(false),
+        }),
+        outputSchema: tableDetailsMetadataSchema.meta(mcpSchemaMetadata(tableDetailsSchema)),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, tableId }) =>
+      ({ projectId, tableId, includePersonal }) =>
         invoke('get_table_details', async () =>
-          tableDetails(await projectState(projectId), tableId),
+          tableDetails(await projectState(projectId, { includePersonal }), tableId),
+        ),
+    );
+    server.registerTool(
+      'get_tables_details',
+      {
+        description:
+          '최대 20개 테이블 ID의 Native 상세를 한 번에 조회합니다. ID 중복은 제거하며 없는 대상이 있으면 전체 요청을 거부합니다. 공유 조회이며 expectedSequence/expectedDatabaseRevision으로 동일 버전을 확인할 수 있습니다.',
+        inputSchema: batchTableDetailsInputSchema,
+        outputSchema: batchTableDetailsMetadataSchema.meta(
+          mcpSchemaMetadata(batchTableDetailsSchema),
+        ),
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      (input) =>
+        invoke('get_tables_details', async () =>
+          batchTableDetails(await projectState(input.projectId), input),
+        ),
+    );
+    server.registerTool(
+      'get_project_changes',
+      {
+        description:
+          'since 이후 공유 Native 변경의 경로·대상 ID·삭제 ID를 최대 100건씩 조회합니다. 값·전체 문서·삭제 스냅샷은 반환하지 않습니다. 다음 페이지는 nextCursor의 since/untilSequence/databaseRevision을 그대로 전달하세요. resyncRequired=true이면 변경 목록을 적용하지 말고 전체 문서를 다시 조회하세요.',
+        inputSchema: projectChangesInputSchema,
+        outputSchema: projectChangesSchema,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      (input) =>
+        invoke('get_project_changes', async () =>
+          this.nativeHistory.changes(input.projectId, input, user),
         ),
     );
     server.registerTool(
@@ -465,35 +567,45 @@ export class McpServerFactory {
     server.registerTool(
       'import_project',
       {
-        description: '검증된 EZERD 프로젝트 전송 문서를 새 프로젝트로 가져옵니다.',
-        inputSchema: z.strictObject({ workspaceId: idSchema, transfer: projectTransferSchema }),
+        description:
+          '버전 1·2 파일을 새 Native v2 프로젝트로 가져옵니다. v1 타입·기본값 원문은 서버 변환 정책에 따라 보존하며, 결과 진단은 get_project_document_state로 확인하세요.',
+        inputSchema: importProjectMetadataSchema,
         outputSchema: projectSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       (input) =>
         invoke('import_project', async () =>
-          projectSchema.parse(await this.workspace.importProject(user.id, input)),
+          projectSchema.parse((await this.transfer.importProject(user.id, input)).project),
         ),
     );
     server.registerTool(
       'export_project',
       {
-        description: '프로젝트의 공유 설계 문서를 EZERD 전송 형식으로 내보냅니다.',
+        description:
+          '프로젝트의 공유 원본과 Native 미리보기를 버전 2 전송 파일로 내보냅니다. 기존 v1 원본도 손실 없이 포함합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
-        outputSchema: projectTransferSchema,
+        outputSchema: z
+          .object({ format: z.literal('ezerd-project'), formatVersion: z.literal(2) })
+          .passthrough()
+          .meta(mcpSchemaMetadata(versionedProjectTransferSchema)),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId }) =>
         invoke('export_project', async () =>
-          projectTransferSchema.parse(await this.workspace.exportProject(user.id, projectId)),
+          versionedProjectTransferSchema.parse(
+            await this.transfer.exportProject(user.id, projectId),
+          ),
         ),
     );
     server.registerTool(
       'update_project',
       {
         description:
-          '최신 expectedVersion을 기준으로 프로젝트 이름, 선택 DB 메타데이터 또는 보관 상태를 변경합니다. databaseKind 변경은 설계나 DDL 방언을 변환하지 않습니다.',
-        inputSchema: z.strictObject({ projectId: idSchema, update: updateProjectSchema }),
+          '최신 expectedVersion을 기준으로 프로젝트 이름 또는 보관 상태를 변경합니다. DB 종류·프로필 변환은 이 메타데이터 변경 도구에서 제공하지 않습니다.',
+        inputSchema: z.strictObject({
+          projectId: idSchema,
+          update: updateNativeProjectMetadataSchema,
+        }),
         outputSchema: projectSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
@@ -566,62 +678,48 @@ export class McpServerFactory {
     server.registerTool(
       'diagnose_project',
       {
-        description: '현재 설계 문서의 구조적 문제를 진단합니다.',
+        description:
+          'Native 문서의 DB별 구조·타입·기능 진단을 objectId/path/category/severity와 함께 반환합니다. 원본 v1은 먼저 명시적으로 변환해야 합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
-        outputSchema: z.strictObject({ diagnostics: z.array(diagnosticSchema) }),
+        outputSchema: z.strictObject({ diagnostics: z.array(databaseIssueSchema) }),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId }) =>
         invoke('diagnose_project', async () => {
-          const { document } = await projectState(projectId);
-          return { diagnostics: z.array(diagnosticSchema).parse(diagnoseDocument(document)) };
+          const state = projectDocumentStateSchema.parse(
+            await this.workspace.getVersionedProjectState(user.id, projectId),
+          );
+          if (state.sourceDocument.schemaVersion !== 2)
+            throw new ConflictException({ code: 'document.native-upgrade-required' });
+          if (state.native.status !== 'available')
+            throw new ConflictException({ code: state.native.code });
+          return { diagnostics: state.native.issues };
         }),
     );
     server.registerTool(
       'diagnose_layout',
       {
         description:
-          '저장 좌표와 실제 렌더링 카드 크기로 화면의 카드 겹침·40px 미만 간격·테이블 자동 확장을 진단합니다. 결과는 배치를 자동 변경하지 않습니다.',
+          'Native 카드 겹침·40px 미만 간격·자동 확장과 테이블 관계선의 카드 관통·선분 겹침·교차를 좌표로 진단합니다. mode 기본 physical, 논리 화면은 logical을 지정하세요. 자동/수동 경로를 공유 라우터로 재구성하며 coverage의 검사 한도·미검증 경로를 반드시 확인하세요. 도메인 관계 경로는 별도 검증이 필요합니다. 배치는 변경하지 않습니다.',
         inputSchema: layoutDiagnosisInputSchema,
         outputSchema: layoutDiagnosisSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, viewId, limit }) =>
+      ({ projectId, viewId, limit, mode }) =>
         invoke('diagnose_layout', async () => {
-          const state = await projectState(projectId);
-          if (viewId) projectView(state, viewId);
+          const state = await projectState(projectId, { viewId });
           const nodes = viewId
-            ? sharedCanvasNodes(state.document, viewId, state.personalViewIds)
+            ? nativeViewNodes(state, viewId)
             : state.document.layout.nodes.filter(
                 (node) => node.viewId === 'overview' || node.viewId === TABLES_VIEW_ID,
               );
           return diagnoseLayout(
             { ...state.document, layout: { ...state.document.layout, nodes } },
-            viewId
-              ? sharedCanvasSelection(state.document, viewId, state.personalViewIds)!.layoutViewId
-              : undefined,
+            viewId ? nativeViewSelection(state, viewId).layoutViewId : undefined,
             limit,
+            mode,
           );
         }),
-    );
-    server.registerTool(
-      'apply_project_changes',
-      {
-        description:
-          '명시적인 도메인·테이블·컬럼·키·관계·노트·ENUM과 공유 화면 배치를 최신 기준에 원자적으로 적용합니다. 기존 객체의 일부 필드는 patch_* 명령으로 변경할 수 있습니다. 생성/이동할 카드의 크기와 같은 뷰의 기존 위치를 먼저 확인하고 최소 40px 간격으로 겹침 없이 배치하세요. 연결된 객체를 가까이 묶고 도메인 흐름 및 PK→FK 방향을 일관되게 표현하며 관계선 교차와 긴 연결을 줄인 뒤 결과를 재조회하세요.',
-        inputSchema: applyProjectChangesSchema.extend({
-          includeDocument: z.boolean().default(false),
-        }),
-        outputSchema: syncOperationResultSchema,
-        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-      },
-      ({ includeDocument, ...input }) =>
-        invoke('apply_project_changes', async () =>
-          operationResult(
-            syncOperationResultSchema.parse(await this.documents.apply(input, user)),
-            includeDocument,
-          ),
-        ),
     );
     server.registerTool(
       'upgrade_project_document',
@@ -629,13 +727,7 @@ export class McpServerFactory {
         description:
           'v1 저장 문서를 프로젝트 DB의 native 형식으로 명시 업그레이드합니다. operationId/clientId와 최신 version/sequence/databaseRevision이 필수이며 원본과 migration 진단을 이력에 보존합니다. MySQL/SQLite v1의 PG 타입과 unknown 값은 legacy로 유지합니다. 응답 뒤 get_project_document_state로 진단을 확인하고 apply_native_project_changes로 안전한 편집을 진행하세요.',
         inputSchema: upgradeProjectDocumentSchema.extend({ projectId: idSchema }),
-        outputSchema: z.strictObject({
-          ...nativeSyncOperationResultSchema.shape,
-          document: z
-            .object({ schemaVersion: z.literal(2) })
-            .passthrough()
-            .optional(),
-        }),
+        outputSchema: nativeOperationOutputSchema,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       ({ projectId, ...input }) =>
@@ -647,15 +739,9 @@ export class McpServerFactory {
       'apply_native_project_changes',
       {
         description:
-          'schemaVersion 2로 저장된 프로젝트의 native 컬럼/테이블 부분 수정, 컬럼 추가, 삭제 계획 및 PK 기반 FK 생성을 수행합니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
+          'schemaVersion 2로 저장된 프로젝트의 native 객체 추가·부분 수정·삭제 및 PK 기반 FK 생성을 수행합니다. 명령별 입력 스키마를 따르세요. add_table은 {type:"add_table",value:NativeTable}이며 컬럼과 placement를 포함하지 않습니다. SQLite 테이블의 physical.namespace는 {kind:"sqliteMain"}, options는 {database:"sqlite",strict:false,withoutRowid:false}입니다. 배치는 같은 commands 배열에 {type:"add_table_reference",tableId:"새 테이블 ID",viewId:"__tables__",placement:{x:1500,y:180,width:400,height:260}}를 추가하세요. 컬럼은 별도 add_column 명령입니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 기존 legacy 원문을 그대로 보존하는 관계없는 신규 객체 추가는 허용합니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
         inputSchema: applyNativeProjectChangesMetadataSchema,
-        outputSchema: z.strictObject({
-          ...nativeSyncOperationResultSchema.shape,
-          document: z
-            .object({ schemaVersion: z.literal(2) })
-            .passthrough()
-            .optional(),
-        }),
+        outputSchema: nativeOperationOutputSchema,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       (input) =>
@@ -667,7 +753,7 @@ export class McpServerFactory {
       'apply_personal_changes',
       {
         description:
-          'v1/native 프로젝트에서 인증된 사용자 자신의 결합 화면·참조 테이블·개인 배치·뷰포트·관계 경로·메모를 개인 버전 기준으로 변경합니다. native 신규 쓰기는 get_personal_state의 databaseRevision/projectVersion/syncSequence를 expectedDatabaseRevision/expectedProjectVersion/expectedSyncSequence로 함께 전달합니다. 기존 operation 재생은 같은 원문을 유지합니다. 공유 설계·DB 문맥·물리 타입은 변경하지 않습니다.',
+          'native 프로젝트에서 인증된 사용자 자신의 결합 화면·참조 테이블·개인 배치·뷰포트·관계 경로·메모를 개인 버전 기준으로 변경합니다. native 신규 쓰기는 get_personal_state의 databaseRevision/projectVersion/syncSequence를 expectedDatabaseRevision/expectedProjectVersion/expectedSyncSequence로 함께 전달합니다. 기존 operation 재생은 같은 원문을 유지합니다. 공유 설계·DB 문맥·물리 타입은 변경하지 않습니다.',
         inputSchema: applyPersonalChangesSchema,
         outputSchema: personalStateSnapshotSchema,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
@@ -676,73 +762,6 @@ export class McpServerFactory {
         invoke('apply_personal_changes', async () =>
           personalStateSnapshotSchema.parse(await this.personal.apply(input, user)),
         ),
-    );
-    server.registerTool(
-      'get_project_history',
-      {
-        description:
-          '지정한 동기화 순서 이후의 이력을 최대 100건씩 조회합니다. 기본 응답은 변경 경로만 포함하며 변경값·전체 문서·삭제 스냅샷은 요청 시 포함합니다.',
-        inputSchema: historyInputSchema,
-        outputSchema: historyPageSchema,
-        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-      },
-      ({ projectId, since, limit, ...options }) =>
-        invoke('get_project_history', async () =>
-          projectHistory(await this.sync.historyPage(user.id, projectId, since, limit), options),
-        ),
-    );
-    server.registerTool(
-      'undo_project_operation',
-      {
-        description: '인증된 사용자가 승인받은 기존 작업을 현재 충돌 규칙에 따라 실행 취소합니다.',
-        inputSchema: z.strictObject({
-          projectId: idSchema,
-          sourceOperationId: idSchema,
-          request: commandRequestSchema,
-          includeDocument: z.boolean().default(false),
-        }),
-        outputSchema: syncOperationResultSchema,
-        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-      },
-      ({ projectId, sourceOperationId, request, includeDocument }) =>
-        invoke('undo_project_operation', async () =>
-          operationResult(
-            requireAccepted(
-              syncOperationResultSchema.parse(
-                await this.sync.undo(projectId, sourceOperationId, request, user),
-              ),
-            ),
-            includeDocument,
-          ),
-        ),
-    );
-    server.registerTool(
-      'restore_project_deletion',
-      {
-        description: '삭제 작업의 보존 스냅샷을 새 객체 ID로 복원합니다.',
-        inputSchema: z.strictObject({
-          projectId: idSchema,
-          deletedOperationId: idSchema,
-          request: commandRequestSchema,
-          includeDocument: z.boolean().default(false),
-        }),
-        outputSchema: z.strictObject({
-          result: syncOperationResultSchema,
-          omittedRelations: z.array(z.string()),
-        }),
-        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-      },
-      ({ projectId, deletedOperationId, request, includeDocument }) =>
-        invoke('restore_project_deletion', async () => {
-          const outcome = await this.sync.restore(projectId, deletedOperationId, request, user);
-          return {
-            result: operationResult(
-              requireAccepted(syncOperationResultSchema.parse(outcome.result)),
-              includeDocument,
-            ),
-            omittedRelations: z.array(z.string()).parse(outcome.omittedRelations),
-          };
-        }),
     );
     server.registerTool(
       'get_native_project_baseline',
@@ -758,10 +777,12 @@ export class McpServerFactory {
             databaseRevision: z.number().int().nonnegative().max(2147483647),
           }),
         }),
-        outputSchema: z.strictObject({
-          ...nativeSyncSnapshotSchema.shape,
-          document: z.object({ schemaVersion: z.literal(2) }).passthrough(),
-        }),
+        outputSchema: z
+          .strictObject({
+            ...nativeSyncSnapshotSchema.shape,
+            document: z.object({ schemaVersion: z.literal(2) }).passthrough(),
+          })
+          .meta(mcpSchemaMetadata(nativeSyncSnapshotSchema)),
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId, clientId, expected }) =>
@@ -777,10 +798,12 @@ export class McpServerFactory {
         description:
           'native 이력과 legacy/upgrade 경계를 sequence 순서로 조회합니다. 원본 변경·삭제 증거를 반환하며 native 보상은 자신의 accepted native 작업에 한정됩니다.',
         inputSchema: nativeHistoryQuerySchema.extend({ projectId: idSchema }),
-        outputSchema: z.strictObject({
-          ...nativeHistoryPageSchema.shape,
-          history: z.array(z.object({ operationId: idSchema }).passthrough()).max(100),
-        }),
+        outputSchema: z
+          .strictObject({
+            ...nativeHistoryPageSchema.shape,
+            history: z.array(z.object({ operationId: idSchema }).passthrough()).max(100),
+          })
+          .meta(mcpSchemaMetadata(nativeHistoryPageSchema)),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
       ({ projectId, since, limit }) =>
@@ -805,16 +828,18 @@ export class McpServerFactory {
             sourceOperationId: idSchema,
             request: nativeHistoryCommandSchema,
           }),
-          outputSchema: z.strictObject({
-            ...nativeHistoryCommandResultSchema.shape,
-            result: z.strictObject({
-              ...nativeSyncOperationResultSchema.shape,
-              document: z
-                .object({ schemaVersion: z.literal(2) })
-                .passthrough()
-                .optional(),
-            }),
-          }),
+          outputSchema: z
+            .strictObject({
+              ...nativeHistoryCommandResultSchema.shape,
+              result: z.strictObject({
+                ...nativeSyncOperationResultSchema.shape,
+                document: z
+                  .object({ schemaVersion: z.literal(2) })
+                  .passthrough()
+                  .optional(),
+              }),
+            })
+            .meta(mcpSchemaMetadata(nativeHistoryCommandResultSchema)),
           annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
         },
         ({ projectId, sourceOperationId, request }) =>
@@ -836,34 +861,20 @@ export class McpServerFactory {
       {
         description:
           '보관한 원래 native operation/command/upgrade/history 요청을 서버에서 취소 확정합니다. 이미 처리된 같은 actor/fingerprint 요청은 원문 결과를 반환하고 미기록 요청은 취소 마커로 늦은 쓰기를 막습니다. request는 전송했던 원문 전체이며 최신 문서나 새 operationId로 바꾸지 마세요.',
-        inputSchema: z.strictObject({
-          projectId: idSchema,
-          kind: z.enum([
-            'protocol-operation',
-            'native-command',
-            'native-upgrade',
-            'history-undo',
-            'history-restore',
-          ]),
-          sourceOperationId: idSchema.optional(),
-          request: z.unknown(),
-        }),
-        outputSchema: z.strictObject({
-          outcome: z.enum(['recorded', 'cancelled']),
-          result: z
-            .object({ protocolVersion: z.union([z.literal(1), z.literal(2)]) })
-            .passthrough(),
-        }),
+        inputSchema: cancellationMetadataSchema,
+        outputSchema: z
+          .strictObject({
+            outcome: z.enum(['recorded', 'cancelled']),
+            // Historical v1 ACKs have no protocolVersion. The handler validates both formats.
+            result: z.object({}).passthrough(),
+          })
+          .meta(mcpSchemaMetadata(nativeCancellationResultSchema)),
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },
       ({ projectId, ...raw }) =>
         invoke('cancel_native_project_request', async () =>
           nativeCancellationResultSchema.parse(
-            await this.nativeCancellation.cancel(
-              projectId,
-              nativeCancellationInputSchema.parse(raw),
-              user,
-            ),
+            await this.nativeCancellation.cancel(projectId, raw, user),
           ),
         ),
     );
@@ -1157,6 +1168,7 @@ export class McpServerFactory {
       return { content: [{ type: 'text' as const, text: `${tool} 완료` }], structuredContent };
     } catch (error) {
       const expected = error instanceof HttpException;
+      const response = expected ? error.getResponse() : undefined;
       const errorCode = expected ? `HTTP_${error.getStatus()}` : 'INTERNAL';
       await this.logger.write({
         level: expected ? 'warn' : 'error',
@@ -1174,7 +1186,13 @@ export class McpServerFactory {
         content: [
           {
             type: 'text' as const,
-            text: expected ? error.message : `도구 실행에 실패했습니다. 요청 ID: ${requestId}`,
+            text: expected
+              ? JSON.stringify({
+                  ...(typeof response === 'string' ? { message: response } : response),
+                  status: error.getStatus(),
+                  requestId,
+                })
+              : `도구 실행에 실패했습니다. 요청 ID: ${requestId}`,
           },
         ],
       };

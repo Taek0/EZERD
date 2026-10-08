@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { type DesignDocument } from '@ezerd/model';
 import { tableCardMetrics, tableCardSize } from './table-geometry.js';
-import { relationGeometry } from './TableEditor.js';
+import { relationGeometry } from '../relations/relation-routing.js';
 const base = {
   tables: [{ id: 't', scope: 'physical', physical: { name: 'users' } }],
   columns: [],

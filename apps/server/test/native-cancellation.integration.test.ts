@@ -250,7 +250,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('native durable cancellation R
         ['network/network-access.js', 'LanAccessService'],
         ['workspace/workspace-events.service.js', 'WorkspaceEventsService'],
         ['sync/native-sync.service.js', 'NativeSyncService'],
-        ['sync/sync.service.js', 'SyncService'],
+        ['sync/sync-retention.service.js', 'SyncRetentionService'],
         ['sync/native-history.service.js', 'NativeHistoryService'],
         ['workspace/native-upgrade.service.js', 'NativeUpgradeService'],
         ['mcp/mcp-native-document.service.js', 'McpNativeDocumentService'],
@@ -716,7 +716,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('native durable cancellation R
       "UPDATE sync_client_baselines SET last_successful_sync_at=NOW()-INTERVAL '14 days' WHERE project_id=$1",
       [id],
     );
-    await app.get<any>(load('sync/sync.service.js').SyncService).cleanupExpired();
+    await app
+      .get<any>(load('sync/sync-retention.service.js').SyncRetentionService)
+      .cleanupExpired();
     const before = await state(id);
     expect(before.ledger).toEqual([]);
     expect(before.baselines).toEqual([]);

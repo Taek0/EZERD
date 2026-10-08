@@ -10,15 +10,12 @@ import {
 import { and, asc, desc, eq, gt, ilike, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
-  designDocumentSchema,
-  importProjectSchema,
   projectTransferSchema,
   type ProjectTransfer,
   projectDatabaseCapabilitiesSchema,
   projectDocumentStateSchema,
 } from '@ezerd/contracts';
 import {
-  diagnoseDocument,
   defaultDatabaseContext,
   resolveProjectDatabaseState,
   hasPhysicalDatabaseDesign,
@@ -51,8 +48,12 @@ import type { ProjectRow } from '../db/schema.js';
 import { projectPreview } from './project-preview.js';
 import { nextAutomaticProjectName } from './project-name.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
+import { NativeQueryCache } from '../mcp/native-query-cache.js';
+import type { NativeProjectState } from '../mcp/mcp-native-read.js';
 
-function project(row: ProjectRow): Project {
+function project(
+  row: Omit<ProjectRow, 'document'> & { document?: ProjectRow['document'] },
+): Project {
   const database = resolveProjectDatabaseState({
     ...row,
     databaseKind: row.databaseKind ?? 'postgresql',
@@ -85,6 +86,8 @@ async function operation<T>(callback: () => Promise<T>): Promise<T> {
 
 @Injectable()
 export class WorkspaceService {
+  private readonly nativeQueryCache = new NativeQueryCache();
+
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
@@ -113,10 +116,7 @@ export class WorkspaceService {
             databaseKind: context.kind,
             name,
             databaseProfileId: context.profileId,
-            // The JSONB row annotation remains v1 for older clients; the factory supplies v2.
-            document: sharedDocument(
-              createEmptyNativeDocument(context),
-            ) as unknown as ProjectRow['document'],
+            document: sharedDocument(createEmptyNativeDocument(context)),
             databaseRevision: 0,
           })
           .returning();
@@ -132,50 +132,13 @@ export class WorkspaceService {
   }
 
   async exportProject(actorId: string, id: string): Promise<ProjectTransfer> {
-    const snapshot = await this.getProject(actorId, id);
+    const snapshot = await this.readLegacyExportDocument(actorId, id);
     return projectTransferSchema.parse({
       format: 'ezerd-project',
       formatVersion: 1,
       exportedAt: new Date().toISOString(),
       project: { name: snapshot.project.name, databaseKind: snapshot.project.databaseKind },
       document: snapshot.document,
-    });
-  }
-
-  importProject(actorId: string, raw: unknown) {
-    const parsed = importProjectSchema.safeParse(raw);
-    if (!parsed.success)
-      throw new BadRequestException('프로젝트 파일 형식, 버전 또는 크기를 확인해 주세요.');
-    const { transfer: input, workspaceId } = parsed.data;
-    const document = normalizeServerDocument(input.document);
-    if (!designDocumentSchema.safeParse(document).success)
-      throw new BadRequestException(
-        '전체 캔버스를 포함한 설계 데이터의 구조나 크기를 확인해 주세요.',
-      );
-    const issue = diagnoseDocument(document)[0];
-    if (issue) throw new BadRequestException(`설계 데이터를 확인해 주세요: ${issue.message}`);
-    return operation(async () => {
-      // One row contains the whole design: insertion is atomic, with fresh DB defaults.
-      return this.access.runWorkspace(actorId, workspaceId, 'createProject', async (tx) => {
-        const [row] = await tx
-          .insert(projects)
-          .values({
-            name: input.project.name,
-            databaseKind: input.project.databaseKind ?? 'postgresql',
-            databaseProfileId: defaultDatabaseContext(input.project.databaseKind ?? 'postgresql')
-              .profileId,
-            workspaceId,
-            document,
-          })
-          .returning();
-        await tx.insert(workspaceAuditEvents).values({
-          workspaceId,
-          actorId,
-          action: 'project.imported',
-          details: { projectId: row!.id, name: row!.name },
-        });
-        return project(row!);
-      });
     });
   }
 
@@ -251,18 +214,10 @@ export class WorkspaceService {
     });
   }
 
-  getProject(actorId: string, id: string) {
+  private readLegacyExportDocument(actorId: string, id: string) {
     return this.readProject(actorId, id, (row) => ({
       project: project(row),
       document: normalizeServerDocument(row.document),
-    }));
-  }
-
-  getProjectState(actorId: string, id: string) {
-    return this.readProject(actorId, id, (row) => ({
-      project: project(row),
-      document: normalizeServerDocument(row.document),
-      syncSequence: row.syncSequence,
     }));
   }
 
@@ -295,6 +250,63 @@ export class WorkspaceService {
             : { status: 'unavailable', code: result.code },
       });
     });
+  }
+
+  /** MCP queries need a validated native source, without full preview/diagnostic construction. */
+  getNativeQueryState(actorId: string, id: string): Promise<NativeProjectState> {
+    return operation(() =>
+      this.access.runProject(actorId, id, 'read', async (tx) => {
+        // Authorization and the current head are checked even when the source is cached.
+        // Both reads share the access service's repeatable-read snapshot.
+        const [head] = await tx
+          .select({
+            id: projects.id,
+            workspaceId: projects.workspaceId,
+            name: projects.name,
+            databaseKind: projects.databaseKind,
+            databaseProfileId: projects.databaseProfileId,
+            databaseRevision: projects.databaseRevision,
+            status: projects.status,
+            version: projects.version,
+            syncSequence: projects.syncSequence,
+            createdAt: projects.createdAt,
+            updatedAt: projects.updatedAt,
+          })
+          .from(projects)
+          .where(eq(projects.id, id));
+        if (!head) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+        const database = resolveProjectDatabaseState(head);
+        const key = JSON.stringify([
+          head.id,
+          head.workspaceId,
+          head.createdAt.toISOString(),
+          head.updatedAt.toISOString(),
+          head.version,
+          head.syncSequence,
+          database.revision,
+          database.kind,
+          database.profileId,
+        ]);
+        let document = this.nativeQueryCache.get(key);
+        if (!document) {
+          const [source] = await tx
+            .select({ document: projects.document })
+            .from(projects)
+            .where(eq(projects.id, id));
+          if (!source) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+          document = this.nativeQueryCache.parse(key, source.document, database);
+        }
+        return {
+          project: {
+            ...project(head),
+            databaseProfileId: database.profileId,
+            databaseRevision: database.revision,
+          },
+          syncSequence: head.syncSequence,
+          document,
+        };
+      }),
+    );
   }
 
   private async missingOrConflict(id: string): Promise<never> {

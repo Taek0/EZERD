@@ -5,7 +5,6 @@ import {
   nativeEditorCommandSchema,
   nativeStoredDesignDocumentSchema,
   type NativeEditorCommand,
-  nativeDomainCommandTypes,
   planNativeClipboardCommand,
 } from '@ezerd/contracts';
 import {
@@ -41,6 +40,7 @@ import {
   applyNativeCanvasStyle,
   applyNativeDomainRelation,
 } from './native-canvas-decoration-candidate.js';
+import { mcpSchemaMetadata } from './mcp-schema-metadata.js';
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const applyNativeProjectChangesSchema = z.strictObject({
   projectId: z.uuid(),
@@ -53,52 +53,25 @@ export const applyNativeProjectChangesSchema = z.strictObject({
   commands: z.array(nativeEditorCommandSchema).min(1).max(100),
   includeDocument: z.boolean().default(false),
 });
-/** SDK metadata is intentionally shallow; the handler parses the complete AST/patch runtime contract. */
-export const applyNativeProjectChangesMetadataSchema = z.strictObject({
-  ...applyNativeProjectChangesSchema.shape,
-  commands: z
-    .array(
-      z
-        .object({
-          type: z.enum([
-            ...nativeDomainCommandTypes,
-            'patch_canvas_style',
-            'add_domain_relation',
-            'patch_domain_relation',
-            'delete_domain_relation',
-            'paste_native_clipboard',
-            'reorder_columns',
-            'patch_column',
-            'patch_table',
-            'add_column',
-            'add_table',
-            'add_key',
-            'patch_key',
-            'add_index',
-            'patch_index',
-            'add_check',
-            'patch_check',
-            'add_enum',
-            'patch_enum',
-            'add_foreign_key',
-            'patch_foreign_key',
-            'delete_objects',
-            'create_foreign_key',
-            'add_table_reference',
-            'remove_table_reference',
-            'update_node_layout',
-            'upsert_note',
-            'patch_note',
-            'delete_note',
-            'upsert_relation_layout',
-            'delete_relation_layout',
-          ]),
-        })
-        .passthrough(),
-    )
-    .min(1)
-    .max(100),
-});
+/** Advertise the runtime input shape while preserving raw commands for locked replay/validation.
+ * JSON Schema cannot express AST budgets or project policy; these stay in the handler.
+ */
+export const applyNativeProjectChangesMetadataSchema = z
+  .strictObject({
+    ...applyNativeProjectChangesSchema.shape,
+    commands: z
+      .array(z.object({ type: z.string().min(1) }).passthrough())
+      .min(1)
+      .max(100),
+  })
+  .meta(mcpSchemaMetadata(applyNativeProjectChangesSchema));
+
+function commandValidationError(error: z.ZodError) {
+  return new BadRequestException({
+    code: 'native.command-invalid',
+    issues: error.issues,
+  });
+}
 
 function patchObject<T extends { id: string }>(
   items: T[] | undefined,
@@ -343,7 +316,7 @@ export class McpNativeDocumentService {
       })
       .passthrough()
       .safeParse(raw);
-    if (!identity.success) throw new BadRequestException({ code: 'native.command-invalid' });
+    if (!identity.success) throw commandValidationError(identity.error);
     const { includeDocument: _includeDocument, ...semanticInput } = raw as Record<string, unknown>;
     const hash = createHash('sha256')
       .update(requestFingerprint({ command: 'apply_native_project_changes', ...semanticInput }))
@@ -362,7 +335,7 @@ export class McpNativeDocumentService {
         async (issueBaseline) => {
           // Runs only after read/replay, the project row lock/replay and fresh design access.
           const parsed = applyNativeProjectChangesSchema.safeParse(raw);
-          if (!parsed.success) throw new BadRequestException({ code: 'native.command-invalid' });
+          if (!parsed.success) throw commandValidationError(parsed.error);
           const input = parsed.data;
           // The locked issuer accepts an older observed edit head within the same DB revision.
           // Applying explicit patches to this current document merges disjoint properties and
@@ -377,6 +350,7 @@ export class McpNativeDocumentService {
             candidate = nativeEditorCandidate(baseline.document, input.commands);
           } catch (error) {
             if (error instanceof BadRequestException) throw error;
+            if (error instanceof z.ZodError) throw commandValidationError(error);
             throw new BadRequestException({
               code: error instanceof Error ? error.message : 'native.command-invalid',
             });

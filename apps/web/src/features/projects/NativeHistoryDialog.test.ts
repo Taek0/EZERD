@@ -56,3 +56,45 @@ it('shows action filtering and deletion restore without per-entry undo', () => {
   expect(markup).not.toContain('실행 취소');
   expect(markup).not.toContain('불러온 이력에서 필터링합니다.');
 });
+
+it('displays newest loaded edits first without mutating cursor data or source ordering', () => {
+  const fixture = advancedFixture();
+  const base = {
+    format: 'native' as const,
+    changes: [],
+    result: {
+      status: 'accepted' as const,
+      actor: { id: fixture.context.userId, username: 'Tester' },
+      createdAt: '2026-10-07T00:00:00Z',
+    },
+  };
+  harness.page = {
+    protocolVersion: 2,
+    version: fixture.snapshot.project.version,
+    sequence: 30,
+    nextSince: 30,
+    history: [10, 30, 20].map((sequence) => ({
+      ...base,
+      operationId: `operation-${sequence}`,
+      sequence,
+      result: { ...base.result, actor: { ...base.result.actor, username: `Actor-${sequence}` } },
+    })),
+  } as unknown as NativeHistoryPage;
+  const original = structuredClone(harness.page);
+  harness.stateIndex = 0;
+  const markup = renderToStaticMarkup(
+    createElement(NativeHistoryDialog, {
+      embedded: true,
+      userId: fixture.context.userId,
+      snapshot: fixture.snapshot,
+      canEdit: true,
+      onClose: vi.fn(),
+      onReload: vi.fn(),
+    }),
+  );
+  expect(markup.indexOf('Actor-30')).toBeLessThan(markup.indexOf('Actor-20'));
+  expect(markup.indexOf('Actor-20')).toBeLessThan(markup.indexOf('Actor-10'));
+  expect(markup).toContain('이력 더 보기');
+  expect(markup).toContain('최근 편집 순');
+  expect(harness.page).toEqual(original);
+});

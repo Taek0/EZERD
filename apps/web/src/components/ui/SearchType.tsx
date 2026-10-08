@@ -6,6 +6,7 @@ import { ComboBox, Group, Input, ListBox } from 'react-aria-components';
 import { UntitledPopover, UntitledSelectItem } from './untitled.js';
 import { useI18n } from '../../shared/i18n/index.js';
 import './translations.js';
+import './search-type.css';
 export function SearchType({
   value,
   onValueChange,
@@ -15,6 +16,8 @@ export function SearchType({
   autoFocus = false,
   showSearchIcon = true,
   onEditEnd,
+  query,
+  onQueryChange,
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -24,11 +27,17 @@ export function SearchType({
   autoFocus?: boolean;
   showSearchIcon?: boolean;
   onEditEnd?: (reason: 'blur' | 'escape' | 'selection') => void;
+  query?: string | undefined;
+  onQueryChange?: (query: string) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const selectInitialFocus = useRef(true);
   const { t } = useI18n();
   const [blocked, setBlocked] = useState(false);
   const [container, setContainer] = useState<HTMLElement>();
+  const selectedLabel = options.find((option) => option.value === value)?.label.toUpperCase() ?? '';
+  const [inputValue, setInputValue] = useState(selectedLabel);
+  useEffect(() => setInputValue(selectedLabel), [value, selectedLabel]);
   useEffect(() => {
     const fieldset = root.current?.closest('fieldset');
     const sync = () => setBlocked(!!fieldset?.disabled);
@@ -45,8 +54,13 @@ export function SearchType({
       className="ui-search-type"
       aria-label={label}
       selectedKey={value}
+      inputValue={query ?? inputValue}
+      onInputChange={setInputValue}
       onSelectionChange={(key) => {
         if (key !== null) {
+          setInputValue(
+            options.find((option) => option.value === String(key))?.label.toUpperCase() ?? '',
+          );
           onValueChange(String(key));
           onEditEnd?.('selection');
         }
@@ -59,7 +73,14 @@ export function SearchType({
     >
       <Group className="ui-input-group">
         {showSearchIcon && (
-          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+          <svg
+            className="ui-search-type-icon"
+            aria-hidden="true"
+            width="16"
+            height="16"
+            viewBox="0 0 20 20"
+            fill="none"
+          >
             <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.6" />
             <path d="m13 13 4 4" stroke="currentColor" strokeWidth="1.6" />
           </svg>
@@ -68,7 +89,17 @@ export function SearchType({
           className="ui-input"
           placeholder={t('타입 검색')}
           autoFocus={autoFocus}
-          onFocus={(event) => event.currentTarget.select()}
+          onChange={(event) => {
+            selectInitialFocus.current = false;
+            onQueryChange?.(event.currentTarget.value);
+          }}
+          onFocus={(event) => {
+            // Opening the popover can restore input focus after the first key.
+            // Never reselect text that the user has already started entering.
+            if (!selectInitialFocus.current) return;
+            selectInitialFocus.current = false;
+            event.currentTarget.select();
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Escape' && onEditEnd) {
               event.stopPropagation();

@@ -46,11 +46,7 @@ try {
       'run',
       ...(process.argv.length > 2
         ? process.argv.slice(2)
-        : [
-            'apps/server/test/api.integration.test.ts',
-            'apps/server/test/autosync.integration.test.ts',
-            'apps/server/test/mcp.integration.test.ts',
-          ]),
+        : ['apps/server/test/api.integration.test.ts', 'apps/server/test/mcp.integration.test.ts']),
     ],
     { cwd: root, env, stdio: 'inherit' },
   );

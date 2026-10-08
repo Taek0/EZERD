@@ -61,3 +61,19 @@ it('does not retrace the path when a manual bend is close to an attachment stub'
     }),
   ).toBe(true);
 });
+
+describe('table relation routing', () => {
+  it('routes tight adjacent cards above both headers with a readable label', () => {
+    const a = { x: 0, y: 50, width: 280, height: 220 },
+      b = { x: 300, y: 60, width: 280, height: 220 };
+    const line = relationGeometry(a, b, 160, 0);
+    expect(line.labelY + 14).toBeLessThan(Math.min(a.y, b.y));
+    expect(line.path).toContain('L 440');
+  });
+  it('keeps self-reference labels above the card and endpoints outside its body', () => {
+    const a = { x: 10, y: 90, width: 280, height: 220 };
+    const line = relationGeometry(a, a, 140, 0);
+    expect(line.labelY + 14).toBeLessThan(a.y);
+    expect(line.path).toContain('150 82');
+  });
+});

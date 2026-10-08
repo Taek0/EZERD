@@ -1,0 +1,25 @@
+.native-property-editor > fieldset > legend:empty {
+  display: none;
+}
+
+.native-property-editor label[hidden] {
+  display: none;
+}
+
+.native-property-type-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.native-property-editor .native-primary-key-label,
+.native-primary-key-control .native-primary-key-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.native-primary-key-label .ui-checkbox-root {
+  flex: 0 0 auto;
+}

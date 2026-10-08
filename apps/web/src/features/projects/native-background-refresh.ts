@@ -1,4 +1,5 @@
 import { loadProjectEntry, type ProjectEntry } from './project-entry.js';
+import { shareNativeJson } from './native-ack-entry.js';
 
 type NativeEntry = Extract<ProjectEntry, { kind: 'native' }>;
 interface RefreshContext {
@@ -49,7 +50,8 @@ export class NativeBackgroundRefresh {
           next.snapshot.project.databaseRevision < current.entry.snapshot.project.databaseRevision
         )
           continue;
-        this.options.apply(next);
+        const shared = shareNativeJson(current.entry, next);
+        if (shared !== current.entry) this.options.apply(shared);
       } catch (cause) {
         if (this.options.current()?.identity === start.identity) this.options.error(cause);
       }

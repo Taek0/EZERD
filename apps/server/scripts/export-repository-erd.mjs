@@ -15,12 +15,27 @@ const groups = [
     '공간',
     ['workspace', 'user_workspaces', 'workspace_invitations', 'workspace_audit_events'],
   ],
-  ['project', '프로젝트', ['projects', 'project_personal_states', 'project_personal_operations']],
+  [
+    'project',
+    '프로젝트',
+    [
+      'projects',
+      'project_personal_states',
+      'project_personal_operations',
+      'project_database_operations',
+    ],
+  ],
   ['review', '리뷰', ['review_threads', 'review_messages', 'review_notifications']],
   [
     'sync',
     '동기화',
-    ['sync_operations', 'sync_field_versions', 'sync_client_baselines', 'sync_tombstones'],
+    [
+      'sync_operations',
+      'sync_field_versions',
+      'sync_client_baselines',
+      'sync_tombstones',
+      'native_request_cancellations',
+    ],
   ],
 ];
 const doc = {
@@ -282,10 +297,12 @@ layoutTables('all-tables', [
   'review_notifications',
   'project_personal_states',
   'project_personal_operations',
+  'project_database_operations',
   'sync_operations',
   'sync_field_versions',
   'sync_client_baselines',
   'sync_tombstones',
+  'native_request_cancellations',
   'workspace_audit_events',
 ]);
 for (const r of doc.tableRelations) {
@@ -380,8 +397,8 @@ writeFileSync(
     {
       format: 'ezerd-project',
       formatVersion: 1,
-      exportedAt: '2026-09-30T00:00:00.000Z',
-      project: { name: 'EZERD 코드 ERD · 2026-09-30', databaseKind: 'postgresql' },
+      exportedAt: new Date().toISOString(),
+      project: { name: 'EZERD 코드 ERD', databaseKind: 'postgresql' },
       document: doc,
     },
     null,

@@ -1,7 +1,7 @@
+import type { DocumentBase } from './document-base.js';
 import {
   ensureTableCanvasLayout,
   TABLES_VIEW_ID,
-  type DesignDocument,
   type TableCanvasDocument,
   type Position,
   type RelationLayout,
@@ -9,7 +9,7 @@ import {
 
 /** Consolidate shared domain annotations into the canonical canvas; personal views stay private. */
 export function normalizeSharedTableCanvas<
-  T extends TableCanvasDocument & Pick<DesignDocument, 'domains' | 'notes'>,
+  T extends TableCanvasDocument & Pick<DocumentBase, 'domains' | 'notes'>,
 >(document: T, options: { nodeId?: (tableId: string) => string } = {}): T {
   const doc = ensureTableCanvasLayout(document, options);
   const domains = new Set(doc.domains.map((domain) => domain.id));

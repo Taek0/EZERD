@@ -121,3 +121,8 @@ export function nativeTypeCurrentLabel(
 export function nativeTypeParameterRules(typeId: string) {
   return getDatabaseType(typeId as Parameters<typeof getDatabaseType>[0])?.parameters ?? {};
 }
+
+/** Display only; command and option values retain their database-qualified IDs. */
+export function nativeTypeOptionLabel(typeId: string): string {
+  return typeId.replace(/^(postgresql|mysql|sqlite):/, '');
+}

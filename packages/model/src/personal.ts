@@ -1,16 +1,16 @@
 import type {
-  DesignDocument,
+  DocumentBase,
   CombinedView,
   Note,
   NodeLayout,
   Viewport,
   RelationLayout,
-} from './document.js';
-import { TABLES_VIEW_ID } from './document.js';
-import type { TableCanvasDocument } from './document.js';
+} from './document-base.js';
+import { TABLES_VIEW_ID } from './document-base.js';
+import type { TableCanvasDocument } from './document-base.js';
 
 export interface PersonalCanvasDocument
-  extends TableCanvasDocument, Pick<DesignDocument, 'domains' | 'views' | 'notes'> {
+  extends TableCanvasDocument, Pick<DocumentBase, 'domains' | 'views' | 'notes'> {
   tableRelations?:
     readonly { id: string; sourceTableId: string; targetTableId: string }[] | undefined;
 }
