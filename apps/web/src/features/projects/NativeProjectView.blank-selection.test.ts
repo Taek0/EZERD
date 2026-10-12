@@ -389,7 +389,9 @@ it('opens the existing column editor from the independent navigator without writ
   const original = JSON.stringify(ui.entry.document);
   const tree = ui.render();
   const navigator = tree.find((node) => node.props.className === 'native-project-navigator')!;
-  expect(navigator.props.hidden).toBe(false);
+  const shell = tree.find((node) => node.props.className === 'native-project-navigator-shell')!;
+  expect(shell.props.inert).toBe(false);
+  expect(shell.props['aria-hidden']).toBe(false);
   const row = nodes(navigator).find(
     (node) => node.type === NativeNavigatorTable && node.props.name === 'audit',
   )!;
