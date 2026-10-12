@@ -893,3 +893,72 @@ body {
 .native-table-header > button {
   color: #fff;
 }
+/* Inspector contents must size to the panel, never to an unwrapped action row. */
+.native-editor-inspector .panel-section-body,
+.native-editor-inspector .panel-list,
+.native-editor-inspector .native-property-editor fieldset {
+  grid-template-columns: minmax(0, 1fr);
+}
+.native-editor-inspector .panel-section-body > *,
+.native-editor-inspector .native-property-editor,
+.native-editor-inspector .native-property-editor fieldset > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.native-editor-inspector .inspector-topbar {
+  padding-bottom: 12px;
+}
+.native-editor-inspector .native-inspector-panel {
+  gap: 12px;
+}
+.native-editor-inspector .actions {
+  flex-wrap: wrap;
+}
+.native-editor-inspector .native-domain-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 4px;
+}
+.native-editor-inspector .native-domain-actions > .ui-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  height: auto;
+  padding: 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.native-editor-inspector .domain-color-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+.native-editor-inspector .domain-color-field > .ui-button {
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
+.native-editor-inspector .domain-color-trigger {
+  justify-content: flex-start;
+}
+.native-editor-inspector .panel-list {
+  gap: 6px;
+}
+.native-editor-inspector .panel-list-detail {
+  padding: 12px;
+  margin: 0 0 10px;
+  border: 1px solid #dce5f0;
+  border-radius: 8px;
+  background: #f8fafd;
+}
+.native-editor-inspector .panel-list-detail .panel-section {
+  background: transparent;
+}
+.native-editor-inspector .native-column-actions {
+  justify-content: flex-start;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #dce5f0;
+}

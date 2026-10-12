@@ -15,7 +15,6 @@ export function NativeNavigatorDomain({
   active,
   reveal,
   revealKey,
-  onSelect,
   onOpen,
   children,
 }: {
@@ -25,7 +24,6 @@ export function NativeNavigatorDomain({
   active: boolean;
   reveal: boolean;
   revealKey: string;
-  onSelect?: (() => void) | undefined;
   onOpen?: (() => void) | undefined;
   children: ReactNode;
 }) {
@@ -53,8 +51,9 @@ export function NativeNavigatorDomain({
         <Button
           variant="ghost"
           className="native-navigator-select"
-          aria-current={active || undefined}
-          onClick={onSelect ?? (() => setExpanded((value) => !value))}
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded((value) => !value)}
           title={name}
         >
           <span className="panel-row-dot" style={{ background: color }} aria-hidden="true" />

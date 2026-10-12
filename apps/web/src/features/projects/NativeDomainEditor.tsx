@@ -291,8 +291,10 @@ export function NativeDomainEditor({
           ? '테이블 소속 이동'
           : action === 'delete'
             ? '도메인 삭제'
-            : selectedDomainId && action === 'edit'
-              ? '기본 정보'
+            : action === 'edit'
+              ? selectedDomainId
+                ? '기본 정보'
+                : '도메인 수정'
               : '새 도메인 만들기',
       )}
       open={open}

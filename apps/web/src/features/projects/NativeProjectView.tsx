@@ -1560,16 +1560,6 @@ export function NativeProjectView({
                                 members.some((table) => table.id === selectedTable?.id)
                               }
                               onOpen={group.id === null ? undefined : () => openDomain(group.id!)}
-                              onSelect={
-                                group.id === null
-                                  ? undefined
-                                  : () => {
-                                      leaveRecoveredSelection();
-                                      setSelectedDomain(group.id);
-                                      setInspectorOpen(true);
-                                      setInspectorTab('domains');
-                                    }
-                              }
                             >
                               {members.map((table) => (
                                 <NativeNavigatorTable
