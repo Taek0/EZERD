@@ -85,7 +85,7 @@ export function NativeNavigatorTable({
           aria-expanded={open}
           aria-controls={id}
           onClick={() => {
-            onExpandedChange(true);
+            onExpandedChange(!open);
             onSelect();
           }}
           title={name}
