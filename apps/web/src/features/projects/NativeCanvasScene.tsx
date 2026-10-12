@@ -8,6 +8,8 @@ import { NativeTableLines } from './NativeTableLines.js';
 import {
   nativeCardColor,
   nativeTableHeaderColor,
+  nativeTableHeaderTextColor,
+  nativeTableCanvasTypography,
   nativeTableCanvasTitle,
   nativeTableCanvasNamespace,
 } from './native-canvas-style.js';
@@ -156,6 +158,15 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               top: node.y,
               width: node.width,
               height: node.height,
+              ...(table
+                ? {
+                    '--native-table-title-size': nativeTableCanvasTypography.title + 'px',
+                    '--native-table-text-size': nativeTableCanvasTypography.text + 'px',
+                    '--native-table-line-size': nativeTableCanvasTypography.line + 'px',
+                    '--native-table-head-size': nativeTableCanvasTypography.columnHeader + 'px',
+                    '--native-table-footer-size': nativeTableCanvasTypography.footer + 'px',
+                  }
+                : {}),
               borderColor: selected ? 'var(--accent)' : nativeCardColor(base, node.objectId),
               ...(domain
                 ? {
@@ -278,6 +289,11 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
             {!note && (
               <header
                 className={table ? 'native-table-header' : undefined}
+                data-custom-color={
+                  (table &&
+                    !!(table.color ?? base.domains.find((d) => d.id === table.domainId)?.color)) ||
+                  undefined
+                }
                 title={
                   table
                     ? `${effectiveView !== '__tables__' && effectiveView !== table.domainId ? t('외부 참조 · ') : ''}${t('소유 도메인 · {domain}', { domain: base.domains.find((d) => d.id === table.domainId)?.name ?? t('미지정') })}`
@@ -285,7 +301,10 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                 }
                 style={
                   table
-                    ? { background: nativeTableHeaderColor(base, table), color: '#ffffff' }
+                    ? {
+                        background: nativeTableHeaderColor(base, table),
+                        color: nativeTableHeaderTextColor(base, table),
+                      }
                     : undefined
                 }
               >

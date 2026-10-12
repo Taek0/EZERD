@@ -39,7 +39,7 @@ describe('source card rows rendered from native values', () => {
       expect(document).toEqual(before);
     },
   );
-  it('matches original grid, wrapping, chrome and minimum bounds on equivalent displayed values', () => {
+  it('uses compact bounds while preserving wrapped content and immutable source values', () => {
     const p = fixture(),
       source = createEmptyDocument();
     p.document.columns![0]!.physical.type = {
@@ -78,12 +78,10 @@ describe('source card rows rendered from native values', () => {
     const before = structuredClone(p.document);
     const original = tableCardMetrics(source, 't');
     const native = nativeTableCanvasMetrics(p.document, p.table, 'physical');
-    expect({
-      width: native.width,
-      height: native.height,
-      grid: native.grid,
-      rows: native.rows.map((row) => row.height),
-    }).toEqual(original);
+    expect(native.width).toBeLessThan(original.width);
+    expect(native.height).toBeLessThanOrEqual(original.height);
+    expect(native.grid.split('minmax(').length - 1).toBe(5);
+    expect(native.rows[0]!.height).toBeGreaterThanOrEqual(2 * 22 + 9);
     expect(native.rows[0]!.height).toBeGreaterThan(37);
     expect(p.document).toEqual(before);
   });

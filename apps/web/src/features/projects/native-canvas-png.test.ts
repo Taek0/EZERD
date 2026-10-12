@@ -56,8 +56,8 @@ describe('native PNG uses semantic source and common geometry', () => {
     const scene = nativeCanvasScene(source, '__tables__', 'physical');
     const { svg } = nativeCanvasSvg(source, scene, 'physical');
     const metrics = nativeTableCanvasMetrics(source, source.tables![0]!, 'physical');
-    expect(svg).toContain('font-size="26"');
     expect(svg).toContain('font-size="20"');
+    expect(svg).toContain('font-size="14"');
     expect(svg).toContain('native-png-null');
     expect(svg).toContain('fill="#f7f9fb"');
     expect(svg).not.toContain('>+</text>');
@@ -134,12 +134,12 @@ describe('native PNG uses semantic source and common geometry', () => {
     expect(svg).toContain('font-family:ui-monospace,SFMono-Regular,Consolas,monospace');
     for (const node of scene.nodes) {
       expect(svg).toContain(
-        `width="${node.width}" height="${node.height}" rx="${node.objectId === 'n' ? 3 : 5}"`,
+        `width="${node.width}" height="${node.height}" rx="${node.objectId === 'n' ? 3 : 8}"`,
       );
     }
     expect(svg).toContain('clip-path="url(#native-card-0-col-1)"');
-    expect(svg).toContain('font-size="26"');
     expect(svg).toContain('font-size="20"');
+    expect(svg).toContain('font-size="14"');
   });
   it('encodes image/png at the bounded common 2x scale and downloads only in the captured context', async () => {
     vi.useFakeTimers();

@@ -1,3 +1,4 @@
+import { NativeNavigatorTable } from './NativeNavigatorTable.js';
 import { isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -375,4 +376,67 @@ it('does not show or select a preview when durable enqueue fails', async () => {
       (table) => table.id === 'instant',
     ),
   ).toBe(false);
+});
+
+it('opens the existing column editor from the independent navigator without writing the document', () => {
+  const ui = creationFixture();
+  ui.entry.document!.tables!.forEach((table) => {
+    table.scope = 'both';
+  });
+  ui.entry.document!.columns!.forEach((column) => {
+    column.scope = 'both';
+  });
+  const original = JSON.stringify(ui.entry.document);
+  const tree = ui.render();
+  const navigator = tree.find((node) => node.props.className === 'native-project-navigator')!;
+  const shell = tree.find((node) => node.props.className === 'native-project-navigator-shell')!;
+  expect(shell.props.inert).toBe(false);
+  expect(shell.props['aria-hidden']).toBe(false);
+  const row = nodes(navigator).find(
+    (node) => node.type === NativeNavigatorTable && node.props.name === 'audit',
+  )!;
+  expect(row).toBeDefined();
+  (ui.canvas().props.onToggleInspector as () => void)();
+  expect(ui.canvas().props.inspectorOpen).toBe(false);
+  (row.props.onSelectColumn as (id: string) => void)('cb');
+  expect(ui.canvas().props.selectedTableId).toBe('b');
+  expect(ui.canvas().props.selectedColumnId).toBe('cb');
+  expect(ui.canvas().props.inspectorOpen).toBe(true);
+  expect(
+    ui
+      .render()
+      .some(
+        (node) =>
+          node.type === NativePropertyEditor &&
+          (node.props.column as { id: string } | undefined)?.id === 'cb',
+      ),
+  ).toBe(true);
+  expect(JSON.stringify(ui.entry.document)).toBe(original);
+  expect(nativeSaveIntents(clipboardActor, ui.snapshot.project.id)).toEqual([]);
+});
+
+it('retains navigator search while selecting a matching column and preserves the current canvas scope', () => {
+  const ui = creationFixture();
+  ui.entry.document!.tables!.forEach((table) => {
+    table.scope = 'both';
+  });
+  ui.entry.document!.columns!.forEach((column) => {
+    column.scope = 'both';
+  });
+  const input = ui.render().find((node) => node.props['aria-label'] === '현재 화면 검색')!;
+  (input.props.onChange as (event: { target: { value: string } }) => void)({
+    target: { value: 'copy' },
+  });
+  const rows = ui.render().filter((node) => node.type === NativeNavigatorTable);
+  expect(rows.map((row) => row.props.name)).toEqual(['audit']);
+  (rows[0]!.props.onSelectColumn as (id: string) => void)('cb');
+  expect(
+    ui.render().find((node) => node.props['aria-label'] === '현재 화면 검색')!.props.value,
+  ).toBe('copy');
+  expect(
+    ui
+      .render()
+      .filter((node) => node.type === NativeNavigatorTable)
+      .map((node) => node.props.name),
+  ).toEqual(['audit']);
 });

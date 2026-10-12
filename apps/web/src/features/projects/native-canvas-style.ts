@@ -27,6 +27,7 @@ export function nativeCanvasStyleCommands(
 export {
   nativeTableCanvasRows,
   nativeTableCanvasHeaderHeight,
+  nativeTableCanvasTypography,
   nativeTableCanvasFooterHeight,
   nativeCanvasFontFamily,
   nativeRelationLabelWidth,
@@ -44,6 +45,11 @@ export function nativeTableHeaderColor(document: NativeDesignDocument, table: Na
   return (
     table.color ??
     document.domains.find((domain) => domain.id === table.domainId)?.color ??
-    '#8993a3'
+    '#435975'
   );
+}
+
+/** Table titles use the same fixed white ink on screen and in PNG exports. */
+export function nativeTableHeaderTextColor(_document: NativeDesignDocument, _table: NativeTable) {
+  return '#ffffff';
 }

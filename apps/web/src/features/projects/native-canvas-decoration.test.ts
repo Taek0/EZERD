@@ -30,8 +30,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 describe('native common style/domain relation UI and geometry', () => {
   it('produces only changed presentation fields and preserves native labels and source payloads', () => {
-    const source = decorationFixture(),
-      before = structuredClone(source);
+    const source = decorationFixture();
+    // Explicit line breaks keep this visibility test independent of the visual font size.
+    source.columns![0]!.physical.comment += '\nSecond visible line';
+    const before = structuredClone(source);
     expect(
       nativeCanvasStyleCommands(
         { kind: 'table', id: 't' },

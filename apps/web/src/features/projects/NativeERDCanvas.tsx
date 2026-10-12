@@ -630,6 +630,7 @@ function NativeCanvasWorkspace({
   toolbarHost,
   pathHost,
   panelToggle,
+  navigatorControl,
   selectionHost,
 }: {
   document: NativeDesignDocument;
@@ -690,6 +691,7 @@ function NativeCanvasWorkspace({
   toolbarHost?: HTMLElement | null;
   pathHost?: HTMLElement | null;
   panelToggle?: ReactNode;
+  navigatorControl?: ReactNode;
   selectionHost?: HTMLElement | null;
 }) {
   // Parent panel/resize state must not invalidate the memoized document scene.
@@ -2354,7 +2356,7 @@ function NativeCanvasWorkspace({
   }, [reviewFocus?.nonce, effectiveView]);
   const toolbar = (
     <NativeCanvasToolbar
-      {...{ panelToggle }}
+      {...{ panelToggle, navigatorControl }}
       {...(pathHost !== undefined ? { pathHost } : {})}
       exportControl={exportControl}
       viewId={effectiveView}

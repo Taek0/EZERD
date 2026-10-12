@@ -36,6 +36,7 @@ registerTranslations({
 export interface NativeCanvasToolbarProps {
   pathHost?: HTMLElement | null | undefined;
   panelToggle?: ReactNode;
+  navigatorControl?: ReactNode;
   exportControl?: ReactNode;
   viewId: string;
   views: { id: string; name: string }[];
@@ -85,6 +86,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   exportControl,
   pathHost,
   panelToggle,
+  navigatorControl,
 }: NativeCanvasToolbarProps) {
   const { t } = useI18n();
   const logicalMode = useNativeLogicalMode();
@@ -141,9 +143,11 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
     <div className="canvas-toolbar native-canvas-toolbar" data-view-id={viewId}>
       {pathHost === undefined ? path : pathHost ? createPortal(path, pathHost) : null}
       <div className="actions">
+        {navigatorControl && <div className="native-navigator-control">{navigatorControl}</div>}
         <div className="toolbar-group toolbar-create" role="group" aria-label={t('편집 도구')}>
           {onCreate && (
             <Button
+              variant="primary"
               className="native-toolbar-action"
               disabled={writeBlocked}
               onClick={() => onCreate(viewId === 'overview' ? 'domain' : 'table')}
@@ -202,6 +206,12 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               ENUM
             </Button>
           )}
+        </div>
+        <div
+          className="toolbar-group native-export-group"
+          role="group"
+          aria-label={t('프로젝트 내보내기')}
+        >
           {exportControl ??
             ((onExportProject || onExportDDL || onExportPNG) && (
               <Dropdown
@@ -264,11 +274,12 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
           role="group"
           aria-label={t('협업과 속성 패널')}
         >
+          {panelToggle}
           {onToggleInspector && (
             <IconButton
               className="inspector-toggle panel-toggle"
               aria-label={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
-              title={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
+              tooltip={t(inspectorOpen ? '속성 패널 숨기기' : '속성 패널 열기')}
               aria-pressed={inspectorOpen}
               aria-expanded={inspectorOpen}
               aria-controls="native-canvas-inspector"
@@ -280,7 +291,6 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               </svg>
             </IconButton>
           )}
-          {panelToggle}
         </div>
       </div>
     </div>

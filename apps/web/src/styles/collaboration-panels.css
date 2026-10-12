@@ -4,7 +4,11 @@
   padding: 16px;
   font-size: 13px;
   overscroll-behavior: contain;
-  animation: collaboration-panel-enter 160ms ease-out;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 160ms ease,
+    transform 160ms cubic-bezier(0.2, 0.7, 0.3, 1);
   transform-origin: top right;
 }
 .app-shell .mcp-panel .ui-button {
@@ -39,37 +43,33 @@
   padding: 14px;
   font-size: 13px;
   overscroll-behavior: contain;
-  animation: collaboration-panel-enter 160ms ease-out;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 160ms ease,
+    transform 160ms cubic-bezier(0.2, 0.7, 0.3, 1);
   transform-origin: top right;
 }
 .app-shell .mcp-panel[data-closing='true'],
 .notifications .notification-popover[data-closing='true'] {
-  animation: collaboration-panel-exit 160ms ease-in forwards;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
   pointer-events: none;
 }
-@keyframes collaboration-panel-enter {
-  from {
-    opacity: 0;
-    transform: translateY(-5px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-@keyframes collaboration-panel-exit {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
+/* CSS transitions reverse from the current presentation when close is cancelled. */
+@starting-style {
+  .app-shell .mcp-panel,
+  .notifications .notification-popover {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .app-shell .mcp-panel,
-  .notifications .notification-popover {
-    animation: none;
+  .notifications .notification-popover,
+  .app-shell .mcp-panel[data-closing='true'],
+  .notifications .notification-popover[data-closing='true'] {
+    transition: none;
+    transform: none;
   }
 }

@@ -14,12 +14,24 @@ export function nativeTableCanvasRows(
 }
 
 // Keep source card typography, displayed bounds, relation ports and PNG in one coordinate system.
-export const nativeTableCanvasHeaderHeight = 50 + 34;
-export const nativeTableCanvasFooterHeight = 40;
+export const nativeTableCanvasTypography = {
+  title: 20,
+  text: 14,
+  line: 22,
+  columnHeader: 28,
+  footer: 32,
+} as const;
+export const nativeTableCanvasHeaderHeight = 50 + nativeTableCanvasTypography.columnHeader;
+export const nativeTableCanvasFooterHeight = nativeTableCanvasTypography.footer;
 /** Matches styles/tokens.css --font-sans; SVG images cannot inherit the page token. */
-export const nativeCanvasFontFamily = "'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
+export const nativeCanvasFontFamily =
+  "'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
 const textWidth = (value: string) =>
-  [...value].reduce((width, character) => width + (character.charCodeAt(0) > 255 ? 20 : 12.4), 0);
+  [...value].reduce(
+    (width, character) =>
+      width + (character.charCodeAt(0) > 255 ? nativeTableCanvasTypography.text : 8.68),
+    0,
+  );
 export const nativeRelationLabelWidth = (label: string) =>
   Math.max(
     90,
@@ -91,11 +103,11 @@ export function nativeTableCanvasMetrics(
   const showNullable = table.canvasDisplay?.showNullable !== false;
   const showComment = table.canvasDisplay?.showComment !== false;
   const widths = [
-    54,
-    Math.max(100, ...rows.map((row) => Math.min(216, textWidth(row.name)))),
-    Math.max(108, ...rows.map((row) => Math.min(234, textWidth(row.type) + 16))),
-    40,
-    Math.max(96, ...rows.map((row) => Math.min(288, textWidth(row.comment)))),
+    34,
+    Math.max(92, ...rows.map((row) => Math.min(190, textWidth(row.name)))),
+    Math.max(88, ...rows.map((row) => Math.min(214, textWidth(row.type) + 12))),
+    32,
+    Math.max(100, ...rows.map((row) => Math.min(240, textWidth(row.comment)))),
   ];
   const lines = (value: string, width: number) =>
     value
@@ -110,7 +122,7 @@ export function nativeTableCanvasMetrics(
         lines(row.type, widths[2]!),
         showComment ? lines(row.comment, widths[4]!) : 1,
       ) *
-        28 +
+        nativeTableCanvasTypography.line +
       9,
   }));
   const visibleWidths = widths.filter(
@@ -122,13 +134,14 @@ export function nativeTableCanvasMetrics(
     width: Math.max(
       280,
       visibleWidths.reduce((sum, width) => sum + width, 0) + 20 + (visibleWidths.length - 1) * 6,
-      (textWidth(title) * 26) / 20 + 24,
+      (textWidth(title) * nativeTableCanvasTypography.title) / nativeTableCanvasTypography.text +
+        24,
     ),
     height: Math.max(
-      180,
+      170,
       nativeTableCanvasHeaderHeight +
         Math.max(
-          37,
+          nativeTableCanvasTypography.line + 9,
           measuredRows.reduce((sum, row) => sum + row.height, 0),
         ) +
         nativeTableCanvasFooterHeight,

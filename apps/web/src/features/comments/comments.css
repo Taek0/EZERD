@@ -497,7 +497,8 @@
   font-size: 12px;
 }
 .comment-pin.ui-icon-button:hover {
-  background: var(--button-hover-background);
+  background: var(--button-primary-hover);
+  color: var(--button-primary-text);
   box-shadow: var(--ui-product-raised);
 }
 .notification-popover {

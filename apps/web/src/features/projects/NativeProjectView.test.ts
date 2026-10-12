@@ -192,3 +192,15 @@ it.each(['ko', 'en'] as const)(
     setLocale('ko');
   },
 );
+it('renders nested unassigned tables and columns with a resizable explorer and no duplicate outline tab', () => {
+  setLocale('ko');
+  const html = renderToStaticMarkup(
+    createElement(NativeProjectView, { entry: entry(), onLeave() {}, onReload() {} }),
+  );
+  expect(html).toMatch(
+    /native-navigator-domain-group[\s\S]*미소속[\s\S]*native-navigator-domain-tables[\s\S]*orders[\s\S]*native-navigator-columns[\s\S]*amount/,
+  );
+  expect(html).toContain('aria-label="탐색 패널 너비"');
+  expect(html).toContain('aria-valuemin="200"');
+  expect(html).not.toContain('inspector-tabs');
+});

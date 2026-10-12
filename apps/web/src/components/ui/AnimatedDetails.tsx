@@ -29,6 +29,7 @@ export function AnimatedDetails({
         const from = element.getBoundingClientRect().height;
         animation.current?.cancel();
         target.current = opening;
+        element.setAttribute('data-collapsing', String(!opening));
         element.open = true;
         const style = getComputedStyle(element);
         const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
@@ -47,6 +48,7 @@ export function AnimatedDetails({
         current.onfinish = () => {
           if (animation.current !== current) return;
           element.open = opening;
+          element.removeAttribute('data-collapsing');
           element.style.overflow = '';
           animation.current = null;
           target.current = null;

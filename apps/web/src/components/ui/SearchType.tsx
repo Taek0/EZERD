@@ -108,7 +108,11 @@ export function SearchType({
           }}
         />
       </Group>
-      <UntitledPopover {...(container ? { UNSTABLE_portalContainer: container } : {})}>
+      <UntitledPopover
+        className="ui-type-popover"
+        maxHeight={360}
+        {...(container ? { UNSTABLE_portalContainer: container } : {})}
+      >
         <ListBox<{ value: string; label: string }>
           className="ui-select-list"
           renderEmptyState={() => t('검색 결과가 없습니다.')}
