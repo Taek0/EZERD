@@ -1,4 +1,5 @@
 import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
+import { nativeEditorDraftRefSchema } from '@ezerd/contracts';
 import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeCanvasInputForm, type NativeCanvasSubmit } from './NativeCanvasInputForm.js';
@@ -170,6 +171,9 @@ describe('native canvas form gesture-submit registration', () => {
     ui.render();
     await vi.advanceTimersByTimeAsync(5000);
     expect(save).toHaveBeenCalledTimes(1);
+    const reference = save.mock.calls[0]?.[2];
+    expect(nativeEditorDraftRefSchema.safeParse(reference).success).toBe(true);
+    expect(Object.keys(reference as object).sort()).toEqual(['key', 'revision']);
     expect(save.mock.calls[0]?.[0]).toEqual([
       {
         type: 'upsert_relation_layout',
@@ -238,7 +242,7 @@ describe('native canvas form gesture-submit registration', () => {
         },
       ],
       sentDraft!.expected,
-      sentDraft,
+      { key: sentDraft!.key, revision: sentDraft!.revision },
     );
     ui.change('route', '51');
     const newer = ui.draft();
@@ -375,7 +379,7 @@ describe('native canvas form gesture-submit registration', () => {
         },
       ],
       { version: 8, sequence: 11, databaseRevision: 3 },
-      second,
+      { key: second.key, revision: second.revision },
     ]);
     ui.snapshot.sequence++;
     ui.props.initial = { ...ui.props.initial, route: '20' };

@@ -159,7 +159,12 @@ export function NativeCanvasInputForm({
         setStorageError(message(error));
         return;
       }
-      if (await context.onSave(commands, captured.expected, captured)) {
+      if (
+        await context.onSave(commands, captured.expected, {
+          key: captured.key,
+          revision: captured.revision,
+        })
+      ) {
         discardNativeEditorDraft(context.userId, context.snapshot.project.id, captured);
         if (latest.current.revision === captured.revision) {
           recoveryInput.current = false;
