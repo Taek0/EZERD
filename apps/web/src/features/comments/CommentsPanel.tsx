@@ -655,7 +655,8 @@ export function Notifications({
         title={t('알림')}
         aria-expanded={opened}
         onClick={() => {
-          if (opened) notificationPanel.close();
+          if (notificationPanel.closing) notificationPanel.cancelClose();
+          else if (opened) notificationPanel.close();
           else setOpened(true);
           setRefresh((v) => v + 1);
         }}

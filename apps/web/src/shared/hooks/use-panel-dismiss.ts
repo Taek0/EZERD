@@ -5,7 +5,16 @@ export function usePanelDismiss(onClose: () => void, enabled = true) {
   const callback = useRef(onClose);
   callback.current = onClose;
   const [closing, setClosing] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  const clearCloseTimer = () => {
+    if (timer.current !== undefined) window.clearTimeout(timer.current);
+    timer.current = undefined;
+  };
   const close = () => setClosing(true);
+  const cancelClose = () => {
+    clearCloseTimer();
+    setClosing(false);
+  };
   useEffect(() => {
     if (!enabled) {
       setClosing(false);
@@ -16,7 +25,7 @@ export function usePanelDismiss(onClose: () => void, enabled = true) {
         setClosing(true);
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
         event.preventDefault();
         setClosing(true);
       }
@@ -31,8 +40,11 @@ export function usePanelDismiss(onClose: () => void, enabled = true) {
   useEffect(() => {
     if (!closing || !enabled) return;
     const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 160;
-    const timer = window.setTimeout(() => callback.current(), delay);
-    return () => window.clearTimeout(timer);
+    timer.current = window.setTimeout(() => {
+      timer.current = undefined;
+      callback.current();
+    }, delay);
+    return clearCloseTimer;
   }, [closing, enabled]);
-  return { ref, closing, close };
+  return { ref, closing, close, cancelClose };
 }
