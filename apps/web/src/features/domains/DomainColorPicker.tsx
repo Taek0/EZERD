@@ -1,3 +1,4 @@
+import './domain-color-picker.css';
 import { translate as tr, useI18n } from '../../shared/i18n/index.js';
 import '../canvas/translations.js';
 import {
