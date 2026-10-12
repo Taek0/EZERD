@@ -1456,6 +1456,7 @@ export function NativeProjectView({
         ) : (
           <>
             <div
+              ref={navigatorResize.ref}
               className="review-workspace native-review-workspace"
               data-navigator-open={navigatorOpen}
               data-resizing-navigator={navigatorResize.resizing}

@@ -22,9 +22,28 @@ vi.mock('react', async (original) => ({
   },
 }));
 let stored: string | null = null;
+const frames = new Map<number, FrameRequestCallback>();
+let frameId = 0;
+const styles = new Map<string, string>();
+const target = {
+  focus: vi.fn(),
+  setPointerCapture: vi.fn(),
+  hasPointerCapture: () => true,
+  releasePointerCapture: vi.fn(),
+  setAttribute: vi.fn(),
+};
+function tick() {
+  const tasks = [...frames.values()];
+  frames.clear();
+  tasks.forEach((task) => task(0));
+}
 function render() {
   host.cursor = 0;
-  return useNavigatorResize();
+  const hook = useNavigatorResize();
+  hook.ref.current = {
+    style: { setProperty: (key: string, value: string) => styles.set(key, value) },
+  } as unknown as HTMLDivElement;
+  return hook;
 }
 function pointer(x: number, id = 1) {
   return {
@@ -32,12 +51,7 @@ function pointer(x: number, id = 1) {
     clientX: x,
     pointerId: id,
     preventDefault: vi.fn(),
-    currentTarget: {
-      focus: vi.fn(),
-      setPointerCapture: vi.fn(),
-      hasPointerCapture: () => true,
-      releasePointerCapture: vi.fn(),
-    },
+    currentTarget: target,
   } as unknown as Parameters<
     NonNullable<ReturnType<typeof useNavigatorResize>['separator']['onPointerDown']>
   >[0];
@@ -45,6 +59,13 @@ function pointer(x: number, id = 1) {
 beforeEach(() => {
   host.slots = [];
   stored = null;
+  frames.clear();
+  styles.clear();
+  vi.stubGlobal('requestAnimationFrame', (task: FrameRequestCallback) => {
+    frames.set(++frameId, task);
+    return frameId;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
   vi.stubGlobal('localStorage', {
     getItem: () => stored,
     setItem: (_key: string, value: string) => {
@@ -59,10 +80,14 @@ describe('explorer resizing', () => {
     render().separator.onPointerMove!(pointer(300, 2));
     expect(render().width).toBe(240);
     render().separator.onPointerMove!(pointer(318));
-    expect(render().width).toBe(320);
+    tick();
+    expect(render().width).toBe(240);
+    expect(styles.get('--native-navigator-width')).toBe('320px');
     expect(stored).toBe('240');
     render().separator.onPointerMove!(pointer(900));
-    expect(render().width).toBe(420);
+    tick();
+    expect(render().width).toBe(240);
+    expect(styles.get('--native-navigator-width')).toBe('420px');
     render().separator.onPointerUp!(pointer(900));
     expect(render().resizing).toBe(false);
     expect(stored).toBe('420');

@@ -1,3 +1,4 @@
+import { createPanelWidthPreview } from '../../shared/editor/panel-width-preview.js';
 import { useEffect, useRef, useState, type HTMLAttributes } from 'react';
 
 export const navigatorBounds = { min: 200, max: 420, default: 240 };
@@ -16,7 +17,14 @@ export function useNavigatorResize() {
     }
   });
   const [resizing, setResizing] = useState(false);
-  const drag = useRef<{ pointer: number; x: number; width: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const drag = useRef<{
+    pointer: number;
+    x: number;
+    width: number;
+    preview: ReturnType<typeof createPanelWidthPreview>;
+  } | null>(null);
+  useEffect(() => () => drag.current?.preview.cancel(), []);
   useEffect(() => {
     if (resizing) return;
     try {
@@ -26,6 +34,7 @@ export function useNavigatorResize() {
     }
   }, [width, resizing]);
   const finish = () => {
+    drag.current?.preview.finish();
     drag.current = null;
     setResizing(false);
   };
@@ -37,25 +46,45 @@ export function useNavigatorResize() {
     'aria-valuemax': navigatorBounds.max,
     'aria-valuenow': width,
     onPointerDown(event) {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || drag.current || !ref.current) return;
       event.preventDefault();
-      event.currentTarget.focus();
+      event.currentTarget.focus({ preventScroll: true });
       event.currentTarget.setPointerCapture(event.pointerId);
-      drag.current = { pointer: event.pointerId, x: event.clientX, width };
+      drag.current = {
+        pointer: event.pointerId,
+        x: event.clientX,
+        width,
+        preview: createPanelWidthPreview(
+          ref.current,
+          '--native-navigator-width',
+          event.currentTarget,
+          width,
+          setWidth,
+        ),
+      };
       setResizing(true);
     },
     onPointerMove(event) {
       if (drag.current?.pointer !== event.pointerId) return;
-      setWidth(navigatorWidth(drag.current.width + event.clientX - drag.current.x));
+      drag.current.preview.update(
+        navigatorWidth(drag.current.width + event.clientX - drag.current.x),
+      );
     },
     onPointerUp(event) {
       if (drag.current?.pointer !== event.pointerId) return;
+      drag.current.preview.update(
+        navigatorWidth(drag.current.width + event.clientX - drag.current.x),
+      );
       finish();
       if (event.currentTarget.hasPointerCapture(event.pointerId))
         event.currentTarget.releasePointerCapture(event.pointerId);
     },
-    onPointerCancel: finish,
-    onLostPointerCapture: finish,
+    onPointerCancel: (event) => {
+      if (drag.current?.pointer === event.pointerId) finish();
+    },
+    onLostPointerCapture: (event) => {
+      if (drag.current?.pointer === event.pointerId) finish();
+    },
     onDoubleClick: () => setWidth(navigatorBounds.default),
     onKeyDown(event) {
       const step = event.shiftKey ? 40 : 10;
@@ -75,5 +104,5 @@ export function useNavigatorResize() {
       }
     },
   };
-  return { width, resizing, separator };
+  return { width, resizing, separator, ref };
 }

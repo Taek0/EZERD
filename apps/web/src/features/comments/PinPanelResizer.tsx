@@ -1,3 +1,4 @@
+import { createPanelWidthPreview } from '../../shared/editor/panel-width-preview.js';
 import { translate as t, useI18n } from '../../shared/i18n/index.js';
 import '../collaboration/translations.js';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
@@ -25,12 +26,18 @@ export function PinPanelResizer({ width, onWidthChange, onResizingChange }: Prop
     observer.observe(workspace);
     return () => observer.disconnect();
   }, []);
-  const drag = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+    preview: ReturnType<typeof createPanelWidthPreview>;
+  } | null>(null);
   const resizingCallback = useRef(onResizingChange);
   resizingCallback.current = onResizingChange;
   useEffect(
     () => () => {
       if (drag.current) {
+        drag.current.preview.finish();
         drag.current = null;
         resizingCallback.current?.(false);
       }
@@ -39,6 +46,14 @@ export function PinPanelResizer({ width, onWidthChange, onResizingChange }: Prop
   );
   function finish(event: PointerEvent<HTMLDivElement>) {
     if (drag.current?.pointerId !== event.pointerId) return;
+    if (event.type === 'pointerup')
+      drag.current.preview.update(
+        Math.min(
+          bounds.max,
+          Math.max(bounds.min, drag.current.startWidth + drag.current.startX - event.clientX),
+        ),
+      );
+    drag.current.preview.finish();
     drag.current = null;
     onResizingChange?.(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId))
@@ -75,15 +90,30 @@ export function PinPanelResizer({ width, onWidthChange, onResizingChange }: Prop
       tabIndex={0}
       onKeyDown={keydown}
       onPointerDown={(event) => {
-        if (!event.isPrimary || event.button !== 0 || drag.current) return;
+        if (
+          !event.isPrimary ||
+          event.button !== 0 ||
+          drag.current ||
+          !event.currentTarget.parentElement
+        )
+          return;
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.focus({ preventScroll: true });
         event.currentTarget.setPointerCapture(event.pointerId);
+        const startWidth =
+          event.currentTarget.parentElement.getBoundingClientRect().width || displayedWidth;
         drag.current = {
           pointerId: event.pointerId,
           startX: event.clientX,
-          startWidth: event.currentTarget.parentElement?.getBoundingClientRect().width ?? width,
+          startWidth,
+          preview: createPanelWidthPreview(
+            event.currentTarget.parentElement,
+            '--comments-panel-width',
+            event.currentTarget,
+            startWidth,
+            onWidthChange,
+          ),
         };
         onResizingChange?.(true);
       }}
@@ -92,7 +122,12 @@ export function PinPanelResizer({ width, onWidthChange, onResizingChange }: Prop
         if (!active || active.pointerId !== event.pointerId) return;
         event.preventDefault();
         event.stopPropagation();
-        changeWidth(active.startWidth + active.startX - event.clientX);
+        active.preview.update(
+          Math.min(
+            bounds.max,
+            Math.max(bounds.min, active.startWidth + active.startX - event.clientX),
+          ),
+        );
       }}
       onPointerUp={finish}
       onPointerCancel={finish}
