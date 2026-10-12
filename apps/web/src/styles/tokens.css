@@ -39,19 +39,31 @@
   --ui-danger: #9e3434;
 }
 
-/* Approved button proposal A; independent of form and card surfaces. */
+/* Flat action roles approved 2026-10-12. Keep control geometry in component recipes. */
 :root {
   --button-radius: 8px;
-  --button-background: linear-gradient(145deg, #f8f9fb, #e9edf2);
-  --button-primary-background: linear-gradient(145deg, #eaf0f7, #dce5ef);
-  --button-text: #414651;
-  --button-primary-text: #294f79;
-  --button-hover-background: #dfe7f0;
-  --button-hover-text: #24476d;
-  --button-pressed-background: #dce5ef;
-  --button-selected-background: #dce7f4;
-  --button-selected-text: #234f80;
-  --button-shadow-inset: inset 2px 2px 5px #aeb7c440, inset -2px -2px 5px #ffffffb3;
-  --button-danger-background: #f4e9e9;
-  --button-danger-hover: #eddbdb;
+  --button-background: #fff;
+  --button-text: #445166;
+  --button-border: #d8dfe9;
+  --button-hover-background: #f3f5f8;
+  --button-hover-text: #25344b;
+  --button-hover-border: #b9c5d6;
+  --button-pressed-background: #e8edf3;
+  --button-pressed-border: #aebbd0;
+  --button-primary-background: #263347;
+  --button-primary-text: #fff;
+  --button-primary-hover: #37455d;
+  --button-primary-pressed: #192537;
+  --button-selected-background: #e8edf5;
+  --button-selected-text: #304867;
+  --button-selected-border: #bac9dd;
+  --button-danger-background: #fff;
+  --button-danger-hover: #fcf2f2;
+  --button-danger-pressed: #f8e6e6;
+  --button-danger-border: #e1c9c9;
+  --button-disabled-background: #f1f3f6;
+  --button-disabled-text: #7c8798;
+  --button-disabled-border: #e4e8ee;
+  --button-focus: #5278b7;
+  --button-shadow-inset: none;
 }
