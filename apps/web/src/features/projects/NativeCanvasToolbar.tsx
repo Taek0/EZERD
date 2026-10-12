@@ -144,6 +144,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
         <div className="toolbar-group toolbar-create" role="group" aria-label={t('편집 도구')}>
           {onCreate && (
             <Button
+              variant="primary"
               className="native-toolbar-action"
               disabled={writeBlocked}
               onClick={() => onCreate(viewId === 'overview' ? 'domain' : 'table')}
@@ -202,6 +203,12 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               ENUM
             </Button>
           )}
+        </div>
+        <div
+          className="toolbar-group native-export-group"
+          role="group"
+          aria-label={t('프로젝트 내보내기')}
+        >
           {exportControl ??
             ((onExportProject || onExportDDL || onExportPNG) && (
               <Dropdown

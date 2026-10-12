@@ -11,6 +11,7 @@ import './styles/editor-feedback.css';
 import './styles/canvas-viewport.css';
 import './styles/editor-topbar.css';
 import './styles/navigation-controls.css';
+import './styles/product-design.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -5,11 +5,14 @@ import {
   nativeCardColor,
   nativeTableCanvasMetrics,
   nativeTableCanvasHeaderHeight,
+  nativeTableCanvasFooterHeight,
+  nativeTableCanvasTypography,
   nativeRelationLabelWidth,
   nativeCanvasFontFamily,
   nativeTableCanvasTitle,
   nativeTableCanvasNamespace,
   nativeTableHeaderColor,
+  nativeTableHeaderTextColor,
 } from './native-canvas-style.js';
 import type { NativeDesignDocument, NodeLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
@@ -115,7 +118,7 @@ export function nativeCanvasSvg(
       let contents = '';
       const cardClip = `native-card-${index}`;
       const clips: string[] = [
-        `<clipPath id="${cardClip}"><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${note ? 3 : table ? 5 : 12}"/></clipPath>`,
+        `<clipPath id="${cardClip}"><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${note ? 3 : table ? 8 : 12}"/></clipPath>`,
       ];
       if (table) {
         const showNullable = table.canvasDisplay?.showNullable !== false,
@@ -159,20 +162,20 @@ export function nativeCanvasSvg(
         clips.push(
           `<clipPath id="${cardClip}-title"><rect x="${node.x + 10}" y="${node.y}" width="${(globalView ? node.width * 0.58 : node.width) - 20}" height="50"/></clipPath>`,
         );
-        contents += `<g fill="#ffffff" class="native-png-header native-png-title" clip-path="url(#${cardClip}-title)">${text(node.x + 10, node.y + 34, title, 26)}</g>`;
+        contents += `<g style="color:${nativeTableHeaderTextColor(document, table)}" class="native-png-header native-png-title" clip-path="url(#${cardClip}-title)">${text(node.x + 10, node.y + 32, title, nativeTableCanvasTypography.title)}</g>`;
         clips.push(
           `<clipPath id="${cardClip}-owner"><rect x="${node.x + node.width * 0.6}" y="${node.y}" width="${node.width * 0.4 - 10}" height="50"/></clipPath>`,
         );
         if (globalView)
-          contents += `<g class="native-png-header" clip-path="url(#${cardClip}-owner)">${text(node.x + node.width - 10, node.y + 27, owner, 13, 'end')}${namespace ? text(node.x + node.width - 10, node.y + 40, namespace, 10, 'end') : ''}</g>`;
-        contents += `<rect x="${node.x}" y="${node.y + 50}" width="${node.width}" height="34" fill="#f3f5f7"/>`;
+          contents += `<g style="color:${nativeTableHeaderTextColor(document, table)}" class="native-png-header" clip-path="url(#${cardClip}-owner)">${text(node.x + node.width - 10, node.y + 27, owner, 13, 'end')}${namespace ? text(node.x + node.width - 10, node.y + 40, namespace, 10, 'end') : ''}</g>`;
+        contents += `<rect x="${node.x}" y="${node.y + 50}" width="${node.width}" height="${nativeTableCanvasTypography.columnHeader}" fill="#f3f6fa"/>`;
         let x = node.x + 11;
         for (const [i, col] of columns.entries()) {
           const clip = `${cardClip}-col-${i}`;
           clips.push(
             `<clipPath id="${clip}"><rect x="${x}" y="${node.y + 50}" width="${Math.max(0, col.width)}" height="${Math.max(0, node.height - 50)}"/></clipPath>`,
           );
-          contents += `<g class="native-png-column-head" clip-path="url(#${clip})">${text(x, node.y + 73, col.label, 14)}</g>`;
+          contents += `<g class="native-png-column-head" clip-path="url(#${clip})">${text(x, node.y + 69, col.label, 11)}</g>`;
           x += col.width + 6;
         }
         let offset = nativeTableCanvasHeaderHeight;
@@ -180,7 +183,7 @@ export function nativeCanvasSvg(
           const keys = row.keys.split(' '),
             pk = keys.includes('PK'),
             fk = keys.includes('FK');
-          const fill = pk && fk ? '#f1f0ff' : pk ? '#fff7df' : fk ? '#edf5ff' : '#ffffff';
+          const fill = pk && fk ? '#f4f2fc' : pk ? '#fffcf3' : fk ? '#f4f8ff' : '#ffffff';
           contents += `<rect x="${node.x}" y="${node.y + offset}" width="${node.width}" height="${row.height}" fill="${fill}"/><path d="M ${node.x} ${node.y + offset + row.height} H ${node.x + node.width}" style="stroke:#edf0f3;stroke-width:1"/>`;
           let x = node.x + 11;
           for (const [i, col] of columns.entries()) {
@@ -193,7 +196,7 @@ export function nativeCanvasSvg(
                 mode === 'physical' ? row.column.physical.nullable : row.column.logical.required;
               contents += `<g class="native-png-null" clip-path="url(#${cardClip}-col-${i})"><title>${xml(translate(row.nullable))}</title><rect x="${x}" y="${node.y + offset + row.height / 2 - 8}" width="16" height="16" rx="4" fill="${checked ? '#4169e1' : '#fff'}" stroke="#d0d5dd"/>${checked ? `<path d="M ${x + 3} ${node.y + offset + row.height / 2} l 3 3 l 7 -7" stroke="#fff" stroke-width="2"/>` : ''}</g>`;
             } else
-              contents += `<g class="native-png-${col.key}" clip-path="url(#${cardClip}-col-${i})"><title>${xml(value)}</title>${wrappedText(x, node.y + offset + 25, value, col.width, col.key === 'keys' ? 14 : 20, 28)}</g>`;
+              contents += `<g class="native-png-${col.key}" clip-path="url(#${cardClip}-col-${i})"><title>${xml(value)}</title>${wrappedText(x, node.y + offset + 21, value, col.width, col.key === 'keys' ? 11 : nativeTableCanvasTypography.text, nativeTableCanvasTypography.line)}</g>`;
             x += col.width + 6;
           }
           offset += row.height;
@@ -206,7 +209,7 @@ export function nativeCanvasSvg(
             15,
           );
         // Original prepareExportContent strips action buttons, preserving their card chrome.
-        contents += `<rect x="${node.x}" y="${node.y + node.height - 40}" width="${node.width}" height="40" fill="#f7f9fb"/>`;
+        contents += `<rect x="${node.x}" y="${node.y + node.height - nativeTableCanvasFooterHeight}" width="${node.width}" height="${nativeTableCanvasFooterHeight}" fill="#f7f9fb"/>`;
       } else if (domain) {
         const domainTitle = wrappedText(node.x + 20, node.y + 73, title, node.width - 40, 28, 36.4);
         const titleRows = Math.min(2, (domainTitle.match(/<text /g) ?? []).length);
@@ -246,7 +249,7 @@ export function nativeCanvasSvg(
         const [source, target] = nativeRelationEnds(relation),
           width = nativeRelationLabelWidth(label);
         const marker = (end: typeof source) => `native-png-crow-${end.min}-${end.max}`;
-        return `<g class="native-png-relation"><path d="${xml(geometry.path)}" marker-start="url(#${marker(source)})" marker-end="url(#${marker(target)})"${mode === 'logical' ? ' stroke-dasharray="6 4"' : ''}/><rect x="${geometry.labelX - width / 2}" y="${geometry.labelY - 13}" width="${width}" height="28" rx="9" fill="#fafbfc" stroke="#bdc8d8"/>${text(geometry.labelX, geometry.labelY + 5, label, 12, 'middle')}</g>`;
+        return `<g class="native-png-relation"><path d="${xml(geometry.path)}" marker-start="url(#${marker(source)})" marker-end="url(#${marker(target)})"${mode === 'logical' ? ' stroke-dasharray="6 4"' : ''}/><rect x="${geometry.labelX - width / 2}" y="${geometry.labelY - 13}" width="${width}" height="28" rx="9" fill="#fafcfe" stroke="#bdc8d8"/>${text(geometry.labelX, geometry.labelY + 5, label, 12, 'middle')}</g>`;
       })
       .join('') +
     domains
@@ -255,16 +258,16 @@ export function nativeCanvasSvg(
           `<g class="native-png-domain-relation"><path d="${xml(geometry.path)}" marker-end="url(#native-png-arrow)"${relation.direction === 'both' ? ' marker-start="url(#native-png-arrow)"' : ''}/>${geometry.labelAnchor ? `<path class="native-png-domain-leader" d="M ${geometry.labelAnchor.x} ${geometry.labelAnchor.y} L ${geometry.label.x} ${geometry.label.y + 4}"/>` : ''}${text(geometry.label.x, geometry.label.y, relation.name, 14, 'middle')}</g>`,
       )
       .join('');
-  const relationColor = mode === 'physical' ? '#4169e1' : '#617087';
+  const relationColor = mode === 'physical' ? '#7089ad' : '#788aa3';
   const crowDefs = ([0, 1] as const)
     .flatMap((min) =>
       ([1, 'many'] as const).map(
         (max) =>
-          `<marker id="native-png-crow-${min}-${max}" viewBox="0 0 32 24" refX="30" refY="12" markerWidth="32" markerHeight="24" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><g fill="none" stroke="${relationColor}" stroke-width="1.7"><path d="${nativeRelationEndPath(max)}"/>${min === 0 ? '<circle cx="10" cy="12" r="5" fill="#fafbfc"/>' : '<path d="M 13 4 L 13 20"/>'}</g></marker>`,
+          `<marker id="native-png-crow-${min}-${max}" viewBox="0 0 32 24" refX="30" refY="12" markerWidth="32" markerHeight="24" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><g fill="none" stroke="${relationColor}" stroke-width="1.7"><path d="${nativeRelationEndPath(max)}"/>${min === 0 ? '<circle cx="10" cy="12" r="5" fill="#fafcfe"/>' : '<path d="M 13 4 L 13 20"/>'}</g></marker>`,
       ),
     )
     .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}"><style>text{fill:#26344a;font-family:${nativeCanvasFontFamily}}path{stroke:#617087;stroke-width:1.5;fill:none}.native-png-header text{fill:#ffffff}.native-png-title text{font-weight:700}.native-png-column-head text{font-weight:600;fill:#617087}.native-png-domain-overline text{fill:#667995;letter-spacing:1.7px}.native-png-domain-body text{fill:#617087}.native-png-note-body text{fill:#555447}.native-png-relation>path{stroke:${relationColor};stroke-width:2}marker[id^="native-png-crow"] path{stroke:${relationColor};stroke-width:1.7}marker path{fill:none}.native-png-keys text{fill:#4169e1;font-weight:700}.native-png-type text{fill:#737d87;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.native-png-null path{stroke:#fff;stroke-width:2}.native-png-domain-relation>path{stroke:#74829a;stroke-width:1.7}.native-png-domain-relation .native-png-domain-leader{stroke-width:1;stroke-dasharray:3 3;opacity:.55}.native-png-domain-relation text{fill:#526582;stroke:#f6f8fb;stroke-width:5;paint-order:stroke}#native-png-arrow path{fill:#74829a;stroke:none}</style><defs>${crowDefs}<marker id="native-png-arrow" viewBox="0 0 10 10" markerWidth="7" markerHeight="7" refX="9" refY="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#f6f8fb"/>${paths}${cards}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}"><style>text{fill:#243248;font-family:${nativeCanvasFontFamily}}path{stroke:#617087;stroke-width:1.5;fill:none}.native-png-header text{fill:currentColor}.native-png-title text{font-weight:700}.native-png-column-head text{font-weight:600;fill:#617087}.native-png-domain-overline text{fill:#667995;letter-spacing:1.7px}.native-png-domain-body text{fill:#617087}.native-png-note-body text{fill:#555447}.native-png-relation>path{stroke:${relationColor};stroke-width:2}marker[id^="native-png-crow"] path{stroke:${relationColor};stroke-width:1.7}marker path{fill:none}.native-png-keys text{fill:#59749a;font-weight:700}.native-png-type text{fill:#607592;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.native-png-null path{stroke:#fff;stroke-width:2}.native-png-domain-relation>path{stroke:#74829a;stroke-width:1.7}.native-png-domain-relation .native-png-domain-leader{stroke-width:1;stroke-dasharray:3 3;opacity:.55}.native-png-domain-relation text{fill:#526582;stroke:#fafcfe;stroke-width:5;paint-order:stroke}#native-png-arrow path{fill:#74829a;stroke:none}</style><defs>${crowDefs}<marker id="native-png-arrow" viewBox="0 0 10 10" markerWidth="7" markerHeight="7" refX="9" refY="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#fafcfe"/>${paths}${cards}</svg>`;
   return { svg, bounds };
 }
 export async function exportNativeCanvasPng(
