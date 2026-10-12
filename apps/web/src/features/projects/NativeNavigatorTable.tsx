@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { Button, IconButton } from '../../components/ui/index.js';
+import { ChevronDown } from '../../components/ui/untitled.js';
 import { useI18n } from '../../shared/i18n/index.js';
 import { nativeInspectorMatches } from './native-inspector-state.js';
 
@@ -74,14 +75,17 @@ export function NativeNavigatorTable({
           onClick={() => setExpanded((value) => !value)}
         >
           <span className="native-navigator-chevron" data-open={open}>
-            ›
+            <ChevronDown />
           </span>
         </IconButton>
         <Button
           className="native-navigator-select"
           variant="ghost"
           aria-current={active || undefined}
-          onClick={onSelect}
+          onClick={() => {
+            setExpanded(true);
+            onSelect();
+          }}
           title={name}
         >
           <span className="panel-row-dot" style={{ background: accent }} aria-hidden="true" />

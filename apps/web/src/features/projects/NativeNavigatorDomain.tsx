@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Button, IconButton } from '../../components/ui/index.js';
+import { ChevronDown } from '../../components/ui/untitled.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 registerTranslations({
   '테이블 펼치기': 'Expand tables',
@@ -45,7 +46,7 @@ export function NativeNavigatorDomain({
           onClick={() => setExpanded((value) => !value)}
         >
           <span className="native-navigator-chevron" data-open={expanded}>
-            ›
+            <ChevronDown />
           </span>
         </IconButton>
         <Button

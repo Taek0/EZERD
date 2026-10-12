@@ -236,11 +236,11 @@
 }
 .native-navigator-chevron {
   display: inline-block;
-  transform: rotate(0deg);
+  transform: rotate(-90deg);
   transition: transform 160ms ease;
 }
 .native-navigator-chevron[data-open='true'] {
-  transform: rotate(90deg);
+  transform: rotate(0deg);
 }
 @media (prefers-reduced-motion: reduce) {
   .native-navigator-collapse,

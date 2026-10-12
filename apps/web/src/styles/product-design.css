@@ -962,3 +962,46 @@ body {
   padding-top: 12px;
   border-top: 1px solid #dce5f0;
 }
+/* Disclosure is not selection. Preserve row selection and keyboard focus independently. */
+.native-project-navigator .native-navigator-table-row .ui-button[aria-expanded='true'] {
+  background: transparent;
+  color: inherit;
+  outline-color: transparent;
+  box-shadow: none;
+}
+.native-project-navigator .native-navigator-table-row .ui-button:hover {
+  background: #edf2fa;
+}
+.native-project-navigator .native-navigator-table-row .ui-button:focus-visible,
+.native-project-navigator .native-navigator-table-row .ui-button[data-focus-visible] {
+  outline: 2px solid #6385b3;
+  outline-offset: 1px;
+}
+.native-navigator-chevron {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+.native-navigator-chevron > svg {
+  width: 100%;
+  height: 100%;
+}
+.native-project-navigator .panel-section > summary > .ui-chevron {
+  order: -1;
+  margin: 0;
+}
+.native-project-navigator .panel-section:not([open]) > summary > .ui-chevron,
+.native-project-navigator .panel-section[data-collapsing='true'] > summary > .ui-chevron {
+  transform: rotate(-90deg);
+}
+.native-project-navigator
+  .panel-section[open]:not([data-collapsing='true'])
+  > summary
+  > .ui-chevron {
+  transform: rotate(0deg);
+}
+.workspace-switcher-trigger,
+.workspace-switcher-trigger * {
+  user-select: none;
+  -webkit-user-select: none;
+}
