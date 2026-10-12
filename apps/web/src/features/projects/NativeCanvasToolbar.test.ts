@@ -147,7 +147,7 @@ it('keeps logical design, review and recovery in More, invoking their actions wh
   expect(onOpenRecovery).toHaveBeenCalledOnce();
 });
 
-it('places the inspector toggle before pins and removes the physical/logical button group', () => {
+it('places explorer on the left and inspector after pins on the right', () => {
   const html = renderToStaticMarkup(
     createElement(NativeCanvasToolbar, {
       viewId: '__tables__',
@@ -161,9 +161,11 @@ it('places the inspector toggle before pins and removes the physical/logical but
       onMode() {},
       onToggleInspector() {},
       panelToggle: createElement('button', null, 'PIN_MARKER'),
+      navigatorControl: createElement('button', null, 'EXPLORER_MARKER'),
     }),
   );
-  expect(html.indexOf('native-canvas-inspector')).toBeLessThan(html.indexOf('PIN_MARKER'));
+  expect(html.indexOf('EXPLORER_MARKER')).toBeLessThan(html.indexOf('toolbar-create'));
+  expect(html.indexOf('PIN_MARKER')).toBeLessThan(html.indexOf('native-canvas-inspector'));
   expect(html).not.toContain('모델 보기');
   expect(html).not.toContain('>물리<');
   expect(html).not.toContain('>논리<');

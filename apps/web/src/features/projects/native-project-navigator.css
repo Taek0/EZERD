@@ -152,7 +152,7 @@
   .app-shell.editor-shell .review-workspace.native-review-workspace[data-navigator-open='false'] {
     grid-template-columns: 0 minmax(0, 1fr);
   }
-  .native-review-workspace > .native-project-navigator {
+  .native-review-workspace > .native-project-navigator-shell {
     grid-column: 1;
     grid-row: 1 / 3;
   }

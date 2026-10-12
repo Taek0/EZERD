@@ -1154,22 +1154,24 @@ export function NativeProjectView({
     setInspectorTab('properties');
     setInspectorOpen(true);
   }
+  const navigatorControl = (
+    <IconButton
+      ref={navigatorToggle}
+      aria-label={t(navigatorOpen ? '탐색 패널 숨기기' : '탐색 패널 열기')}
+      tooltip={t(navigatorOpen ? '탐색 패널 숨기기' : '탐색 패널 열기')}
+      aria-pressed={navigatorOpen}
+      aria-expanded={navigatorOpen}
+      aria-controls="native-project-navigator"
+      onClick={() => setNavigatorOpen((value) => !value)}
+    >
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <rect x="2" y="3" width="16" height="14" rx="3" stroke="currentColor" />
+        <path d="M8 3v14" stroke="currentColor" />
+      </svg>
+    </IconButton>
+  );
   const panelToggle = (
     <div className="toolbar-group panel-toggles" role="group" aria-label={t('협업과 속성 패널')}>
-      <IconButton
-        ref={navigatorToggle}
-        aria-label={t(navigatorOpen ? '탐색 패널 숨기기' : '탐색 패널 열기')}
-        tooltip={t(navigatorOpen ? '탐색 패널 숨기기' : '탐색 패널 열기')}
-        aria-pressed={navigatorOpen}
-        aria-expanded={navigatorOpen}
-        aria-controls="native-project-navigator"
-        onClick={() => setNavigatorOpen((value) => !value)}
-      >
-        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <rect x="2" y="3" width="16" height="14" rx="3" stroke="currentColor" />
-          <path d="M8 3v14" stroke="currentColor" />
-        </svg>
-      </IconButton>
       {userId && (
         <IconButton
           aria-label={t(commentsOpen ? '핀 패널 숨기기' : '핀 패널 열기')}
@@ -1459,192 +1461,197 @@ export function NativeProjectView({
               data-resizing-navigator={navigatorResize.resizing}
               style={{ '--native-navigator-width': `${navigatorResize.width}px` } as CSSProperties}
             >
-              <aside
-                className="native-project-navigator"
-                id="native-project-navigator"
-                aria-label={t('설계 탐색')}
-                hidden={!navigatorOpen}
+              <div
+                className="native-project-navigator-shell"
+                inert={!navigatorOpen}
+                aria-hidden={!navigatorOpen}
               >
-                <div className="native-navigator-heading">
-                  <strong>{t('설계 탐색')}</strong>
-                  <IconButton
-                    variant="ghost"
-                    aria-label={t('탐색 패널 숨기기')}
-                    onClick={() => {
-                      setNavigatorOpen(false);
-                      navigatorToggle.current?.focus();
-                    }}
-                  >
-                    ×
-                  </IconButton>
-                </div>
                 <aside
-                  className="native-table-nav native-inspector-panel"
-                  role="region"
-                  id={`${snapshot.project.id}-tables`}
-                  aria-label={t('테이블')}
+                  className="native-project-navigator"
+                  id="native-project-navigator"
+                  aria-label={t('설계 탐색')}
                 >
-                  <label>
-                    {t('현재 화면 검색')}
-                    <Input
-                      ref={navigatorSearch}
-                      aria-label={t('현재 화면 검색')}
-                      placeholder={t(
-                        canvasView === 'overview' ? '도메인·관계 검색' : '테이블·컬럼·관계 검색',
-                      )}
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                    />
-                  </label>
-                  <Select
-                    aria-label={t('전체 도메인')}
-                    value={domain}
-                    onValueChange={setDomain}
-                    renderOptionLeading={(id) => {
-                      const item = doc.domains.find((candidate) => candidate.id === id);
-                      return item ? (
-                        <span
-                          className="native-domain-option-dot"
-                          style={{ backgroundColor: item.color ?? '#8993a3' }}
-                          aria-hidden="true"
-                        />
-                      ) : null;
-                    }}
-                  >
-                    <option value="*">{t('전체 도메인')}</option>
-                    <option value="">{t('미소속')}</option>
-                    {doc.domains.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </Select>
-                  <PanelSection
-                    title={t('데이터 모델')}
-                    defaultOpen={false}
-                    count={canvasView === 'overview' ? doc.domains.length : tables.length}
-                  >
-                    <PanelList
-                      empty={t(
-                        canvasView === 'overview'
-                          ? '표시할 도메인이 없습니다.'
-                          : '선택한 범위에 테이블이 없습니다.',
-                      )}
+                  <div className="native-navigator-heading">
+                    <strong>{t('설계 탐색')}</strong>
+                    <IconButton
+                      variant="ghost"
+                      aria-label={t('탐색 패널 숨기기')}
+                      onClick={() => {
+                        setNavigatorOpen(false);
+                        navigatorToggle.current?.focus();
+                      }}
                     >
-                      {[
-                        ...doc.domains.map((item) => ({
-                          id: item.id as string | null,
-                          name: item.name,
-                          color: item.color ?? '#8993a3',
-                        })),
-                        { id: null, name: t('미소속'), color: '#8993a3' },
-                      ]
-                        .filter(
-                          (group) =>
-                            (domain === '*' ||
-                              (domain === '' ? group.id === null : group.id === domain)) &&
-                            (tables.some((table) => table.domainId === group.id) ||
-                              (group.id !== null &&
-                                (canvasView === 'overview' || canvasView === '__tables__') &&
-                                (!search.trim() || matches(group.name)))),
-                        )
-                        .map((group) => {
-                          const members = tables.filter((table) => table.domainId === group.id);
-                          return (
-                            <NativeNavigatorDomain
-                              key={group.id ?? '__unassigned__'}
-                              name={group.name}
-                              color={group.color}
-                              count={members.length}
-                              active={group.id !== null && selectedDomain === group.id}
-                              revealKey={`${search}:${selectedTable?.id ?? ''}:${editingColumn ?? ''}`}
-                              reveal={!!search.trim()}
-                              onOpen={group.id === null ? undefined : () => openDomain(group.id!)}
-                            >
-                              {members.map((table) => (
-                                <NativeNavigatorTable
-                                  key={table.id}
-                                  name={tableName(table.id)}
-                                  active={selectedTable?.id === table.id}
-                                  expanded={expandedNavigatorTables[table.id] ?? false}
-                                  onExpandedChange={(expanded) =>
-                                    setExpandedNavigatorTables((previous) => ({
-                                      ...previous,
-                                      [table.id]: expanded,
-                                    }))
-                                  }
-                                  accent={table.color ?? group.color}
-                                  columns={navigatorColumns.get(table.id) ?? []}
-                                  selectedColumn={editingColumn}
-                                  search={search}
-                                  badge={
-                                    canvasView !== '__tables__' &&
-                                    canvasView !== 'overview' &&
-                                    table.domainId !== canvasView
-                                      ? t('참조')
-                                      : undefined
-                                  }
-                                  onSelect={() => selectFromNavigator(table.id)}
-                                  onSelectColumn={(id) => selectFromNavigator(table.id, id)}
-                                />
-                              ))}
-                              {!members.length && (
-                                <li className="panel-note">
-                                  {t('선택한 범위에 테이블이 없습니다.')}
-                                </li>
-                              )}
-                            </NativeNavigatorDomain>
-                          );
-                        })}
-                    </PanelList>
-                  </PanelSection>
-                  <PanelSection
-                    title={t(canvasView === 'overview' ? '도메인 관계' : '테이블 관계')}
-                    count={
-                      canvasView === 'overview'
-                        ? filteredDomainRelations.length
-                        : filteredTableRelations.length
-                    }
-                    defaultOpen={false}
+                      ×
+                    </IconButton>
+                  </div>
+                  <aside
+                    className="native-table-nav native-inspector-panel"
+                    role="region"
+                    id={`${snapshot.project.id}-tables`}
+                    aria-label={t('테이블')}
                   >
-                    <PanelList empty={t('표시할 관계가 없습니다.')}>
-                      {canvasView === 'overview'
-                        ? filteredDomainRelations.map((relation) => (
-                            <PanelRow
-                              key={relation.id}
-                              title={relation.name}
-                              meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
-                              onSelect={() => requestAction('domainRelation', relation.id)}
-                            />
-                          ))
-                        : filteredTableRelations.map((relation) => (
-                            <PanelRow
-                              key={relation.id}
-                              title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
-                              meta={
-                                relation.physical?.name ||
-                                (logicalEnabled ? relation.logical.name : '')
-                              }
-                              badge={relation.physical ? 'FK' : undefined}
-                              onSelect={() =>
-                                requestStructure(
-                                  'patch',
-                                  JSON.stringify(['tableRelations', relation.id]),
-                                  relation.sourceTableId,
-                                )
-                              }
-                            />
-                          ))}
-                    </PanelList>
-                  </PanelSection>
+                    <label>
+                      {t('현재 화면 검색')}
+                      <Input
+                        ref={navigatorSearch}
+                        aria-label={t('현재 화면 검색')}
+                        placeholder={t(
+                          canvasView === 'overview' ? '도메인·관계 검색' : '테이블·컬럼·관계 검색',
+                        )}
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                      />
+                    </label>
+                    <Select
+                      aria-label={t('전체 도메인')}
+                      value={domain}
+                      onValueChange={setDomain}
+                      renderOptionLeading={(id) => {
+                        const item = doc.domains.find((candidate) => candidate.id === id);
+                        return item ? (
+                          <span
+                            className="native-domain-option-dot"
+                            style={{ backgroundColor: item.color ?? '#8993a3' }}
+                            aria-hidden="true"
+                          />
+                        ) : null;
+                      }}
+                    >
+                      <option value="*">{t('전체 도메인')}</option>
+                      <option value="">{t('미소속')}</option>
+                      {doc.domains.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <PanelSection
+                      title={t('데이터 모델')}
+                      defaultOpen={false}
+                      count={canvasView === 'overview' ? doc.domains.length : tables.length}
+                    >
+                      <PanelList
+                        empty={t(
+                          canvasView === 'overview'
+                            ? '표시할 도메인이 없습니다.'
+                            : '선택한 범위에 테이블이 없습니다.',
+                        )}
+                      >
+                        {[
+                          ...doc.domains.map((item) => ({
+                            id: item.id as string | null,
+                            name: item.name,
+                            color: item.color ?? '#8993a3',
+                          })),
+                          { id: null, name: t('미소속'), color: '#8993a3' },
+                        ]
+                          .filter(
+                            (group) =>
+                              (domain === '*' ||
+                                (domain === '' ? group.id === null : group.id === domain)) &&
+                              (tables.some((table) => table.domainId === group.id) ||
+                                (group.id !== null &&
+                                  (canvasView === 'overview' || canvasView === '__tables__') &&
+                                  (!search.trim() || matches(group.name)))),
+                          )
+                          .map((group) => {
+                            const members = tables.filter((table) => table.domainId === group.id);
+                            return (
+                              <NativeNavigatorDomain
+                                key={group.id ?? '__unassigned__'}
+                                name={group.name}
+                                color={group.color}
+                                count={members.length}
+                                active={group.id !== null && selectedDomain === group.id}
+                                revealKey={`${search}:${selectedTable?.id ?? ''}:${editingColumn ?? ''}`}
+                                reveal={!!search.trim()}
+                                onOpen={group.id === null ? undefined : () => openDomain(group.id!)}
+                              >
+                                {members.map((table) => (
+                                  <NativeNavigatorTable
+                                    key={table.id}
+                                    name={tableName(table.id)}
+                                    active={selectedTable?.id === table.id}
+                                    expanded={expandedNavigatorTables[table.id] ?? false}
+                                    onExpandedChange={(expanded) =>
+                                      setExpandedNavigatorTables((previous) => ({
+                                        ...previous,
+                                        [table.id]: expanded,
+                                      }))
+                                    }
+                                    accent={table.color ?? group.color}
+                                    columns={navigatorColumns.get(table.id) ?? []}
+                                    selectedColumn={editingColumn}
+                                    search={search}
+                                    badge={
+                                      canvasView !== '__tables__' &&
+                                      canvasView !== 'overview' &&
+                                      table.domainId !== canvasView
+                                        ? t('참조')
+                                        : undefined
+                                    }
+                                    onSelect={() => selectFromNavigator(table.id)}
+                                    onSelectColumn={(id) => selectFromNavigator(table.id, id)}
+                                  />
+                                ))}
+                                {!members.length && (
+                                  <li className="panel-note">
+                                    {t('선택한 범위에 테이블이 없습니다.')}
+                                  </li>
+                                )}
+                              </NativeNavigatorDomain>
+                            );
+                          })}
+                      </PanelList>
+                    </PanelSection>
+                    <PanelSection
+                      title={t(canvasView === 'overview' ? '도메인 관계' : '테이블 관계')}
+                      count={
+                        canvasView === 'overview'
+                          ? filteredDomainRelations.length
+                          : filteredTableRelations.length
+                      }
+                      defaultOpen={false}
+                    >
+                      <PanelList empty={t('표시할 관계가 없습니다.')}>
+                        {canvasView === 'overview'
+                          ? filteredDomainRelations.map((relation) => (
+                              <PanelRow
+                                key={relation.id}
+                                title={relation.name}
+                                meta={`${doc.domains.find((item) => item.id === relation.sourceDomainId)?.name ?? '?'} ${relation.direction === 'both' ? '↔' : '→'} ${doc.domains.find((item) => item.id === relation.targetDomainId)?.name ?? '?'}`}
+                                onSelect={() => requestAction('domainRelation', relation.id)}
+                              />
+                            ))
+                          : filteredTableRelations.map((relation) => (
+                              <PanelRow
+                                key={relation.id}
+                                title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
+                                meta={
+                                  relation.physical?.name ||
+                                  (logicalEnabled ? relation.logical.name : '')
+                                }
+                                badge={relation.physical ? 'FK' : undefined}
+                                onSelect={() =>
+                                  requestStructure(
+                                    'patch',
+                                    JSON.stringify(['tableRelations', relation.id]),
+                                    relation.sourceTableId,
+                                  )
+                                }
+                              />
+                            ))}
+                      </PanelList>
+                    </PanelSection>
+                  </aside>
+                  <div
+                    {...navigatorResize.separator}
+                    className="native-navigator-resize"
+                    aria-label={t('탐색 패널 너비')}
+                    aria-controls="native-project-navigator"
+                  />
                 </aside>
-                <div
-                  {...navigatorResize.separator}
-                  className="native-navigator-resize"
-                  aria-label={t('탐색 패널 너비')}
-                  aria-controls="native-project-navigator"
-                />
-              </aside>
+              </div>
               <div
                 className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}${stackedInspector ? ' inspector-stacked' : ''}`}
                 ref={workspaceRef}
@@ -1678,6 +1685,7 @@ export function NativeProjectView({
                     toolbarHost,
                     pathHost,
                     panelToggle,
+                    navigatorControl,
                     selectionHost: selectedNote ? noteSelectionHost : domainSelectionHost,
                     ...(editingColumn ? { selectedColumnId: editingColumn } : {}),
                     ...(requestedView ? { requestedView } : {}),

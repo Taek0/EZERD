@@ -1005,3 +1005,39 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
+/* Spatially match each panel control to its side of the canvas. */
+.native-navigator-control {
+  margin-right: auto;
+  flex: none;
+}
+.native-project-navigator-shell {
+  flex: 0 0 var(--native-navigator-width);
+  width: var(--native-navigator-width);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+}
+.native-project-navigator-shell > .native-project-navigator {
+  height: 100%;
+}
+[data-navigator-open='false'] > .native-project-navigator-shell {
+  flex-basis: 0;
+  width: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .native-project-navigator-shell {
+    transition:
+      flex-basis 220ms ease,
+      width 220ms ease,
+      opacity 160ms ease,
+      visibility 220ms;
+  }
+}
+[data-resizing-navigator='true'] > .native-project-navigator-shell {
+  transition: none;
+}
