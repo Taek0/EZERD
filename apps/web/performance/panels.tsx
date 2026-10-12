@@ -21,6 +21,7 @@ import './panels.css';
 declare const __PERF_COMMIT__: string;
 declare const __PERF_DIRTY__: boolean;
 declare const __PANEL_BASELINE__: boolean;
+declare const __PANEL_INTERACTION_BASELINE__: boolean;
 const actor = '90000000-0000-4000-8000-000000000031',
   project = '90000000-0000-4000-8000-000000000032';
 if (location.hostname !== '127.0.0.1' || location.port !== '4180')
@@ -290,6 +291,131 @@ function Demo() {
       setRunning(false);
     }
   }
+  async function runInteractions() {
+    if (running) return;
+    setRunning(true);
+    setOutput('');
+    const results: unknown[] = [];
+    try {
+      await document.fonts.ready;
+      button('탐색 패널 열기')?.click();
+      button('핀 패널 열기')?.click();
+      button('속성 패널 열기')?.click();
+      await settle();
+      root.current!.querySelector<HTMLElement>('.native-erd-node.table')!.click();
+      await settle();
+      const fingerprint = fixtureFingerprint(fixture.document);
+      for (const kind of ['navigator', 'pins', 'column'] as const) {
+        for (let repetition = 0; repetition < 4; repetition++) {
+          const intervals: number[] = [];
+          commits.current = [];
+          collector.start({
+            scenario: 'panel-interactions',
+            kind,
+            repetition,
+            count,
+            columns: 10,
+            commit: __PERF_COMMIT__,
+            dirty: __PERF_DIRTY__,
+            baseline: __PANEL_INTERACTION_BASELINE__,
+            viewport: [innerWidth, innerHeight],
+            dpr: devicePixelRatio,
+            userAgent: navigator.userAgent,
+          });
+          active.current = true;
+          let last = await frame();
+          const tick = async () => {
+            const now = await frame();
+            intervals.push(now - last);
+            last = now;
+          };
+          let targetReached = true;
+          if (kind === 'column') {
+            const row = root.current!.querySelector<HTMLButtonElement>(
+              'button[aria-controls^="native-column-"]',
+            );
+            if (!row) throw Error('Missing column row');
+            for (const open of [true, false]) {
+              row.click();
+              for (let i = 0; i < 30; i++) await tick();
+              targetReached &&= row.getAttribute('aria-expanded') === String(open);
+            }
+          } else {
+            const label = kind === 'pins' ? '핀 패널 너비 조절' : '탐색 패널 너비';
+            const separator = root.current!.querySelector<HTMLElement>(
+              `[role="separator"][aria-label="${label}"]`,
+            )!;
+            if (!separator) throw Error('Missing separator ' + label);
+            const original = {
+              set: separator.setPointerCapture,
+              has: separator.hasPointerCapture,
+              release: separator.releasePointerCapture,
+            };
+            // Synthetic pointer events have no browser-owned pointer. Limit the capture shim to this separator.
+            separator.setPointerCapture = () => {};
+            separator.hasPointerCapture = () => true;
+            separator.releasePointerCapture = () => {};
+            const initial = Number(separator.getAttribute('aria-valuenow'));
+            const dispatch = (type: string, x: number) =>
+              separator.dispatchEvent(
+                new PointerEvent(type, {
+                  bubbles: true,
+                  pointerId: 91,
+                  pointerType: 'mouse',
+                  isPrimary: true,
+                  button: 0,
+                  buttons: type === 'pointerup' ? 0 : 1,
+                  clientX: x,
+                  clientY: 300,
+                }),
+              );
+            try {
+              dispatch('pointerdown', 800);
+              for (let i = 0; i < 60; i++) {
+                for (let j = 0; j < 4; j++)
+                  dispatch(
+                    'pointermove',
+                    800 +
+                      (kind === 'pins' ? -1 : 1) * 80 * Math.sin((Math.PI * (i * 4 + j + 1)) / 240),
+                  );
+                await tick();
+              }
+              dispatch('pointerup', 800);
+              await tick();
+              await tick();
+              targetReached =
+                Math.abs(Number(separator.getAttribute('aria-valuenow')) - initial) < 1;
+            } finally {
+              separator.setPointerCapture = original.set;
+              separator.hasPointerCapture = original.has;
+              separator.releasePointerCapture = original.release;
+            }
+          }
+          active.current = false;
+          const { samples: _samples, ...measurement } = collector.stop();
+          results.push({
+            kind,
+            repetition,
+            warmup: repetition === 0,
+            measurement,
+            frames: stats(intervals),
+            react: stats(commits.current),
+            targetReached,
+            documentUnchanged: fingerprint === fixtureFingerprint(fixture.document),
+          });
+          await settle();
+        }
+      }
+      setOutput(JSON.stringify({ results }, null, 2));
+    } catch (error) {
+      active.current = false;
+      collector.cancel();
+      setOutput(JSON.stringify({ error: String(error), results }));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   return (
     <>
       <header className="panel-lab-controls">
@@ -370,6 +496,22 @@ function Demo() {
             </button>
           )),
         )}
+        <button disabled={running} onClick={() => void runInteractions()}>
+          Measure resize and columns
+        </button>
+        <button
+          disabled={!output || running}
+          onClick={() => {
+            const url = URL.createObjectURL(new Blob([output], { type: 'application/json' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `panel-interactions-${__PANEL_INTERACTION_BASELINE__ ? 'before' : 'after'}-${count}.json`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }}
+        >
+          Download panel JSON
+        </button>
         <output aria-label="Panel status">
           {running ? 'running' : output ? 'complete' : 'ready'}
         </output>

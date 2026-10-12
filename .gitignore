@@ -18,3 +18,5 @@ dist-performance-comparison/
 
 dist-marquee-before/
 dist-marquee-after/
+**/dist-panel-before/
+**/dist-panel-after/

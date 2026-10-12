@@ -1,3 +1,4 @@
+import { panelInteractionBaselinePlugin } from './performance/panel-interaction-baseline-plugin.js';
 import { actualFixturePlugin } from './performance/actual-fixture-plugin.js';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -16,12 +17,16 @@ export default defineConfig(() => {
     throw new Error('Invalid performance frame mode');
   return {
     resolve: {
-      alias: comparison
-        ? [{ find: /^react-dom\/client$/, replacement: 'react-dom/profiling' }]
-        : [],
+      alias:
+        comparison || process.env.EZERD_PANEL_INTERACTIONS === '1'
+          ? [{ find: /^react-dom\/client$/, replacement: 'react-dom/profiling' }]
+          : [],
     },
     plugins: [
       actualFixturePlugin(),
+      ...(process.env.EZERD_PANEL_INTERACTION_BASELINE === '1'
+        ? [panelInteractionBaselinePlugin()]
+        : []),
       ...(process.env.EZERD_PANEL_BASELINE === '1' ? [panelBaselinePlugin()] : []),
       ...(process.env.EZERD_PANEL_DETAIL === '1'
         ? [
@@ -45,6 +50,9 @@ export default defineConfig(() => {
       tailwindcss(),
     ],
     define: {
+      __PANEL_INTERACTION_BASELINE__: JSON.stringify(
+        process.env.EZERD_PANEL_INTERACTION_BASELINE === '1',
+      ),
       __PANEL_BASELINE__: JSON.stringify(process.env.EZERD_PANEL_BASELINE === '1'),
       __PERF_FRAME_MODE__: JSON.stringify(frameMode),
       __PERF_DIRTY__: JSON.stringify(
