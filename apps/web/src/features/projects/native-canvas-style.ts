@@ -45,23 +45,11 @@ export function nativeTableHeaderColor(document: NativeDesignDocument, table: Na
   return (
     table.color ??
     document.domains.find((domain) => domain.id === table.domainId)?.color ??
-    '#edf2f8'
+    '#435975'
   );
 }
 
-/** Choose readable text without replacing a user-defined table/domain color. */
-export function nativeTableHeaderTextColor(document: NativeDesignDocument, table: NativeTable) {
-  const background = nativeTableHeaderColor(document, table);
-  const luminance = (hex: string) => {
-    const channels = [1, 3, 5].map((offset) => {
-      const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
-      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-    });
-    return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722;
-  };
-  const bg = luminance(background),
-    ink = luminance('#243248');
-  const darkContrast = (Math.max(bg, ink) + 0.05) / (Math.min(bg, ink) + 0.05);
-  const lightContrast = 1.05 / (bg + 0.05);
-  return darkContrast >= lightContrast ? '#243248' : '#ffffff';
+/** Table titles use the same fixed white ink on screen and in PNG exports. */
+export function nativeTableHeaderTextColor(_document: NativeDesignDocument, _table: NativeTable) {
+  return '#ffffff';
 }

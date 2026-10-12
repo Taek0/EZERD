@@ -647,7 +647,7 @@ body {
   padding: 9px 11px;
 }
 .native-erd-node.table[data-selected='true'] .native-table-header:not([data-custom-color]) {
-  background: #eaf0ff !important;
+  background: #435975 !important;
 }
 .native-table-header > button,
 .native-table-header .native-table-title {
@@ -881,4 +881,15 @@ body {
   .workspace-popover[data-exiting] {
     animation: none;
   }
+}
+/* Commands stay on their existing row, collected beside the inspector controls. */
+.app-shell.editor-shell .native-canvas-toolbar .actions {
+  justify-content: flex-end;
+}
+.app-shell.editor-shell .native-canvas-toolbar .native-export-group {
+  margin-left: 0;
+}
+.native-table-header .native-table-title,
+.native-table-header > button {
+  color: #fff;
 }

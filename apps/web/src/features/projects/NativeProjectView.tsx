@@ -1,3 +1,5 @@
+import { NativeNavigatorDomain } from './NativeNavigatorDomain.js';
+import { useNavigatorResize } from './use-navigator-resize.js';
 import {
   NativeNavigatorTable,
   navigatorTableMatches,
@@ -29,14 +31,7 @@ import {
   nativeColumnTypeDisplay,
   planNativeDeletion,
 } from '@ezerd/model';
-import {
-  Button,
-  IconButton,
-  Input,
-  Select,
-  TabButton,
-  Textarea,
-} from '../../components/ui/index.js';
+import { Button, IconButton, Input, Select, Textarea } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 import './native-project-view.css';
 import { PanelSection, PanelList, PanelRow, PanelListDetail } from '../../shared/editor/panel.js';
@@ -359,13 +354,7 @@ export function NativeProjectView({
   const [navigatorOpen, setNavigatorOpen] = useState(true);
   const navigatorSearch = useRef<HTMLInputElement>(null);
   const navigatorToggle = useRef<HTMLButtonElement>(null);
-  const navigatorFocusRequested = useRef(false);
-  useEffect(() => {
-    if (navigatorOpen && navigatorFocusRequested.current) {
-      navigatorFocusRequested.current = false;
-      navigatorSearch.current?.focus();
-    }
-  }, [navigatorOpen]);
+  const navigatorResize = useNavigatorResize();
   const [inspectorTab, setInspectorTab] = useState<'properties' | 'domains'>('properties');
   const [inspectorWidth, setInspectorWidth] = useState(() => {
     try {
@@ -1016,16 +1005,20 @@ export function NativeProjectView({
     });
     navigatorColumns.set(column.tableId, list);
   }
-  const tables = outline.tables.filter(
+  const tables = (canvasView === 'overview' ? (doc?.tables ?? []) : outline.tables).filter(
     (table) =>
       visible(table.scope) &&
       (domain === '*' || (domain === '' ? table.domainId === null : table.domainId === domain)) &&
-      navigatorTableMatches(
+      (nativeInspectorMatches(
         search,
-        table.physical.name,
-        table.logical.name,
-        navigatorColumns.get(table.id) ?? [],
-      ),
+        doc?.domains.find((item) => item.id === table.domainId)?.name,
+      ) ||
+        navigatorTableMatches(
+          search,
+          table.physical.name,
+          table.logical.name,
+          navigatorColumns.get(table.id) ?? [],
+        )),
   );
   const matches = (...values: (string | undefined)[]) => nativeInspectorMatches(search, ...values);
   const filteredDomainRelations = (doc?.domainRelations ?? []).filter((relation) =>
@@ -1147,6 +1140,7 @@ export function NativeProjectView({
   });
   function selectFromNavigator(tableId: string, columnId?: string) {
     leaveRecoveredSelection();
+    if (canvasView === 'overview') setRequestedView({ id: '__tables__', nonce: Date.now() });
     setSelected(tableId);
     setSelectedDomain(null);
     setSelectedTableRelation(null);
@@ -1459,6 +1453,8 @@ export function NativeProjectView({
             <div
               className="review-workspace native-review-workspace"
               data-navigator-open={navigatorOpen}
+              data-resizing-navigator={navigatorResize.resizing}
+              style={{ '--native-navigator-width': `${navigatorResize.width}px` } as CSSProperties}
             >
               <aside
                 className="native-project-navigator"
@@ -1521,7 +1517,7 @@ export function NativeProjectView({
                     ))}
                   </Select>
                   <PanelSection
-                    title={t(canvasView === 'overview' ? '도메인' : '테이블')}
+                    title={t('데이터 모델')}
                     defaultOpen
                     count={canvasView === 'overview' ? doc.domains.length : tables.length}
                   >
@@ -1532,60 +1528,77 @@ export function NativeProjectView({
                           : '선택한 범위에 테이블이 없습니다.',
                       )}
                     >
-                      {canvasView === 'overview'
-                        ? doc.domains
-                            .filter((item) => matches(item.name, item.description))
-                            .map((item) => (
-                              <PanelRow
-                                key={item.id}
-                                title={item.name}
-                                accent={item.color ?? '#8993a3'}
-                                active={selectedDomain === item.id}
-                                meta={t('관계 {count}개', {
-                                  count: doc.domainRelations.filter(
-                                    (relation) =>
-                                      relation.sourceDomainId === item.id ||
-                                      relation.targetDomainId === item.id,
-                                  ).length,
-                                })}
-                                onSelect={() => {
-                                  leaveRecoveredSelection();
-                                  setSelectedDomain(item.id);
-                                  setInspectorOpen(true);
-                                  setInspectorTab('domains');
-                                }}
-                                action={
-                                  <Button disabled={editorBusy} onClick={() => openDomain(item.id)}>
-                                    {t('열기')}
-                                  </Button>
-                                }
-                              />
-                            ))
-                        : tables.map((table) => (
-                            <NativeNavigatorTable
-                              key={table.id}
-                              name={tableName(table.id)}
-                              active={selectedTable?.id === table.id}
-                              accent={
-                                table.color ??
-                                doc.domains.find((item) => item.id === table.domainId)?.color ??
-                                '#8993a3'
+                      {[
+                        ...doc.domains.map((item) => ({
+                          id: item.id as string | null,
+                          name: item.name,
+                          color: item.color ?? '#8993a3',
+                        })),
+                        { id: null, name: t('미소속'), color: '#8993a3' },
+                      ]
+                        .filter(
+                          (group) =>
+                            (domain === '*' ||
+                              (domain === '' ? group.id === null : group.id === domain)) &&
+                            (tables.some((table) => table.domainId === group.id) ||
+                              (group.id !== null &&
+                                (canvasView === 'overview' || canvasView === '__tables__') &&
+                                (!search.trim() || matches(group.name)))),
+                        )
+                        .map((group) => {
+                          const members = tables.filter((table) => table.domainId === group.id);
+                          return (
+                            <NativeNavigatorDomain
+                              key={group.id ?? '__unassigned__'}
+                              name={group.name}
+                              color={group.color}
+                              count={members.length}
+                              active={group.id !== null && selectedDomain === group.id}
+                              revealKey={`${search}:${selectedTable?.id ?? ''}:${editingColumn ?? ''}`}
+                              reveal={
+                                !!search.trim() ||
+                                members.some((table) => table.id === selectedTable?.id)
                               }
-                              columns={navigatorColumns.get(table.id) ?? []}
-                              selectedColumn={editingColumn}
-                              search={search}
-                              badge={
-                                canvasView === '__tables__'
-                                  ? (doc.domains.find((item) => item.id === table.domainId)?.name ??
-                                    t('미지정'))
-                                  : table.domainId === canvasView
-                                    ? undefined
-                                    : t('참조')
+                              onOpen={group.id === null ? undefined : () => openDomain(group.id!)}
+                              onSelect={
+                                group.id === null
+                                  ? undefined
+                                  : () => {
+                                      leaveRecoveredSelection();
+                                      setSelectedDomain(group.id);
+                                      setInspectorOpen(true);
+                                      setInspectorTab('domains');
+                                    }
                               }
-                              onSelect={() => selectFromNavigator(table.id)}
-                              onSelectColumn={(id) => selectFromNavigator(table.id, id)}
-                            />
-                          ))}
+                            >
+                              {members.map((table) => (
+                                <NativeNavigatorTable
+                                  key={table.id}
+                                  name={tableName(table.id)}
+                                  active={selectedTable?.id === table.id}
+                                  accent={table.color ?? group.color}
+                                  columns={navigatorColumns.get(table.id) ?? []}
+                                  selectedColumn={editingColumn}
+                                  search={search}
+                                  badge={
+                                    canvasView !== '__tables__' &&
+                                    canvasView !== 'overview' &&
+                                    table.domainId !== canvasView
+                                      ? t('참조')
+                                      : undefined
+                                  }
+                                  onSelect={() => selectFromNavigator(table.id)}
+                                  onSelectColumn={(id) => selectFromNavigator(table.id, id)}
+                                />
+                              ))}
+                              {!members.length && (
+                                <li className="panel-note">
+                                  {t('선택한 범위에 테이블이 없습니다.')}
+                                </li>
+                              )}
+                            </NativeNavigatorDomain>
+                          );
+                        })}
                     </PanelList>
                   </PanelSection>
                   <PanelSection
@@ -1628,6 +1641,12 @@ export function NativeProjectView({
                     </PanelList>
                   </PanelSection>
                 </aside>
+                <div
+                  {...navigatorResize.separator}
+                  className="native-navigator-resize"
+                  aria-label={t('탐색 패널 너비')}
+                  aria-controls="native-project-navigator"
+                />
               </aside>
               <div
                 className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}${stackedInspector ? ' inspector-stacked' : ''}`}
@@ -1880,31 +1899,6 @@ export function NativeProjectView({
                         </IconButton>
                       </div>
                     )}
-                    <div className="inspector-tabs" role="group" aria-label={t('패널 보기 전환')}>
-                      <TabButton
-                        selected={inspectorTab === 'properties' || inspectorTab === 'domains'}
-                        onClick={() =>
-                          setInspectorTab(canvasView === 'overview' ? 'domains' : 'properties')
-                        }
-                      >
-                        {t('속성')}
-                      </TabButton>
-                      <Button
-                        variant="ghost"
-                        aria-expanded={navigatorOpen}
-                        aria-controls="native-project-navigator"
-                        onClick={() => {
-                          navigatorFocusRequested.current = !navigatorOpen;
-                          setNavigatorOpen(true);
-                          if (navigatorOpen) navigatorSearch.current?.focus();
-                        }}
-                      >
-                        {t('목록')}{' '}
-                        <span className="panel-count">
-                          {canvasView === 'overview' ? doc.domains.length : tables.length}
-                        </span>
-                      </Button>
-                    </div>
                   </div>
                   <div className="native-canvas-settings-host" ref={setCanvasSettingsHost} />
                   <div

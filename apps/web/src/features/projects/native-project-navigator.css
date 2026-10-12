@@ -175,3 +175,77 @@
   margin-left: auto;
   flex: none;
 }
+/* Explorer resizing tracks the pointer directly; only discrete disclosures animate. */
+.native-project-navigator {
+  position: relative;
+  padding-right: 6px;
+}
+.native-navigator-resize {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 5;
+  outline-offset: -2px;
+}
+.native-navigator-resize::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.native-navigator-resize:hover::after,
+.native-navigator-resize:focus-visible::after,
+[data-resizing-navigator='true'] .native-navigator-resize::after {
+  background: #7194c9;
+}
+[data-resizing-navigator='true'] {
+  cursor: col-resize;
+  user-select: none;
+}
+.native-navigator-domain-group {
+  min-width: 0;
+  list-style: none;
+}
+.native-navigator-domain-tables {
+  list-style: none;
+  margin: 3px 0 6px 12px;
+  padding: 0 0 0 5px;
+  border-left: 1px solid var(--line);
+}
+.native-navigator-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 180ms ease,
+    opacity 140ms ease,
+    visibility 180ms;
+}
+.native-navigator-collapse[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+.native-navigator-collapse > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.native-navigator-chevron {
+  display: inline-block;
+  transform: rotate(0deg);
+  transition: transform 160ms ease;
+}
+.native-navigator-chevron[data-open='true'] {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .native-navigator-collapse,
+  .native-navigator-chevron,
+  .native-navigator-resize::after {
+    transition: none;
+  }
+}

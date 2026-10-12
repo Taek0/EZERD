@@ -52,7 +52,7 @@ export function NativeNavigatorTable({
   const [expanded, setExpanded] = useState(active);
   useEffect(() => {
     if (active) setExpanded(true);
-  }, [active]);
+  }, [active, selectedColumn]);
   const matchingColumns = search.trim()
     ? columns.filter((column) =>
         nativeInspectorMatches(search, column.physicalName, column.logicalName),
@@ -73,7 +73,9 @@ export function NativeNavigatorTable({
           disabled={!columns.length || searchingColumns}
           onClick={() => setExpanded((value) => !value)}
         >
-          {open ? '⌄' : '›'}
+          <span className="native-navigator-chevron" data-open={open}>
+            ›
+          </span>
         </IconButton>
         <Button
           className="native-navigator-select"
@@ -88,21 +90,31 @@ export function NativeNavigatorTable({
         </Button>
       </div>
       {badge && <small className="native-navigator-domain">{badge}</small>}
-      <ul id={id} className="native-navigator-columns" hidden={!open}>
-        {(open ? shown : []).map((column) => (
-          <li key={column.id}>
-            <Button
-              variant="ghost"
-              aria-current={(active && selectedColumn === column.id) || undefined}
-              onClick={() => onSelectColumn(column.id)}
-              title={`${column.name} · ${column.type}`}
-            >
-              <span className="native-navigator-name">{column.name}</span>
-              <small>{column.type}</small>
-            </Button>
-          </li>
-        ))}
-      </ul>
+      <div
+        id={id}
+        className="native-navigator-collapse"
+        data-open={open}
+        inert={!open}
+        aria-hidden={!open}
+      >
+        <div>
+          <ul className="native-navigator-columns">
+            {shown.map((column) => (
+              <li key={column.id}>
+                <Button
+                  variant="ghost"
+                  aria-current={(active && selectedColumn === column.id) || undefined}
+                  onClick={() => onSelectColumn(column.id)}
+                  title={`${column.name} · ${column.type}`}
+                >
+                  <span className="native-navigator-name">{column.name}</span>
+                  <small>{column.type}</small>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </li>
   );
 }

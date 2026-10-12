@@ -420,8 +420,8 @@ describe('simplified native inspector', () => {
       props = fixture();
     const render = () => root.render(() => NativeProjectView(props));
     for (const [view, objects, relations] of [
-      ['__tables__', '테이블', '테이블 관계'],
-      ['overview', '도메인', '도메인 관계'],
+      ['__tables__', '데이터 모델', '테이블 관계'],
+      ['overview', '데이터 모델', '도메인 관계'],
     ]) {
       (child(render(), NativeERDCanvas).props.onViewChange as (id: string) => void)(view!);
       const sections = nodes(render()).filter((node) => node.type === PanelSection);
