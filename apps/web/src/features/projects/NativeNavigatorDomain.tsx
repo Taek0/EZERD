@@ -30,7 +30,7 @@ export function NativeNavigatorDomain({
 }) {
   const { t } = useI18n();
   const id = useId();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     if (reveal) setExpanded(true);
   }, [reveal, revealKey]);

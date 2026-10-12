@@ -1,3 +1,4 @@
+import { NativeNavigatorTable } from './NativeNavigatorTable.js';
 import { isValidElement, type ReactElement } from 'react';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeProjectView } from './NativeProjectView.js';
@@ -415,7 +416,7 @@ describe('simplified native inspector', () => {
     expect(hooks.stage).not.toHaveBeenCalled();
     root.unmount();
   });
-  it('starts outline objects expanded and relationships collapsed in both views', () => {
+  it('starts model objects and relationships collapsed in both views', () => {
     const root = renderer(),
       props = fixture();
     const render = () => root.render(() => NativeProjectView(props));
@@ -425,7 +426,7 @@ describe('simplified native inspector', () => {
     ]) {
       (child(render(), NativeERDCanvas).props.onViewChange as (id: string) => void)(view!);
       const sections = nodes(render()).filter((node) => node.type === PanelSection);
-      expect(sections.find((node) => node.props.title === objects)?.props.defaultOpen).toBe(true);
+      expect(sections.find((node) => node.props.title === objects)?.props.defaultOpen).toBe(false);
       expect(sections.find((node) => node.props.title === relations)?.props.defaultOpen).toBe(
         false,
       );
@@ -438,4 +439,22 @@ describe('simplified native inspector', () => {
     expect(child(render(), NativeERDCanvas).props.recoveryOpen).toBe(true);
     root.unmount();
   });
+});
+
+it('retains explicit table expansion across canvas view selection and supports closing it again', () => {
+  const root = renderer(),
+    props = fixture();
+  for (const table of props.entry.document.tables ?? []) table.scope = 'both';
+  for (const column of props.entry.document.columns ?? []) column.scope = 'both';
+  const render = () => root.render(() => NativeProjectView(props));
+  const table = () => child(render(), NativeNavigatorTable);
+  expect(table().props.expanded).toBe(false);
+  (table().props.onExpandedChange as (open: boolean) => void)(true);
+  (table().props.onSelect as () => void)();
+  expect(table().props.expanded).toBe(true);
+  (child(render(), NativeERDCanvas).props.onViewChange as (id: string) => void)('overview');
+  expect(table().props.expanded).toBe(true);
+  (table().props.onExpandedChange as (open: boolean) => void)(false);
+  expect(table().props.expanded).toBe(false);
+  root.unmount();
 });

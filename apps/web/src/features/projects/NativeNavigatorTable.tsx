@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useId } from 'react';
 import { Button, IconButton } from '../../components/ui/index.js';
 import { ChevronDown } from '../../components/ui/untitled.js';
 import { useI18n } from '../../shared/i18n/index.js';
@@ -32,6 +32,8 @@ export function NativeNavigatorTable({
   accent,
   badge,
   active,
+  expanded,
+  onExpandedChange,
   columns,
   selectedColumn,
   search,
@@ -42,6 +44,8 @@ export function NativeNavigatorTable({
   accent: string;
   badge?: string | undefined;
   active: boolean;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
   columns: NativeNavigatorColumn[];
   selectedColumn?: string | null | undefined;
   search: string;
@@ -50,10 +54,6 @@ export function NativeNavigatorTable({
 }) {
   const { t } = useI18n();
   const id = useId();
-  const [expanded, setExpanded] = useState(active);
-  useEffect(() => {
-    if (active) setExpanded(true);
-  }, [active, selectedColumn]);
   const matchingColumns = search.trim()
     ? columns.filter((column) =>
         nativeInspectorMatches(search, column.physicalName, column.logicalName),
@@ -72,7 +72,7 @@ export function NativeNavigatorTable({
           aria-expanded={open}
           aria-controls={id}
           disabled={!columns.length || searchingColumns}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => onExpandedChange(!open)}
         >
           <span className="native-navigator-chevron" data-open={open}>
             <ChevronDown />
@@ -82,8 +82,10 @@ export function NativeNavigatorTable({
           className="native-navigator-select"
           variant="ghost"
           aria-current={active || undefined}
+          aria-expanded={open}
+          aria-controls={id}
           onClick={() => {
-            setExpanded(true);
+            onExpandedChange(true);
             onSelect();
           }}
           title={name}

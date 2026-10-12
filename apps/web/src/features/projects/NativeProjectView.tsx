@@ -352,6 +352,9 @@ export function NativeProjectView({
     }
   });
   const [navigatorOpen, setNavigatorOpen] = useState(true);
+  const [expandedNavigatorTables, setExpandedNavigatorTables] = useState<Record<string, boolean>>(
+    {},
+  );
   const navigatorSearch = useRef<HTMLInputElement>(null);
   const navigatorToggle = useRef<HTMLButtonElement>(null);
   const navigatorResize = useNavigatorResize();
@@ -1518,7 +1521,7 @@ export function NativeProjectView({
                   </Select>
                   <PanelSection
                     title={t('데이터 모델')}
-                    defaultOpen
+                    defaultOpen={false}
                     count={canvasView === 'overview' ? doc.domains.length : tables.length}
                   >
                     <PanelList
@@ -1555,10 +1558,7 @@ export function NativeProjectView({
                               count={members.length}
                               active={group.id !== null && selectedDomain === group.id}
                               revealKey={`${search}:${selectedTable?.id ?? ''}:${editingColumn ?? ''}`}
-                              reveal={
-                                !!search.trim() ||
-                                members.some((table) => table.id === selectedTable?.id)
-                              }
+                              reveal={!!search.trim()}
                               onOpen={group.id === null ? undefined : () => openDomain(group.id!)}
                             >
                               {members.map((table) => (
@@ -1566,6 +1566,13 @@ export function NativeProjectView({
                                   key={table.id}
                                   name={tableName(table.id)}
                                   active={selectedTable?.id === table.id}
+                                  expanded={expandedNavigatorTables[table.id] ?? false}
+                                  onExpandedChange={(expanded) =>
+                                    setExpandedNavigatorTables((previous) => ({
+                                      ...previous,
+                                      [table.id]: expanded,
+                                    }))
+                                  }
                                   accent={table.color ?? group.color}
                                   columns={navigatorColumns.get(table.id) ?? []}
                                   selectedColumn={editingColumn}
