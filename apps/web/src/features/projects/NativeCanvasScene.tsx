@@ -109,6 +109,9 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   onEdit,
 }: NativeCanvasSceneProps) {
   const { t } = useI18n();
+  const selectedColumnTableId = selectedColumnId
+    ? base.columns?.find((column) => column.id === selectedColumnId)?.tableId
+    : undefined;
   return (
     <>
       <NativeTableLines
@@ -369,7 +372,9 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                   mode={mode}
                   onSelect={onSelect}
                   onEdit={onEdit}
-                  selectedColumnId={selectedColumnId}
+                  selectedColumnId={
+                    table.id === selectedColumnTableId ? selectedColumnId : undefined
+                  }
                   onToggleNullable={onToggleNullable}
                   onConnectFromColumn={onConnectFromColumn}
                   editorContext={editorContext}
