@@ -66,6 +66,35 @@ function descendants(node: ReactNode): ReactElement<Record<string, unknown>>[] {
   return [node, ...descendants(node.props.children as ReactNode)];
 }
 describe('native scene render boundary', () => {
+  it('sends column selection only to its owning table rows', () => {
+    const p = props();
+    const column = p.base.columns![0]!;
+    const table = p.base.tables!.find((t) => t.id === column.tableId)!;
+    const other = { ...table, id: 'unrelated-table' };
+    p.base = { ...p.base, tables: [...p.base.tables!, other] };
+    const node = p.drawn.nodes.find((n) => n.objectId === table.id)!;
+    p.drawn = {
+      ...p.drawn,
+      nodes: [
+        ...p.drawn.nodes,
+        { ...node, id: 'unrelated-node', objectId: other.id, x: node.x + 1000 },
+      ],
+    };
+    const rows = () => descendants(scene(p)).filter((node) => node.type === NativeCanvasTableRows);
+    const before = rows().find((n) => (n.props.table as { id: string }).id === other.id)!.props;
+    p.selectedColumnId = column.id;
+    const selected = rows();
+    expect(
+      selected.find((n) => (n.props.table as { id: string }).id === table.id)!.props
+        .selectedColumnId,
+    ).toBe(column.id);
+    const after = selected.find((n) => (n.props.table as { id: string }).id === other.id)!.props;
+    expect(after.selectedColumnId).toBeUndefined();
+    for (const key of Object.keys(before)) expect(after[key]).toBe(before[key]);
+    p.selectedColumnId = undefined;
+    expect(rows().every((n) => n.props.selectedColumnId === undefined)).toBe(true);
+  });
+
   it('binds the original 240ms domain entry animation to the native keyed wrapper with reduced motion disabled', () => {
     const originalCss = readFileSync(new URL('../../styles/styles.css', import.meta.url), 'utf8');
     const nativeCss = readFileSync(new URL('./NativeERDCanvas.css', import.meta.url), 'utf8');
