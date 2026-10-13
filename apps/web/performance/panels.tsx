@@ -1,3 +1,4 @@
+declare const __BUTTON_MEMO_PROBE__: boolean;
 import { enqueueNativeSave } from '../src/features/projects/native-save-intents.js';
 import { projectDocumentStateSchema } from '@ezerd/contracts';
 import { VisualLayerAudit } from './visual-layer-audit.js';
@@ -321,6 +322,7 @@ function Demo() {
           active.current = true;
           collector.start({
             scenario: 'button-audit',
+            memoProbe: __BUTTON_MEMO_PROBE__,
             kind,
             repetition,
             count,

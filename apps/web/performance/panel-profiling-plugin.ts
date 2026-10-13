@@ -2,6 +2,8 @@ import type { Plugin } from 'vite';
 export function panelProfilingPlugin(controlPath: string): Plugin {
   const targets: Record<string, string[]> = {
     'NativeERDCanvas.tsx': ['NativeERDCanvas'],
+    'NativeNavigatorTable.tsx': ['NativeNavigatorTable'],
+    'NativeNavigatorDomain.tsx': ['NativeNavigatorDomain'],
     'NativeDomainEditor.tsx': ['NativeDomainEditor'],
     'NativeDomainRelationEditor.tsx': ['NativeDomainRelationEditor'],
     'NativePropertyEditor.tsx': ['NativePropertyEditor'],
