@@ -1,4 +1,7 @@
-import { buttonMemoProbePlugin } from './performance/button-memo-probe-plugin.js';
+import {
+  buttonMemoProbePlugin,
+  buttonNavigatorProbePlugin,
+} from './performance/button-memo-probe-plugin.js';
 import { panelInteractionBaselinePlugin } from './performance/panel-interaction-baseline-plugin.js';
 import { actualFixturePlugin } from './performance/actual-fixture-plugin.js';
 import { defineConfig } from 'vite';
@@ -25,6 +28,7 @@ export default defineConfig(() => {
     },
     plugins: [
       actualFixturePlugin(),
+      ...(process.env.EZERD_BUTTON_NAV_PROBE === '1' ? [buttonNavigatorProbePlugin()] : []),
       ...(process.env.EZERD_BUTTON_MEMO_PROBE === '1' ? [buttonMemoProbePlugin()] : []),
       ...(process.env.EZERD_PANEL_INTERACTION_BASELINE === '1'
         ? [panelInteractionBaselinePlugin()]
@@ -52,6 +56,7 @@ export default defineConfig(() => {
       tailwindcss(),
     ],
     define: {
+      __BUTTON_NAV_PROBE__: JSON.stringify(process.env.EZERD_BUTTON_NAV_PROBE === '1'),
       __BUTTON_MEMO_PROBE__: JSON.stringify(process.env.EZERD_BUTTON_MEMO_PROBE === '1'),
       __PANEL_INTERACTION_BASELINE__: JSON.stringify(
         process.env.EZERD_PANEL_INTERACTION_BASELINE === '1',

@@ -1,3 +1,4 @@
+declare const __BUTTON_NAV_PROBE__: boolean;
 declare const __BUTTON_MEMO_PROBE__: boolean;
 import { enqueueNativeSave } from '../src/features/projects/native-save-intents.js';
 import { projectDocumentStateSchema } from '@ezerd/contracts';
@@ -323,6 +324,7 @@ function Demo() {
           collector.start({
             scenario: 'button-audit',
             memoProbe: __BUTTON_MEMO_PROBE__,
+            navigatorProbe: __BUTTON_NAV_PROBE__,
             kind,
             repetition,
             count,
