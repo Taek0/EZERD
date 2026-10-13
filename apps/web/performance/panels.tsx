@@ -1,3 +1,4 @@
+import { enqueueNativeSave } from '../src/features/projects/native-save-intents.js';
 import { projectDocumentStateSchema } from '@ezerd/contracts';
 import { VisualLayerAudit } from './visual-layer-audit.js';
 import { Profiler, useMemo, useRef, useState, type ProfilerOnRenderCallback } from 'react';
@@ -291,6 +292,144 @@ function Demo() {
       setRunning(false);
     }
   }
+  async function auditButtons() {
+    if (running) return;
+    setRunning(true);
+    setOutput('');
+    const results: unknown[] = [];
+    const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    try {
+      await document.fonts.ready;
+      button('핀 패널 숨기기')?.click();
+      button('속성 패널 열기')?.click();
+      root.current!.querySelector<HTMLElement>('.native-erd-node.table')!.click();
+      await pause(500);
+      for (const kind of ['pins', 'column', 'inspector'] as const) {
+        for (let repetition = 0; repetition < 4; repetition++) {
+          const label = kind === 'pins' ? '핀 패널 열기' : '속성 패널 숨기기';
+          const target =
+            kind === 'column'
+              ? root.current!.querySelector<HTMLButtonElement>(
+                  'button[aria-controls^="native-column-"]',
+                )
+              : button(label);
+          if (!target) throw Error('Missing ' + kind);
+          const fingerprint = fixtureFingerprint(fixture.document);
+          commits.current = [];
+          panelProfiles.samples = [];
+          panelProfiles.active = true;
+          active.current = true;
+          collector.start({
+            scenario: 'button-audit',
+            kind,
+            repetition,
+            count,
+            actual: !!actualSnapshot,
+            commit: __PERF_COMMIT__,
+            dirty: __PERF_DIRTY__,
+            viewport: [innerWidth, innerHeight],
+            dpr: devicePixelRatio,
+            userAgent: navigator.userAgent,
+          });
+          const start = performance.now();
+          let firstRaf: number | null = null,
+            secondRaf: number | null = null;
+          let secondFrame = 0;
+          const firstFrame = requestAnimationFrame(() => {
+            firstRaf = performance.now() - start;
+            secondFrame = requestAnimationFrame(() => {
+              secondRaf = performance.now() - start;
+            });
+          });
+          target.click();
+          const dispatchMs = performance.now() - start;
+          await pause(450);
+          cancelAnimationFrame(firstFrame);
+          cancelAnimationFrame(secondFrame);
+          active.current = false;
+          panelProfiles.active = false;
+          const { samples: _samples, ...measurement } = collector.stop();
+          results.push({
+            kind,
+            repetition,
+            warmup: repetition === 0,
+            dispatchMs,
+            firstRaf,
+            secondRaf,
+            react: stats(commits.current),
+            subtrees: Object.fromEntries(
+              [...new Set(panelProfiles.samples.map((s) => s.id))].map((id) => [
+                id,
+                stats(panelProfiles.samples.filter((s) => s.id === id).map((s) => s.actual)),
+              ]),
+            ),
+            measurement,
+            documentUnchanged: fingerprint === fixtureFingerprint(fixture.document),
+            targetReached:
+              kind === 'column'
+                ? target.getAttribute('aria-expanded') === 'true'
+                : !!button(kind === 'pins' ? '핀 패널 숨기기' : '속성 패널 열기'),
+          });
+          if (kind === 'column') target.click();
+          else button(kind === 'pins' ? '핀 패널 숨기기' : '속성 패널 열기')?.click();
+          await pause(350);
+        }
+      }
+      const storageTimes: number[] = [];
+      for (let i = 0; i < 30; i++) {
+        const memory = new Map<string, string>();
+        const storage = {
+          get length() {
+            return memory.size;
+          },
+          key: (i: number) => [...memory.keys()][i] ?? null,
+          getItem: (key: string) => memory.get(key) ?? null,
+          setItem: (key: string, value: string) => {
+            memory.set(key, value);
+          },
+          removeItem: (key: string) => {
+            memory.delete(key);
+          },
+          clear: () => memory.clear(),
+        } as Storage;
+        const start = performance.now();
+        enqueueNativeSave(
+          '90000000-0000-4000-8000-000000000039',
+          fixture.snapshot,
+          [
+            {
+              type: 'patch_table',
+              id: fixture.document.tables![0]!.id,
+              patch: { physical: { name: 'benchmark_name' } },
+            },
+          ],
+          undefined,
+          undefined,
+          storage,
+        );
+        storageTimes.push(performance.now() - start);
+      }
+      setOutput(
+        JSON.stringify(
+          {
+            results,
+            enqueueMemoryStorage: stats(storageTimes.slice(1)),
+            note: 'Synthetic click; rAF callbacks are scheduling proxies, not measured pixel presentation. Memory storage excludes real persistence and network.',
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (error) {
+      active.current = false;
+      panelProfiles.active = false;
+      collector.cancel();
+      setOutput(JSON.stringify({ error: String(error), results }));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function runInteractions() {
     if (running) return;
     setRunning(true);
@@ -420,6 +559,9 @@ function Demo() {
     <>
       <header className="panel-lab-controls">
         <strong>Full editor panel profiling · no server writes</strong>
+        <button disabled={running} onClick={() => void auditButtons()}>
+          Audit button latency
+        </button>
         <label>
           Layout spacing{' '}
           <select
