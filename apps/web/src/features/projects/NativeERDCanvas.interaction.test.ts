@@ -363,7 +363,7 @@ describe('native canvas clipboard storage integration', () => {
     const handler = nodes(tree).find((node) => typeof node.props.onContextMenu === 'function')!;
     (handler.props.onContextMenu as (event: unknown) => void)(event);
     expect(event.preventDefault).toHaveBeenCalledOnce();
-    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
     event.preventDefault.mockClear();
     (handler.props.onKeyDownCapture as (event: unknown) => void)({ ...event, key: 'ContextMenu' });
     expect(event.preventDefault).not.toHaveBeenCalled();
@@ -447,6 +447,35 @@ describe('native canvas clipboard storage integration', () => {
       expect(ui.controls().tool).toBe('select');
     }
   });
+  it.each(['select', 'hand'])(
+    'delivers portal menu clicks and keys in %s mode while retaining canvas click behavior',
+    (tool) => {
+      const ui = canvas();
+      (ui.controls().onTool as (tool: string) => void)(tool);
+      ui.render();
+      const portalOption = new Target();
+      portalOption.parentElement = {};
+      const stopPropagation = vi.fn();
+      const preventDefault = vi.fn();
+      const onAction = vi.fn();
+      ui.event('onClickCapture', { target: portalOption, stopPropagation });
+      // React delivers the click to the menu item only when ancestor capture allows it.
+      if (!stopPropagation.mock.calls.length) onAction();
+      expect(onAction).toHaveBeenCalledOnce();
+      ui.event('onKeyDownCapture', {
+        target: portalOption,
+        key: 'a',
+        ctrlKey: true,
+        nativeEvent: {},
+        stopPropagation,
+        preventDefault,
+      });
+      expect(stopPropagation).not.toHaveBeenCalled();
+      expect(preventDefault).not.toHaveBeenCalled();
+      ui.event('onClickCapture', { stopPropagation });
+      expect(stopPropagation).toHaveBeenCalledTimes(tool === 'hand' ? 1 : 0);
+    },
+  );
   it.each(['select', 'hand'])(
     'ignores a portal option in %s mode without capturing its pointer',
     (tool) => {

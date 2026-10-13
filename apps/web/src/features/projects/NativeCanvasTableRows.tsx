@@ -453,20 +453,42 @@ function NativeCanvasColumnMenu({
       return;
     const row = event.target.closest<HTMLElement>('[data-column-id]');
     const id = row?.getAttribute('data-column-id');
-    if (!row || !id || !nativeCanvasColumnMenuItems(props, id, t).length) return;
+    if (
+      !row ||
+      !id ||
+      !props.document.columns?.some(
+        (column) =>
+          column.id === id &&
+          column.tableId === props.table.id &&
+          isVisibleInView(column.scope, props.mode, props.table.scope),
+      )
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
-    props.onSelect(props.table.id, id);
-    const rect = row.getBoundingClientRect();
+    // Only the chosen action opens an editor. Opening the menu stays local to this card.
+    const rect = 'clientX' in event ? null : row.getBoundingClientRect();
     setMenu({
-      x: 'clientX' in event ? event.clientX : rect.left + 10,
-      y: 'clientY' in event ? event.clientY : rect.top + 28,
+      x: 'clientX' in event ? event.clientX : rect!.left + 10,
+      y: 'clientY' in event ? event.clientY : rect!.top + 28,
       columnId: id,
     });
   };
   return (
     <>
       {cloneElement(children, {
+        onPointerDownCapture: (event) => {
+          // Secondary presses must not focus a cell and start its inline editor first.
+          if (
+            event.button === 2 &&
+            event.target instanceof Element &&
+            event.target.closest('[data-column-id]') &&
+            !event.target.closest(
+              'input,textarea,select,[contenteditable]:not([contenteditable="false"])',
+            )
+          )
+            event.preventDefault();
+        },
         onContextMenu: open,
         onKeyDownCapture: (event) => {
           if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) open(event);

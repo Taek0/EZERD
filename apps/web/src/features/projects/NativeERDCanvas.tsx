@@ -2846,6 +2846,8 @@ function NativeCanvasWorkspace({
           }
         }}
         onClickCapture={(event) => {
+          // Portalled menu actions belong to the overlay, even in hand/connection mode.
+          if (!event.currentTarget.contains(event.target as Node)) return;
           if (connection && event.target instanceof Element) {
             const node = event.target.closest('[data-object-id]');
             if (node) {
@@ -2864,6 +2866,7 @@ function NativeCanvasWorkspace({
             event.stopPropagation();
         }}
         onKeyDownCapture={(event) => {
+          if (!event.currentTarget.contains(event.target as Node)) return;
           if (
             event.target instanceof Element &&
             event.target.closest(`${toolShortcutInputSelector},.native-inline-editor`)
