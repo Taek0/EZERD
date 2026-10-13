@@ -1,3 +1,4 @@
+import { useInspectorResize } from './use-inspector-resize.js';
 import { NativeNavigatorDomain } from './NativeNavigatorDomain.js';
 import { useNavigatorResize } from './use-navigator-resize.js';
 import {
@@ -446,7 +447,13 @@ export function NativeProjectView({
     values?: Record<string, string>;
   } | null>(null);
   const [domainCreation, setDomainCreation] = useState(0);
-  const resize = useRef<{ pointer: number; x: number; width: number } | null>(null);
+  const inspectorResize = useInspectorResize(
+    workspaceRef,
+    panelWidth,
+    workspaceWidth,
+    setInspectorWidth,
+    setResizingInspector,
+  );
   function toolbarCreate(kind: 'table' | 'domain' | 'enum' | 'column') {
     leaveRecoveredSelection();
     setInspectorOpen(true);
@@ -1657,13 +1664,16 @@ export function NativeProjectView({
                 className={`native-editor-workspace${inspectorOpen ? '' : ' inspector-closed'}${stackedInspector ? ' inspector-stacked' : ''}`}
                 ref={workspaceRef}
                 data-resizing={resizingInspector}
-                style={{
-                  gridTemplateColumns: stackedInspector
-                    ? 'minmax(0,1fr)'
-                    : inspectorOpen
-                      ? `minmax(0,1fr) 6px ${panelWidth}px`
-                      : 'minmax(0,1fr) 0px 0px',
-                }}
+                style={
+                  {
+                    '--native-inspector-width': `${panelWidth}px`,
+                    gridTemplateColumns: stackedInspector
+                      ? 'minmax(0,1fr)'
+                      : inspectorOpen
+                        ? 'minmax(0,1fr) 6px var(--native-inspector-width)'
+                        : 'minmax(0,1fr) 0px 0px',
+                  } as CSSProperties
+                }
               >
                 <NativeERDCanvas
                   key={`${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
@@ -1793,54 +1803,7 @@ export function NativeProjectView({
                   aria-valuemax={panelBounds.max}
                   tabIndex={inspectorOpen && !stackedInspector ? 0 : -1}
                   hidden={!inspectorOpen || stackedInspector}
-                  onPointerDown={(event) => {
-                    if (event.button !== 0) return;
-                    event.preventDefault();
-                    setResizingInspector(true);
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    resize.current = {
-                      pointer: event.pointerId,
-                      x: event.clientX,
-                      width: panelWidth,
-                    };
-                  }}
-                  onPointerMove={(event) => {
-                    const active = resize.current;
-                    if (active?.pointer !== event.pointerId) return;
-                    setInspectorWidth(
-                      clampInspectorWidth(active.width + active.x - event.clientX, workspaceWidth),
-                    );
-                  }}
-                  onPointerUp={(event) => {
-                    resize.current = null;
-                    setResizingInspector(false);
-                    if (event.currentTarget.hasPointerCapture(event.pointerId))
-                      event.currentTarget.releasePointerCapture(event.pointerId);
-                  }}
-                  onPointerCancel={() => {
-                    resize.current = null;
-                    setResizingInspector(false);
-                  }}
-                  onLostPointerCapture={() => {
-                    resize.current = null;
-                    setResizingInspector(false);
-                  }}
-                  onKeyDown={(event) => {
-                    const next =
-                      event.key === 'Home'
-                        ? panelBounds.min
-                        : event.key === 'End'
-                          ? panelBounds.max
-                          : event.key === 'ArrowLeft'
-                            ? panelWidth + (event.shiftKey ? 40 : 10)
-                            : event.key === 'ArrowRight'
-                              ? panelWidth - (event.shiftKey ? 40 : 10)
-                              : null;
-                    if (next !== null) {
-                      event.preventDefault();
-                      setInspectorWidth(clampInspectorWidth(next, workspaceWidth));
-                    }
-                  }}
+                  {...inspectorResize}
                 />
                 <aside
                   className="native-editor-inspector inspector-shell inspector"
