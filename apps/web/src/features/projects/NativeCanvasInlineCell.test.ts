@@ -1065,3 +1065,44 @@ it('invalidates idle presentation when displayed value or permissions change', (
   ui.render({ ...p, document, context: { ...p.context, busy: true } });
   expect(ui.root().props.tabIndex).toBe(-1);
 });
+
+it('keeps an optimistic name dirty against the confirmed ACK baseline', async () => {
+  const p = fixture();
+  let finish!: (accepted: boolean) => void;
+  const save = vi.fn<NonNullable<NativeCanvasInlineCellProps['context']>['onSave']>(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const ui = mount({ ...p, context: { ...p.context, onSave: save } });
+  ui.begin();
+  ui.change('local_pending');
+  const confirmed = structuredClone(p.document);
+  confirmed.columns![0]!.physical.name = 'remote_base';
+  const projected = structuredClone(confirmed);
+  projected.columns![0]!.physical.name = 'local_pending';
+  ui.render({
+    ...p,
+    document: projected,
+    context: {
+      ...p.context,
+      onSave: save,
+      snapshot: {
+        ...p.context.snapshot,
+        sequence: p.context.snapshot.sequence + 1,
+        project: { ...p.context.snapshot.project, version: p.context.snapshot.project.version + 1 },
+        sourceDocument: confirmed,
+        native: { status: 'available', document: confirmed, issues: [], migrationIssues: [] },
+      },
+    },
+  });
+  call(ui.field(), 'onBlur');
+  await flush();
+  expect(ui.stored()?.before.value).toBe('remote_base');
+  expect(ui.stored()?.values.value).toBe('local_pending');
+  finish(false);
+  await flush();
+  expect(ui.stored()?.before.value).toBe('remote_base');
+  expect(ui.stored()?.values.value).toBe('local_pending');
+});

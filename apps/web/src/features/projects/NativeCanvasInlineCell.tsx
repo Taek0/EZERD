@@ -367,6 +367,13 @@ function EditableNativeCanvasInlineCell({
       (selected.expected.sequence !== snapshot.sequence ||
         selected.expected.version !== snapshot.project.version)
     ) {
+      let confirmedBefore = selected.before.value ?? '';
+      try {
+        if (snapshot.sourceDocument.schemaVersion === 2)
+          confirmedBefore = nativeInlineInput(snapshot.sourceDocument, selectedTarget).value;
+      } catch {
+        /* A locally added object may not have a confirmed server counterpart yet. */
+      }
       selected = {
         ...selected,
         revision: nativeDurableId(),
@@ -375,7 +382,7 @@ function EditableNativeCanvasInlineCell({
           version: snapshot.project.version,
           sequence: snapshot.sequence,
         },
-        before: { value: nativeInlineInput(doc, selectedTarget).value },
+        before: { value: confirmedBefore },
       };
       persist(selected);
     }

@@ -131,6 +131,19 @@ export function NativePropertyEditor({
       const current = currentDraft.current;
       if (current.expected.databaseRevision !== snapshot.project.databaseRevision) return;
       const latest = fresh();
+      const confirmed =
+        snapshot.sourceDocument.schemaVersion === 2
+          ? (column ? snapshot.sourceDocument.columns : snapshot.sourceDocument.tables)?.find(
+              (item) => item.id === original.id,
+            )
+          : undefined;
+      if (!confirmed) return;
+      latest.values = {
+        physicalName: confirmed.physical.name,
+        comment: confirmed.physical.comment,
+        logicalName: confirmed.logical.name,
+        definition: confirmed.logical.definition,
+      };
       if (
         current.expected.version === latest.expected.version &&
         current.expected.sequence === latest.expected.sequence
@@ -157,6 +170,47 @@ export function NativePropertyEditor({
     snapshot.project.databaseRevision,
     outstanding,
     ackSequence,
+  ]);
+  // Pristine controls may follow a local display projection; dirty inputs must never adopt it as an ACK baseline.
+  useEffect(() => {
+    const current = currentDraft.current;
+    if (
+      outstanding ||
+      current.expected.databaseRevision !== snapshot.project.databaseRevision ||
+      current.expected.sequence !== snapshot.sequence ||
+      current.expected.version !== snapshot.project.version
+    )
+      return;
+    if (
+      Object.keys(current.values).some(
+        (key) =>
+          current.values[key as keyof typeof current.values] !==
+          current.before[key as keyof typeof current.before],
+      )
+    )
+      return;
+    const displayed = fresh().values;
+    if (
+      Object.keys(displayed).every(
+        (key) =>
+          displayed[key as keyof typeof displayed] ===
+          current.values[key as keyof typeof current.values],
+      )
+    )
+      return;
+    const next = { ...current, values: { ...displayed }, before: { ...displayed } };
+    currentDraft.current = next;
+    setDraft(next);
+  }, [
+    original.physical.name,
+    original.physical.comment,
+    original.logical.name,
+    original.logical.definition,
+    snapshot.sequence,
+    snapshot.project.version,
+    snapshot.project.databaseRevision,
+    outstanding,
+    draft,
   ]);
   const dirty =
     physicalName !== draft.before.physicalName ||
@@ -291,6 +345,20 @@ export function NativePropertyEditor({
                 onClick={() => {
                   try {
                     const latest = fresh();
+                    const confirmed =
+                      snapshot.sourceDocument.schemaVersion === 2
+                        ? (column
+                            ? snapshot.sourceDocument.columns
+                            : snapshot.sourceDocument.tables
+                          )?.find((item) => item.id === original.id)
+                        : undefined;
+                    if (!confirmed) return;
+                    latest.values = {
+                      physicalName: confirmed.physical.name,
+                      comment: confirmed.physical.comment,
+                      logicalName: confirmed.logical.name,
+                      definition: confirmed.logical.definition,
+                    };
                     persist(
                       rebaseNativeDraft(currentDraft.current, latest.expected, latest.values),
                     );
