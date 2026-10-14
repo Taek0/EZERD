@@ -1,5 +1,5 @@
 import './native-property-editor.css';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { NativeColumn, NativeDesignDocument } from '@ezerd/model';
 import { Checkbox } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
@@ -38,7 +38,12 @@ export function NativePrimaryKeyControl({
       key.kind === 'primary' &&
       key.columnIds.includes(column.id),
   );
-  const preview = nativePrimaryKeyPlan(document, column.id, !checked, newId);
+  // Local name/form state changes do not change the acknowledged design. Keep its
+  // expensive preview, but always recompute the authoritative plan on interaction.
+  const preview = useMemo(
+    () => nativePrimaryKeyPlan(document, column.id, !checked, newId),
+    [document, column.id, checked, newId],
+  );
   const reason =
     preview.code === 'foreign-key.target-key-required'
       ? t('이 PK를 참조하는 FK가 있습니다. 관계의 참조 키를 먼저 변경하세요.')
