@@ -1,3 +1,4 @@
+import { notifyNativeLocalChanges, recordNativeLocalResult } from './native-local-projection.js';
 import {
   nativePendingSaveSchema,
   nativeSyncOperationResultSchema,
@@ -62,13 +63,15 @@ export function updateNativeIntentBlocker(
   if (dirty)
     registerNativeExportBlocker(user, project, 'save-intents', { dirty, storageFailure: false });
   else clearNativeExportBlocker(user, project, 'save-intents');
+  notifyNativeLocalChanges(user, project);
 }
-function finishIntent(intent: Intent, accepted: boolean, storage: Storage) {
+function finishIntent(intent: Intent, accepted: boolean, storage: Storage, sequence: number) {
   if (!accepted)
     storage.setItem(
       intent.key.replace('ezerd.native.intent:', 'ezerd.native.rejected-intent:'),
       JSON.stringify(intent.pending),
     );
+  recordNativeLocalResult(intent, accepted, sequence, storage);
   storage.removeItem(intent.key);
   updateNativeIntentBlocker(intent.pending.userId, intent.pending.projectId, storage);
 }
@@ -196,7 +199,8 @@ export async function flushNativeSaveIntent(
     const intent = nativeSaveIntents(user, snapshot.project.id, storage).find(
       (item) => item.pending.request.operationId === existing.request.operationId,
     );
-    if (intent) finishIntent(intent, noChanges || result.status === 'accepted', storage);
+    if (intent)
+      finishIntent(intent, noChanges || result.status === 'accepted', storage, result.sequence);
     onResult?.(result);
     return {
       operationId: existing.request.operationId,
@@ -216,7 +220,7 @@ export async function flushNativeSaveIntent(
       ),
     );
     checkNativeAck(pending, result);
-    finishIntent(intent, result.status === 'accepted', storage);
+    finishIntent(intent, result.status === 'accepted', storage, result.sequence);
     onResult?.(result);
     return { operationId: pending.request.operationId, accepted: result.status === 'accepted' };
   } catch (error) {
@@ -232,7 +236,7 @@ export async function flushNativeSaveIntent(
       payload: pending,
     });
     const result = await cancelNativePending(pending, storage, actorApi);
-    finishIntent(intent, result.status === 'accepted', storage);
+    finishIntent(intent, result.status === 'accepted', storage, result.sequence);
     onResult?.(result);
     return { operationId: pending.request.operationId, accepted: result.status === 'accepted' };
   }
@@ -269,7 +273,7 @@ export async function flushNativeSaveIntent(
   }
   if (result.status === 'rejected')
     await discardNativePending(user, snapshot.project.id, staged.request.operationId, storage);
-  finishIntent(intent, noChanges || result.status === 'accepted', storage);
+  finishIntent(intent, noChanges || result.status === 'accepted', storage, result.sequence);
   onResult?.(result);
   return {
     operationId: staged.request.operationId,
