@@ -1,5 +1,5 @@
 import { useNavigatorPresence } from './use-navigator-presence.js';
-import { useId } from 'react';
+import { useId, useLayoutEffect, useRef } from 'react';
 import { Button, IconButton } from '../../components/ui/index.js';
 import { ChevronDown } from '../../components/ui/untitled.js';
 import { useI18n } from '../../shared/i18n/index.js';
@@ -64,6 +64,11 @@ export function NativeNavigatorTable({
   const open = expanded || searchingColumns;
   const shown = searchingColumns ? matchingColumns : columns;
   const presence = useNavigatorPresence(open);
+  const closingColumns = useRef(shown);
+  useLayoutEffect(() => {
+    if (open) closingColumns.current = shown;
+  }, [open, shown]);
+  const displayedColumns = open ? shown : closingColumns.current;
   return (
     <li className="native-navigator-table">
       <div className="native-navigator-table-row" data-selected={active}>
@@ -109,7 +114,7 @@ export function NativeNavigatorTable({
         <div>
           <ul className="native-navigator-columns">
             {presence.present &&
-              shown.map((column) => (
+              displayedColumns.map((column) => (
                 <li key={column.id}>
                   <Button
                     variant="ghost"
