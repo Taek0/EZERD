@@ -91,7 +91,9 @@ export function measurementPlugin(
       if (path.endsWith('/features/projects/NativeCanvasInlineCell.tsx'))
         names = ['EditableNativeCanvasInlineCell'];
       if (path.endsWith('/features/projects/NativeCanvasTableRows.tsx'))
-        names = ['NativeCanvasTableRows'];
+        names = ['NativeCanvasTableRows', 'NativeCanvasColumnMenu', 'nativeCanvasColumnMenuItems'];
+      if (path.endsWith('/features/projects/native-editor-policy.ts'))
+        names = ['nativeEditorPolicy'];
       if (/\/packages\/model\/(dist|src)\/database\/display\.(js|ts)$/.test(path))
         names = ['nativeColumnTypeDisplay'];
       if (!names.length) return;

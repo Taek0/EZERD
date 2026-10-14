@@ -306,15 +306,17 @@ function Demo() {
       button('속성 패널 열기')?.click();
       root.current!.querySelector<HTMLElement>('.native-erd-node.table')!.click();
       await pause(500);
-      for (const kind of ['pins', 'column', 'inspector'] as const) {
+      for (const kind of ['pins', 'column', 'inspector', 'menu'] as const) {
         for (let repetition = 0; repetition < 4; repetition++) {
           const label = kind === 'pins' ? '핀 패널 열기' : '속성 패널 숨기기';
           const target =
-            kind === 'column'
-              ? root.current!.querySelector<HTMLButtonElement>(
-                  'button[aria-controls^="native-column-"]',
-                )
-              : button(label);
+            kind === 'menu'
+              ? root.current!.querySelector<HTMLElement>('[data-column-id]')
+              : kind === 'column'
+                ? root.current!.querySelector<HTMLButtonElement>(
+                    'button[aria-controls^="native-column-"]',
+                  )
+                : button(label);
           if (!target) throw Error('Missing ' + kind);
           const fingerprint = fixtureFingerprint(fixture.document);
           commits.current = [];
@@ -345,7 +347,16 @@ function Demo() {
               secondRaf = performance.now() - start;
             });
           });
-          target.click();
+          if (kind === 'menu')
+            target.dispatchEvent(
+              new MouseEvent('contextmenu', {
+                bubbles: true,
+                button: 2,
+                clientX: 300,
+                clientY: 300,
+              }),
+            );
+          else target.click();
           const dispatchMs = performance.now() - start;
           await pause(450);
           cancelAnimationFrame(firstFrame);
@@ -370,11 +381,15 @@ function Demo() {
             measurement,
             documentUnchanged: fingerprint === fixtureFingerprint(fixture.document),
             targetReached:
-              kind === 'column'
-                ? target.getAttribute('aria-expanded') === 'true'
-                : !!button(kind === 'pins' ? '핀 패널 숨기기' : '속성 패널 열기'),
+              kind === 'menu'
+                ? !!document.querySelector('[role=menu][aria-label="컬럼"]')
+                : kind === 'column'
+                  ? target.getAttribute('aria-expanded') === 'true'
+                  : !!button(kind === 'pins' ? '핀 패널 숨기기' : '속성 패널 열기'),
           });
-          if (kind === 'column') target.click();
+          if (kind === 'menu')
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          else if (kind === 'column') target.click();
           else button(kind === 'pins' ? '핀 패널 숨기기' : '속성 패널 열기')?.click();
           await pause(350);
         }
