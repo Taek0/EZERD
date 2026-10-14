@@ -1,3 +1,5 @@
+import { useNativeLocalEntries } from './use-native-local-entries.js';
+import { projectNativeLocalColumns, type NativeLocalEntry } from './native-local-projection.js';
 import { useInspectorResize } from './use-inspector-resize.js';
 import { NativeNavigatorDomain } from './NativeNavigatorDomain.js';
 import { useNavigatorResize } from './use-navigator-resize.js';
@@ -95,6 +97,8 @@ registerTranslations({
   '! 확인 필요': '! Action needed',
   '○ 보관된 입력': '○ Preserved input',
   '✓ 저장 기준 확인됨': '✓ Saved baseline confirmed',
+  '○ 로컬 반영됨 · 오프라인': '○ Applied locally · Offline',
+  '◌ 로컬 반영됨 · 동기화 중…': '◌ Applied locally · Syncing…',
   '설계 조회': 'Design overview',
   '설계 탐색': 'Design explorer',
   '탐색 패널 숨기기': 'Hide explorer',
@@ -256,6 +260,12 @@ export function NativeProjectView({
 }) {
   const { t } = useI18n();
   const { snapshot, document: acknowledgedDocument } = entry;
+  const localEntries = useNativeLocalEntries(
+    userId ?? '',
+    snapshot.project.id,
+    snapshot.sequence,
+    snapshot.project.databaseRevision,
+  );
   const previewIdentity = JSON.stringify([
     userId,
     snapshot.project.id,
@@ -272,6 +282,10 @@ export function NativeProjectView({
     source: typeof acknowledgedDocument;
     raw: typeof snapshot.sourceDocument;
     previews: NativeTableCreationPreview[];
+    localEntries: NativeLocalEntry[];
+    sequence: number;
+    localPending: number;
+    localBlocked: number;
     document: NativeDesignDocument | null;
     shared: NativeDesignDocument | null;
   } | null>(null);
@@ -279,18 +293,35 @@ export function NativeProjectView({
     !previewCache.current ||
     previewCache.current.source !== acknowledgedDocument ||
     previewCache.current.raw !== snapshot.sourceDocument ||
-    previewCache.current.previews !== previews
+    previewCache.current.previews !== previews ||
+    previewCache.current.localEntries !== localEntries.entries ||
+    previewCache.current.sequence !== snapshot.sequence
   ) {
+    const local = acknowledgedDocument
+      ? projectNativeLocalColumns(
+          withNativeTableCreationPreviews(acknowledgedDocument, previews),
+          localEntries.entries,
+          snapshot.sequence,
+          snapshot.project.databaseRevision,
+        )
+      : null;
     previewCache.current = {
       source: acknowledgedDocument,
       raw: snapshot.sourceDocument,
       previews,
-      document: acknowledgedDocument
-        ? withNativeTableCreationPreviews(acknowledgedDocument, previews)
-        : null,
+      localEntries: localEntries.entries,
+      sequence: snapshot.sequence,
+      localPending: local?.pending ?? 0,
+      localBlocked: local?.blocked ?? 0,
+      document: local?.document ?? null,
       shared:
         snapshot.sourceDocument.schemaVersion === 2
-          ? withNativeTableCreationPreviews(snapshot.sourceDocument, previews)
+          ? projectNativeLocalColumns(
+              withNativeTableCreationPreviews(snapshot.sourceDocument, previews),
+              localEntries.entries,
+              snapshot.sequence,
+              snapshot.project.databaseRevision,
+            ).document
           : null,
     };
   }
@@ -1146,7 +1177,7 @@ export function NativeProjectView({
     pending: !!pending,
     durable: userId ? durableState : 'empty',
     dirty,
-    error: !!saveError || !doc,
+    error: !!saveError || !doc || localEntries.error || previewCache.current.localBlocked > 0,
   });
   function selectFromNavigator(tableId: string, columnId?: string) {
     leaveRecoveredSelection();
@@ -1291,15 +1322,19 @@ export function NativeProjectView({
               role="status"
             >
               {t(
-                saveStatus === 'saving'
-                  ? '◌ 저장 확인 중…'
-                  : saveStatus === 'offline'
-                    ? '○ 오프라인'
-                    : saveStatus === 'attention'
-                      ? '! 확인 필요'
-                      : saveStatus === 'draft'
-                        ? '○ 보관된 입력'
-                        : '✓ 저장 기준 확인됨',
+                previewCache.current.localPending > 0 && saveStatus !== 'attention'
+                  ? offline
+                    ? '○ 로컬 반영됨 · 오프라인'
+                    : '◌ 로컬 반영됨 · 동기화 중…'
+                  : saveStatus === 'saving'
+                    ? '◌ 저장 확인 중…'
+                    : saveStatus === 'offline'
+                      ? '○ 오프라인'
+                      : saveStatus === 'attention'
+                        ? '! 확인 필요'
+                        : saveStatus === 'draft'
+                          ? '○ 보관된 입력'
+                          : '✓ 저장 기준 확인됨',
               )}
             </span>
             {userId && (
@@ -1678,7 +1713,8 @@ export function NativeProjectView({
                 <NativeERDCanvas
                   key={`${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
                   document={doc}
-                  {...(previews.length && previewCache.current.shared
+                  {...((previews.length || localEntries.entries.length) &&
+                  previewCache.current.shared
                     ? { optimisticSourceDocument: previewCache.current.shared }
                     : {})}
                   snapshot={snapshot}
