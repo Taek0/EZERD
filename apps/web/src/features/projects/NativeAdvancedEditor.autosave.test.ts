@@ -94,6 +94,7 @@ function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   return [tree, ...nodes(tree.props.children)];
 }
 function driver(kind: 'index' | 'check', f = advancedFixture()) {
+  let active = true;
   const advanced = host(),
     form = host();
   const pending: { commands: NativeWebCommand[]; resolve: (accepted: boolean) => void }[] = [];
@@ -116,8 +117,9 @@ function driver(kind: 'index' | 'check', f = advancedFixture()) {
         const context = { ...f.context, snapshot: f.snapshot, onSave };
         const tree = render(advanced, () =>
           kind === 'index'
-            ? NativeAdvancedIndexForm({ context, document: f.document, table: f.table })
+            ? NativeAdvancedIndexForm({ context, document: f.document, table: f.table, active })
             : NativeAdvancedExpressionForm({
+                active,
                 context,
                 document: f.document,
                 table: f.table,
@@ -141,6 +143,10 @@ function driver(kind: 'index' | 'check', f = advancedFixture()) {
     },
     values: () => values,
     props: () => props,
+    hide() {
+      active = false;
+      api.render();
+    },
     change(field: string, value: string) {
       change(field, value);
       api.render();
@@ -392,6 +398,7 @@ it('keeps advanced form keys stable across ACK revisions but isolates explicit r
         context: { ...f.context, snapshot: f.snapshot },
         document: f.document,
         table: f.table,
+        initialSelection: 'index:new',
         ...(recoveryRevision ? { recoveryRevision } : {}),
       }),
     ) as ReactElement;
@@ -409,3 +416,20 @@ it('keeps advanced form keys stable across ACK revisions but isolates explicit r
   expect(key()).toBe(first);
   expect(key('explicit-recovery')).not.toBe(first);
 });
+
+it.each(['index', 'check'] as const)(
+  'continues dirty %s autosave after its panel closes',
+  async (kind) => {
+    const d = driver(kind);
+    d.name('closed_pending');
+    d.hide();
+    await d.tick();
+    expect(d.pending).toHaveLength(1);
+    expect(d.pending[0]!.commands[0]!.type).toBe(`add_${kind}`);
+    expect(d.draft()).not.toBeNull();
+    d.publish();
+    await d.ack();
+    await d.tick();
+    expect(d.pending).toHaveLength(1);
+  },
+);
