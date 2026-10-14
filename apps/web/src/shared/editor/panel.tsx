@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { useLayoutEffect, useRef, useState, type ReactNode, type HTMLAttributes } from 'react';
 import { Accordion, Button } from '../../components/ui/index.js';
 
@@ -11,6 +12,7 @@ export function PanelSection({
   open,
   defaultOpen = false,
   onOpenChange,
+  onPrepareOpen,
   className,
   children,
 }: {
@@ -19,6 +21,8 @@ export function PanelSection({
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Mount deferred children before AnimatedDetails measures the opening height. */
+  onPrepareOpen?: () => void;
   className?: string;
   children: ReactNode;
 }) {
@@ -33,6 +37,16 @@ export function PanelSection({
   return (
     <Accordion
       {...state}
+      onClick={
+        onPrepareOpen
+          ? (event) => {
+              const summary =
+                event.target instanceof Element ? event.target.closest('summary') : null;
+              if (summary?.parentElement === event.currentTarget && !event.currentTarget.open)
+                flushSync(onPrepareOpen);
+            }
+          : undefined
+      }
       className={['panel-section', className].filter(Boolean).join(' ')}
       title={
         <span className="panel-section-title">

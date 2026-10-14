@@ -19,6 +19,7 @@ describe('advanced editor static meaning and readonly controls', () => {
       const f = advancedFixture();
       const html = renderToStaticMarkup(
         createElement(NativeAdvancedEditor, {
+          initialSelection: 'index:new',
           context: f.context,
           document: f.document,
           table: f.table,
@@ -112,6 +113,7 @@ describe('advanced editor static meaning and readonly controls', () => {
         );
         const html = renderToStaticMarkup(
           createElement(NativeAdvancedEditor, {
+            initialSelection: 'index:new',
             context: f.context,
             document: f.document,
             table: f.table,
@@ -199,6 +201,7 @@ describe('advanced editor static meaning and readonly controls', () => {
       expect(changed).not.toHaveBeenCalled();
       const editor = renderToStaticMarkup(
         createElement(NativeAdvancedEditor, {
+          initialSelection: 'index:new',
           context: f.context,
           document: f.document,
           table: f.table,
@@ -352,8 +355,7 @@ describe('advanced editor static meaning and readonly controls', () => {
     expect(html).toContain('구조 편집');
     expect(html).toContain('새 외래 키');
     expect(html).toContain('고급 인덱스·식 편집');
-    expect(html).toContain('CHECK 조건');
-    expect(html).toContain('새 고급 인덱스');
+    expect(html).not.toContain('새 고급 인덱스');
     // Targets belong to the chosen kind; CHECK creation is exposed after selecting CHECK.
     const check = renderToStaticMarkup(
       createElement(NativeAdvancedEditor, {
@@ -376,6 +378,7 @@ describe('advanced editor static meaning and readonly controls', () => {
     f.table.scope = 'logical';
     const html = renderToStaticMarkup(
       createElement(NativeAdvancedEditor, {
+        initialSelection: 'index:new',
         context: f.context,
         document: f.document,
         table: f.table,
