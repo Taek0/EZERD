@@ -40,3 +40,5 @@ export * from './native-transfer.js';
 export * from './native-ddl.js';
 export * from './native-history.js';
 export * from './native-cancellation.js';
+
+export * from './native-constraint-patch.js';

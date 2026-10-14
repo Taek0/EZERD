@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createNativeColumn, updateNativeColumn } from '@ezerd/model';
+import { createNativeColumn, createNativeTable, updateNativeColumn } from '@ezerd/model';
 import {
   decorationFixture,
   decorationSnapshot,
@@ -132,10 +132,7 @@ describe('local column projection', () => {
     enqueueNativeSave(
       user,
       f.snapshot,
-      [
-        rename('name'),
-        { type: 'patch_column', id: 'c', patch: { physical: { comment: 'unsupported' } } },
-      ],
+      [rename('name'), { type: 'reorder_columns', tableId: 't', columnIds: ['c'] }],
       undefined,
       undefined,
       f.store,
@@ -256,4 +253,126 @@ it('keeps the durable local edit visible when transport fails offline', async ()
     projectNativeLocalColumns(f.doc, readNativeLocalEntries(user, project, reloaded), 10, 3)
       .document.columns![0]!.physical.name,
   ).toBe('offline_name');
+});
+
+it('projects column attributes and atomic dependent table deletion before ACK', () => {
+  const f = setup();
+  enqueueNativeSave(
+    user,
+    f.snapshot,
+    [{ type: 'patch_column', id: 'c', patch: { physical: { nullable: false, comment: 'local' } } }],
+    undefined,
+    undefined,
+    f.store,
+  );
+  expect(f.project().document.columns![0]!.physical).toMatchObject({
+    nullable: false,
+    comment: 'local',
+  });
+  enqueueNativeSave(
+    user,
+    f.snapshot,
+    [{ type: 'delete_objects', targets: [{ collection: 'tables', id: 't' }] }],
+    undefined,
+    undefined,
+    f.store,
+  );
+  const projected = f.project();
+  expect(projected.blocked).toBe(0);
+  expect(projected.document.tables).toEqual([]);
+  expect(projected.document.columns).toEqual([]);
+  expect(projected.document.layout.nodes.some((n) => n.objectId === 't')).toBe(false);
+  expect(f.doc.tables).toHaveLength(1);
+  const reloaded = storage(f.store.dump());
+  expect(
+    projectNativeLocalColumns(f.doc, readNativeLocalEntries(user, project, reloaded), 10, 3)
+      .document,
+  ).toEqual(projected.document);
+});
+it('keeps an entire failed batch out of the display and isolates a changed database revision', () => {
+  const f = setup();
+  enqueueNativeSave(
+    user,
+    f.snapshot,
+    [
+      rename('tentative'),
+      { type: 'patch_column', id: 'missing', patch: { physical: { nullable: false } } },
+    ],
+    undefined,
+    undefined,
+    f.store,
+  );
+  expect(f.project()).toMatchObject({ document: f.doc, blocked: 1, pending: 0 });
+  expect(
+    projectNativeLocalColumns(f.doc, readNativeLocalEntries(user, project, f.store), 10, 4),
+  ).toMatchObject({ document: f.doc, blocked: 1 });
+});
+it('rolls rejected deletion back without losing the saved intent', async () => {
+  const f = setup();
+  enqueueNativeSave(
+    user,
+    f.snapshot,
+    [{ type: 'delete_objects', targets: [{ collection: 'columns', id: 'c' }] }],
+    undefined,
+    undefined,
+    f.store,
+  );
+  expect(f.project().document.columns).toEqual([]);
+  const entry = readNativeLocalEntries(user, project, f.store)[0]!;
+  const api = vi
+    .fn()
+    .mockRejectedValueOnce(new ApiError(404, 'missing'))
+    .mockResolvedValueOnce(ack(entry, 'rejected'));
+  await flushNativeSaveIntent(user, f.snapshot, f.store, api as typeof request);
+  expect(f.project().document).toBe(f.doc);
+  expect(nativeRejectedSaveIntents(user, project, f.store)).toHaveLength(1);
+});
+
+it('projects FK creation, patch and cascading removal with generated columns', () => {
+  const f = setup();
+  f.doc.tables!.push(createNativeTable(f.doc.database, 'child', 'a'));
+  f.doc.columns = [createNativeColumn(f.doc.database, f.doc.tables![0]!, 'c')];
+  f.doc.keys = [
+    { id: 'pk', tableId: 't', kind: 'primary', scope: 'both', name: 'pk', columnIds: ['c'] },
+  ];
+  enqueueNativeSave(
+    user,
+    f.snapshot,
+    [
+      {
+        type: 'create_foreign_key',
+        primaryTableId: 't',
+        foreignTableId: 'child',
+        primaryKeyId: 'pk',
+        relationId: 'fk',
+        columnIds: ['fc'],
+      },
+    ],
+    undefined,
+    undefined,
+    f.store,
+  );
+  expect(f.project().blocked).toBe(0);
+  expect(f.project().document.tableRelations).toHaveLength(1);
+  expect(f.project().document.columns?.find((c) => c.id === 'fc')?.tableId).toBe('child');
+  enqueueNativeSave(
+    user,
+    f.snapshot,
+    [{ type: 'patch_foreign_key', id: 'fk', patch: { logical: { name: 'local relation' } } }],
+    undefined,
+    undefined,
+    f.store,
+  );
+  expect(f.project().document.tableRelations![0]!.logical.name).toBe('local relation');
+  enqueueNativeSave(
+    user,
+    f.snapshot,
+    [{ type: 'delete_objects', targets: [{ collection: 'tables', id: 'child' }] }],
+    undefined,
+    undefined,
+    f.store,
+  );
+  expect(f.project().document.tableRelations).toEqual([]);
+  expect(f.project().document.columns?.some((c) => c.id === 'fc')).toBe(false);
+  expect(f.doc.columns).toHaveLength(1);
 });
