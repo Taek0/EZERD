@@ -369,6 +369,12 @@ function Demo() {
           applyMs,
           react: stats(commits.current),
           measurement,
+          subtrees: Object.fromEntries(
+            [...new Set(panelProfiles.samples.map((s) => s.id))].map((id) => [
+              id,
+              stats(panelProfiles.samples.filter((s) => s.id === id).map((s) => s.actual)),
+            ]),
+          ),
           reflected: root
             .current!.querySelector('.native-erd-node.table')
             ?.textContent?.includes(name),
