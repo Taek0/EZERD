@@ -62,9 +62,21 @@ let userId: string | undefined,
 const projectIds: string[] = [];
 const records: any[] = [];
 const compact = process.env.EZERD_ACK_MODE === 'delta';
+const actual = process.env.EZERD_BENCH_SNAPSHOT
+  ? projectDocumentStateSchema.parse(
+      JSON.parse(readFileSync(process.env.EZERD_BENCH_SNAPSHOT, 'utf8')),
+    )
+  : null;
+const targetServer = process.env.EZERD_BENCH_BASE;
+if (targetServer && targetServer !== 'http://127.0.0.1:3001')
+  throw Error('Only the requested local server is allowed');
 const out = fileURLToPath(
   new URL(
-    '../../../artifacts/performance/2026-10-14-async-final-' + (compact ? 'delta' : 'full') + '/',
+    (actual
+      ? '../../../artifacts/performance/2026-10-14-actual-server-'
+      : '../../../artifacts/performance/2026-10-14-async-final-') +
+      (compact ? 'delta' : 'full') +
+      '/',
     import.meta.url,
   ),
 );
@@ -81,8 +93,8 @@ try {
     );
     throw Error('DB readiness failed');
   }
-  await app.listen(0, '127.0.0.1');
-  const base = await app.getUrl();
+  if (!targetServer) await app.listen(0, '127.0.0.1');
+  const base = targetServer ?? (await app.getUrl());
   const request = async (path: string, method = 'GET', body?: unknown, allowed = 200) => {
     const start = performance.now();
     const response = await fetch(base + '/api' + path, {
@@ -118,7 +130,7 @@ try {
   token = (await request('/sessions', 'POST', { userId, pin: '0012' }, 201)).data.token;
   workspaceId = (await request('/workspaces', 'POST', { name: 'perf-ack-' + randomUUID() }, 201))
     .data.id;
-  for (const count of [10, 50, 100]) {
+  for (const count of actual ? [actual.sourceDocument.tables?.length ?? 0] : [10, 50, 100]) {
     const created = (
       await request(
         '/projects',
@@ -128,7 +140,9 @@ try {
       )
     ).data;
     projectIds.push(created.id);
-    const fixture = createNativePerformanceFixture(count, 10);
+    const fixture = actual
+      ? { document: actual.sourceDocument }
+      : createNativePerformanceFixture(count, 10);
     await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
       created.id,
       JSON.stringify(fixture.document),
@@ -241,6 +255,9 @@ try {
         entry = next;
         records.push({
           ...sample,
+          ...(targetServer
+            ? { sqlMs: null, sqlCount: null, serverTiming: 'unavailable-external-server' }
+            : {}),
           httpMs: response.httpMs,
           headersMs: response.headersMs,
           jsonMs: response.jsonMs,

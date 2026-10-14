@@ -4,12 +4,14 @@ import { fileURLToPath } from 'node:url';
 /** Opt-in localhost-only snapshot route; never copied into a build/public asset. */
 export function actualFixturePlugin(): Plugin {
   const enabled = process.env.EZERD_ACTUAL_FIXTURE === '1';
-  const file = fileURLToPath(
-    new URL(
-      '../../../artifacts/performance/2026-10-07-actual-chrome/snapshot.json',
-      import.meta.url,
-    ),
-  );
+  const file =
+    process.env.EZERD_ACTUAL_FIXTURE_PATH ??
+    fileURLToPath(
+      new URL(
+        '../../../artifacts/performance/2026-10-07-actual-chrome/snapshot.json',
+        import.meta.url,
+      ),
+    );
   const install = (middlewares: Connect.Server) =>
     middlewares.use('/__diagnostic/snapshot.json', async (req, res) => {
       if (

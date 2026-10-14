@@ -122,7 +122,7 @@ function Demo() {
   const [layerOff, setLayerOff] = useState(false);
   const [svgExtent, setSvgExtent] = useState(false);
   const [gridOff, setGridOff] = useState(false);
-  const [count, setCount] = useState(50),
+  const [count, setCount] = useState(actualSnapshot?.sourceDocument.tables?.length ?? 50),
     [output, setOutput] = useState(''),
     [running, setRunning] = useState(false);
   const root = useRef<HTMLDivElement>(null),
@@ -262,7 +262,8 @@ function Demo() {
         kind,
         open,
         count,
-        columns: 10,
+        columns: actualSnapshot ? null : 10,
+        totalColumns: fixture.document.columns?.length ?? 0,
         commit: __PERF_COMMIT__,
         dirty: __PERF_DIRTY__,
         viewport: [innerWidth, innerHeight],
@@ -324,7 +325,7 @@ function Demo() {
     }
   }
   async function auditLocalFirst(draftInput = false) {
-    if (running || actualSnapshot) return;
+    if (running) return;
     if (nativeSaveIntents(actor, project).length) {
       setOutput(JSON.stringify({ error: 'Existing fixture queue: use a clean fixture session' }));
       return;
@@ -347,7 +348,8 @@ function Demo() {
     };
     const seen: string[] = [];
     let stopSampling = false;
-    const columnId = fixture.document.columns![0]!.id;
+    const columnId =
+      root.current!.querySelector<HTMLElement>('[data-column-id]')!.dataset.columnId!;
     const rowText = (id: string) =>
       Array.from(root.current!.querySelectorAll<HTMLElement>('[data-column-id]')).find(
         (el) => el.getAttribute('data-column-id') === id,
@@ -501,9 +503,14 @@ function Demo() {
         root.current!.querySelectorAll(`[data-column-id="${addedId}"]`).length === 1;
       const attributeAt = performance.now();
       enqueueNativeSave(actor, liveFixture.current.value.snapshot, [
-        { type: 'patch_column', id: addedId, patch: { physical: { comment: 'local_attribute' } } },
+        { type: 'patch_column', id: addedId, patch: { physical: { nullable: true } } },
       ]);
-      await wait(() => rowText(addedId).includes('local_attribute'));
+      await wait(
+        () =>
+          root.current!.querySelector<HTMLInputElement>(
+            `[data-column-id="${addedId}"] input[type="checkbox"]`,
+          )?.checked === true,
+      );
       const attributePreviewMs = performance.now() - attributeAt;
       const attributeBeforeAck =
         liveFixture.current.value.snapshot.sequence === initialSequence + 3;
@@ -565,7 +572,7 @@ function Demo() {
   }
 
   async function auditAckReplay() {
-    if (running || actualSnapshot) return;
+    if (running) return;
     setRunning(true);
     setOutput('');
     const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -590,7 +597,11 @@ function Demo() {
           groupId: crypto.randomUUID(),
           sequence: current.snapshot.sequence + 1,
           status: 'accepted',
-          document: nextDocument,
+          delta: {
+            baseSequence: current.snapshot.sequence,
+            projectVersion: current.snapshot.project.version + 1,
+            changes: deriveOperationChanges(current.snapshot.sourceDocument, nextDocument),
+          },
           actor: { id: actor, username: 'preview', color: '#06b6d4' },
           changedPaths: [`/tables/${nextDocument.tables![0]!.id}/physical/name`],
           createdAt: new Date().toISOString(),
@@ -631,7 +642,9 @@ function Demo() {
         do {
           await pause(50);
         } while (
-          !root.current!.querySelector('.native-erd-node.table')?.textContent?.includes(name) &&
+          !Array.from(root.current!.querySelectorAll('.native-erd-node.table')).some((node) =>
+            node.textContent?.includes(name),
+          ) &&
           performance.now() < deadline
         );
         await pause(250);
@@ -651,9 +664,9 @@ function Demo() {
               stats(panelProfiles.samples.filter((s) => s.id === id).map((s) => s.actual)),
             ]),
           ),
-          reflected: root
-            .current!.querySelector('.native-erd-node.table')
-            ?.textContent?.includes(name),
+          reflected: Array.from(root.current!.querySelectorAll('.native-erd-node.table')).some(
+            (node) => node.textContent?.includes(name),
+          ),
         });
       }
       setOutput(JSON.stringify({ results }, null, 2));
@@ -822,11 +835,12 @@ function Demo() {
     }
   }
 
-  async function runInteractions() {
+  async function runInteractions(onlyInspector = false) {
     if (running) return;
     setRunning(true);
     setOutput('');
     const results: unknown[] = [];
+    let observer: PerformanceObserver | null = null;
     try {
       await document.fonts.ready;
       button('탐색 패널 열기')?.click();
@@ -836,16 +850,40 @@ function Demo() {
       root.current!.querySelector<HTMLElement>('.native-erd-node.table')!.click();
       await settle();
       const fingerprint = fixtureFingerprint(fixture.document);
-      for (const kind of ['navigator', 'pins', 'inspector', 'column'] as const) {
+      for (const kind of onlyInspector
+        ? (['inspector'] as const)
+        : (['navigator', 'pins', 'inspector', 'column'] as const)) {
         for (let repetition = 0; repetition < 4; repetition++) {
           const intervals: number[] = [];
+          const visibility: string[] = [];
+          const longFrames: unknown[] = [];
+          if (PerformanceObserver.supportedEntryTypes.includes('long-animation-frame')) {
+            observer = new PerformanceObserver((list) => {
+              for (const frame of list.getEntries() as any[])
+                if (longFrames.length < 100)
+                  longFrames.push({
+                    duration: frame.duration,
+                    blockingDuration: frame.blockingDuration,
+                    renderStart: frame.renderStart,
+                    styleAndLayoutStart: frame.styleAndLayoutStart,
+                    startTime: frame.startTime,
+                    scripts: frame.scripts?.map((script: any) => ({
+                      duration: script.duration,
+                      forcedStyleAndLayoutDuration: script.forcedStyleAndLayoutDuration,
+                      invoker: script.invoker,
+                    })),
+                  });
+            });
+            observer.observe({ type: 'long-animation-frame', buffered: false });
+          }
           commits.current = [];
           collector.start({
             scenario: 'panel-interactions',
             kind,
             repetition,
             count,
-            columns: 10,
+            columns: actualSnapshot ? null : 10,
+            totalColumns: fixture.document.columns?.length ?? 0,
             commit: __PERF_COMMIT__,
             dirty: __PERF_DIRTY__,
             baseline: __PANEL_INTERACTION_BASELINE__,
@@ -858,6 +896,9 @@ function Demo() {
           const tick = async () => {
             const now = await frame();
             intervals.push(now - last);
+            visibility.push(
+              document.visibilityState + (document.hasFocus() ? ':focused' : ':unfocused'),
+            );
             last = now;
           };
           let targetReached = true;
@@ -930,6 +971,8 @@ function Demo() {
               separator.releasePointerCapture = original.release;
             }
           }
+          observer?.disconnect();
+          observer = null;
           active.current = false;
           const { samples: _samples, ...measurement } = collector.stop();
           results.push({
@@ -938,6 +981,8 @@ function Demo() {
             warmup: repetition === 0,
             measurement,
             frames: stats(intervals),
+            visibility: [...new Set(visibility)],
+            longFrames,
             react: stats(commits.current),
             targetReached,
             documentUnchanged: fingerprint === fixtureFingerprint(fixture.document),
@@ -951,6 +996,7 @@ function Demo() {
       collector.cancel();
       setOutput(JSON.stringify({ error: String(error), results }));
     } finally {
+      observer?.disconnect();
       setRunning(false);
     }
   }
@@ -959,13 +1005,13 @@ function Demo() {
     <>
       <header className="panel-lab-controls">
         <strong>Full editor panel profiling · no server writes</strong>
-        <button disabled={running || !!actualSnapshot} onClick={() => void auditLocalFirst(true)}>
+        <button disabled={running} onClick={() => void auditLocalFirst(true)}>
           Audit local autosave input
         </button>
-        <button disabled={running || !!actualSnapshot} onClick={() => void auditLocalFirst()}>
+        <button disabled={running} onClick={() => void auditLocalFirst()}>
           Audit local-first columns
         </button>
-        <button disabled={running || !!actualSnapshot} onClick={() => void auditAckReplay()}>
+        <button disabled={running} onClick={() => void auditAckReplay()}>
           Audit ACK replay
         </button>
         <button disabled={running} onClick={() => void auditButtons()}>
@@ -1025,9 +1071,10 @@ function Demo() {
         <select
           aria-label="Tables"
           value={count}
-          disabled={running}
+          disabled={running || !!actualSnapshot}
           onChange={(e) => setCount(Number(e.target.value))}
         >
+          {actualSnapshot && <option value={count}>{count}</option>}
           <option>36</option>
           <option>50</option>
           <option>100</option>
@@ -1049,6 +1096,9 @@ function Demo() {
         )}
         <button disabled={running} onClick={() => void runInteractions()}>
           Measure resize and columns
+        </button>
+        <button disabled={running} onClick={() => void runInteractions(true)}>
+          Measure inspector resize only
         </button>
         <button
           disabled={!output || running}
