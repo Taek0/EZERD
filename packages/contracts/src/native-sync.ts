@@ -40,12 +40,28 @@ export const nativeSyncOperationResultSchema = z
     ...syncOperationResultFields,
     nextBaseline: nativeSyncBaselineSchema,
     document: nativeStoredDesignDocumentSchema.optional(),
+    delta: z
+      .strictObject({
+        baseSequence: z.number().int().nonnegative(),
+        projectVersion: z.number().int().nonnegative(),
+        changes: z.array(syncChangeSchema).max(1000),
+      })
+      .optional(),
     protocolVersion: z.literal(2),
     database: databaseContextSchema,
     databaseRevision: databaseRevisionSchema,
     issues: z.array(databaseIssueSchema).max(1000).optional(),
   })
   .superRefine((result, ctx) => {
+    if (
+      result.delta &&
+      (result.status !== 'accepted' ||
+        result.delta.baseSequence + 1 !== result.sequence ||
+        result.delta.changes.length !== result.changedPaths.length ||
+        result.delta.changes.some((change, i) => change.path !== result.changedPaths[i]) ||
+        new Set(result.changedPaths).size !== result.changedPaths.length)
+    )
+      ctx.addIssue({ code: 'custom', path: ['delta'], message: 'sync.delta-invalid' });
     if (result.document && !sameContext(result.database, result.document.database))
       ctx.addIssue({
         code: 'custom',
@@ -88,3 +104,14 @@ export const nativeSyncSnapshotSchema = z
       });
   });
 export type NativeSyncSnapshot = z.infer<typeof nativeSyncSnapshotSchema>;
+
+/** Opt-in transport optimization; old clients and historical ACKs keep their original envelope. */
+export function nativeAckResponse(
+  result: NativeSyncOperationResult,
+  compact = false,
+): NativeSyncOperationResult {
+  const { delta, ...full } = result;
+  if (!compact || !delta || result.status !== 'accepted') return full;
+  const { document: _document, ...ack } = full;
+  return { ...ack, delta };
+}

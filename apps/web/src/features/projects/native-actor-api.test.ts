@@ -101,3 +101,16 @@ describe('native default transport pins actor and authentication before awaits',
     expect(captureNativeActorApi(actor, api as typeof request)).toBe(api);
   });
 });
+
+it('negotiates delta ACK only on native command/result endpoints without rewriting requests', async () => {
+  const fetcher = vi.fn().mockImplementation(async () => new Response('{}'));
+  const bound = captureNativeActorApi(actor, request, {
+    sessionStorage: { getItem: () => session() },
+    fetcher,
+  });
+  for (const endpoint of ['commands', 'operations/op', 'events'])
+    await bound('/api/projects/p/native-sync/' + endpoint);
+  expect(new Headers(fetcher.mock.calls[0]![1].headers).get('x-ezerd-native-ack')).toBe('delta-v1');
+  expect(new Headers(fetcher.mock.calls[1]![1].headers).get('x-ezerd-native-ack')).toBe('delta-v1');
+  expect(new Headers(fetcher.mock.calls[2]![1].headers).has('x-ezerd-native-ack')).toBe(false);
+});

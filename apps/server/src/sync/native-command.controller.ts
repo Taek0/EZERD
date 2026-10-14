@@ -21,6 +21,7 @@ export class NativeCommandController {
     @Param('projectId') id: string,
     @Body() raw: unknown,
     @Headers('authorization') authorization?: string,
+    @Headers('x-ezerd-native-ack') ackFormat?: string,
   ) {
     const user = await requireSession(this.sessions, authorization),
       projectId = z.uuid().safeParse(id);
@@ -32,6 +33,10 @@ export class NativeCommandController {
       'projectId' in raw
     )
       throw new BadRequestException({ code: 'native.command-invalid' });
-    return this.commands.apply({ ...raw, projectId: projectId.data }, user);
+    return this.commands.apply(
+      { ...raw, projectId: projectId.data },
+      user,
+      ackFormat === 'delta-v1',
+    );
   }
 }

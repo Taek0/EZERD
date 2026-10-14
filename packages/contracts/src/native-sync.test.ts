@@ -8,6 +8,7 @@ import {
 } from '@ezerd/model';
 import {
   nativeSyncOperationInputSchema,
+  nativeAckResponse,
   nativeSyncOperationResultSchema,
   nativeSyncSnapshotSchema,
 } from './native-sync.js';
@@ -200,4 +201,31 @@ describe('native sync transport preparation', () => {
       }).success,
     ).toBe(false);
   });
+});
+
+it('negotiates compact ACK without changing legacy, rejected, or historical envelopes', () => {
+  const full = nativeSyncOperationResultSchema.parse({
+    ...result,
+    delta: { baseSequence: 0, projectVersion: 2, changes: metadata.changes },
+  });
+  const compact = nativeAckResponse(full, true);
+  expect(compact.document).toBeUndefined();
+  expect(compact.delta).toEqual(full.delta);
+  expect(nativeSyncOperationResultSchema.safeParse(compact).success).toBe(true);
+  expect(nativeAckResponse(full)).toEqual(result);
+  const historical = nativeSyncOperationResultSchema.parse(result);
+  expect(nativeAckResponse(historical, true)).toEqual(result);
+  expect(full.document).toBeDefined();
+  expect(
+    nativeSyncOperationResultSchema.safeParse({
+      ...full,
+      delta: { ...full.delta, baseSequence: 9 },
+    }).success,
+  ).toBe(false);
+  expect(nativeSyncOperationResultSchema.safeParse({ ...full, changedPaths: [] }).success).toBe(
+    false,
+  );
+  expect(nativeSyncOperationResultSchema.safeParse({ ...full, status: 'rejected' }).success).toBe(
+    false,
+  );
 });
