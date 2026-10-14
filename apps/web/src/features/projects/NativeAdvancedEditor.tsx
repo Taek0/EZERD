@@ -151,12 +151,14 @@ export function NativeAdvancedIndexForm({
   table,
   index,
   readOnly = false,
+  active = true,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table: NativeTable;
   index?: NativeIndex;
   readOnly?: boolean;
+  active?: boolean;
 }) {
   const { t } = useI18n();
   const draftKey = `advanced:index:${table.id}:${index?.id ?? 'new'}`;
@@ -173,10 +175,15 @@ export function NativeAdvancedIndexForm({
     indexDraftJSON: JSON.stringify(nativeIndexDraft(document, table, current)),
     originalJSON: JSON.stringify(current ?? null),
   };
+  const evaluations = new Map<string, NativeAdvancedCandidate>();
   function evaluate(
     values: Record<string, string>,
     before: Record<string, string> = initial,
   ): NativeAdvancedCandidate {
+    if (!active && sameAdvancedValues(values, before)) return inactiveAdvancedCandidate;
+    const cacheKey = JSON.stringify([values, before]);
+    const cached = evaluations.get(cacheKey);
+    if (cached) return cached;
     try {
       const persistedId = values.id ?? '';
       if (
@@ -188,13 +195,15 @@ export function NativeAdvancedIndexForm({
           before.originalJSON
       )
         throw Error('native.advanced-source-changed');
-      return nativeIndexCandidate(
+      const candidate = nativeIndexCandidate(
         document,
         table,
         persistedId,
         readNativeIndexDraft(values.indexDraftJSON ?? ''),
         !!current,
       );
+      evaluations.set(cacheKey, candidate);
+      return candidate;
     } catch (error) {
       return {
         allowed: false,
@@ -400,12 +409,14 @@ export function NativeAdvancedExpressionForm({
   table,
   target: providedTarget,
   readOnly = false,
+  active = true,
 }: {
   context: NativeEditorContext;
   document: NativeDesignDocument;
   table: NativeTable;
   target: NativeExpressionTarget;
   readOnly?: boolean;
+  active?: boolean;
 }) {
   const { t } = useI18n();
   const creating = providedTarget.kind === 'check' && providedTarget.create;
@@ -438,9 +449,11 @@ export function NativeAdvancedExpressionForm({
   const title =
     target.kind === 'check' ? '새 복합 CHECK' : target.kind === 'default' ? '기본값 식' : '생성 식';
   const evaluate = (values: Record<string, string>, before: Record<string, string> = initial) =>
-    creating && acknowledged && target.kind === 'check' && target.create
-      ? { allowed: false, usable: false, preserved: false, issues: [], code: 'check.not-found' }
-      : nativeExpressionCandidate(document, table, target, values, before);
+    !active && sameAdvancedValues(values, before)
+      ? inactiveAdvancedCandidate
+      : creating && acknowledged && target.kind === 'check' && target.create
+        ? { allowed: false, usable: false, preserved: false, issues: [], code: 'check.not-found' }
+        : nativeExpressionCandidate(document, table, target, values, before);
   return (
     <fieldset disabled={readOnly || context.busy}>
       <NativeEditorForm
@@ -549,6 +562,8 @@ function NativeAdvancedEditorContent({
   recoveryRevision,
 }: NativeAdvancedEditorProps) {
   const { t } = useI18n();
+  const [open, setOpen] = useState(!!initialSelection);
+  const [visited, setVisited] = useState(!!initialSelection);
   const [selected, setSelected] = useState(initialSelection ?? 'index:new');
   const [newCheckId] = useState(nativeDurableId);
   const selectionValid = nativeAdvancedSelectionValid(document, table, selected);
@@ -603,67 +618,95 @@ function NativeAdvancedEditorContent({
     <PanelSection
       className="native-property-editor native-advanced-editor"
       title={t('고급 인덱스·식 편집')}
-      defaultOpen={!!initialSelection}
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setVisited(true);
+        setOpen(next);
+      }}
     >
-      {readonly && <p role="status">{t('고급 편집은 현재 DB의 물리 테이블에서만 가능합니다.')}</p>}
-      {!selectionValid && (
-        <p role="alert">
-          {t('현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.')}
-        </p>
-      )}
-      <div className="native-advanced-selection">
-        <NativeEditorField
-          label="항목 종류"
-          value={selectedKind}
-          disabled={context.busy}
-          choices={[
-            { value: 'index', label: t('인덱스') },
-            { value: 'check', label: t('CHECK 조건') },
-            { value: 'default', label: t('기본값 식') },
-            { value: 'computed', label: t('생성 식') },
-          ].map((choice) => ({
-            ...choice,
-            disabled: !choices.some((item) => kindOf(item.value) === choice.value),
-          }))}
-          onChange={(kind) => {
-            const next = choices.find((choice) => kindOf(choice.value) === kind);
-            if (!context.busy && next) setSelected(next.value);
-          }}
-        />
-        <NativeEditorField
-          label="편집 대상"
-          value={selected}
-          disabled={context.busy}
-          choices={choices.filter((choice) => kindOf(choice.value) === selectedKind)}
-          onChange={(value) => {
-            if (!context.busy) setSelected(value);
-          }}
-        />
-      </div>
-      {selectionValid && (
-        <PanelSection title={t('핵심 설정')} defaultOpen>
-          {isIndex && selectionValid && (
-            <NativeAdvancedIndexForm
-              key={mountingKey}
-              context={context}
-              document={document}
-              table={table}
-              {...(index ? { index } : {})}
-              readOnly={readonly}
-            />
+      {(open || visited) && (
+        <>
+          {readonly && (
+            <p role="status">{t('고급 편집은 현재 DB의 물리 테이블에서만 가능합니다.')}</p>
           )}
-          {target && selectionValid && (
-            <NativeAdvancedExpressionForm
-              key={mountingKey}
-              context={context}
-              document={document}
-              table={table}
-              target={target}
-              readOnly={readonly}
-            />
+          {!selectionValid && (
+            <p role="alert">
+              {t(
+                '현재 설계에서 복구할 편집 대상을 찾을 수 없습니다. 보관된 초안은 그대로 유지됩니다.',
+              )}
+            </p>
           )}
-        </PanelSection>
+          <div className="native-advanced-selection">
+            <NativeEditorField
+              label="항목 종류"
+              value={selectedKind}
+              disabled={context.busy}
+              choices={[
+                { value: 'index', label: t('인덱스') },
+                { value: 'check', label: t('CHECK 조건') },
+                { value: 'default', label: t('기본값 식') },
+                { value: 'computed', label: t('생성 식') },
+              ].map((choice) => ({
+                ...choice,
+                disabled: !choices.some((item) => kindOf(item.value) === choice.value),
+              }))}
+              onChange={(kind) => {
+                const next = choices.find((choice) => kindOf(choice.value) === kind);
+                if (!context.busy && next) setSelected(next.value);
+              }}
+            />
+            <NativeEditorField
+              label="편집 대상"
+              value={selected}
+              disabled={context.busy}
+              choices={choices.filter((choice) => kindOf(choice.value) === selectedKind)}
+              onChange={(value) => {
+                if (!context.busy) setSelected(value);
+              }}
+            />
+          </div>
+          {selectionValid && (
+            <PanelSection title={t('핵심 설정')} defaultOpen>
+              {isIndex && selectionValid && (
+                <NativeAdvancedIndexForm
+                  key={mountingKey}
+                  context={context}
+                  document={document}
+                  table={table}
+                  {...(index ? { index } : {})}
+                  readOnly={readonly}
+                  active={open}
+                />
+              )}
+              {target && selectionValid && (
+                <NativeAdvancedExpressionForm
+                  key={mountingKey}
+                  context={context}
+                  document={document}
+                  table={table}
+                  target={target}
+                  readOnly={readonly}
+                  active={open}
+                />
+              )}
+            </PanelSection>
+          )}
+        </>
       )}
     </PanelSection>
+  );
+}
+
+const inactiveAdvancedCandidate: NativeAdvancedCandidate = {
+  allowed: false,
+  usable: false,
+  preserved: false,
+  issues: [],
+  code: 'native.advanced-inactive',
+};
+export function sameAdvancedValues(values: Record<string, string>, before: Record<string, string>) {
+  const keys = Object.keys(values);
+  return (
+    keys.length === Object.keys(before).length && keys.every((key) => values[key] === before[key])
   );
 }
