@@ -561,8 +561,13 @@ function Demo() {
       endPhase('delete');
       const deleteBeforeAck = liveFixture.current.value.snapshot.sequence === initialSequence + 4;
       await wait(() => gates.length === 5);
+      beginPhase('delete-ack');
+      const deleteAckAt = performance.now();
       gates[4]!.release();
       await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 5);
+      await wait(() => !!root.current!.textContent?.includes('✓ 저장 기준 확인됨'));
+      const deleteConfirmationMs = performance.now() - deleteAckAt;
+      endPhase('delete-ack');
       await pause(100);
       setOutput(
         JSON.stringify(
@@ -586,6 +591,7 @@ function Demo() {
             attributePreviewMs,
             attributeBeforeAck,
             deletePreviewMs,
+            deleteConfirmationMs,
             deleteBeforeAck,
             deletedAfterAck: !root.current!.querySelector(`[data-column-id="${addedId}"]`),
             compactAcks: true,

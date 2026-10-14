@@ -104,6 +104,14 @@ export function measurementPlugin(
       if (/\/packages\/model\/(dist|src)\/native-table-canvas\.(js|ts)$/.test(path))
         names = ['nativeTableCanvasMetrics'];
       if (path.endsWith('/native-primary-key.ts')) names = ['nativePrimaryKeyPlan'];
+      if (path.endsWith('/native-ack-entry.ts')) names = ['nativeEntryAfterAck'];
+      if (/\/packages\/model\/(dist|src)\/sync\.(js|ts)$/.test(path)) names = ['applyChanges'];
+      if (/\/packages\/model\/(dist|src)\/table-canvas\.(js|ts)$/.test(path))
+        names = ['normalizeSharedTableCanvas'];
+      if (/\/packages\/model\/(dist|src)\/personal\.(js|ts)$/.test(path))
+        names = ['reconcilePersonalState', 'mergeStoredPersonalState'];
+      if (/\/packages\/model\/(dist|src)\/database\/validation\.(js|ts)$/.test(path))
+        names = ['validateDatabaseDocument'];
       if (!names.length) return;
       const label = names.includes('relationGeometry')
         ? 'relation-routing.ts'
