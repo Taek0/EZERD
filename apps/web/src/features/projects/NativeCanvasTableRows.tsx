@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   cloneElement,
   useState,
@@ -33,7 +34,7 @@ export type NativeCanvasActionRequest = (
   values?: Record<string, string>,
 ) => void;
 
-export function NativeCanvasTableRows({
+function NativeCanvasTableRows({
   document,
   table,
   mode,
@@ -503,3 +504,7 @@ function NativeCanvasColumnMenu({
     </>
   );
 }
+
+// Compare every prop, including callbacks and editor permissions, with React's default shallow comparison.
+const MemoNativeCanvasTableRows = memo(NativeCanvasTableRows);
+export { MemoNativeCanvasTableRows as NativeCanvasTableRows };

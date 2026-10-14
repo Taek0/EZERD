@@ -114,7 +114,7 @@ describe('source card rows rendered from native values', () => {
         scope: 'physical',
       },
     ];
-    const tree = elements(NativeCanvasTableRows({ ...p, onToggleNullable, onConnectFromColumn }));
+    const tree = elements(renderRows({ ...p, onToggleNullable, onConnectFromColumn }));
     const checkbox = tree.find((element) => element.type === Checkbox)!;
     expect(checkbox.props.disabled).toBe(true);
     (checkbox.props.onChange as (event: unknown) => void)({ target: { checked: true } });
@@ -126,7 +126,7 @@ describe('source card rows rendered from native values', () => {
     expect(onConnectFromColumn).toHaveBeenCalledWith('c');
     p.document.keys = [];
     expect(
-      elements(NativeCanvasTableRows({ ...p, onConnectFromColumn })).some(
+      elements(renderRows({ ...p, onConnectFromColumn })).some(
         (element) => element.props.title === 'PK에서 관계 연결',
       ),
     ).toBe(false);
@@ -135,7 +135,7 @@ describe('source card rows rendered from native values', () => {
     const p = fixture(),
       onToggleNullable = vi.fn(),
       onEdit = vi.fn();
-    const tree = elements(NativeCanvasTableRows({ ...p, onToggleNullable, onEdit }));
+    const tree = elements(renderRows({ ...p, onToggleNullable, onEdit }));
     const checkbox = tree.find((element) => element.type === Checkbox)!;
     (checkbox.props.onChange as (event: unknown) => void)({ target: { checked: true } });
     expect(onToggleNullable).toHaveBeenCalledWith('t', 'c', true, 'physical');
@@ -163,9 +163,9 @@ describe('source card rows rendered from native values', () => {
     p.document.keys = [
       { id: 'pk', tableId: 't', name: 'pk', kind: 'primary', columnIds: ['c'], scope: 'both' },
     ];
-    const checkbox = elements(
-      NativeCanvasTableRows({ ...p, mode: 'logical', onToggleNullable }),
-    ).find((element) => element.type === Checkbox)!;
+    const checkbox = elements(renderRows({ ...p, mode: 'logical', onToggleNullable })).find(
+      (element) => element.type === Checkbox,
+    )!;
     expect(checkbox.props.checked).toBe(true);
     expect(checkbox.props.disabled).toBe(false);
     (checkbox.props.onChange as (event: unknown) => void)({ target: { checked: false } });
@@ -191,7 +191,7 @@ describe('source card rows rendered from native values', () => {
         onSave: vi.fn(async () => true),
       };
       const tree = elements(
-        NativeCanvasTableRows({ ...p, mode, editorContext: context, onEdit: onAdvancedFormat }),
+        renderRows({ ...p, mode, editorContext: context, onEdit: onAdvancedFormat }),
       );
       const cells = tree.filter((node) => node.type === NativeCanvasInlineCell);
       expect(cells).toHaveLength(3);
@@ -319,9 +319,9 @@ describe('source card rows rendered from native values', () => {
     expect(onConnectFromColumn).not.toHaveBeenCalled();
     const onToggleNullable = vi.fn();
     p.document.keys = [];
-    const checkbox = elements(
-      NativeCanvasTableRows({ ...p, editorContext: context, onToggleNullable }),
-    ).find((element) => element.type === Checkbox)!;
+    const checkbox = elements(renderRows({ ...p, editorContext: context, onToggleNullable })).find(
+      (element) => element.type === Checkbox,
+    )!;
     expect(checkbox.props.disabled).toBe(true);
     (checkbox.props.onChange as (event: unknown) => void)({ target: { checked: true } });
     expect(onToggleNullable).not.toHaveBeenCalled();
@@ -360,3 +360,9 @@ describe('source card rows rendered from native values', () => {
     ).toBe(false);
   });
 });
+
+const renderRows = (
+  NativeCanvasTableRows as unknown as {
+    type: (props: Parameters<typeof NativeCanvasTableRows>[0]) => ReactElement;
+  }
+).type;

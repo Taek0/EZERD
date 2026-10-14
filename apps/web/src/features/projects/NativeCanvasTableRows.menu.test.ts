@@ -54,7 +54,7 @@ function fixture() {
     },
   };
   const render = () => {
-    const menu = NativeCanvasTableRows(props);
+    const menu = renderRows(props);
     return elements((menu.type as Function)(menu.props));
   };
   return { props, render };
@@ -118,3 +118,9 @@ describe('column context menu input path', () => {
     expect(state.menu).toBeNull();
   });
 });
+
+const renderRows = (
+  NativeCanvasTableRows as unknown as {
+    type: (props: Parameters<typeof NativeCanvasTableRows>[0]) => ReactElement;
+  }
+).type;

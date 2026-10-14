@@ -340,7 +340,7 @@ describe('native canvas clipboard storage integration', () => {
     const document = ui.props.document;
     const table = document.tables![0]!;
     const onSelect = vi.fn();
-    const wrapper = NativeCanvasTableRows({ document, table, mode: 'logical', onSelect });
+    const wrapper = renderRows({ document, table, mode: 'logical', onSelect });
     const tree = (wrapper.type as (props: typeof wrapper.props) => unknown)(wrapper.props);
     const row = {
       getAttribute: () => document.columns!.find((column) => column.tableId === table.id)!.id,
@@ -1194,3 +1194,9 @@ describe('native blank canvas pointer interaction', () => {
     expect(form(render(false)).props.pauseAutosave).toBe(false);
   });
 });
+
+const renderRows = (
+  NativeCanvasTableRows as unknown as {
+    type: (props: Parameters<typeof NativeCanvasTableRows>[0]) => ReactElement;
+  }
+).type;
