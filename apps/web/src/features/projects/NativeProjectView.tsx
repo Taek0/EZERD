@@ -1177,7 +1177,12 @@ export function NativeProjectView({
     pending: !!pending,
     durable: userId ? durableState : 'empty',
     dirty,
-    error: !!saveError || !doc || localEntries.error || previewCache.current.localBlocked > 0,
+    error:
+      !!saveError ||
+      !doc ||
+      localEntries.error ||
+      previewCache.current.localBlocked > 0 ||
+      (previewCache.current.localPending > 0 && !editable),
   });
   function selectFromNavigator(tableId: string, columnId?: string) {
     leaveRecoveredSelection();

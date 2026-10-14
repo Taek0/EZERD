@@ -238,3 +238,22 @@ it('removes only rejected projection and preserves the original rejected intent'
     rename('rejected'),
   ]);
 });
+
+it('keeps the durable local edit visible when transport fails offline', async () => {
+  const f = setup();
+  f.enqueue('offline_name');
+  const api = vi
+    .fn()
+    .mockRejectedValueOnce(new ApiError(404, 'missing'))
+    .mockRejectedValueOnce(Error('offline'));
+  await expect(
+    flushNativeSaveIntent(user, f.snapshot, f.store, api as typeof request),
+  ).rejects.toThrow('offline');
+  expect(nativeSaveIntents(user, project, f.store)).toHaveLength(1);
+  expect(f.project().document.columns![0]!.physical.name).toBe('offline_name');
+  const reloaded = storage(f.store.dump());
+  expect(
+    projectNativeLocalColumns(f.doc, readNativeLocalEntries(user, project, reloaded), 10, 3)
+      .document.columns![0]!.physical.name,
+  ).toBe('offline_name');
+});
