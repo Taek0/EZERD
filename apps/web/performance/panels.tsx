@@ -308,7 +308,7 @@ function Demo() {
       setRunning(false);
     }
   }
-  async function auditLocalFirst() {
+  async function auditLocalFirst(draftInput = false) {
     if (running || actualSnapshot) return;
     if (nativeSaveIntents(actor, project).length) {
       setOutput(JSON.stringify({ error: 'Existing fixture queue: use a clean fixture session' }));
@@ -320,7 +320,7 @@ function Demo() {
     liveFixture.current = { key: `${count}:${spacing}`, value: fixture };
     let serverDocument = structuredClone(fixture.document),
       sequence = fixture.snapshot.sequence;
-    const gates: { release: () => void }[] = [],
+    const gates: { release: () => void; id: string; startedAt: number; commands: unknown }[] = [],
       replies = new Map<string, unknown>();
     const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
     const wait = async (check: () => boolean) => {
@@ -337,9 +337,24 @@ function Demo() {
       Array.from(root.current!.querySelectorAll<HTMLElement>('[data-column-id]')).find(
         (el) => el.getAttribute('data-column-id') === id,
       )?.textContent ?? '';
+    const visibleName = (name: string) =>
+      rowText(columnId).includes(name) ||
+      Array.from(
+        root.current!.querySelectorAll<HTMLElement>(`[data-column-id="${columnId}"] [aria-label]`),
+      ).some((element) => element.getAttribute('aria-label') === name + ' 타입');
+    const nameInput = () =>
+      root.current!.querySelector<HTMLInputElement>(
+        '.native-erd-node.table [data-inline-cell][aria-label="컬럼명"] input',
+      );
+    const typeName = (value: string) => {
+      const input = nameInput();
+      if (!input) throw Error('Missing active name input');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
     const sample = () => {
       if (stopSampling) return;
-      seen.push(rowText(columnId));
+      seen.push(visibleName('local_first_2') ? 'local_first_2' : 'other');
       setTimeout(sample, 20);
     };
     controlledSave = async (url, init) => {
@@ -353,7 +368,14 @@ function Demo() {
       if (!url.pathname.endsWith('/commands') || init?.method !== 'POST') return null;
       const body = JSON.parse(String(init.body));
       if (replies.has(body.operationId)) return Response.json(replies.get(body.operationId));
-      await new Promise<void>((resolve) => gates.push({ release: resolve }));
+      await new Promise<void>((resolve) =>
+        gates.push({
+          release: resolve,
+          id: body.operationId,
+          startedAt: performance.now(),
+          commands: structuredClone(body.commands),
+        }),
+      );
       for (const command of body.commands) {
         if (command.type === 'patch_column')
           serverDocument = updateNativeColumn(serverDocument, command.id, command.patch);
@@ -390,21 +412,46 @@ function Demo() {
     try {
       await pause(400);
       const initialSequence = sequence;
-      const first = enqueueNativeSave(actor, fixture.snapshot, [
-        { type: 'patch_column', id: columnId, patch: { physical: { name: 'local_first_1' } } },
-      ]);
-      await wait(() => rowText(columnId).includes('local_first_1'));
+      if (draftInput) {
+        root
+          .current!.querySelector<HTMLElement>(
+            '.native-erd-node.table [data-inline-cell][aria-label="컬럼명"]',
+          )!
+          .click();
+        await wait(() => !!nameInput());
+      }
+      const typedAt = performance.now();
+      let first = '',
+        second = '';
+      if (draftInput) typeName('local_first_1');
+      else
+        first = enqueueNativeSave(actor, fixture.snapshot, [
+          { type: 'patch_column', id: columnId, patch: { physical: { name: 'local_first_1' } } },
+        ]);
+      await wait(() => visibleName('local_first_1'));
+      const previewMs = performance.now() - typedAt;
+      const beforeTransmit = gates.length === 0;
       const beforeAck = liveFixture.current.value.snapshot.sequence === initialSequence;
       await wait(() => gates.length === 1);
-      const second = enqueueNativeSave(actor, fixture.snapshot, [
-        { type: 'patch_column', id: columnId, patch: { physical: { name: 'local_first_2' } } },
-      ]);
-      await wait(() => rowText(columnId).includes('local_first_2'));
+      first ||= gates[0]!.id;
+      const firstRequest = JSON.stringify(gates[0]!.commands);
+      if (draftInput) {
+        typeName('intermediate_value');
+        await pause(100);
+        typeName('local_first_2');
+      } else
+        second = enqueueNativeSave(actor, fixture.snapshot, [
+          { type: 'patch_column', id: columnId, patch: { physical: { name: 'local_first_2' } } },
+        ]);
+      await wait(() => visibleName('local_first_2'));
+      if (draftInput) await pause(800);
+      const onlyFirstInFlight = gates.length === 1;
       sample();
       gates[0]!.release();
       await wait(() => gates.length === 2);
       await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 1);
-      const afterEarlierAck = rowText(columnId).includes('local_first_2');
+      second ||= gates[1]!.id;
+      const afterEarlierAck = visibleName('local_first_2');
       gates[1]!.release();
       await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 2);
       await pause(100);
@@ -429,7 +476,15 @@ function Demo() {
       setOutput(
         JSON.stringify(
           {
-            scenario: 'local-first-columns',
+            scenario: draftInput ? 'autosave-local-input' : 'local-first-columns',
+            previewMs,
+            beforeTransmit,
+            onlyFirstInFlight,
+            firstRequestDelayMs: gates[0]!.startedAt - typedAt,
+            firstRequestUnchanged: JSON.stringify(gates[0]!.commands) === firstRequest,
+            secondContainsLatest:
+              JSON.stringify(gates[1]!.commands).includes('local_first_2') &&
+              !JSON.stringify(gates[1]!.commands).includes('intermediate_value'),
             commit: __PERF_COMMIT__,
             beforeAck,
             afterEarlierAck,
@@ -843,6 +898,9 @@ function Demo() {
     <>
       <header className="panel-lab-controls">
         <strong>Full editor panel profiling · no server writes</strong>
+        <button disabled={running || !!actualSnapshot} onClick={() => void auditLocalFirst(true)}>
+          Audit local autosave input
+        </button>
         <button disabled={running || !!actualSnapshot} onClick={() => void auditLocalFirst()}>
           Audit local-first columns
         </button>
