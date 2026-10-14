@@ -1,3 +1,5 @@
+import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
+import type { HTMLAttributes } from 'react';
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { NativeDesignDocument } from '@ezerd/model';
 import { Button, Input, Tooltip } from '../../components/ui/index.js';
@@ -91,7 +93,7 @@ function EditableNativeCanvasInlineCell({
   const input = nativeInlineInput(document, target);
   const key = nativeInlineKey(target);
   const typeCell = target.mode === 'physical' && target.field === 'format' && !!input.column;
-  const typeOptions = useMemo(() => nativeInlineTypeOptions(document, target), [document, key]);
+
   const root = useRef<HTMLSpanElement>(null);
   const latest = useRef({ context, document, target, onAdvancedFormat });
   useLayoutEffect(() => {
@@ -105,6 +107,12 @@ function EditableNativeCanvasInlineCell({
     };
   }, []);
   const [editing, setEditing] = useState(false);
+  const typeOptions = useMemo(
+    () =>
+      editing && typeCell ? nativeInlineTypeOptions(document, target) : emptyInlineTypeOptions,
+    [editing, typeCell, document, key],
+  );
+  const emptyLabel = t('미입력');
   const [draft, setDraft] = useState<NativeEditorDraft | null>(null);
   const current = useRef<NativeEditorDraft | null>(null);
   const original = useRef<NativeEditorDraft | null>(null);
@@ -475,9 +483,87 @@ function EditableNativeCanvasInlineCell({
       void commit(true);
     }
   }
-  return (
-    <Tooltip content={`${fieldLabel}: ${display || t('미입력')}`}>
+  const liveHandlers: Pick<
+    HTMLAttributes<HTMLSpanElement>,
+    | 'onFocus'
+    | 'onClick'
+    | 'onDoubleClick'
+    | 'onPointerDown'
+    | 'onKeyDown'
+    | 'onKeyDownCapture'
+    | 'onCompositionStart'
+    | 'onCompositionEnd'
+  > = {
+    onFocus: (event) => {
+      if (event.target !== event.currentTarget) return;
+      if (returningFromAdvanced.current) returningFromAdvanced.current = false;
+      else begin();
+    },
+    onClick: (event) => {
+      event.stopPropagation();
+      if (!editing) begin();
+    },
+    onDoubleClick: (event) => {
+      event.stopPropagation();
+      if (!editing) begin();
+    },
+    onPointerDown: (event) => {
+      if (editing) event.stopPropagation();
+    },
+    onKeyDown: keyDown,
+    onKeyDownCapture: (event) => {
+      if (
+        editing &&
+        (event.nativeEvent.isComposing || event.keyCode === 229 || composing.current) &&
+        (event.key === 'Enter' || event.key === 'Escape')
+      )
+        event.stopPropagation();
+      else if (editing && event.key === 'Escape') keyDown(event);
+      else if (editing && typeCell && event.altKey && event.key === 'Enter') {
+        event.preventDefault();
+        event.stopPropagation();
+        advanced();
+      } else if (!editing && (event.key === 'F2' || event.key === 'Enter')) {
+        event.preventDefault();
+        event.stopPropagation();
+        begin();
+      }
+    },
+    onCompositionStart: () => {
+      composing.current = true;
+      autosave.compositionProps.onCompositionStart();
+    },
+    onCompositionEnd: () => {
+      composing.current = false;
+      autosave.compositionProps.onCompositionEnd();
+      if (deferredBlur.current) {
+        deferredBlur.current = false;
+        queueMicrotask(() => {
+          if (active.current) void commit(false);
+        });
+      }
+    },
+  };
+  const dispatch = useCommittedEvent((name: keyof typeof liveHandlers, event: never) =>
+    liveHandlers[name]?.(event),
+  );
+  const stableHandlers = useMemo<typeof liveHandlers>(
+    () => ({
+      onFocus: (event) => dispatch('onFocus', event as never),
+      onClick: (event) => dispatch('onClick', event as never),
+      onDoubleClick: (event) => dispatch('onDoubleClick', event as never),
+      onPointerDown: (event) => dispatch('onPointerDown', event as never),
+      onKeyDown: (event) => dispatch('onKeyDown', event as never),
+      onKeyDownCapture: (event) => dispatch('onKeyDownCapture', event as never),
+      onCompositionStart: (event) => dispatch('onCompositionStart', event as never),
+      onCompositionEnd: (event) => dispatch('onCompositionEnd', event as never),
+    }),
+    [dispatch],
+  );
+  const presentation = (
+    <Tooltip content={`${fieldLabel}: ${display || emptyLabel}`}>
       <span
+        {...stableHandlers}
         ref={root}
         className={[
           title ? 'table-inline table-title-inline' : 'table-inline',
@@ -490,57 +576,8 @@ function EditableNativeCanvasInlineCell({
         data-inline-key={key}
         data-dirty={dirty || undefined}
         aria-label={fieldLabel}
-        title={`${fieldLabel}: ${display || t('미입력')}`}
+        title={`${fieldLabel}: ${display || emptyLabel}`}
         tabIndex={editing || context.busy ? -1 : 0}
-        onFocus={(event) => {
-          if (event.target !== event.currentTarget) return;
-          if (returningFromAdvanced.current) returningFromAdvanced.current = false;
-          else begin();
-        }}
-        onClick={(event) => {
-          event.stopPropagation();
-          if (!editing) begin();
-        }}
-        onDoubleClick={(event) => {
-          event.stopPropagation();
-          if (!editing) begin();
-        }}
-        onPointerDown={(event) => {
-          if (editing) event.stopPropagation();
-        }}
-        onKeyDown={keyDown}
-        onKeyDownCapture={(event) => {
-          if (
-            editing &&
-            (event.nativeEvent.isComposing || event.keyCode === 229 || composing.current) &&
-            (event.key === 'Enter' || event.key === 'Escape')
-          )
-            event.stopPropagation();
-          else if (editing && event.key === 'Escape') keyDown(event);
-          else if (editing && typeCell && event.altKey && event.key === 'Enter') {
-            event.preventDefault();
-            event.stopPropagation();
-            advanced();
-          } else if (!editing && (event.key === 'F2' || event.key === 'Enter')) {
-            event.preventDefault();
-            event.stopPropagation();
-            begin();
-          }
-        }}
-        onCompositionStart={() => {
-          composing.current = true;
-          autosave.compositionProps.onCompositionStart();
-        }}
-        onCompositionEnd={() => {
-          composing.current = false;
-          autosave.compositionProps.onCompositionEnd();
-          if (deferredBlur.current) {
-            deferredBlur.current = false;
-            queueMicrotask(() => {
-              if (active.current) void commit(false);
-            });
-          }
-        }}
       >
         {editing ? (
           typeCell ? (
@@ -594,4 +631,28 @@ function EditableNativeCanvasInlineCell({
       </span>
     </Tooltip>
   );
+  // Keep the idle display tree stable across ACKs; events still dispatch to the latest committed state.
+  // Active editors always receive a fresh tree (including type options, validation and ACK state).
+  return useMemo(
+    () => presentation,
+    [
+      editing ? presentation : null,
+      dispatch,
+      fieldLabel,
+      display,
+      title,
+      className,
+      typeCell,
+      key,
+      dirty,
+      context.busy,
+      submitted?.display,
+      draft?.values.query,
+      error,
+      storageError,
+      emptyLabel,
+    ],
+  );
 }
+
+const emptyInlineTypeOptions: ReturnType<typeof nativeInlineTypeOptions> = [];

@@ -66,7 +66,14 @@ vi.mock('react', async (original) => {
         slot.deps = deps;
       }
     },
-    useMemo: (factory: () => unknown) => factory(),
+    useMemo(factory: () => unknown, deps: readonly unknown[]) {
+      const slot = (driver.slots[driver.cursor++] ??= {});
+      if (!slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
+        slot.value = factory();
+        slot.deps = deps;
+      }
+      return slot.value;
+    },
   };
 });
 function elements(tree: unknown): ReactElement<Record<string, unknown>>[] {
@@ -1014,4 +1021,47 @@ describe('advanced inline editor focus and IME', () => {
     expect(close).toHaveBeenCalledOnce();
     expect(focus).toHaveBeenCalledOnce();
   });
+});
+
+it('reuses an idle ACK display but edits using the latest committed snapshot and callback', async () => {
+  const p = fixture(),
+    ui = mount(p),
+    before = ui.root(),
+    save = vi.fn<NonNullable<NativeCanvasInlineCellProps['context']>['onSave']>(async () => true);
+  const next = {
+    ...p,
+    document: structuredClone(p.document),
+    context: {
+      ...p.context,
+      onSave: save,
+      snapshot: {
+        ...p.context.snapshot,
+        sequence: p.context.snapshot.sequence + 1,
+        project: { ...p.context.snapshot.project, version: p.context.snapshot.project.version + 1 },
+      },
+    },
+  };
+  ui.render(next);
+  expect(ui.root()).toBe(before);
+  ui.begin();
+  ui.change('after_ack');
+  call(ui.field(), 'onBlur');
+  await flush();
+  expect(save).toHaveBeenCalled();
+  expect(save.mock.calls[0]![1]).toMatchObject({
+    sequence: next.context.snapshot.sequence,
+    version: next.context.snapshot.project.version,
+  });
+});
+it('invalidates idle presentation when displayed value or permissions change', () => {
+  const p = fixture(),
+    ui = mount(p),
+    before = ui.root();
+  const document = structuredClone(p.document);
+  document.columns![0]!.physical.name = 'remote_name';
+  ui.render({ ...p, document });
+  expect(ui.root()).not.toBe(before);
+  expect(ui.root().props.children).toContain('remote_name');
+  ui.render({ ...p, document, context: { ...p.context, busy: true } });
+  expect(ui.root().props.tabIndex).toBe(-1);
 });
