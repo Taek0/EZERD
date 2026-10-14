@@ -1,5 +1,6 @@
+import { projectNativeLocalName } from './native-local-draft-names.js';
 import { nativePendingSaveSchema } from '@ezerd/contracts';
-import { addNativeColumn, updateNativeColumn, type NativeDesignDocument } from '@ezerd/model';
+import { addNativeColumn, type NativeDesignDocument } from '@ezerd/model';
 import type { NativePendingSave, NativeWebCommand } from './native-save.js';
 
 export type ProjectionStorage = Pick<
@@ -40,7 +41,7 @@ export function supportsNativeLocalColumns(commands: readonly NativeWebCommand[]
     commands.length > 0 &&
     commands.every((command) => {
       if (command.type === 'add_column') return true;
-      if (command.type !== 'patch_column') return false;
+      if (command.type !== 'patch_column' && command.type !== 'patch_table') return false;
       return (
         Object.keys(command.patch).every((key) => key === 'physical' || key === 'logical') &&
         Object.keys(command.patch.physical ?? {}).every((key) => key === 'name') &&
@@ -167,16 +168,13 @@ export function projectNativeLocalColumns(
         if (command.type === 'add_column') {
           if (!next.columns?.some((column) => column.id === command.value.id))
             next = addNativeColumn(next, command.value);
-        } else if (command.type === 'patch_column') {
-          const column = next.columns?.find((column) => column.id === command.id);
-          if (!column) throw Error('document.column-not-found');
-          if (
-            (command.patch.physical?.name !== undefined &&
-              command.patch.physical.name !== column.physical.name) ||
-            (command.patch.logical?.name !== undefined &&
-              command.patch.logical.name !== column.logical.name)
-          )
-            next = updateNativeColumn(next, command.id, command.patch);
+        } else if (command.type === 'patch_column' || command.type === 'patch_table') {
+          next = projectNativeLocalName(
+            next,
+            command.type === 'patch_table' ? 'table' : 'column',
+            command.id,
+            command.patch,
+          );
         }
       }
       projected = next;

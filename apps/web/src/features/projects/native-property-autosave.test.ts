@@ -1,3 +1,7 @@
+import {
+  readNativeLocalDraftNames,
+  projectNativeLocalDraftNames,
+} from './native-local-draft-names.js';
 import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enabled: true }) }));
 import { isValidElement, type ReactElement } from 'react';
@@ -235,4 +239,98 @@ describe('property autosave lifecycle', () => {
     await vi.advanceTimersByTimeAsync(0);
     ui.unmount();
   });
+});
+
+it('projects a name before 750ms while the server quiet window batches only the latest input', async () => {
+  vi.useFakeTimers();
+  const ui = fixture();
+  ui.render();
+  ui.change('early');
+  ui.render();
+  const projected = () =>
+    projectNativeLocalDraftNames(
+      ui.snapshot.native.status === 'available' ? ui.snapshot.native.document : neverDoc(),
+      readNativeLocalDraftNames(decorationUserId, ui.snapshot.project.id),
+      3,
+    ).document;
+  expect(projected().columns![0]!.physical.name).toBe('early');
+  expect(ui.save).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(500);
+  ui.change('latest');
+  ui.render();
+  expect(projected().columns![0]!.physical.name).toBe('latest');
+  await vi.advanceTimersByTimeAsync(749);
+  expect(ui.save).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(ui.save).toHaveBeenCalledTimes(1);
+  expect((ui.save.mock.calls[0] as unknown as [unknown])[0]).toMatchObject([
+    { patch: { physical: { name: 'latest' } } },
+  ]);
+});
+function neverDoc(): never {
+  throw Error('Expected Native fixture');
+}
+it('rebases an unsent name on the confirmed snapshot instead of its own projected props', async () => {
+  vi.useFakeTimers();
+  const ui = fixture();
+  ui.render();
+  ui.change('local_unsent');
+  ui.render();
+  const doc = structuredClone(ui.snapshot.sourceDocument);
+  if (doc.schemaVersion !== 2) throw Error();
+  doc.columns![0]!.physical.name = 'remote_ack';
+  ui.props.column = { ...ui.column, physical: { ...ui.column.physical, name: 'local_unsent' } };
+  ui.props.snapshot = {
+    ...ui.snapshot,
+    sequence: 11,
+    project: { ...ui.snapshot.project, version: 8 },
+    sourceDocument: doc,
+    native: { status: 'available', document: doc, issues: [], migrationIssues: [] },
+  };
+  ui.render();
+  ui.render();
+  expect(ui.draft()?.before.physicalName).toBe('remote_ack');
+  expect(ui.draft()?.values.physicalName).toBe('local_unsent');
+  await vi.advanceTimersByTimeAsync(750);
+  expect(ui.save).toHaveBeenCalledTimes(1);
+});
+
+it('keeps later input visible while an earlier ACK waits and sends only its latest value next', async () => {
+  vi.useFakeTimers();
+  const acknowledgements: ((accepted: boolean) => void)[] = [];
+  const save = vi.fn(() => new Promise<boolean>((resolve) => acknowledgements.push(resolve)));
+  const ui = fixture(save);
+  ui.render();
+  ui.change('first_request');
+  ui.render();
+  await vi.advanceTimersByTimeAsync(750);
+  expect(save).toHaveBeenCalledTimes(1);
+  const originalRequest = JSON.stringify(save.mock.calls[0]);
+  ui.change('intermediate');
+  ui.render();
+  await vi.advanceTimersByTimeAsync(400);
+  ui.change('latest_local');
+  ui.render();
+  await vi.advanceTimersByTimeAsync(750);
+  const doc = ui.snapshot.native.status === 'available' ? ui.snapshot.native.document : neverDoc();
+  expect(
+    projectNativeLocalDraftNames(
+      doc,
+      readNativeLocalDraftNames(decorationUserId, ui.snapshot.project.id),
+      3,
+    ).document.columns![0]!.physical.name,
+  ).toBe('latest_local');
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(save.mock.calls[0])).toBe(originalRequest);
+  acknowledgements[0]!(true);
+  await vi.advanceTimersByTimeAsync(0);
+  ui.render();
+  ui.render();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(save).toHaveBeenCalledTimes(2);
+  expect((save.mock.calls[1] as unknown as [unknown])[0]).toMatchObject([
+    { patch: { physical: { name: 'latest_local' } } },
+  ]);
+  acknowledgements[1]!(true);
+  await vi.advanceTimersByTimeAsync(0);
 });

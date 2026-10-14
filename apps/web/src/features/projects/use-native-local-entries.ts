@@ -1,4 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
+import { subscribeNativeDraftMemory, nativeDraftMemoryState } from './native-durable-drafts.js';
+import {
+  readNativeLocalDraftNames,
+  type NativeLocalDraftName,
+} from './native-local-draft-names.js';
 import {
   readNativeLocalEntries,
   pruneNativeLocalBridges,
@@ -6,6 +11,7 @@ import {
   type NativeLocalEntry,
 } from './native-local-projection.js';
 const empty: NativeLocalEntry[] = [];
+const emptyDrafts: NativeLocalDraftName[] = [];
 export function useNativeLocalEntries(
   user: string,
   project: string,
@@ -19,14 +25,21 @@ export function useNativeLocalEntries(
         user && typeof localStorage !== 'undefined'
           ? readNativeLocalEntries(user, project, localStorage)
           : empty;
+      const drafts = user ? readNativeLocalDraftNames(user, project) : emptyDrafts;
+      const error = user ? nativeDraftMemoryState(user, project).storageFailure : false;
       return {
         identity,
         entries,
-        error: false,
-        signature: JSON.stringify(entries.map((entry) => [entry.key, entry.ackSequence])),
+        drafts,
+        error,
+        signature: JSON.stringify([
+          entries.map((entry) => [entry.key, entry.ackSequence]),
+          drafts,
+          error,
+        ]),
       };
     } catch {
-      return { identity, entries: empty, error: true, signature: 'error' };
+      return { identity, entries: empty, drafts: emptyDrafts, error: true, signature: 'error' };
     }
   };
   const [state, setState] = useState(read);
@@ -38,6 +51,7 @@ export function useNativeLocalEntries(
       );
     };
     const unsubscribe = subscribeNativeLocalChanges(user, project, refresh);
+    const unsubscribeDrafts = subscribeNativeDraftMemory(() => startTransition(refresh));
     const storage = (event: StorageEvent) => {
       if (
         event.key === null ||
@@ -50,6 +64,7 @@ export function useNativeLocalEntries(
     refresh();
     return () => {
       unsubscribe();
+      unsubscribeDrafts();
       window.removeEventListener('storage', storage);
     };
   }, [identity]);
@@ -65,5 +80,7 @@ export function useNativeLocalEntries(
       /* The projection reader reports storage failures. */
     }
   }, [identity, sequence, revision]);
-  return state.identity === identity ? state : { entries: empty, error: false };
+  return state.identity === identity
+    ? state
+    : { entries: empty, drafts: emptyDrafts, error: false };
 }

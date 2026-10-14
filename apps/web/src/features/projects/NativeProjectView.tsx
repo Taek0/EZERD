@@ -1,3 +1,7 @@
+import {
+  projectNativeLocalDraftNames,
+  type NativeLocalDraftName,
+} from './native-local-draft-names.js';
 import { useNativeLocalEntries } from './use-native-local-entries.js';
 import { projectNativeLocalColumns, type NativeLocalEntry } from './native-local-projection.js';
 import { useInspectorResize } from './use-inspector-resize.js';
@@ -97,6 +101,7 @@ registerTranslations({
   '! 확인 필요': '! Action needed',
   '○ 보관된 입력': '○ Preserved input',
   '✓ 저장 기준 확인됨': '✓ Saved baseline confirmed',
+  '○ 로컬 반영됨 · 자동저장 대기': '○ Applied locally · Waiting to autosave',
   '○ 로컬 반영됨 · 오프라인': '○ Applied locally · Offline',
   '◌ 로컬 반영됨 · 동기화 중…': '◌ Applied locally · Syncing…',
   '설계 조회': 'Design overview',
@@ -283,6 +288,8 @@ export function NativeProjectView({
     raw: typeof snapshot.sourceDocument;
     previews: NativeTableCreationPreview[];
     localEntries: NativeLocalEntry[];
+    localDraftNames: NativeLocalDraftName[];
+    localDrafts: number;
     sequence: number;
     localPending: number;
     localBlocked: number;
@@ -295,6 +302,7 @@ export function NativeProjectView({
     previewCache.current.raw !== snapshot.sourceDocument ||
     previewCache.current.previews !== previews ||
     previewCache.current.localEntries !== localEntries.entries ||
+    previewCache.current.localDraftNames !== localEntries.drafts ||
     previewCache.current.sequence !== snapshot.sequence
   ) {
     const local = acknowledgedDocument
@@ -305,21 +313,34 @@ export function NativeProjectView({
           snapshot.project.databaseRevision,
         )
       : null;
+    const localDraft = local
+      ? projectNativeLocalDraftNames(
+          local.document,
+          localEntries.drafts,
+          snapshot.project.databaseRevision,
+        )
+      : null;
     previewCache.current = {
       source: acknowledgedDocument,
       raw: snapshot.sourceDocument,
       previews,
       localEntries: localEntries.entries,
+      localDraftNames: localEntries.drafts,
+      localDrafts: localDraft?.count ?? 0,
       sequence: snapshot.sequence,
       localPending: local?.pending ?? 0,
       localBlocked: local?.blocked ?? 0,
-      document: local?.document ?? null,
+      document: localDraft?.document ?? null,
       shared:
         snapshot.sourceDocument.schemaVersion === 2
-          ? projectNativeLocalColumns(
-              withNativeTableCreationPreviews(snapshot.sourceDocument, previews),
-              localEntries.entries,
-              snapshot.sequence,
+          ? projectNativeLocalDraftNames(
+              projectNativeLocalColumns(
+                withNativeTableCreationPreviews(snapshot.sourceDocument, previews),
+                localEntries.entries,
+                snapshot.sequence,
+                snapshot.project.databaseRevision,
+              ).document,
+              localEntries.drafts,
               snapshot.project.databaseRevision,
             ).document
           : null,
@@ -1182,7 +1203,8 @@ export function NativeProjectView({
       !doc ||
       localEntries.error ||
       previewCache.current.localBlocked > 0 ||
-      (previewCache.current.localPending > 0 && !editable),
+      ((previewCache.current.localPending > 0 || previewCache.current.localDrafts > 0) &&
+        !editable),
   });
   function selectFromNavigator(tableId: string, columnId?: string) {
     leaveRecoveredSelection();
@@ -1327,10 +1349,13 @@ export function NativeProjectView({
               role="status"
             >
               {t(
-                previewCache.current.localPending > 0 && saveStatus !== 'attention'
+                (previewCache.current.localPending > 0 || previewCache.current.localDrafts > 0) &&
+                  saveStatus !== 'attention'
                   ? offline
                     ? '○ 로컬 반영됨 · 오프라인'
-                    : '◌ 로컬 반영됨 · 동기화 중…'
+                    : previewCache.current.localPending > 0
+                      ? '◌ 로컬 반영됨 · 동기화 중…'
+                      : '○ 로컬 반영됨 · 자동저장 대기'
                   : saveStatus === 'saving'
                     ? '◌ 저장 확인 중…'
                     : saveStatus === 'offline'
@@ -1718,7 +1743,9 @@ export function NativeProjectView({
                 <NativeERDCanvas
                   key={`${userId ?? ''}:${snapshot.project.id}:recovery:${recoveryEpoch}`}
                   document={doc}
-                  {...((previews.length || localEntries.entries.length) &&
+                  {...((previews.length ||
+                    localEntries.entries.length ||
+                    localEntries.drafts.length) &&
                   previewCache.current.shared
                     ? { optimisticSourceDocument: previewCache.current.shared }
                     : {})}

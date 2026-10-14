@@ -5,7 +5,9 @@ interface MemoryDraft {
   value: unknown;
   dirty: boolean;
   storageFailure: boolean;
+  nameOrder: Record<string, number>;
 }
+let nameEditOrder = 0;
 const defaultOwner = {};
 const pools = new WeakMap<object, Map<string, MemoryDraft>>();
 const listeners = new Set<() => void>();
@@ -85,6 +87,7 @@ export function listNativeMemoryDrafts(
       key,
       value: structuredClone(draft.value),
       storageFailure: draft.storageFailure,
+      nameOrder: { ...draft.nameOrder },
     }));
 }
 export function nativeDraftMemoryState(
@@ -116,6 +119,7 @@ export function markNativeDraftStorageFailure(
     value: previous?.value,
     dirty: previous?.dirty ?? false,
     storageFailure: true,
+    nameOrder: previous?.nameOrder ?? {},
   });
   notify();
 }
@@ -128,6 +132,14 @@ export function retainNativeMemoryDraft(
   failed: boolean,
   storage?: NativeDraftStorage,
 ) {
+  const previous = pool(storage).get(key);
+  const previousValues = (previous?.value as { values?: Record<string, unknown> } | undefined)
+    ?.values;
+  const values = draft.values as Record<string, unknown>;
+  const nameOrder = { ...previous?.nameOrder };
+  for (const field of ['physicalName', 'logicalName', 'value'])
+    if (typeof values[field] === 'string' && values[field] !== previousValues?.[field])
+      nameOrder[field] = ++nameEditOrder;
   pool(storage).set(key, {
     userId: draft.userId,
     projectId: draft.projectId,
@@ -137,6 +149,7 @@ export function retainNativeMemoryDraft(
         (draft.values as Record<string, unknown>)[key] !==
         (draft.before as Record<string, unknown>)[key],
     ),
+    nameOrder,
     storageFailure: failed,
   });
   notify();
