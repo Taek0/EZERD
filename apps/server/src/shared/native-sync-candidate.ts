@@ -49,6 +49,19 @@ export type NativeSyncCandidatePreparation =
     }
   | { status: 'rejected'; code: string; issues?: DatabaseIssue[]; conflictingPaths?: string[] };
 
+const validatedOperation = Symbol('validated-native-sync-operation');
+export interface ValidatedNativeSyncOperation {
+  readonly [validatedOperation]: true;
+  readonly input: NativeSyncOperationInput;
+  readonly original: NativeSyncOperationInput;
+}
+/** Validate the request once; the opaque envelope never crosses a transport boundary. */
+export function validateNativeSyncOperation(raw: unknown): ValidatedNativeSyncOperation {
+  const parsed = nativeSyncOperationInputSchema.safeParse(raw);
+  if (!parsed.success) throw new BadRequestException({ code: 'sync.input-invalid' });
+  const original = raw as NativeSyncOperationInput;
+  return { [validatedOperation]: true, input: parsed.data, original };
+}
 /** Run after authorization, replay handling and the project row lock; this never writes or ACKs. */
 export function prepareNativeSyncCandidate(
   raw: unknown,
@@ -58,11 +71,28 @@ export function prepareNativeSyncCandidate(
   versions: FieldVersions,
   now = Date.now(),
 ): NativeSyncCandidatePreparation {
-  const parsed = nativeSyncOperationInputSchema.safeParse(raw);
-  if (!parsed.success) throw new BadRequestException({ code: 'sync.input-invalid' });
-  const input = parsed.data;
-  // The protocol parser may trim identifiers. Such a transformation must never hide raw claims.
-  const original = raw as NativeSyncOperationInput;
+  return prepareValidatedNativeSyncCandidate(
+    validateNativeSyncOperation(raw),
+    project,
+    baseline,
+    actorId,
+    versions,
+    now,
+  );
+}
+/** The same guards as the raw entry point, reusing only its already validated request envelope. */
+export function prepareValidatedNativeSyncCandidate(
+  checked: ValidatedNativeSyncOperation,
+  project: LockedNativeProject,
+  baseline: TrustedNativeBaseline | undefined,
+  actorId: string,
+  versions: FieldVersions,
+  now = Date.now(),
+): NativeSyncCandidatePreparation {
+  if (checked[validatedOperation] !== true)
+    throw new BadRequestException({ code: 'sync.input-invalid' });
+  const { input, original } = checked;
+  // Keep the raw-normalization guard at the original preparation boundary.
   for (const field of ['baselineDocument', 'document', 'changes'] as const)
     if (requestFingerprint(input[field]) !== requestFingerprint(original[field]))
       throw new BadRequestException({ code: 'sync.raw-input-changed' });

@@ -14,7 +14,6 @@ import {
   nativeAckResponse,
   nativeSyncSnapshotSchema,
   nativeSyncEventSchema,
-  type NativeSyncOperationInput,
   type NativeSyncOperationResult,
   type NativeSyncSnapshot,
 } from '@ezerd/contracts';
@@ -35,7 +34,11 @@ import {
 } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
-import { prepareNativeSyncCandidate } from '../shared/native-sync-candidate.js';
+import {
+  prepareValidatedNativeSyncCandidate,
+  validateNativeSyncOperation,
+  type TrustedNativeBaseline,
+} from '../shared/native-sync-candidate.js';
 import { SyncGateway } from './sync.gateway.js';
 import { readNativeCancellation } from './native-cancellation-record.js';
 
@@ -115,6 +118,7 @@ export class NativeSyncService {
     user: AuthenticatedUser,
     expected?: ExpectedNativeHead,
     concurrentCommands = false,
+    onIssued?: (baseline: TrustedNativeBaseline) => void,
   ): Promise<NativeSyncSnapshot> {
     const database = resolveProjectDatabaseState(project);
     if (project.status !== 'active') throw new ConflictException({ code: 'project.archived' });
@@ -143,6 +147,16 @@ export class NativeSyncService {
       databaseRevision: database.revision,
       lastSuccessfulSyncAt: now,
       document: sql`${JSON.stringify(document)}::jsonb`,
+    });
+    onIssued?.({
+      projectId: project.id,
+      userId: user.id,
+      clientId,
+      baselineId,
+      lastSequence: project.syncSequence,
+      databaseRevision: database.revision,
+      lastSuccessfulSyncAt: now,
+      document,
     });
     return nativeSyncSnapshotSchema.parse({
       protocolVersion: 2,
@@ -211,37 +225,43 @@ export class NativeSyncService {
       await this.access.requireProject(user.id, projectId, 'design', tx);
       // MCP validation/candidate preparation and baseline issuance share this locked context.
       // No command validation or new baseline occurs before both replay checks.
+      const issuedBaselines = new Map<string, TrustedNativeBaseline>();
       const operation = prepareCommand
         ? await prepareCommand((clientId, expected) =>
             // Explicit commands patch the latest locked document in server processing order.
             // Old version/sequence are allowed only here; DB context and raw baselines stay strict.
-            this.issueBaseline(tx, project, clientId, user, expected, true),
+            this.issueBaseline(tx, project, clientId, user, expected, true, (baseline) =>
+              issuedBaselines.set(baseline.baselineId, baseline),
+            ),
           )
         : raw;
-      const parsed = nativeSyncOperationInputSchema.safeParse(operation);
-      if (!parsed.success) throw new BadRequestException({ code: 'sync.input-invalid' });
-      const input: NativeSyncOperationInput = parsed.data;
+      const checked = validateNativeSyncOperation(operation);
+      const input = checked.input;
       if (input.operationId !== identity.data)
         throw new BadRequestException({ code: 'sync.input-invalid' });
       const database = resolveProjectDatabaseState(project);
       // The project/current raw payload remains the authority for previous errors and legacy origins.
-      const [baseline] = await tx
-        .select()
-        .from(syncClientBaselines)
-        .where(
-          and(
-            eq(syncClientBaselines.projectId, projectId),
-            eq(syncClientBaselines.baselineId, input.baselineId),
-            eq(syncClientBaselines.userId, user.id),
-            eq(syncClientBaselines.clientId, input.clientId),
-          ),
-        );
+      // Only server-issued rows from this locked transaction may bypass the reread.
+      let baseline = issuedBaselines.get(input.baselineId);
+      if (!baseline) {
+        [baseline] = await tx
+          .select()
+          .from(syncClientBaselines)
+          .where(
+            and(
+              eq(syncClientBaselines.projectId, projectId),
+              eq(syncClientBaselines.baselineId, input.baselineId),
+              eq(syncClientBaselines.userId, user.id),
+              eq(syncClientBaselines.clientId, input.clientId),
+            ),
+          );
+      }
       const versionRows = await tx
         .select()
         .from(syncFieldVersions)
         .where(eq(syncFieldVersions.projectId, projectId));
-      const prepared = prepareNativeSyncCandidate(
-        operation,
+      const prepared = prepareValidatedNativeSyncCandidate(
+        checked,
         {
           id: project.id,
           status: project.status,
@@ -382,7 +402,10 @@ export class NativeSyncService {
       }
       return {
         result,
-        event: nativeSyncEventSchema.parse({ ...nativeAckResponse(result), changes }),
+        event: {
+          ...nativeAckResponse(result),
+          changes: nativeSyncEventSchema.shape.changes.parse(changes),
+        },
       };
     });
     if (outcome.event) this.gateway.publish(projectId, outcome.event);
