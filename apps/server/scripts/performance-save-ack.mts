@@ -1,3 +1,4 @@
+import { Session } from 'node:inspector';
 import { createNativeColumn, requestFingerprint } from '@ezerd/model';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
@@ -61,6 +62,15 @@ let userId: string | undefined,
   token = '';
 const projectIds: string[] = [];
 const records: any[] = [];
+const cpu = process.env.EZERD_SAVE_CPU === '1' ? new Session() : null;
+const cpuPost = (method: string) =>
+  new Promise<any>((resolve, reject) =>
+    cpu!.post(method as any, (error, result) => (error ? reject(error) : resolve(result))),
+  );
+if (cpu) {
+  cpu.connect();
+  await cpuPost('Profiler.enable');
+}
 const compact = process.env.EZERD_ACK_MODE === 'delta';
 const actual = process.env.EZERD_BENCH_SNAPSHOT
   ? projectDocumentStateSchema.parse(
@@ -72,9 +82,11 @@ if (targetServer && targetServer !== 'http://127.0.0.1:3001')
   throw Error('Only the requested local server is allowed');
 const out = fileURLToPath(
   new URL(
-    (actual
-      ? '../../../artifacts/performance/2026-10-14-actual-server-'
-      : '../../../artifacts/performance/2026-10-14-async-final-') +
+    (process.env.EZERD_BENCH_LABEL
+      ? '../../../artifacts/performance/' + process.env.EZERD_BENCH_LABEL + '-'
+      : actual
+        ? '../../../artifacts/performance/2026-10-14-actual-server-'
+        : '../../../artifacts/performance/2026-10-14-async-final-') +
       (compact ? 'delta' : 'full') +
       '/',
     import.meta.url,
@@ -205,6 +217,7 @@ try {
           sqlCount: 0,
         };
         measurement = sample;
+        if (cpu) await cpuPost('Profiler.start');
         const response = await request(
           `/projects/${created.id}/native-sync/commands`,
           'POST',
@@ -221,6 +234,10 @@ try {
           201,
         );
         measurement = null;
+        if (cpu) {
+          const { profile } = await cpuPost('Profiler.stop');
+          writeFileSync(out + `cpu-${count}-${action}-${repetition}.json`, JSON.stringify(profile));
+        }
         const schemaStart = performance.now();
         const ack = nativeSyncOperationResultSchema.parse(response.data);
         const schemaMs = performance.now() - schemaStart;
@@ -286,5 +303,6 @@ try {
   if (userId) await pool.query('DELETE FROM users WHERE id=$1', [userId]);
   await pool.end();
   await app.close();
+  cpu?.disconnect();
 }
 console.log(JSON.stringify(records));
