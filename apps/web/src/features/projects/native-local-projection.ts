@@ -1,6 +1,17 @@
 import { projectNativeLocalName } from './native-local-draft-names.js';
-import { nativePendingSaveSchema } from '@ezerd/contracts';
-import { addNativeColumn, type NativeDesignDocument } from '@ezerd/model';
+import {
+  nativePendingSaveSchema,
+  patchNativeConstraintForeignKey,
+  patchNativeConstraintKey,
+} from '@ezerd/contracts';
+import {
+  addNativeColumn,
+  updateNativeColumn,
+  updateNativeTable,
+  createNativeForeignKeyFromPrimaryKey,
+  planNativeDeletion,
+  type NativeDesignDocument,
+} from '@ezerd/model';
 import type { NativePendingSave, NativeWebCommand } from './native-save.js';
 
 export type ProjectionStorage = Pick<
@@ -39,15 +50,26 @@ export function notifyNativeLocalChanges(user: string, project: string) {
 export function supportsNativeLocalColumns(commands: readonly NativeWebCommand[]) {
   return (
     commands.length > 0 &&
-    commands.every((command) => {
-      if (command.type === 'add_column') return true;
-      if (command.type !== 'patch_column' && command.type !== 'patch_table') return false;
-      return (
-        Object.keys(command.patch).every((key) => key === 'physical' || key === 'logical') &&
-        Object.keys(command.patch.physical ?? {}).every((key) => key === 'name') &&
-        Object.keys(command.patch.logical ?? {}).every((key) => key === 'name')
-      );
-    })
+    commands.every((command) =>
+      [
+        'add_column',
+        'patch_column',
+        'patch_table',
+        'delete_objects',
+        'create_foreign_key',
+        'add_foreign_key',
+        'patch_foreign_key',
+        'patch_key',
+        'add_key',
+      ].includes(command.type),
+    )
+  );
+}
+function nameOnly(patch: { physical?: object; logical?: object }) {
+  return (
+    Object.keys(patch).every((key) => key === 'physical' || key === 'logical') &&
+    Object.keys(patch.physical ?? {}).every((key) => key === 'name') &&
+    Object.keys(patch.logical ?? {}).every((key) => key === 'name')
   );
 }
 /** The original transport intent is never rewritten. This bridge only prevents an ACK-to-render gap. */
@@ -169,12 +191,41 @@ export function projectNativeLocalColumns(
           if (!next.columns?.some((column) => column.id === command.value.id))
             next = addNativeColumn(next, command.value);
         } else if (command.type === 'patch_column' || command.type === 'patch_table') {
-          next = projectNativeLocalName(
-            next,
-            command.type === 'patch_table' ? 'table' : 'column',
-            command.id,
-            command.patch,
-          );
+          next = nameOnly(command.patch)
+            ? projectNativeLocalName(
+                next,
+                command.type === 'patch_table' ? 'table' : 'column',
+                command.id,
+                command.patch,
+              )
+            : command.type === 'patch_table'
+              ? updateNativeTable(next, command.id, command.patch)
+              : updateNativeColumn(next, command.id, command.patch);
+        } else if (command.type === 'delete_objects') {
+          const deletion = planNativeDeletion(next, command.targets, {
+            ...(command.cascadeGeneratedColumns !== undefined
+              ? { cascadeGeneratedColumns: command.cascadeGeneratedColumns }
+              : {}),
+          });
+          if (deletion.blockers.length) throw Error('deletion.blocked');
+          next = deletion.document;
+        } else if (command.type === 'create_foreign_key') {
+          next = createNativeForeignKeyFromPrimaryKey(next, command);
+        } else if (command.type === 'add_foreign_key') {
+          if (next.tableRelations?.some((item) => item.id === command.value.id))
+            throw Error('document.duplicate-identities');
+          next = {
+            ...next,
+            tableRelations: [...(next.tableRelations ?? []), structuredClone(command.value)],
+          };
+        } else if (command.type === 'patch_foreign_key') {
+          next = patchNativeConstraintForeignKey(next, command.id, command.patch);
+        } else if (command.type === 'add_key') {
+          if (next.keys?.some((item) => item.id === command.value.id))
+            throw Error('document.duplicate-identities');
+          next = { ...next, keys: [...(next.keys ?? []), structuredClone(command.value)] };
+        } else if (command.type === 'patch_key') {
+          next = patchNativeConstraintKey(next, command.id, command.patch);
         }
       }
       projected = next;
