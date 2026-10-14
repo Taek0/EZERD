@@ -1,3 +1,5 @@
+import { addNativeColumn, updateNativeColumn } from '@ezerd/model';
+import { nativeSaveIntents } from '../src/features/projects/native-save-intents.js';
 import { startTransition } from 'react';
 import { nativeEntryAfterAck } from '../src/features/projects/native-ack-entry.js';
 import { nativeSyncOperationResultSchema } from '@ezerd/contracts';
@@ -42,6 +44,7 @@ sessionStorage.setItem(
 );
 localStorage.setItem('ezerd.inspector', 'visible');
 localStorage.setItem('ezerd.inspectorWidth', '320');
+let controlledSave: ((url: URL, init?: RequestInit) => Promise<Response | null>) | null = null;
 const originalFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
   const url = new URL(
@@ -49,6 +52,10 @@ window.fetch = async (input, init) => {
     location.href,
   );
   if (!url.pathname.startsWith('/api/')) return originalFetch(input, init);
+  if (controlledSave) {
+    const controlled = await controlledSave(url, init);
+    if (controlled) return controlled;
+  }
   if (init?.method && init.method !== 'GET')
     return Response.json({ message: 'Writes disabled in panel fixture' }, { status: 403 });
   if (url.pathname.endsWith('/threads')) return Response.json([]);
@@ -129,6 +136,9 @@ function Demo() {
     return f;
   }, [count, spacing]);
   const [replayed, setReplayed] = useState<{ key: string; value: typeof fixture } | null>(null);
+  const liveFixture = useRef({ key: `${count}:${spacing}`, value: fixture });
+  if (liveFixture.current.key !== `${count}:${spacing}`)
+    liveFixture.current = { key: `${count}:${spacing}`, value: fixture };
   const profile: ProfilerOnRenderCallback = (_id, _phase, actual) => {
     if (active.current) commits.current.push(actual);
   };
@@ -298,6 +308,154 @@ function Demo() {
       setRunning(false);
     }
   }
+  async function auditLocalFirst() {
+    if (running || actualSnapshot) return;
+    if (nativeSaveIntents(actor, project).length) {
+      setOutput(JSON.stringify({ error: 'Existing fixture queue: use a clean fixture session' }));
+      return;
+    }
+    setRunning(true);
+    setOutput('');
+    setReplayed(null);
+    liveFixture.current = { key: `${count}:${spacing}`, value: fixture };
+    let serverDocument = structuredClone(fixture.document),
+      sequence = fixture.snapshot.sequence;
+    const gates: { release: () => void }[] = [],
+      replies = new Map<string, unknown>();
+    const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    const wait = async (check: () => boolean) => {
+      const until = performance.now() + 10000;
+      while (!check()) {
+        if (performance.now() > until) throw Error('Timed out waiting for fixture state');
+        await pause(25);
+      }
+    };
+    const seen: string[] = [];
+    let stopSampling = false;
+    const columnId = fixture.document.columns![0]!.id;
+    const rowText = (id: string) =>
+      Array.from(root.current!.querySelectorAll<HTMLElement>('[data-column-id]')).find(
+        (el) => el.getAttribute('data-column-id') === id,
+      )?.textContent ?? '';
+    const sample = () => {
+      if (stopSampling) return;
+      seen.push(rowText(columnId));
+      setTimeout(sample, 20);
+    };
+    controlledSave = async (url, init) => {
+      if (!url.pathname.startsWith(`/api/projects/${project}/native-sync/`)) return null;
+      if (url.pathname.includes('/operations/')) {
+        const id = url.pathname.split('/').at(-1)!;
+        return replies.has(id)
+          ? Response.json(replies.get(id))
+          : Response.json({ message: 'not found' }, { status: 404 });
+      }
+      if (!url.pathname.endsWith('/commands') || init?.method !== 'POST') return null;
+      const body = JSON.parse(String(init.body));
+      if (replies.has(body.operationId)) return Response.json(replies.get(body.operationId));
+      await new Promise<void>((resolve) => gates.push({ release: resolve }));
+      for (const command of body.commands) {
+        if (command.type === 'patch_column')
+          serverDocument = updateNativeColumn(serverDocument, command.id, command.patch);
+        else if (command.type === 'add_column')
+          serverDocument = addNativeColumn(serverDocument, command.value);
+        else throw Error('Unsupported controlled fixture command');
+      }
+      sequence++;
+      const ack = {
+        protocolVersion: 2,
+        database: {
+          kind: serverDocument.database.kind,
+          profileId: serverDocument.database.profileId,
+        },
+        databaseRevision: fixture.snapshot.project.databaseRevision,
+        operationId: body.operationId,
+        groupId: body.groupId,
+        sequence,
+        status: 'accepted',
+        document: structuredClone(serverDocument),
+        actor: { id: actor, username: 'preview', color: '#06b6d4' },
+        changedPaths: [],
+        createdAt: new Date().toISOString(),
+        nextBaseline: {
+          baselineId: crypto.randomUUID(),
+          baseSequence: sequence,
+          baselineIssuedAt: new Date().toISOString(),
+          databaseRevision: fixture.snapshot.project.databaseRevision,
+        },
+      };
+      replies.set(body.operationId, ack);
+      return Response.json(ack, { status: 201 });
+    };
+    try {
+      await pause(400);
+      const initialSequence = sequence;
+      const first = enqueueNativeSave(actor, fixture.snapshot, [
+        { type: 'patch_column', id: columnId, patch: { physical: { name: 'local_first_1' } } },
+      ]);
+      await wait(() => rowText(columnId).includes('local_first_1'));
+      const beforeAck = liveFixture.current.value.snapshot.sequence === initialSequence;
+      await wait(() => gates.length === 1);
+      const second = enqueueNativeSave(actor, fixture.snapshot, [
+        { type: 'patch_column', id: columnId, patch: { physical: { name: 'local_first_2' } } },
+      ]);
+      await wait(() => rowText(columnId).includes('local_first_2'));
+      sample();
+      gates[0]!.release();
+      await wait(() => gates.length === 2);
+      await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 1);
+      const afterEarlierAck = rowText(columnId).includes('local_first_2');
+      gates[1]!.release();
+      await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 2);
+      await pause(100);
+      stopSampling = true;
+      const originalIds = new Set(fixture.document.columns!.map((column) => column.id));
+      const findAdded = () =>
+        Array.from(root.current!.querySelectorAll<HTMLElement>('[data-column-id]'))
+          .map((element) => element.getAttribute('data-column-id')!)
+          .find((id) => !originalIds.has(id));
+      const addButton = root.current!.querySelector<HTMLButtonElement>(
+        '.native-erd-node.table button[aria-label="컬럼 추가"]',
+      );
+      if (!addButton) throw Error('Missing actual add-column button');
+      addButton.click();
+      await wait(() => !!findAdded());
+      const addedId = findAdded()!;
+      const addBeforeAck = liveFixture.current.value.snapshot.sequence === initialSequence + 2;
+      await wait(() => gates.length === 3);
+      gates[2]!.release();
+      await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 3);
+      await pause(100);
+      setOutput(
+        JSON.stringify(
+          {
+            scenario: 'local-first-columns',
+            commit: __PERF_COMMIT__,
+            beforeAck,
+            afterEarlierAck,
+            neverReverted: seen.every((text) => text.includes('local_first_2')),
+            addBeforeAck,
+            addedExactlyOnce:
+              root.current!.querySelectorAll(`[data-column-id="${addedId}"]`).length === 1,
+            queueEmpty: nativeSaveIntents(actor, project).length === 0,
+            sequence: liveFixture.current.value.snapshot.sequence,
+            operationsDistinct: first !== second,
+            serverWrites: 'mock only',
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (error) {
+      setOutput(JSON.stringify({ error: String(error), gates: gates.length, sequence }));
+    } finally {
+      stopSampling = true;
+      for (const gate of gates) gate.release();
+      controlledSave = null;
+      setRunning(false);
+    }
+  }
+
   async function auditAckReplay() {
     if (running || actualSnapshot) return;
     setRunning(true);
@@ -685,6 +843,9 @@ function Demo() {
     <>
       <header className="panel-lab-controls">
         <strong>Full editor panel profiling · no server writes</strong>
+        <button disabled={running || !!actualSnapshot} onClick={() => void auditLocalFirst()}>
+          Audit local-first columns
+        </button>
         <button disabled={running || !!actualSnapshot} onClick={() => void auditAckReplay()}>
           Audit ACK replay
         </button>
@@ -802,6 +963,17 @@ function Demo() {
               canPersonalEdit
               onLeave={noop}
               onReload={noop}
+              onAcknowledged={(ack) => {
+                const next = nativeEntryAfterAck(
+                  { kind: 'native', ...liveFixture.current.value, personalUnavailable: false },
+                  ack,
+                );
+                if (!next?.document) return false;
+                const value = { document: next.document, snapshot: next.snapshot };
+                liveFixture.current = { key: `${count}:${spacing}`, value };
+                startTransition(() => setReplayed({ key: `${count}:${spacing}`, value }));
+                return true;
+              }}
             />
           </Profiler>
         </ConfirmProvider>
