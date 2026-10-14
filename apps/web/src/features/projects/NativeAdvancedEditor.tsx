@@ -619,6 +619,7 @@ function NativeAdvancedEditorContent({
       className="native-property-editor native-advanced-editor"
       title={t('고급 인덱스·식 편집')}
       open={open}
+      onPrepareOpen={() => setVisited(true)}
       onOpenChange={(next) => {
         if (next) setVisited(true);
         setOpen(next);
