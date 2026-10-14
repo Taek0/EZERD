@@ -324,16 +324,18 @@ export class NativeSyncService {
         createdAt: now,
       });
       if (accepted) {
-        for (const change of changes)
+        if (changes.length)
           await tx
             .insert(syncFieldVersions)
-            .values({
-              projectId,
-              path: change.path,
-              sequence,
-              operationId: input.operationId,
-              updatedAt: now,
-            })
+            .values(
+              changes.map((change) => ({
+                projectId,
+                path: change.path,
+                sequence,
+                operationId: input.operationId,
+                updatedAt: now,
+              })),
+            )
             .onConflictDoUpdate({
               target: [syncFieldVersions.projectId, syncFieldVersions.path],
               set: { sequence, operationId: input.operationId, updatedAt: now },
