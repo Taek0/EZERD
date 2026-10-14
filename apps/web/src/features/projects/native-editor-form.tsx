@@ -58,6 +58,7 @@ export function NativeEditorForm({
   initial,
   build,
   disabled = false,
+  renderActive = true,
   children,
 }: {
   context: NativeEditorContext;
@@ -66,6 +67,8 @@ export function NativeEditorForm({
   initial: Record<string, string>;
   build: (values: Record<string, string>, before: Record<string, string>) => NativeWebCommand[];
   disabled?: boolean | ((values: Record<string, string>) => boolean);
+  /** False only while hidden: preserve the visual tree, not the draft/ACK/save state. */
+  renderActive?: boolean;
   children: (
     values: Record<string, string>,
     change: (field: string, value: string) => void,
@@ -236,6 +239,24 @@ export function NativeEditorForm({
       if (queued) setOutstanding((count) => count - 1);
     }
   }
+  const preservedChildren = useRef<{ value: ReactNode } | null>(null);
+  const childrenView =
+    renderActive || !preservedChildren.current
+      ? children(draft.values, (field, value) => {
+          setConfirmation(false);
+          autosave.markChanged();
+          const current = currentDraft.current;
+          persist({
+            ...current,
+            revision: nativeDurableId(),
+            values: { ...current.values, [field]: value },
+          });
+        })
+      : preservedChildren.current.value;
+  useLayoutEffect(() => {
+    if (renderActive || !preservedChildren.current)
+      preservedChildren.current = { value: childrenView };
+  });
   return (
     <form
       {...autosave.compositionProps}
@@ -295,16 +316,7 @@ export function NativeEditorForm({
             </Button>
           </div>
         )}
-        {children(draft.values, (field, value) => {
-          setConfirmation(false);
-          autosave.markChanged();
-          const current = currentDraft.current;
-          persist({
-            ...current,
-            revision: nativeDurableId(),
-            values: { ...current.values, [field]: value },
-          });
-        })}
+        {childrenView}
         {blocked && <p>{t('입력 내용을 확인해 주세요. 현재 입력은 보관됩니다.')}</p>}
         {confirmation && (
           <Button

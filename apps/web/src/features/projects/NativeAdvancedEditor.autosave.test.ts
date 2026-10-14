@@ -95,6 +95,7 @@ function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
 }
 function driver(kind: 'index' | 'check', f = advancedFixture()) {
   let active = true;
+  let bodyRenders = 0;
   const advanced = host(),
     form = host();
   const pending: { commands: NativeWebCommand[]; resolve: (accepted: boolean) => void }[] = [];
@@ -131,6 +132,7 @@ function driver(kind: 'index' | 'check', f = advancedFixture()) {
           NativeEditorForm({
             ...props,
             children(current, update) {
+              bodyRenders++;
               values = current;
               change = update;
               return null;
@@ -142,6 +144,11 @@ function driver(kind: 'index' | 'check', f = advancedFixture()) {
       throw Error('hook driver did not settle');
     },
     values: () => values,
+    bodyRenders: () => bodyRenders,
+    show() {
+      active = true;
+      api.render();
+    },
     props: () => props,
     hide() {
       active = false;
@@ -433,3 +440,15 @@ it.each(['index', 'check'] as const)(
     expect(d.pending).toHaveLength(1);
   },
 );
+
+it('keeps hidden form state current without reevaluating its visual body', async () => {
+  const d = driver('index');
+  const before = d.bodyRenders();
+  d.hide();
+  d.document(structuredClone(d.f.document));
+  await d.tick();
+  expect(d.bodyRenders()).toBe(before);
+  expect(d.onSave).not.toHaveBeenCalled();
+  d.show();
+  expect(d.bodyRenders()).toBeGreaterThan(before);
+});
