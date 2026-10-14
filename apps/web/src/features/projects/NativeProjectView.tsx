@@ -1,3 +1,4 @@
+import { shareNativeJson } from './native-ack-entry.js';
 import {
   projectNativeLocalDraftNames,
   type NativeLocalDraftName,
@@ -330,8 +331,14 @@ export function NativeProjectView({
       sequence: snapshot.sequence,
       localPending: local?.pending ?? 0,
       localBlocked: local?.blocked ?? 0,
-      document: localDraft?.document ?? null,
-      shared:
+      // Pending -> accepted bridge -> canonical ACK can describe exactly the same
+      // visible scene. Preserve it while still advancing the authoritative snapshot.
+      document: shareNativeJson(
+        previewCache.current?.document ?? null,
+        localDraft?.document ?? null,
+      ),
+      shared: shareNativeJson(
+        previewCache.current?.shared ?? null,
         snapshot.sourceDocument.schemaVersion === 2
           ? projectNativeLocalDraftNames(
               projectNativeLocalColumns(
@@ -344,6 +351,7 @@ export function NativeProjectView({
               snapshot.project.databaseRevision,
             ).document
           : null,
+      ),
     };
   }
   const doc = previewCache.current.document;

@@ -1,3 +1,7 @@
+import { shareNativeJson, nativeEntryAfterAck } from './native-ack-entry.js';
+import { projectEntry } from './project-entry.js';
+import { nativeSyncOperationResultSchema } from '@ezerd/contracts';
+import { planNativeDeletion } from '@ezerd/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createNativeColumn, createNativeTable, updateNativeColumn } from '@ezerd/model';
 import {
@@ -375,4 +379,47 @@ it('projects FK creation, patch and cascading removal with generated columns', (
   expect(f.project().document.tableRelations).toEqual([]);
   expect(f.project().document.columns?.some((c) => c.id === 'fc')).toBe(false);
   expect(f.doc.columns).toHaveLength(1);
+});
+
+it('preserves an already deleted visual scene across acceptance without retaining stale confirmed values', () => {
+  const f = setup();
+  f.doc.columns!.push(createNativeColumn(f.doc.database, f.doc.tables![0]!, 'survivor'));
+  const original = JSON.stringify(f.doc);
+  enqueueNativeSave(
+    user,
+    f.snapshot,
+    [{ type: 'delete_objects', targets: [{ collection: 'columns', id: 'c' }] }],
+    undefined,
+    undefined,
+    f.store,
+  );
+  const pending = readNativeLocalEntries(user, project, f.store)[0]!;
+  const request = JSON.stringify(pending.pending.request);
+  const visible = f.project().document;
+  const survivor = visible.columns![0]!;
+  recordNativeLocalResult(pending, true, 11, f.store);
+  f.store.removeItem(pending.key);
+  expect(shareNativeJson(visible, f.project().document)).toBe(visible);
+  const entry = projectEntry(f.snapshot);
+  if (entry.kind !== 'native') throw Error();
+  const accepted = nativeSyncOperationResultSchema.parse({
+    ...ack(pending),
+    document: planNativeDeletion(f.doc, [{ collection: 'columns', id: 'c' }]).document,
+  });
+  const confirmed = nativeEntryAfterAck(entry, accepted)!;
+  expect(confirmed.snapshot.sequence).toBe(11);
+  expect(confirmed.snapshot.project.version).toBe(f.snapshot.project.version + 1);
+  pruneNativeLocalBridges(user, project, 11, 3, f.store);
+  const finalView = f.project(confirmed.snapshot.sourceDocument as typeof f.doc, 11).document;
+  expect(shareNativeJson(visible, finalView)).toBe(visible);
+  const remote = updateNativeColumn(finalView, 'survivor', {
+    physical: { comment: 'new server value' },
+  });
+  const updated = shareNativeJson(visible, remote);
+  expect(updated).not.toBe(visible);
+  expect(updated.columns![0]).not.toBe(survivor);
+  expect(updated.columns![0]!.physical.comment).toBe('new server value');
+  expect(updated.tables![0]).toBe(visible.tables![0]);
+  expect(JSON.stringify(f.doc)).toBe(original);
+  expect(JSON.stringify(pending.pending.request)).toBe(request);
 });
