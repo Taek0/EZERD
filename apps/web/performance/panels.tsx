@@ -1,4 +1,9 @@
-import { addNativeColumn, updateNativeColumn } from '@ezerd/model';
+import {
+  addNativeColumn,
+  updateNativeColumn,
+  planNativeDeletion,
+  deriveOperationChanges,
+} from '@ezerd/model';
 import { nativeSaveIntents } from '../src/features/projects/native-save-intents.js';
 import { startTransition } from 'react';
 import { nativeEntryAfterAck } from '../src/features/projects/native-ack-entry.js';
@@ -89,7 +94,17 @@ const actualSnapshot = new URLSearchParams(location.search).has('actual')
       }),
     )
   : null;
-const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
+const frame = () =>
+  new Promise<number>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cancelAnimationFrame(id);
+      reject(Error('Animation frame unavailable: foreground frame metrics were not collected'));
+    }, 2000);
+    const id = requestAnimationFrame((time) => {
+      clearTimeout(timeout);
+      resolve(time);
+    });
+  });
 const noop = () => {};
 const stats = (values: number[]) => {
   const v = [...values].sort((a, b) => a - b);
@@ -376,11 +391,14 @@ function Demo() {
           commands: structuredClone(body.commands),
         }),
       );
+      const previousDocument = serverDocument;
       for (const command of body.commands) {
         if (command.type === 'patch_column')
           serverDocument = updateNativeColumn(serverDocument, command.id, command.patch);
         else if (command.type === 'add_column')
           serverDocument = addNativeColumn(serverDocument, command.value);
+        else if (command.type === 'delete_objects')
+          serverDocument = planNativeDeletion(serverDocument, command.targets).document;
         else throw Error('Unsupported controlled fixture command');
       }
       sequence++;
@@ -395,9 +413,15 @@ function Demo() {
         groupId: body.groupId,
         sequence,
         status: 'accepted',
-        document: structuredClone(serverDocument),
+        delta: {
+          baseSequence: sequence - 1,
+          projectVersion: fixture.snapshot.project.version + sequence - fixture.snapshot.sequence,
+          changes: deriveOperationChanges(previousDocument, serverDocument),
+        },
         actor: { id: actor, username: 'preview', color: '#06b6d4' },
-        changedPaths: [],
+        changedPaths: deriveOperationChanges(previousDocument, serverDocument).map(
+          (change) => change.path,
+        ),
         createdAt: new Date().toISOString(),
         nextBaseline: {
           baselineId: crypto.randomUUID(),
@@ -473,6 +497,30 @@ function Demo() {
       gates[2]!.release();
       await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 3);
       await pause(100);
+      const addedExactlyOnce =
+        root.current!.querySelectorAll(`[data-column-id="${addedId}"]`).length === 1;
+      const attributeAt = performance.now();
+      enqueueNativeSave(actor, liveFixture.current.value.snapshot, [
+        { type: 'patch_column', id: addedId, patch: { physical: { comment: 'local_attribute' } } },
+      ]);
+      await wait(() => rowText(addedId).includes('local_attribute'));
+      const attributePreviewMs = performance.now() - attributeAt;
+      const attributeBeforeAck =
+        liveFixture.current.value.snapshot.sequence === initialSequence + 3;
+      await wait(() => gates.length === 4);
+      gates[3]!.release();
+      await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 4);
+      const deleteAt = performance.now();
+      enqueueNativeSave(actor, liveFixture.current.value.snapshot, [
+        { type: 'delete_objects', targets: [{ collection: 'columns', id: addedId }] },
+      ]);
+      await wait(() => !root.current!.querySelector(`[data-column-id="${addedId}"]`));
+      const deletePreviewMs = performance.now() - deleteAt;
+      const deleteBeforeAck = liveFixture.current.value.snapshot.sequence === initialSequence + 4;
+      await wait(() => gates.length === 5);
+      gates[4]!.release();
+      await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 5);
+      await pause(100);
       setOutput(
         JSON.stringify(
           {
@@ -490,8 +538,13 @@ function Demo() {
             afterEarlierAck,
             neverReverted: seen.every((text) => text.includes('local_first_2')),
             addBeforeAck,
-            addedExactlyOnce:
-              root.current!.querySelectorAll(`[data-column-id="${addedId}"]`).length === 1,
+            addedExactlyOnce,
+            attributePreviewMs,
+            attributeBeforeAck,
+            deletePreviewMs,
+            deleteBeforeAck,
+            deletedAfterAck: !root.current!.querySelector(`[data-column-id="${addedId}"]`),
+            compactAcks: true,
             queueEmpty: nativeSaveIntents(actor, project).length === 0,
             sequence: liveFixture.current.value.snapshot.sequence,
             operationsDistinct: first !== second,
@@ -783,7 +836,7 @@ function Demo() {
       root.current!.querySelector<HTMLElement>('.native-erd-node.table')!.click();
       await settle();
       const fingerprint = fixtureFingerprint(fixture.document);
-      for (const kind of ['navigator', 'pins', 'column'] as const) {
+      for (const kind of ['navigator', 'pins', 'inspector', 'column'] as const) {
         for (let repetition = 0; repetition < 4; repetition++) {
           const intervals: number[] = [];
           commits.current = [];
@@ -819,7 +872,12 @@ function Demo() {
               targetReached &&= row.getAttribute('aria-expanded') === String(open);
             }
           } else {
-            const label = kind === 'pins' ? '핀 패널 너비 조절' : '탐색 패널 너비';
+            const label =
+              kind === 'pins'
+                ? '핀 패널 너비 조절'
+                : kind === 'inspector'
+                  ? '속성 패널 너비'
+                  : '탐색 패널 너비';
             const separator = root.current!.querySelector<HTMLElement>(
               `[role="separator"][aria-label="${label}"]`,
             )!;
@@ -854,7 +912,9 @@ function Demo() {
                   dispatch(
                     'pointermove',
                     800 +
-                      (kind === 'pins' ? -1 : 1) * 80 * Math.sin((Math.PI * (i * 4 + j + 1)) / 240),
+                      (kind !== 'navigator' ? -1 : 1) *
+                        80 *
+                        Math.sin((Math.PI * (i * 4 + j + 1)) / 240),
                   );
                 await tick();
               }
@@ -864,6 +924,7 @@ function Demo() {
               targetReached =
                 Math.abs(Number(separator.getAttribute('aria-valuenow')) - initial) < 1;
             } finally {
+              dispatch('pointercancel', 800);
               separator.setPointerCapture = original.set;
               separator.hasPointerCapture = original.has;
               separator.releasePointerCapture = original.release;

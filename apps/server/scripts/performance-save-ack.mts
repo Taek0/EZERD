@@ -1,4 +1,4 @@
-import { createNativeColumn } from '@ezerd/model';
+import { createNativeColumn, requestFingerprint } from '@ezerd/model';
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -61,8 +61,12 @@ let userId: string | undefined,
   token = '';
 const projectIds: string[] = [];
 const records: any[] = [];
+const compact = process.env.EZERD_ACK_MODE === 'delta';
 const out = fileURLToPath(
-  new URL('../../../artifacts/performance/2026-10-14-save-ack/', import.meta.url),
+  new URL(
+    '../../../artifacts/performance/2026-10-14-async-final-' + (compact ? 'delta' : 'full') + '/',
+    import.meta.url,
+  ),
 );
 mkdirSync(out, { recursive: true });
 try {
@@ -86,6 +90,7 @@ try {
       headers: {
         'content-type': 'application/json',
         ...(token ? { authorization: 'Bearer ' + token } : {}),
+        ...(compact ? { 'x-ezerd-native-ack': 'delta-v1' } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
@@ -144,25 +149,31 @@ try {
         entry.document.tables[0],
         randomUUID(),
       );
-      for (const action of ['rename', 'add-column', 'delete-column']) {
+      for (const action of ['rename', 'add-column', 'delete-column', 'batch-properties']) {
         const commands =
-          action === 'rename'
-            ? [
-                {
-                  type: 'patch_table',
-                  id: entry.document.tables[0].id,
-                  patch: { physical: { name: 'bench_' + count + '_' + repetition } },
-                },
-              ]
-            : action === 'add-column'
-              ? [{ type: 'add_column', value: addedColumn }]
-              : [
+          action === 'batch-properties'
+            ? entry.document.columns.slice(0, 10).map((column: any) => ({
+                type: 'patch_column',
+                id: column.id,
+                patch: { physical: { comment: 'batch_' + repetition } },
+              }))
+            : action === 'rename'
+              ? [
                   {
-                    type: 'delete_objects',
-                    targets: [{ collection: 'columns', id: addedColumn.id }],
-                    cascadeGeneratedColumns: false,
+                    type: 'patch_table',
+                    id: entry.document.tables[0].id,
+                    patch: { physical: { name: 'bench_' + count + '_' + repetition } },
                   },
-                ];
+                ]
+              : action === 'add-column'
+                ? [{ type: 'add_column', value: addedColumn }]
+                : [
+                    {
+                      type: 'delete_objects',
+                      targets: [{ collection: 'columns', id: addedColumn.id }],
+                      cascadeGeneratedColumns: false,
+                    },
+                  ];
         const operationId = randomUUID();
         const lookup = await request(
           `/projects/${created.id}/native-sync/operations/${operationId}`,
@@ -211,6 +222,22 @@ try {
         const added = next.document.columns.some((column: any) => column.id === addedColumn.id);
         if ((action === 'add-column' && !added) || (action === 'delete-column' && added))
           throw Error('Column ACK mismatch');
+        if (compact) {
+          if (!ack.delta || ack.document) throw Error('Compact negotiation failed');
+          const replay = await request(
+            `/projects/${created.id}/native-sync/operations/${operationId}`,
+          );
+          if (requestFingerprint(replay.data) !== requestFingerprint(response.data))
+            throw Error('Compact lookup replay mismatch');
+          const authoritative = projectDocumentStateSchema.parse(
+            (await request(`/projects/${created.id}/document-state`)).data,
+          );
+          if (
+            requestFingerprint(authoritative.sourceDocument) !==
+            requestFingerprint(next.snapshot.sourceDocument)
+          )
+            throw Error('Compact/full state mismatch');
+        }
         entry = next;
         records.push({
           ...sample,
