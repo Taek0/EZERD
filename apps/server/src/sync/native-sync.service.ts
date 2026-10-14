@@ -11,6 +11,7 @@ import {
   nativeStoredDesignDocumentSchema,
   nativeSyncOperationInputSchema,
   nativeSyncOperationResultSchema,
+  nativeAckResponse,
   nativeSyncSnapshotSchema,
   nativeSyncEventSchema,
   type NativeSyncOperationInput,
@@ -273,7 +274,14 @@ export class NativeSyncService {
               reason: prepared.code,
               ...(prepared.issues ? { issues: prepared.issues.slice(0, 1000) } : {}),
             }
-          : { document: prepared.document }),
+          : {
+              document: prepared.document,
+              delta: {
+                baseSequence: project.syncSequence,
+                projectVersion: project.version + 1,
+                changes,
+              },
+            }),
         actor: { id: user.id, username: user.username, color: user.color },
         changedPaths: changes.map((change) => change.path),
         createdAt: now.toISOString(),
@@ -370,7 +378,10 @@ export class NativeSyncService {
           document: sql`${JSON.stringify(sharedDocument(prepared.document))}::jsonb`,
         });
       }
-      return { result, event: nativeSyncEventSchema.parse({ ...result, changes }) };
+      return {
+        result,
+        event: nativeSyncEventSchema.parse({ ...nativeAckResponse(result), changes }),
+      };
     });
     if (outcome.event) this.gateway.publish(projectId, outcome.event);
     return outcome.result;
@@ -410,7 +421,10 @@ export class NativeSyncService {
           .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
           .orderBy(asc(syncOperations.sequence));
         const parsed = rows.map((row) =>
-          nativeSyncEventSchema.safeParse({ ...row.result, changes: row.changes }),
+          nativeSyncEventSchema.safeParse({
+            ...(({ delta: _delta, ...rest }) => rest)(row.result),
+            changes: row.changes,
+          }),
         );
         const resetRequired =
           since > project.syncSequence ||

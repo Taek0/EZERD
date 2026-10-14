@@ -1,6 +1,7 @@
 import type { NativeSyncOperationResult } from '@ezerd/contracts';
 import {
   extractPersonalState,
+  applyChanges,
   mergeStoredPersonalState,
   normalizeSharedTableCanvas,
   reconcilePersonalState,
@@ -22,7 +23,15 @@ export function shareNativeJson<T>(before: T, after: T): T {
   )
     return after;
   if (Array.isArray(before) && Array.isArray(after)) {
-    const next = after.map((value, index) => shareNativeJson(before[index], value));
+    // Entity deletion/reordering must not invalidate every following row.
+    const entities = [...before, ...after].every((value: unknown) => {
+      if (!value || typeof value !== 'object') return false;
+      return 'id' in value && typeof value.id === 'string';
+    });
+    const byId = entities ? new Map(before.map((value) => [value.id, value])) : null;
+    const next = after.map((value, index) =>
+      shareNativeJson(byId ? byId.get(value.id) : before[index], value),
+    );
     return (
       next.length === before.length && next.every((value, index) => value === before[index])
         ? before
@@ -58,12 +67,35 @@ export function nativeEntryAfterAck(
   // A sequence gap may contain rejected operations, so project.version cannot be guessed.
   if (
     ack.sequence !== snapshot.sequence + 1 ||
-    !ack.document ||
+    (!ack.document && !ack.delta) ||
     snapshot.native.status !== 'available' ||
     snapshot.sourceDocument.schemaVersion !== 2
   )
     return null;
-  const document = shareNativeJson(snapshot.sourceDocument, ack.document);
+  let incoming = ack.document;
+  if (!incoming && ack.delta) {
+    if (
+      ack.delta.baseSequence !== snapshot.sequence ||
+      ack.delta.projectVersion !== snapshot.project.version + 1
+    )
+      return null;
+    try {
+      incoming = applyChanges(
+        snapshot.sourceDocument,
+        ack.delta.changes.map((change) => ({
+          path: change.path,
+          before: change.before,
+          after: change.after,
+          ...(change.beforeExists !== undefined ? { beforeExists: change.beforeExists } : {}),
+          ...(change.afterExists !== undefined ? { afterExists: change.afterExists } : {}),
+        })),
+      );
+    } catch {
+      return null;
+    }
+  }
+  if (!incoming) return null;
+  const document = shareNativeJson(snapshot.sourceDocument, incoming);
   // ACKs carry raw storage, whereas the server reader supplies canonical canvas placement.
   // Apply exactly that read-only projection without ever replacing sourceDocument.
   const displayDocument = shareNativeJson(

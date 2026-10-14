@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { NativeSyncOperationResult } from '@ezerd/contracts';
 import { clipboardSnapshot } from './native-clipboard-test-fixtures.js';
 import { projectEntry } from './project-entry.js';
-import { nativeEntryAfterAck } from './native-ack-entry.js';
+import { nativeEntryAfterAck, shareNativeJson } from './native-ack-entry.js';
 import {
   normalizeSharedTableCanvas,
+  deriveOperationChanges,
   TABLES_VIEW_ID,
   createEmptyNativeDocument,
   createNativeTable,
@@ -203,4 +204,42 @@ describe('native ACK document confirmation', () => {
     ).toBeNull();
     expect(nativeEntryAfterAck(entry, { ...ack, status: 'rejected' })).toBeNull();
   });
+});
+
+it('applies compact ACK exactly like full ACK, preserves identities and refuses sequence/version gaps', () => {
+  const { entry, ack } = fixture();
+  const { document, ...metadata } = ack;
+  const compact = {
+    ...metadata,
+    delta: {
+      baseSequence: entry.snapshot.sequence,
+      projectVersion: entry.snapshot.project.version + 1,
+      changes: deriveOperationChanges(entry.snapshot.sourceDocument, document!),
+    },
+  };
+  const full = nativeEntryAfterAck(entry, ack)!;
+  const next = nativeEntryAfterAck(entry, compact)!;
+  expect(next).toEqual(full);
+  expect(next.snapshot.sourceDocument.tables![0]).toBe(entry.snapshot.sourceDocument.tables![0]);
+  expect(nativeEntryAfterAck(next, compact)).toBe(next);
+  expect(
+    nativeEntryAfterAck(entry, { ...compact, delta: { ...compact.delta, baseSequence: 999 } }),
+  ).toBeNull();
+  expect(
+    nativeEntryAfterAck(entry, { ...compact, delta: { ...compact.delta, projectVersion: 999 } }),
+  ).toBeNull();
+});
+it('retains surviving entity references across deletion and reorder', () => {
+  const before = [
+    { id: 'a', value: 1 },
+    { id: 'b', value: 2 },
+    { id: 'c', value: 3 },
+  ];
+  const next = shareNativeJson(before, [
+    { id: 'c', value: 3 },
+    { id: 'b', value: 2 },
+  ]);
+  expect(next[0]).toBe(before[2]);
+  expect(next[1]).toBe(before[1]);
+  expect(shareNativeJson([1, 2], [2, 1])).toEqual([2, 1]);
 });

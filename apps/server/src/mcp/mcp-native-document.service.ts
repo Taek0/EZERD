@@ -3,6 +3,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import {
   nativeEditorCommandSchema,
+  nativeAckResponse,
   nativeStoredDesignDocumentSchema,
   type NativeEditorCommand,
   planNativeClipboardCommand,
@@ -307,7 +308,7 @@ export function nativeEditorCandidate(
 @Injectable()
 export class McpNativeDocumentService {
   constructor(@Inject(NativeSyncService) private readonly sync: NativeSyncService) {}
-  async apply(raw: unknown, user: AuthenticatedUser) {
+  async apply(raw: unknown, user: AuthenticatedUser, compactAck = false) {
     const identity = z
       .object({
         projectId: z.uuid(),
@@ -322,8 +323,8 @@ export class McpNativeDocumentService {
       .update(requestFingerprint({ command: 'apply_native_project_changes', ...semanticInput }))
       .digest('hex');
     const finish = (result: Awaited<ReturnType<NativeSyncService['apply']>>) => {
-      if (identity.data.includeDocument) return result;
-      const { document: _document, ...ack } = result;
+      if (identity.data.includeDocument) return nativeAckResponse(result, compactAck);
+      const { document: _document, delta: _delta, ...ack } = result;
       return ack;
     };
     return finish(

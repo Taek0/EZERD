@@ -1,3 +1,4 @@
+import { nativeAckResponse } from '@ezerd/contracts';
 import {
   BadRequestException,
   Body,
@@ -44,11 +45,15 @@ export class NativeSyncController {
     @Param('projectId') projectId: string,
     @Body() raw: unknown,
     @Headers('authorization') authorization?: string,
+    @Headers('x-ezerd-native-ack') ackFormat?: string,
   ) {
-    return this.sync.apply(
-      parse(id, projectId),
-      raw,
-      await requireSession(this.sessions, authorization),
+    return nativeAckResponse(
+      await this.sync.apply(
+        parse(id, projectId),
+        raw,
+        await requireSession(this.sessions, authorization),
+      ),
+      ackFormat === 'delta-v1',
     );
   }
   @Get('operations/:operationId')
@@ -56,11 +61,15 @@ export class NativeSyncController {
     @Param('projectId') projectId: string,
     @Param('operationId') operationId: string,
     @Headers('authorization') authorization?: string,
+    @Headers('x-ezerd-native-ack') ackFormat?: string,
   ) {
-    return this.sync.lookup(
-      parse(id, projectId),
-      parse(id, operationId),
-      await requireSession(this.sessions, authorization),
+    return nativeAckResponse(
+      await this.sync.lookup(
+        parse(id, projectId),
+        parse(id, operationId),
+        await requireSession(this.sessions, authorization),
+      ),
+      ackFormat === 'delta-v1',
     );
   }
   @Get('events')

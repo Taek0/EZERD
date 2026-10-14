@@ -60,6 +60,8 @@ export function captureNativeActorApi(
     });
     // client.request spreads object headers; use exactly the same key to override its live auth.
     headers.Authorization = authorization;
+    if (/\/native-sync\/(commands|operations(?:\/[^/?]+)?)$/.test(url))
+      headers['x-ezerd-native-ack'] = 'delta-v1';
     return request<T>(url, { ...init, headers }, async (input, outgoing) => {
       current(); // No await between the final account/session check and the real fetch invocation.
       const pinned = new Headers(outgoing?.headers);
