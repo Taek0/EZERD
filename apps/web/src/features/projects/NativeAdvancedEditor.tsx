@@ -217,6 +217,7 @@ export function NativeAdvancedIndexForm({
   return (
     <fieldset disabled={readOnly || context.busy}>
       <NativeEditorForm
+        renderActive={active}
         context={context}
         draftKey={draftKey}
         title={t(index ? '인덱스 키 식' : '새 고급 인덱스')}
@@ -457,6 +458,7 @@ export function NativeAdvancedExpressionForm({
   return (
     <fieldset disabled={readOnly || context.busy}>
       <NativeEditorForm
+        renderActive={active}
         context={context}
         draftKey={draftKey}
         title={t(title)}
@@ -563,6 +565,7 @@ function NativeAdvancedEditorContent({
 }: NativeAdvancedEditorProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(!!initialSelection);
+  const [preparing, setPreparing] = useState(false);
   const [visited, setVisited] = useState(!!initialSelection);
   const [selected, setSelected] = useState(initialSelection ?? 'index:new');
   const [newCheckId] = useState(nativeDurableId);
@@ -619,10 +622,14 @@ function NativeAdvancedEditorContent({
       className="native-property-editor native-advanced-editor"
       title={t('고급 인덱스·식 편집')}
       open={open}
-      onPrepareOpen={() => setVisited(true)}
+      onPrepareOpen={() => {
+        setVisited(true);
+        setPreparing(true);
+      }}
       onOpenChange={(next) => {
         if (next) setVisited(true);
         setOpen(next);
+        setPreparing(false);
       }}
     >
       {(open || visited) && (
@@ -676,7 +683,7 @@ function NativeAdvancedEditorContent({
                   table={table}
                   {...(index ? { index } : {})}
                   readOnly={readonly}
-                  active={open}
+                  active={open || preparing}
                 />
               )}
               {target && selectionValid && (
@@ -687,7 +694,7 @@ function NativeAdvancedEditorContent({
                   table={table}
                   target={target}
                   readOnly={readonly}
-                  active={open}
+                  active={open || preparing}
                 />
               )}
             </PanelSection>
