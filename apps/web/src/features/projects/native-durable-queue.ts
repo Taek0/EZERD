@@ -190,6 +190,7 @@ export class NativeDurableQueue {
       const db = await this.open(),
         key = scope(userId, projectId);
       let committed: Row | null = null;
+      let didWrite = false;
       const output = await new Promise<T>((resolve, reject) => {
         const tx = db.transaction(
             table,
@@ -211,7 +212,8 @@ export class NativeDurableQueue {
             guard?.();
             committed = changed.row;
             result = changed.result;
-            if (write) {
+            if (write && changed.row !== current) {
+              didWrite = true;
               if (changed.row) store.put(changed.row, key);
               else store.delete(key);
             }
@@ -222,7 +224,7 @@ export class NativeDurableQueue {
         };
       });
       this.status(userId, projectId, committed);
-      if (write) this.channel?.postMessage([userId, projectId]);
+      if (didWrite) this.channel?.postMessage([userId, projectId]);
       return output;
     } catch (error) {
       // Busy/conflicting claims are known states, not an excuse to fall back to memory writes.

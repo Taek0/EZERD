@@ -1,3 +1,4 @@
+import { IDBObjectStore } from 'fake-indexeddb';
 import { nativeTestDeferred } from './native-durable-test-environment.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -11,6 +12,7 @@ const queues: NativeDurableQueue[] = [];
 afterEach(async () => {
   for (const queue of queues.splice(0)) await queue.close();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 const entry = (
   kind: NativeDurablePending['kind'] = 'commands',
@@ -580,4 +582,46 @@ describe('databaseChange no-new-mutation precondition proof fence', () => {
     expect(await b.read('actor', 'project')).toEqual(pending);
     await expect(b.discard(pending)).rejects.toThrow('native.transmission-unknown');
   });
+});
+
+it('does not rewrite an empty or peer-owned row while finishing an accepted transmission', async () => {
+  const { a, b } = pair(),
+    pending = entry();
+  const put = vi.spyOn(IDBObjectStore.prototype, 'put'),
+    remove = vi.spyOn(IDBObjectStore.prototype, 'delete');
+  await a.claim(pending);
+  const token = await a.beginTransmission(pending);
+  await a.acknowledge(pending);
+  const puts = put.mock.calls.length,
+    deletes = remove.mock.calls.length;
+  await a.endTransmission(pending, token);
+  expect(put).toHaveBeenCalledTimes(puts);
+  expect(remove).toHaveBeenCalledTimes(deletes);
+  const peer = entry();
+  await b.claim(peer);
+  const peerPuts = put.mock.calls.length;
+  await a.endTransmission(pending, token);
+  expect(put).toHaveBeenCalledTimes(peerPuts);
+  expect(remove).toHaveBeenCalledTimes(deletes);
+  expect(await b.read(peer.userId, peer.projectId)).toEqual(peer);
+});
+it('still runs an adoption guard atomically without rewriting the same stored claim', async () => {
+  const { a, b } = pair(),
+    pending = entry();
+  await a.claim(pending);
+  const put = vi.spyOn(IDBObjectStore.prototype, 'put'),
+    guard = vi.fn();
+  await b.claim(pending, guard, true);
+  expect(guard).toHaveBeenCalledOnce();
+  expect(put).not.toHaveBeenCalled();
+  await expect(
+    b.claim(
+      pending,
+      () => {
+        throw Error('guard failed');
+      },
+      true,
+    ),
+  ).rejects.toThrow('guard failed');
+  expect(await a.read(pending.userId, pending.projectId)).toEqual(pending);
 });
