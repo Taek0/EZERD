@@ -1,3 +1,4 @@
+import { useNavigatorPresence } from './use-navigator-presence.js';
 import { useId } from 'react';
 import { Button, IconButton } from '../../components/ui/index.js';
 import { ChevronDown } from '../../components/ui/untitled.js';
@@ -62,6 +63,7 @@ export function NativeNavigatorTable({
   const searchingColumns = !!search.trim() && matchingColumns.length > 0;
   const open = expanded || searchingColumns;
   const shown = searchingColumns ? matchingColumns : columns;
+  const presence = useNavigatorPresence(open);
   return (
     <li className="native-navigator-table">
       <div className="native-navigator-table-row" data-selected={active}>
@@ -97,6 +99,7 @@ export function NativeNavigatorTable({
       </div>
       {badge && <small className="native-navigator-domain">{badge}</small>}
       <div
+        ref={presence.ref}
         id={id}
         className="native-navigator-collapse"
         data-open={open}
@@ -105,19 +108,20 @@ export function NativeNavigatorTable({
       >
         <div>
           <ul className="native-navigator-columns">
-            {shown.map((column) => (
-              <li key={column.id}>
-                <Button
-                  variant="ghost"
-                  aria-current={(active && selectedColumn === column.id) || undefined}
-                  onClick={() => onSelectColumn(column.id)}
-                  title={`${column.name} · ${column.type}`}
-                >
-                  <span className="native-navigator-name">{column.name}</span>
-                  <small>{column.type}</small>
-                </Button>
-              </li>
-            ))}
+            {presence.present &&
+              shown.map((column) => (
+                <li key={column.id}>
+                  <Button
+                    variant="ghost"
+                    aria-current={(active && selectedColumn === column.id) || undefined}
+                    onClick={() => onSelectColumn(column.id)}
+                    title={`${column.name} · ${column.type}`}
+                  >
+                    <span className="native-navigator-name">{column.name}</span>
+                    <small>{column.type}</small>
+                  </Button>
+                </li>
+              ))}
           </ul>
         </div>
       </div>
