@@ -869,6 +869,12 @@ export function NativeProjectView({
           );
           if (!confirmedLocally) onReload();
         }
+        // The accepted request has already completed its durable cleanup. Do not
+        // keep its saving indicator open for another empty drain/read cycle.
+        // New/cross-tab intents use the existing save scheduling/polling path;
+        // every actual send continues to take the transactional durable claim.
+        if (!saveWaiters.current.size && !nativeSaveIntents(userId, snapshot.project.id).length)
+          break;
       }
     } catch (error) {
       if (currentEditor()) {
