@@ -13,6 +13,8 @@ import {
 import { type NativeSyncOperationInput } from '@ezerd/contracts';
 import {
   prepareNativeSyncCandidate,
+  prepareValidatedNativeSyncCandidate,
+  validateNativeSyncOperation,
   type LockedNativeProject,
   type TrustedNativeBaseline,
 } from '../src/shared/native-sync-candidate.js';
@@ -402,4 +404,67 @@ describe('server native candidate preparation under trusted context', () => {
       code(prepareNativeSyncCandidate(input, project, baseline, actorId, new Map(), now)),
     ).toBe('sync.stored-document-invalid');
   });
+});
+
+it('reuses schema validation without bypassing context, field-conflict or raw-change checks', () => {
+  const f = fixture(),
+    raw = f.request((doc) => {
+      doc.tables![0]!.physical.name = 'updated';
+    });
+  const checked = validateNativeSyncOperation(raw);
+  for (const scenario of [
+    {
+      project: f.project,
+      baseline: f.baseline,
+      actor: actorId,
+      versions: new Map<string, number>(),
+    },
+    {
+      project: { ...f.project, status: 'archived' as const },
+      baseline: f.baseline,
+      actor: actorId,
+      versions: new Map<string, number>(),
+    },
+    {
+      project: f.project,
+      baseline: f.baseline,
+      actor: randomUUID(),
+      versions: new Map<string, number>(),
+    },
+    {
+      project: f.project,
+      baseline: f.baseline,
+      actor: actorId,
+      versions: new Map([['/tables/t/physical/name', 1]]),
+    },
+    {
+      project: f.project,
+      baseline: undefined,
+      actor: actorId,
+      versions: new Map<string, number>(),
+    },
+  ]) {
+    const { project, baseline, actor, versions } = scenario;
+    expect(
+      prepareValidatedNativeSyncCandidate(checked, project, baseline, actor, versions, now),
+    ).toEqual(prepareNativeSyncCandidate(raw, project, baseline, actor, versions, now));
+  }
+  raw.document.tables![0]!.physical.name = 'changed after parsing';
+  expect(
+    badRequestCode(() =>
+      prepareValidatedNativeSyncCandidate(checked, f.project, f.baseline, actorId, new Map(), now),
+    ),
+  ).toBe('sync.raw-input-changed');
+  expect(
+    badRequestCode(() =>
+      prepareValidatedNativeSyncCandidate(
+        { input: checked.input, original: checked.original } as typeof checked,
+        f.project,
+        f.baseline,
+        actorId,
+        new Map(),
+        now,
+      ),
+    ),
+  ).toBe('sync.input-invalid');
 });
