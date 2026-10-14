@@ -10,3 +10,5 @@
 - React 작업량 비교이며 FPS/INP/픽셀 표시 완료 시간은 아니다. 서버 SQL·전체 문서 ACK 왕복 비용과 일반 자동저장 대기 750ms는 이번 변경 대상이 아니다.
 
 [계획](../planning/2026-10-14-Performance-AdvancedAndAckBoundaries.md)
+
+- viewport 보충: 이전/방문 후 최종 측정은 2560×1249, 미사용 폼 측정은 2560×1305였다. 미사용 폼 수치의 엄밀한 동일 viewport 개선율로 해석하지 않는다.
