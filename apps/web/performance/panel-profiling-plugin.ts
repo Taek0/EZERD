@@ -9,6 +9,7 @@ export function panelProfilingPlugin(controlPath: string): Plugin {
     'NativePropertyEditor.tsx': ['NativePropertyEditor'],
     'native-editor-format.tsx': ['NativeFormatEditor'],
     'native-editor-structure.tsx': ['NativeStructureEditor'],
+    'NativePrimaryKeyControl.tsx': ['NativePrimaryKeyControl'],
     'NativeAdvancedEditor.tsx': ['NativeAdvancedEditor'],
     'NativeTableRelationInspector.tsx': ['NativeTableRelationInspector'],
   };

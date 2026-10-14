@@ -96,6 +96,14 @@ export function measurementPlugin(
         names = ['nativeEditorPolicy'];
       if (/\/packages\/model\/(dist|src)\/database\/display\.(js|ts)$/.test(path))
         names = ['nativeColumnTypeDisplay'];
+      if (path.endsWith('/native-local-projection.ts'))
+        names = ['projectNativeLocalColumns', 'readNativeLocalEntries'];
+      if (path.endsWith('/native-local-draft-names.ts'))
+        names = ['readNativeLocalDraftNames', 'projectNativeLocalDraftNames'];
+      if (path.endsWith('/native-inline-edit.ts')) names = ['nativeInlineInput'];
+      if (/\/packages\/model\/(dist|src)\/native-table-canvas\.(js|ts)$/.test(path))
+        names = ['nativeTableCanvasMetrics'];
+      if (path.endsWith('/native-primary-key.ts')) names = ['nativePrimaryKeyPlan'];
       if (!names.length) return;
       const label = names.includes('relationGeometry')
         ? 'relation-routing.ts'

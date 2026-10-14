@@ -332,6 +332,36 @@ function Demo() {
     }
     setRunning(true);
     setOutput('');
+    const phaseResults: unknown[] = [];
+    const beginPhase = (phase: string) => {
+      commits.current = [];
+      panelProfiles.samples = [];
+      panelProfiles.active = true;
+      active.current = true;
+      collector.start({
+        scenario: 'local-render-phase',
+        phase,
+        count,
+        commit: __PERF_COMMIT__,
+        dirty: __PERF_DIRTY__,
+      });
+    };
+    const endPhase = (phase: string) => {
+      active.current = false;
+      panelProfiles.active = false;
+      const { samples: _samples, ...measurement } = collector.stop();
+      phaseResults.push({
+        phase,
+        react: stats(commits.current),
+        measurement,
+        subtrees: Object.fromEntries(
+          [...new Set(panelProfiles.samples.map((s) => s.id))].map((id) => [
+            id,
+            stats(panelProfiles.samples.filter((s) => s.id === id).map((s) => s.actual)),
+          ]),
+        ),
+      });
+    };
     setReplayed(null);
     liveFixture.current = { key: `${count}:${spacing}`, value: fixture };
     let serverDocument = structuredClone(fixture.document),
@@ -446,6 +476,7 @@ function Demo() {
           .click();
         await wait(() => !!nameInput());
       }
+      beginPhase('name');
       const typedAt = performance.now();
       let first = '',
         second = '';
@@ -456,6 +487,7 @@ function Demo() {
         ]);
       await wait(() => visibleName('local_first_1'));
       const previewMs = performance.now() - typedAt;
+      endPhase('name');
       const beforeTransmit = gates.length === 0;
       const beforeAck = liveFixture.current.value.snapshot.sequence === initialSequence;
       await wait(() => gates.length === 1);
@@ -501,6 +533,7 @@ function Demo() {
       await pause(100);
       const addedExactlyOnce =
         root.current!.querySelectorAll(`[data-column-id="${addedId}"]`).length === 1;
+      beginPhase('nullable');
       const attributeAt = performance.now();
       enqueueNativeSave(actor, liveFixture.current.value.snapshot, [
         { type: 'patch_column', id: addedId, patch: { physical: { nullable: true } } },
@@ -512,17 +545,20 @@ function Demo() {
           )?.checked === true,
       );
       const attributePreviewMs = performance.now() - attributeAt;
+      endPhase('nullable');
       const attributeBeforeAck =
         liveFixture.current.value.snapshot.sequence === initialSequence + 3;
       await wait(() => gates.length === 4);
       gates[3]!.release();
       await wait(() => liveFixture.current.value.snapshot.sequence === initialSequence + 4);
+      beginPhase('delete');
       const deleteAt = performance.now();
       enqueueNativeSave(actor, liveFixture.current.value.snapshot, [
         { type: 'delete_objects', targets: [{ collection: 'columns', id: addedId }] },
       ]);
       await wait(() => !root.current!.querySelector(`[data-column-id="${addedId}"]`));
       const deletePreviewMs = performance.now() - deleteAt;
+      endPhase('delete');
       const deleteBeforeAck = liveFixture.current.value.snapshot.sequence === initialSequence + 4;
       await wait(() => gates.length === 5);
       gates[4]!.release();
@@ -532,6 +568,7 @@ function Demo() {
         JSON.stringify(
           {
             scenario: draftInput ? 'autosave-local-input' : 'local-first-columns',
+            phaseResults,
             previewMs,
             beforeTransmit,
             onlyFirstInFlight,
@@ -564,6 +601,9 @@ function Demo() {
     } catch (error) {
       setOutput(JSON.stringify({ error: String(error), gates: gates.length, sequence }));
     } finally {
+      active.current = false;
+      panelProfiles.active = false;
+      collector.cancel();
       stopSampling = true;
       for (const gate of gates) gate.release();
       controlledSave = null;
