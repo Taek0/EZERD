@@ -1,3 +1,5 @@
+import { nativeEntryAfterAck } from '../src/features/projects/native-ack-entry.js';
+import { nativeSyncOperationResultSchema } from '@ezerd/contracts';
 declare const __BUTTON_NAV_PROBE__: boolean;
 declare const __BUTTON_MEMO_PROBE__: boolean;
 import { enqueueNativeSave } from '../src/features/projects/native-save-intents.js';
@@ -125,6 +127,7 @@ function Demo() {
     }
     return f;
   }, [count, spacing]);
+  const [replayed, setReplayed] = useState<{ key: string; value: typeof fixture } | null>(null);
   const profile: ProfilerOnRenderCallback = (_id, _phase, actual) => {
     if (active.current) commits.current.push(actual);
   };
@@ -294,6 +297,94 @@ function Demo() {
       setRunning(false);
     }
   }
+  async function auditAckReplay() {
+    if (running || actualSnapshot) return;
+    setRunning(true);
+    setOutput('');
+    const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    const results: unknown[] = [];
+    let current = { kind: 'native' as const, ...fixture, personalUnavailable: false };
+    try {
+      setReplayed(null);
+      await pause(500);
+      for (let repetition = 0; repetition < 4; repetition++) {
+        const nextDocument = structuredClone(current.snapshot.sourceDocument);
+        if (nextDocument.schemaVersion !== 2) throw Error('Native fixture required');
+        const name = 'ack_bench_' + repetition;
+        nextDocument.tables![0]!.physical.name = name;
+        const raw = JSON.stringify({
+          protocolVersion: 2,
+          database: {
+            kind: nextDocument.database.kind,
+            profileId: nextDocument.database.profileId,
+          },
+          databaseRevision: current.snapshot.project.databaseRevision,
+          operationId: crypto.randomUUID(),
+          groupId: crypto.randomUUID(),
+          sequence: current.snapshot.sequence + 1,
+          status: 'accepted',
+          document: nextDocument,
+          actor: { id: actor, username: 'preview', color: '#06b6d4' },
+          changedPaths: [`/tables/${nextDocument.tables![0]!.id}/physical/name`],
+          createdAt: new Date().toISOString(),
+          nextBaseline: {
+            baselineId: crypto.randomUUID(),
+            baseSequence: current.snapshot.sequence + 1,
+            baselineIssuedAt: new Date().toISOString(),
+            databaseRevision: current.snapshot.project.databaseRevision,
+          },
+        });
+        commits.current = [];
+        panelProfiles.samples = [];
+        panelProfiles.active = true;
+        active.current = true;
+        collector.start({
+          scenario: 'ack-replay',
+          count,
+          repetition,
+          commit: __PERF_COMMIT__,
+          dirty: __PERF_DIRTY__,
+          viewport: [innerWidth, innerHeight],
+        });
+        const start = performance.now();
+        const ack = nativeSyncOperationResultSchema.parse(JSON.parse(raw));
+        const parseMs = performance.now() - start;
+        const applyStart = performance.now();
+        const next = nativeEntryAfterAck(current, ack);
+        const applyMs = performance.now() - applyStart;
+        if (!next?.document) throw Error('ACK not applied');
+        current = { ...next, document: next.document };
+        setReplayed({
+          key: `${count}:${spacing}`,
+          value: { snapshot: next.snapshot, document: next.document },
+        });
+        await pause(450);
+        active.current = false;
+        panelProfiles.active = false;
+        const { samples: _samples, ...measurement } = collector.stop();
+        results.push({
+          repetition,
+          warmup: repetition === 0,
+          parseMs,
+          applyMs,
+          react: stats(commits.current),
+          measurement,
+          reflected: root
+            .current!.querySelector('.native-erd-node.table')
+            ?.textContent?.includes(name),
+        });
+      }
+      setOutput(JSON.stringify({ results }, null, 2));
+    } catch (error) {
+      active.current = false;
+      panelProfiles.active = false;
+      collector.cancel();
+      setOutput(JSON.stringify({ error: String(error), results }));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function auditButtons() {
     if (running) return;
     setRunning(true);
@@ -578,6 +669,9 @@ function Demo() {
     <>
       <header className="panel-lab-controls">
         <strong>Full editor panel profiling · no server writes</strong>
+        <button disabled={running || !!actualSnapshot} onClick={() => void auditAckReplay()}>
+          Audit ACK replay
+        </button>
         <button disabled={running} onClick={() => void auditButtons()}>
           Audit button latency
         </button>
@@ -682,7 +776,11 @@ function Demo() {
           <Profiler id="workspace" onRender={profile}>
             <NativeProjectView
               key={`${count}:${spacing}`}
-              entry={{ kind: 'native', ...fixture, personalUnavailable: false }}
+              entry={{
+                kind: 'native',
+                ...(replayed?.key === `${count}:${spacing}` ? replayed.value : fixture),
+                personalUnavailable: false,
+              }}
               userId={actor}
               canEdit
               canPersonalEdit
