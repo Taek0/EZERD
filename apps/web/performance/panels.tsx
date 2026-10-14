@@ -1,3 +1,4 @@
+import { startTransition } from 'react';
 import { nativeEntryAfterAck } from '../src/features/projects/native-ack-entry.js';
 import { nativeSyncOperationResultSchema } from '@ezerd/contracts';
 declare const __BUTTON_NAV_PROBE__: boolean;
@@ -354,11 +355,20 @@ function Demo() {
         const applyMs = performance.now() - applyStart;
         if (!next?.document) throw Error('ACK not applied');
         current = { ...next, document: next.document };
-        setReplayed({
-          key: `${count}:${spacing}`,
-          value: { snapshot: next.snapshot, document: next.document },
-        });
-        await pause(450);
+        startTransition(() =>
+          setReplayed({
+            key: `${count}:${spacing}`,
+            value: { snapshot: current.snapshot, document: current.document },
+          }),
+        );
+        const deadline = performance.now() + 5000;
+        do {
+          await pause(50);
+        } while (
+          !root.current!.querySelector('.native-erd-node.table')?.textContent?.includes(name) &&
+          performance.now() < deadline
+        );
+        await pause(250);
         active.current = false;
         panelProfiles.active = false;
         const { samples: _samples, ...measurement } = collector.stop();
