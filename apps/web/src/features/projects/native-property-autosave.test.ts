@@ -1,10 +1,15 @@
 import {
+  createHookDriverState,
+  type HookDriverState,
+} from '../../shared/testing/react-hook-driver.js';
+import { elementNodes as nodes } from '../../shared/testing/react-element-tree.js';
+import {
   readNativeLocalDraftNames,
   projectNativeLocalDraftNames,
 } from './native-local-draft-names.js';
 import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enabled: true }) }));
-import { isValidElement, type ReactElement } from 'react';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
 
@@ -14,15 +19,7 @@ import { loadNativeDraft } from './native-save.js';
 // Exercise the actual submit registration, field callback and native storage in Node;
 // this driver models committed effects without claiming DOM or browser interaction coverage.
 const hooks = vi.hoisted(() => ({
-  active: null as null | {
-    slots: {
-      value?: unknown;
-      deps?: readonly unknown[] | undefined;
-      cleanup?: (() => void) | undefined;
-    }[];
-    cursor: number;
-    effects: (() => void)[];
-  },
+  active: null as HookDriverState | null,
 }));
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker() {} }));
 vi.mock('../../shared/i18n/index.js', () => ({
@@ -30,57 +27,13 @@ vi.mock('../../shared/i18n/index.js', () => ({
   registerTranslations() {},
 }));
 vi.mock('react', async (original) => {
-  const react = await original<typeof import('react')>();
-  const effect = (callback: () => void | (() => void), deps?: readonly unknown[]) => {
-    const active = hooks.active!;
-    const slot = (active.slots[active.cursor++] ??= {});
-    if (
-      !deps ||
-      !slot.deps ||
-      deps.length !== slot.deps.length ||
-      deps.some((value, i) => !Object.is(value, slot.deps![i]))
-    ) {
-      active.effects.push(() => {
-        slot.cleanup?.();
-        slot.cleanup = callback() || undefined;
-      });
-      slot.deps = deps;
-    }
-  };
-  return {
-    ...react,
-    useState(initial: unknown) {
-      const active = hooks.active!;
-      const slot = (active.slots[active.cursor++] ??= {
-        value: typeof initial === 'function' ? initial() : initial,
-      });
-      return [
-        slot.value,
-        (value: unknown) => {
-          slot.value = typeof value === 'function' ? value(slot.value) : value;
-        },
-      ];
-    },
-    useRef(initial: unknown) {
-      const active = hooks.active!;
-      return (active.slots[active.cursor++] ??= { value: { current: initial } }).value;
-    },
-    useLayoutEffect: effect,
-    useEffect: effect,
-  };
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
+  return mockReactHooks(actual, () => hooks.active);
 });
-function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
-  if (Array.isArray(tree)) return tree.flatMap(nodes);
-  if (!isValidElement<Record<string, unknown>>(tree)) return [];
-  return [tree, ...nodes(tree.props.children)];
-}
 
 function fixture(save = vi.fn(async () => true)) {
-  const state = {
-    slots: [] as NonNullable<typeof hooks.active>['slots'],
-    cursor: 0,
-    effects: [] as (() => void)[],
-  };
+  const state = createHookDriverState();
   const snapshot = decorationSnapshot();
   if (snapshot.native.status !== 'available') throw Error();
   const column = snapshot.native.document.columns![0]!;

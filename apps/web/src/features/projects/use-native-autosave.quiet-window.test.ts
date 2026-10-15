@@ -7,30 +7,11 @@ const hooks = vi.hoisted(() => ({
   slots: [] as { value?: unknown; deps?: readonly unknown[]; cleanup?: (() => void) | undefined }[],
   effects: [] as (() => void)[],
 }));
-vi.mock('react', () => ({
-  useState(initial: unknown) {
-    const slot = (hooks.slots[hooks.cursor++] ??= { value: initial });
-    return [
-      slot.value,
-      (value: unknown) => {
-        slot.value = value;
-      },
-    ];
-  },
-  useRef(initial: unknown) {
-    return (hooks.slots[hooks.cursor++] ??= { value: { current: initial } }).value;
-  },
-  useLayoutEffect(callback: () => void | (() => void), deps?: readonly unknown[]) {
-    const slot = (hooks.slots[hooks.cursor++] ??= {});
-    if (!deps || !slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
-      hooks.effects.push(() => {
-        slot.cleanup?.();
-        slot.cleanup = callback() || undefined;
-      });
-      if (deps) slot.deps = deps;
-    }
-  },
-}));
+vi.mock('react', async (original) => {
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
+  return mockReactHooks(actual, () => hooks);
+});
 
 function fixture(save = vi.fn(async () => {})) {
   let blocked = false;

@@ -52,45 +52,9 @@ const driver = vi.hoisted(() => ({
   effects: [] as (() => void)[],
 }));
 vi.mock('react', async (original) => {
-  const react = await original<typeof import('react')>();
-  return {
-    ...react,
-    useState(initial: unknown) {
-      const index = driver.cursor++;
-      const slot = (driver.slots[index] ??= {
-        value: typeof initial === 'function' ? initial() : initial,
-      });
-      return [
-        slot.value,
-        (next: unknown) => {
-          slot.value = typeof next === 'function' ? next(slot.value) : next;
-        },
-      ];
-    },
-    useRef(initial: unknown) {
-      const index = driver.cursor++;
-      return (driver.slots[index] ??= { value: { current: initial } }).value;
-    },
-    useCallback(callback: unknown, deps: readonly unknown[]) {
-      const slot = (driver.slots[driver.cursor++] ??= {});
-      if (!slot.deps || deps.some((value, i) => !Object.is(value, slot.deps![i]))) {
-        slot.value = callback;
-        slot.deps = deps;
-      }
-      return slot.value;
-    },
-    useEffect(effect: () => void | (() => void), deps: readonly unknown[]) {
-      const index = driver.cursor++,
-        slot = (driver.slots[index] ??= {});
-      if (!slot.deps || deps.some((value, i) => !Object.is(value, slot.deps![i]))) {
-        driver.effects.push(() => {
-          slot.cleanup?.();
-          slot.cleanup = effect() || undefined;
-        });
-        slot.deps = deps;
-      }
-    },
-  };
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
+  return mockReactHooks(actual, () => driver);
 });
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: Error) => void;

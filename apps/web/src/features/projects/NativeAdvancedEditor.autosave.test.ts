@@ -1,5 +1,10 @@
+import {
+  createHookDriverState,
+  type HookDriverState,
+} from '../../shared/testing/react-hook-driver.js';
+import { elementNodes as nodes } from '../../shared/testing/react-element-tree.js';
 import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
-import { isValidElement, type ReactElement } from 'react';
+import { type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   NativeAdvancedEditor,
@@ -15,11 +20,7 @@ import type { NativeWebCommand } from './native-save.js';
 // This committed-hook driver is not a browser/DOM interaction test.
 const hooks = vi.hoisted(() => ({
   dirty: false,
-  active: null as null | {
-    slots: { value?: unknown; deps?: readonly unknown[]; cleanup?: (() => void) | undefined }[];
-    cursor: number;
-    effects: (() => void)[];
-  },
+  active: null as HookDriverState | null,
 }));
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker() {} }));
 vi.mock('../../shared/i18n/index.js', () => ({
@@ -27,55 +28,16 @@ vi.mock('../../shared/i18n/index.js', () => ({
   registerTranslations() {},
 }));
 vi.mock('react', async (original) => {
-  const react = await original<typeof import('react')>();
-  const effect = (callback: () => void | (() => void), deps?: readonly unknown[]) => {
-    const active = hooks.active!;
-    const slot = (active.slots[active.cursor++] ??= {});
-    if (!deps || !slot.deps || deps.some((value, i) => !Object.is(value, slot.deps![i]))) {
-      active.effects.push(() => {
-        slot.cleanup?.();
-        slot.cleanup = callback() || undefined;
-      });
-      if (deps) slot.deps = deps;
-    }
-  };
-  return {
-    ...react,
-    useState(initial: unknown) {
-      const slot = (hooks.active!.slots[hooks.active!.cursor++] ??= {
-        value: typeof initial === 'function' ? initial() : initial,
-      });
-      return [
-        slot.value,
-        (update: unknown) => {
-          const next = typeof update === 'function' ? update(slot.value) : update;
-          if (!Object.is(next, slot.value)) hooks.dirty = true;
-          slot.value = next;
-        },
-      ];
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
+  return mockReactHooks(actual, () => hooks.active, {
+    onStateChange: () => {
+      hooks.dirty = true;
     },
-    useRef(initial: unknown) {
-      return (hooks.active!.slots[hooks.active!.cursor++] ??= { value: { current: initial } })
-        .value;
-    },
-    useMemo(factory: () => unknown, deps: readonly unknown[]) {
-      const slot = (hooks.active!.slots[hooks.active!.cursor++] ??= {});
-      if (!slot.deps || deps.some((value, i) => !Object.is(value, slot.deps![i]))) {
-        slot.value = factory();
-        slot.deps = deps;
-      }
-      return slot.value;
-    },
-    useEffect: effect,
-    useLayoutEffect: effect,
-  };
+  });
 });
 function host() {
-  return {
-    slots: [] as NonNullable<typeof hooks.active>['slots'],
-    cursor: 0,
-    effects: [] as (() => void)[],
-  };
+  return createHookDriverState();
 }
 function render<T>(state: ReturnType<typeof host>, callback: () => T): T {
   hooks.active = state;
@@ -88,11 +50,7 @@ function render<T>(state: ReturnType<typeof host>, callback: () => T): T {
     hooks.active = null;
   }
 }
-function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
-  if (Array.isArray(tree)) return tree.flatMap(nodes);
-  if (!isValidElement<Record<string, unknown>>(tree)) return [];
-  return [tree, ...nodes(tree.props.children)];
-}
+
 function driver(kind: 'index' | 'check', f = advancedFixture()) {
   let active = true;
   let bodyRenders = 0;

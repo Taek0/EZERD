@@ -1,4 +1,5 @@
-import { isValidElement, type ReactElement, type ComponentProps } from 'react';
+import { elementNodes as nodes } from '../../shared/testing/react-element-tree.js';
+import { type ComponentProps } from 'react';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { ProjectGallery, type GalleryHandle } from './ProjectGallery.js';
 const driver = vi.hoisted(() => ({
@@ -13,42 +14,16 @@ vi.mock('../../shared/i18n/index.js', () => ({
 }));
 vi.mock('../../components/ui/ConfirmProvider.js', () => ({ useConfirm: () => driver.confirm }));
 vi.mock('react', async (original) => {
-  const react = await original<typeof import('react')>();
-  const effect = (run: () => void, deps: readonly unknown[]) => {
-    const slot = (driver.slots[driver.cursor++] ??= {});
-    if (!slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
-      slot.deps = deps;
-      driver.effects.push(run);
-    }
-  };
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
   return {
-    ...react,
-    useState(initial: unknown) {
-      const slot = (driver.slots[driver.cursor++] ??= {
-        value: typeof initial === 'function' ? initial() : initial,
-      });
-      return [
-        slot.value,
-        (value: unknown) => {
-          slot.value = typeof value === 'function' ? value(slot.value) : value;
-        },
-      ];
-    },
-    useRef(initial: unknown) {
-      return (driver.slots[driver.cursor++] ??= { value: { current: initial } }).value;
-    },
-    useEffect: effect,
-    useLayoutEffect: effect,
+    ...mockReactHooks(actual, () => driver),
     useImperativeHandle(ref: { current: unknown }, create: () => unknown) {
       ref.current = create();
     },
   };
 });
-function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
-  if (Array.isArray(tree)) return tree.flatMap(nodes);
-  if (!isValidElement<Record<string, unknown>>(tree)) return [];
-  return [tree, ...nodes(tree.props.children)];
-}
+
 function harness() {
   const onCreate = vi.fn(async (_name: string, _kind: string, _options: unknown) => {}),
     onEdit = vi.fn(async () => true);
