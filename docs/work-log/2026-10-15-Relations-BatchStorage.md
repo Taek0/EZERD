@@ -8,4 +8,6 @@
 
 계약 테스트는 100개 초과 수용, 관계 ID 중복, 경로·경유점·바이트 한도, 화면 혼합 거절을 확인한다. 서버 후보 테스트는 150개 경로의 단일 변경 묶음, 테이블 및 관계 의미 보존, 실패 시 원본 불변, 이동 이후 관계선만 되돌리는 동작을 확인한다. `pnpm build:shared`, 두 집중 테스트, `pnpm --filter @ezerd/server typecheck`가 통과했다.
 
+격리된 `ezerd_qa_*` PostgreSQL 데이터베이스에서 실제 HTTP 통합 테스트도 통과했다. 150개 경로의 단일 operation 저장과 동일 operation ID 재전송 ACK, 존재하지 않는 관계가 섞인 배치의 전체 거절, 미래 버전의 충돌 거절, 이후 테이블 이동을 유지한 관계선만 실행 취소, 취소 뒤 원래 ACK 재전송을 검증했다. 테스트 러너가 QA DB를 생성·마이그레이션한 뒤 삭제했으며 기존 프로젝트 데이터를 변경하지 않았다.
+
 관련 계획: [관계선 자동 정렬 구현 계획](../planning/2026-10-15-Relations-AutoArrangeImplementationPlan.md).
