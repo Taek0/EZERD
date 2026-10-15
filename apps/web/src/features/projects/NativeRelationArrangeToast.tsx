@@ -53,12 +53,14 @@ export function NativeRelationArrangeToast({
   useEffect(() => {
     setVisible(status.phase !== 'idle' && status.phase !== 'computing');
     if (status.phase === 'idle') return;
+    // A pending operation must keep its cancellation action reachable until resolved.
+    if ((status.phase === 'saving' || status.phase === 'offline') && status.canCancel) return;
     const timer = window.setTimeout(
       () => setVisible(status.phase === 'computing'),
       status.phase === 'computing' ? 250 : 8000,
     );
     return () => window.clearTimeout(timer);
-  }, [status.phase, status.reason]);
+  }, [status.phase, status.reason, status.canCancel]);
   const defaultText = {
     idle: '',
     computing: '관계선 정리 중…',
@@ -78,7 +80,7 @@ export function NativeRelationArrangeToast({
     save: '관계선 정리 결과를 저장하지 못했어요',
   };
   const text =
-    crowdedTableNames.length && status.reason === 'space'
+    crowdedTableNames.length && (status.phase === 'saved' || status.reason === 'space')
       ? t(
           crowdedTableNames.length === 1
             ? '{table} 주변 공간이 부족해요'

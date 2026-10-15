@@ -51,3 +51,36 @@ it('delays computing feedback, keeps cancellation available, and replaces it wit
   await act(async () => vi.advanceTimersByTime(8000));
   expect(host.querySelector('button')).toBeNull();
 });
+
+it('keeps pending save cancellation reachable beyond the transient notice timeout', async () => {
+  const cancel = vi.fn();
+  await act(async () =>
+    root.render(
+      h(NativeRelationArrangeToast, {
+        status: { phase: 'saving', canUndo: false, canCancel: true },
+        onCancel: cancel,
+        onUndo() {},
+      }),
+    ),
+  );
+  await act(async () => vi.advanceTimersByTime(30000));
+  expect(host.querySelector('[role="status"]')?.textContent).toContain('저장 중');
+  await act(async () => host.querySelector('button')!.click());
+  expect(cancel).toHaveBeenCalledOnce();
+});
+it('shows verified crowded table names after successful arrangement without a failure reason', async () => {
+  await act(async () =>
+    root.render(
+      h(NativeRelationArrangeToast, {
+        status: { phase: 'saved', canUndo: true, crowdedTableIds: ['orders', 'items', 'users'] },
+        crowdedTableNames: ['주문', '주문 항목', '사용자'],
+        onCancel() {},
+        onUndo() {},
+      }),
+    ),
+  );
+  expect(host.querySelector('[role="status"]')?.textContent).toContain(
+    '주문 외 2개 테이블 주변 공간이 부족해요',
+  );
+  expect(host.querySelector('button')?.textContent).toBe('실행 취소');
+});
