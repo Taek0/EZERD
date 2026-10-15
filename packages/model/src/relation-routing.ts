@@ -227,14 +227,26 @@ function search(
   boxes: RelationBounds[],
   startAxis?: 0 | 1,
   endAxis?: 0 | 1,
+  budget?: RelationSearchBudget,
+  selection?: RelationRoutingSelection,
 ): Point[] | null {
   if (same(start, end)) return [start];
-  const xs = [...new Set([start.x, end.x, ...boxes.flatMap((r) => [r.x, r.x + r.width])])].sort(
-    (a, b) => a - b,
-  );
-  const ys = [...new Set([start.y, end.y, ...boxes.flatMap((r) => [r.y, r.y + r.height])])].sort(
-    (a, b) => a - b,
-  );
+  const xs = [
+    ...new Set([
+      start.x,
+      end.x,
+      ...boxes.flatMap((r) => [r.x, r.x + r.width]),
+      ...(selection?.corridorXs ?? []),
+    ]),
+  ].sort((a, b) => a - b);
+  const ys = [
+    ...new Set([
+      start.y,
+      end.y,
+      ...boxes.flatMap((r) => [r.y, r.y + r.height]),
+      ...(selection?.corridorYs ?? []),
+    ]),
+  ].sort((a, b) => a - b);
   const point = (index: number): Point => ({
     x: xs[index % xs.length]!,
     y: ys[Math.floor(index / xs.length)]!,
@@ -278,6 +290,13 @@ function search(
     push({ key, cost: 0, priority: distance(start, end) });
   }
   while (heap.length) {
+    if (budget) {
+      if (budget.exploredNodes >= budget.maxNodes) {
+        budget.limitReached = true;
+        return null;
+      }
+      budget.exploredNodes++;
+    }
     const current = pop();
     if (current.cost !== costs.get(current.key)) continue;
     const at = Math.floor(current.key / 2),
@@ -306,7 +325,11 @@ function search(
         q = point(next);
       if (boxes.some((r) => inside(q, r) || segmentCrossesBounds(p, q, r))) continue;
       const key = next * 2 + nextAxis!,
-        cost = current.cost + distance(p, q) + (axis === nextAxis ? 0 : 48);
+        cost =
+          current.cost +
+          distance(p, q) +
+          (axis === nextAxis ? 0 : 48) +
+          (selection?.edgePenalty?.(p, q) ?? 0);
       if (cost >= (costs.get(key) ?? Infinity)) continue;
       costs.set(key, cost);
       previous.set(key, current.key);
@@ -333,6 +356,40 @@ function outsidePoint(point: Point, boxes: RelationBounds[]): Point {
   }
   return { x: Math.min(...boxes.map((r) => r.x)) - 44, y: point.y };
 }
+/** Reusable obstacle queries for several routes between the same two cards. */
+export interface RelationSearchBudget {
+  maxNodes: number;
+  exploredNodes: number;
+  limitReached: boolean;
+}
+export function createRelationRoutingContext(
+  a: RelationBounds,
+  b: RelationBounds,
+  obstacles: RelationBounds[] = [],
+  budget?: RelationSearchBudget,
+) {
+  const self =
+    a === b || (a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
+  const raw = [a, ...(self ? [] : [b]), ...obstacles];
+  const boxes = raw.map((r) => expand(r, 18));
+  return {
+    raw,
+    boxes,
+    rawClear: createPathClear(raw, segmentCrossesBounds),
+    expandedClear: createPathClear(boxes, segmentCrossesBounds),
+    budget,
+  };
+}
+export type RelationRoutingContext = ReturnType<typeof createRelationRoutingContext>;
+export interface RelationRoutingSelection {
+  corridorXs?: readonly number[];
+  corridorYs?: readonly number[];
+  /** Additional nonnegative cost for sharing or crossing already placed routes. */
+  additionalScore?: (points: readonly Point[]) => number;
+  edgePenalty?: (a: Point, b: Point) => number;
+  searchEvenWithCandidate?: boolean;
+}
+
 export function relationGeometry(
   a: RelationBounds,
   b: RelationBounds,
@@ -342,18 +399,22 @@ export function relationGeometry(
   bend?: Point,
   obstacles: RelationBounds[] = [],
   options: Pick<RelationLayout, 'sourceAnchor' | 'targetAnchor' | 'waypoints'> = {},
+  prepared?: RelationRoutingContext,
+  selection?: RelationRoutingSelection,
 ) {
   const self =
     a === b || (a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
-  const raw = [a, ...(self ? [] : [b]), ...obstacles];
-  const boxes = raw.map((r) => expand(r, 18));
-  const rawClear = createPathClear(raw, segmentCrossesBounds);
-  const expandedClear = createPathClear(boxes, segmentCrossesBounds);
+  const { raw, boxes, rawClear, expandedClear } =
+    prepared ?? createRelationRoutingContext(a, b, obstacles);
   const source = options.sourceAnchor ? [anchorPort(a, options.sourceAnchor)] : ports(a, lane),
     target = options.targetAnchor ? [anchorPort(b, options.targetAnchor)] : ports(b, lane);
   const requested = bend && !options.waypoints ? outsidePoint(bend, boxes) : undefined;
   const xs = [
-    ...new Set([...boxes.flatMap((r) => [r.x, r.x + r.width]), (a.x + a.width + b.x) / 2]),
+    ...new Set([
+      ...boxes.flatMap((r) => [r.x, r.x + r.width]),
+      (a.x + a.width + b.x) / 2,
+      ...(selection?.corridorXs ?? []),
+    ]),
   ];
   const ys = [
     ...new Set([
@@ -362,6 +423,7 @@ export function relationGeometry(
         r.y + r.height + 36 + lane * 22 + offset,
       ]),
       (a.y + a.height / 2 + b.y + b.height / 2) / 2,
+      ...(selection?.corridorYs ?? []),
     ]),
   ];
   let best: Point[] | undefined,
@@ -377,14 +439,13 @@ export function relationGeometry(
   const consider = (s: Port, t: Port, middle: Point[]) => {
     if (requested && !expandedClear(middle)) return;
     const points = simplify([s.tip, ...middle, t.tip]);
-    const cost = requested ? undefined : score(points);
     // Automatic candidates only replace the best on a strictly lower score.
     // Requested-bend callers also use validity to decide whether to run fallback search.
-    if (!requested && (cost! >= bestScore || !expandedClear(middle))) return;
+    if (!requested && !expandedClear(middle)) return;
     // Simplification must not reverse an attachment into the table.
     if (!rawClear(points) || retraces(points)) return;
     if (requested && !points.slice(1, -1).some((p) => same(p, requested))) return;
-    const candidateScore = cost ?? score(points);
+    const candidateScore = score(points) + (selection?.additionalScore?.(points) ?? 0);
     if (candidateScore < bestScore) {
       best = points;
       bestScore = candidateScore;
@@ -442,9 +503,12 @@ export function relationGeometry(
         const sk = s.stub.x + ',' + s.stub.y + ':' + axis,
           tk = t.stub.x + ',' + t.stub.y + ':' + axis;
         if (!sourcePaths.has(sk))
-          sourcePaths.set(sk, search(s.stub, requested, boxes, undefined, axis));
+          sourcePaths.set(sk, search(s.stub, requested, boxes, undefined, axis, prepared?.budget));
         if (!targetPaths.has(tk))
-          targetPaths.set(tk, search(requested, t.stub, boxes, axis === 0 ? 1 : 0));
+          targetPaths.set(
+            tk,
+            search(requested, t.stub, boxes, axis === 0 ? 1 : 0, undefined, prepared?.budget),
+          );
         const first = sourcePaths.get(sk),
           last = targetPaths.get(tk);
         for (const before of [...firstDirect, ...(first ? [first] : [])])
@@ -458,9 +522,17 @@ export function relationGeometry(
     for (const x of xs) consider(s, t, [s.stub, { x, y: s.stub.y }, { x, y: t.stub.y }, t.stub]);
     for (const y of ys) consider(s, t, [s.stub, { x: s.stub.x, y }, { x: t.stub.x, y }, t.stub]);
   }
-  if (!best)
+  if (!best || selection?.searchEvenWithCandidate)
     for (const { s, t } of candidates) {
-      const middle = search(s.stub, t.stub, boxes);
+      const middle = search(
+        s.stub,
+        t.stub,
+        boxes,
+        undefined,
+        undefined,
+        prepared?.budget,
+        selection,
+      );
       if (middle) consider(s, t, middle);
     }
   // Overlapping cards can enclose every port; keep a visible exterior loop until they are separated.
