@@ -115,6 +115,14 @@ function engineKeyEligibility(
   }
   if (type.kind === 'legacy') return denied('legacy.type-unresolved');
   if (type.database !== context.kind) return denied('type.not-supported');
+  if (type.kind === 'custom')
+    return {
+      primaryAllowed: true,
+      uniqueAllowed: true,
+      usable: false,
+      coverage: false,
+      conditions: [],
+    };
   if (type.kind === 'projectEnum')
     return {
       primaryAllowed: true,

@@ -28,6 +28,8 @@ export const projectDatabaseCapabilitiesSchema = z.strictObject({
   database: projectDatabaseStateSchema,
   documentSchemaVersion: z.union([z.literal(1), z.literal(2)]),
   capabilityScope: z.literal('native-v2'),
+  ddlExport: z.boolean(),
+  customType: z.boolean(),
   targetVersion: z.string(),
   assumptions: z.array(z.string()),
   defaultTypeId: z.string(),

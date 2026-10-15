@@ -23,6 +23,7 @@ export const projectDatabaseKind = pgEnum('project_database_kind', [
   'postgresql',
   'mysql',
   'sqlite',
+  'generic',
 ]);
 export const projectStatus = pgEnum('project_status', ['active', 'archived']);
 export const workspaceStatus = pgEnum('workspace_status', ['active', 'archived']);
@@ -75,7 +76,8 @@ export const projects = pgTable(
       sql`${table.databaseProfileId} IS NULL OR
       (${table.databaseKind} = 'postgresql' AND ${table.databaseProfileId} = 'postgresql-18-v1') OR
       (${table.databaseKind} = 'mysql' AND ${table.databaseProfileId} = 'mysql-8.4-innodb-v1') OR
-      (${table.databaseKind} = 'sqlite' AND ${table.databaseProfileId} = 'sqlite-3.45-v1')`,
+      (${table.databaseKind} = 'sqlite' AND ${table.databaseProfileId} = 'sqlite-3.45-v1') OR
+      (${table.databaseKind}::text = 'generic' AND ${table.databaseProfileId} = 'generic-v1')`,
     ),
     index('projects_workspace_status_updated_idx').on(
       table.workspaceId,

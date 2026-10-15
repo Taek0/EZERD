@@ -33,6 +33,13 @@ const actions = new Set(['NO ACTION', 'RESTRICT', 'CASCADE', 'SET NULL', 'SET DE
 
 /** Product exports always require the same completed-path policy as new writes. */
 export function exportNativeDatabaseDDL(document: NativeDesignDocument): NativeDDLResult {
+  if (document.database.kind === 'generic')
+    return {
+      database: { ...document.database },
+      sql: '',
+      canExport: false,
+      issues: [problem('ddl.database-unspecified', null, '/database')],
+    };
   const issues = validateDatabaseDocument(document, document.database, { mode: 'export' });
   if (issues.some((issue) => issue.severity === 'error'))
     return { database: { ...document.database }, sql: '', issues, canExport: false };
@@ -41,6 +48,13 @@ export function exportNativeDatabaseDDL(document: NativeDesignDocument): NativeD
 
 /** Engine compiler for execution fixtures. API/UI must use exportNativeDatabaseDDL. */
 export function compileNativeDatabaseDDL(document: NativeDesignDocument): NativeDDLResult {
+  if (document.database.kind === 'generic')
+    return {
+      database: { ...document.database },
+      sql: '',
+      canExport: false,
+      issues: [problem('ddl.database-unspecified', null, '/database')],
+    };
   const context = document.database;
   let issues: DatabaseIssue[];
   try {
@@ -120,6 +134,7 @@ export function compileNativeDatabaseDDL(document: NativeDesignDocument): Native
         if (!definition) throw Error('type.enum-not-found');
         return quote(definition.schema || 'public') + '.' + quote(definition.name) + array;
       }
+      if (type.kind === 'custom') throw Error('ddl.database-unspecified');
       const definition = getDatabaseType(type.typeId);
       if (!definition) throw Error('type.not-supported');
       if (type.kind === 'valueList')

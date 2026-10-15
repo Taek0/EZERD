@@ -212,6 +212,7 @@ export class McpServerFactory {
       {
         capabilities: { tools: {} },
         instructions:
+          'RDBMS 미지정은 databaseKind:"generic"/profileId:"generic-v1"입니다. 테이블·컬럼·키·관계 등 구조 모델링과 공통 타입을 사용하며 사용자 정의 타입은 {kind:"custom",database:"generic",name:"타입명"}입니다. generic 테이블 namespace는 {kind:"generic"}, 테이블/컬럼 options는 {database:"generic"}입니다. RDBMS 미지정 프로젝트는 DDL 내보내기를 지원하지 않습니다. ' +
           'get_project_database_capabilities로 DB/profile/revision과 usable 기능을 확인하고 get_project_document_state로 원본을 조회하세요. 원본 schemaVersion 2만 apply_native_project_changes로 편집합니다. v1 전용 조회·편집·이력 도구는 종료되었습니다. v1 원본 조회와 파일 가져오기·내보내기·upgrade는 호환 목적으로 유지합니다. get_personal_state/apply_personal_changes는 자신의 개인 캔버스만 다룹니다. ' +
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
           ' active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
@@ -326,7 +327,7 @@ export class McpServerFactory {
       'export_project_ddl',
       {
         description:
-          '같은 서버 snapshot의 DB/profile/revision과 version/sequence를 기준으로 프로젝트 전체 물리 설계를 SQL로 내보냅니다. 화면·도메인·선택 상태를 필터로 사용하지 않습니다. canExport=false이면 SQL은 비어 있고 objectId/path 진단을 확인해야 합니다. native 타입/기능은 readiness 검사까지 통과해야 하며 v1 MySQL/SQLite의 PG 타입은 재해석하지 않습니다.',
+          '같은 서버 snapshot의 DB/profile/revision과 version/sequence를 기준으로 프로젝트 전체 물리 설계를 SQL로 내보냅니다. RDBMS 미지정(generic)은 ddl.database-unspecified 진단과 canExport:false, 빈 SQL을 반환합니다. 화면·도메인·선택 상태를 필터로 사용하지 않습니다. canExport=false이면 SQL은 비어 있고 objectId/path 진단을 확인해야 합니다. native 타입/기능은 readiness 검사까지 통과해야 하며 v1 MySQL/SQLite의 PG 타입은 재해석하지 않습니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: projectDDLExportSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -340,7 +341,7 @@ export class McpServerFactory {
       'get_project_database_capabilities',
       {
         description:
-          '프로젝트의 DB 종류·프로필·변경 번호와 native v2 타입/옵션·기능을 조회합니다. supportedByEngine은 엔진 규칙이며 usable만 실제 사용 가능한 기능입니다. native 저장/preview는 get_project_document_state로 읽고 native 편집은 apply_native_project_changes를 사용합니다. 기능 적용 시 객체별 조건을 다시 검증해야 합니다.',
+          '프로젝트의 DB 종류·프로필·변경 번호와 native v2 타입/옵션·기능을 조회합니다. supportedByEngine은 엔진 규칙이며 usable만 실제 사용 가능한 기능입니다. generic의 타입·기능 usable은 구조 모델링 지원만 뜻하며 실제 엔진 호환성이나 DDL 실행 검증을 뜻하지 않습니다. ddlExport/customType으로 DDL 및 사용자 정의 타입 지원 여부를 확인하세요. native 저장/preview는 get_project_document_state로 읽고 native 편집은 apply_native_project_changes를 사용합니다. 기능 적용 시 객체별 조건을 다시 검증해야 합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: projectDatabaseCapabilitiesSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -554,7 +555,7 @@ export class McpServerFactory {
       'create_project',
       {
         description:
-          '새 EZERD 프로젝트를 생성합니다. 이름 생략/공백은 워크스페이스에서 새 프로젝트 및 증가하는 숫자로 자동 지정합니다. formatVersion: 2 또는 생략은 선택 databaseKind/default profile의 빈 native 설계를 만들며 get_project_document_state 및 apply_native_project_changes로 조회/편집합니다. 새 프로젝트는 native 설계만 지원합니다. native 생성은 미검증 DB 기능의 사용 가능 상태를 켜지 않습니다.',
+          '새 EZERD 프로젝트를 생성합니다. 이름 생략/공백은 워크스페이스에서 새 프로젝트 및 증가하는 숫자로 자동 지정합니다. databaseKind:"generic"은 RDBMS 미지정 구조 모델링입니다. formatVersion: 2 또는 생략은 선택 databaseKind/default profile의 빈 native 설계를 만들며 get_project_document_state 및 apply_native_project_changes로 조회/편집합니다. 새 프로젝트는 native 설계만 지원합니다. native 생성은 미검증 DB 기능의 사용 가능 상태를 켜지 않습니다.',
         inputSchema: createProjectSchema,
         outputSchema: projectSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -739,7 +740,7 @@ export class McpServerFactory {
       'apply_native_project_changes',
       {
         description:
-          'schemaVersion 2로 저장된 프로젝트의 native 객체 추가·부분 수정·삭제 및 PK 기반 FK 생성을 수행합니다. 명령별 입력 스키마를 따르세요. add_table은 {type:"add_table",value:NativeTable}이며 컬럼과 placement를 포함하지 않습니다. SQLite 테이블의 physical.namespace는 {kind:"sqliteMain"}, options는 {database:"sqlite",strict:false,withoutRowid:false}입니다. 배치는 같은 commands 배열에 {type:"add_table_reference",tableId:"새 테이블 ID",viewId:"__tables__",placement:{x:1500,y:180,width:400,height:260}}를 추가하세요. 컬럼은 별도 add_column 명령입니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 기존 legacy 원문을 그대로 보존하는 관계없는 신규 객체 추가는 허용합니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
+          'schemaVersion 2로 저장된 프로젝트의 native 객체 추가·부분 수정·삭제 및 PK 기반 FK 생성을 수행합니다. 명령별 입력 스키마를 따르세요. generic 테이블 namespace는 {kind:"generic"}, 테이블/컬럼 options는 {database:"generic"}, 사용자 정의 타입은 {kind:"custom",database:"generic",name:"타입명"}입니다. add_table은 {type:"add_table",value:NativeTable}이며 컬럼과 placement를 포함하지 않습니다. SQLite 테이블의 physical.namespace는 {kind:"sqliteMain"}, options는 {database:"sqlite",strict:false,withoutRowid:false}입니다. 배치는 같은 commands 배열에 {type:"add_table_reference",tableId:"새 테이블 ID",viewId:"__tables__",placement:{x:1500,y:180,width:400,height:260}}를 추가하세요. 컬럼은 별도 add_column 명령입니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 기존 legacy 원문을 그대로 보존하는 관계없는 신규 객체 추가는 허용합니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
         inputSchema: applyNativeProjectChangesMetadataSchema,
         outputSchema: nativeOperationOutputSchema,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },

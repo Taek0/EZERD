@@ -84,17 +84,21 @@ export function createNativeTable(
       name: '',
       comment: '',
       namespace:
-        database.kind === 'postgresql'
-          ? { kind: 'postgresSchema', name: 'public' }
-          : database.kind === 'mysql'
-            ? { kind: 'mysqlCurrentDatabase' }
-            : { kind: 'sqliteMain' },
+        database.kind === 'generic'
+          ? { kind: 'generic' }
+          : database.kind === 'postgresql'
+            ? { kind: 'postgresSchema', name: 'public' }
+            : database.kind === 'mysql'
+              ? { kind: 'mysqlCurrentDatabase' }
+              : { kind: 'sqliteMain' },
       options:
-        database.kind === 'postgresql'
-          ? { database: 'postgresql' }
-          : database.kind === 'mysql'
-            ? { database: 'mysql', engine: 'InnoDB', charset: 'utf8mb4' }
-            : { database: 'sqlite', strict: false, withoutRowid: false },
+        database.kind === 'generic'
+          ? { database: 'generic' }
+          : database.kind === 'postgresql'
+            ? { database: 'postgresql' }
+            : database.kind === 'mysql'
+              ? { database: 'mysql', engine: 'InnoDB', charset: 'utf8mb4' }
+              : { database: 'sqlite', strict: false, withoutRowid: false },
     },
     customProperties: emptyProperties(),
   };
@@ -125,6 +129,8 @@ export function createNativeColumn(
     };
   else if (database.kind === 'sqlite' && profile.defaultTypeId === 'sqlite:text')
     type = { kind: 'builtin', database: 'sqlite', typeId: 'sqlite:text', parameters: {} };
+  else if (database.kind === 'generic')
+    type = { kind: 'builtin', database: 'generic', typeId: 'generic:text', parameters: {} };
   else throw new Error('database.profile-unsupported');
   return {
     id,

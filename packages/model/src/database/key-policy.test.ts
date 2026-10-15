@@ -122,7 +122,7 @@ describe('default direct PK/UNIQUE type policy', () => {
             /^(tiny|medium|long)?(text|blob)$/.test(d.sqlName)))
       );
       const covered =
-        hasDatabaseCoverage(d.coverage) &&
+        (d.databaseKind === 'generic' || hasDatabaseCoverage(d.coverage)) &&
         hasDatabaseCoverage(nativeFeatureCoverage('primaryKey')) &&
         hasDatabaseCoverage(nativeFeatureCoverage('unique')) &&
         (type.kind !== 'valueList' ||

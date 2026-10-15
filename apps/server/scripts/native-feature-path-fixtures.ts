@@ -39,7 +39,7 @@ export const featurePathSchema = 'qa_native_feature_path';
 export type FeaturePathFeature = DatabaseFeatureId | 'default' | 'onUpdate' | 'invisibleIndex';
 export interface NativeFeaturePathCase {
   key: string;
-  kind: DatabaseKind;
+  kind: Exclude<DatabaseKind, 'generic'>;
   feature: FeaturePathFeature;
   variant?: string;
   requiredFeatures: DatabaseFeatureId[];
@@ -58,21 +58,21 @@ const numeric = (value: string): NativeExpression => ({
   literalType: 'number',
   value,
 });
-export function featurePathPrimitive(kind: DatabaseKind): NativeColumnType {
+export function featurePathPrimitive(kind: Exclude<DatabaseKind, 'generic'>): NativeColumnType {
   return kind === 'postgresql'
     ? { kind: 'builtin', database: kind, typeId: 'postgresql:integer', parameters: {} }
     : kind === 'mysql'
       ? { kind: 'builtin', database: kind, typeId: 'mysql:int', parameters: {} }
       : { kind: 'builtin', database: kind, typeId: 'sqlite:integer', parameters: {} };
 }
-function textType(kind: DatabaseKind): NativeColumnType {
+function textType(kind: Exclude<DatabaseKind, 'generic'>): NativeColumnType {
   return kind === 'postgresql'
     ? { kind: 'builtin', database: kind, typeId: 'postgresql:text', parameters: {} }
     : kind === 'mysql'
       ? { kind: 'builtin', database: kind, typeId: 'mysql:varchar', parameters: { length: 64 } }
       : { kind: 'builtin', database: kind, typeId: 'sqlite:text', parameters: {} };
 }
-export function featurePathPrepare(kind: DatabaseKind): NativeDesignDocument {
+export function featurePathPrepare(kind: Exclude<DatabaseKind, 'generic'>): NativeDesignDocument {
   const db = defaultDatabaseContext(kind),
     p = featurePathIds;
   const parent = createNativeTable(db, p.parent, null, 'physical'),
@@ -109,7 +109,10 @@ export function featurePathPrepare(kind: DatabaseKind): NativeDesignDocument {
     }),
   };
 }
-function dependencies(feature: FeaturePathFeature, kind: DatabaseKind): DatabaseFeatureId[] {
+function dependencies(
+  feature: FeaturePathFeature,
+  kind: Exclude<DatabaseKind, 'generic'>,
+): DatabaseFeatureId[] {
   const result: DatabaseFeatureId[] =
     feature === 'default' || feature === 'onUpdate'
       ? []
@@ -140,19 +143,21 @@ function dependencies(feature: FeaturePathFeature, kind: DatabaseKind): Database
 }
 export const nativeFeaturePathCases: readonly NativeFeaturePathCase[] = [
   ...databaseFeatureCatalog.flatMap((feature) =>
-    feature.databases.flatMap((kind) => {
-      const variants =
-        feature.id === 'indexMethod' && kind === 'postgresql'
-          ? ['btree', 'hash', 'gist', 'spgist', 'gin', 'brin']
-          : [undefined];
-      return variants.map((variant) => ({
-        key: `${kind}-${feature.id}${variant ? '-' + variant : ''}`,
-        kind,
-        feature: feature.id,
-        ...(variant ? { variant } : {}),
-        requiredFeatures: dependencies(feature.id, kind),
-      }));
-    }),
+    feature.databases
+      .filter((kind) => kind !== 'generic')
+      .flatMap((kind) => {
+        const variants =
+          feature.id === 'indexMethod' && kind === 'postgresql'
+            ? ['btree', 'hash', 'gist', 'spgist', 'gin', 'brin']
+            : [undefined];
+        return variants.map((variant) => ({
+          key: `${kind}-${feature.id}${variant ? '-' + variant : ''}`,
+          kind,
+          feature: feature.id,
+          ...(variant ? { variant } : {}),
+          requiredFeatures: dependencies(feature.id, kind),
+        }));
+      }),
   ),
   ...(['postgresql', 'mysql', 'sqlite'] as const).flatMap((kind) =>
     ['literal-number', 'literal-string', 'clock'].map((variant) => ({

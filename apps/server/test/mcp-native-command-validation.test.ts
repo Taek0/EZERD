@@ -4,7 +4,14 @@ import { BadRequestException } from '@nestjs/common';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
-import { createNativeTable, sharedDocument, validateDatabaseDocument } from '@ezerd/model';
+import {
+  createEmptyNativeDocument,
+  createNativeColumn,
+  createNativeTable,
+  defaultDatabaseContext,
+  sharedDocument,
+  validateDatabaseDocument,
+} from '@ezerd/model';
 import { nativeEditorCommandSchema } from '@ezerd/contracts';
 import { decorationFixture } from '../../web/src/features/projects/native-canvas-decoration-test-fixtures.js';
 import { McpServerFactory } from '../src/mcp/mcp-server.js';
@@ -12,15 +19,20 @@ import { McpNativeDocumentService } from '../src/mcp/mcp-native-document.service
 import { prepareNativeSyncCandidate } from '../src/shared/native-sync-candidate.js';
 import type { NativeSyncService } from '../src/sync/native-sync.service.js';
 
-async function harness() {
+async function harness(kind: 'sqlite' | 'generic' = 'sqlite') {
   const user = { id: randomUUID(), username: 'owner', color: '#4169e1' };
-  const source = decorationFixture('sqlite');
-  source.enums = [{ id: 'enum', name: 'State', schema: 'public', values: ['active'] }];
-  source.columns![0]!.physical.type = {
-    kind: 'legacy',
-    source: 'document-v1',
-    original: { name: 'enum', enumId: 'enum', isArray: false },
-  };
+  const source =
+    kind === 'generic'
+      ? createEmptyNativeDocument(defaultDatabaseContext(kind))
+      : decorationFixture('sqlite');
+  if (kind === 'sqlite') {
+    source.enums = [{ id: 'enum', name: 'State', schema: 'public', values: ['active'] }];
+    source.columns![0]!.physical.type = {
+      kind: 'legacy',
+      source: 'document-v1',
+      original: { name: 'enum', enumId: 'enum', isArray: false },
+    };
+  }
   const projectId = randomUUID();
   const database = { ...source.database, revision: 2 };
   const now = new Date();
@@ -124,6 +136,37 @@ async function harness() {
 }
 
 describe('native MCP command discovery and diagnostics', () => {
+  it('discovers and applies an unspecified table and custom type through the native sync path', async () => {
+    const session = await harness('generic');
+    try {
+      const tool = (await session.client.listTools()).tools.find(
+        (row) => row.name === 'apply_native_project_changes',
+      )!;
+      expect(JSON.stringify(tool.inputSchema)).toContain('custom');
+      expect(JSON.stringify(tool.inputSchema)).toContain('generic');
+      const table = createNativeTable(session.source.database, 'Records');
+      const column = createNativeColumn(session.source.database, table, 'Identifier');
+      column.physical.type = { kind: 'custom', database: 'generic', name: 'Business identifier' };
+      const result = await session.client.callTool({
+        name: 'apply_native_project_changes',
+        arguments: session.input([
+          { type: 'add_table', value: table },
+          { type: 'add_column', value: column },
+        ]),
+      });
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(result.structuredContent, JSON.stringify(result.structuredContent)).toMatchObject({
+        status: 'accepted',
+        document: {
+          database: { kind: 'generic', profileId: 'generic-v1' },
+          tables: [table],
+          columns: [column],
+        },
+      });
+    } finally {
+      await session.close();
+    }
+  });
   it('publishes every command shape with table values, SQLite namespace and separate placement', async () => {
     const session = await harness();
     try {

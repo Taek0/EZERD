@@ -14,6 +14,8 @@ export function projectDatabaseCapabilities(
     database,
     documentSchemaVersion,
     capabilityScope: 'native-v2' as const,
+    ddlExport: database.kind !== 'generic',
+    customType: documentSchemaVersion === 2 && database.kind === 'generic',
     targetVersion: profile.targetVersion,
     assumptions: profile.assumptions,
     defaultTypeId: profile.defaultTypeId,
@@ -32,12 +34,15 @@ export function projectDatabaseCapabilities(
         ...(type.sqliteAffinity && { sqliteAffinity: type.sqliteAffinity }),
         availability: type.coverage.availability,
         usable:
-          documentSchemaVersion === 2 && !type.deprecated && hasDatabaseCoverage(type.coverage),
+          documentSchemaVersion === 2 &&
+          !type.deprecated &&
+          (database.kind === 'generic' || hasDatabaseCoverage(type.coverage)),
       })),
     features: databaseFeatureCatalog.map((feature) => ({
       id: feature.id,
-      supportedByEngine: feature.databases.includes(database.kind),
-      availability: feature.coverage.availability,
+      supportedByEngine: database.kind !== 'generic' && feature.databases.includes(database.kind),
+      availability:
+        database.kind === 'generic' ? ('implemented' as const) : feature.coverage.availability,
       usable:
         documentSchemaVersion === 2 &&
         feature.databases.includes(database.kind) &&

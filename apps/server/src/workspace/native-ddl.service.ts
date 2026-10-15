@@ -29,7 +29,19 @@ export class NativeDDLService {
       let sql = '',
         canExport = false,
         issues: DatabaseIssue[] = [];
-      if (read.status !== 'available')
+      if (database.kind === 'generic')
+        issues.push({
+          code: 'ddl.database-unspecified',
+          category: 'unsupported',
+          severity: 'error',
+          objectId: null,
+          path: '/database',
+          params: {
+            message:
+              'RDBMS 미지정 프로젝트는 DDL을 내보낼 수 없습니다. 대상 RDBMS를 지정해 주세요.',
+          },
+        });
+      else if (read.status !== 'available')
         issues.push({
           code: read.code,
           category: 'unsupported',

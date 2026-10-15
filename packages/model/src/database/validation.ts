@@ -371,7 +371,8 @@ function collect(
     else if (
       (context.kind === 'postgresql' && namespace.kind !== 'postgresSchema') ||
       (context.kind === 'mysql' && namespace.kind !== 'mysqlCurrentDatabase') ||
-      (context.kind === 'sqlite' && namespace.kind !== 'sqliteMain')
+      (context.kind === 'sqlite' && namespace.kind !== 'sqliteMain') ||
+      (context.kind === 'generic' && namespace.kind !== 'generic')
     )
       add('namespace.not-supported', table.id, `${path}/namespace`, namespace, 'unsupported');
     if (namespace.kind === 'postgresSchema' && namespace.name)
@@ -465,7 +466,7 @@ function collect(
             'invalid',
             { ...issue.params },
           );
-        if (availability && !hasDatabaseCoverage(definition.coverage))
+        if (availability && context.kind !== 'generic' && !hasDatabaseCoverage(definition.coverage))
           add('type.not-implemented', column.id, `${path}/type`, type, 'unsupported');
         if (tableMode?.strict && !definition.sqliteStrict)
           add('type.strict-not-supported', column.id, `${path}/type`, [type, true], 'unsupported');
@@ -493,6 +494,9 @@ function collect(
           },
           [type, column.physical.generation.kind],
         );
+    } else if (type.kind === 'custom') {
+      if (!nativeTypeHasCoverage(context, type))
+        add('type.custom-name-invalid', column.id, `${path}/type/name`, type);
     } else if (type.kind === 'projectEnum') {
       feature('enumType', column.id, `${path}/type`, {}, type.enumId);
       if (isArray(type))
@@ -1467,6 +1471,10 @@ function compatible(
 ): boolean {
   const a = left.physical.type;
   const b = right.physical.type;
+  if (context.kind === 'generic')
+    return (
+      a.kind !== 'legacy' && b.kind !== 'legacy' && requestFingerprint(a) === requestFingerprint(b)
+    );
   if (context.kind === 'sqlite') return a.kind !== 'legacy' && b.kind !== 'legacy';
   if (isArray(a) !== isArray(b)) return false;
   if (a.kind === 'projectEnum' || b.kind === 'projectEnum')

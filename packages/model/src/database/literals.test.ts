@@ -236,7 +236,7 @@ describe('native literal decisions with explicit target IDs', () => {
           coverage:
             value.kind === 'null' &&
             hasDatabaseCoverage(nativeDefaultCoverage) &&
-            hasDatabaseCoverage(d.coverage) &&
+            (d.databaseKind === 'generic' || hasDatabaseCoverage(d.coverage)) &&
             (t.kind !== 'valueList' ||
               hasDatabaseCoverage(
                 nativeFeatureCoverage(t.typeId === 'mysql:enum' ? 'enumColumn' : 'setColumn'),
@@ -244,7 +244,7 @@ describe('native literal decisions with explicit target IDs', () => {
           usable:
             value.kind === 'null' &&
             hasDatabaseCoverage(nativeDefaultCoverage) &&
-            hasDatabaseCoverage(d.coverage) &&
+            (d.databaseKind === 'generic' || hasDatabaseCoverage(d.coverage)) &&
             (t.kind !== 'valueList' ||
               hasDatabaseCoverage(
                 nativeFeatureCoverage(t.typeId === 'mysql:enum' ? 'enumColumn' : 'setColumn'),

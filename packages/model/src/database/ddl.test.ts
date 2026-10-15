@@ -307,7 +307,9 @@ describe('native whole-design DDL compiler', () => {
   });
   it.each(
     databaseTypeCatalog.filter(
-      (type) => type.databaseKind !== 'mysql' || !['enum', 'set'].includes(type.sqlName),
+      (type) =>
+        type.databaseKind !== 'generic' &&
+        (type.databaseKind !== 'mysql' || !['enum', 'set'].includes(type.sqlName)),
     ),
   )('renders the basic declaration of $id', (definition) => {
     const doc = nativeDDLFixture(definition.databaseKind);

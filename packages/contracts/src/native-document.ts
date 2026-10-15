@@ -126,6 +126,16 @@ const declared = z.strictObject({
     .max(2),
 });
 export const nativeColumnTypeSchema = z.union([
+  z.strictObject({
+    kind: z.literal('custom'),
+    database: z.literal('generic'),
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(/^[^\x00-\x1f\x7f]+$/),
+  }),
   builtin,
   projectEnum,
   valueList,
@@ -288,6 +298,7 @@ export const nativeNamespaceSchema = z.union([
   z.strictObject({ kind: z.literal('postgresSchema'), name }),
   z.strictObject({ kind: z.literal('mysqlCurrentDatabase') }),
   z.strictObject({ kind: z.literal('sqliteMain') }),
+  z.strictObject({ kind: z.literal('generic') }),
 ]);
 const storedNamespace = z.union([
   nativeNamespaceSchema,
@@ -306,8 +317,10 @@ const tableOptions = z.union([
     collation: name.optional(),
   }),
   z.strictObject({ database: z.literal('sqlite'), strict: z.boolean(), withoutRowid: z.boolean() }),
+  z.strictObject({ database: z.literal('generic') }),
 ]);
 const columnOptions = z.union([
+  z.strictObject({ database: z.literal('generic') }),
   z.strictObject({ database: z.literal('postgresql'), collation: name.optional() }),
   z.strictObject({
     database: z.literal('mysql'),

@@ -1,8 +1,9 @@
 /** Native database rules are independent of transport schemas and UI components. */
-export const databaseKinds = ['postgresql', 'mysql', 'sqlite'] as const;
+export const databaseKinds = ['postgresql', 'mysql', 'sqlite', 'generic'] as const;
 export type DatabaseKind = (typeof databaseKinds)[number];
 export type DatabaseTypeId = `${DatabaseKind}:${string}`;
-export type DatabaseProfileId = 'postgresql-18-v1' | 'mysql-8.4-innodb-v1' | 'sqlite-3.45-v1';
+export type DatabaseProfileId =
+  'postgresql-18-v1' | 'mysql-8.4-innodb-v1' | 'sqlite-3.45-v1' | 'generic-v1';
 export interface DatabaseContext {
   kind: DatabaseKind;
   profileId: DatabaseProfileId;

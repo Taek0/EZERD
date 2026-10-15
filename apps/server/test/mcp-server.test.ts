@@ -129,6 +129,11 @@ describe('MCP server tools', () => {
         });
       }
       expect(client.getInstructions()).toContain('최소 40px');
+      expect(client.getInstructions()).toContain('databaseKind:"generic"');
+      expect(client.getInstructions()).toContain(
+        '{kind:"custom",database:"generic",name:"타입명"}',
+      );
+      expect(client.getInstructions()).toContain('DDL 내보내기를 지원하지 않습니다');
       expect(client.getInstructions()).toContain('PK→FK 방향');
       expect(client.getInstructions()).toContain('관계선 교차');
       expect(client.getInstructions()).toContain('브라우저 스킬이나 스크린샷 대신');
@@ -820,41 +825,44 @@ describe('MCP workspace authorization', () => {
       await harness.close();
     }
   });
-  it('documents and forwards native creation with optional format version', async () => {
-    const harness = await connected();
-    try {
-      const tool = (await harness.client.listTools()).tools.find(
-        (tool) => tool.name === 'create_project',
-      )!;
-      expect(tool.description).toContain('formatVersion: 2');
-      expect(tool.inputSchema.properties).toHaveProperty('formatVersion');
-      const native = await harness.client.callTool({
-        name: 'create_project',
-        arguments: { workspaceId: project.workspaceId, databaseKind: 'mysql', formatVersion: 2 },
-      });
-      expect(native.isError).not.toBe(true);
-      expect(harness.workspace.createProject).toHaveBeenCalledWith(actor.id, {
-        workspaceId: project.workspaceId,
-        databaseKind: 'mysql',
-        formatVersion: 2,
-      });
-      await harness.client.callTool({
-        name: 'create_project',
-        arguments: { workspaceId: project.workspaceId },
-      });
-      expect(harness.workspace.createProject).toHaveBeenLastCalledWith(actor.id, {
-        workspaceId: project.workspaceId,
-      });
-      const invalid = await harness.client.callTool({
-        name: 'create_project',
-        arguments: { workspaceId: project.workspaceId, formatVersion: 1 },
-      });
-      expect(invalid.isError).toBe(true);
-      expect(harness.workspace.createProject).toHaveBeenCalledTimes(2);
-    } finally {
-      await harness.close();
-    }
-  });
+  it.each(['mysql', 'generic'] as const)(
+    'documents and forwards %s native creation with optional format version',
+    async (databaseKind) => {
+      const harness = await connected();
+      try {
+        const tool = (await harness.client.listTools()).tools.find(
+          (tool) => tool.name === 'create_project',
+        )!;
+        expect(tool.description).toContain('formatVersion: 2');
+        expect(tool.inputSchema.properties).toHaveProperty('formatVersion');
+        const native = await harness.client.callTool({
+          name: 'create_project',
+          arguments: { workspaceId: project.workspaceId, databaseKind, formatVersion: 2 },
+        });
+        expect(native.isError).not.toBe(true);
+        expect(harness.workspace.createProject).toHaveBeenCalledWith(actor.id, {
+          workspaceId: project.workspaceId,
+          databaseKind,
+          formatVersion: 2,
+        });
+        await harness.client.callTool({
+          name: 'create_project',
+          arguments: { workspaceId: project.workspaceId },
+        });
+        expect(harness.workspace.createProject).toHaveBeenLastCalledWith(actor.id, {
+          workspaceId: project.workspaceId,
+        });
+        const invalid = await harness.client.callTool({
+          name: 'create_project',
+          arguments: { workspaceId: project.workspaceId, formatVersion: 1 },
+        });
+        expect(invalid.isError).toBe(true);
+        expect(harness.workspace.createProject).toHaveBeenCalledTimes(2);
+      } finally {
+        await harness.close();
+      }
+    },
+  );
 
   it('uses the authenticated identity for whoami and rejects a token revoked after connection', async () => {
     const harness = await connected();

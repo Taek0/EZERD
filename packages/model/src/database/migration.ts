@@ -113,6 +113,7 @@ export function migrateDesignDocumentV1(
 }
 
 function tableOptions(context: DatabaseContext): NativeTable['physical']['options'] {
+  if (context.kind === 'generic') return { database: 'generic' };
   if (context.kind === 'mysql') return { database: 'mysql', engine: 'InnoDB' };
   if (context.kind === 'sqlite') return { database: 'sqlite', strict: false, withoutRowid: false };
   return { database: 'postgresql' };

@@ -61,9 +61,11 @@ function define(
     sqliteStrict: false,
     ...extras,
     coverage: nativeBuiltinCoverage(databaseKind, name),
-    sources: Object.freeze([
-      databaseKind === 'postgresql' ? pg : databaseKind === 'mysql' ? my : sq,
-    ]),
+    sources: Object.freeze(
+      databaseKind === 'generic'
+        ? []
+        : [databaseKind === 'postgresql' ? pg : databaseKind === 'mysql' ? my : sq],
+    ),
   });
 }
 const grouped = (
@@ -238,10 +240,30 @@ const sqliteTypes = [
   ),
 );
 
+const genericTypes: DatabaseTypeDefinition[] = [
+  ...grouped('generic', ['smallint', 'bigint'], 'integer'),
+  define('generic', 'integer', 'integer', ['int']),
+  define('generic', 'numeric', 'decimal', ['decimal'], {
+    precision: integer(1, 1000),
+    scale: integer(0, 1000),
+  }),
+  define('generic', 'real', 'floating', ['float']),
+  define('generic', 'double precision', 'floating', ['double']),
+  ...grouped('generic', ['char', 'varchar'], 'string', { length: integer(1, 1000000) }),
+  define('generic', 'text', 'string'),
+  define('generic', 'boolean', 'boolean', ['bool']),
+  define('generic', 'date', 'temporal'),
+  ...grouped('generic', ['time', 'timestamp'], 'temporal', temporal),
+  define('generic', 'uuid', 'uuid'),
+  define('generic', 'json', 'json'),
+  define('generic', 'binary', 'binary', [], { length: integer(1, 1000000) }),
+  define('generic', 'blob', 'binary'),
+];
 export const databaseTypeCatalog: readonly DatabaseTypeDefinition[] = Object.freeze([
   ...postgresTypes,
   ...mysqlTypes,
   ...sqliteTypes,
+  ...genericTypes,
 ]);
 const byId = new Map(databaseTypeCatalog.map((item) => [item.id, item]));
 const byName = new Map<string, DatabaseTypeDefinition>();
@@ -329,7 +351,8 @@ export function listDatabaseTypes(
       definition.databaseKind === context.kind &&
       (!options.strict || definition.sqliteStrict) &&
       (options.includeSpecified ||
-        (!definition.deprecated && hasDatabaseCoverage(definition.coverage))),
+        (!definition.deprecated &&
+          (context.kind === 'generic' || hasDatabaseCoverage(definition.coverage)))),
   );
 }
 
@@ -375,10 +398,13 @@ export function validateDatabaseTypeParameters(
   }
   if (input.scale !== undefined && definition.category === 'decimal') {
     const precision = input.precision;
-    if (definition.databaseKind === 'postgresql' && precision === undefined)
+    if (
+      (definition.databaseKind === 'postgresql' || definition.databaseKind === 'generic') &&
+      precision === undefined
+    )
       issue('type.parameter-required', 'precision');
     if (
-      definition.databaseKind === 'mysql' &&
+      (definition.databaseKind === 'mysql' || definition.databaseKind === 'generic') &&
       typeof input.scale === 'number' &&
       input.scale > (typeof precision === 'number' ? precision : 10)
     )

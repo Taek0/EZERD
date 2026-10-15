@@ -75,6 +75,7 @@ const advancedFeatures = new Set([
 /** Constrained defaults have independent AST/parser evidence; this never grants arbitrary SQL. */
 export const nativeDefaultCoverage = advancedCoverage;
 export function nativeBuiltinCoverage(kind: DatabaseKind, name: string): DatabaseCoverage {
+  if (kind === 'generic') return { availability: 'implemented', evidence: {} };
   return kind === 'postgresql' && name === 'txid_snapshot'
     ? specifiedDatabaseCoverage
     : catalogCoverage;
