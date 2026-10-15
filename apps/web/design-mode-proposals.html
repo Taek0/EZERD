@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EZERD · 설계 모드 선택 시안</title>
+    <link rel="stylesheet" href="./public/fonts/apple-sd-gothic-neo/fonts.css" />
+    <style>
+      :root { color-scheme: light; font-family: 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color: #243248; background: #edf1f6; font-synthesis: none; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-size: 13px; }
+      button { font: inherit; cursor: pointer; }
+      main { width: min(1120px, calc(100% - 48px)); margin: 36px auto; }
+      .eyebrow { font-size: 11px; letter-spacing: .12em; color: #60718a; font-weight: 600; }
+      h1 { font-size: 25px; letter-spacing: -.7px; margin: 8px 0 9px; font-weight: 650; }
+      .intro { color: #60718a; line-height: 1.7; margin: 0; }
+      .page-head { display: flex; justify-content: space-between; align-items: end; gap: 20px; margin-bottom: 27px; }
+      .preview-label { white-space: nowrap; color: #60718a; font-size: 11px; border: 1px solid #d5dfec; border-radius: 6px; padding: 7px 10px; }
+      .proposal { margin: 0 0 22px; }
+      .proposal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+      .letter { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border: 1px solid #d2dce9; border-radius: 7px; color: #445a77; background: #f8fafd; font-weight: 600; }
+      h2 { font-size: 14px; font-weight: 650; margin: 0; }
+      .description { color: #60718a; margin-left: auto; font-size: 12px; }
+      .recommended { font-size: 10px; border-radius: 4px; padding: 3px 6px; color: #315ed4; background: #e0e9ff; font-weight: 600; }
+      .editor { border: 1px solid #d5dfec; border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 3px 12px #263c5a06; }
+      .document { height: 39px; padding: 0 16px; display: flex; align-items: center; gap: 10px; }
+      .project-name { font-size: 12px; font-weight: 600; }
+      .crumb { color: #748399; font-size: 11px; }
+      .saved { margin-left: auto; color: #52745f; font-size: 10px; }
+      .toolbar-viewport { overflow-x: auto; }
+      .toolbar { min-width: 820px; height: 53px; display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: #f8fafd; border-block: 1px solid #e0e7f0; }
+      .tool { height: 32px; padding: 6px 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 500; border: 1px solid #d8dfe9; border-radius: 8px; color: #445166; background: #fff; white-space: nowrap; user-select: none; }
+      .tool.primary { background: #315ed4; color: #fff; border-color: #315ed4; }
+      .tool.current { color: #315ed4; background: #eef3ff; border-color: #c3d2ff; }
+      .tool.icon { width: 32px; padding: 0; }
+      .divider { height: 18px; width: 1px; background: #dce4ef; margin: 0 7px; flex: none; }
+      .push { margin-left: auto; }
+      .mode { display: inline-flex; position: relative; flex: none; height: 32px; width: 116px; isolation: isolate; }
+      .mode button { flex: 1; position: relative; min-width: 0; padding: 0; border: 0; background: transparent; color: #60718a; font-size: 12px; font-weight: 500; border-radius: 5px; }
+      .mode button[aria-checked='true'] { color: #254fbf; font-weight: 650; }
+      .mode button:hover { color: #254fbf; }
+      .mode button:active { background: #315ed40d; }
+      .mode button:focus-visible { outline: 2px solid #315ed4; outline-offset: 3px; z-index: 3; }
+      .soft { padding: 3px; border-radius: 8px; background: #e9eef5; box-shadow: inset 0 1px 2px #263c5a0d; }
+      .soft::before { content: ''; position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 2); background: #fff; border-radius: 5px; box-shadow: 0 1px 3px #263c5a20, 0 0 0 1px #263c5a05; z-index: -1; transform: translateX(100%); }
+      .soft[data-active='physical']::before { transform: translateX(0); }
+      .outlined { border: 1px solid #c7d3e4; border-radius: 7px; overflow: visible; background: #fff; }
+      .outlined button { border-radius: 6px 0 0 6px; }
+      .outlined button + button { border-radius: 0 6px 6px 0; border-left: 1px solid #c7d3e4; }
+      .outlined button[aria-checked='true'] { background: #e7efff; box-shadow: inset 0 0 0 1px #a8beee; }
+      .underlined { border-bottom: 1px solid #d5dfec; width: 108px; }
+      .underlined button { border-radius: 4px 4px 0 0; }
+      .underlined::after { content: ''; position: absolute; bottom: -1px; height: 2px; background: #315ed4; width: 50%; left: 0; transform: translateX(100%); }
+      .underlined[data-active='physical']::after { transform: translateX(0); }
+      .underlined button[aria-checked='true'] { background: #edf3ff; }
+      .canvas { height: 95px; display: flex; align-items: center; gap: 30px; padding: 12px 24px; background-color: #fafcfe; background-image: radial-gradient(#d0dae8 .7px, transparent .7px); background-size: 16px 16px; }
+      .entity { width: 173px; border: 1px solid #cad6e7; background: #fff; border-radius: 6px; box-shadow: 0 2px 5px #263c5a06; overflow: hidden; font-size: 11px; }
+      .entity-title { background: #eff4fc; padding: 6px 9px; color: #344b69; font-weight: 600; border-bottom: 1px solid #dce4ef; }
+      .entity-row { display: flex; gap: 8px; padding: 6px 9px; }
+      .key { color: #8a713c; font-size: 9px; }
+      .type { margin-left: auto; color: #7c8a9f; font-size: 10px; }
+      .relationship { color: #8b9cb6; letter-spacing: 2px; margin-inline: -25px; font-size: 17px; }
+      .state { margin-left: auto; align-self: end; color: #60718a; background: #fafcfedb; font-size: 11px; padding: 4px; }
+      .state strong { color: #315ed4; font-weight: 600; }
+      footer { display: flex; gap: 12px; justify-content: space-between; color: #73829a; font-size: 11px; margin-top: 7px; line-height: 1.7; }
+      @media (prefers-reduced-motion: no-preference) { .soft::before, .underlined::after { transition: transform 180ms cubic-bezier(.2,.8,.2,1); } .mode button { transition: color 120ms, background-color 120ms; } }
+      @media (max-width: 720px) { main { width: calc(100% - 24px); margin: 24px auto; } .page-head { align-items: start; } .preview-label { display: none; } h1 { font-size: 22px; } .proposal-head { flex-wrap: wrap; gap: 8px; } .description { flex-basis: 100%; margin: 0 0 0 36px; } .canvas { padding: 12px; gap: 16px; } .entity { width: 140px; flex: none; } .relationship { margin-inline: -15px; } .state { display: none; } footer { display: block; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="page-head">
+        <div>
+          <div class="eyebrow">EZERD / TOOLBAR STUDY</div>
+          <h1>설계 모드, 두 선택지를 한눈에</h1>
+          <p class="intro">
+            물리 · 논리를 항상 함께 보여주고, 현재 모드를 분명하게 표시합니다.<br />각 시안의 모드를
+            눌러 선택 상태를 비교해 보세요.
+          </p>
+        </div>
+        <span class="preview-label">디자인 시안 · 실제 툴바 크기</span>
+      </header>
+      <div id="proposals"></div>
+      <footer>
+        <span>클릭 또는 Tab → 방향키로 모드 전환 · 시스템의 모션 감소 설정 반영</span
+        ><span>예시 데이터와 상태만 바뀌는 독립 미리보기</span>
+      </footer>
+    </main>
+    <script>
+      const designs = [
+        { id: 'A', name: '소프트 세그먼트', style: 'soft', description: '밝은 선택 면이 이동해 전환을 자연스럽게 보여줍니다.', recommended: true },
+        { id: 'B', name: '아웃라인 세그먼트', style: 'outlined', description: '두 버튼의 경계와 파란 면으로 선택을 또렷하게 구분합니다.' },
+        { id: 'C', name: '컴팩트 탭', style: 'underlined', description: '얇은 밑줄로 현재 모드를 표시해 툴바를 가볍게 유지합니다.' },
+      ];
+      document.querySelector('#proposals').innerHTML = designs.map(design => `
+        <section class="proposal" aria-labelledby="heading-${design.id}">
+          <div class="proposal-head"><span class="letter">${design.id}</span><h2 id="heading-${design.id}">${design.name}</h2>${design.recommended ? '<span class="recommended">추천</span>' : ''}<span class="description">${design.description}</span></div>
+          <div class="editor">
+            <div class="document"><span class="project-name">커머스 서비스</span><span class="crumb">/ 전체 테이블</span><span class="saved">✓ 저장됨</span></div>
+            <div class="toolbar-viewport"><div class="toolbar">
+              <span class="tool icon" aria-hidden="true">☷</span><span class="tool primary">＋ 테이블</span><span class="tool">＋ 메모</span><span class="divider"></span><span class="tool current">전체 테이블</span><span class="tool">도메인 맵</span><span class="tool">ENUM</span>
+              <span class="divider"></span>
+              <div class="mode ${design.style}" role="radiogroup" aria-label="${design.id}안 설계 모드" data-active="logical">
+                <button type="button" role="radio" aria-checked="false" tabindex="-1" data-mode="physical">물리</button><button type="button" role="radio" aria-checked="true" tabindex="0" data-mode="logical">논리</button>
+              </div>
+              <span class="tool push">내보내기 <span aria-hidden="true">⌄</span></span><span class="divider"></span><span class="tool icon" aria-hidden="true">⋯</span><span class="tool icon" aria-hidden="true">◫</span>
+            </div></div>
+            <div class="canvas">
+              <div class="entity"><div class="entity-title" data-logical="회원" data-physical="users">회원</div><div class="entity-row"><span class="key">PK</span><span data-logical="회원 번호" data-physical="user_id">회원 번호</span><span class="type" data-logical="숫자" data-physical="BIGINT">숫자</span></div></div>
+              <span class="relationship" aria-hidden="true">───</span>
+              <div class="entity"><div class="entity-title" data-logical="주문" data-physical="orders">주문</div><div class="entity-row"><span class="key">PK</span><span data-logical="주문 번호" data-physical="order_id">주문 번호</span><span class="type" data-logical="숫자" data-physical="BIGINT">숫자</span></div></div>
+              <span class="state" aria-live="polite">현재 <strong>논리</strong> 모드</span>
+            </div>
+          </div>
+        </section>
+      `).join('');
+      document.querySelectorAll('.mode').forEach(group => {
+        const buttons = [...group.querySelectorAll('button')];
+        function select(button) {
+          group.dataset.active = button.dataset.mode;
+          buttons.forEach(item => { item.setAttribute('aria-checked', String(item === button)); item.tabIndex = item === button ? 0 : -1; });
+          const section = group.closest('.proposal');
+          section.querySelector('.state strong').textContent = button.textContent;
+          section.querySelectorAll('[data-logical]').forEach(item => { item.textContent = item.dataset[button.dataset.mode]; });
+        }
+        buttons.forEach(button => button.addEventListener('click', () => select(button)));
+        group.addEventListener('keydown', event => {
+          if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const target = event.key === 'Home' ? buttons[0] : event.key === 'End' ? buttons[1] : buttons[1 - buttons.indexOf(document.activeElement)];
+          if (target) { target.focus(); select(target); }
+        });
+      });
+    </script>
+  </body>
+</html>
