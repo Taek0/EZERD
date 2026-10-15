@@ -2,6 +2,7 @@ import {
   MAX_BATCH_RELATION_LAYOUT_BYTES,
   MAX_BATCH_RELATION_LAYOUTS,
   MAX_BATCH_RELATION_WAYPOINTS,
+  nativeSyncOperationResultSchema,
   relationLayoutSchema,
   type ProjectDocumentState,
 } from '@ezerd/contracts';
@@ -11,14 +12,104 @@ import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { nativeRelationLabelWidth } from './native-canvas-style.js';
 import type { NativeEditorSave } from './native-editor-form.js';
 import { nativeDurableId } from './native-durable-queue.js';
+import { captureNativeActorApi } from './native-actor-api.js';
+import { ApiError, request } from '../../shared/api/client.js';
 import { cancelNativeSaveIntent } from './native-save-intents.js';
-import { sendNativeHistory, stageNativeHistory } from './native-history.js';
+import {
+  loadNativeHistoryPending,
+  sendNativeHistory,
+  stageNativeHistory,
+} from './native-history.js';
 
 type Scene = ReturnType<typeof nativeCanvasScene>;
 type ArrangeInput = Parameters<typeof arrangeRelationRoutes>[0];
 type ArrangeResult = ReturnType<typeof arrangeRelationRoutes>;
 type ArrangedRoute = Extract<ArrangeResult, { ok: true }>['routes'][number];
 type Route = RelationLayout;
+type UndoMarker = {
+  viewId: string;
+  operationId: string;
+  startSequence: number;
+  after: Map<string, Route>;
+  historyOperationId?: string;
+};
+type MarkerStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+async function readOperationStatus(userId: string, projectId: string, operationId: string) {
+  const actorApi = captureNativeActorApi(userId, request);
+  try {
+    const result = nativeSyncOperationResultSchema.parse(
+      await actorApi(
+        `/api/projects/${encodeURIComponent(projectId)}/native-sync/operations/${operationId}`,
+        { cache: 'no-store' },
+      ),
+    );
+    if (result.operationId !== operationId || result.actor.id !== userId)
+      throw Error('relation.auto-arrange-operation-invalid');
+    return result.status;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+const markerKey = (userId: string, projectId: string) =>
+  `ezerd.native.arrange-undo:${JSON.stringify([userId, projectId])}`;
+function readUndoMarker(
+  storage: MarkerStorage,
+  userId: string,
+  projectId: string,
+): UndoMarker | null {
+  const raw = storage.getItem(markerKey(userId, projectId));
+  if (!raw) return null;
+  const value: unknown = JSON.parse(raw);
+  if (!value || typeof value !== 'object') throw Error('relation.auto-arrange-undo-invalid');
+  const marker = value as Record<string, unknown>;
+  if (
+    typeof marker.viewId !== 'string' ||
+    typeof marker.operationId !== 'string' ||
+    !Number.isSafeInteger(marker.startSequence) ||
+    !Array.isArray(marker.after)
+  )
+    throw Error('relation.auto-arrange-undo-invalid');
+  const after = relationLayoutSchema.array().parse(marker.after);
+  return {
+    viewId: marker.viewId,
+    operationId: marker.operationId,
+    startSequence: marker.startSequence as number,
+    after: new Map(after.map((route) => [route.relationId, route])),
+    ...(typeof marker.historyOperationId === 'string'
+      ? { historyOperationId: marker.historyOperationId }
+      : {}),
+  };
+}
+function storeUndoMarker(
+  storage: MarkerStorage,
+  userId: string,
+  projectId: string,
+  marker: UndoMarker,
+) {
+  const previous = readUndoMarker(storage, userId, projectId);
+  if (previous && previous.operationId !== marker.operationId)
+    throw Error('relation.auto-arrange-undo-pending');
+  storage.setItem(
+    markerKey(userId, projectId),
+    JSON.stringify({
+      viewId: marker.viewId,
+      operationId: marker.operationId,
+      startSequence: marker.startSequence,
+      after: [...marker.after.values()],
+      ...(marker.historyOperationId ? { historyOperationId: marker.historyOperationId } : {}),
+    }),
+  );
+}
+function clearUndoMarker(
+  storage: MarkerStorage,
+  userId: string,
+  projectId: string,
+  operationId: string,
+) {
+  if (readUndoMarker(storage, userId, projectId)?.operationId === operationId)
+    storage.removeItem(markerKey(userId, projectId));
+}
 
 export interface NativeRelationArrangeState {
   document: NativeDesignDocument;
@@ -33,7 +124,16 @@ export interface NativeRelationArrangeStatus {
   phase:
     'idle' | 'computing' | 'saving' | 'saved' | 'invalidated' | 'failed' | 'offline' | 'cancelled';
   progress?: 'preparing' | 'routing' | 'applying' | 'retrying';
-  reason?: 'scope' | 'structure' | 'size' | 'route' | 'space' | 'save' | 'limit' | 'cancel';
+  reason?:
+    | 'scope'
+    | 'structure'
+    | 'size'
+    | 'route'
+    | 'space'
+    | 'save'
+    | 'limit'
+    | 'compute-limit'
+    | 'cancel';
   canUndo: boolean;
   canCancel?: boolean;
   crowdedTableIds?: string[];
@@ -215,8 +315,11 @@ interface Job {
   applied?: Map<string, Route>;
   startSequence: number;
   cancelRequested?: boolean;
+  cancelInFlight?: boolean;
   crowdedTableIds?: string[];
   rebaseTimer?: ReturnType<typeof setTimeout>;
+  verificationTimer?: ReturnType<typeof setTimeout>;
+  verification?: { state: NativeRelationArrangeState; after: Map<string, Route> };
 }
 type SaveReceipt = { operationId: string; completion: Promise<boolean> };
 type ArrangeSave = (
@@ -229,17 +332,20 @@ export function createNativeRelationArrangeController(options: {
   save: ArrangeSave;
   onReload?: () => void;
   createWorker?: () => WorkerLike;
+  cancelSave?: typeof cancelNativeSaveIntent;
+  readStatus?: typeof readOperationStatus;
+  storage?: MarkerStorage;
 }) {
+  const storage = options.storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
   let job: Job | null = null;
   let disposed = false;
   let status: NativeRelationArrangeStatus = { phase: 'idle', canUndo: false };
-  let undo: {
-    viewId: string;
-    operationId: string;
-    after: Map<string, Route>;
-    startSequence: number;
-  } | null = null;
+  let undo: UndoMarker | null = null;
   let pendingHistoryUndo = false;
+  let recoveryRequested = false;
+  let recoveryInFlight = false;
+  let nextRecoveryAt = 0;
+  let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   const emit = (next: NativeRelationArrangeStatus) => {
     if (disposed) return;
     status = next;
@@ -248,10 +354,34 @@ export function createNativeRelationArrangeController(options: {
   const invalidate = (reason: NonNullable<NativeRelationArrangeStatus['reason']>) => {
     job?.worker.terminate();
     if (job?.rebaseTimer) clearTimeout(job.rebaseTimer);
+    if (job?.verificationTimer) clearTimeout(job.verificationTimer);
     job = null;
     emit({ phase: 'invalidated', reason, canUndo: false });
   };
   const update = () => {
+    if (
+      !job &&
+      !pendingHistoryUndo &&
+      !recoveryRequested &&
+      Date.now() >= nextRecoveryAt &&
+      storage
+    ) {
+      const state = options.getState();
+      if (state.userId) {
+        try {
+          const recovered = readUndoMarker(storage, state.userId, state.snapshot.project.id);
+          if (recovered) {
+            undo = recovered;
+            emit({ phase: 'saving', canUndo: false });
+            recoveryRequested = true;
+            void recoverMarkedUndo(recovered, state);
+          }
+        } catch {
+          recoveryRequested = true;
+          emit({ phase: 'failed', reason: 'save', canUndo: false });
+        }
+      }
+    }
     if (job && status.phase === 'computing') {
       const reason = nativeRelationArrangeInvalidation(job.initial, options.getState());
       if (reason) invalidate(reason);
@@ -275,6 +405,112 @@ export function createNativeRelationArrangeController(options: {
       pendingHistoryUndo = false;
       void performHistoryUndo();
     }
+  };
+  const verifyAccepted = async (currentJob: Job) => {
+    const pending = currentJob.verification;
+    if (!pending || !currentJob.operationId || !pending.state.userId) return;
+    let actual: 'accepted' | 'rejected' | null;
+    try {
+      actual = await (options.readStatus ?? readOperationStatus)(
+        pending.state.userId,
+        pending.state.snapshot.project.id,
+        currentJob.operationId,
+      );
+    } catch {
+      actual = null;
+    }
+    if (disposed || job !== currentJob) return;
+    if (actual === null) {
+      emit({ phase: 'offline', canUndo: false, canCancel: true });
+      if (currentJob.verificationTimer) clearTimeout(currentJob.verificationTimer);
+      currentJob.verificationTimer = setTimeout(() => void verifyAccepted(currentJob), 4000);
+      return;
+    }
+    delete currentJob.verification;
+    if (currentJob.verificationTimer) clearTimeout(currentJob.verificationTimer);
+    delete currentJob.verificationTimer;
+    job = null;
+    if (actual === 'rejected') {
+      if (storage && pending.state.userId)
+        clearUndoMarker(
+          storage,
+          pending.state.userId,
+          pending.state.snapshot.project.id,
+          currentJob.operationId,
+        );
+      emit({
+        phase: currentJob.cancelRequested ? 'cancelled' : 'saved',
+        canUndo: false,
+      });
+      return;
+    }
+    undo = {
+      viewId: pending.state.scene.viewId,
+      operationId: currentJob.operationId,
+      after: pending.after,
+      startSequence: currentJob.startSequence,
+    };
+    if (currentJob.cancelRequested) {
+      pendingHistoryUndo = true;
+      emit({ phase: 'saving', canUndo: false });
+      options.onReload?.();
+      update();
+    } else emit({ phase: 'saved', canUndo: true });
+  };
+  const recoverMarkedUndo = async (marker: UndoMarker, state: NativeRelationArrangeState) => {
+    if (!state.userId || !storage || recoveryInFlight) return;
+    recoveryInFlight = true;
+    try {
+      if (marker.historyOperationId) {
+        const historyStatus = await (options.readStatus ?? readOperationStatus)(
+          state.userId,
+          state.snapshot.project.id,
+          marker.historyOperationId,
+        );
+        if (historyStatus === 'accepted') {
+          clearUndoMarker(storage, state.userId, state.snapshot.project.id, marker.operationId);
+          undo = null;
+          recoveryRequested = false;
+          emit({ phase: 'saved', canUndo: false });
+          options.onReload?.();
+          return;
+        }
+        if (historyStatus === 'rejected') {
+          delete marker.historyOperationId;
+          storeUndoMarker(storage, state.userId, state.snapshot.project.id, marker);
+        }
+      }
+      const result = await (options.cancelSave ?? cancelNativeSaveIntent)(
+        state.userId,
+        state.snapshot.project.id,
+        marker.operationId,
+      );
+      if (disposed || undo?.operationId !== marker.operationId) return;
+      if (result?.status === 'rejected') {
+        clearUndoMarker(storage, state.userId, state.snapshot.project.id, marker.operationId);
+        undo = null;
+        recoveryRequested = false;
+        emit({ phase: 'cancelled', reason: 'cancel', canUndo: false });
+      } else if (result?.status === 'accepted') {
+        pendingHistoryUndo = true;
+        options.onReload?.();
+        update();
+      } else scheduleRecoveryRetry();
+    } catch {
+      if (!disposed) scheduleRecoveryRetry();
+    } finally {
+      recoveryInFlight = false;
+    }
+  };
+  const scheduleRecoveryRetry = () => {
+    recoveryRequested = false;
+    nextRecoveryAt = Date.now() + 4000;
+    emit({ phase: 'offline', canUndo: false, canCancel: true });
+    if (recoveryTimer) clearTimeout(recoveryTimer);
+    recoveryTimer = setTimeout(() => {
+      recoveryTimer = null;
+      if (!disposed) update();
+    }, 4000);
   };
   const retryRejected = async (currentJob: Job, state: NativeRelationArrangeState) => {
     const reason = nativeRelationArrangeInvalidation(currentJob.initial, state);
@@ -330,11 +566,12 @@ export function createNativeRelationArrangeController(options: {
         .map((route) => [route.relationId, route]),
     );
     currentJob.applied = after;
+    // Undo must wait for this attempt's ACK, including a rebased second attempt.
+    currentJob.startSequence = state.snapshot.sequence;
     emit({
       phase: 'saving',
       ...(currentJob.retryCount ? { progress: 'retrying' as const } : {}),
       canUndo: false,
-      canCancel: true,
     });
     const submitted = options.save([command], {
       version: state.snapshot.project.version,
@@ -342,9 +579,29 @@ export function createNativeRelationArrangeController(options: {
       databaseRevision: state.snapshot.project.databaseRevision,
     });
     const receipt: SaveReceipt | null = 'operationId' in submitted ? submitted : null;
-    if (receipt) currentJob.operationId = receipt.operationId;
+    if (receipt) {
+      currentJob.operationId = receipt.operationId;
+      emit({
+        phase: 'saving',
+        ...(currentJob.retryCount ? { progress: 'retrying' as const } : {}),
+        canUndo: false,
+        canCancel: true,
+      });
+    }
     const accepted = await (receipt?.completion ?? submitted);
     if (disposed || job !== currentJob || generation !== currentJob.saveGeneration) return;
+    if (accepted && receipt && state.userId) {
+      currentJob.verification = { state, after };
+      await verifyAccepted(currentJob);
+      return;
+    }
+    if (currentJob.cancelRequested) {
+      job = null;
+      if (storage && state.userId && currentJob.operationId)
+        clearUndoMarker(storage, state.userId, state.snapshot.project.id, currentJob.operationId);
+      emit({ phase: 'cancelled', reason: 'cancel', canUndo: false });
+      return;
+    }
     if (accepted) {
       undo = currentJob.operationId
         ? {
@@ -388,6 +645,18 @@ export function createNativeRelationArrangeController(options: {
   const start = () => {
     if (disposed || job) return;
     const state = options.getState();
+    if (storage && state.userId) {
+      try {
+        if (readUndoMarker(storage, state.userId, state.snapshot.project.id)) {
+          update();
+          return;
+        }
+      } catch {
+        recoveryRequested = true;
+        emit({ phase: 'failed', reason: 'save', canUndo: false });
+        return;
+      }
+    }
     if (!state.eligible || state.scene.viewId === 'overview') {
       emit({ phase: 'invalidated', reason: 'scope', canUndo: false });
       return;
@@ -430,10 +699,12 @@ export function createNativeRelationArrangeController(options: {
         emit({
           phase: 'failed',
           reason:
-            message.type === 'result' &&
-            message.result.ok === false &&
-            message.result.error.code === 'no-valid-route'
-              ? 'space'
+            message.type === 'result' && message.result.ok === false
+              ? message.result.error.code === 'no-valid-route'
+                ? 'space'
+                : message.result.error.code === 'search-limit'
+                  ? 'compute-limit'
+                  : 'structure'
               : 'save',
           canUndo: false,
         });
@@ -464,29 +735,56 @@ export function createNativeRelationArrangeController(options: {
     worker.postMessage({ jobId: currentJob.id, input: nativeRelationArrangeInput(state) });
   };
   const cancel = () => {
-    if (!job) return;
+    if (!job) {
+      if (undo && status.phase === 'offline') {
+        nextRecoveryAt = 0;
+        update();
+      }
+      return;
+    }
     if (status.phase === 'computing') {
       job.worker.terminate();
       job = null;
       emit({ phase: 'cancelled', reason: 'cancel', canUndo: false });
       return;
     }
-    if (status.phase !== 'saving' || job.cancelRequested) return;
+    if ((status.phase !== 'saving' && status.phase !== 'offline') || job.cancelInFlight) return;
     const currentJob = job;
     const operationId = currentJob.operationId;
     if (!operationId) return;
     const state = options.getState();
     if (!state.userId) return;
+    if (!storage) {
+      emit({ phase: 'failed', reason: 'save', canUndo: false });
+      return;
+    }
+    try {
+      storeUndoMarker(storage, state.userId, state.snapshot.project.id, {
+        viewId: state.scene.viewId,
+        operationId,
+        after: currentJob.applied ?? new Map(),
+        startSequence: currentJob.startSequence,
+      });
+    } catch {
+      emit({ phase: 'failed', reason: 'save', canUndo: false });
+      return;
+    }
     currentJob.cancelRequested = true;
+    currentJob.cancelInFlight = true;
     if (currentJob.rebaseTimer) clearTimeout(currentJob.rebaseTimer);
-    currentJob.saveGeneration++;
-    void cancelNativeSaveIntent(state.userId, state.snapshot.project.id, operationId)
+    void (options.cancelSave ?? cancelNativeSaveIntent)(
+      state.userId,
+      state.snapshot.project.id,
+      operationId,
+    )
       .then((result) => {
         if (job !== currentJob) return;
         job = null;
         if (!result) {
-          emit({ phase: 'failed', reason: 'save', canUndo: false });
+          emit({ phase: 'offline', canUndo: false, canCancel: true });
         } else if (result.status === 'rejected') {
+          clearUndoMarker(storage, state.userId!, state.snapshot.project.id, operationId);
+          undo = null;
           emit({ phase: 'cancelled', reason: 'cancel', canUndo: false });
         } else {
           undo = {
@@ -501,10 +799,17 @@ export function createNativeRelationArrangeController(options: {
           update();
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (job === currentJob) {
-          currentJob.cancelRequested = false;
-          emit({ phase: 'offline', canUndo: false, canCancel: true });
+          currentJob.cancelInFlight = false;
+          emit({
+            phase:
+              error instanceof Error && error.message === 'native.transmission-busy'
+                ? 'saving'
+                : 'offline',
+            canUndo: false,
+            canCancel: true,
+          });
         }
       });
   };
@@ -512,48 +817,101 @@ export function createNativeRelationArrangeController(options: {
     if (!undo || job) return;
     const state = options.getState();
     const target = undo;
-    if (state.scene.viewId !== target.viewId) return invalidate('scope');
+    if (state.scene.viewId !== target.viewId) {
+      pendingHistoryUndo = false;
+      return invalidate('scope');
+    }
     const current = routesOf(state.document, target.viewId);
     if (
       [...target.after].some(([id, route]) => !sameRoute(route, current.get(id), id, target.viewId))
-    )
+    ) {
+      pendingHistoryUndo = false;
+      if (storage && state.userId)
+        clearUndoMarker(storage, state.userId, state.snapshot.project.id, target.operationId);
+      undo = null;
       return invalidate('route');
+    }
     if (!state.userId) return invalidate('scope');
     if (state.snapshot.sequence <= target.startSequence) {
       pendingHistoryUndo = true;
       emit({ phase: 'saving', canUndo: false });
       return;
     }
-    undo = null;
     emit({ phase: 'saving', canUndo: false });
     try {
-      const pending = await stageNativeHistory(
-        state.userId,
-        state.snapshot,
-        target.operationId,
-        'undo',
-      );
+      const previous = await loadNativeHistoryPending(state.userId, state.snapshot.project.id);
+      if (target.historyOperationId) {
+        const historyStatus = await (options.readStatus ?? readOperationStatus)(
+          state.userId,
+          state.snapshot.project.id,
+          target.historyOperationId,
+        );
+        if (historyStatus === 'accepted') {
+          if (storage)
+            clearUndoMarker(storage, state.userId, state.snapshot.project.id, target.operationId);
+          undo = null;
+          emit({ phase: 'saved', canUndo: false });
+          options.onReload?.();
+          return;
+        }
+        if (historyStatus === null && previous?.request.operationId !== target.historyOperationId)
+          throw Error('relation.auto-arrange-undo-unconfirmed');
+        if (historyStatus === 'rejected') {
+          delete target.historyOperationId;
+          if (storage) storeUndoMarker(storage, state.userId, state.snapshot.project.id, target);
+        }
+      }
+      const pending =
+        previous?.sourceOperationId === target.operationId && previous.command === 'undo'
+          ? previous
+          : await stageNativeHistory(state.userId, state.snapshot, target.operationId, 'undo');
+      target.historyOperationId = pending.request.operationId;
+      if (storage) storeUndoMarker(storage, state.userId, state.snapshot.project.id, target);
       const output = await sendNativeHistory(pending);
-      if (output.result.status === 'accepted') options.onReload?.();
+      if (output.result.status === 'accepted') {
+        if (storage)
+          clearUndoMarker(storage, state.userId, state.snapshot.project.id, target.operationId);
+        undo = null;
+        options.onReload?.();
+      }
       emit(
         output.result.status === 'accepted'
           ? { phase: 'saved', canUndo: false }
-          : { phase: 'failed', reason: 'route', canUndo: false },
+          : { phase: 'failed', reason: 'route', canUndo: true },
       );
     } catch {
-      emit({ phase: 'failed', reason: 'save', canUndo: false });
+      emit({ phase: 'failed', reason: 'save', canUndo: true });
     }
   };
   const undoLatest = () => {
     if (!undo) return;
+    const state = options.getState();
+    if (!state.userId || !storage) {
+      emit({ phase: 'failed', reason: 'save', canUndo: true });
+      return;
+    }
+    try {
+      storeUndoMarker(storage, state.userId, state.snapshot.project.id, undo);
+    } catch {
+      emit({ phase: 'failed', reason: 'save', canUndo: true });
+      return;
+    }
     pendingHistoryUndo = true;
+    emit({ phase: 'saving', canUndo: false });
     update();
   };
   const dispose = () => {
     disposed = true;
     job?.worker.terminate();
     if (job?.rebaseTimer) clearTimeout(job.rebaseTimer);
+    if (recoveryTimer) clearTimeout(recoveryTimer);
+    if (typeof window !== 'undefined') window.removeEventListener('online', onOnline);
     job = null;
   };
+  const onOnline = () => {
+    nextRecoveryAt = 0;
+    update();
+  };
+  if (typeof window !== 'undefined') window.addEventListener('online', onOnline);
   return { start, cancel, undo: undoLatest, update, dispose, getStatus: () => status };
 }

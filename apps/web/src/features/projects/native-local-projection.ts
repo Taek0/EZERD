@@ -230,14 +230,17 @@ export function projectNativeLocalColumns(
         } else if (command.type === 'patch_key') {
           next = patchNativeConstraintKey(next, command.id, command.patch);
         } else if (command.type === 'batch_upsert_relation_layouts') {
+          const relationIds = new Set((next.tableRelations ?? []).map((relation) => relation.id));
+          if (command.routes.some((route) => !relationIds.has(route.relationId)))
+            throw Error('document.object-not-found');
           const byId = new Map(
             (next.layout.relations ?? []).map((route) => [
-              `${route.viewId}:${route.relationId}`,
+              JSON.stringify([route.viewId, route.relationId]),
               route,
             ]),
           );
           for (const route of command.routes)
-            byId.set(`${command.viewId}:${route.relationId}`, {
+            byId.set(JSON.stringify([command.viewId, route.relationId]), {
               ...route,
               viewId: command.viewId,
             });
@@ -246,6 +249,8 @@ export function projectNativeLocalColumns(
             layout: { ...next.layout, relations: [...byId.values()] },
           };
         } else if (command.type === 'upsert_relation_layout') {
+          if (!next.tableRelations?.some((relation) => relation.id === command.value.relationId))
+            throw Error('document.object-not-found');
           const routes = (next.layout.relations ?? []).filter(
             (route) =>
               route.relationId !== command.value.relationId ||
