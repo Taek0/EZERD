@@ -80,6 +80,40 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
       stranger = users[2]!;
     }, 20000);
 
+    it('persists per-user workspace order across service reloads and appends new memberships', async () => {
+      const first = await spaces.createWorkspace(owner.id, { name: 'Order Z' });
+      const second = await spaces.createWorkspace(owner.id, { name: 'Order A' });
+      await database.db.insert(schema.userWorkspaces).values([
+        { workspaceId: first.id, userId: peer.id, role: 'viewer' },
+        { workspaceId: second.id, userId: peer.id, role: 'viewer' },
+      ]);
+      const peerBefore = (await spaces.listWorkspaces(peer.id)).map((row) => row.id);
+      const ids = (await spaces.listWorkspaces(owner.id)).map((row) => row.id).reverse();
+      expect(
+        (await spaces.reorderWorkspaces(owner.id, { workspaceIds: ids })).map((row) => row.id),
+      ).toEqual(ids);
+      const reloaded = new SpaceService(database, access, new WorkspaceEventsService());
+      expect((await reloaded.listWorkspaces(owner.id)).map((row) => row.id)).toEqual(ids);
+      expect((await spaces.listWorkspaces(peer.id)).map((row) => row.id)).toEqual(peerBefore);
+      expect(
+        (await spaces.reorderWorkspaces(peer.id, { workspaceIds: [...peerBefore].reverse() })).map(
+          (row) => row.id,
+        ),
+      ).toEqual([...peerBefore].reverse());
+      const added = await spaces.createWorkspace(owner.id, { name: 'AAA New' });
+      expect((await spaces.listWorkspaces(owner.id)).map((row) => row.id)).toEqual([
+        ...ids,
+        added.id,
+      ]);
+      await expect(
+        spaces.reorderWorkspaces(owner.id, { workspaceIds: ids }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect((await spaces.listWorkspaces(owner.id)).map((row) => row.id)).toEqual([
+        ...ids,
+        added.id,
+      ]);
+    });
+
     afterAll(async () => {
       await pool?.end();
       if (created) {

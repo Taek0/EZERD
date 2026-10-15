@@ -15,6 +15,7 @@ import {
   createWorkspaceInvitationSchema,
   updateWorkspaceSchema,
   updateWorkspaceMemberSchema,
+  reorderWorkspacesSchema,
 } from '@ezerd/contracts';
 import { z } from 'zod';
 import { requireSession, SessionService } from '../identity/session.js';
@@ -57,6 +58,17 @@ export class SpaceController {
     @Param('id') rawId: string,
   ) {
     return this.spaces.getWorkspace(await this.actor(authorization), id(rawId));
+  }
+
+  @Patch('workspaces/order')
+  async reorder(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: unknown,
+  ) {
+    return this.spaces.reorderWorkspaces(
+      await this.actor(authorization),
+      parse(reorderWorkspacesSchema, body),
+    );
   }
 
   @Patch('workspaces/:id')

@@ -4,6 +4,9 @@
   padding-left: 24px;
 }
 .workspace-switcher-trigger {
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -86,6 +89,87 @@
 .workspace-menu {
   padding: 0 8px 8px;
   outline: none;
+}
+.workspace-popover button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.workspace-order-list {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.workspace-order-row {
+  position: relative;
+  display: flex;
+  border-radius: 6px;
+  background: inherit;
+}
+.workspace-order-row[data-dragging] {
+  z-index: 2;
+  background: #f0f5fc;
+  box-shadow: 0 4px 14px #263c5a25;
+}
+.workspace-order-row > .workspace-menu-row {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+.workspace-order-row > .workspace-menu-row:disabled {
+  opacity: 1;
+}
+.workspace-drag-handle {
+  flex: none;
+  width: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #738392;
+  font-size: 22px;
+  cursor: grab;
+  touch-action: none;
+  outline: none;
+}
+.workspace-drag-handle[aria-pressed='true'] {
+  cursor: grabbing;
+}
+.workspace-drag-handle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.workspace-order-row:has([aria-current='true']) {
+  background: #eaf0f6;
+}
+.workspace-order-row:hover {
+  background: #edf2f7;
+}
+.workspace-menu-row:focus-visible,
+.workspace-drag-handle:focus-visible {
+  outline: 2px solid var(--button-focus, #7299cd);
+  outline-offset: -2px;
+}
+.workspace-menu-action {
+  width: 100%;
+  border: 0;
+  font-family: inherit;
+  text-align: left;
+  background: transparent;
+}
+.workspace-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .workspace-menu-row,
 .workspace-menu-action {
