@@ -1048,33 +1048,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       }
     });
 
-    it('does not include personal state in ledger read or compensation', async () => {
-      const id = await seed(),
-        source = await acceptedEdit(id, (doc) => {
-          doc.tables![0]!.logical.name = 'Edit';
-        });
-      await pool.query(
-        'INSERT INTO project_personal_states (project_id,user_id,version,state) VALUES ($1,$2,7,$3::jsonb)',
-        [
-          id,
-          ownerId,
-          JSON.stringify({ notes: [{ id: 'private', text: 'PRIVATE-HISTORY-SECRET' }] }),
-        ],
-      );
-      const before = (
-        await pool.query('SELECT * FROM project_personal_states WHERE project_id=$1', [id])
-      ).rows;
-      expect(JSON.stringify((await request(id, 'native-history')).data)).not.toContain(
-        'PRIVATE-HISTORY-SECRET',
-      );
-      expect(
-        (await compensate(id, source.input.operationId, 'undo', await commandInput(id))).status,
-      ).toBe(201);
-      expect(
-        (await pool.query('SELECT * FROM project_personal_states WHERE project_id=$1', [id])).rows,
-      ).toEqual(before);
-    });
-
     it('remaps trusted PostgreSQL ENUM and generated expression references while retaining literal and label text', async () => {
       const doc = fixture();
       doc.tableRelations = [];

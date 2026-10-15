@@ -2,6 +2,16 @@ import type { DatabaseContext, DatabaseKind, DatabaseProfile } from './definitio
 
 export const databaseProfiles: readonly DatabaseProfile[] = Object.freeze([
   Object.freeze({
+    id: 'generic-v1',
+    kind: 'generic',
+    targetVersion: '',
+    defaultTypeId: 'generic:text',
+    defaultTypeParameters: Object.freeze({}),
+    assumptions: Object.freeze([
+      'Structural modeling only; no executable DDL or engine compatibility guarantee.',
+    ]),
+  }),
+  Object.freeze({
     id: 'postgresql-18-v1',
     kind: 'postgresql',
     targetVersion: '18',

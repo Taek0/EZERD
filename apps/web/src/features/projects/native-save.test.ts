@@ -317,20 +317,24 @@ describe('native pending save and property draft durability', () => {
     expect(JSON.parse(api.mock.calls[1]![1].body)).toEqual(pending.request);
     expect(await loadNativePending(userId, projectId, store)).toBeNull();
   });
-  it.each(['history', 'canvas.personal'])(
-    'retains the legacy %s guard before command stage',
-    async (kind) => {
-      const store = storage();
-      store.setItem(
-        `ezerd.native.${kind}:${JSON.stringify([userId, projectId])}`,
-        'pending evidence',
-      );
-      await expect(stageNativeSave(userId, snapshot(), [command], store)).rejects.toThrow(
-        'native.pending-exists',
-      );
-    },
-  );
-  it('blocks command stage while a history or private-canvas transactional claim exists', async () => {
+  it.each(['history'])('retains the legacy %s guard before command stage', async (kind) => {
+    const store = storage();
+    store.setItem(
+      `ezerd.native.${kind}:${JSON.stringify([userId, projectId])}`,
+      'pending evidence',
+    );
+    await expect(stageNativeSave(userId, snapshot(), [command], store)).rejects.toThrow(
+      'native.pending-exists',
+    );
+  });
+  it('ignores retired private storage without deleting it when staging shared commands', async () => {
+    const store = storage();
+    const key = `ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`;
+    store.setItem(key, 'retired input');
+    await expect(stageNativeSave(userId, snapshot(), [command], store)).resolves.toBeDefined();
+    expect(store.getItem(key)).toBe('retired input');
+  });
+  it('blocks command stage while a history transactional claim exists', async () => {
     const store = storage(),
       queue = getNativeDurableQueue();
     await queue.claim({

@@ -72,6 +72,11 @@ export function nativeExpressionTypeHasCoverage(
         decimal: ['decimal'],
         floating: ['float', 'double'],
       },
+      generic: {
+        integer: ['smallint', 'integer', 'bigint'],
+        decimal: ['numeric'],
+        floating: ['real', 'double precision'],
+      },
       sqlite: { integer: ['integer', 'int'], decimal: ['numeric'], floating: ['real'] },
     };
     if (result.numeric && Object.hasOwn(numericFamilies[context.kind], result.numeric))
@@ -105,6 +110,7 @@ export function nativeExpressionTypeHasCoverage(
         time: ['time'],
         timestamp: ['timestamp', 'datetime'],
       },
+      generic: {},
       sqlite: { boolean: ['integer'], string: ['text'], binary: ['blob'] },
     };
     if (Object.hasOwn(families[context.kind], result.family))
@@ -131,7 +137,7 @@ function family(type: NativeColumnType): NativeExpressionType {
     return result('unsupported');
   if (type.kind === 'projectEnum') return result('enum', { enumId: type.enumId });
   if (type.kind === 'valueList') return result('string');
-  if (type.kind === 'untyped') return result('unsupported');
+  if (type.kind === 'untyped' || type.kind === 'custom') return result('unsupported');
   if (type.kind === 'declared') {
     const affinity = sqliteTypeAffinity(type.name);
     return affinity === 'text'

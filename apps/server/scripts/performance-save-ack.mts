@@ -167,7 +167,6 @@ try {
       kind: 'native',
       snapshot,
       document: snapshot.native.document,
-      personalUnavailable: false,
     };
     for (let repetition = 0; repetition < 4; repetition++) {
       const addedColumn = createNativeColumn(

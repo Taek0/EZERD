@@ -72,10 +72,7 @@ const durable = (pending: NativePendingSave): NativeDurablePending => ({
   payload: pending,
 });
 function otherLegacyPending(userId: string, projectId: string, storage: Storage): void {
-  if (
-    storage.getItem(`ezerd.native.history:${JSON.stringify([userId, projectId])}`) !== null ||
-    storage.getItem(`ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`) !== null
-  )
+  if (storage.getItem(`ezerd.native.history:${JSON.stringify([userId, projectId])}`) !== null)
     throw Error('native.pending-exists');
 }
 export async function loadNativePending(

@@ -27,6 +27,7 @@ export function nativeColumnTypeDisplay(
       (raw.isArray ? '[]' : '')
     );
   }
+  if (type.kind === 'custom') return type.name;
   if (type.kind === 'untyped') return '';
   if (type.kind === 'declared')
     return type.name + (type.numericArguments.length ? `(${type.numericArguments.join(',')})` : '');

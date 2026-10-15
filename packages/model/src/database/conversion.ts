@@ -111,6 +111,10 @@ export function planNativeDatabaseConversion(
     engineVerified = !issues.length;
     return finish(clone(document));
   }
+  if (hasPhysicalDesign && (source.kind === 'generic' || target.kind === 'generic')) {
+    add('database.conversion-unverified', null, '/database');
+    return finish();
+  }
   const candidate = clone(document);
   candidate.database = { kind: target.kind, profileId: target.profileId };
   const map = (

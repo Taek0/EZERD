@@ -78,7 +78,7 @@ function render(busy = false) {
       busy,
       userId: '00000000-0000-4000-8000-000000000001',
       canEdit: true,
-      canPersonalEdit: true,
+      canComment: true,
       onLeave() {},
       onReload() {},
     }),

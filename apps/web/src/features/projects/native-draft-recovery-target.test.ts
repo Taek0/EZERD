@@ -76,7 +76,6 @@ describe('native recovery source routing', () => {
         kind: 'advanced',
         tableId: item.tableId,
         selection: `${kind}:new`,
-        personal: false,
       });
       expect({ doc, input }).toEqual(before);
       item.scope = 'logical';
@@ -98,17 +97,12 @@ describe('native recovery source routing', () => {
     if ('values' in shared.draft) shared.draft.values = { objectId: 'n', text: 'preserved' };
     expect(nativeDraftRecoveryTarget(doc, shared)).toMatchObject({
       kind: 'canvas',
-      personal: false,
       selection: { viewId: '__tables__', descriptionId: 'n' },
     });
     const privateDraft = editor('canvas:description:v:pn');
     if ('values' in privateDraft.draft)
       privateDraft.draft.values = { objectId: 'pn', text: 'preserved private' };
-    expect(nativeDraftRecoveryTarget(doc, privateDraft)).toMatchObject({
-      kind: 'canvas',
-      personal: true,
-      selection: { viewId: 'v', descriptionId: 'pn' },
-    });
+    expect(nativeDraftRecoveryTarget(doc, privateDraft)).toBeNull();
     const wrongView = editor('canvas:description:__tables__:pn');
     if ('values' in wrongView.draft) wrongView.draft.values = { objectId: 'pn', text: 'private' };
     expect(nativeDraftRecoveryTarget(doc, wrongView)).toBeNull();
@@ -125,28 +119,20 @@ describe('native recovery source routing', () => {
     if ('values' in inspector.draft) inspector.draft.values = { objectId: 'n' };
     expect(nativeDraftRecoveryTarget(doc, inspector)).toMatchObject({
       kind: 'canvas',
-      personal: false,
       selection: { objectId: 'n' },
     });
   });
   it.each([
-    ['format:table:a', { kind: 'format', tableId: 'a', personal: false }],
-    ['format:column:ca', { kind: 'format', tableId: 'a', columnId: 'ca', personal: false }],
-    [
-      'create:table:project',
-      { kind: 'structure', selection: { action: 'table', target: '' }, personal: false },
-    ],
-    [
-      'create:enum:project',
-      { kind: 'structure', selection: { action: 'enum', target: '' }, personal: false },
-    ],
+    ['format:table:a', { kind: 'format', tableId: 'a' }],
+    ['format:column:ca', { kind: 'format', tableId: 'a', columnId: 'ca' }],
+    ['create:table:project', { kind: 'structure', selection: { action: 'table', target: '' } }],
+    ['create:enum:project', { kind: 'structure', selection: { action: 'enum', target: '' } }],
     [
       'create:column:a',
       {
         kind: 'structure',
         tableId: 'a',
         selection: { action: 'column', target: '' },
-        personal: false,
       },
     ],
     [
@@ -155,7 +141,6 @@ describe('native recovery source routing', () => {
         kind: 'structure',
         tableId: 'a',
         selection: { action: 'foreignKey', target: '' },
-        personal: false,
       },
     ],
     [
@@ -164,7 +149,6 @@ describe('native recovery source routing', () => {
         kind: 'structure',
         tableId: 'a',
         selection: { action: 'patch', target: '["keys","k"]' },
-        personal: false,
       },
     ],
     [
@@ -173,7 +157,6 @@ describe('native recovery source routing', () => {
         kind: 'structure',
         tableId: 'a',
         selection: { action: 'patch', target: '["indexes","ix"]' },
-        personal: false,
       },
     ],
     [
@@ -182,54 +165,32 @@ describe('native recovery source routing', () => {
         kind: 'structure',
         tableId: 'a',
         selection: { action: 'delete', target: '["columns","ca"]' },
-        personal: false,
       },
     ],
-    ['create:domain:project', { kind: 'domain', action: 'create', personal: false }],
-    [
-      'edit:domain:d:colon',
-      { kind: 'domain', action: 'edit', domainId: 'd:colon', personal: false },
-    ],
-    ['delete:domain:d', { kind: 'domain', action: 'delete', domainId: 'd', personal: false }],
-    ['move:domain:a', { kind: 'domain', action: 'move', tableId: 'a', personal: false }],
-    [
-      'advanced:index:a:new',
-      { kind: 'advanced', tableId: 'a', selection: 'index:new', personal: false },
-    ],
-    [
-      'advanced:index:a:ix',
-      { kind: 'advanced', tableId: 'a', selection: '["index","ix"]', personal: false },
-    ],
-    [
-      'advanced:expression:a:check:new',
-      { kind: 'advanced', tableId: 'a', selection: 'check:new', personal: false },
-    ],
+    ['create:domain:project', { kind: 'domain', action: 'create' }],
+    ['edit:domain:d:colon', { kind: 'domain', action: 'edit', domainId: 'd:colon' }],
+    ['delete:domain:d', { kind: 'domain', action: 'delete', domainId: 'd' }],
+    ['move:domain:a', { kind: 'domain', action: 'move', tableId: 'a' }],
+    ['advanced:index:a:new', { kind: 'advanced', tableId: 'a', selection: 'index:new' }],
+    ['advanced:index:a:ix', { kind: 'advanced', tableId: 'a', selection: '["index","ix"]' }],
+    ['advanced:expression:a:check:new', { kind: 'advanced', tableId: 'a', selection: 'check:new' }],
     [
       'advanced:expression:a:check:q',
-      { kind: 'advanced', tableId: 'a', selection: '["check","q"]', personal: false },
+      { kind: 'advanced', tableId: 'a', selection: '["check","q"]' },
     ],
     [
       'advanced:expression:a:default:ca',
-      { kind: 'advanced', tableId: 'a', selection: '["default","ca"]', personal: false },
+      { kind: 'advanced', tableId: 'a', selection: '["default","ca"]' },
     ],
     [
       'advanced:expression:a:computed:ca',
-      { kind: 'advanced', tableId: 'a', selection: '["computed","ca"]', personal: false },
+      { kind: 'advanced', tableId: 'a', selection: '["computed","ca"]' },
     ],
     [
       'canvas:action:__tables__:note:',
       {
         kind: 'canvas',
         selection: { viewId: '__tables__', action: { action: 'note', target: '' } },
-        personal: false,
-      },
-    ],
-    [
-      'canvas:action:v:view:',
-      {
-        kind: 'canvas',
-        selection: { viewId: 'v', action: { action: 'view', target: '' } },
-        personal: true,
       },
     ],
     [
@@ -237,31 +198,6 @@ describe('native recovery source routing', () => {
       {
         kind: 'canvas',
         selection: { viewId: 'd', action: { action: 'note-edit', target: 'n' } },
-        personal: false,
-      },
-    ],
-    [
-      'canvas:action:v:note-delete:pn',
-      {
-        kind: 'canvas',
-        selection: { viewId: 'v', action: { action: 'note-delete', target: 'pn' } },
-        personal: true,
-      },
-    ],
-    [
-      'canvas:action:__tables__:view-edit:v',
-      {
-        kind: 'canvas',
-        selection: { viewId: '__tables__', action: { action: 'view-edit', target: 'v' } },
-        personal: true,
-      },
-    ],
-    [
-      'canvas:action:v:remove-reference:a',
-      {
-        kind: 'canvas',
-        selection: { viewId: 'v', action: { action: 'remove-reference', target: 'a' } },
-        personal: true,
       },
     ],
     [
@@ -269,25 +205,20 @@ describe('native recovery source routing', () => {
       {
         kind: 'canvas',
         selection: { viewId: '__tables__', action: { action: 'reference', target: 'a' } },
-        personal: false,
       },
     ],
-    ['canvas:style:table:a', { kind: 'canvas', selection: { style: 'table:a' }, personal: false }],
-    [
-      'canvas:style:domain:d:colon',
-      { kind: 'canvas', selection: { style: 'domain:d:colon' }, personal: false },
-    ],
-    ['canvas:style:note:n', { kind: 'canvas', selection: { style: 'note:n' }, personal: false }],
+    ['canvas:style:table:a', { kind: 'canvas', selection: { style: 'table:a' } }],
+    ['canvas:style:domain:d:colon', { kind: 'canvas', selection: { style: 'domain:d:colon' } }],
+    ['canvas:style:note:n', { kind: 'canvas', selection: { style: 'note:n' } }],
     [
       'canvas:domain-relation:create',
-      { kind: 'canvas', selection: { domainRelation: { action: 'create' } }, personal: false },
+      { kind: 'canvas', selection: { domainRelation: { action: 'create' } } },
     ],
     [
       'canvas:domain-relation:delete:dr',
       {
         kind: 'canvas',
         selection: { domainRelation: { action: 'delete', id: 'dr' } },
-        personal: false,
       },
     ],
   ])('routes %s without changing source or expected', (key, target) => {
@@ -314,13 +245,17 @@ describe('native recovery source routing', () => {
       kind: 'property',
       tableId: 'a',
       columnId: 'ca',
-      personal: false,
     });
     input.logicalKey = '["table","a"]';
     expect(nativeDraftRecoveryTarget(fixture(), input)).toBeNull();
     expect(nativeDraftRecoveryTarget(fixture(), editor('["column","ca"]'))).toBeNull();
   });
   it.each([
+    'canvas:action:v:view:',
+    'canvas:action:__tables__:view:',
+    'canvas:action:v:note-delete:pn',
+    'canvas:action:__tables__:view-edit:v',
+    'canvas:action:v:remove-reference:a',
     'format:column:gone',
     'constraint:keys:gone',
     'delete:tables:gone',
@@ -347,14 +282,10 @@ describe('native recovery source routing', () => {
     input.draft.values = { id: 'changed-copy' };
     expect(nativeDraftRecoveryTarget(fixture(), input)).toBeNull();
   });
-  it('requires a current placement node/view/object match and retains personal permission routing', () => {
+  it('requires a current shared placement and leaves retired private input download-only', () => {
     const input = editor('canvas:placement:v');
     input.draft.values = { objectId: 'a', nodeId: 'private-node', viewId: 'v' };
-    expect(nativeDraftRecoveryTarget(fixture(), input)).toEqual({
-      kind: 'canvas',
-      selection: { viewId: 'v' },
-      personal: true,
-    });
+    expect(nativeDraftRecoveryTarget(fixture(), input)).toBeNull();
     input.draft.values.nodeId = 'removed-node';
     expect(nativeDraftRecoveryTarget(fixture(), input)).toBeNull();
     const domain = editor('canvas:placement:d');
@@ -362,7 +293,6 @@ describe('native recovery source routing', () => {
     expect(nativeDraftRecoveryTarget(fixture(), domain)).toEqual({
       kind: 'canvas',
       selection: { viewId: 'd' },
-      personal: false,
     });
   });
 });

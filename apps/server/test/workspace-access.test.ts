@@ -5,7 +5,7 @@ import { WorkspaceAccessService } from '../src/workspace/workspace-access.servic
 
 describe('workspace access transactions', () => {
   for (const scope of ['project', 'workspace'] as const) {
-    for (const permission of ['read', 'design', 'review', 'personal'] as const) {
+    for (const permission of ['read', 'design', 'review'] as const) {
       it(`${scope} ${permission} uses the appropriate transaction and checks access before callback`, async () => {
         const executor = {};
         const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>

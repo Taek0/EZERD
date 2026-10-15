@@ -155,7 +155,6 @@ function mount(
         kind: 'native',
         snapshot: current,
         document: current.sourceDocument as ReturnType<typeof createEmptyNativeDocument>,
-        personalUnavailable: false,
       },
       userId: actor,
       canEdit,

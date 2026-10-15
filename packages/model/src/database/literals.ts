@@ -101,6 +101,14 @@ export function nativeTypeHasCoverage(
   }
   if (type.kind === 'legacy' || type.database !== context.kind) return false;
   // General SQLite compatibility syntax is readable, but has no verified new-write family gate.
+  if (type.kind === 'custom')
+    return (
+      type.database === 'generic' &&
+      !!type.name.trim() &&
+      type.name === type.name.trim() &&
+      type.name.length <= 120 &&
+      !/[\x00-\x1f\x7f]/.test(type.name)
+    );
   if (type.kind === 'declared' || type.kind === 'untyped') return false;
   if (type.kind === 'projectEnum')
     return (
@@ -111,7 +119,7 @@ export function nativeTypeHasCoverage(
   if (
     !definition ||
     definition.databaseKind !== context.kind ||
-    !hasDatabaseCoverage(definition.coverage)
+    (context.kind !== 'generic' && !hasDatabaseCoverage(definition.coverage))
   )
     return false;
   if (strict && (context.kind !== 'sqlite' || !definition.sqliteStrict)) return false;

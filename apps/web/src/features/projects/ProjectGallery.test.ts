@@ -1,3 +1,4 @@
+import { ConfirmProvider } from '../../components/ui/ConfirmProvider.js';
 import { afterEach, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -6,26 +7,28 @@ import { ProjectGallery } from './ProjectGallery.js';
 
 const render = (canEdit = true, needsWorkspace = false) =>
   renderToStaticMarkup(
-    createElement(ProjectGallery, {
-      workspaceId: 'space',
-      needsWorkspace,
-      onCreateWorkspace: () => {},
-      projects: [],
-      loading: false,
-      busy: false,
-      canEdit,
-      canDelete: true,
-      status: 'active',
-      search: '',
-      onSearch: () => {},
-      onStatus: () => {},
-      onCreate: async () => {},
-      onEdit: async () => true,
-      onOpen: () => {},
-      onExport: () => {},
-      onArchive: () => {},
-      onDelete: () => {},
-      onImported: () => {},
+    createElement(ConfirmProvider, {
+      children: createElement(ProjectGallery, {
+        workspaceId: 'space',
+        needsWorkspace,
+        onCreateWorkspace: () => {},
+        projects: [],
+        loading: false,
+        busy: false,
+        canEdit,
+        canDelete: true,
+        status: 'active',
+        search: '',
+        onSearch: () => {},
+        onStatus: () => {},
+        onCreate: async () => {},
+        onEdit: async () => true,
+        onOpen: () => {},
+        onExport: () => {},
+        onArchive: () => {},
+        onDelete: () => {},
+        onImported: () => {},
+      }),
     }),
   );
 afterEach(() => setLocale('ko'));

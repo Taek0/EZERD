@@ -7,22 +7,20 @@ import type { NativeDomainAction } from './NativeDomainEditor.js';
 import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
 export type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
 export type NativeDraftRecoveryTarget =
-  | { kind: 'property' | 'format'; tableId: string; columnId?: string; personal: false }
+  | { kind: 'property' | 'format'; tableId: string; columnId?: string }
   | {
       kind: 'structure';
       tableId?: string;
       selection: { action: NativeStructureAction | 'patch' | 'delete'; target: string };
-      personal: false;
     }
-  | { kind: 'advanced'; tableId: string; selection: string; personal: false }
+  | { kind: 'advanced'; tableId: string; selection: string }
   | {
       kind: 'domain';
       action: NativeDomainAction;
       domainId?: string;
       tableId?: string;
-      personal: false;
     }
-  | { kind: 'canvas'; selection: NativeCanvasRecoverySelection; personal: boolean };
+  | { kind: 'canvas'; selection: NativeCanvasRecoverySelection };
 
 /** Routing only: an archive never authorizes creating an object or changing its expected revision. */
 export function nativeDraftRecoveryTarget(
@@ -35,13 +33,7 @@ export function nativeDraftRecoveryTarget(
   const tables = doc.tables ?? [],
     columns = doc.columns ?? [];
   const hasTable = (id: string) => tables.some((table) => table.id === id);
-  const views = [
-    '__tables__',
-    'overview',
-    ...doc.domains.map((domain) => domain.id),
-    ...(doc.views ?? []).map((view) => view.id),
-  ];
-  const privateView = (id: string) => !!doc.views?.some((view) => view.id === id);
+  const views = ['__tables__', 'overview', ...doc.domains.map((domain) => domain.id)];
   const allIds = new Set(
     [
       ...doc.domains,
@@ -64,19 +56,18 @@ export function nativeDraftRecoveryTarget(
       draft.kind === 'column' ? columns.find((item) => item.id === draft.objectId) : undefined;
     const tableId = column?.tableId ?? (draft.kind === 'table' ? draft.objectId : '');
     return hasTable(tableId)
-      ? { kind: 'property', tableId, ...(column ? { columnId: column.id } : {}), personal: false }
+      ? { kind: 'property', tableId, ...(column ? { columnId: column.id } : {}) }
       : null;
   }
   if (!('key' in draft) || draft.key !== key) return null;
   const freshCreation = () =>
     !!draft.before.id && draft.values.id === draft.before.id && !allIds.has(draft.before.id);
   for (const table of tables) {
-    if (key === `format:table:${table.id}`)
-      return { kind: 'format', tableId: table.id, personal: false };
+    if (key === `format:table:${table.id}`) return { kind: 'format', tableId: table.id };
   }
   for (const column of columns) {
     if (key === `format:column:${column.id}` && hasTable(column.tableId))
-      return { kind: 'format', tableId: column.tableId, columnId: column.id, personal: false };
+      return { kind: 'format', tableId: column.tableId, columnId: column.id };
   }
   for (const table of tables)
     for (const column of [undefined, ...columns.filter((c) => c.tableId === table.id)])
@@ -94,7 +85,6 @@ export function nativeDraftRecoveryTarget(
             return {
               kind: 'canvas',
               selection: { viewId: '__tables__', inline: target },
-              personal: false,
             };
         }
   for (const viewId of views)
@@ -103,19 +93,18 @@ export function nativeDraftRecoveryTarget(
         return {
           kind: 'canvas',
           selection: { viewId, routeId: relation.id },
-          personal: privateView(viewId),
         };
     }
   if (key === 'create:domain:project')
-    return freshCreation() ? { kind: 'domain', action: 'create', personal: false } : null;
+    return freshCreation() ? { kind: 'domain', action: 'create' } : null;
   for (const domain of doc.domains) {
     for (const action of ['edit', 'delete'] as const)
       if (key === `${action}:domain:${domain.id}`)
-        return { kind: 'domain', action, domainId: domain.id, personal: false };
+        return { kind: 'domain', action, domainId: domain.id };
   }
   for (const table of tables) {
     if (key === `move:domain:${table.id}`)
-      return { kind: 'domain', action: 'move', tableId: table.id, personal: false };
+      return { kind: 'domain', action: 'move', tableId: table.id };
   }
   for (const action of [
     'table',
@@ -134,7 +123,6 @@ export function nativeDraftRecoveryTarget(
         kind: 'structure',
         ...(owner !== 'project' ? { tableId: owner } : {}),
         selection: { action, target: '' },
-        personal: false,
       };
     }
   }
@@ -170,7 +158,6 @@ export function nativeDraftRecoveryTarget(
             action: action === 'constraint' ? 'patch' : 'delete',
             target: JSON.stringify([collection, item.id]),
           },
-          personal: false,
         };
       }
     }
@@ -186,11 +173,11 @@ export function nativeDraftRecoveryTarget(
       );
     if (key === `advanced:index:${table.id}:new`)
       return freshCreation() || continuedAdvancedCreation(doc.indexes ?? [])
-        ? { kind: 'advanced', tableId: table.id, selection: 'index:new', personal: false }
+        ? { kind: 'advanced', tableId: table.id, selection: 'index:new' }
         : null;
     if (key === `advanced:expression:${table.id}:check:new`)
       return freshCreation() || continuedAdvancedCreation(doc.checks ?? [])
-        ? { kind: 'advanced', tableId: table.id, selection: 'check:new', personal: false }
+        ? { kind: 'advanced', tableId: table.id, selection: 'check:new' }
         : null;
     for (const index of doc.indexes ?? []) {
       if (index.tableId === table.id && key === `advanced:index:${table.id}:${index.id}`)
@@ -198,7 +185,6 @@ export function nativeDraftRecoveryTarget(
           kind: 'advanced',
           tableId: table.id,
           selection: JSON.stringify(['index', index.id]),
-          personal: false,
         };
     }
     for (const check of doc.checks ?? []) {
@@ -207,7 +193,6 @@ export function nativeDraftRecoveryTarget(
           kind: 'advanced',
           tableId: table.id,
           selection: JSON.stringify(['check', check.id]),
-          personal: false,
         };
     }
     for (const column of columns) {
@@ -218,7 +203,6 @@ export function nativeDraftRecoveryTarget(
             kind: 'advanced',
             tableId: table.id,
             selection: JSON.stringify([action, column.id]),
-            personal: false,
           };
     }
   }
@@ -239,7 +223,7 @@ export function nativeDraftRecoveryTarget(
         !(viewId === 'overview' && doc.domains.some((domain) => domain.id === objectId))
       )
         return null;
-      return { kind: 'canvas', selection: { viewId, objectId }, personal: privateView(viewId) };
+      return { kind: 'canvas', selection: { viewId, objectId } };
     }
     const descriptionId = draft.values.objectId;
     if (
@@ -256,7 +240,6 @@ export function nativeDraftRecoveryTarget(
       return {
         kind: 'canvas',
         selection: { viewId, descriptionId },
-        personal: privateView(viewId),
       };
     if (key === `canvas:placement:${viewId}`) {
       const node = doc.layout.nodes.find(
@@ -269,15 +252,14 @@ export function nativeDraftRecoveryTarget(
         ? '__tables__'
         : viewId;
       if (!node || node.viewId !== placementView) return null;
-      return { kind: 'canvas', selection: { viewId }, personal: privateView(viewId) };
+      return { kind: 'canvas', selection: { viewId } };
     }
-    for (const action of ['note', 'view'] as const) {
+    for (const action of ['note'] as const) {
       if (key === `canvas:action:${viewId}:${action}:`)
         return freshCreation()
           ? {
               kind: 'canvas',
               selection: { viewId, action: { action, target: '' } },
-              personal: action === 'view' || privateView(viewId),
             }
           : null;
     }
@@ -291,16 +273,6 @@ export function nativeDraftRecoveryTarget(
           return {
             kind: 'canvas',
             selection: { viewId, action: { action, target: note.id } },
-            personal: privateView(viewId),
-          };
-    }
-    for (const view of doc.views ?? []) {
-      for (const action of ['view-edit', 'view-delete'] as const)
-        if (key === `canvas:action:${viewId}:${action}:${view.id}`)
-          return {
-            kind: 'canvas',
-            selection: { viewId, action: { action, target: view.id } },
-            personal: true,
           };
     }
     for (const table of tables) {
@@ -312,31 +284,23 @@ export function nativeDraftRecoveryTarget(
         return {
           kind: 'canvas',
           selection: { viewId, action: { action: 'reference', target: table.id } },
-          personal: privateView(viewId),
-        };
-      if (
-        key === `canvas:action:${viewId}:remove-reference:${table.id}` &&
-        privateView(viewId) &&
-        doc.layout.nodes.some((node) => node.viewId === viewId && node.objectId === table.id)
-      )
-        return {
-          kind: 'canvas',
-          selection: { viewId, action: { action: 'remove-reference', target: table.id } },
-          personal: true,
         };
     }
   }
   for (const [kind, objects] of [
     ['table', tables],
     ['domain', doc.domains],
-    ['note', doc.notes.filter((note) => !privateView(note.viewId))],
+    [
+      'note',
+      doc.notes.filter((note) => note.viewId === '__tables__' || note.viewId === 'overview'),
+    ],
   ] as const) {
     for (const item of objects)
       if (key === `canvas:style:${kind}:${item.id}`)
-        return { kind: 'canvas', selection: { style: `${kind}:${item.id}` }, personal: false };
+        return { kind: 'canvas', selection: { style: `${kind}:${item.id}` } };
   }
   if (key === 'canvas:domain-relation:create' && doc.domains.length && freshCreation())
-    return { kind: 'canvas', selection: { domainRelation: { action: 'create' } }, personal: false };
+    return { kind: 'canvas', selection: { domainRelation: { action: 'create' } } };
   for (const relation of doc.domainRelations) {
     if (
       !doc.domains.some((domain) => domain.id === relation.sourceDomainId) ||
@@ -348,7 +312,6 @@ export function nativeDraftRecoveryTarget(
         return {
           kind: 'canvas',
           selection: { domainRelation: { action, id: relation.id } },
-          personal: false,
         };
   }
   // Clipboard creation / unknown producer keys have no safe form route. Source remains downloadable.

@@ -13,7 +13,7 @@ export function workspacePermissions(workspace: Workspace | undefined) {
   return {
     manage: workspace?.role === 'owner',
     edit: active && workspace?.role !== 'viewer',
-    personal: active,
+
     review: active,
     deleteProject: active && workspace?.role === 'owner',
   };

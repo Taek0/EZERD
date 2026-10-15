@@ -202,12 +202,11 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             .every((item: { usable: boolean }) => !item.usable),
         ).toBe(true);
         const count = (
-          await pool.query(
-            'SELECT (SELECT COUNT(*) FROM project_personal_states WHERE project_id=$1) AS personal, (SELECT COUNT(*) FROM sync_operations WHERE project_id=$1) AS ledger',
-            [project.id],
-          )
+          await pool.query('SELECT COUNT(*) AS ledger FROM sync_operations WHERE project_id=$1', [
+            project.id,
+          ])
         ).rows[0];
-        expect(count).toEqual({ personal: '0', ledger: '0' });
+        expect(count).toEqual({ ledger: '0' });
       },
     );
     it.each(['postgresql', 'mysql', 'sqlite'] as const)(
@@ -249,30 +248,19 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await row(existing.data.id)).document).toEqual(document);
       expect((await request(`/projects/${existing.data.id}`)).status).toBe(410);
     });
-    it('isolates native personal camera defaults and never invents a default domain or another user canvas', async () => {
-      const created = await create('sqlite', 2, 'Private defaults');
+    it('retires personal state endpoints without changing the shared native source', async () => {
+      const created = await create('sqlite', 2, 'Shared defaults');
       expect(created.status).toBe(201);
       const id = created.data.id;
-      const original = (await row(id)).document,
-        own = (await request(`/projects/${id}/personal-state`)).data;
-      expect(own.state).toMatchObject({
-        views: [],
-        notes: [],
-        nodes: [],
-        viewports: [{ viewId: '__tables__', x: 0, y: 0, zoom: 1 }],
-      });
-      const saved = await request(`/projects/${id}/personal-state`, 'PUT', {
-        expectedDatabaseRevision: own.databaseRevision,
-        expectedProjectVersion: own.projectVersion,
-        expectedSyncSequence: own.syncSequence,
-        expectedVersion: 0,
-        state: { ...own.state, viewports: [{ viewId: '__tables__', x: 111, y: 222, zoom: 2 }] },
-      });
-      expect(saved.status, JSON.stringify(saved.data)).toBe(200);
-      const theirs = (await request(`/projects/${id}/personal-state`, 'GET', undefined, viewer))
-        .data;
-      expect(theirs.version).toBe(0);
-      expect(theirs.state.viewports).toEqual(own.state.viewports);
+      const original = (await row(id)).document;
+      for (const actor of [owner, viewer]) {
+        expect(
+          (await request(`/projects/${id}/personal-state`, 'GET', undefined, actor)).status,
+        ).toBe(404);
+        expect(
+          (await request(`/projects/${id}/personal-state`, 'PUT', { state: {} }, actor)).status,
+        ).toBe(404);
+      }
       expect((await row(id)).document).toEqual(original);
       expect(original.domains).toEqual([]);
     });

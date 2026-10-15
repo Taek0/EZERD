@@ -387,28 +387,13 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       },
     );
 
-    it('does not copy private state, project counters/status or client coordinates into a new import', async () => {
+    it('does not copy project counters/status or client coordinates into a new import', async () => {
       const source = await imported('mysql');
-      await pool.query(
-        'INSERT INTO project_personal_states (project_id,user_id,state) VALUES ($1,$2,$3::jsonb)',
-        [
-          source.id,
-          owner.id,
-          JSON.stringify({
-            views: [],
-            notes: [{ id: 'private-note', viewId: 'overview', text: 'PRIVATE_TOKEN' }],
-            nodes: [],
-            viewports: [],
-            relations: [],
-          }),
-        ],
-      );
       await pool.query(
         "UPDATE projects SET status='archived',version=7,sync_sequence=11,database_revision=3 WHERE id=$1",
         [source.id],
       );
       const file = await exported(source.id);
-      expect(JSON.stringify(file)).not.toContain('PRIVATE_TOKEN');
       const result = await upload(file);
       expect(result.status).toBe(201);
       const saved = await row(result.data.project.id);
@@ -418,10 +403,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         sync_sequence: 0,
         database_revision: 0,
       });
-      expect(
-        (await pool.query('SELECT * FROM project_personal_states WHERE project_id=$1', [saved.id]))
-          .rows,
-      ).toEqual([]);
       const before = await counts();
       expect((await upload({ ...file, personalState: { notes: [] } })).status).toBe(400);
       expect(await counts()).toEqual(before);

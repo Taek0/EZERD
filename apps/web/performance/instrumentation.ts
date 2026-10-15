@@ -108,8 +108,6 @@ export function measurementPlugin(
       if (/\/packages\/model\/(dist|src)\/sync\.(js|ts)$/.test(path)) names = ['applyChanges'];
       if (/\/packages\/model\/(dist|src)\/table-canvas\.(js|ts)$/.test(path))
         names = ['normalizeSharedTableCanvas'];
-      if (/\/packages\/model\/(dist|src)\/personal\.(js|ts)$/.test(path))
-        names = ['reconcilePersonalState', 'mergeStoredPersonalState'];
       if (/\/packages\/model\/(dist|src)\/database\/validation\.(js|ts)$/.test(path))
         names = ['validateDatabaseDocument'];
       if (!names.length) return;

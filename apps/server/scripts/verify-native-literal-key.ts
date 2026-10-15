@@ -33,7 +33,7 @@ const evidence: Evidence[] = [];
 const versions: Record<string, string> = {};
 const roundtrips: string[] = [];
 function fixture(
-  kind: DatabaseKind,
+  kind: Exclude<DatabaseKind, 'generic'>,
   definition: DatabaseTypeDefinition,
   name: string,
   schema?: string,

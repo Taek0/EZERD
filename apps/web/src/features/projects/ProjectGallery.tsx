@@ -1,3 +1,5 @@
+import './generic-translations.js';
+import { useConfirm } from '../../components/ui/ConfirmProvider.js';
 import {
   forwardRef,
   useImperativeHandle,
@@ -42,8 +44,9 @@ registerTranslations({
   '테이블 {tables}개 · 관계 {relations}개': '{tables} tables · {relations} relations',
   '선택한 DB의 빈 설계로 시작합니다.': 'Start with an empty design for the selected database.',
 });
-type DatabaseKind = 'postgresql' | 'mysql' | 'sqlite';
+type DatabaseKind = 'postgresql' | 'mysql' | 'sqlite' | 'generic';
 const databases: Record<DatabaseKind, string> = {
+  generic: '선택안함',
   postgresql: 'PostgreSQL',
   mysql: 'MySQL',
   sqlite: 'SQLite',
@@ -86,6 +89,7 @@ type Props = {
 };
 export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectGallery(p, ref) {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
   const live = useRef(p);
   live.current = p;
   const mounted = useRef(true);
@@ -260,13 +264,28 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
               label={t('데이터베이스 선택')}
               trigger={
                 <Button className="db-tag db-trigger" disabled={saving}>
-                  {databases[value.databaseKind]} <span aria-hidden="true">⌄</span>
+                  {t(databases[value.databaseKind])} <span aria-hidden="true">⌄</span>
                 </Button>
               }
               items={(Object.keys(databases) as DatabaseKind[]).map((kind) => ({
                 id: kind,
-                label: databases[kind],
-                onAction: () => update({ ...current.current!, databaseKind: kind }),
+                label: t(databases[kind]),
+                onAction: async () => {
+                  const selected = current.current;
+                  if (!selected) return;
+                  if (
+                    kind === 'generic' &&
+                    selected.databaseKind !== 'generic' &&
+                    !(await confirm({
+                      title: t('구조 설계로 시작'),
+                      description: t(
+                        'DB를 선택하지 않으면 공통 타입과 직접 입력한 타입으로 구조를 설계할 수 있습니다. DDL 내보내기는 사용할 수 없습니다.',
+                      ),
+                    }))
+                  )
+                    return;
+                  if (current.current === selected) update({ ...selected, databaseKind: kind });
+                },
               }))}
             />
             <div className="inline-actions">
@@ -456,7 +475,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
                   </p>
                   <div className="erd-footer">
                     <span className="db-tag">
-                      {databases[project.databaseKind ?? 'postgresql']}
+                      {t(databases[project.databaseKind ?? 'postgresql'])}
                     </span>
                     <span>
                       {new Date(project.updatedAt).toLocaleDateString(

@@ -16,7 +16,13 @@ describe('native project capabilities', () => {
       expect(legacy.features.every((feature) => !feature.usable)).toBe(true);
       const native = projectDatabaseCapabilities(database, 2);
       expect(native.types.filter((type) => type.usable)).toHaveLength(
-        databaseKind === 'postgresql' ? 64 : databaseKind === 'mysql' ? 37 : 23,
+        databaseKind === 'postgresql'
+          ? 64
+          : databaseKind === 'mysql'
+            ? 37
+            : databaseKind === 'sqlite'
+              ? 23
+              : 17,
       );
       expect(native.features.find((feature) => feature.id === 'table')?.usable).toBe(true);
       expect(native.features.find((feature) => feature.id === 'array')?.supportedByEngine).toBe(

@@ -111,14 +111,6 @@ if (interactive) {
     if (url.pathname.endsWith('/threads')) value = [review];
     else if (url.pathname.endsWith('/members'))
       value = [{ userId: previewUser, username: 'preview', color: '#06b6d4' }];
-    else if (url.pathname.endsWith('/personal-state'))
-      value = {
-        databaseRevision: 0,
-        version: 0,
-        projectVersion: 0,
-        syncSequence: 0,
-        state: { views: [], notes: [], nodes: [], viewports: [], relations: [] },
-      };
     else if (url.pathname.endsWith('/native-history'))
       value = {
         protocolVersion: 2,
@@ -224,8 +216,8 @@ createRoot(document.getElementById('root')!).render(
       </header>
       <MotionProbe />
       <NativeProjectView
-        entry={{ kind: 'native', ...fixture, personalUnavailable: false }}
-        {...(interactive ? { userId: previewUser, canEdit: true, canPersonalEdit: true } : {})}
+        entry={{ kind: 'native', ...fixture }}
+        {...(interactive ? { userId: previewUser, canEdit: true } : {})}
         onLeave={() => {}}
         onReload={() => {}}
       />

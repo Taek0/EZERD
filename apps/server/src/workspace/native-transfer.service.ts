@@ -39,6 +39,7 @@ import {
   nativeImportLegacyProvenance,
   validateNativeImportWithProvenance,
 } from '../shared/native-import-provenance.js';
+import { WorkspaceEventsService } from './workspace-events.service.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
 
 async function storageOperation<T>(callback: () => Promise<T>): Promise<T> {
@@ -92,6 +93,7 @@ export class NativeTransferService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
+    @Inject(WorkspaceEventsService) private readonly events?: WorkspaceEventsService,
   ) {}
 
   exportProject(actorId: string, projectId: string): Promise<VersionedProjectTransfer> {
@@ -147,176 +149,184 @@ export class NativeTransferService {
         issues: parsed.error.issues,
       });
     const { workspaceId, transfer } = parsed.data;
-    return storageOperation(() =>
-      this.access.runWorkspace(actorId, workspaceId, 'createProject', async (tx) => {
-        const context =
-          transfer.formatVersion === 1
-            ? defaultDatabaseContext(transfer.project.databaseKind ?? 'postgresql')
-            : {
-                kind: transfer.project.databaseKind,
-                profileId: transfer.project.databaseProfileId,
-              };
-        const original = 'sourceDocument' in transfer ? transfer.sourceDocument : transfer.document;
-        let source: NativeDesignDocument;
-        let migrationIssues: NativeMigrationIssue[] = [];
-        let previous: NativeDesignDocument | undefined;
-        if (original.schemaVersion === 1) {
-          // Sole recovery exception: derive BOTH the candidate and previous on the server from v1.
-          // Never authorize an arbitrary native document using source coordinates or client diagnostics.
-          const migration = migrateDesignDocumentV1(original, context);
-          source = migration.document;
-          previous = structuredClone(migration.document);
-          migrationIssues = migration.issues;
-        } else {
-          source = structuredClone(original);
-          const canonical = nativeStoredDesignDocumentSchema.safeParse(source);
+    return storageOperation(async () => {
+      const result = await this.access.runWorkspace(
+        actorId,
+        workspaceId,
+        'createProject',
+        async (tx) => {
+          const context =
+            transfer.formatVersion === 1
+              ? defaultDatabaseContext(transfer.project.databaseKind ?? 'postgresql')
+              : {
+                  kind: transfer.project.databaseKind,
+                  profileId: transfer.project.databaseProfileId,
+                };
+          const original =
+            'sourceDocument' in transfer ? transfer.sourceDocument : transfer.document;
+          let source: NativeDesignDocument;
+          let migrationIssues: NativeMigrationIssue[] = [];
+          let previous: NativeDesignDocument | undefined;
+          if (original.schemaVersion === 1) {
+            // Sole recovery exception: derive BOTH the candidate and previous on the server from v1.
+            // Never authorize an arbitrary native document using source coordinates or client diagnostics.
+            const migration = migrateDesignDocumentV1(original, context);
+            source = migration.document;
+            previous = structuredClone(migration.document);
+            migrationIssues = migration.issues;
+          } else {
+            source = structuredClone(original);
+            const canonical = nativeStoredDesignDocumentSchema.safeParse(source);
+            if (
+              !canonical.success ||
+              requestFingerprint(canonical.data) !== requestFingerprint(source)
+            )
+              throw new UnprocessableEntityException({
+                code: 'project-transfer.native-canonical-required',
+              });
+          }
+
+          if ('native' in transfer) {
+            if (transfer.native.status === 'unavailable')
+              throw new UnprocessableEntityException({ code: transfer.native.code });
+            const derived = readNativeProjectDocument(original, { ...context, revision: 0 });
+            if (
+              derived.status !== 'available' ||
+              requestFingerprint(derived.preview) !== requestFingerprint(transfer.native.document)
+            )
+              throw new UnprocessableEntityException({ code: 'project-transfer.preview-mismatch' });
+          }
+
+          // Graph errors cannot be grandfathered by the recovery policy, even in v1 migration.
+          const graph = graphIssues(source);
+          if (graph.length)
+            throw new UnprocessableEntityException({
+              code: 'project-transfer.graph-invalid',
+              issues: graph,
+            });
+          let document: NativeDesignDocument;
+          // Immutable legacy enum evidence may retain an enumId. The entire document's IDs
+          // live inside the newly generated project UUID namespace; ordinary restores do not.
+          const preserveSourceIds = (source.columns ?? []).some(
+            (column) =>
+              column.physical.type.kind === 'legacy' &&
+              column.physical.type.original.enumId !== undefined,
+          );
+          const mapping = freshIdentities(source, preserveSourceIds);
+          try {
+            document = remapNativeDocumentIds(source, mapping);
+            if (previous) previous = remapNativeDocumentIds(previous, mapping);
+          } catch {
+            throw new UnprocessableEntityException({ code: 'project-transfer.remap-invalid' });
+          }
+          const shape = nativeStoredDesignDocumentSchema.safeParse(document);
           if (
-            !canonical.success ||
-            requestFingerprint(canonical.data) !== requestFingerprint(source)
+            !shape.success ||
+            Buffer.byteLength(JSON.stringify(document), 'utf8') > MAX_DOCUMENT_BYTES
           )
             throw new UnprocessableEntityException({
-              code: 'project-transfer.native-canonical-required',
+              code: 'project-transfer.document-invalid',
+              issues: shape.success ? [{ code: 'document.size-limit' }] : shape.error.issues,
             });
-        }
-
-        if ('native' in transfer) {
-          if (transfer.native.status === 'unavailable')
-            throw new UnprocessableEntityException({ code: transfer.native.code });
-          const derived = readNativeProjectDocument(original, { ...context, revision: 0 });
-          if (
-            derived.status !== 'available' ||
-            requestFingerprint(derived.preview) !== requestFingerprint(transfer.native.document)
-          )
-            throw new UnprocessableEntityException({ code: 'project-transfer.preview-mismatch' });
-        }
-
-        // Graph errors cannot be grandfathered by the recovery policy, even in v1 migration.
-        const graph = graphIssues(source);
-        if (graph.length)
-          throw new UnprocessableEntityException({
-            code: 'project-transfer.graph-invalid',
-            issues: graph,
-          });
-        let document: NativeDesignDocument;
-        // Immutable legacy enum evidence may retain an enumId. The entire document's IDs
-        // live inside the newly generated project UUID namespace; ordinary restores do not.
-        const preserveSourceIds = (source.columns ?? []).some(
-          (column) =>
-            column.physical.type.kind === 'legacy' &&
-            column.physical.type.original.enumId !== undefined,
-        );
-        const mapping = freshIdentities(source, preserveSourceIds);
-        try {
-          document = remapNativeDocumentIds(source, mapping);
-          if (previous) previous = remapNativeDocumentIds(previous, mapping);
-        } catch {
-          throw new UnprocessableEntityException({ code: 'project-transfer.remap-invalid' });
-        }
-        const shape = nativeStoredDesignDocumentSchema.safeParse(document);
-        if (
-          !shape.success ||
-          Buffer.byteLength(JSON.stringify(document), 'utf8') > MAX_DOCUMENT_BYTES
-        )
-          throw new UnprocessableEntityException({
-            code: 'project-transfer.document-invalid',
-            issues: shape.success ? [{ code: 'document.size-limit' }] : shape.error.issues,
-          });
-        // Persist the remapped raw representation, never the Zod-trimmed/normalized preview.
-        const remappedGraph = graphIssues(document);
-        if (remappedGraph.length)
-          throw new UnprocessableEntityException({
-            code: 'project-transfer.graph-invalid',
-            issues: remappedGraph,
-          });
-        const provenance =
-          original.schemaVersion === 2
-            ? nativeImportLegacyProvenance(document, context)
-            : undefined;
-        const writeIssues = provenance
-          ? validateNativeImportWithProvenance(document, context, provenance)
-          : validateDatabaseDocument(document, context, {
-              mode: 'write',
-              ...(previous ? { previous } : {}),
+          // Persist the remapped raw representation, never the Zod-trimmed/normalized preview.
+          const remappedGraph = graphIssues(document);
+          if (remappedGraph.length)
+            throw new UnprocessableEntityException({
+              code: 'project-transfer.graph-invalid',
+              issues: remappedGraph,
             });
-        if (writeIssues.some((issue) => issue.severity === 'error'))
-          throw new UnprocessableEntityException({
-            code: 'database.validation-failed',
-            issues: writeIssues,
-          });
-        const [row] = await tx
-          .insert(projects)
-          .values({
+          const provenance =
+            original.schemaVersion === 2
+              ? nativeImportLegacyProvenance(document, context)
+              : undefined;
+          const writeIssues = provenance
+            ? validateNativeImportWithProvenance(document, context, provenance)
+            : validateDatabaseDocument(document, context, {
+                mode: 'write',
+                ...(previous ? { previous } : {}),
+              });
+          if (writeIssues.some((issue) => issue.severity === 'error'))
+            throw new UnprocessableEntityException({
+              code: 'database.validation-failed',
+              issues: writeIssues,
+            });
+          const [row] = await tx
+            .insert(projects)
+            .values({
+              workspaceId,
+              name: transfer.project.name.trim(),
+              databaseKind: context.kind,
+              databaseProfileId: context.profileId,
+              document: sql`${JSON.stringify(document)}::jsonb`,
+            })
+            .returning();
+          await tx.insert(workspaceAuditEvents).values({
             workspaceId,
-            name: transfer.project.name.trim(),
-            databaseKind: context.kind,
-            databaseProfileId: context.profileId,
-            document: sql`${JSON.stringify(document)}::jsonb`,
-          })
-          .returning();
-        await tx.insert(workspaceAuditEvents).values({
-          workspaceId,
-          actorId,
-          action: 'project.imported',
-          details: {
-            projectId: row!.id,
-            name: row!.name,
-            formatVersion: transfer.formatVersion,
-            sourceSchemaVersion: original.schemaVersion,
-            // Source metadata is informational; it grants no trusted origin on later imports.
-            ...('source' in transfer ? { source: transfer.source } : {}),
-            importProvenance: {
-              policyVersion: 1,
-              authority:
-                original.schemaVersion === 1 ? 'server-v1-migration' : 'validated-v1-legacy-mask',
-              hashEncoding: 'canonical-json-utf8',
-              sourceDocument: structuredClone(original),
-              sourceDocumentSha256: importJsonSha256(original),
-              transferSha256: importJsonSha256(transfer),
-              context,
-              targetProjectId: row!.id,
-              mappingPolicy: preserveSourceIds
-                ? 'preserve-source-project-namespace'
-                : 'fresh-project-object-ids',
-              identityMappingSha256: importJsonSha256({
-                entities: [...mapping.entities],
-                nodes: [...mapping.nodes],
-              }),
-              legacyMaskSha256: provenance
-                ? importJsonSha256(provenance.mask)
-                : previous
-                  ? importJsonSha256(previous)
-                  : null,
-              trustedLegacyPaths: provenance ? [...provenance.fieldPaths].sort() : [],
+            actorId,
+            action: 'project.imported',
+            details: {
+              projectId: row!.id,
+              name: row!.name,
+              formatVersion: transfer.formatVersion,
+              sourceSchemaVersion: original.schemaVersion,
+              // Source metadata is informational; it grants no trusted origin on later imports.
+              ...('source' in transfer ? { source: transfer.source } : {}),
+              importProvenance: {
+                policyVersion: 1,
+                authority:
+                  original.schemaVersion === 1 ? 'server-v1-migration' : 'validated-v1-legacy-mask',
+                hashEncoding: 'canonical-json-utf8',
+                sourceDocument: structuredClone(original),
+                sourceDocumentSha256: importJsonSha256(original),
+                transferSha256: importJsonSha256(transfer),
+                context,
+                targetProjectId: row!.id,
+                mappingPolicy: preserveSourceIds
+                  ? 'preserve-source-project-namespace'
+                  : 'fresh-project-object-ids',
+                identityMappingSha256: importJsonSha256({
+                  entities: [...mapping.entities],
+                  nodes: [...mapping.nodes],
+                }),
+                legacyMaskSha256: provenance
+                  ? importJsonSha256(provenance.mask)
+                  : previous
+                    ? importJsonSha256(previous)
+                    : null,
+                trustedLegacyPaths: provenance ? [...provenance.fieldPaths].sort() : [],
+              },
             },
-          },
-        });
-        // Diagnostics must use target IDs/paths, not source IDs from the uploaded file.
-        migrationIssues = migrationIssues.map((issue) => ({
-          ...issue,
-          objectId: mapping.entities.get(issue.objectId)!,
-          path: issue.path.replace(
-            '/' + issue.objectId.replaceAll('~', '~0').replaceAll('/', '~1') + '/',
-            '/' + mapping.entities.get(issue.objectId)! + '/',
-          ),
-        }));
-        return nativeTransferImportResultSchema.parse({
-          project: {
-            id: row!.id,
-            workspaceId,
-            name: row!.name,
-            databaseKind: context.kind,
-            databaseProfileId: context.profileId,
-            databaseRevision: row!.databaseRevision,
-            status: row!.status,
-            version: row!.version,
-            createdAt: row!.createdAt.toISOString(),
-            updatedAt: row!.updatedAt.toISOString(),
-          },
-          sequence: row!.syncSequence,
-          migrationIssues,
-          issues: validateDatabaseDocument(document, context, { mode: 'read' }),
-        });
-      }),
-    );
+          });
+          // Diagnostics must use target IDs/paths, not source IDs from the uploaded file.
+          migrationIssues = migrationIssues.map((issue) => ({
+            ...issue,
+            objectId: mapping.entities.get(issue.objectId)!,
+            path: issue.path.replace(
+              '/' + issue.objectId.replaceAll('~', '~0').replaceAll('/', '~1') + '/',
+              '/' + mapping.entities.get(issue.objectId)! + '/',
+            ),
+          }));
+          return nativeTransferImportResultSchema.parse({
+            project: {
+              id: row!.id,
+              workspaceId,
+              name: row!.name,
+              databaseKind: context.kind,
+              databaseProfileId: context.profileId,
+              databaseRevision: row!.databaseRevision,
+              status: row!.status,
+              version: row!.version,
+              createdAt: row!.createdAt.toISOString(),
+              updatedAt: row!.updatedAt.toISOString(),
+            },
+            sequence: row!.syncSequence,
+            migrationIssues,
+            issues: validateDatabaseDocument(document, context, { mode: 'read' }),
+          });
+        },
+      );
+      this.events?.userChanged({ resource: 'projects', workspaceId });
+      return result;
+    });
   }
 }

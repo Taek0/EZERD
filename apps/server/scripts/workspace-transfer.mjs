@@ -25,8 +25,6 @@ export const approvedTransfer = {
 };
 
 const preservedTables = [
-  'project_personal_states',
-  'project_personal_operations',
   'review_threads',
   'review_notifications',
   'sync_operations',

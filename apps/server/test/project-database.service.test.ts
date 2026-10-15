@@ -137,6 +137,24 @@ function fixture(
   };
 }
 describe('ProjectDatabaseService native conversion policy and transaction ordering', () => {
+  it('persists an unspecified profile when changing an empty native project', async () => {
+    const f = fixture();
+    const input = { ...request(), targetKind: 'generic' as const };
+    expect(await f.service.preview(actorId, projectId, input)).toMatchObject({
+      canChange: true,
+      target: { kind: 'generic', profileId: 'generic-v1' },
+    });
+    expect(await f.service.change(actorId, projectId, input)).toMatchObject({
+      changed: true,
+      database: { kind: 'generic', profileId: 'generic-v1', revision: 4 },
+    });
+    expect(f.updates[0]).toMatchObject({
+      databaseKind: 'generic',
+      databaseProfileId: 'generic-v1',
+      databaseRevision: 4,
+      syncSequence: 12,
+    });
+  });
   it('keeps old preview/metadatа inputs and optional diagnostics consistent with the canonical issue contract', () => {
     const input = { expectedVersion: 7, targetKind: 'mysql' };
     expect(previewProjectDatabaseSchema.parse(input)).toEqual(input);

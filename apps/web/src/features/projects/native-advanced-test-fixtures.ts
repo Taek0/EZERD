@@ -18,7 +18,9 @@ export function advancedFixture(kind: DatabaseKind = 'postgresql') {
       ? { kind: 'builtin', database: kind, typeId: 'postgresql:integer', parameters: {} }
       : kind === 'mysql'
         ? { kind: 'builtin', database: kind, typeId: 'mysql:int', parameters: {} }
-        : { kind: 'builtin', database: kind, typeId: 'sqlite:integer', parameters: {} };
+        : kind === 'generic'
+          ? { kind: 'builtin', database: kind, typeId: 'generic:integer', parameters: {} }
+          : { kind: 'builtin', database: kind, typeId: 'sqlite:integer', parameters: {} };
   const stringType: NativeColumnType =
     kind === 'postgresql'
       ? {
@@ -29,7 +31,9 @@ export function advancedFixture(kind: DatabaseKind = 'postgresql') {
         }
       : kind === 'mysql'
         ? { kind: 'builtin', database: kind, typeId: 'mysql:varchar', parameters: { length: 20 } }
-        : { kind: 'builtin', database: kind, typeId: 'sqlite:text', parameters: {} };
+        : kind === 'generic'
+          ? { kind: 'builtin', database: kind, typeId: 'generic:text', parameters: {} }
+          : { kind: 'builtin', database: kind, typeId: 'sqlite:text', parameters: {} };
   const columns = ['a', 'b', 's'].map((id) => {
     const c = createNativeColumn(database, table, id);
     c.physical.name = id;

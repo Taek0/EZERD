@@ -10,8 +10,6 @@ import {
   diagnoseDocument,
   ensureTableCanvasLayout,
   exportPostgres,
-  extractPersonalState,
-  reconcilePersonalState,
   removeTableReference,
   sharedDocument,
   updateNodeLayout,
@@ -143,21 +141,17 @@ describe('direct table canvas', () => {
     expect(legacy.layout.nodes).toHaveLength(3);
   });
 
-  it('shares global notes and layouts while retaining the personal global viewport', () => {
+  it('shares global notes and layouts while excluding camera persistence', () => {
     let doc = addTable(createEmptyDocument(), table('t'), { x: 0, y: 0 });
     doc = addNote(doc, { id: 'note', viewId: TABLES_VIEW_ID, text: 'shared' }, { x: 400, y: 0 });
     doc = {
       ...doc,
       layout: { ...doc.layout, viewports: [{ viewId: TABLES_VIEW_ID, x: 12, y: 34, zoom: 2 }] },
     };
-    const personal = extractPersonalState(doc);
-    expect(personal.nodes).toEqual([]);
-    expect(personal.notes).toEqual([]);
     const shared = sharedDocument(doc);
     expect(shared.layout.nodes).toEqual(doc.layout.nodes);
     expect(shared.notes).toEqual(doc.notes);
     expect(shared.layout.viewports).toEqual([]);
-    expect(reconcilePersonalState(shared, personal).viewports).toEqual(doc.layout.viewports);
   });
 
   it('keeps overlapping legacy domain origins in a compact grid without changing owner layouts', () => {

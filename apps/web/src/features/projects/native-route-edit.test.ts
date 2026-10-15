@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { clipboardFixture } from './native-clipboard-test-fixtures.js';
 import { upsertRelationLayout } from '@ezerd/model';
-import { nativeCanvasScene, nativeCanvasPersonalCandidate } from './NativeERDCanvas.js';
+import { nativeCanvasScene } from './NativeERDCanvas.js';
 import {
   nativeRouteCommand,
   nativeRouteDrag,
@@ -35,9 +35,7 @@ describe('native relation path editing', () => {
       item.relation.id,
       JSON.stringify(moved),
     );
-    expect(() => nativeCanvasPersonalCandidate(document, command)).toThrow(
-      'canvas.personal-view-required',
-    );
+    expect(command.type).toBe('upsert_relation_layout');
     const candidate = upsertRelationLayout(document, moved);
     expect(candidate.layout.relations).toContainEqual(moved);
     expect(candidate.tableRelations).toEqual(document.tableRelations);
@@ -87,7 +85,6 @@ describe('native relation path editing', () => {
     ).toEqual({
       kind: 'canvas',
       selection: { viewId: '__tables__', routeId: 'fk' },
-      personal: false,
     });
   });
 });

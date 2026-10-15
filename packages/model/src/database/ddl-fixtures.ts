@@ -4,7 +4,7 @@ import { defaultDatabaseContext } from './profiles.js';
 import type { DatabaseKind } from './definitions.js';
 
 /** Shared execution fixture: unassigned parent and domain-owned child, not view-filtered. */
-export function nativeDDLFixture(kind: DatabaseKind): NativeDesignDocument {
+export function nativeDDLFixture(kind: Exclude<DatabaseKind, 'generic'>): NativeDesignDocument {
   const database = defaultDatabaseContext(kind),
     parent = createNativeTable(database, 'parent'),
     child = createNativeTable(database, 'child', 'domain');

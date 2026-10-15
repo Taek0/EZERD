@@ -15,16 +15,7 @@ const groups = [
     '공간',
     ['workspace', 'user_workspaces', 'workspace_invitations', 'workspace_audit_events'],
   ],
-  [
-    'project',
-    '프로젝트',
-    [
-      'projects',
-      'project_personal_states',
-      'project_personal_operations',
-      'project_database_operations',
-    ],
-  ],
+  ['project', '프로젝트', ['projects', 'project_database_operations']],
   ['review', '리뷰', ['review_threads', 'review_messages', 'review_notifications']],
   [
     'sync',
@@ -64,11 +55,11 @@ const domainColors = {
 };
 const domainDescriptions = {
   identity:
-    '사용자 신원과 인증 수단을 관리한다. users는 공통 사용자 기준이며 sessions는 로그인 세션, mcp_tokens는 MCP 접근 토큰과 만료·폐기 상태를 저장한다. 사용자 PK는 멤버십, 개인 설정, 리뷰와 동기화 수행자를 연결한다.',
+    '사용자 신원과 인증 수단을 관리한다. users는 공통 사용자 기준이며 sessions는 로그인 세션, mcp_tokens는 MCP 접근 토큰과 만료·폐기 상태를 저장한다. 사용자 PK는 멤버십, 리뷰와 동기화 수행자를 연결한다.',
   'workspace-domain':
     '협업 공간과 접근 권한을 관리한다. workspace는 공간, user_workspaces는 사용자별 역할, workspace_invitations는 초대 수신자·초대자·만료 상태를 저장한다. workspace_audit_events는 감사 이력이며 삭제 후 보존을 위해 물리 FK가 없다. 공간은 프로젝트의 상위 소유 단위다.',
   project:
-    '공간에 소속된 ERD 프로젝트와 사용자별 개인 화면을 관리한다. projects는 설계 JSONB와 버전·동기화 순번을 저장한다. project_personal_states는 사용자별 화면 상태, project_personal_operations는 개인 작업의 중복 처리 방지 결과를 저장한다. 프로젝트 삭제는 관련 하위 데이터에 전파된다.',
+    '공간에 소속된 ERD 프로젝트를 관리한다. projects는 공유 설계 JSONB와 버전·동기화 순번을 저장한다. 프로젝트 삭제는 관련 하위 데이터에 전파된다.',
   review:
     '프로젝트 설계에 대한 리뷰와 알림을 관리한다. review_threads는 화면·객체 위치에 연결된 리뷰 스레드, review_messages는 작성자와 댓글, review_notifications는 사용자별 알림과 읽음 상태를 저장한다. 스레드가 부모이며 댓글과 알림은 같은 하위 계층이다. mention_ids는 JSONB로 저장한다.',
   sync: '프로젝트 공동 편집의 변경 이력과 충돌 판정 정보를 관리한다. sync_operations는 작업과 처리 결과, sync_field_versions는 필드별 마지막 변경 순번, sync_client_baselines는 클라이언트 기준 문서, sync_tombstones는 삭제 객체 스냅샷을 저장한다. 네 테이블은 projects를 참조하는 동등한 하위 객체이며 서로 직접 FK는 없다.',
@@ -295,8 +286,6 @@ layoutTables('all-tables', [
   'review_threads',
   'review_messages',
   'review_notifications',
-  'project_personal_states',
-  'project_personal_operations',
   'project_database_operations',
   'sync_operations',
   'sync_field_versions',
@@ -331,10 +320,6 @@ const relationMeanings = {
   'workspace-domain:project': [
     '공간별 프로젝트 소유',
     '각 프로젝트는 하나의 공간에 소속된다. 공간 하나에 여러 프로젝트가 존재할 수 있으며 프로젝트가 남아 있으면 공간 삭제가 RESTRICT로 차단된다.',
-  ],
-  'identity:project': [
-    '사용자별 개인 화면·작업 기록',
-    '프로젝트별 사용자 개인 화면과 개인 작업 중복 처리 방지 기록을 사용자에 연결한다. 사용자 삭제 시 해당 개인 상태와 작업 기록도 삭제된다.',
   ],
   'identity:review': [
     '댓글 작성자·알림 수신자',

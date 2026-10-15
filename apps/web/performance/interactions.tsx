@@ -414,7 +414,6 @@ function Demo() {
             viewId="__tables__"
             relationId={relation}
             world={world}
-            personalVersion={undefined}
             context={{
               ...context,
               affectsSharedDocument: true,

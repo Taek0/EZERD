@@ -5,6 +5,7 @@ import { projectEntry } from './project-entry.js';
 import { nativeEntryAfterAck, shareNativeJson } from './native-ack-entry.js';
 import {
   normalizeSharedTableCanvas,
+  sharedDocument,
   deriveOperationChanges,
   TABLES_VIEW_ID,
   createEmptyNativeDocument,
@@ -15,7 +16,7 @@ import { nativeCanvasScene } from './NativeERDCanvas.js';
 
 // Match the read-only server reader's canonical ID contract, including long imported IDs.
 function readerPreview(document: NativeDesignDocument) {
-  return normalizeSharedTableCanvas(document, {
+  return normalizeSharedTableCanvas(sharedDocument(document), {
     nodeId: (tableId) => `node:${tableId.slice(0, 128)}:${TABLES_VIEW_ID}`,
   });
 }
@@ -89,7 +90,7 @@ describe('native ACK document confirmation', () => {
       entry.document!.layout.nodes.find((node) => node.objectId === 'a'),
     );
     expect(next.document!.layout.nodes.find((node) => node.objectId === 'b')).toBe(
-      raw.layout.nodes[0],
+      entry.document!.layout.nodes.find((node) => node.objectId === 'b'),
     );
     expect(next.snapshot.sourceDocument).toEqual(ack.document);
     expect(next.snapshot.sourceDocument.layout.nodes.map((node) => node.objectId)).toEqual(['b']);
@@ -99,7 +100,7 @@ describe('native ACK document confirmation', () => {
     expect({ entry, ack }).toEqual(before);
   });
 
-  it('normalizes only shared preview before merging existing personal views and placements', () => {
+  it('normalizes the shared preview without restoring retired private views and placements', () => {
     const { entry, ack } = sparseFixture();
     entry.document = {
       ...entry.document!,
@@ -123,11 +124,11 @@ describe('native ACK document confirmation', () => {
     };
     const original = structuredClone(entry.document);
     const next = nativeEntryAfterAck(entry, ack)!;
-    expect(next.document!.views).toEqual(original.views);
-    expect(next.document!.layout.nodes.find((node) => node.id === 'private-a')).toEqual(
-      original.layout.nodes.at(-1),
+    expect(next.document!.views ?? []).toEqual([]);
+    expect(next.document!.layout.nodes.find((node) => node.id === 'private-a')).toBeUndefined();
+    expect(next.document!.layout.viewports?.some((viewport) => viewport.viewId === 'private')).toBe(
+      false,
     );
-    expect(next.document!.layout.viewports).toEqual(original.layout.viewports);
     expect(next.snapshot.sourceDocument).toEqual(ack.document);
     if (next.snapshot.native.status !== 'available') throw Error('native');
     expect(next.snapshot.native.document.views ?? []).toEqual([]);
@@ -172,7 +173,7 @@ describe('native ACK document confirmation', () => {
     expect(new Set(nodes.map((node) => node.id)).size).toBe(3);
     expect(nodes.slice(1).map((node) => node.id)).toEqual([`${occupied}:1`, `${occupied}:2`]);
     expect(nodes.every((node) => node.id.length <= 160)).toBe(true);
-    expect(nodes[0]).toBe(raw.layout.nodes[0]);
+    expect(nodes[0]).toBe(entry.document!.layout.nodes[0]);
     expect(nodes.slice(1).map((node) => node.objectId)).toEqual([prefix + '0', prefix + '1']);
     const again = nativeEntryAfterAck(next, { ...ack, sequence: ack.sequence + 1 })!;
     expect(again.document!.layout.nodes).toBe(nodes);

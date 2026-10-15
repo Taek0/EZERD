@@ -12,7 +12,7 @@ export const transferProject = '00000000-0000-4000-8000-000000000002';
 export const transferWorkspace = '00000000-0000-4000-8000-000000000003';
 export const transferTime = '2026-10-02T00:00:00.000Z';
 export function transferState(
-  kind: DatabaseKind = 'postgresql',
+  kind: Exclude<DatabaseKind, 'generic'> = 'postgresql',
   schemaVersion: 1 | 2 = 2,
 ): ProjectDocumentState {
   const properties = { common: {}, logical: {}, physical: {} };

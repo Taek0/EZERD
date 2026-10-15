@@ -73,6 +73,13 @@ function state(): ProjectDocumentState {
   };
 }
 describe('DDL export uses a saved consistent project state', () => {
+  it('ignores retired private storage without deleting it', async () => {
+    const storage = store();
+    const key = `ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`;
+    storage.setItem(key, 'retired input');
+    await expect(assertNativeExportReady(userId, projectId, storage)).resolves.toBeUndefined();
+    expect(storage.getItem(key)).toBe('retired input');
+  });
   it('blocks own unsaved inputs but ignores another user and project', async () => {
     const storage = store(),
       values = { physicalName: 'id', comment: '', logicalName: 'ID', definition: '' };

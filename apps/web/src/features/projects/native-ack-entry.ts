@@ -1,10 +1,8 @@
 import type { NativeSyncOperationResult } from '@ezerd/contracts';
 import {
-  extractPersonalState,
   applyChanges,
-  mergeStoredPersonalState,
+  sharedDocument,
   normalizeSharedTableCanvas,
-  reconcilePersonalState,
   TABLES_VIEW_ID,
   validateDatabaseDocument,
 } from '@ezerd/model';
@@ -100,7 +98,7 @@ export function nativeEntryAfterAck(
   // Apply exactly that read-only projection without ever replacing sourceDocument.
   const displayDocument = shareNativeJson(
     snapshot.native.document,
-    normalizeSharedTableCanvas(document, {
+    normalizeSharedTableCanvas(sharedDocument(document), {
       nodeId: (tableId) => `node:${tableId.slice(0, 128)}:${TABLES_VIEW_ID}`,
     }),
   );
@@ -110,13 +108,7 @@ export function nativeEntryAfterAck(
       /^\/layout\/nodes\/[^/]+\/(position|size|x|y|width|height)$/.test(path),
     );
   const preview = current.document
-    ? shareNativeJson(
-        current.document,
-        mergeStoredPersonalState(
-          displayDocument,
-          reconcilePersonalState(displayDocument, extractPersonalState(current.document)),
-        ),
-      )
+    ? shareNativeJson(current.document, displayDocument)
     : displayDocument;
   return {
     ...current,

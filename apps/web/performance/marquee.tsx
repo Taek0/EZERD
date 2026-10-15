@@ -42,14 +42,6 @@ window.fetch = async (input, init) => {
   if (url.pathname.endsWith('/threads')) return Response.json([]);
   if (url.pathname.endsWith('/members'))
     return Response.json([{ userId: actor, username: 'preview', color: '#06b6d4' }]);
-  if (url.pathname.endsWith('/personal-state'))
-    return Response.json({
-      databaseRevision: 0,
-      version: 0,
-      projectVersion: 0,
-      syncSequence: 0,
-      state: { views: [], notes: [], nodes: [], viewports: [], relations: [] },
-    });
   if (url.pathname.endsWith('/native-history'))
     return Response.json({
       protocolVersion: 2,
@@ -271,10 +263,9 @@ function Demo() {
           <Profiler id="workspace" onRender={profile}>
             <NativeProjectView
               key={count}
-              entry={{ kind: 'native', ...fixture, personalUnavailable: false }}
+              entry={{ kind: 'native', ...fixture }}
               userId={actor}
               canEdit
-              canPersonalEdit
               onLeave={() => {}}
               onReload={() => {}}
             />

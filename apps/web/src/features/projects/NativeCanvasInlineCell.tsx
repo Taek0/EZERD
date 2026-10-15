@@ -1,3 +1,4 @@
+import './generic-translations.js';
 import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
 import type { HTMLAttributes } from 'react';
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
@@ -302,7 +303,12 @@ function EditableNativeCanvasInlineCell({
           key: formatKey,
           revision: nativeDurableId(),
           before: initial,
-          values: { ...initial, typeChoice: chosen.values.value ?? '' },
+          values: {
+            ...initial,
+            ...(doc.database.kind === 'generic' && chosen.values.value?.startsWith('custom:')
+              ? { typeChoice: 'custom', customName: chosen.values.value.slice(7) }
+              : { typeChoice: chosen.values.value ?? '' }),
+          },
         });
       }
       finish(false);
@@ -485,7 +491,12 @@ function EditableNativeCanvasInlineCell({
     if (event.key === 'Escape') {
       event.preventDefault();
       cancel();
-    } else if (!typeCell && event.key === 'Enter') {
+    } else if (
+      (!typeCell ||
+        (latest.current.document.database.kind === 'generic' &&
+          current.current?.values.value?.startsWith('custom:'))) &&
+      event.key === 'Enter'
+    ) {
       event.preventDefault();
       void commit(true);
     }
@@ -589,21 +600,37 @@ function EditableNativeCanvasInlineCell({
         {editing ? (
           typeCell ? (
             <>
-              <SearchType
-                value={draft?.values.value ?? input.value}
-                options={typeOptions}
-                query={draft?.values.query}
-                onQueryChange={(query) => change(current.current?.values.value ?? '', query)}
-                label={fieldLabel}
-                autoFocus
-                showSearchIcon={false}
-                onValueChange={(value) => change(value)}
-                onEditEnd={(reason) => {
-                  if (reason === 'escape') {
-                    if (!composing.current) cancel();
-                  } else void commit(reason === 'selection');
-                }}
-              />
+              {(draft?.values.value ?? input.value).startsWith('custom:') &&
+              document.database.kind === 'generic' ? (
+                <Input
+                  autoFocus
+                  aria-label={t('사용자 정의 타입')}
+                  value={(draft?.values.value ?? input.value).slice(7)}
+                  onChange={(event) => change(`custom:${event.target.value}`)}
+                  onBlur={() => {
+                    void commit(false);
+                  }}
+                />
+              ) : (
+                <SearchType
+                  value={draft?.values.value ?? input.value}
+                  options={typeOptions.map((option) => ({ ...option, label: t(option.label) }))}
+                  query={draft?.values.query}
+                  onQueryChange={(query) => change(current.current?.values.value ?? '', query)}
+                  label={fieldLabel}
+                  autoFocus
+                  showSearchIcon={false}
+                  onValueChange={(value) => change(value)}
+                  onEditEnd={(reason) => {
+                    if (reason === 'escape') {
+                      if (!composing.current) cancel();
+                    } else if (!(
+                      reason === 'selection' && current.current?.values.value === 'custom:'
+                    ))
+                      void commit(reason === 'selection');
+                  }}
+                />
+              )}
               {onAdvancedFormat && (
                 <Button
                   tabIndex={-1}

@@ -142,7 +142,17 @@ export type SqliteBuiltinSpec = TypeSpec<
     | 'any'}`,
   NoParameters
 >;
+export type GenericBuiltinSpec =
+  | TypeSpec<
+      `generic:${'smallint' | 'integer' | 'bigint' | 'real' | 'double precision' | 'text' | 'boolean' | 'date' | 'uuid' | 'json' | 'blob'}`,
+      NoParameters
+    >
+  | TypeSpec<'generic:char' | 'generic:varchar' | 'generic:binary', { length?: number }>
+  | TypeSpec<'generic:numeric', { precision?: number; scale?: number }>
+  | TypeSpec<'generic:time' | 'generic:timestamp', { precision?: number }>;
 export type NativeColumnType =
+  | ({ kind: 'builtin'; database: 'generic' } & GenericBuiltinSpec)
+  | { kind: 'custom'; database: 'generic'; name: string }
   | ({
       kind: 'builtin';
       database: 'postgresql';
@@ -236,15 +246,18 @@ export type NativeGeneration =
       expression: NativeExpression;
     };
 export type NativeNamespace =
+  | { kind: 'generic' }
   | { kind: 'postgresSchema'; name: string }
   | { kind: 'mysqlCurrentDatabase' }
   | { kind: 'sqliteMain' }
   | { kind: 'legacyNamespace'; source: 'document-v1'; original: string };
 export type NativeTableOptions =
+  | { database: 'generic' }
   | { database: 'postgresql' }
   | { database: 'mysql'; engine: 'InnoDB'; charset?: string; collation?: string }
   | { database: 'sqlite'; strict: boolean; withoutRowid: boolean };
 export type NativeColumnOptions =
+  | { database: 'generic' }
   | { database: 'postgresql'; collation?: string }
   | { database: 'mysql'; charset?: string; collation?: string; onUpdate?: NativeExpression }
   | { database: 'sqlite'; collation?: 'BINARY' | 'NOCASE' | 'RTRIM' };

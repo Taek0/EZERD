@@ -1,3 +1,4 @@
+import './generic-translations.js';
 import { shareNativeJson } from './native-ack-entry.js';
 import {
   projectNativeLocalDraftNames,
@@ -243,7 +244,7 @@ export function NativeProjectView({
   focusedReview,
   userId,
   canEdit = false,
-  canPersonalEdit = canEdit,
+  canComment = canEdit,
   projectActions,
   workspaceStatus,
   workspaceRole,
@@ -256,7 +257,7 @@ export function NativeProjectView({
   focusedReview?: Thread;
   userId?: string;
   canEdit?: boolean;
-  canPersonalEdit?: boolean;
+  canComment?: boolean;
   projectActions?: (
     focus: (id: string) => void,
     png?: { run: () => Promise<void>; disabled: boolean; busy: boolean },
@@ -694,18 +695,13 @@ export function NativeProjectView({
   activePermission.current = editable;
   const activeDocument = useRef(doc);
   activeDocument.current = doc;
-  const activePersonalPermission = useRef(false);
-  activePersonalPermission.current =
-    !!userId && canPersonalEdit && snapshot.project.status === 'active' && !!doc;
   const recoveryActorCurrent = (actor: string) =>
     actor === userId && currentEditor() && currentTransferUserId() === actor;
   function canRecoverDraft(input: NativeDraftArchiveEntry) {
     if (!recoveryActorCurrent(input.userId) || input.projectId !== snapshot.project.id)
       return false;
     const target = nativeDraftRecoveryTarget(activeDocument.current, input);
-    return (
-      !!target && (target.personal ? activePersonalPermission.current : activePermission.current)
-    );
+    return !!target && activePermission.current;
   }
   function openRecoveredDraft(input: NativeDraftArchiveEntry) {
     if (!canRecoverDraft(input)) throw Error('native.draft-recovery-unavailable');
@@ -1348,10 +1344,18 @@ export function NativeProjectView({
                   ? 'PostgreSQL'
                   : snapshot.project.databaseKind === 'mysql'
                     ? 'MySQL'
-                    : 'SQLite'}
+                    : snapshot.project.databaseKind === 'generic'
+                      ? t('선택안함')
+                      : 'SQLite'}
               </span>
               <span>
-                {t('목표 DB 버전')}: {profile.targetVersion}
+                {snapshot.project.databaseKind === 'generic' ? (
+                  t('구조 설계 · DDL 내보내기 불가')
+                ) : (
+                  <>
+                    {t('목표 DB 버전')}: {profile.targetVersion}
+                  </>
+                )}
               </span>
               <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
             </div>
@@ -1401,7 +1405,7 @@ export function NativeProjectView({
           </div>
         )}
         {workspaceStatus !== 'archived' &&
-          (workspaceRole === 'viewer' || (!canEdit && canPersonalEdit)) && (
+          (workspaceRole === 'viewer' || (!canEdit && canComment)) && (
             <div className="notice" role="status">
               {t('뷰어 권한입니다. 설계를 조회하고 핀과 댓글을 남길 수 있습니다.')}
             </div>
@@ -1766,9 +1770,6 @@ export function NativeProjectView({
                   snapshot={snapshot}
                   {...(userId ? { userId } : {})}
                   editable={editable}
-                  personalEditable={
-                    !!userId && canPersonalEdit && snapshot.project.status === 'active'
-                  }
                   busy={editorBusy}
                   recoveryBusy={recoveryBusy}
                   onSave={save}
@@ -1799,7 +1800,7 @@ export function NativeProjectView({
                     setReviewDocument(source);
                   }}
                   onCreatePin={(context) => {
-                    if (!canPersonalEdit || !userId || snapshot.project.status !== 'active') return;
+                    if (!canComment || !userId || snapshot.project.status !== 'active') return;
                     setReviewContext(context);
                     setDraftPin({ ...context, nonce: Date.now() });
                     setReviewFocus(null);
@@ -2630,7 +2631,7 @@ export function NativeProjectView({
                   )}
                   <CommentsPanel
                     key={`${userId}:${snapshot.project.id}`}
-                    readOnly={!canPersonalEdit || snapshot.project.status !== 'active'}
+                    readOnly={!canComment || snapshot.project.status !== 'active'}
                     workspaceId={snapshot.project.workspaceId}
                     projectId={snapshot.project.id}
                     userId={userId}

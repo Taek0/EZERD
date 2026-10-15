@@ -50,13 +50,7 @@ const nodes = [];
 const rows = [
   ['users', 'workspace', 'workspace_audit_events'],
   ['sessions', 'mcp_tokens', 'user_workspaces', 'workspace_invitations', 'projects'],
-  [
-    'project_personal_states',
-    'project_personal_operations',
-    'project_database_operations',
-    'native_request_cancellations',
-    'review_threads',
-  ],
+  ['project_database_operations', 'native_request_cancellations', 'review_threads'],
   [
     'sync_operations',
     'sync_client_baselines',

@@ -51,6 +51,8 @@ export function nativeInlineTypeOptions(
   const options: { value: string; label: string }[] = nativeEditorPolicy(document, table, column)
     .types.filter((item) => item.usable)
     .map(({ definition }) => ({ value: definition.id, label: definition.sqlName }));
+  if (document.database.kind === 'generic')
+    options.push({ value: 'custom:', label: '(직접 입력)' });
   const current = nativeTypeChoice(column.physical.type);
   if (!options.some((option) => option.value === current))
     options.unshift({ value: current, label: nativeTypeCurrentLabel(column, document) });
@@ -68,30 +70,32 @@ export function nativeInlineTypeCommand(
     throw Error('native.inline-field-invalid');
   const previous = column.physical.type;
   if (value === nativeTypeChoice(previous)) return null;
-  const entry = nativeEditorPolicy(document, table, column).types.find(
-    (item) => item.definition.id === value,
-  );
-  if (!entry?.usable) throw Error('type.not-implemented');
-  if (value === 'mysql:enum' || value === 'mysql:set')
-    throw Error('native.inline-advanced-format-required');
-  // Parameterized/array variants are retained when compatible. No silent parameter removal.
-  const parameters = previous.kind === 'builtin' ? { ...previous.parameters } : {};
-  if (validateDatabaseTypeParameters(entry.definition, parameters).length)
-    throw Error('native.inline-advanced-format-required');
+  let nextType: unknown;
+  if (document.database.kind === 'generic' && value.startsWith('custom:')) {
+    nextType = { kind: 'custom', database: 'generic', name: value.slice(7) };
+  } else {
+    const entry = nativeEditorPolicy(document, table, column).types.find(
+      (item) => item.definition.id === value,
+    );
+    if (!entry?.usable) throw Error('type.not-implemented');
+    if (value === 'mysql:enum' || value === 'mysql:set')
+      throw Error('native.inline-advanced-format-required');
+    // Parameterized/array variants are retained when compatible. No silent parameter removal.
+    const parameters = previous.kind === 'builtin' ? { ...previous.parameters } : {};
+    if (validateDatabaseTypeParameters(entry.definition, parameters).length)
+      throw Error('native.inline-advanced-format-required');
+    nextType = {
+      kind: 'builtin',
+      database: document.database.kind,
+      typeId: entry.definition.id,
+      parameters,
+      ...('array' in previous && previous.array ? { array: previous.array } : {}),
+    };
+  }
   const command = nativeEditorCommandSchema.parse({
     type: 'patch_column',
     id: column.id,
-    patch: {
-      physical: {
-        type: {
-          kind: 'builtin',
-          database: document.database.kind,
-          typeId: entry.definition.id,
-          parameters,
-          ...('array' in previous && previous.array ? { array: previous.array } : {}),
-        },
-      },
-    },
+    patch: { physical: { type: nextType } },
   });
   if (command.type !== 'patch_column' || !command.patch.physical?.type)
     throw Error('native.inline-field-invalid');

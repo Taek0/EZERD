@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { migrateDesignDocumentV1 } from '../../../packages/model/src/database/migration.ts';
-import { mergeStoredPersonalState } from '../../../packages/model/src/personal.ts';
 import { versionedProjectTransferSchema } from '../../../packages/contracts/src/native-transfer.ts';
 import {
   nativeTableCanvasMetrics,
@@ -15,7 +14,6 @@ import {
 
 const root = 'artifacts/repository-erd/current/';
 const saved = JSON.parse(readFileSync(root + 'project-state.json', 'utf8'));
-const personal = JSON.parse(readFileSync(root + 'personal-state.json', 'utf8'));
 const doc = saved.sourceDocument;
 const source = migrateDesignDocumentV1(
   JSON.parse(readFileSync(root + 'ezerd-project.json', 'utf8')).document,
@@ -104,20 +102,6 @@ for (let i = 0; i < relations.length; i++) {
       labelIntersections++;
   }
 }
-const privateNodes = personal.state.nodes.filter((n) => n.viewId === 'repository-current');
-const privateRoutes = personal.state.relations.filter((n) => n.viewId === 'repository-current');
-const privateMatches =
-  nodes.every((n) =>
-    privateNodes.some(
-      (p) =>
-        p.objectId === n.objectId &&
-        p.x === n.x &&
-        p.y === n.y &&
-        p.width === n.width &&
-        p.height === n.height,
-    ),
-  ) &&
-  routes.every((r) => privateRoutes.some((p) => isDeepStrictEqual({ ...p, viewId: r.viewId }, r)));
 const scene = { nodes, relations, viewId: '__tables__' };
 const preview = nativeCanvasSvg(doc, scene, 'physical');
 writeFileSync(root + 'erd-preview.svg', preview.svg);
@@ -135,16 +119,15 @@ const report = {
   cardIntersections,
   labelIntersections,
   labelLineIntersections,
-  privateMatches,
   geometry: routing.after,
   canvas: preview.bounds,
   aspectRatio: Number((preview.bounds.width / preview.bounds.height).toFixed(2)),
   nativeIssues: saved.native.issues,
 };
-if (spacingViolations || undersized || hierarchyViolations || cardIntersections || !privateMatches)
+if (spacingViolations || undersized || hierarchyViolations || cardIntersections)
   throw new Error(JSON.stringify(report));
 writeFileSync(root + 'verification.json', JSON.stringify(report, null, 2));
-const exportDocument = mergeStoredPersonalState(doc, personal.state);
+const exportDocument = doc;
 const transfer = versionedProjectTransferSchema.parse({
   format: 'ezerd-project',
   formatVersion: 2,

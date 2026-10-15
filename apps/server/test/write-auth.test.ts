@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { ReviewController } from '../src/review/review.controller.js';
 import { ReviewService } from '../src/review/review.service.js';
 import { WorkspaceController } from '../src/workspace/workspace.controller.js';
-import { PersonalStateController } from '../src/workspace/personal-state.controller.js';
 
 const actor = { id: randomUUID(), username: 'actor', color: '#4169e1' };
 
@@ -35,7 +34,6 @@ describe('authenticated write paths', () => {
       {} as never,
     );
     const review = new ReviewController(session as never, domainService as never);
-    const personal = new PersonalStateController(session as never, domainService as never);
     const id = randomUUID();
 
     const writes = [
@@ -56,14 +54,13 @@ describe('authenticated write paths', () => {
       review.update(undefined, id, { resolved: true }),
       review.remove(undefined, id, { expectedUpdatedAt: new Date().toISOString() }),
       review.updateNotification(undefined, id, { read: true }),
-      personal.save(undefined, id, {}),
     ];
 
     for (const write of writes) await expect(write).rejects.toBeInstanceOf(UnauthorizedException);
     expect(session.authenticateHeader).toHaveBeenCalledTimes(writes.length);
   });
 
-  it('authenticates review, notifications, and personal reads before service access', async () => {
+  it('authenticates review and notification reads before service access', async () => {
     const domainService = new Proxy(
       {},
       {
@@ -74,13 +71,8 @@ describe('authenticated write paths', () => {
     );
     const session = rejectingSession();
     const review = new ReviewController(session as never, domainService as never);
-    const personal = new PersonalStateController(session as never, domainService as never);
     const id = randomUUID();
-    const reads = [
-      review.list(undefined, id),
-      review.listNotifications(undefined, id),
-      personal.get(undefined, id),
-    ];
+    const reads = [review.list(undefined, id), review.listNotifications(undefined, id)];
     for (const read of reads) await expect(read).rejects.toBeInstanceOf(UnauthorizedException);
     expect(session.authenticateHeader).toHaveBeenCalledTimes(reads.length);
   });
@@ -130,8 +122,7 @@ describe('authenticated write paths', () => {
         return {
           from: () => {
             if (index === 0) return { where: () => ({ for: async () => [project] }) };
-            if (index === 1) return { where: async () => [] };
-            if (index === 2) return { where: async () => [thread] };
+            if (index === 1) return { where: async () => [thread] };
             return { where: () => ({ orderBy: async () => [] }) };
           },
         };

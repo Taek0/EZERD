@@ -301,8 +301,6 @@ const levels = [
   ['sessions', 'mcp_tokens', 'user_workspaces', 'workspace_invitations', 'projects'],
   [
     'review_threads',
-    'project_personal_states',
-    'project_personal_operations',
     'project_database_operations',
     'sync_operations',
     'native_request_cancellations',

@@ -462,15 +462,26 @@ describe('native gallery conversion actual consumers', () => {
     expect(await queue.read(transferActor, transferProject)).toEqual(other);
     await queue.discard(other);
     localStorage.setItem(
-      `ezerd.native.canvas.personal:${JSON.stringify([transferActor, transferProject])}`,
+      `ezerd.native.history:${JSON.stringify([transferActor, transferProject])}`,
       'original',
     );
     await expect(stageGalleryDatabaseConversion(plan, f.options)).rejects.toThrow('pending');
     expect(
       localStorage.getItem(
-        `ezerd.native.canvas.personal:${JSON.stringify([transferActor, transferProject])}`,
+        `ezerd.native.history:${JSON.stringify([transferActor, transferProject])}`,
       ),
     ).toBe('original');
+  });
+  it('ignores retired personal-state keys without deleting their retained contents', async () => {
+    const f = fixture(),
+      plan = await f.review();
+    const key = `ezerd.native.canvas.personal:${JSON.stringify([transferActor, transferProject])}`;
+    localStorage.setItem(key, 'retained legacy personal data');
+    await expect(stageGalleryDatabaseConversion(plan, f.options)).resolves.toBeUndefined();
+    expect(localStorage.getItem(key)).toBe('retained legacy personal data');
+    expect((await getNativeDurableQueue().read(transferActor, transferProject))?.kind).toBe(
+      'databaseChange',
+    );
   });
   it('does not send when durable storage is unavailable', async () => {
     const f = fixture(),

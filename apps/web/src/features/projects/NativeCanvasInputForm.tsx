@@ -2,7 +2,6 @@ import { useNativeAutosave, requiresNativeConfirmation } from './use-native-auto
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   NativeEditorCommand,
-  NativePersonalCanvasCommand,
   ProjectDocumentState,
   NativeEditorDraftRef as DraftRef,
 } from '@ezerd/contracts';
@@ -18,14 +17,14 @@ import {
 } from './native-editor-draft.js';
 import { nativeDurableId } from './native-durable-queue.js';
 import { useNativeExportBlocker } from './native-export-state.js';
-type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
+type CanvasCommand = NativeEditorCommand;
 export type NativeCanvasSubmit = () => Promise<void>;
 const expected = (snapshot: ProjectDocumentState) => ({
   version: snapshot.project.version,
   sequence: snapshot.sequence,
   databaseRevision: snapshot.project.databaseRevision,
 });
-/** Canvas forms keep incomplete private/shared input without putting private commands in shared pending. */
+/** Preserve incomplete canvas input before submitting it through the shared queue. */
 export function NativeCanvasInputForm({
   context,
   title,
@@ -193,16 +192,14 @@ export function NativeCanvasInputForm({
     const inputChanged = [
       ...new Set([...Object.keys(current.values), ...Object.keys(current.before)]),
     ].some((key) => current.values[key] !== current.before[key]);
-    // Clean local forms can follow a new shared baseline. Recovery and private CAS
-    // evidence still require an explicit review/reset, even when their values are clean.
+    // Clean local forms can follow a new shared baseline. Recovered input still
+    // requires an explicit review/reset, even when its values are clean.
     if (
       !baselineChanged ||
       inputChanged ||
       submitting.current.size > 0 ||
       storageError ||
-      recoveryInput.current ||
-      current.before.personalVersion !== initial.personalVersion ||
-      current.before.privateVersion !== initial.privateVersion
+      recoveryInput.current
     )
       return;
     const next = fresh();

@@ -127,7 +127,6 @@ function fixture(kind: 'postgresql' | 'mysql' | 'sqlite' = 'postgresql'): Native
     },
     document,
     syncSequence: 12,
-    personalViewIds: ['mine'],
   };
 }
 
@@ -210,8 +209,8 @@ describe('native MCP scoped queries', () => {
       Object.freeze(value);
     };
     freeze(state.document);
-    expect(tableDetails(state, 'a').nodes.some((node) => node.viewId === 'mine')).toBe(true);
-    const otherActor = { ...state, personalViewIds: [] };
+    expect(tableDetails(state, 'a').nodes.some((node) => node.viewId === 'mine')).toBe(false);
+    const otherActor = { ...state };
     expect(tableDetails(otherActor, 'a').nodes.some((node) => node.viewId === 'mine')).toBe(false);
     expect(
       batchTableDetails(otherActor, {
@@ -235,7 +234,6 @@ describe('native MCP scoped queries', () => {
       TABLES_VIEW_ID,
       'sales',
       'other',
-      'mine',
     ]);
     expect(JSON.stringify(result)).not.toContain('Long definition');
   });
@@ -269,15 +267,15 @@ describe('native MCP scoped queries', () => {
     expect(result.tables.map((table) => table.id)).toEqual(['a', 'b']);
     expect(result.notes.map((note) => note.id)).toEqual(['shared']);
     expect(result.nodes.every((node) => node.viewId === TABLES_VIEW_ID)).toBe(true);
-    expect(result.viewport?.x).toBe(12);
+    expect(result.viewport).toBeNull();
     expect(result.tableRelations[0]).toMatchObject({ scope: 'both' });
     const first = projectView(state, 'sales', 1);
     expect(first.tableRelations).toEqual([]);
     expect(first.nextCursor).toBe('1-a');
     expect(projectView(state, 'sales', 1, first.nextCursor!).nodes[0]!.id).toBe('2-b');
     expect(listViewRelations(state, 'sales').relations[0]?.layout?.offset).toBe(12);
-    expect(listViewRelations(state, 'mine').relations[0]?.layout?.offset).toBe(99);
-    expect(projectView(state, 'mine').notes.map((note) => note.id)).toEqual(['private']);
+    expect(() => listViewRelations(state, 'mine')).toThrow('화면을 찾을 수 없습니다.');
+    expect(() => projectView(state, 'mine')).toThrow('화면을 찾을 수 없습니다.');
     expect(projectView(state, 'other').notes.map((note) => note.id)).toEqual(['shared']);
     expect(projectView(state, 'overview').tables).toEqual([]);
     expect(() => projectView(state, 'hidden')).toThrow('화면을 찾을 수 없습니다.');

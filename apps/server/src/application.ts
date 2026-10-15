@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { RequestMethod } from '@nestjs/common';
 import { LanAccessService } from './network/network-access.js';
+import { createFontCacheHeaders } from './font-cache.js';
 
 export function configureApplication(app: NestExpressApplication): void {
   app.set('trust proxy', false);
@@ -15,7 +16,7 @@ export function configureApplication(app: NestExpressApplication): void {
   const webRoot = fileURLToPath(new URL('../../web/dist/', import.meta.url));
   if (existsSync(`${webRoot}/index.html`)) {
     // UI and API share one origin/port for LAN hosting. Only public build assets are served.
-    app.useStaticAssets(webRoot, { dotfiles: 'deny' });
+    app.useStaticAssets(webRoot, { dotfiles: 'deny', setHeaders: createFontCacheHeaders(webRoot) });
   } else if (process.env.NODE_ENV === 'production') {
     throw new Error('Web build missing. Run pnpm build before hosting.');
   }

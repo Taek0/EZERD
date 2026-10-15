@@ -5,10 +5,9 @@ import {
   createNativeColumn,
   defaultDatabaseContext,
   addTableReference,
-  upsertCombinedView,
+  updateNodeLayout,
   type NativeDesignDocument,
 } from '@ezerd/model';
-import { nativePersonalCanvasCommandSchema } from '@ezerd/contracts';
 import {
   nativeCanvasMoveCommand,
   nativeSelectionPlacements,
@@ -17,7 +16,6 @@ import {
   nativeCanvasDraftPlacements,
 } from './native-canvas-selection.js';
 import { nativeCanvasDeleteCommands } from './native-canvas-delete.js';
-import { nativeCanvasPersonalCandidate } from './NativeERDCanvas.js';
 
 function fixture(): NativeDesignDocument {
   const database = defaultDatabaseContext('postgresql');
@@ -42,8 +40,8 @@ function fixture(): NativeDesignDocument {
 }
 describe('restored native canvas interactions', () => {
   it('resizes an existing node without replacing a concurrent move', () => {
-    const source = upsertCombinedView(fixture(), { id: 'private', name: 'Mine', domainIds: ['d'] });
-    const displayed = source.layout.nodes.find((node) => node.viewId === 'private')!;
+    const source = fixture();
+    const displayed = source.layout.nodes.find((node) => node.viewId === '__tables__')!;
     const moved = {
       ...source,
       layout: {
@@ -54,10 +52,8 @@ describe('restored native canvas interactions', () => {
       },
     };
     const command = nativeCanvasMoveCommand(source, displayed, { width: 500, height: 300 });
-    const next = nativeCanvasPersonalCandidate(
-      moved,
-      nativePersonalCanvasCommandSchema.parse(command),
-    );
+    if (command.type !== 'update_node_layout') throw Error('Expected update');
+    const next = updateNodeLayout(moved, command.nodeId, command.patch);
     expect(next.layout.nodes.find((node) => node.id === displayed.id)).toMatchObject({
       x: 300,
       y: 400,
@@ -108,24 +104,6 @@ describe('restored native canvas interactions', () => {
     expect(placements.every((n) => n.y >= 474)).toBe(true);
     expect(source.layout.nodes.find((n) => n.objectId === 'hidden')!.x).toBe(900);
   });
-  it('saves all group placements into one private candidate without changing shared nodes', () => {
-    const source = upsertCombinedView(fixture(), { id: 'private', name: 'Mine', domainIds: ['d'] });
-    const privateNodes = source.layout.nodes.filter((n) => n.viewId === 'private');
-    const commands = nativeSelectionPlacements(privateNodes, 80, 90).map((n) =>
-      nativeCanvasMoveCommand(source, n, { x: n.x, y: n.y }),
-    );
-    const next = commands.reduce<NativeDesignDocument>(
-      (doc, c) => nativeCanvasPersonalCandidate(doc, nativePersonalCanvasCommandSchema.parse(c)),
-      source,
-    );
-    expect(next.layout.nodes.filter((n) => n.viewId === '__tables__')).toEqual(
-      source.layout.nodes.filter((n) => n.viewId === '__tables__'),
-    );
-    expect(next.layout.nodes.filter((n) => n.viewId === 'private').map((n) => n.x)).toEqual(
-      privateNodes.map((n) => n.x + 80),
-    );
-    expect(next.columns).toBe(source.columns);
-  });
   it('materializes generated table positions but rejects generated domain positions', () => {
     const source = fixture(),
       node = source.layout.nodes[0]!;
@@ -160,19 +138,13 @@ describe('restored native canvas interactions', () => {
       nativeCanvasDraftPlacements({ nodesJSON: JSON.stringify(Array(101).fill(nodes[0])) }),
     ).toThrow('canvas.placement-invalid');
   });
-  it('collapses domain/table cascade overlap and never deletes shared data in private views', () => {
+  it('collapses domain/table cascade overlap', () => {
     const doc = fixture(),
       original = structuredClone(doc);
-    const commands = nativeCanvasDeleteCommands(doc, ['d', 'a', 'b'], 'overview');
+    const commands = nativeCanvasDeleteCommands(doc, ['d', 'a', 'b']);
     expect(commands).toEqual([
       { type: 'delete_domain', id: 'd', policy: { kind: 'deleteTables' } },
     ]);
-    const personal = upsertCombinedView(doc, { id: 'private', name: 'Mine', domainIds: ['d'] });
-    const privateCommands = nativeCanvasDeleteCommands(personal, ['a', 'b'], 'private', true);
-    expect(privateCommands.every((c) => c.type === 'remove_table_reference')).toBe(true);
     expect(doc).toEqual(original);
-    expect(() => nativeCanvasDeleteCommands(personal, ['a'], '__tables__', true)).toThrow(
-      'canvas.personal-view-required',
-    );
   });
 });

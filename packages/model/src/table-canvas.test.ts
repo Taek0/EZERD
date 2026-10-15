@@ -6,7 +6,6 @@ import {
   addNote,
   createEmptyDocument,
   diagnoseDocument,
-  extractPersonalState,
   normalizeSharedTableCanvas,
   sharedDocument,
   updateNodeLayout,
@@ -115,7 +114,7 @@ describe('unified shared table canvas normalization', () => {
       normalized.layout.relations!.find((route) => route.viewId === TABLES_VIEW_ID)!.offset,
     ).toBe(24);
     expect(normalized.layout.relations!.filter((route) => route.viewId === 'sales')).toEqual([]);
-    expect(extractPersonalState(normalized).notes).toEqual([
+    expect(normalized.notes.filter((note) => note.viewId === 'personal')).toEqual([
       { id: 'private-note', viewId: 'personal', text: 'Personal annotation' },
     ]);
     const shared = sharedDocument(normalized);

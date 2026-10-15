@@ -102,7 +102,20 @@ export const databaseFeatureCatalog: readonly DatabaseFeatureDefinition[] = Obje
   databaseFeatureIds.map((id) =>
     Object.freeze({
       id,
-      databases: Object.freeze([...(only[id] ?? all)]),
+      databases: Object.freeze([
+        ...(only[id] ?? all),
+        ...([
+          'table',
+          'column',
+          'primaryKey',
+          'unique',
+          'foreignKey',
+          'tableComment',
+          'columnComment',
+        ].includes(id)
+          ? ['generic' as const]
+          : []),
+      ]),
       coverage: nativeFeatureCoverage(id),
     }),
   ),
@@ -170,6 +183,7 @@ export function checkDatabaseFeature(
     return reject('type.option-not-supported');
 
   const usable =
-    hasDatabaseCoverage(feature.coverage) && (!type || hasDatabaseCoverage(type.coverage));
+    (context.kind === 'generic' || hasDatabaseCoverage(feature.coverage)) &&
+    (!type || context.kind === 'generic' || hasDatabaseCoverage(type.coverage));
   return { supported: true, usable, ...(!usable && { code: 'feature.not-implemented' }) };
 }

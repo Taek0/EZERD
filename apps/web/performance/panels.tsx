@@ -66,14 +66,6 @@ window.fetch = async (input, init) => {
   if (url.pathname.endsWith('/threads')) return Response.json([]);
   if (url.pathname.endsWith('/members'))
     return Response.json([{ userId: actor, username: 'preview', color: '#06b6d4' }]);
-  if (url.pathname.endsWith('/personal-state'))
-    return Response.json({
-      databaseRevision: 0,
-      version: 0,
-      projectVersion: 0,
-      syncSequence: 0,
-      state: { views: [], notes: [], nodes: [], viewports: [], relations: [] },
-    });
   if (url.pathname.endsWith('/native-history'))
     return Response.json({
       protocolVersion: 2,
@@ -623,7 +615,7 @@ function Demo() {
     setOutput('');
     const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
     const results: unknown[] = [];
-    let current = { kind: 'native' as const, ...fixture, personalUnavailable: false };
+    let current = { kind: 'native' as const, ...fixture };
     try {
       setReplayed(null);
       await pause(500);
@@ -1171,16 +1163,14 @@ function Demo() {
               entry={{
                 kind: 'native',
                 ...(replayed?.key === `${count}:${spacing}` ? replayed.value : fixture),
-                personalUnavailable: false,
               }}
               userId={actor}
               canEdit
-              canPersonalEdit
               onLeave={noop}
               onReload={noop}
               onAcknowledged={(ack) => {
                 const next = nativeEntryAfterAck(
-                  { kind: 'native', ...liveFixture.current.value, personalUnavailable: false },
+                  { kind: 'native', ...liveFixture.current.value },
                   ack,
                 );
                 if (!next?.document) return false;
