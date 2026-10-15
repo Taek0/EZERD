@@ -46,9 +46,12 @@ for (const face of selected) {
   const format = signature === 'wOF2' ? 'woff2' : signature === 'wOFF' ? 'woff' : null;
   if (!format) throw new Error(`Unsupported font format: ${file}`);
   const targetFile = file.replace(/\.woff2$/, `.${format}`);
+  const sha256 = createHash('sha256').update(buffer).digest('hex');
   await copyFile(path.join(sourceRoot, 'subsets', file), path.join(target, targetFile));
   rewrittenFaces.push(
-    face.replace(file, targetFile).replace(/format\("woff2"\)/, `format("${format}")`),
+    face
+      .replace(file, `${targetFile}?v=${sha256}`)
+      .replace(/format\("woff2"\)/, `format("${format}")`),
   );
   imported.add(file);
   manifest.push({
@@ -57,7 +60,7 @@ for (const face of selected) {
     format,
     weight,
     bytes: buffer.length,
-    sha256: createHash('sha256').update(buffer).digest('hex'),
+    sha256,
   });
 }
 for (const weight of weights.keys()) {
