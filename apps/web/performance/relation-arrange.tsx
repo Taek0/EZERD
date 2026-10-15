@@ -1,4 +1,4 @@
-import { startTransition, useRef, useState } from 'react';
+import { startTransition, useCallback, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { projectDocumentStateSchema, type NativeSyncOperationResult } from '@ezerd/contracts';
 import {
@@ -243,28 +243,56 @@ window.fetch = async (input, init) => {
   return response({ message: 'Unsupported fixture API', path: url.pathname }, 403);
 };
 
+function LabDelayButton() {
+  const [delayed, setDelayed] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        saveDelayMs = delayed ? 0 : 2000;
+        setDelayed(!delayed);
+      }}
+    >
+      Save delay: {delayed ? '2 s' : 'off'}
+    </button>
+  );
+}
+
 function Demo() {
   const [entry, setEntry] = useState<Extract<ProjectEntry, { kind: 'native' }>>({
     kind: 'native',
     ...initial,
   } as Extract<ProjectEntry, { kind: 'native' }>);
   const currentEntry = useRef(entry);
-  const [delay, setDelay] = useState(false);
   const [status, setStatus] = useState('ready');
+  const onReload = useCallback(() => {
+    const latest = [...results.values()]
+      .filter((result) => result.status === 'accepted')
+      .sort((a, b) => b.sequence - a.sequence)[0];
+    const next = latest && nativeEntryAfterAck(currentEntry.current, latest);
+    if (next) {
+      currentEntry.current = next;
+      currentSnapshot = next.snapshot;
+      startTransition(() => setEntry(next));
+    }
+    setStatus('reloaded');
+  }, []);
+  const onAcknowledged = useCallback((ack: NativeSyncOperationResult) => {
+    const next = nativeEntryAfterAck(currentEntry.current, ack);
+    if (!next) return false;
+    currentEntry.current = next;
+    currentSnapshot = next.snapshot;
+    startTransition(() => setEntry(next));
+    setStatus(`${ack.status} · ${ack.sequence} · ${ack.changedPaths.length} paths`);
+    return true;
+  }, []);
+  const onLeave = useCallback(() => setStatus('leave requested'), []);
   return (
     <>
       <header className="panel-lab-controls">
         <strong>Relation arrangement lab</strong>
         <span>{actual ? 'Actual snapshot' : 'Generated 50-table fixture'}</span>
         <span>{initial.document.tableRelations?.length ?? 0} relations</span>
-        <button
-          onClick={() => {
-            saveDelayMs = delay ? 0 : 2000;
-            setDelay(!delay);
-          }}
-        >
-          Save delay: {delay ? '2 s' : 'off'}
-        </button>
+        <LabDelayButton />
         <output aria-label="Relation fixture status">{status}</output>
       </header>
       <div className="app-shell editor-shell panel-lab-shell">
@@ -273,28 +301,9 @@ function Demo() {
             entry={entry}
             userId={actor}
             canEdit
-            onLeave={() => setStatus('leave requested')}
-            onReload={() => {
-              const latest = [...results.values()]
-                .filter((result) => result.status === 'accepted')
-                .sort((a, b) => b.sequence - a.sequence)[0];
-              const next = latest && nativeEntryAfterAck(currentEntry.current, latest);
-              if (next) {
-                currentEntry.current = next;
-                currentSnapshot = next.snapshot;
-                startTransition(() => setEntry(next));
-              }
-              setStatus('reloaded');
-            }}
-            onAcknowledged={(ack) => {
-              const next = nativeEntryAfterAck(currentEntry.current, ack);
-              if (!next) return false;
-              currentEntry.current = next;
-              currentSnapshot = next.snapshot;
-              startTransition(() => setEntry(next));
-              setStatus(`${ack.status} · ${ack.sequence} · ${ack.changedPaths.length} paths`);
-              return true;
-            }}
+            onLeave={onLeave}
+            onReload={onReload}
+            onAcknowledged={onAcknowledged}
           />
         </ConfirmProvider>
       </div>
