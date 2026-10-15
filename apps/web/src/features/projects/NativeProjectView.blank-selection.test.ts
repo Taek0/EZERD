@@ -10,7 +10,7 @@ import { NativeStructureEditor } from './native-editor-structure.js';
 import { NativeEditorField } from './native-editor-form.js';
 import { projectEntry } from './project-entry.js';
 import { clipboardActor, clipboardSnapshot } from './native-clipboard-test-fixtures.js';
-import { createNativeTable } from '@ezerd/model';
+import { createNativeTable, createEmptyNativeDocument, defaultDatabaseContext } from '@ezerd/model';
 import { nativeSaveIntents } from './native-save-intents.js';
 import type { NativeWebCommand } from './native-save.js';
 
@@ -29,6 +29,14 @@ vi.mock('react', async (original) => {
   const actual = await original<typeof import('react')>();
   return {
     ...actual,
+    useCallback<T extends (...args: never[]) => unknown>(callback: T, deps: readonly unknown[]) {
+      if (!parent.active) return actual.useCallback(callback, deps);
+      const index = parent.cursor++;
+      const slot = parent.slots[index] as { callback: T; deps: readonly unknown[] } | undefined;
+      if (!slot || deps.some((value, i) => !Object.is(value, slot.deps[i])))
+        parent.slots[index] = { callback, deps };
+      return (parent.slots[index] as { callback: T }).callback;
+    },
     useState(initial: unknown) {
       if (!parent.active) return actual.useState(initial);
       const index = parent.cursor++;
@@ -439,4 +447,62 @@ it('retains navigator search while selecting a matching column and preserves the
       .filter((node) => node.type === NativeNavigatorTable)
       .map((node) => node.props.name),
   ).toEqual(['audit']);
+});
+
+describe('project design mode', () => {
+  it.each(['generic', 'mysql', 'postgresql', 'sqlite'] as const)(
+    'defaults %s on entry and retains selection through ACKs',
+    (kind) => {
+      const snapshot = clipboardSnapshot();
+      snapshot.project.databaseKind = kind;
+      snapshot.project.databaseProfileId = defaultDatabaseContext(kind).profileId;
+      if (snapshot.native?.status !== 'available') throw Error('Expected available');
+      snapshot.native.document = createEmptyNativeDocument(defaultDatabaseContext(kind));
+      snapshot.native.document.tables = [
+        createNativeTable(snapshot.native.document.database, 'existing-table', null, 'logical'),
+      ];
+      snapshot.native.document.tables[0]!.logical.name = '기존 논리 이름';
+      snapshot.sourceDocument = snapshot.native.document;
+      let entry = projectEntry(snapshot);
+      let userId: string = clipboardActor;
+      const inspect = () => {
+        if (entry.kind !== 'native') throw Error('Expected native');
+        parent.active = true;
+        parent.cursor = 0;
+        try {
+          const tree = nodes(NativeProjectView({ entry, userId, onLeave() {}, onReload() {} }));
+          return {
+            canvas: tree.find((node) => node.type === NativeERDCanvas)!,
+            provider: tree.find((node) => node.type === NativeLogicalModeProvider)!,
+          };
+        } finally {
+          parent.active = false;
+        }
+      };
+      const initial = kind === 'generic' ? 'logical' : 'physical';
+      expect(inspect().canvas.props.mode).toBe(initial);
+      expect(inspect().provider.props.enabled).toBe(kind === 'generic');
+      const chosen = kind === 'generic' ? 'physical' : 'logical';
+      (inspect().canvas.props.onModeChange as (mode: string) => void)(chosen);
+      expect(inspect().canvas.props.mode).toBe(chosen);
+      expect(inspect().provider.props.enabled).toBe(chosen === 'logical');
+      const ack = structuredClone(snapshot);
+      ack.sequence += 1;
+      ack.project.version += 1;
+      const callback = inspect().canvas.props.onModeChange;
+      entry = projectEntry(ack);
+      expect(inspect().canvas.props.onModeChange).toBe(callback);
+      expect(inspect().canvas.props.mode).toBe(chosen);
+      userId = 'different-user';
+      expect(inspect().canvas.props.mode).toBe(initial);
+      (inspect().canvas.props.onModeChange as (mode: string) => void)(chosen);
+      ack.project.id = '00000000-0000-4000-8000-000000000099';
+      entry = projectEntry(ack);
+      expect(inspect().canvas.props.mode).toBe(initial);
+      (inspect().canvas.props.onModeChange as (mode: string) => void)(chosen);
+      ack.project.databaseRevision += 1;
+      entry = projectEntry(ack);
+      expect(inspect().canvas.props.mode).toBe(initial);
+    },
+  );
 });

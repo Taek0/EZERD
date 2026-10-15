@@ -55,6 +55,19 @@ vi.mock('./native-export-state.js', () => ({
 }));
 vi.mock('react', async (original) => ({
   ...(await original<typeof import('react')>()),
+  useCallback<T extends (...args: never[]) => unknown>(callback: T, deps: readonly unknown[]) {
+    const state = hooks.active!,
+      entry = (state.slots[state.cursor++] ??= {});
+    if (
+      !entry.deps ||
+      entry.deps.length !== deps.length ||
+      deps.some((value, i) => !Object.is(value, entry.deps![i]))
+    ) {
+      entry.value = callback;
+      entry.deps = deps;
+    }
+    return entry.value as T;
+  },
   useState(initial: unknown) {
     const state = hooks.active!,
       i = state.cursor++,

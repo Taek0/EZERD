@@ -279,7 +279,7 @@ export const ProjectGallery = forwardRef<GalleryHandle, Props>(function ProjectG
                     !(await confirm({
                       title: t('구조 설계로 시작'),
                       description: t(
-                        'DB를 선택하지 않으면 공통 타입과 직접 입력한 타입으로 구조를 설계할 수 있습니다. DDL 내보내기는 사용할 수 없습니다.',
+                        'DB를 선택하지 않으면 논리 설계가 기본으로 열립니다. 공통 타입과 직접 입력한 타입으로 구조를 설계할 수 있으며, 물리 설계로도 전환할 수 있습니다. DDL 내보내기는 사용할 수 없습니다.',
                       ),
                     }))
                   )

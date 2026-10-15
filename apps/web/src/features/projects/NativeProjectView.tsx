@@ -31,7 +31,7 @@ import { CommentPins, CommentsPanel, type CommentContext } from '../comments/Com
 import { PinPanelResizer } from '../comments/PinPanelResizer.js';
 import type { CSSProperties } from 'react';
 import type { NativeDesignDocument } from '@ezerd/model';
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProjectEntry } from './project-entry.js';
 import type { Thread, NativeSyncOperationResult } from '@ezerd/contracts';
 import {
@@ -371,9 +371,28 @@ export function NativeProjectView({
     profileId: snapshot.project.databaseProfileId,
   });
   const [domain, setDomain] = useState('*');
-  const [logicalEnabled, setLogicalEnabled] = useState(false);
-  const [requestedMode, setMode] = useState<'physical' | 'logical'>('physical');
-  const mode = logicalEnabled ? requestedMode : 'physical';
+  // A database conversion is a new design context; ACKs and refreshes are not.
+  const modeIdentity = JSON.stringify([
+    userId,
+    snapshot.project.id,
+    snapshot.project.databaseKind,
+    snapshot.project.databaseProfileId,
+    snapshot.project.databaseRevision,
+  ]);
+  const defaultMode = snapshot.project.databaseKind === 'generic' ? 'logical' : 'physical';
+  const [modeSelection, setModeSelection] = useState<{
+    identity: string;
+    mode: 'physical' | 'logical';
+  }>({ identity: modeIdentity, mode: defaultMode });
+  const mode = modeSelection.identity === modeIdentity ? modeSelection.mode : defaultMode;
+  if (modeSelection.identity !== modeIdentity) {
+    setModeSelection({ identity: modeIdentity, mode: defaultMode });
+  }
+  const setMode = useCallback(
+    (next: 'physical' | 'logical') => setModeSelection({ identity: modeIdentity, mode: next }),
+    [modeIdentity],
+  );
+  const logicalEnabled = mode === 'logical';
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(doc?.tables?.[0]?.id ?? null);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
@@ -720,7 +739,6 @@ export function NativeProjectView({
         ? activeDocument.current?.columns?.find((item) => item.id === target.columnId)
         : undefined;
     const recoveringLogical = table?.scope === 'logical' || column?.scope === 'logical';
-    if (recoveringLogical) setLogicalEnabled(true);
     setMode(recoveringLogical ? 'logical' : 'physical');
     setSelected(tableId ?? null);
     setEditingColumn('columnId' in target ? (target.columnId ?? null) : null);
@@ -1288,7 +1306,6 @@ export function NativeProjectView({
       setSelected(owner);
       setDomain('*');
       setSearch('');
-      setMode('physical');
     }
   }
   function reorderColumns(sourceId: string, targetId: string) {
@@ -1316,7 +1333,6 @@ export function NativeProjectView({
     <NativeLogicalModeProvider
       enabled={logicalEnabled}
       onEnabledChange={(enabled) => {
-        setLogicalEnabled(enabled);
         setMode(enabled ? 'logical' : 'physical');
       }}
     >

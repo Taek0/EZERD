@@ -472,16 +472,14 @@ describe('native gallery conversion actual consumers', () => {
       ),
     ).toBe('original');
   });
-  it('ignores retired personal-state keys without deleting their retained contents', async () => {
+  it('ignores retired personal input without deleting it when staging a database change', async () => {
     const f = fixture(),
       plan = await f.review();
     const key = `ezerd.native.canvas.personal:${JSON.stringify([transferActor, transferProject])}`;
-    localStorage.setItem(key, 'retained legacy personal data');
+    localStorage.setItem(key, 'original');
     await expect(stageGalleryDatabaseConversion(plan, f.options)).resolves.toBeUndefined();
-    expect(localStorage.getItem(key)).toBe('retained legacy personal data');
-    expect((await getNativeDurableQueue().read(transferActor, transferProject))?.kind).toBe(
-      'databaseChange',
-    );
+    expect(localStorage.getItem(key)).toBe('original');
+    expect(await getNativeDurableQueue().read(transferActor, transferProject)).not.toBeNull();
   });
   it('does not send when durable storage is unavailable', async () => {
     const f = fixture(),

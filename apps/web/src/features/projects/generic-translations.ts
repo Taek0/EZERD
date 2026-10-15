@@ -4,8 +4,8 @@ registerTranslations({
   '(직접 입력)': '(Custom type)',
   '사용자 정의 타입': 'Custom type',
   '구조 설계로 시작': 'Start a structural model',
-  'DB를 선택하지 않으면 공통 타입과 직접 입력한 타입으로 구조를 설계할 수 있습니다. DDL 내보내기는 사용할 수 없습니다.':
-    'Without a database, you can model structures using common or custom types. DDL export is unavailable.',
+  'DB를 선택하지 않으면 논리 설계가 기본으로 열립니다. 공통 타입과 직접 입력한 타입으로 구조를 설계할 수 있으며, 물리 설계로도 전환할 수 있습니다. DDL 내보내기는 사용할 수 없습니다.':
+    'Without a database, projects open in logical design by default. Model structures using common or custom types, and switch to physical design at any time. DDL export is unavailable.',
   'DDL 내보내기 · DB 선택 필요': 'Export DDL · Database required',
   '구조 설계 · DDL 내보내기 불가': 'Structural model · DDL export unavailable',
 });

@@ -55,6 +55,19 @@ vi.mock('react', async (original) => {
   const react = await original<typeof import('react')>();
   return {
     ...react,
+    useCallback<T extends (...args: never[]) => unknown>(callback: T, deps: readonly unknown[]) {
+      const state = driver,
+        entry = (state.slots[state.cursor++] ??= {});
+      if (
+        !entry.deps ||
+        entry.deps.length !== deps.length ||
+        deps.some((value, i) => !Object.is(value, entry.deps![i]))
+      ) {
+        entry.value = callback;
+        entry.deps = deps;
+      }
+      return entry.value as T;
+    },
     useState(initial: unknown) {
       const index = driver.cursor++;
       const slot = (driver.slots[index] ??= {
