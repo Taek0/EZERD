@@ -559,16 +559,14 @@ body {
   .ui-popover[data-exiting] {
     animation: product-menu-exit 100ms ease-in;
   }
-  .native-project-navigator:not([hidden]) {
-    animation: product-explorer-enter 140ms ease-out;
-  }
   .erd-card {
     transition:
+      transform 180ms,
       box-shadow 140ms ease,
       border-color 140ms ease;
   }
-  .erd-card:hover {
-    transform: none;
+  .erd-card:not(.editing-card):hover {
+    transform: translateY(-3px);
     border-color: #aebfd7;
     box-shadow: 0 4px 12px #2c456a10;
   }
@@ -593,16 +591,6 @@ body {
     transform: translateY(var(--ui-overlay-y, -3px));
   }
 }
-@keyframes product-explorer-enter {
-  from {
-    opacity: 0;
-    transform: translateX(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .ui-context-menu,
   .ui-popover[data-entering],
@@ -615,7 +603,7 @@ body {
   .native-editor-inspector {
     transition: none;
   }
-  .erd-card:hover {
+  .erd-card:not(.editing-card):hover {
     transform: none;
   }
 }
@@ -867,20 +855,6 @@ body {
   border-color: #d6e0ed;
   border-radius: 12px;
   box-shadow: 0 18px 50px #233b5d2a;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .workspace-popover[data-entering] {
-    animation: product-menu-enter 140ms ease-out;
-  }
-  .workspace-popover[data-exiting] {
-    animation: product-menu-exit 100ms ease-in;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .workspace-popover[data-entering],
-  .workspace-popover[data-exiting] {
-    animation: none;
-  }
 }
 /* Commands stay on their existing row, collected beside the inspector controls. */
 .app-shell.editor-shell .native-canvas-toolbar .actions {
