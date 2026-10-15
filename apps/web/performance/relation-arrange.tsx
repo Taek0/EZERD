@@ -14,6 +14,7 @@ import { nativeEntryAfterAck } from '../src/features/projects/native-ack-entry.j
 import type { ProjectEntry } from '../src/features/projects/project-entry.js';
 import { ConfirmProvider } from '../src/components/ui/ConfirmProvider.js';
 import { createNativePerformanceFixture } from '../src/shared/performance/native-fixture.js';
+import { relationArrangeFixtureHistory } from '../src/shared/performance/relation-arrange-history.js';
 import '../src/components/ui/tailwind.css';
 import '../src/styles/tokens.css';
 import '../src/components/ui/ui.css';
@@ -81,6 +82,7 @@ function releaseAllHeldSaves() {
 const results = new Map<string, NativeSyncOperationResult>();
 const changesByOperation = new Map<string, ReturnType<typeof deriveOperationChanges>>();
 const clientIds = new Map<string, string>();
+const historySources = new Map<string, string>();
 const response = (value: unknown, status = 200) => Response.json(value, { status });
 const database = () => ({
   kind: serverDocument.database.kind,
@@ -218,29 +220,25 @@ window.fetch = async (input, init) => {
     releaseHeldSave(result.operationId);
     return response({ outcome: 'cancelled', result });
   }
-  if (url.pathname.endsWith('/native-history'))
+  if (url.pathname.endsWith('/native-history')) {
+    const since = Number(url.searchParams.get('since') ?? 0);
+    const limit = Number(url.searchParams.get('limit') ?? 25);
     return response({
       protocolVersion: 2,
       projectId: project,
       version: serverVersion,
       sequence: serverSequence,
       database: { ...database(), revision: initial.snapshot.project.databaseRevision },
-      history: [...results.values()]
-        .filter((result) => result.status === 'accepted')
-        .sort((a, b) => a.sequence - b.sequence)
-        .filter((result) => result.sequence > Number(url.searchParams.get('since') ?? 0))
-        .slice(0, 25)
-        .map((result) => ({
-          operationId: result.operationId,
-          sequence: result.sequence,
-          clientId: clientIds.get(result.operationId),
-          kind: 'online',
-          format: 'native',
-          result,
-          changes: changesByOperation.get(result.operationId),
-        })),
-      nextSince: null,
+      ...relationArrangeFixtureHistory(
+        results.values(),
+        changesByOperation,
+        clientIds,
+        historySources,
+        since,
+        limit,
+      ),
     });
+  }
   const undo = url.pathname.match(/\/native-history\/([^/]+)\/undo$/);
   if (undo && method === 'POST') {
     const request = JSON.parse(String(init?.body)) as {
@@ -258,9 +256,19 @@ window.fetch = async (input, init) => {
       });
     const changes = changesByOperation.get(undo[1]!);
     if (!changes) return response({ code: 'history.source-not-found' }, 404);
+    if ([...historySources.values()].includes(undo[1]!))
+      return response({ code: 'history.source-already-compensated' }, 409);
     const next = applyChanges(serverDocument, inverseChanges(changes));
+    const result = accept(
+      request.operationId,
+      request.groupId,
+      request.clientId,
+      next,
+      'history.undo',
+    );
+    historySources.set(request.operationId, undo[1]!);
     return response({
-      result: accept(request.operationId, request.groupId, request.clientId, next, 'history.undo'),
+      result,
       command: 'undo',
       sourceOperationId: undo[1],
       identityMap: [],

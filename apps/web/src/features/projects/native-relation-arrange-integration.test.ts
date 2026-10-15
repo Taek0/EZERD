@@ -19,6 +19,7 @@ import {
   recordNativeLocalResult,
 } from './native-local-projection.js';
 import { createNativeTestIndexedDB } from './native-durable-test-environment.js';
+import { nativeAutoLayoutPlacements, nativeCanvasMoveCommand } from './native-canvas-selection.js';
 
 const actor = '90000000-0000-4000-8000-000000000031';
 function storage() {
@@ -41,6 +42,55 @@ beforeEach(() => vi.stubGlobal('indexedDB', createNativeTestIndexedDB()));
 afterEach(() => vi.unstubAllGlobals());
 
 describe('relation arrangement across local projection and history', () => {
+  it('restores every table placement from one auto-layout operation with one undo', () => {
+    const { document, snapshot } = createNativePerformanceFixture(10, 5);
+    const before = {
+      ...document,
+      layout: {
+        ...document.layout,
+        nodes: document.layout.nodes.map((node, index) => ({
+          ...node,
+          x: 500 + index * 13,
+          y: 200 + index * 17,
+        })),
+      },
+    };
+    snapshot.sourceDocument = before;
+    if (snapshot.native.status !== 'available') throw Error('Native fixture required');
+    snapshot.native.document = before;
+    const store = storage();
+    const visible = before.layout.nodes.filter((node) => node.viewId === TABLES_VIEW_ID);
+    const placements = nativeAutoLayoutPlacements(before, visible, TABLES_VIEW_ID);
+    const operationId = enqueueNativeSave(
+      actor,
+      snapshot,
+      placements.map((node) => nativeCanvasMoveCommand(before, node, { x: node.x, y: node.y })),
+      undefined,
+      undefined,
+      store,
+    );
+    const intents = readNativeLocalEntries(actor, snapshot.project.id, store);
+    expect(intents).toHaveLength(1);
+    expect(intents[0]!.pending.request).toMatchObject({
+      operationId,
+      groupId: operationId,
+      commands: expect.arrayContaining([expect.objectContaining({ type: 'update_node_layout' })]),
+    });
+    let arranged = before;
+    for (const command of intents[0]!.pending.request.commands) {
+      if (command.type !== 'update_node_layout') throw Error('Expected node placement');
+      arranged = updateNodeLayout(arranged, command.nodeId, command.patch);
+    }
+    const changes = deriveOperationChanges(before, arranged);
+    expect(changes.length).toBeGreaterThan(1);
+    expect(changes.every((change) => /^\/layout\/nodes\/[^/]+\/position$/.test(change.path))).toBe(
+      true,
+    );
+    const undone = applyChanges(arranged, inverseChanges(changes));
+    expect(undone.layout.nodes).toEqual(before.layout.nodes);
+    expect(undone).toEqual(before);
+  });
+
   it('shows a pending batch, bridges its ACK, then converges to the confirmed document', () => {
     const { document, snapshot } = createNativePerformanceFixture(10, 5);
     const store = storage();
