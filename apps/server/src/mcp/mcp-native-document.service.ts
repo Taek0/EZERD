@@ -24,6 +24,7 @@ import {
   updateNote,
   removeNote,
   upsertRelationLayout,
+  upsertRelationLayouts,
   TABLES_VIEW_ID,
   type NativeColumn,
   type NativeTable,
@@ -87,6 +88,11 @@ export function nativeEditorCandidate(
   document: NativeDesignDocument,
   commands: NativeEditorCommand[],
 ): NativeDesignDocument {
+  if (
+    commands.some((command) => command.type === 'batch_upsert_relation_layouts') &&
+    commands.length !== 1
+  )
+    throw new Error('relation-layout.batch-exclusive');
   let candidate = structuredClone(document);
   const claims = nativeDomainCandidateClaims(document);
   const occupied = claims.occupiedIds;
@@ -207,6 +213,13 @@ export function nativeEditorCandidate(
       case 'upsert_relation_layout':
         sharedView(command.value.viewId);
         candidate = upsertRelationLayout(candidate, command.value);
+        break;
+      case 'batch_upsert_relation_layouts':
+        sharedView(command.viewId);
+        candidate = upsertRelationLayouts(
+          candidate,
+          command.routes.map((route) => ({ ...route, viewId: command.viewId })),
+        );
         break;
       case 'delete_relation_layout':
         sharedView(command.viewId);

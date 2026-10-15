@@ -129,3 +129,17 @@
 .ui-accordion > summary::-webkit-details-marker {
   display: none;
 }
+
+.ui-context-submenu {
+  min-width: 180px;
+}
+.ui-submenu-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+}
+.ui-submenu-label > span {
+  color: var(--text-muted);
+}

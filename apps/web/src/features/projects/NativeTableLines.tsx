@@ -12,12 +12,14 @@ export function NativeTableLines({
   mode,
   selectedId,
   onSelect,
+  onHover,
   document,
 }: {
   relations: ReturnType<typeof nativeCanvasScene>['relations'];
   mode: 'physical' | 'logical';
   selectedId?: string | null | undefined;
   onSelect?: ((id: string | null) => void) | undefined;
+  onHover?: ((id: string | null) => void) | undefined;
   document?: NativeDesignDocument;
 }) {
   const id = useId().replaceAll(':', '');
@@ -85,6 +87,10 @@ export function NativeTableLines({
             tabIndex={onSelect ? 0 : undefined}
             aria-label={`${t('테이블 관계')} ${label}`}
             aria-pressed={onSelect ? selectedId === relation.id : undefined}
+            onPointerEnter={() => onHover?.(relation.id)}
+            onPointerLeave={() => onHover?.(null)}
+            onFocus={() => onHover?.(relation.id)}
+            onBlur={() => onHover?.(null)}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();

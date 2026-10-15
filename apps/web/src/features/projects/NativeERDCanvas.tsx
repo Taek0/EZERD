@@ -1,3 +1,8 @@
+import { createNativeRelationArrangeController } from './native-relation-auto-arrange.js';
+import {
+  NativeRelationArrangeToast,
+  type RelationArrangeNotice,
+} from './NativeRelationArrangeToast.js';
 import { useCommittedEvent } from '../../shared/hooks/use-committed-event.js';
 import { createPlacementPersistence } from './native-placement-persistence.js';
 import type { CommentContext } from '../comments/CommentsPanel.js';
@@ -113,6 +118,8 @@ registerTranslations({
   'Native ERD': 'Native ERD',
   '보관된 입력 복구': 'Recover saved input',
   '자동 배치': 'Automatic layout',
+  '테이블 배치': 'Arrange tables',
+  '관계선 배치': 'Arrange relation lines',
   '도메인 개요': 'Domain overview',
   화면: 'View',
   '배치 저장': 'Save placement',
@@ -422,6 +429,7 @@ function NativeCanvasWorkspace({
   editable,
   busy,
   onSave: onSaveFromParent,
+  onReload: onReloadFromParent,
   mode,
   selectedTableId,
   selectedDomainId,
@@ -455,6 +463,8 @@ function NativeCanvasWorkspace({
   panelToggle,
   navigatorControl,
   selectionHost,
+  onRelationArrangeBusyChange,
+  onArrangeSave: onArrangeSaveFromParent,
 }: {
   document: NativeDesignDocument;
   /** Parent-owned validated create preview; snapshot remains the save/ACK baseline. */
@@ -514,10 +524,20 @@ function NativeCanvasWorkspace({
   panelToggle?: ReactNode;
   navigatorControl?: ReactNode;
   selectionHost?: HTMLElement | null;
+  onRelationArrangeBusyChange?: (busy: boolean) => void;
+  onArrangeSave?: (
+    commands: NativeEditorCommand[],
+    expectation: ReturnType<typeof expected>,
+  ) => {
+    operationId: string;
+    completion: Promise<boolean>;
+  };
 }) {
   // Parent panel/resize state must not invalidate the memoized document scene.
   // Event handlers still observe the latest committed permissions and save baseline.
   const onSave = useCommittedEvent(onSaveFromParent);
+  const onReload = useCommittedEvent(onReloadFromParent);
+  const onArrangeSave = useCommittedEvent(onArrangeSaveFromParent);
   const onSelect = useCommittedEvent(onSelectFromParent);
   const onSelectDomain = useCommittedEvent(onSelectDomainFromParent);
   const onToggleInspector = useCommittedEvent(onToggleInspectorFromParent);
@@ -531,6 +551,11 @@ function NativeCanvasWorkspace({
   const onRequestAction = useCommittedEvent(onRequestActionFromParent);
   const onCanvasScopeChange = useCommittedEvent(onCanvasScopeChangeFromParent);
   const { t, locale } = useI18n();
+  const [arrangeStatus, setArrangeStatus] = useState<RelationArrangeNotice>({
+    phase: 'idle',
+    canUndo: false,
+  });
+  const arranging = arrangeStatus.phase === 'computing';
   const confirm = useConfirm();
   const [descriptionId, setDescriptionId] = useState<string | null>(
     recoverySelection?.descriptionId ?? null,
@@ -629,24 +654,26 @@ function NativeCanvasWorkspace({
   );
   const [domainFilter, setDomainFilter] = useState<NativeDomainFilterValue | null>(null);
   const navigateView = useCallback(
-    (id: string) => {
+    (id: string, external = false) => {
+      if (arranging && !external) return;
       const domain = document.domains.find((domain) => domain.id === id);
       setDomainFilter(domain ? { domainIds: [domain.id], unassigned: false } : null);
       setViewId(domain ? TABLES_VIEW_ID : id);
       onViewChange?.(domain ? TABLES_VIEW_ID : id);
     },
-    [onViewChange, document.domains],
+    [onViewChange, document.domains, arranging],
   );
   useEffect(() => {
-    if (requestedView) navigateView(requestedView.id);
+    if (requestedView) navigateView(requestedView.id, true);
   }, [requestedView?.nonce]);
   const applyDomainFilter = useCallback(
     (filter: NativeDomainFilterValue | null) => {
+      if (arranging) return;
       setViewId(TABLES_VIEW_ID);
       setDomainFilter(filter);
       onViewChange?.(TABLES_VIEW_ID);
     },
-    [onViewChange],
+    [onViewChange, arranging],
   );
   const [tool, setTool] = useState<'select' | 'hand'>('select');
   const spacePan = useRef(false);
@@ -908,6 +935,49 @@ function NativeCanvasWorkspace({
       return singleDrawn;
     }
   }, [base, scene, singleDrawn, draft?.values.nodesJSON, effectiveView, mode, domainFilter]);
+  const arrangeEligible =
+    !!userId &&
+    placementEditable &&
+    effectiveView === TABLES_VIEW_ID &&
+    !domainFilter &&
+    drawn.relations.length > 0;
+  const arrangeState = useRef({
+    document: base,
+    scene: drawn,
+    viewId: effectiveView,
+    mode,
+    eligible: arrangeEligible,
+    snapshot,
+    ...(userId ? { userId } : {}),
+  });
+  const arrangeController = useMemo(
+    () =>
+      createNativeRelationArrangeController({
+        getState: () => arrangeState.current,
+        save: (commands: NativeEditorCommand[], expectation: ReturnType<typeof expected>) =>
+          onArrangeSave?.(commands, expectation) ?? onSave(commands, expectation),
+        onReload,
+        onStatus: setArrangeStatus,
+      }),
+    [snapshot.project.id, userId, onSave, onArrangeSave, onReload],
+  );
+  useLayoutEffect(() => {
+    arrangeState.current = {
+      document: base,
+      scene: drawn,
+      viewId: effectiveView,
+      mode,
+      eligible: arrangeEligible,
+      snapshot,
+      ...(userId ? { userId } : {}),
+    };
+    arrangeController.update();
+  }, [arrangeController, base, drawn, effectiveView, mode, arrangeEligible, snapshot, userId]);
+  useEffect(() => () => arrangeController.dispose(), [arrangeController]);
+  useEffect(() => {
+    onRelationArrangeBusyChange?.(arranging);
+    return () => onRelationArrangeBusyChange?.(false);
+  }, [arranging, onRelationArrangeBusyChange]);
   const visibleSelection = useMemo(
     () => selectedObjectIds.filter((id) => scene.nodes.some((node) => node.objectId === id)),
     [selectedObjectIds, scene],
@@ -1580,6 +1650,7 @@ function NativeCanvasWorkspace({
       !placementEditable ||
       allBusy ||
       draft ||
+      arranging ||
       expectation.version !== snapshot.project.version ||
       expectation.sequence !== snapshot.sequence ||
       expectation.databaseRevision !== snapshot.project.databaseRevision
@@ -1599,7 +1670,7 @@ function NativeCanvasWorkspace({
     () => ({
       userId: userId ?? '',
       snapshot,
-      busy: allBusy || placementDraftBlocked || !placementEditable,
+      busy: allBusy || arranging || placementDraftBlocked || !placementEditable,
       affectsSharedDocument: true,
       onSave: (
         commands: CanvasCommand[],
@@ -1607,7 +1678,7 @@ function NativeCanvasWorkspace({
         ref: DraftRef,
       ) => routeSaveRef.current(commands, expectation, ref),
     }),
-    [userId, snapshot, allBusy, placementDraftBlocked, placementEditable],
+    [userId, snapshot, allBusy, arranging, placementDraftBlocked, placementEditable],
   );
   const openInline = useCallback((target: NativeInlineTarget, focusTarget?: HTMLElement) => {
     inlineFocusReturn.current = focusTarget ?? null;
@@ -1919,6 +1990,7 @@ function NativeCanvasWorkspace({
       editable={editable}
       noteEditable={placementEditable}
       disabled={!!draft}
+      navigationLocked={arranging}
       mode={mode}
       onMode={onModeChange}
       inspectorOpen={inspectorOpen}
@@ -2083,6 +2155,7 @@ function NativeCanvasWorkspace({
         </div>
       )}
       <div
+        data-arranging={arranging || undefined}
         className={`native-erd-surface canvas-surface${tool === 'hand' ? ' hand-tool' : ''}${pinMode ? ' pin-mode' : ''}`}
         style={{
           backgroundSize: `${24 * camera.zoom}px ${24 * camera.zoom}px`,
@@ -2618,6 +2691,21 @@ function NativeCanvasWorkspace({
                 )}
         </div>
         <NativeCameraControls
+          notice={
+            <NativeRelationArrangeToast
+              status={arrangeStatus}
+              crowdedTableNames={(arrangeStatus.crowdedTableIds ?? []).map((id) => {
+                const table = base.tables?.find((item) => item.id === id);
+                return table
+                  ? mode === 'logical'
+                    ? table.logical.name || table.physical.name
+                    : table.physical.name || table.logical.name
+                  : id;
+              })}
+              onCancel={() => arrangeController.cancel()}
+              onUndo={() => arrangeController.undo()}
+            />
+          }
           tool={tool}
           onTool={setTool}
           zoom={camera.zoom}
@@ -2770,7 +2858,21 @@ function NativeCanvasWorkspace({
                           allBusy ||
                           placementDraftBlocked ||
                           !scene.nodes.length,
-                        onAction: () => void arrangeVisibleNodes(),
+                        onAction: () => {},
+                        children: [
+                          {
+                            id: 'auto-layout-tables',
+                            label: t('테이블 배치'),
+                            disabled: arranging,
+                            onAction: () => void arrangeVisibleNodes(),
+                          },
+                          {
+                            id: 'auto-layout-relations',
+                            label: t('관계선 배치'),
+                            disabled: arranging || !arrangeEligible,
+                            onAction: () => arrangeController.start(),
+                          },
+                        ],
                       },
                     ]
                   : []),
@@ -2811,7 +2913,8 @@ function NativeCanvasWorkspace({
                       {
                         id: 'reset-route',
                         label: t('자동 경로로 복원'),
-                        disabled: !placementEditable || allBusy || placementDraftBlocked,
+                        disabled:
+                          arranging || !placementEditable || allBusy || placementDraftBlocked,
                         onAction: () =>
                           void saveCommands([
                             {

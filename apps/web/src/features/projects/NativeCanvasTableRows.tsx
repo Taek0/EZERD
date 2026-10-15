@@ -41,6 +41,7 @@ function NativeCanvasTableRows({
   onSelect,
   onEdit,
   selectedColumnId,
+  highlightedColumnIds,
   onToggleNullable,
   onConnectFromColumn,
   editorContext,
@@ -58,6 +59,7 @@ function NativeCanvasTableRows({
   onRequestAction?: NativeCanvasActionRequest | undefined;
   onSelectRelation?: ((id: string | null) => void) | undefined;
   selectedColumnId?: string | undefined;
+  highlightedColumnIds?: ReadonlySet<string> | undefined;
   onToggleNullable?:
     | ((tableId: string, columnId: string, value: boolean, mode: 'physical' | 'logical') => void)
     | undefined;
@@ -111,6 +113,7 @@ function NativeCanvasTableRows({
               data-pk={primary}
               data-fk={connected}
               data-selected={row.column.id === selectedColumnId}
+              data-relation-highlight={highlightedColumnIds?.has(row.column.id) || undefined}
               style={{ minHeight: row.height }}
             >
               <span className="native-key-marker" role="cell">
