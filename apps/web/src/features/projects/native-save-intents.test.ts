@@ -12,6 +12,7 @@ import {
   nativeSaveIntents,
   nativeRejectedSaveIntents,
   lookupNativeSaveIntentResult,
+  cancelNativeSaveIntent,
 } from './native-save-intents.js';
 import { checkNativeAck, loadNativePending } from './native-save.js';
 import { nativeEditorExportBlocked } from './native-export-state.js';
@@ -86,6 +87,41 @@ function ack(operationId: string, status = 'accepted') {
   };
 }
 describe('durable unsent native save intents', () => {
+  it('fences an unsent route batch under its original operation ID when cancelled', async () => {
+    const store = storage();
+    const route = {
+      relationId: other,
+      offset: 0,
+      sourceAnchor: { side: 'bottom' as const, ratio: 0.5 },
+      targetAnchor: { side: 'top' as const, ratio: 0.5 },
+      waypoints: [{ x: 12, y: 34 }],
+    };
+    const id = enqueueNativeSave(
+      userId,
+      snapshot(),
+      [{ type: 'batch_upsert_relation_layouts', viewId: '__tables__', routes: [route] }],
+      undefined,
+      undefined,
+      store,
+    );
+    const api = vi.fn().mockResolvedValue({
+      outcome: 'cancelled',
+      result: {
+        ...ack(id, 'rejected'),
+        changedPaths: [],
+        reason: 'operation.cancelled',
+        reasonCode: 'operation.cancelled',
+      },
+    });
+    expect(
+      (await cancelNativeSaveIntent(userId, projectId, id, store, api as typeof request))?.status,
+    ).toBe('rejected');
+    expect(api.mock.calls[0]![0]).toContain('/native-sync/cancel');
+    expect(JSON.parse(api.mock.calls[0]![1].body as string).request.operationId).toBe(id);
+    expect(nativeSaveIntents(userId, projectId, store)).toEqual([]);
+    expect(nativeRejectedSaveIntents(userId, projectId, store)).toEqual([]);
+    expect(await loadNativePending(userId, projectId, store)).toBeNull();
+  });
   it('stages pre-existing unsent intents verbatim instead of changing their operation hash', async () => {
     const store = storage(),
       id = enqueueNativeSave(userId, snapshot(), [command], undefined, undefined, store),

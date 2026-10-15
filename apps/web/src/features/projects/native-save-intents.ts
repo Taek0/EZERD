@@ -167,6 +167,62 @@ export function enqueueNativeSave(
   return operationId;
 }
 
+/** Fence a specific queued arrange request, including a send racing another tab. */
+export async function cancelNativeSaveIntent(
+  user: string,
+  project: string,
+  operationId: string,
+  storage: Storage = localStorage,
+  api: typeof request = request,
+): Promise<NativeSyncOperationResult | null> {
+  const intent = nativeSaveIntents(user, project, storage).find(
+    (item) => item.pending.request.operationId === operationId,
+  );
+  if (!intent) {
+    const actorApi = captureNativeActorApi(user, api);
+    try {
+      const result = nativeSyncOperationResultSchema.parse(
+        await actorApi(
+          `/api/projects/${encodeURIComponent(project)}/native-sync/operations/${operationId}`,
+          { cache: 'no-store' },
+        ),
+      );
+      if (result.operationId !== operationId || result.actor.id !== user)
+        throw Error('native.cancellation-ack-invalid');
+      return result;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+  const entry = {
+    userId: user,
+    projectId: project,
+    operationId,
+    kind: 'commands' as const,
+    payload: intent.pending,
+  };
+  await getNativeDurableQueue().claim(
+    entry,
+    () => {
+      const current = nativeSaveIntents(user, project, storage).find(
+        (item) => item.pending.request.operationId === operationId,
+      );
+      if (!current || requestFingerprint(current.pending) !== requestFingerprint(intent.pending))
+        throw Error('native.pending-changed');
+    },
+    true,
+  );
+  const result = await cancelNativePending(intent.pending, storage, api);
+  if (result.status === 'accepted') finishIntent(intent, true, storage, result.sequence);
+  else {
+    recordNativeLocalResult(intent, false, result.sequence, storage);
+    storage.removeItem(intent.key);
+    updateNativeIntentBlocker(user, project, storage);
+  }
+  return result;
+}
+
 /** At most one immutable durable request is transmitted. Unknown delivery is recovered first. */
 export async function flushNativeSaveIntent(
   user: string,
