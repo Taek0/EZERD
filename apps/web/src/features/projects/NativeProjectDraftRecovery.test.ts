@@ -70,6 +70,15 @@ vi.mock('react', async (original) => ({
     const state = hooks.active!;
     return (state.slots[state.cursor++] ??= { value: { current: initial } }).value;
   },
+  useCallback(callback: unknown, deps: readonly unknown[]) {
+    const state = hooks.active!,
+      slot = (state.slots[state.cursor++] ??= {});
+    if (!slot.deps || deps.some((value, i) => !Object.is(value, slot.deps![i]))) {
+      slot.value = callback;
+      slot.deps = deps;
+    }
+    return slot.value;
+  },
   useEffect(effect: () => void | (() => void), deps: readonly unknown[]) {
     const state = hooks.active!,
       slot = (state.slots[state.cursor++] ??= {});

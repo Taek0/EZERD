@@ -71,6 +71,14 @@ vi.mock('react', async (original) => {
       const index = driver.cursor++;
       return (driver.slots[index] ??= { value: { current: initial } }).value;
     },
+    useCallback(callback: unknown, deps: readonly unknown[]) {
+      const slot = (driver.slots[driver.cursor++] ??= {});
+      if (!slot.deps || deps.some((value, i) => !Object.is(value, slot.deps![i]))) {
+        slot.value = callback;
+        slot.deps = deps;
+      }
+      return slot.value;
+    },
     useEffect(effect: () => void | (() => void), deps: readonly unknown[]) {
       const index = driver.cursor++,
         slot = (driver.slots[index] ??= {});
