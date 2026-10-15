@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { projectDocumentStateSchema, type NativeSyncOperationResult } from '@ezerd/contracts';
 import {
@@ -61,6 +61,23 @@ let currentSnapshot = initial.snapshot;
 let serverSequence = initial.snapshot.sequence;
 let serverVersion = initial.snapshot.project.version;
 let saveDelayMs = 0;
+let holdSaveResponse = false;
+let disposed = false;
+const heldSaves = new Map<string, () => void>();
+const heldEvent = 'relation-fixture-held-saves';
+function announceHeldSaves() {
+  window.dispatchEvent(new Event(heldEvent));
+}
+function releaseHeldSave(operationId: string) {
+  const release = heldSaves.get(operationId);
+  if (!release) return;
+  heldSaves.delete(operationId);
+  announceHeldSaves();
+  release();
+}
+function releaseAllHeldSaves() {
+  for (const operationId of heldSaves.keys()) releaseHeldSave(operationId);
+}
 const results = new Map<string, NativeSyncOperationResult>();
 const changesByOperation = new Map<string, ReturnType<typeof deriveOperationChanges>>();
 const clientIds = new Map<string, string>();
@@ -74,6 +91,7 @@ function accept(
   groupId: string,
   clientId: string,
   next: NativeDesignDocument,
+  reasonCode?: string,
 ) {
   const changes = deriveOperationChanges(serverDocument, next);
   serverDocument = next;
@@ -88,6 +106,7 @@ function accept(
     groupId,
     sequence: serverSequence,
     status: 'accepted',
+    ...(reasonCode ? { reasonCode } : {}),
     document: structuredClone(serverDocument),
     delta: { baseSequence: serverSequence - 1, projectVersion: serverVersion, changes },
     actor: { id: actor, username: 'fixture', color: '#06b6d4' },
@@ -142,7 +161,13 @@ window.fetch = async (input, init) => {
       commands: Array<Record<string, unknown>>;
     };
     if (results.has(request.operationId)) return response(results.get(request.operationId));
+    if (holdSaveResponse)
+      await new Promise<void>((resolve) => {
+        heldSaves.set(request.operationId, resolve);
+        announceHeldSaves();
+      });
     if (saveDelayMs) await new Promise((resolve) => setTimeout(resolve, saveDelayMs));
+    if (disposed) return response({ code: 'fixture-disposed' }, 410);
     if (results.has(request.operationId)) return response(results.get(request.operationId));
     let next = serverDocument;
     for (const command of request.commands) {
@@ -190,6 +215,7 @@ window.fetch = async (input, init) => {
       },
     };
     results.set(result.operationId, result);
+    releaseHeldSave(result.operationId);
     return response({ outcome: 'cancelled', result });
   }
   if (url.pathname.endsWith('/native-history'))
@@ -234,7 +260,7 @@ window.fetch = async (input, init) => {
     if (!changes) return response({ code: 'history.source-not-found' }, 404);
     const next = applyChanges(serverDocument, inverseChanges(changes));
     return response({
-      result: accept(request.operationId, request.groupId, request.clientId, next),
+      result: accept(request.operationId, request.groupId, request.clientId, next, 'history.undo'),
       command: 'undo',
       sourceOperationId: undo[1],
       identityMap: [],
@@ -243,17 +269,41 @@ window.fetch = async (input, init) => {
   return response({ message: 'Unsupported fixture API', path: url.pathname }, 403);
 };
 
-function LabDelayButton() {
-  const [delayed, setDelayed] = useState(false);
+function LabSaveControls() {
+  const [delay, setDelay] = useState(0);
+  const [holding, setHolding] = useState(false);
+  const [pending, setPending] = useState(heldSaves.size);
+  useEffect(() => {
+    const refresh = () => setPending(heldSaves.size);
+    window.addEventListener(heldEvent, refresh);
+    return () => window.removeEventListener(heldEvent, refresh);
+  }, []);
   return (
-    <button
-      onClick={() => {
-        saveDelayMs = delayed ? 0 : 2000;
-        setDelayed(!delayed);
-      }}
-    >
-      Save delay: {delayed ? '2 s' : 'off'}
-    </button>
+    <>
+      <button
+        onClick={() => {
+          const next = delay === 0 ? 2000 : delay === 2000 ? 10000 : 0;
+          saveDelayMs = next;
+          setDelay(next);
+        }}
+      >
+        Save delay: {delay ? `${delay / 1000} s` : 'off'}
+      </button>
+      <label>
+        <input
+          type="checkbox"
+          checked={holding}
+          onChange={(event) => {
+            holdSaveResponse = event.target.checked;
+            setHolding(event.target.checked);
+          }}
+        />
+        Hold save response
+      </label>
+      <button disabled={!pending} onClick={releaseAllHeldSaves}>
+        Release held save ({pending})
+      </button>
+    </>
   );
 }
 
@@ -274,7 +324,11 @@ function Demo() {
       currentSnapshot = next.snapshot;
       startTransition(() => setEntry(next));
     }
-    setStatus('reloaded');
+    setStatus(
+      latest?.reasonCode === 'history.undo'
+        ? `history undo confirmed · ${latest.sequence} · ${latest.changedPaths.length} paths`
+        : 'reloaded',
+    );
   }, []);
   const onAcknowledged = useCallback((ack: NativeSyncOperationResult) => {
     const next = nativeEntryAfterAck(currentEntry.current, ack);
@@ -292,7 +346,7 @@ function Demo() {
         <strong>Relation arrangement lab</strong>
         <span>{actual ? 'Actual snapshot' : 'Generated 50-table fixture'}</span>
         <span>{initial.document.tableRelations?.length ?? 0} relations</span>
-        <LabDelayButton />
+        <LabSaveControls />
         <output aria-label="Relation fixture status">{status}</output>
       </header>
       <div className="app-shell editor-shell panel-lab-shell">
@@ -314,6 +368,8 @@ const root = createRoot(document.getElementById('root')!);
 root.render(<Demo />);
 if (import.meta.hot)
   import.meta.hot.dispose(() => {
+    disposed = true;
+    releaseAllHeldSaves();
     root.unmount();
     window.fetch = originalFetch;
   });
