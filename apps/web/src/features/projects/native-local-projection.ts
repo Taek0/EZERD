@@ -61,6 +61,9 @@ export function supportsNativeLocalColumns(commands: readonly NativeWebCommand[]
         'patch_foreign_key',
         'patch_key',
         'add_key',
+        'batch_upsert_relation_layouts',
+        'upsert_relation_layout',
+        'delete_relation_layout',
       ].includes(command.type),
     )
   );
@@ -226,6 +229,48 @@ export function projectNativeLocalColumns(
           next = { ...next, keys: [...(next.keys ?? []), structuredClone(command.value)] };
         } else if (command.type === 'patch_key') {
           next = patchNativeConstraintKey(next, command.id, command.patch);
+        } else if (command.type === 'batch_upsert_relation_layouts') {
+          const relationIds = new Set((next.tableRelations ?? []).map((relation) => relation.id));
+          if (command.routes.some((route) => !relationIds.has(route.relationId)))
+            throw Error('document.object-not-found');
+          const byId = new Map(
+            (next.layout.relations ?? []).map((route) => [
+              JSON.stringify([route.viewId, route.relationId]),
+              route,
+            ]),
+          );
+          for (const route of command.routes)
+            byId.set(JSON.stringify([command.viewId, route.relationId]), {
+              ...route,
+              viewId: command.viewId,
+            });
+          next = {
+            ...next,
+            layout: { ...next.layout, relations: [...byId.values()] },
+          };
+        } else if (command.type === 'upsert_relation_layout') {
+          if (!next.tableRelations?.some((relation) => relation.id === command.value.relationId))
+            throw Error('document.object-not-found');
+          const routes = (next.layout.relations ?? []).filter(
+            (route) =>
+              route.relationId !== command.value.relationId ||
+              route.viewId !== command.value.viewId,
+          );
+          next = {
+            ...next,
+            layout: { ...next.layout, relations: [...routes, command.value] },
+          };
+        } else if (command.type === 'delete_relation_layout') {
+          next = {
+            ...next,
+            layout: {
+              ...next.layout,
+              relations: (next.layout.relations ?? []).filter(
+                (route) =>
+                  route.relationId !== command.relationId || route.viewId !== command.viewId,
+              ),
+            },
+          };
         }
       }
       projected = next;
