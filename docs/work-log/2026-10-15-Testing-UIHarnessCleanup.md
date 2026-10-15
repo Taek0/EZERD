@@ -30,3 +30,12 @@
 - 제품 구현과 서버·모델·계약 안전성 테스트는 변경하지 않았다. 별도 의미를 가진 수동 실행기와 아직 이관하지 않은 모킹은 유지했으므로 모든 React 모킹을 제거한 작업은 아니다.
 - 작업은 codex/performance-lab 격리 워크트리에만 커밋했다. 로컬 main 변경 및 원격 push는 하지 않았다.
 - 원시 검증 로그: artifacts/performance/2026-10-15-ui-harness-check.log 및 2026-10-15-ui-harness-perf-build.log (Git 제외).
+
+## 최신 main 기준 PR 검증
+
+- origin/main 13cba79 기반 codex/ui-harness-cleanup에 테스트 정리만 선별했다. 앞선 격리 작업 결과와 달리 이 절은 PR 전용 브랜치 검증이다.
+- main의 두 복구 테스트에 추가된 useCallback 지원은 공통 driver의 memoization으로 보존했다.
+- pnpm check 통과: 2,937 tests passed / 496 skipped, 포맷·타입 검사와 제품 빌드 성공. DB 통합 테스트는 활성화하지 않았다.
+- 신규 워크트리 첫 검사는 DATABASE_URL 누락과 폰트 해시 테스트 시간 초과로 실패했다. 구성 검사에 더미 로컬 PostgreSQL URL을 제공하고 다른 전체 검사와 겹치지 않게 재실행한 결과 통과했다. 테스트 코드·timeout·skip 조건은 변경하지 않았다.
+- 최신 main 대비 테스트·보조 코드 19개 파일: 418줄 추가 / 781줄 제거, 순감 363줄. lab의 이전 기준 수치(372줄)와 비교 기준이 다르다.
+- PR에는 lab 전용 측정 도구가 포함되지 않는다. jsdom은 개발 의존성으로만 추가한다.
