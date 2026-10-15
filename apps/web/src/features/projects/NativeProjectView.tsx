@@ -955,7 +955,7 @@ export function NativeProjectView({
       });
     });
     scheduleFlush();
-    return { operationId, completion };
+    return { operationId, completion, pending: intent.pending };
   }
   async function save(
     commands: NativeWebCommand[],

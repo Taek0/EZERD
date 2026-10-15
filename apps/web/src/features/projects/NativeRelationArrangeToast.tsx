@@ -18,6 +18,8 @@ registerTranslations({
   '화면이 변경되어 정리를 중단했어요': 'Arrangement stopped because the view changed',
   '관계선이 수정되어 최신 배치를 유지했어요':
     'Relation lines changed. The latest arrangement was preserved.',
+  '계산 한도에 도달해 정리를 완료하지 못했어요. 다시 시도해 주세요.':
+    'The calculation limit was reached. Please try arranging again.',
   '정리 결과가 저장 한도를 초과했어요': 'The arrangement exceeds the save limit',
   '최신 변경사항을 반영해 저장 중…': 'Saving with the latest changes…',
   '{table} 주변 공간이 부족해요': 'There is not enough space around {table}',
@@ -77,6 +79,7 @@ export function NativeRelationArrangeToast({
     scope: '화면이 변경되어 정리를 중단했어요',
     route: '관계선이 수정되어 최신 배치를 유지했어요',
     limit: '정리 결과가 저장 한도를 초과했어요',
+    'compute-limit': '계산 한도에 도달해 정리를 완료하지 못했어요. 다시 시도해 주세요.',
     save: '관계선 정리 결과를 저장하지 못했어요',
   };
   const text =
