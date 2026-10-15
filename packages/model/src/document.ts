@@ -1064,30 +1064,46 @@ export function upsertCombinedView<T extends CanvasDocument>(doc: T, view: Combi
 }
 
 export function upsertRelationLayout<T extends CanvasDocument>(doc: T, route: RelationLayout): T {
-  requireView(doc, route.viewId);
-  const relation = doc.tableRelations?.find((r) => r.id === route.relationId);
-  requireObject(relation);
-  if (
-    ![relation.sourceTableId, relation.targetTableId].every((id) =>
-      doc.layout.nodes.some((n) => n.objectId === id && n.viewId === route.viewId),
-    )
-  )
-    throw new Error('화면에서 관계의 양쪽 테이블을 찾을 수 없습니다.');
-  if (!Number.isFinite(route.offset) || Math.abs(route.offset) > 1e7)
-    throw new Error('관계 경로 위치가 올바르지 않습니다.');
-  if (route.bend) position(route.bend);
-  for (const anchor of [route.sourceAnchor, route.targetAnchor])
+  return upsertRelationLayouts(doc, [route]);
+}
+
+/** Validates and applies many routes with one document/layout allocation. */
+export function upsertRelationLayouts<T extends CanvasDocument>(
+  doc: T,
+  routes: readonly RelationLayout[],
+): T {
+  if (!routes.length) return doc;
+  const relations = new Map((doc.tableRelations ?? []).map((relation) => [relation.id, relation]));
+  const nodes = new Set(doc.layout.nodes.map((node) => `${node.viewId}\u0000${node.objectId}`));
+  const routeKeys = new Set<string>();
+  for (const route of routes) {
+    requireView(doc, route.viewId);
+    const key = `${route.viewId}\u0000${route.relationId}`;
+    if (routeKeys.has(key)) throw new Error('관계 경로 ID가 중복되었습니다.');
+    routeKeys.add(key);
+    const relation = relations.get(route.relationId);
+    requireObject(relation);
     if (
-      anchor &&
-      (!['left', 'right', 'top', 'bottom'].includes(anchor.side) ||
-        !Number.isFinite(anchor.ratio) ||
-        anchor.ratio < 0 ||
-        anchor.ratio > 1)
+      !nodes.has(`${route.viewId}\u0000${relation.sourceTableId}`) ||
+      !nodes.has(`${route.viewId}\u0000${relation.targetTableId}`)
     )
-      throw new Error('관계 접점이 올바르지 않습니다.');
-  if (route.waypoints) {
-    if (route.waypoints.length > 128) throw new Error('관계 꺾임점은 128개까지 가능합니다.');
-    for (const point of route.waypoints) position(point);
+      throw new Error('화면에서 관계의 양쪽 테이블을 찾을 수 없습니다.');
+    if (!Number.isFinite(route.offset) || Math.abs(route.offset) > 1e7)
+      throw new Error('관계 경로 위치가 올바르지 않습니다.');
+    if (route.bend) position(route.bend);
+    for (const anchor of [route.sourceAnchor, route.targetAnchor])
+      if (
+        anchor &&
+        (!['left', 'right', 'top', 'bottom'].includes(anchor.side) ||
+          !Number.isFinite(anchor.ratio) ||
+          anchor.ratio < 0 ||
+          anchor.ratio > 1)
+      )
+        throw new Error('관계 접점이 올바르지 않습니다.');
+    if (route.waypoints) {
+      if (route.waypoints.length > 128) throw new Error('관계 꺾임점은 128개까지 가능합니다.');
+      for (const point of route.waypoints) position(point);
+    }
   }
   return {
     ...doc,
@@ -1095,9 +1111,9 @@ export function upsertRelationLayout<T extends CanvasDocument>(doc: T, route: Re
       ...doc.layout,
       relations: [
         ...(doc.layout.relations ?? []).filter(
-          (r) => r.relationId !== route.relationId || r.viewId !== route.viewId,
+          (route) => !routeKeys.has(`${route.viewId}\u0000${route.relationId}`),
         ),
-        cloneModel(route),
+        ...routes.map(cloneModel),
       ],
     },
   };
