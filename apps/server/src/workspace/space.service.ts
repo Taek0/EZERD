@@ -23,7 +23,7 @@ import {
   workspaces,
 } from '../db/schema.js';
 import { WorkspaceAccessService, type WorkspaceExecutor } from './workspace-access.service.js';
-import { WorkspaceEventsService } from './workspace-events.service.js';
+import { WorkspaceEventsService, type UserChange } from './workspace-events.service.js';
 
 type Tx = Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0];
 type WorkspaceRow = typeof workspaces.$inferSelect;
@@ -47,6 +47,25 @@ export class SpaceService {
     @Inject(WorkspaceEventsService) private readonly events: WorkspaceEventsService,
   ) {}
 
+  private readonly pendingEvents = new WeakMap<Tx, UserChange[]>();
+
+  private async transaction<T>(
+    callback: (tx: Tx) => Promise<T>,
+    options?: Parameters<DatabaseService['db']['transaction']>[1],
+  ): Promise<T> {
+    const events: UserChange[] = [];
+    const result = await this.database.db.transaction(async (tx) => {
+      this.pendingEvents.set(tx, events);
+      try {
+        return await callback(tx);
+      } finally {
+        this.pendingEvents.delete(tx);
+      }
+    }, options);
+    for (const event of events) this.events.userChanged(event);
+    return result;
+  }
+
   private async audit(
     tx: Tx,
     workspaceId: string,
@@ -58,6 +77,44 @@ export class SpaceService {
     await tx
       .insert(workspaceAuditEvents)
       .values({ workspaceId, actorId, action, details, targetUserId });
+    // Capture recipients before membership deletion, but publish only after commit.
+    const members = await tx
+      .select({ userId: userWorkspaces.userId })
+      .from(userWorkspaces)
+      .where(eq(userWorkspaces.workspaceId, workspaceId));
+    const userIds = [
+      ...new Set([
+        ...members.map((row) => row.userId),
+        actorId,
+        ...(targetUserId ? [targetUserId] : []),
+      ]),
+    ];
+    const pending = this.pendingEvents.get(tx);
+    pending?.push({
+      resource: action.startsWith('invitation.') ? 'invitations' : 'workspaces',
+      workspaceId,
+      userIds,
+    });
+    if (action === 'workspace.updated' || action === 'workspace.deleted') {
+      const invitees = await tx
+        .select({ userId: workspaceInvitations.invitedUserId })
+        .from(workspaceInvitations)
+        .where(eq(workspaceInvitations.workspaceId, workspaceId));
+      pending?.push({
+        resource: 'invitations',
+        workspaceId,
+        userIds: [...new Set([...userIds, ...invitees.map((row) => row.userId)])],
+      });
+    }
+    if (
+      action === 'invitation.accepted' ||
+      action.startsWith('member.') ||
+      action === 'workspace.deleted'
+    ) {
+      pending?.push({ resource: 'workspaces', workspaceId, userIds });
+      pending?.push({ resource: 'projects', workspaceId, userIds });
+      pending?.push({ resource: 'notifications', workspaceId, userIds });
+    }
   }
 
   private async lock(tx: Tx, id: string) {
@@ -73,7 +130,7 @@ export class SpaceService {
   }
 
   async createWorkspace(actorId: string, input: { name: string }): Promise<Workspace> {
-    return this.database.db.transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       const [row] = await tx.insert(workspaces).values({ name: input.name }).returning();
       await tx
         .insert(userWorkspaces)
@@ -96,7 +153,7 @@ export class SpaceService {
   }
 
   async getWorkspace(actorId: string, id: string): Promise<Workspace> {
-    return this.database.db.transaction(
+    return this.transaction(
       async (tx) => {
         const access = await this.access.requireWorkspace(actorId, id, 'read', tx);
         const [row] = await tx.select().from(workspaces).where(eq(workspaces.id, id));
@@ -111,7 +168,7 @@ export class SpaceService {
     id: string,
     input: { name?: string | undefined; status?: 'active' | 'archived' | undefined },
   ): Promise<Workspace> {
-    const result = await this.database.db.transaction(async (tx) => {
+    const result = await this.transaction(async (tx) => {
       const previous = await this.owner(tx, actorId, id);
       const [row] = await tx
         .update(workspaces)
@@ -129,7 +186,7 @@ export class SpaceService {
   }
 
   async deleteWorkspace(actorId: string, id: string) {
-    await this.database.db.transaction(async (tx) => {
+    await this.transaction(async (tx) => {
       const row = await this.owner(tx, actorId, id);
       const [project] = await tx
         .select({ id: projects.id })
@@ -164,7 +221,7 @@ export class SpaceService {
   }
 
   async listMembers(actorId: string, id: string) {
-    return this.database.db.transaction(
+    return this.transaction(
       async (tx) => {
         await this.access.requireWorkspace(actorId, id, 'read', tx);
         return this.members(tx, id);
@@ -196,7 +253,7 @@ export class SpaceService {
     userId: string,
     input: { role: WorkspaceRole },
   ): Promise<WorkspaceMember> {
-    const result = await this.database.db.transaction(async (tx) => {
+    const result = await this.transaction(async (tx) => {
       await this.owner(tx, actorId, id);
       const previous = await this.protectLastOwner(tx, id, userId, input.role);
       await tx
@@ -226,7 +283,7 @@ export class SpaceService {
   }
 
   private async remove(actorId: string, id: string, userId: string, self: boolean) {
-    await this.database.db.transaction(async (tx) => {
+    await this.transaction(async (tx) => {
       if (self) {
         await this.lock(tx, id);
         await this.access.requireWorkspace(actorId, id, 'read', tx);
@@ -299,7 +356,7 @@ export class SpaceService {
     id: string,
     input: { username: string; role: WorkspaceRole },
   ): Promise<WorkspaceInvitation> {
-    return this.database.db.transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       await this.owner(tx, actorId, id);
       await this.expire(tx, actorId, id);
       const [user] = await tx.select().from(users).where(eq(users.username, input.username));
@@ -343,7 +400,7 @@ export class SpaceService {
   }
 
   async listInvitations(actorId: string, id: string): Promise<WorkspaceInvitation[]> {
-    return this.database.db.transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       await this.owner(tx, actorId, id);
       await this.expire(tx, actorId, id);
       const rows = await tx
@@ -358,7 +415,7 @@ export class SpaceService {
   }
 
   async invitationInbox(actorId: string): Promise<WorkspaceInvitation[]> {
-    return this.database.db.transaction(async (tx) => {
+    return this.transaction(async (tx) => {
       await this.expire(tx, actorId, undefined, actorId);
       const rows = await tx
         .select()
@@ -400,7 +457,7 @@ export class SpaceService {
       .where(eq(workspaceInvitations.id, invitationId));
     if (!initial || (workspaceId && initial.workspaceId !== workspaceId))
       throw new NotFoundException('초대를 찾을 수 없습니다.');
-    const result = await this.database.db.transaction(async (tx) => {
+    const result = await this.transaction(async (tx) => {
       await this.lock(tx, initial.workspaceId);
       if (status === 'cancelled')
         await this.access.requireWorkspace(actorId, initial.workspaceId, 'manageWorkspace', tx);

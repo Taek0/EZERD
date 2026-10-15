@@ -24,6 +24,7 @@ import { messages, notifications, projects, threads, users, userWorkspaces } fro
 import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncGateway } from '../sync/sync.gateway.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
+import { WorkspaceEventsService } from '../workspace/workspace-events.service.js';
 import { WorkspaceAccessService } from '../workspace/workspace-access.service.js';
 
 type Transaction = Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0];
@@ -129,6 +130,7 @@ export class ReviewService {
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(SyncGateway) private readonly gateway: SyncGateway,
     @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
+    @Inject(WorkspaceEventsService) private readonly events?: WorkspaceEventsService,
   ) {}
 
   list(projectId: string, userId: string) {
@@ -246,6 +248,10 @@ export class ReviewService {
         await addMessage(tx, row!.id, projectId, actor.id, input);
         return loadThread(tx, row!.id);
       });
+      this.events?.userChanged({
+        resource: 'notifications',
+        userIds: input.mentionIds.filter((id) => id !== actor.id),
+      });
       this.gateway.publishReview(projectId, {
         action: 'thread-created',
         projectId,
@@ -264,9 +270,18 @@ export class ReviewService {
           throw new ConflictException(
             '새 답글 또는 상태 변경이 있습니다. 최신 핀을 확인한 후 삭제해주세요.',
           );
+        const recipients = await tx
+          .select({ userId: notifications.userId })
+          .from(notifications)
+          .where(eq(notifications.threadId, id));
         await tx.delete(threads).where(eq(threads.id, id));
-        return { projectId: thread.projectId, response: { id, deleted: true as const } };
+        return {
+          recipientIds: recipients.map((row) => row.userId),
+          projectId: thread.projectId,
+          response: { id, deleted: true as const },
+        };
       });
+      this.events?.userChanged({ resource: 'notifications', userIds: result.recipientIds });
       this.gateway.publishReview(result.projectId, {
         action: 'thread-deleted',
         projectId: result.projectId,
@@ -283,6 +298,10 @@ export class ReviewService {
         const thread = await lockActiveThread(tx, id, actor.id, this.access);
         await addMessage(tx, id, thread.projectId, actor.id, input);
         return { projectId: thread.projectId, thread: await loadThread(tx, id) };
+      });
+      this.events?.userChanged({
+        resource: 'notifications',
+        userIds: input.mentionIds.filter((id) => id !== actor.id),
       });
       this.gateway.publishReview(result.projectId, {
         action: 'message-created',
@@ -372,8 +391,8 @@ export class ReviewService {
     input: z.infer<typeof updateNotificationSchema>,
     actor: AuthenticatedUser,
   ) {
-    return operation(() =>
-      this.database.db.transaction(async (tx) => {
+    return operation(async () => {
+      const result = await this.database.db.transaction(async (tx) => {
         const [reference] = await tx
           .select({ projectId: notifications.projectId })
           .from(notifications)
@@ -388,7 +407,9 @@ export class ReviewService {
           .returning();
         if (!row) throw new NotFoundException('알림을 찾을 수 없습니다.');
         return notification(row);
-      }),
-    );
+      });
+      this.events?.userChanged({ resource: 'notifications', userIds: [actor.id] });
+      return result;
+    });
   }
 }

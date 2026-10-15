@@ -1,3 +1,5 @@
+import { watchInvitationExpiry } from './invitation-expiry.js';
+import { useResourceLoad } from '../../shared/api/use-resource-load.js';
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -45,6 +47,7 @@ export function WorkspacePanel({
   onSelect,
   onRefresh,
   disabled = false,
+  refreshKey = '',
 }: {
   ref?: Ref<WorkspacePanelHandle>;
   workspaces: Workspace[];
@@ -52,6 +55,7 @@ export function WorkspacePanel({
   onSelect: (id: string) => void;
   onRefresh: () => void;
   disabled?: boolean;
+  refreshKey?: string;
 }) {
   const { t, locale } = useI18n();
   const confirm = useConfirm();
@@ -63,6 +67,14 @@ export function WorkspacePanel({
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [inbox, setInbox] = useState<Invitation[]>([]);
+  const [, setExpiryRevision] = useState(0);
+  useEffect(
+    () =>
+      watchInvitationExpiry([...inbox, ...invitations], () =>
+        setExpiryRevision((value) => value + 1),
+      ),
+    [inbox, invitations],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -77,51 +89,48 @@ export function WorkspacePanel({
       setMode('create');
     },
   }));
-  useEffect(() => {
-    const controller = new AbortController();
-    void request<Invitation[]>('/api/workspace-invitations', { signal: controller.signal })
-      .then(setInbox)
-      .catch((cause) => {
-        if (!controller.signal.aborted) setError(message(cause));
-      });
-    return () => controller.abort();
-  }, [revision, mode]);
-  useEffect(() => {
-    const reload = () => setRevision((value) => value + 1);
-    const timer = window.setInterval(reload, 15000);
-    window.addEventListener('focus', reload);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('focus', reload);
-    };
-  }, []);
+  useResourceLoad(
+    async (signal) => {
+      await request<Invitation[]>('/api/workspace-invitations', { signal })
+        .then((values) => {
+          if (!signal.aborted) setInbox(values);
+        })
+        .catch((cause) => {
+          if (!signal.aborted) setError(message(cause));
+        });
+    },
+    [],
+    `${revision}:${mode}:${refreshKey}`,
+  );
   useEffect(() => {
     if (mode === 'manage') setName(selected?.name ?? '');
     setMembers([]);
     setInvitations([]);
   }, [selected?.id, mode]);
-  useEffect(() => {
-    if (mode !== 'manage' || !selected) return;
-    const controller = new AbortController();
-    void Promise.all([
-      request<Member[]>(`/api/workspaces/${selected.id}/members`, { signal: controller.signal }),
-      selected.role === 'owner'
-        ? request<Invitation[]>(`/api/workspaces/${selected.id}/invitations`, {
-            signal: controller.signal,
-          })
-        : Promise.resolve([]),
-    ])
-      .then(([people, invites]) => {
-        if (!controller.signal.aborted) {
-          setMembers(people);
-          setInvitations(invites);
-        }
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted) setError(message(cause));
-      });
-    return () => controller.abort();
-  }, [selected?.id, selected?.role, mode, revision]);
+  useResourceLoad(
+    async (signal) => {
+      if (mode !== 'manage' || !selected) return;
+      await Promise.all([
+        request<Member[]>(`/api/workspaces/${selected.id}/members`, { signal: signal }),
+        selected.role === 'owner'
+          ? request<Invitation[]>(`/api/workspaces/${selected.id}/invitations`, {
+              signal: signal,
+            })
+          : Promise.resolve([]),
+      ])
+        .then(([people, invites]) => {
+          if (!signal.aborted) {
+            setMembers(people);
+            setInvitations(invites);
+          }
+        })
+        .catch((cause) => {
+          if (!signal.aborted) setError(message(cause));
+        });
+    },
+    [selected?.id, selected?.role, mode],
+    `${revision}:${refreshKey}`,
+  );
   useEffect(() => {
     if (!mode) return;
     const element = dialog.current;

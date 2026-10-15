@@ -43,7 +43,7 @@ export function nativeSyncSocketUrl(baseUrl: string, token: string): string {
   return base.href;
 }
 
-const browserEnvironment = (): NativeSyncEnvironment => ({
+export const browserEnvironment = (): NativeSyncEnvironment => ({
   createSocket: (url) => {
     const socket = new WebSocket(url);
     const adapter: NativeSyncSocket = {
@@ -210,6 +210,10 @@ export function startNativeSyncSubscription(options: NativeSyncSubscriptionOptio
         return;
       }
       if (!record(message)) return;
+      if (message.type === 'heartbeat') {
+        lastMessage = env.now();
+        return;
+      }
       if (message.type === 'workspace-access-changed') {
         if (
           typeof message.workspaceId === 'string' &&

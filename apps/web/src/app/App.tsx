@@ -1,3 +1,5 @@
+import { startUserSync } from '../shared/api/user-sync.js';
+import { useResourceLoad } from '../shared/api/use-resource-load.js';
 import {
   WorkspacePanel,
   type WorkspacePanelHandle,
@@ -163,6 +165,13 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>([]),
     [search, setSearch] = useState(''),
     [status, setStatus] = useState<'active' | 'archived'>('active');
+  // Keep cards while visiting the editor, but never render a previous gallery scope.
+  const projectListScope = JSON.stringify([user?.id, session?.token, workspaceId, status, search]);
+  const cachedProjectListScope = useRef(projectListScope);
+  if (cachedProjectListScope.current !== projectListScope) {
+    cachedProjectListScope.current = projectListScope;
+    setProjects([]);
+  }
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false);
@@ -290,6 +299,56 @@ export function App() {
     setNativeOpened(entry);
     setWorkspaceId(entry.snapshot.project.workspaceId);
   }
+  const userSync = useRef<ReturnType<typeof startUserSync> | null>(null);
+  const [userRevision, setUserRevision] = useState({
+    workspaces: 0,
+    invitations: 0,
+    notifications: 0,
+    projects: 0,
+  });
+  useEffect(() => {
+    if (!user || !session) return;
+    const transport = startUserSync({
+      token: session.token,
+      recheckAccess: () => setRefresh((value) => value + 1),
+      invalidate: (resource, changedWorkspaceId) => {
+        if (
+          resource === 'projects' &&
+          changedWorkspaceId &&
+          changedWorkspaceId !== galleryIdentity.current.workspaceId
+        )
+          return;
+        setUserRevision((previous) =>
+          resource
+            ? { ...previous, [resource]: previous[resource] + 1 }
+            : {
+                workspaces: previous.workspaces + 1,
+                invitations: previous.invitations + 1,
+                notifications: previous.notifications + 1,
+                projects: previous.projects + 1,
+              },
+        );
+      },
+    });
+    userSync.current = transport;
+    let expiry: ReturnType<typeof setTimeout>;
+    const checkExpiry = () => {
+      const remaining = Date.parse(session.expiresAt) - Date.now();
+      if (Number.isFinite(remaining) && remaining > 0) {
+        expiry = setTimeout(checkExpiry, Math.min(remaining, 2147483647));
+        return;
+      }
+      transport.stop();
+      setSession(null);
+      closeProject();
+    };
+    checkExpiry();
+    return () => {
+      clearTimeout(expiry);
+      transport.stop();
+      userSync.current = null;
+    };
+  }, [user?.id, session?.token, session?.expiresAt]);
   const [nativeSocketEpoch, setNativeSocketEpoch] = useState(0);
   const [nativeAccessChecking, setNativeAccessChecking] = useState(false);
   useEffect(() => {
@@ -348,6 +407,7 @@ export function App() {
       return;
     }
     stop = startNativeSyncSubscription({
+      ...(userSync.current ? { environment: userSync.current.environment } : {}),
       projectId,
       workspaceId: nativeOpened.snapshot.project.workspaceId,
       token: session.token,
@@ -471,13 +531,17 @@ export function App() {
       live = false;
     };
   }, []);
-  useEffect(() => {
-    if (!user || !session) return;
-    const controller = new AbortController();
-    const load = () =>
-      void request<Workspace[]>('/api/workspaces', { signal: controller.signal })
+  useResourceLoad(
+    async (signal) => {
+      if (!user || !session) return;
+      const identity = JSON.stringify([user.id, session.token]);
+      const current = () => !signal.aborted && nativeRefreshIdentity.current === identity;
+      await request<Workspace[]>('/api/workspaces', {
+        signal,
+        headers: { Authorization: `Bearer ${session.token}` },
+      })
         .then((spaces) => {
-          if (controller.signal.aborted) return;
+          if (!current()) return;
           setWorkspaces(spaces);
           setWorkspacesLoaded(true);
           setWorkspaceId((id) =>
@@ -494,42 +558,53 @@ export function App() {
           }
         })
         .catch((cause) => {
-          if (!controller.signal.aborted) setError(message(cause));
+          if (!current()) return;
+          if (cause instanceof ApiError && cause.status === 401) {
+            userSync.current?.stop();
+            closeProject();
+            setSession(null);
+            setUser(null);
+            setWorkspaces([]);
+            setWorkspacesLoaded(false);
+            setProjects([]);
+            setWorkspaceId('');
+          }
+          setError(message(cause));
         });
-    load();
-    const timer = window.setInterval(load, 15000);
-    window.addEventListener('focus', load);
-    return () => {
-      controller.abort();
-      window.clearInterval(timer);
-      window.removeEventListener('focus', load);
-    };
-  }, [user?.id, session?.token, refresh]);
-  useEffect(() => {
-    if (!user || !session || nativeOpened || !workspaceId) {
-      setProjects([]);
-      return;
-    }
-    const controller = new AbortController();
-    setLoading(true);
-    setError((value) => (value === t('워크스페이스 접근 권한이 변경되었습니다.') ? value : ''));
-    void request<unknown[]>(
-      `/api/projects?workspaceId=${encodeURIComponent(workspaceId)}&status=${status}&search=${encodeURIComponent(search)}`,
-      {
-        signal: controller.signal,
-      },
-    )
-      .then((values) => {
-        if (!controller.signal.aborted) setProjects(values.map((v) => projectSchema.parse(v)));
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(message(e));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [user, session, nativeOpened, workspaceId, status, search, refresh]);
+    },
+    [user?.id, session?.token],
+    `${refresh}:${userRevision.workspaces}:${!!nativeOpened}`,
+  );
+  useResourceLoad(
+    async (signal) => {
+      if (!user || !session || !workspaceId) {
+        setProjects([]);
+        setLoading(false);
+        return;
+      }
+      if (nativeOpened) return;
+      const current = () => !signal.aborted && cachedProjectListScope.current === projectListScope;
+      setLoading(true);
+      setError((value) => (value === t('워크스페이스 접근 권한이 변경되었습니다.') ? value : ''));
+      await request<unknown[]>(
+        `/api/projects?workspaceId=${encodeURIComponent(workspaceId)}&status=${status}&search=${encodeURIComponent(search)}`,
+        {
+          signal,
+        },
+      )
+        .then((values) => {
+          if (current()) setProjects(values.map((v) => projectSchema.parse(v)));
+        })
+        .catch((e) => {
+          if (current()) setError(message(e));
+        })
+        .finally(() => {
+          if (current()) setLoading(false);
+        });
+    },
+    [user?.id, session?.token, !!nativeOpened, workspaceId, status, search],
+    `${refresh}:${userRevision.projects}:${userRevision.workspaces}`,
+  );
   async function identify(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -862,6 +937,8 @@ export function App() {
         </Button>
         {user ? (
           <WorkspacePanel
+            key={user.id}
+            refreshKey={`${userRevision.invitations}:${userRevision.workspaces}`}
             ref={workspacePanel}
             workspaces={workspaces}
             selected={selectedWorkspace}
@@ -876,7 +953,14 @@ export function App() {
             FOR CLEAR THINKING.
           </span>
         )}
-        {user && <Notifications userId={user.id} onNavigate={visitNotification} />}
+        {user && (
+          <Notifications
+            key={user.id}
+            userId={user.id}
+            refreshKey={userRevision.notifications}
+            onNavigate={visitNotification}
+          />
+        )}
         {user && (
           <Dropdown
             label={t('사용자 메뉴')}

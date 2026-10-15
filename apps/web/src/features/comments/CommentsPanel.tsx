@@ -1,3 +1,4 @@
+import { useResourceLoad } from '../../shared/api/use-resource-load.js';
 import { translate as t, useI18n, getLocale } from '../../shared/i18n/index.js';
 import '../collaboration/translations.js';
 import { userColorStyle } from '../identity/user-color-style.js';
@@ -588,9 +589,11 @@ export function CommentsPanel({
 }
 export function Notifications({
   userId,
+  refreshKey = 0,
   onNavigate,
 }: {
   userId: string;
+  refreshKey?: number;
   onNavigate: (notification: Notification) => Promise<boolean>;
 }) {
   useI18n();
@@ -602,25 +605,23 @@ export function Notifications({
   const revision = useRef(0),
     lock = useRef(false);
   const notificationPanel = usePanelDismiss(() => setOpened(false), opened);
-  useEffect(() => {
-    const controller = new AbortController();
-    const snapshot = revision.current;
-    void request<unknown[]>(`/api/users/${userId}/notifications`, { signal: controller.signal })
-      .then((values) => {
-        if (!controller.signal.aborted && snapshot === revision.current) {
-          setItems(values.map((v) => notificationSchema.parse(v)));
-          setError('');
-        }
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(message(e));
-      });
-    return () => controller.abort();
-  }, [userId, refresh]);
-  useEffect(() => {
-    const timer = window.setInterval(() => setRefresh((v) => v + 1), 30000);
-    return () => clearInterval(timer);
-  }, []);
+  useResourceLoad(
+    async (signal) => {
+      const snapshot = revision.current;
+      await request<unknown[]>(`/api/users/${userId}/notifications`, { signal: signal })
+        .then((values) => {
+          if (!signal.aborted && snapshot === revision.current) {
+            setItems(values.map((v) => notificationSchema.parse(v)));
+            setError('');
+          }
+        })
+        .catch((e) => {
+          if (!signal.aborted) setError(message(e));
+        });
+    },
+    [userId],
+    `${refresh}:${refreshKey}`,
+  );
   async function visit(item: Notification) {
     if (lock.current) return;
     lock.current = true;

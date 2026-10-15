@@ -43,6 +43,7 @@ import {
   workspaceAuditEvents,
   syncClientBaselines,
 } from '../db/schema.js';
+import { WorkspaceEventsService } from './workspace-events.service.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
 import type { ProjectRow } from '../db/schema.js';
 import { projectPreview } from './project-preview.js';
@@ -91,43 +92,51 @@ export class WorkspaceService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(WorkspaceAccessService) private readonly access: WorkspaceAccessService,
+    @Inject(WorkspaceEventsService) private readonly events?: WorkspaceEventsService,
   ) {}
 
   createProject(actorId: string, input: z.infer<typeof createProjectSchema>) {
     return operation(async () => {
       if (input.formatVersion !== undefined && input.formatVersion !== 2)
         throw new BadRequestException('새 프로젝트는 Native 설계로만 생성할 수 있습니다.');
-      return this.access.runWorkspace(actorId, input.workspaceId, 'createProject', async (tx) => {
-        const context = defaultDatabaseContext(input.databaseKind ?? 'postgresql');
-        const name =
-          input.name?.trim() ||
-          nextAutomaticProjectName(
-            (
-              await tx
-                .select({ name: projects.name })
-                .from(projects)
-                .where(eq(projects.workspaceId, input.workspaceId))
-            ).map((row) => row.name),
-          );
-        const [row] = await tx
-          .insert(projects)
-          .values({
+      const result = await this.access.runWorkspace(
+        actorId,
+        input.workspaceId,
+        'createProject',
+        async (tx) => {
+          const context = defaultDatabaseContext(input.databaseKind ?? 'postgresql');
+          const name =
+            input.name?.trim() ||
+            nextAutomaticProjectName(
+              (
+                await tx
+                  .select({ name: projects.name })
+                  .from(projects)
+                  .where(eq(projects.workspaceId, input.workspaceId))
+              ).map((row) => row.name),
+            );
+          const [row] = await tx
+            .insert(projects)
+            .values({
+              workspaceId: input.workspaceId,
+              databaseKind: context.kind,
+              name,
+              databaseProfileId: context.profileId,
+              document: sharedDocument(createEmptyNativeDocument(context)),
+              databaseRevision: 0,
+            })
+            .returning();
+          await tx.insert(workspaceAuditEvents).values({
             workspaceId: input.workspaceId,
-            databaseKind: context.kind,
-            name,
-            databaseProfileId: context.profileId,
-            document: sharedDocument(createEmptyNativeDocument(context)),
-            databaseRevision: 0,
-          })
-          .returning();
-        await tx.insert(workspaceAuditEvents).values({
-          workspaceId: input.workspaceId,
-          actorId,
-          action: 'project.created',
-          details: { projectId: row!.id, name: row!.name },
-        });
-        return project(row!);
-      });
+            actorId,
+            action: 'project.created',
+            details: { projectId: row!.id, name: row!.name },
+          });
+          return project(row!);
+        },
+      );
+      this.events?.userChanged({ resource: 'projects', workspaceId: result.workspaceId });
+      return result;
     });
   }
 
@@ -336,8 +345,8 @@ export class WorkspaceService {
 
   updateProject(actorId: string, id: string, input: z.infer<typeof updateProjectSchema>) {
     const { expectedVersion, ...changes } = input;
-    return operation(() =>
-      this.access.runProject(actorId, id, 'manageProject', async (tx) => {
+    return operation(async () => {
+      const result = await this.access.runProject(actorId, id, 'manageProject', async (tx) => {
         const [current] = await tx.select().from(projects).where(eq(projects.id, id)).for('update');
         if (!current) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
         const databaseChanged =
@@ -393,41 +402,55 @@ export class WorkspaceService {
           details: { projectId: id, expectedVersion, version: row.version, ...changes },
         });
         return project(row);
-      }),
-    );
+      });
+      this.events?.userChanged({ resource: 'projects', workspaceId: result.workspaceId });
+      return result;
+    });
   }
 
   deleteProject(actorId: string, id: string, input: z.infer<typeof deleteProjectSchema>) {
-    return operation(() =>
-      this.access.runProject(actorId, id, 'deleteProject', async (tx, access) => {
-        const [removed] = await tx
-          .delete(projects)
-          .where(
-            and(
-              eq(projects.id, id),
-              eq(projects.version, input.expectedVersion),
-              eq(projects.status, 'archived'),
-            ),
-          )
-          .returning({ id: projects.id });
-        if (removed) {
-          await tx.insert(workspaceAuditEvents).values({
-            workspaceId: access.workspaceId,
-            actorId,
-            action: 'project.deleted',
-            details: { projectId: id, expectedVersion: input.expectedVersion },
-          });
-          return { id: removed.id, deleted: true as const };
-        }
-        const [current] = await tx
-          .select({ id: projects.id })
-          .from(projects)
-          .where(eq(projects.id, id));
-        if (!current) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
-        throw new ConflictException(
-          '보관된 프로젝트의 최신 버전만 삭제할 수 있습니다. 목록을 새로 확인해주세요.',
-        );
-      }),
-    );
+    return operation(async () => {
+      let workspaceId: string | undefined;
+      const result = await this.access.runProject(
+        actorId,
+        id,
+        'deleteProject',
+        async (tx, access) => {
+          const [removed] = await tx
+            .delete(projects)
+            .where(
+              and(
+                eq(projects.id, id),
+                eq(projects.version, input.expectedVersion),
+                eq(projects.status, 'archived'),
+              ),
+            )
+            .returning({ id: projects.id });
+          if (removed) {
+            workspaceId = access.workspaceId;
+            await tx.insert(workspaceAuditEvents).values({
+              workspaceId: access.workspaceId,
+              actorId,
+              action: 'project.deleted',
+              details: { projectId: id, expectedVersion: input.expectedVersion },
+            });
+            return { id: removed.id, deleted: true as const };
+          }
+          const [current] = await tx
+            .select({ id: projects.id })
+            .from(projects)
+            .where(eq(projects.id, id));
+          if (!current) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+          throw new ConflictException(
+            '보관된 프로젝트의 최신 버전만 삭제할 수 있습니다. 목록을 새로 확인해주세요.',
+          );
+        },
+      );
+      if (workspaceId) {
+        this.events?.userChanged({ resource: 'projects', workspaceId });
+        this.events?.userChanged({ resource: 'notifications', workspaceId });
+      }
+      return result;
+    });
   }
 }
