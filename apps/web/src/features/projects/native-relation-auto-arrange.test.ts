@@ -166,7 +166,7 @@ describe('relation arrange worker and durable handoff', () => {
       onStatus: (status) => statuses.push(status.phase),
       save,
       createWorker: () => worker,
-      readStatus: async () => 'accepted',
+      readStatus: async () => ({ status: 'accepted', sequence: 3 }),
       storage,
     });
     controller.start();
@@ -191,7 +191,7 @@ describe('relation arrange worker and durable handoff', () => {
       storage = markerStorage();
     const completion = new Promise<boolean>(() => {});
     const save = vi.fn().mockReturnValue({ operationId: 'cancelled-batch', completion });
-    const accepted = { status: 'accepted' } as NativeSyncOperationResult;
+    const accepted = { status: 'accepted', sequence: 3 } as NativeSyncOperationResult;
     const cancelSave = vi.fn().mockResolvedValue(accepted);
     const first = createNativeRelationArrangeController({
       getState: () => state,
@@ -206,6 +206,16 @@ describe('relation arrange worker and durable handoff', () => {
     await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     first.cancel();
     await vi.waitFor(() => expect(cancelSave).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(
+        JSON.parse(
+          storage.getItem(`ezerd.native.arrange-undo:${JSON.stringify([projectId, projectId])}`)!,
+        ).acceptedSequence,
+      ).toBe(3),
+    );
+    // Another edit reached sequence 2, but the accepted batch is sequence 3.
+    state.snapshot.sequence = 2;
+    first.update();
     expect(storage.size).toBe(1);
     first.dispose();
 
@@ -225,6 +235,7 @@ describe('relation arrange worker and durable handoff', () => {
     second.cancel();
     await vi.waitFor(() => expect(retry).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(statuses.at(-1)).toBe('saving'));
+    second.update();
     expect(storage.size).toBe(1);
     second.dispose();
   });
@@ -237,7 +248,7 @@ describe('relation arrange worker and durable handoff', () => {
       getState: () => state,
       onStatus: (status) => statuses.push(status),
       save: () => ({ operationId: 'no-op', completion: Promise.resolve(true) }),
-      readStatus: async () => 'rejected',
+      readStatus: async () => ({ status: 'rejected', sequence: 2 }),
       createWorker: () => worker,
     });
     controller.start();
@@ -263,7 +274,7 @@ describe('relation arrange worker and durable handoff', () => {
       save: () => ({ operationId: 'busy-batch', completion }),
       createWorker: () => worker,
       cancelSave: vi.fn().mockRejectedValue(Error('native.transmission-busy')),
-      readStatus: async () => 'accepted',
+      readStatus: async () => ({ status: 'accepted', sequence: 3 }),
       onReload: reload,
       storage,
     });
@@ -292,7 +303,7 @@ describe('relation arrange worker and durable handoff', () => {
       }),
     );
     const cancelSave = vi.fn();
-    const readStatus = vi.fn().mockResolvedValue('accepted');
+    const readStatus = vi.fn().mockResolvedValue({ status: 'accepted', sequence: 3 });
     const statuses: string[] = [];
     const controller = createNativeRelationArrangeController({
       getState: () => state,
@@ -310,6 +321,36 @@ describe('relation arrange worker and durable handoff', () => {
     controller.dispose();
   });
 
+  it('releases a marker after a terminal rejected history operation', async () => {
+    const state = fixture(),
+      storage = markerStorage();
+    storage.setItem(
+      `ezerd.native.arrange-undo:${JSON.stringify([projectId, projectId])}`,
+      JSON.stringify({
+        viewId: '__tables__',
+        operationId: 'arrange',
+        startSequence: 1,
+        after: [],
+        historyOperationId: 'rejected-undo',
+      }),
+    );
+    const statuses: string[] = [];
+    const cancelSave = vi.fn();
+    const controller = createNativeRelationArrangeController({
+      getState: () => state,
+      onStatus: (status) => statuses.push(`${status.phase}:${status.reason ?? ''}`),
+      save: vi.fn(),
+      cancelSave,
+      readStatus: async () => ({ status: 'rejected', sequence: 3 }),
+      storage,
+    });
+    controller.update();
+    await vi.waitFor(() => expect(statuses.at(-1)).toBe('failed:route'));
+    expect(storage.size).toBe(0);
+    expect(cancelSave).not.toHaveBeenCalled();
+    controller.dispose();
+  });
+
   it('keeps a moved table and corrects its route before the single local save', async () => {
     const state = fixture(),
       worker = fakeWorker();
@@ -321,7 +362,7 @@ describe('relation arrange worker and durable handoff', () => {
       onStatus: vi.fn(),
       save,
       createWorker: () => worker,
-      readStatus: async () => 'accepted',
+      readStatus: async () => ({ status: 'accepted', sequence: 2 }),
     });
     controller.start();
     state.scene.nodes[1]!.y = 340;

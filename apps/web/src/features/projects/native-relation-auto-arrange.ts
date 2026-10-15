@@ -30,6 +30,7 @@ type UndoMarker = {
   viewId: string;
   operationId: string;
   startSequence: number;
+  acceptedSequence?: number;
   after: Map<string, Route>;
   historyOperationId?: string;
 };
@@ -45,7 +46,7 @@ async function readOperationStatus(userId: string, projectId: string, operationI
     );
     if (result.operationId !== operationId || result.actor.id !== userId)
       throw Error('relation.auto-arrange-operation-invalid');
-    return result.status;
+    return { status: result.status, sequence: result.sequence };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
@@ -75,6 +76,9 @@ function readUndoMarker(
     viewId: marker.viewId,
     operationId: marker.operationId,
     startSequence: marker.startSequence as number,
+    ...(Number.isSafeInteger(marker.acceptedSequence)
+      ? { acceptedSequence: marker.acceptedSequence as number }
+      : {}),
     after: new Map(after.map((route) => [route.relationId, route])),
     ...(typeof marker.historyOperationId === 'string'
       ? { historyOperationId: marker.historyOperationId }
@@ -96,6 +100,9 @@ function storeUndoMarker(
       viewId: marker.viewId,
       operationId: marker.operationId,
       startSequence: marker.startSequence,
+      ...(marker.acceptedSequence !== undefined
+        ? { acceptedSequence: marker.acceptedSequence }
+        : {}),
       after: [...marker.after.values()],
       ...(marker.historyOperationId ? { historyOperationId: marker.historyOperationId } : {}),
     }),
@@ -347,6 +354,7 @@ export function createNativeRelationArrangeController(options: {
   let recoveryInFlight = false;
   let nextRecoveryAt = 0;
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  let onlineAttached = false;
   const emit = (next: NativeRelationArrangeStatus) => {
     if (disposed) return;
     status = next;
@@ -360,6 +368,14 @@ export function createNativeRelationArrangeController(options: {
     emit({ phase: 'invalidated', reason, canUndo: false });
   };
   const update = () => {
+    if (
+      !onlineAttached &&
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+    ) {
+      window.addEventListener('online', onOnline);
+      onlineAttached = true;
+    }
     if (
       !job &&
       !pendingHistoryUndo &&
@@ -402,7 +418,11 @@ export function createNativeRelationArrangeController(options: {
         });
       }
     }
-    if (pendingHistoryUndo && undo && options.getState().snapshot.sequence > undo.startSequence) {
+    if (
+      pendingHistoryUndo &&
+      undo?.acceptedSequence !== undefined &&
+      options.getState().snapshot.sequence >= undo.acceptedSequence
+    ) {
       pendingHistoryUndo = false;
       void performHistoryUndo();
     }
@@ -410,7 +430,7 @@ export function createNativeRelationArrangeController(options: {
   const verifyAccepted = async (currentJob: Job) => {
     const pending = currentJob.verification;
     if (!pending || !currentJob.operationId || !pending.state.userId) return;
-    let actual: 'accepted' | 'rejected' | null;
+    let actual: Awaited<ReturnType<typeof readOperationStatus>>;
     try {
       actual = await (options.readStatus ?? readOperationStatus)(
         pending.state.userId,
@@ -431,7 +451,7 @@ export function createNativeRelationArrangeController(options: {
     if (currentJob.verificationTimer) clearTimeout(currentJob.verificationTimer);
     delete currentJob.verificationTimer;
     job = null;
-    if (actual === 'rejected') {
+    if (actual.status === 'rejected') {
       if (storage && pending.state.userId)
         clearUndoMarker(
           storage,
@@ -450,8 +470,11 @@ export function createNativeRelationArrangeController(options: {
       operationId: currentJob.operationId,
       after: pending.after,
       startSequence: currentJob.startSequence,
+      acceptedSequence: actual.sequence,
     };
     if (currentJob.cancelRequested) {
+      if (storage && pending.state.userId)
+        storeUndoMarker(storage, pending.state.userId, pending.state.snapshot.project.id, undo);
       pendingHistoryUndo = true;
       emit({ phase: 'saving', canUndo: false });
       options.onReload?.();
@@ -468,7 +491,7 @@ export function createNativeRelationArrangeController(options: {
           state.snapshot.project.id,
           marker.historyOperationId,
         );
-        if (historyStatus === 'accepted') {
+        if (historyStatus?.status === 'accepted') {
           clearUndoMarker(storage, state.userId, state.snapshot.project.id, marker.operationId);
           undo = null;
           recoveryRequested = false;
@@ -476,9 +499,12 @@ export function createNativeRelationArrangeController(options: {
           options.onReload?.();
           return;
         }
-        if (historyStatus === 'rejected') {
-          delete marker.historyOperationId;
-          storeUndoMarker(storage, state.userId, state.snapshot.project.id, marker);
+        if (historyStatus?.status === 'rejected') {
+          clearUndoMarker(storage, state.userId, state.snapshot.project.id, marker.operationId);
+          undo = null;
+          recoveryRequested = false;
+          emit({ phase: 'failed', reason: 'route', canUndo: false });
+          return;
         }
       }
       const result = await (options.cancelSave ?? cancelNativeSaveIntent)(
@@ -493,6 +519,8 @@ export function createNativeRelationArrangeController(options: {
         recoveryRequested = false;
         emit({ phase: 'cancelled', reason: 'cancel', canUndo: false });
       } else if (result?.status === 'accepted') {
+        marker.acceptedSequence = result.sequence;
+        storeUndoMarker(storage, state.userId, state.snapshot.project.id, marker);
         pendingHistoryUndo = true;
         options.onReload?.();
         update();
@@ -793,7 +821,9 @@ export function createNativeRelationArrangeController(options: {
             operationId,
             after: currentJob.applied ?? new Map(),
             startSequence: currentJob.startSequence,
+            acceptedSequence: result.sequence,
           };
+          storeUndoMarker(storage, state.userId!, state.snapshot.project.id, undo);
           pendingHistoryUndo = true;
           emit({ phase: 'saving', canUndo: false });
           options.onReload?.();
@@ -822,6 +852,14 @@ export function createNativeRelationArrangeController(options: {
       pendingHistoryUndo = false;
       return invalidate('scope');
     }
+    if (
+      target.acceptedSequence === undefined ||
+      state.snapshot.sequence < target.acceptedSequence
+    ) {
+      pendingHistoryUndo = true;
+      emit({ phase: 'saving', canUndo: false });
+      return;
+    }
     const current = routesOf(state.document, target.viewId);
     if (
       [...target.after].some(([id, route]) => !sameRoute(route, current.get(id), id, target.viewId))
@@ -833,11 +871,6 @@ export function createNativeRelationArrangeController(options: {
       return invalidate('route');
     }
     if (!state.userId) return invalidate('scope');
-    if (state.snapshot.sequence <= target.startSequence) {
-      pendingHistoryUndo = true;
-      emit({ phase: 'saving', canUndo: false });
-      return;
-    }
     emit({ phase: 'saving', canUndo: false });
     try {
       const previous = await loadNativeHistoryPending(state.userId, state.snapshot.project.id);
@@ -847,7 +880,7 @@ export function createNativeRelationArrangeController(options: {
           state.snapshot.project.id,
           target.historyOperationId,
         );
-        if (historyStatus === 'accepted') {
+        if (historyStatus?.status === 'accepted') {
           if (storage)
             clearUndoMarker(storage, state.userId, state.snapshot.project.id, target.operationId);
           undo = null;
@@ -857,9 +890,12 @@ export function createNativeRelationArrangeController(options: {
         }
         if (historyStatus === null && previous?.request.operationId !== target.historyOperationId)
           throw Error('relation.auto-arrange-undo-unconfirmed');
-        if (historyStatus === 'rejected') {
-          delete target.historyOperationId;
-          if (storage) storeUndoMarker(storage, state.userId, state.snapshot.project.id, target);
+        if (historyStatus?.status === 'rejected') {
+          if (storage)
+            clearUndoMarker(storage, state.userId, state.snapshot.project.id, target.operationId);
+          undo = null;
+          emit({ phase: 'failed', reason: 'route', canUndo: false });
+          return;
         }
       }
       const pending =
@@ -874,11 +910,15 @@ export function createNativeRelationArrangeController(options: {
           clearUndoMarker(storage, state.userId, state.snapshot.project.id, target.operationId);
         undo = null;
         options.onReload?.();
+      } else {
+        if (storage)
+          clearUndoMarker(storage, state.userId, state.snapshot.project.id, target.operationId);
+        undo = null;
       }
       emit(
         output.result.status === 'accepted'
           ? { phase: 'saved', reason: 'undo', canUndo: false }
-          : { phase: 'failed', reason: 'route', canUndo: true },
+          : { phase: 'failed', reason: 'route', canUndo: false },
       );
     } catch {
       emit({ phase: 'failed', reason: 'save', canUndo: true });
@@ -906,13 +946,13 @@ export function createNativeRelationArrangeController(options: {
     job?.worker.terminate();
     if (job?.rebaseTimer) clearTimeout(job.rebaseTimer);
     if (recoveryTimer) clearTimeout(recoveryTimer);
-    if (typeof window !== 'undefined') window.removeEventListener('online', onOnline);
+    if (onlineAttached && typeof window.removeEventListener === 'function')
+      window.removeEventListener('online', onOnline);
     job = null;
   };
   const onOnline = () => {
     nextRecoveryAt = 0;
     update();
   };
-  if (typeof window !== 'undefined') window.addEventListener('online', onOnline);
   return { start, cancel, undo: undoLatest, update, dispose, getStatus: () => status };
 }
