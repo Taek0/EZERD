@@ -93,6 +93,7 @@ export function nativeEditorPolicy(
   };
 }
 export function nativeTypeChoice(type: NativeColumn['physical']['type']): string {
+  if (type.kind === 'custom') return `custom:${type.name}`;
   return type.kind === 'builtin' || type.kind === 'valueList'
     ? type.typeId
     : type.kind === 'projectEnum'
@@ -109,6 +110,7 @@ export function nativeTypeReady(
     return !!policy.types.find((item) => item.definition.id === type.typeId)?.usable;
   if (type.kind === 'projectEnum')
     return document.database.kind === 'postgresql' && policy.feature('enumType').usable;
+  if (type.kind === 'custom') return document.database.kind === 'generic';
   // No capability/coverage entry exists for SQLite arbitrary declarations or untyped columns yet.
   return false;
 }
@@ -124,5 +126,5 @@ export function nativeTypeParameterRules(typeId: string) {
 
 /** Display only; command and option values retain their database-qualified IDs. */
 export function nativeTypeOptionLabel(typeId: string): string {
-  return typeId.replace(/^(postgresql|mysql|sqlite):/, '');
+  return typeId.replace(/^(postgresql|mysql|sqlite|generic):/, '');
 }

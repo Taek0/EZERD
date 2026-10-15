@@ -1,9 +1,10 @@
+import './generic-translations.js';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Project } from '@ezerd/contracts';
 import { getDatabaseProfile, nativeColumnTypeDisplay, type NativeColumnType } from '@ezerd/model';
 import { Button } from '../../components/ui/index.js';
 import { message } from '../../shared/api/client.js';
-import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
+import { registerTranslations, useI18n, translate } from '../../shared/i18n/index.js';
 import { getNativeDurableQueue } from './native-durable-queue.js';
 import {
   galleryConversionDetails,
@@ -77,7 +78,13 @@ export function galleryConversionError(cause: unknown): string {
   return '결과를 확인하지 못했습니다. 저장된 요청을 보존했습니다. 다시 확인해 주세요.';
 }
 const databaseLabel = (kind: string) =>
-  kind === 'postgresql' ? 'PostgreSQL' : kind === 'mysql' ? 'MySQL' : 'SQLite';
+  kind === 'generic'
+    ? translate('선택안함')
+    : kind === 'postgresql'
+      ? 'PostgreSQL'
+      : kind === 'mysql'
+        ? 'MySQL'
+        : 'SQLite';
 export function NativeGalleryConversionReview({
   plan,
   recovered,
@@ -136,10 +143,12 @@ export function NativeGalleryConversionReview({
       )}
       <p>
         {databaseLabel(plan.preview.current.kind)}{' '}
-        {getDatabaseProfile(plan.preview.current).targetVersion}
+        {plan.preview.current.kind !== 'generic' &&
+          getDatabaseProfile(plan.preview.current).targetVersion}
         {' → '}
         {databaseLabel(plan.preview.target.kind)}{' '}
-        {getDatabaseProfile(plan.preview.target).targetVersion}
+        {plan.preview.target.kind !== 'generic' &&
+          getDatabaseProfile(plan.preview.target).targetVersion}
       </p>
       {affected.length > 0 && (
         <>

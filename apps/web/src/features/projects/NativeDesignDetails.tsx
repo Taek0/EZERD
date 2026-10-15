@@ -39,7 +39,7 @@ export function NativeDesignDetails({
   return (
     <PanelSection className="native-design-details" title={t('상세 설계 정보')}>
       <p>{mode === 'physical' ? table.physical.comment : table.logical.definition}</p>
-      {mode === 'physical' && (
+      {mode === 'physical' && document.database.kind !== 'generic' && (
         <dl className="native-options">
           <dt>{t('DB 옵션')}</dt>
           <dd>
@@ -90,7 +90,7 @@ export function NativeDesignDetails({
                 {(mode === 'physical' ? column.physical.comment : column.logical.definition) ||
                   t('설명 없음')}
               </p>
-              {mode === 'physical' && (
+              {mode === 'physical' && document.database.kind !== 'generic' && (
                 <details>
                   <summary>{t('기본값·생성·DB 옵션')}</summary>
                   <dl>
@@ -108,7 +108,9 @@ export function NativeDesignDetails({
                             ? ' ON UPDATE ' +
                               nativeExpressionDisplay(column.physical.options.onUpdate, document)
                             : '')
-                        : column.physical.options.collation || '—'}
+                        : ('collation' in column.physical.options
+                            ? column.physical.options.collation
+                            : '') || '—'}
                     </dd>
                   </dl>
                 </details>

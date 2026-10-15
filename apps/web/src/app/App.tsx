@@ -76,7 +76,7 @@ export type Project = {
   workspaceId: string;
   name: string;
   status: 'active' | 'archived';
-  databaseKind?: 'postgresql' | 'mysql' | 'sqlite';
+  databaseKind?: 'postgresql' | 'mysql' | 'sqlite' | 'generic';
   databaseRevision?: number | undefined;
   preview?:
     | {
@@ -614,7 +614,7 @@ export function App() {
   }
   async function createGalleryProject(
     name: string,
-    databaseKind: 'postgresql' | 'mysql' | 'sqlite',
+    databaseKind: 'postgresql' | 'mysql' | 'sqlite' | 'generic',
     options: GalleryProjectCreationOptions = { formatVersion: 2 },
   ) {
     if (!permissions.edit || !workspaceId) throw new Error(t('프로젝트를 만들 수 없습니다.'));
@@ -631,7 +631,7 @@ export function App() {
     project: Project,
     patch: {
       name?: string;
-      databaseKind?: 'postgresql' | 'mysql' | 'sqlite';
+      databaseKind?: 'postgresql' | 'mysql' | 'sqlite' | 'generic';
       status?: 'active' | 'archived';
     },
   ) {
@@ -1039,6 +1039,7 @@ export function App() {
                   nativeOpened.snapshot.project.databaseRevision,
                 );
               }}
+              ddlDisabled={nativeOpened.snapshot.project.databaseKind === 'generic'}
               onExportDDL={() =>
                 openProjectDDL(
                   nativeOpened.snapshot.project.id,

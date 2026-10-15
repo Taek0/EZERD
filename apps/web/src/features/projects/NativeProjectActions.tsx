@@ -1,3 +1,4 @@
+import './generic-translations.js';
 import { useState } from 'react';
 import { Dropdown, IconButton } from '../../components/ui/index.js';
 import { message } from '../../shared/api/client.js';
@@ -6,12 +7,14 @@ import { useNativeExportBlocked } from './native-export-state.js';
 export function NativeProjectActions({
   onExportProject,
   onExportDDL,
+  ddlDisabled = false,
   userId,
   projectId,
   png,
 }: {
   onExportProject: () => Promise<void>;
   onExportDDL: () => Promise<void>;
+  ddlDisabled?: boolean;
   userId: string;
   projectId: string;
   png?: { run: () => Promise<void>; disabled: boolean; busy: boolean } | undefined;
@@ -67,9 +70,11 @@ export function NativeProjectActions({
           },
           {
             id: 'ddl-export',
-            label: t('DDL 내보내기'),
-            disabled: busy,
-            onAction: () => void run(onExportDDL),
+            label: t(ddlDisabled ? 'DDL 내보내기 · DB 선택 필요' : 'DDL 내보내기'),
+            disabled: busy || ddlDisabled,
+            onAction: () => {
+              if (!ddlDisabled) void run(onExportDDL);
+            },
           },
           ...(png
             ? [

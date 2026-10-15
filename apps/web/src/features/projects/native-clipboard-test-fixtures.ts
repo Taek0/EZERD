@@ -15,7 +15,9 @@ import {
 } from '@ezerd/contracts';
 export const clipboardActor = '00000000-0000-4000-8000-000000000001';
 export const clipboardProject = '00000000-0000-4000-8000-000000000002';
-export function clipboardFixture(kind: DatabaseKind = 'postgresql'): NativeDesignDocument {
+export function clipboardFixture(
+  kind: Exclude<DatabaseKind, 'generic'> = 'postgresql',
+): NativeDesignDocument {
   const database = defaultDatabaseContext(kind),
     a = createNativeTable(database, 'a', 'd', 'logical'),
     b = createNativeTable(database, 'b', 'd', 'logical');

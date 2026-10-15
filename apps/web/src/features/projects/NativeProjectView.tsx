@@ -1,3 +1,4 @@
+import './generic-translations.js';
 import { shareNativeJson } from './native-ack-entry.js';
 import {
   projectNativeLocalDraftNames,
@@ -1348,10 +1349,18 @@ export function NativeProjectView({
                   ? 'PostgreSQL'
                   : snapshot.project.databaseKind === 'mysql'
                     ? 'MySQL'
-                    : 'SQLite'}
+                    : snapshot.project.databaseKind === 'generic'
+                      ? t('선택안함')
+                      : 'SQLite'}
               </span>
               <span>
-                {t('목표 DB 버전')}: {profile.targetVersion}
+                {snapshot.project.databaseKind === 'generic' ? (
+                  t('구조 설계 · DDL 내보내기 불가')
+                ) : (
+                  <>
+                    {t('목표 DB 버전')}: {profile.targetVersion}
+                  </>
+                )}
               </span>
               <span>{t(editable ? '편집 가능' : '조회 전용')}</span>
             </div>

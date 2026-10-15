@@ -1,7 +1,12 @@
 import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactElement, type FunctionComponent } from 'react';
-import { createNativeColumn, createNativeTable, type DatabaseKind } from '@ezerd/model';
+import {
+  createNativeColumn,
+  createNativeTable,
+  createNativeForeignKeyFromPrimaryKey,
+  type DatabaseKind,
+} from '@ezerd/model';
 import { Input } from '../../components/ui/index.js';
 import { SearchType } from '../../components/ui/SearchType.js';
 import {
@@ -216,6 +221,46 @@ beforeEach(() => {
 });
 
 describe('native inline cell lifecycle', () => {
+  it.each(['Enter', 'Tab', 'IME'] as const)(
+    'saves custom input with %s and waits for composition',
+    async (key) => {
+      const props = fixture('generic');
+      props.target.field = 'format';
+      const ui = mount(props);
+      ui.begin();
+      call(ui.field(), 'onValueChange', 'custom:');
+      call(ui.field(), 'onEditEnd', 'selection');
+      ui.render();
+      expect(props.context.onSave).not.toHaveBeenCalled();
+      expect(ui.field().type).toBe(Input);
+      call(ui.field(), 'onChange', { target: { value: 'Money<KRW>' } });
+      if (key === 'IME') {
+        call(ui.root(), 'onCompositionStart');
+        call(ui.root(), 'onKeyDown', keyboard('Enter', { nativeEvent: { isComposing: true } }));
+        await flush();
+        expect(props.context.onSave).not.toHaveBeenCalled();
+        call(ui.root(), 'onCompositionEnd');
+        call(ui.root(), 'onKeyDown', keyboard('Enter'));
+      } else if (key === 'Enter') call(ui.root(), 'onKeyDown', keyboard('Enter'));
+      else {
+        const event = keyboard('Tab');
+        call(ui.root(), 'onKeyDown', event);
+        expect(event.preventDefault).not.toHaveBeenCalled();
+        call(ui.field(), 'onBlur');
+      }
+      await flush();
+      expect(props.context.onSave).toHaveBeenCalledOnce();
+      expect((props.context.onSave as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toMatchObject([
+        {
+          type: 'patch_column',
+          patch: {
+            physical: { type: { kind: 'custom', database: 'generic', name: 'Money<KRW>' } },
+          },
+        },
+      ]);
+    },
+  );
+
   it('does not overwrite a replacement cell revision when an unmount drain runs', async () => {
     vi.useFakeTimers();
     const ui = mount();
@@ -770,6 +815,58 @@ describe('native inline cell lifecycle', () => {
 });
 
 describe('native inline catalog commands', () => {
+  it('rejects custom changes that mismatch a referenced primary key', () => {
+    const props = fixture('generic');
+    props.target.field = 'format';
+    const child = createNativeTable(props.document.database, 'child');
+    child.physical.name = 'children';
+    props.document.tables!.push(child);
+    props.document.keys = [
+      {
+        id: 'pk',
+        tableId: 't',
+        kind: 'primary',
+        name: 'records_pk',
+        columnIds: ['c'],
+        scope: 'both',
+      },
+    ];
+    const document = createNativeForeignKeyFromPrimaryKey(props.document, {
+      primaryTableId: 't',
+      foreignTableId: 'child',
+      primaryKeyId: 'pk',
+      relationId: 'fk',
+      columnIds: ['ref'],
+    });
+    const before = structuredClone(document);
+    expect(() => nativeInlineTypeCommand(document, props.target, 'custom:OtherId')).toThrow(
+      'foreign-key.type-mismatch',
+    );
+    expect(document).toEqual(before);
+  });
+  it('preserves unrelated inputs when switching between common and custom types', () => {
+    const props = fixture('generic');
+    props.target.field = 'format';
+    const column = props.document.columns![0]!;
+    column.physical.comment = 'Keep this comment';
+    column.logical.semanticType = 'Currency';
+    const original = structuredClone(props.document);
+    const custom = nativeInlineTypeCommand(props.document, props.target, 'custom:Money<KRW>')!;
+    expect(custom).toMatchObject({
+      type: 'patch_column',
+      patch: { physical: { type: { kind: 'custom', name: 'Money<KRW>' } } },
+    });
+    expect(props.document).toEqual(original);
+    if (custom.type !== 'patch_column' || !custom.patch.physical?.type) throw Error('missing type');
+    expect(Object.keys(custom.patch.physical)).toEqual(['type']);
+    column.physical.type = custom.patch.physical.type;
+    const common = nativeInlineTypeCommand(props.document, props.target, 'generic:text')!;
+    expect(common).toMatchObject({
+      patch: { physical: { type: { kind: 'builtin', typeId: 'generic:text' } } },
+    });
+    expect(column.physical.comment).toBe('Keep this comment');
+    expect(column.logical.semanticType).toBe('Currency');
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)('patches only native type on %s', (kind) => {
     const props = fixture(kind);
     props.target.field = 'format';

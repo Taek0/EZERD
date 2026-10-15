@@ -16,6 +16,38 @@ afterEach(() => {
   setLocale('ko');
 });
 describe('native inspector metadata and contextual forms', () => {
+  it('edits custom type text and returns to common types without engine reset confirmation', () => {
+    const f = advancedFixture('generic'),
+      column = f.columns[0]!;
+    const before = nativeFormatInitial(f.table, column);
+    const commands = nativeFormatCommands(
+      f.document,
+      f.table,
+      column,
+      { ...before, typeChoice: 'custom', customName: 'Money<KRW>' },
+      before,
+    );
+    expect(commands[0]).toMatchObject({
+      type: 'patch_column',
+      patch: { physical: { type: { kind: 'custom', database: 'generic', name: 'Money<KRW>' } } },
+    });
+    column.physical.type = { kind: 'custom', database: 'generic', name: 'Money<KRW>' };
+    const custom = nativeFormatInitial(f.table, column);
+    expect(custom.typeChoice).toBe('custom');
+    expect(custom.customName).toBe('Money<KRW>');
+    expect(
+      nativeFormatCommands(
+        f.document,
+        f.table,
+        column,
+        { ...custom, typeChoice: 'generic:text' },
+        custom,
+      )[0],
+    ).toMatchObject({ patch: { physical: { type: { kind: 'builtin', typeId: 'generic:text' } } } });
+    expect(() =>
+      nativeFormatCommands(f.document, f.table, column, { ...custom, customName: '' }, custom),
+    ).toThrow();
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'patches %s logical metadata without normalizing physical types or other scopes',
     (kind) => {
@@ -101,6 +133,28 @@ describe('native inspector metadata and contextual forms', () => {
       ),
     ).toThrow();
   });
+  it.each(['ko', 'en'] as const)(
+    'shows custom input and hides engine controls for structural models in %s',
+    (locale) => {
+      const f = advancedFixture('generic');
+      f.columns[0]!.physical.type = { kind: 'custom', database: 'generic', name: 'Money<KRW>' };
+      setLocale(locale);
+      const html = renderToStaticMarkup(
+        createElement(NativeFormatEditor, {
+          context: f.context,
+          document: f.document,
+          table: f.table,
+          column: f.columns[0]!,
+          mode: 'physical',
+        }),
+      );
+      expect(html).toContain(locale === 'ko' ? '사용자 정의 타입' : 'Custom type');
+      expect(html).toContain('Money&lt;KRW&gt;');
+      expect(html).not.toContain('Charset');
+      expect(html).not.toContain('Collation');
+      expect(html).not.toContain('ON UPDATE');
+    },
+  );
   it('opens logical controls and metadata rows through the existing format draft without physical input controls', () => {
     const f = advancedFixture();
     f.columns[0]!.customProperties.common = { owner: '<Finance>' };

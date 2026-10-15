@@ -5,11 +5,13 @@ const driver = vi.hoisted(() => ({
   slots: [] as { value?: unknown; deps?: readonly unknown[] }[],
   cursor: 0,
   effects: [] as (() => void)[],
+  confirm: vi.fn(async () => true),
 }));
 vi.mock('../../shared/i18n/index.js', () => ({
   registerTranslations() {},
   useI18n: () => ({ t: (value: string) => value, locale: 'ko' }),
 }));
+vi.mock('../../components/ui/ConfirmProvider.js', () => ({ useConfirm: () => driver.confirm }));
 vi.mock('react', async (original) => {
   const react = await original<typeof import('react')>();
   const effect = (run: () => void, deps: readonly unknown[]) => {
@@ -89,6 +91,7 @@ function harness() {
   return { props, render, begin, handle, onCreate, onEdit };
 }
 beforeEach(() => {
+  driver.confirm.mockReset().mockResolvedValue(true);
   driver.slots = [];
   driver.cursor = 0;
   driver.effects = [];
@@ -102,6 +105,34 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe('gallery native creation callback consumption', () => {
+  it('creates a structural model after selecting no database', async () => {
+    const h = harness();
+    await h.begin();
+    const database = h.render().find((node) => node.props.label === '데이터베이스 선택')!;
+    const option = (
+      database.props.items as { id: string; label: string; onAction: () => Promise<void> }[]
+    ).find((item) => item.id === 'generic');
+    expect(option?.label).toBe('선택안함');
+    await option!.onAction();
+    expect(driver.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining('DDL 내보내기는 사용할 수 없습니다.'),
+      }),
+    );
+    await h.handle.current!.flush();
+    expect(h.onCreate).toHaveBeenCalledWith('', 'generic', { formatVersion: 2 });
+  });
+  it('keeps the previous database when the structural-model notice is cancelled', async () => {
+    const h = harness();
+    await h.begin();
+    driver.confirm.mockResolvedValueOnce(false);
+    const database = h.render().find((node) => node.props.label === '데이터베이스 선택')!;
+    await (database.props.items as { id: string; onAction: () => Promise<void> }[])
+      .find((item) => item.id === 'generic')!
+      .onAction();
+    await h.handle.current!.flush();
+    expect(h.onCreate).toHaveBeenCalledWith('', 'postgresql', { formatVersion: 2 });
+  });
   it('defaults to native, preserves DB selection and auto-flushes the explicit creation option', async () => {
     const h = harness();
     await h.begin();
