@@ -1,7 +1,13 @@
 import { createElement, isValidElement, type ReactNode, type ReactElement } from 'react';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createHookDriverState,
+  type HookDriverState,
+} from '../../shared/testing/react-hook-driver.js';
+import { NativeTableLines } from './NativeTableLines.js';
+import { clipboardFixture } from './native-clipboard-test-fixtures.js';
 import { NativeCanvasScene, type NativeCanvasSceneProps } from './NativeCanvasScene.js';
 import { nativeCanvasScene } from './NativeERDCanvas.js';
 import { decorationFixture } from './native-canvas-decoration-test-fixtures.js';
@@ -10,6 +16,16 @@ import { nativeCanvasSvg } from './native-canvas-png.js';
 import { NativeCanvasInlineCell } from './NativeCanvasInlineCell.js';
 import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
 import { decorationSnapshot, decorationUserId } from './native-canvas-decoration-test-fixtures.js';
+const driver = vi.hoisted(() => ({ active: null as HookDriverState | null }));
+let sceneDriver: HookDriverState;
+beforeEach(() => {
+  sceneDriver = createHookDriverState();
+});
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
+  return mockReactHooks(actual, () => driver.active);
+});
 afterEach(() => vi.unstubAllGlobals());
 vi.mock('../../shared/i18n/index.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -42,7 +58,13 @@ function scene(p: NativeCanvasSceneProps) {
   const component = (
     NativeCanvasScene as unknown as { type: (p: NativeCanvasSceneProps) => ReactNode }
   ).type;
-  return component(p);
+  sceneDriver.cursor = 0;
+  driver.active = sceneDriver;
+  try {
+    return component(p);
+  } finally {
+    driver.active = null;
+  }
 }
 function article(p: NativeCanvasSceneProps, objectId = 't') {
   const visit = (node: ReactNode): ReactElement<Record<string, unknown>> | undefined => {
@@ -93,6 +115,37 @@ describe('native scene render boundary', () => {
     for (const key of Object.keys(before)) expect(after[key]).toBe(before[key]);
     p.selectedColumnId = undefined;
     expect(rows().every((n) => n.props.selectedColumnId === undefined)).toBe(true);
+  });
+
+  it('highlights both endpoint columns on hover and preserves selected relation columns after leaving', () => {
+    const p = props();
+    p.base = clipboardFixture();
+    p.base.tableRelations![0]!.physical = {
+      name: 'fk',
+      sourceColumnIds: ['cb'],
+      targetColumnIds: ['ca'],
+      onDelete: 'NO ACTION',
+      onUpdate: 'NO ACTION',
+    };
+    p.sharedSource = p.base;
+    p.mode = 'logical';
+    p.drawn = nativeCanvasScene(p.base, '__tables__', 'logical');
+    const render = () => descendants(scene(p));
+    const highlighted = (nodes: ReturnType<typeof render>) =>
+      nodes.find((node) => node.type === NativeCanvasTableRows)!.props
+        .highlightedColumnIds as ReadonlySet<string>;
+    const initial = render();
+    expect([...highlighted(initial)]).toEqual([]);
+    const hover = initial.find((node) => node.type === NativeTableLines)!.props.onHover as (
+      id: string | null,
+    ) => void;
+    hover('fk');
+    expect([...highlighted(render())].sort()).toEqual(['ca', 'cb']);
+    p.selectedRelationId = 'fk';
+    hover(null);
+    expect([...highlighted(render())].sort()).toEqual(['ca', 'cb']);
+    p.selectedRelationId = null;
+    expect([...highlighted(render())]).toEqual([]);
   });
 
   it('binds the original 240ms domain entry animation to the native keyed wrapper with reduced motion disabled', () => {
