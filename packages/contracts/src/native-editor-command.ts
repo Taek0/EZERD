@@ -86,6 +86,30 @@ const canvasId = z
   .min(1)
   .max(160)
   .refine((value) => value === value.trim());
+export const MAX_BATCH_RELATION_LAYOUTS = 1000;
+export const MAX_BATCH_RELATION_WAYPOINTS = 8192;
+export const MAX_BATCH_RELATION_LAYOUT_BYTES = 600_000;
+/** A single command keeps all route edits in one sync operation and one history entry. */
+export const nativeBatchRelationLayoutsCommandSchema = z
+  .strictObject({
+    type: z.literal('batch_upsert_relation_layouts'),
+    viewId: canvasId,
+    routes: z
+      .array(relationLayoutSchema.omit({ viewId: true }))
+      .min(1)
+      .max(MAX_BATCH_RELATION_LAYOUTS),
+  })
+  .superRefine((command, ctx) => {
+    if (new Set(command.routes.map((route) => route.relationId)).size !== command.routes.length)
+      ctx.addIssue({ code: 'custom', path: ['routes'], message: 'relation-layout.duplicate-id' });
+    if (
+      command.routes.reduce((total, route) => total + (route.waypoints?.length ?? 0), 0) >
+      MAX_BATCH_RELATION_WAYPOINTS
+    )
+      ctx.addIssue({ code: 'custom', path: ['routes'], message: 'relation-layout.waypoint-limit' });
+    if (nativeClipboardByteLength(JSON.stringify(command)) > MAX_BATCH_RELATION_LAYOUT_BYTES)
+      ctx.addIssue({ code: 'custom', message: 'relation-layout.size-limit' });
+  });
 export const nativeDomainCommandTypes = [
   'add_domain',
   'patch_domain',
@@ -300,6 +324,7 @@ export const nativeEditorCommandSchema = z.discriminatedUnion('type', [
   nativeCanvasStyleCommandSchema,
   ...nativeDomainRelationCommandSchema.options,
   nativeClipboardPasteCommandSchema,
+  nativeBatchRelationLayoutsCommandSchema,
   ...nativeDomainCommandSchema.options,
   ...nativeSharedCanvasCommandSchema.options,
   z.strictObject({
