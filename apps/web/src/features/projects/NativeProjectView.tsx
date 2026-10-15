@@ -33,7 +33,7 @@ import type { CSSProperties } from 'react';
 import type { NativeDesignDocument } from '@ezerd/model';
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ProjectEntry } from './project-entry.js';
-import type { Thread, NativeSyncOperationResult } from '@ezerd/contracts';
+import type { Thread, NativeSyncOperationResult, NativeEditorCommand } from '@ezerd/contracts';
 import {
   getDatabaseProfile,
   moveNativeTableDomain,
@@ -451,6 +451,7 @@ export function NativeProjectView({
   const [workspaceWidth, setWorkspaceWidth] = useState(inspectorLayoutWidth(1100));
   const [resizingInspector, setResizingInspector] = useState(false);
   const [canvasScope, setCanvasScope] = useState<NativeCanvasScope | null>(null);
+  const [relationArranging, setRelationArranging] = useState(false);
   const [requestedView, setRequestedView] = useState<{ id: string; nonce: number } | null>(null);
   const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null);
   const [pathHost, setPathHost] = useState<HTMLDivElement | null>(null);
@@ -938,6 +939,24 @@ export function NativeProjectView({
       window.removeEventListener('online', wake);
     };
   }, [userId, snapshot.project.id, editable, snapshot.project.databaseRevision]);
+  function saveArrangement(commands: NativeEditorCommand[], expected: NativeSaveExpected) {
+    if (!editable || !userId || !currentEditor()) throw Error('native.permission-denied');
+    const operationId = enqueueNativeSave(userId, snapshot, commands, expected);
+    const intent = nativeSaveIntents(userId, snapshot.project.id).find(
+      (item) => item.pending.request.operationId === operationId,
+    );
+    if (!intent) throw Error('native.pending-changed');
+    setSaveError('');
+    const completion = new Promise<boolean>((resolve) => {
+      const current = saveWaiters.current.get(operationId);
+      saveWaiters.current.set(operationId, {
+        pending: intent.pending,
+        callbacks: [...(current?.callbacks ?? []), resolve],
+      });
+    });
+    scheduleFlush();
+    return { operationId, completion, pending: intent.pending };
+  }
   async function save(
     commands: NativeWebCommand[],
     expected?: NativeSaveExpected,
@@ -1140,6 +1159,7 @@ export function NativeProjectView({
       )
     : t('전체 테이블');
   function openDomain(id: string) {
+    if (relationArranging) return;
     leaveRecoveredSelection();
     setSearch('');
     setDomain('*');
@@ -1333,6 +1353,7 @@ export function NativeProjectView({
     <NativeLogicalModeProvider
       enabled={logicalEnabled}
       onEnabledChange={(enabled) => {
+        if (relationArranging) return;
         setMode(enabled ? 'logical' : 'physical');
       }}
     >
@@ -1673,6 +1694,7 @@ export function NativeProjectView({
                                 revealKey={`${search}:${selectedTable?.id ?? ''}:${editingColumn ?? ''}`}
                                 reveal={!!search.trim()}
                                 onOpen={group.id === null ? undefined : () => openDomain(group.id!)}
+                                openDisabled={relationArranging}
                               >
                                 {members.map((table) => (
                                   <NativeNavigatorTable
@@ -1789,6 +1811,8 @@ export function NativeProjectView({
                   busy={editorBusy}
                   recoveryBusy={recoveryBusy}
                   onSave={save}
+                  onArrangeSave={saveArrangement}
+                  onRelationArrangeBusyChange={setRelationArranging}
                   onReload={onReload}
                   {...{
                     onCanvasScopeChange: receiveCanvasScope,
@@ -2045,7 +2069,10 @@ export function NativeProjectView({
                     {selectedDomain && (
                       <>
                         <div className="actions">
-                          <Button onClick={() => openDomain(selectedDomain)}>
+                          <Button
+                            disabled={relationArranging}
+                            onClick={() => openDomain(selectedDomain)}
+                          >
                             {t('도메인 열기')}
                           </Button>
                           {canvasView === 'overview' && (

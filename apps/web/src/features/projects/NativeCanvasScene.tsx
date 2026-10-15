@@ -1,5 +1,14 @@
 import type { NativeInlineTarget } from './NativeCanvasInlineEditor.js';
-import { memo, useRef, type PointerEvent, type MouseEvent, type RefObject } from 'react';
+import {
+  memo,
+  useRef,
+  useState,
+  useMemo,
+  useLayoutEffect,
+  type PointerEvent,
+  type MouseEvent,
+  type RefObject,
+} from 'react';
 import type { NativeDesignDocument, NodeLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { NativeDomainLines } from './native-domain-lines.js';
@@ -109,6 +118,36 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   onEdit,
 }: NativeCanvasSceneProps) {
   const { t } = useI18n();
+  const [hoveredRelationId, setHoveredRelationId] = useState<string | null>(null);
+  const previousRelationColumns = useRef(new Map<string, ReadonlySet<string>>());
+  const relationColumns = useMemo(() => {
+    const byTable = new Map<string, Set<string>>();
+    const add = (tableId: string, ids: readonly string[]) => {
+      if (!ids.length) return;
+      const columns = byTable.get(tableId) ?? new Set<string>();
+      for (const id of ids) columns.add(id);
+      byTable.set(tableId, columns);
+    };
+    for (const { relation } of drawn.relations) {
+      if (relation.id !== selectedRelationId && relation.id !== hoveredRelationId) continue;
+      add(relation.sourceTableId, relation.physical?.sourceColumnIds ?? []);
+      add(relation.targetTableId, relation.physical?.targetColumnIds ?? []);
+    }
+    const result = new Map<string, ReadonlySet<string>>();
+    for (const [tableId, ids] of byTable) {
+      const previous = previousRelationColumns.current.get(tableId);
+      result.set(
+        tableId,
+        previous && previous.size === ids.size && [...ids].every((id) => previous.has(id))
+          ? previous
+          : ids,
+      );
+    }
+    return result;
+  }, [drawn.relations, selectedRelationId, hoveredRelationId]);
+  useLayoutEffect(() => {
+    previousRelationColumns.current = relationColumns;
+  }, [relationColumns]);
   const selectedColumnTableId = selectedColumnId
     ? base.columns?.find((column) => column.id === selectedColumnId)?.tableId
     : undefined;
@@ -120,6 +159,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
         mode={mode}
         selectedId={selectedRelationId}
         onSelect={onSelectRelation}
+        onHover={setHoveredRelationId}
       />
       {effectiveView === 'overview' && (
         <NativeDomainLines
@@ -367,6 +407,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
             {table && (
               <>
                 <NativeCanvasTableRows
+                  highlightedColumnIds={relationColumns.get(table.id)}
                   document={base}
                   table={table}
                   mode={mode}

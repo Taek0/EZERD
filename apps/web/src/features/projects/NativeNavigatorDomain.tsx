@@ -17,6 +17,7 @@ export function NativeNavigatorDomain({
   reveal,
   revealKey,
   onOpen,
+  openDisabled = false,
   children,
 }: {
   name: string;
@@ -26,6 +27,7 @@ export function NativeNavigatorDomain({
   reveal: boolean;
   revealKey: string;
   onOpen?: (() => void) | undefined;
+  openDisabled?: boolean;
   children: ReactNode;
 }) {
   const { t } = useI18n();
@@ -66,6 +68,7 @@ export function NativeNavigatorDomain({
             variant="ghost"
             aria-label={`${name} ${t('열기')}`}
             title={`${name} ${t('열기')}`}
+            disabled={openDisabled}
             onClick={onOpen}
           >
             ↗

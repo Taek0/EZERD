@@ -36,6 +36,7 @@ import {
   ListBoxSection,
   Header,
   MenuTrigger,
+  SubmenuTrigger,
 } from 'react-aria-components';
 import {
   cx,
@@ -544,6 +545,7 @@ export interface ContextMenuItem {
   id: string;
   label: ReactNode;
   onAction: () => void;
+  children?: ContextMenuItem[];
   disabled?: boolean;
   destructive?: boolean;
 }
@@ -572,6 +574,7 @@ function OpenContextMenu({
 }: ContextMenuProps & { position: { x: number; y: number } }) {
   const { t } = useI18n();
   const container = useRef<HTMLDivElement>(null);
+  const owner = useId();
   const previous = useRef(
     document.activeElement instanceof HTMLElement ? document.activeElement : null,
   );
@@ -586,9 +589,17 @@ function OpenContextMenu({
       menu.style.top = `${Math.max(8, Math.min(position.y, window.innerHeight - rect.height - 8))}px`;
     }
     const outside = (event: PointerEvent) => {
-      if (!container.current?.contains(event.target as Node)) close.current();
+      if (
+        !container.current?.contains(event.target as Node) &&
+        !(
+          event.target instanceof Element && event.target.closest(`[data-context-owner="${owner}"]`)
+        )
+      )
+        close.current();
     };
     const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && document.querySelector(`[data-context-owner="${owner}"]`))
+        return;
       if (event.key === 'Escape' || event.key === 'Tab') {
         if (event.key === 'Escape') event.preventDefault();
         event.stopPropagation();
@@ -623,29 +634,72 @@ function OpenContextMenu({
         className="ui-menu"
         onClose={onClose}
       >
-        {items.map((item) => (
-          <AriaMenuItem
-            key={item.id}
-            id={item.id}
-            textValue={typeof item.label === 'string' ? item.label : item.id}
-            isDisabled={!!item.disabled}
-            className={cx('ui-menu-item', item.destructive && 'ui-menu-item--danger')}
-            onAction={() => {
-              acted.current = true;
-              try {
-                item.onAction();
-              } finally {
-                onClose();
-              }
-            }}
-          >
-            {item.label}
-          </AriaMenuItem>
-        ))}
+        {contextMenuItems(
+          items,
+          (item) => {
+            acted.current = true;
+            try {
+              item.onAction?.();
+            } finally {
+              onClose();
+            }
+          },
+          owner,
+          previous.current?.closest('dialog') ?? document.body,
+        )}
       </AriaMenu>
     </div>,
     previous.current?.closest('dialog') ?? document.body,
   );
+}
+
+function contextMenuItems(
+  items: ContextMenuItem[],
+  act: (item: ContextMenuItem) => void,
+  owner: string,
+  portal: Element,
+): ReactNode[] {
+  return items.map((item) => {
+    const row = (
+      <AriaMenuItem
+        key={item.id}
+        id={item.id}
+        textValue={typeof item.label === 'string' ? item.label : item.id}
+        isDisabled={!!item.disabled}
+        className={cx('ui-menu-item', item.destructive && 'ui-menu-item--danger')}
+        {...(!item.children?.length ? { onAction: () => act(item) } : {})}
+      >
+        {item.children?.length ? (
+          <span className="ui-submenu-label">
+            {item.label}
+            <span aria-hidden="true">›</span>
+          </span>
+        ) : (
+          item.label
+        )}
+      </AriaMenuItem>
+    );
+    return item.children?.length ? (
+      <SubmenuTrigger key={item.id} delay={150}>
+        {row}
+        <UntitledPopover
+          placement="right top"
+          className="ui-context-submenu"
+          data-context-owner={owner}
+          UNSTABLE_portalContainer={portal}
+        >
+          <AriaMenu
+            aria-label={typeof item.label === 'string' ? item.label : item.id}
+            className="ui-menu"
+          >
+            {contextMenuItems(item.children, act, owner, portal)}
+          </AriaMenu>
+        </UntitledPopover>
+      </SubmenuTrigger>
+    ) : (
+      row
+    );
+  });
 }
 
 export function Dropdown({

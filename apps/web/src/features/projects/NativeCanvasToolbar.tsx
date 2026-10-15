@@ -56,6 +56,7 @@ export interface NativeCanvasToolbarProps {
   editable: boolean;
   noteEditable: boolean;
   disabled: boolean;
+  navigationLocked?: boolean;
   mode: 'physical' | 'logical';
   onMode?: ((mode: 'physical' | 'logical') => void) | undefined;
   inspectorOpen?: boolean | undefined;
@@ -81,6 +82,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   editable,
   noteEditable,
   disabled,
+  navigationLocked = false,
   mode,
   onMode,
   inspectorOpen,
@@ -179,10 +181,10 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               data-mode={value}
               aria-checked={mode === value}
               tabIndex={mode === value ? 0 : -1}
-              disabled={!onMode}
+              disabled={!onMode || navigationLocked}
               onClick={() => onMode?.(value)}
               onKeyDown={(event) => {
-                if (!onMode) return;
+                if (!onMode || navigationLocked) return;
                 let next: 'physical' | 'logical';
                 if (event.key === 'Home') next = 'physical';
                 else if (event.key === 'End') next = 'logical';
@@ -205,7 +207,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
           <Button
             className="native-toolbar-action"
             aria-pressed={viewId === '__tables__'}
-            disabled={disabled}
+            disabled={disabled || navigationLocked}
             onClick={() => {
               onFilter?.(null);
               onView('__tables__');
@@ -216,7 +218,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
           <Button
             className="native-toolbar-action"
             aria-pressed={viewId === 'overview'}
-            disabled={disabled}
+            disabled={disabled || navigationLocked}
             onClick={() => onView('overview')}
           >
             {t('도메인 맵')}
@@ -226,11 +228,11 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               domains={domains}
               value={filter ?? null}
               onChange={onFilter}
-              disabled={disabled}
+              disabled={disabled || navigationLocked}
             />
           )}
           {viewId === '__tables__' && filter && onFilter && (
-            <Button disabled={disabled} onClick={() => onFilter(null)}>
+            <Button disabled={disabled || navigationLocked} onClick={() => onFilter(null)}>
               {t('필터 해제')}
             </Button>
           )}
@@ -329,6 +331,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   );
 });
 export function NativeCameraControls({
+  notice,
   tool,
   onTool,
   zoom,
@@ -336,6 +339,7 @@ export function NativeCameraControls({
   onReset,
   onFit,
 }: {
+  notice?: ReactNode;
   tool: 'select' | 'hand';
   onTool: (tool: 'select' | 'hand') => void;
   zoom: number;
@@ -349,6 +353,7 @@ export function NativeCameraControls({
       className="zoom-controls native-camera-controls"
       onPointerDown={(e) => e.stopPropagation()}
     >
+      {notice}
       <div className="canvas-tool-picker" role="group" aria-label={t('캔버스 도구')}>
         <IconButton
           aria-label={t('커서 도구')}
