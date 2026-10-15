@@ -99,3 +99,14 @@ it('walks fragments/arrays without running child components or render props', ()
   expect(elementNodes(tree).map((node) => node.type)).toEqual([React.Fragment, 'span', render]);
   expect(render).not.toHaveBeenCalled();
 });
+
+it('notifies an explicit manual rerender loop only when state changes', () => {
+  const state = createHookDriverState(),
+    notify = vi.fn(),
+    hooks = mockReactHooks(React, () => state, { onStateChange: notify });
+  const [, set] = hooks.useState(1);
+  set(1);
+  expect(notify).not.toHaveBeenCalled();
+  set((n) => n + 1);
+  expect(notify).toHaveBeenCalledOnce();
+});

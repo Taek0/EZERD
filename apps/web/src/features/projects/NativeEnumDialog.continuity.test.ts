@@ -28,41 +28,17 @@ const hooks = vi.hoisted(() => ({
   effects: [] as (() => void)[],
 }));
 vi.mock('react', async (original) => {
-  const react = await original<typeof import('react')>();
-  const effect = (callback: () => void | (() => void), deps?: readonly unknown[]) => {
-    const state = hooks.active!;
-    const slot = (state.slots[state.cursor++] ??= {});
-    if (!deps || !slot.deps || deps.some((item, i) => !Object.is(item, slot.deps![i]))) {
-      hooks.effects.push(() => {
-        slot.cleanup?.();
-        slot.cleanup = callback() || undefined;
-      });
-      slot.deps = deps;
-    }
-  };
-  return {
-    ...react,
-    useState(initial: unknown) {
-      const state = hooks.active!;
-      const slot = (state.slots[state.cursor++] ??= {
-        value: typeof initial === 'function' ? initial() : initial,
-      });
-      return [
-        slot.value,
-        (value: any) => {
-          const next = typeof value === 'function' ? value(slot.value) : value;
-          if (!Object.is(next, slot.value)) hooks.dirty = true;
-          slot.value = next;
-        },
-      ];
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
+  return mockReactHooks(
+    actual,
+    () => (hooks.active ? Object.assign(hooks.active, { effects: hooks.effects }) : null),
+    {
+      onStateChange: () => {
+        hooks.dirty = true;
+      },
     },
-    useRef(initial: unknown) {
-      const state = hooks.active!;
-      return (state.slots[state.cursor++] ??= { value: { current: initial } }).value;
-    },
-    useEffect: effect,
-    useLayoutEffect: effect,
-  };
+  );
 });
 vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => ({ enabled: true }) }));
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker() {} }));

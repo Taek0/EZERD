@@ -1,5 +1,10 @@
+import {
+  createHookDriverState,
+  type HookDriverState,
+} from '../../shared/testing/react-hook-driver.js';
+import { elementNodes as nodes } from '../../shared/testing/react-element-tree.js';
 import { NativeNavigatorTable } from './NativeNavigatorTable.js';
-import { isValidElement, type ReactElement } from 'react';
+
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeProjectView } from './NativeProjectView.js';
 import { NativeEnumDialog } from './NativeEnumDialog.js';
@@ -25,11 +30,7 @@ import {
   type NativeDraftArchiveEntry,
 } from './native-draft-archive.js';
 const hooks = vi.hoisted(() => ({
-  active: null as null | {
-    slots: { value?: unknown; deps?: readonly unknown[]; cleanup?: (() => void) | undefined }[];
-    cursor: number;
-    effects: (() => void)[];
-  },
+  active: null as HookDriverState | null,
   actor: '00000000-0000-4000-8000-000000000001',
   stage: vi.fn(),
   send: vi.fn(),
@@ -53,54 +54,13 @@ vi.mock('./native-export-state.js', () => ({
   useNativeDurableState: () => 'empty',
   useNativeExportBlocked: () => false,
 }));
-vi.mock('react', async (original) => ({
-  ...(await original<typeof import('react')>()),
-  useCallback<T extends (...args: never[]) => unknown>(callback: T, deps: readonly unknown[]) {
-    const state = hooks.active!,
-      entry = (state.slots[state.cursor++] ??= {});
-    if (
-      !entry.deps ||
-      entry.deps.length !== deps.length ||
-      deps.some((value, i) => !Object.is(value, entry.deps![i]))
-    ) {
-      entry.value = callback;
-      entry.deps = deps;
-    }
-    return entry.value as T;
-  },
-  useState(initial: unknown) {
-    const state = hooks.active!,
-      i = state.cursor++,
-      slot = (state.slots[i] ??= { value: typeof initial === 'function' ? initial() : initial });
-    return [
-      slot.value,
-      (value: unknown) => {
-        slot.value = typeof value === 'function' ? value(slot.value) : value;
-      },
-    ];
-  },
-  useRef(initial: unknown) {
-    const state = hooks.active!;
-    return (state.slots[state.cursor++] ??= { value: { current: initial } }).value;
-  },
-  useEffect(effect: () => void | (() => void), deps: readonly unknown[]) {
-    const state = hooks.active!,
-      slot = (state.slots[state.cursor++] ??= {});
-    if (!slot.deps || deps.some((value, i) => !Object.is(value, slot.deps![i]))) {
-      state.effects.push(() => {
-        slot.cleanup?.();
-        slot.cleanup = effect() || undefined;
-      });
-      slot.deps = deps;
-    }
-  },
-}));
+vi.mock('react', async (original) => {
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
+  return mockReactHooks(actual, () => hooks.active);
+});
 function renderer() {
-  const state = {
-    slots: [] as NonNullable<typeof hooks.active>['slots'],
-    cursor: 0,
-    effects: [] as (() => void)[],
-  };
+  const state = createHookDriverState();
   return {
     render<T>(render: () => T): T {
       hooks.active = state;
@@ -118,11 +78,7 @@ function renderer() {
     },
   };
 }
-function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
-  if (Array.isArray(tree)) return tree.flatMap(nodes);
-  if (!isValidElement<Record<string, unknown>>(tree)) return [];
-  return [tree, ...nodes(tree.props.children)];
-}
+
 function child(tree: unknown, type: unknown) {
   return nodes(tree).find((node) => node.type === type)!;
 }
