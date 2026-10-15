@@ -1,5 +1,13 @@
 import type { NativeInlineTarget } from './NativeCanvasInlineEditor.js';
-import { memo, useRef, type PointerEvent, type MouseEvent, type RefObject } from 'react';
+import {
+  memo,
+  useRef,
+  useState,
+  useMemo,
+  type PointerEvent,
+  type MouseEvent,
+  type RefObject,
+} from 'react';
 import type { NativeDesignDocument, NodeLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { NativeDomainLines } from './native-domain-lines.js';
@@ -109,6 +117,16 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
   onEdit,
 }: NativeCanvasSceneProps) {
   const { t } = useI18n();
+  const [hoveredRelationId, setHoveredRelationId] = useState<string | null>(null);
+  const relationColumns = useMemo(() => {
+    const ids = new Set<string>();
+    for (const { relation } of drawn.relations) {
+      if (relation.id !== selectedRelationId && relation.id !== hoveredRelationId) continue;
+      for (const id of relation.physical?.sourceColumnIds ?? []) ids.add(id);
+      for (const id of relation.physical?.targetColumnIds ?? []) ids.add(id);
+    }
+    return ids;
+  }, [drawn.relations, selectedRelationId, hoveredRelationId]);
   const selectedColumnTableId = selectedColumnId
     ? base.columns?.find((column) => column.id === selectedColumnId)?.tableId
     : undefined;
@@ -120,6 +138,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
         mode={mode}
         selectedId={selectedRelationId}
         onSelect={onSelectRelation}
+        onHover={setHoveredRelationId}
       />
       {effectiveView === 'overview' && (
         <NativeDomainLines
@@ -367,6 +386,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
             {table && (
               <>
                 <NativeCanvasTableRows
+                  highlightedColumnIds={relationColumns}
                   document={base}
                   table={table}
                   mode={mode}
