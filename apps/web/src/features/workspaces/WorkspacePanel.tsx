@@ -4,10 +4,8 @@ import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'reac
 import { createPortal } from 'react-dom';
 import {
   Button as MenuButton,
-  Menu,
-  MenuItem,
-  MenuSection,
-  MenuTrigger,
+  Dialog,
+  DialogTrigger,
   Popover,
   Separator,
 } from 'react-aria-components';
@@ -16,6 +14,7 @@ import { useConfirm } from '../../components/ui/ConfirmProvider.js';
 import { body, message, request } from '../../shared/api/client.js';
 import { useI18n } from '../../shared/i18n/index.js';
 import { type Workspace, type WorkspaceRole } from './workspace-policy.js';
+import { WorkspaceOrderList } from './WorkspaceOrderList.js';
 import './translations.js';
 import './workspaces.css';
 
@@ -61,6 +60,7 @@ export function WorkspacePanel({
   const confirm = useConfirm();
   const [mode, setMode] = useState<'create' | 'manage' | 'inbox' | null>(null);
   const [closing, setClosing] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [role, setRole] = useState<WorkspaceRole>('editor');
@@ -240,12 +240,13 @@ export function WorkspacePanel({
   }
   return (
     <div className="workspace-switcher">
-      <MenuTrigger>
+      <DialogTrigger isOpen={switcherOpen} onOpenChange={setSwitcherOpen}>
         <MenuButton
           ref={trigger}
           className="workspace-switcher-trigger"
           isDisabled={disabled}
           aria-label={t('워크스페이스 선택')}
+          aria-haspopup="dialog"
         >
           <span className="workspace-initial" aria-hidden="true">
             {Array.from(selected?.name ?? 'W')[0]?.toUpperCase()}
@@ -271,55 +272,36 @@ export function WorkspacePanel({
             <span>{t('워크스페이스')}</span>
             <span>{workspaces.length}</span>
           </div>
-          <Menu className="workspace-menu" aria-label={t('워크스페이스 선택')}>
-            <MenuSection aria-label={t('워크스페이스')}>
-              {workspaces.map((space) => (
-                <MenuItem
-                  key={space.id}
-                  id={space.id}
-                  textValue={space.name}
-                  className="workspace-menu-row"
-                  onAction={() => onSelect(space.id)}
-                  aria-label={`${space.name}, ${t(roleLabels[space.role])}${space.status === 'archived' ? `, ${t('보관됨')}` : ''}${space.id === selected?.id ? `, ${t('현재 선택됨')}` : ''}`}
-                >
-                  <span className="workspace-initial" aria-hidden="true">
-                    {Array.from(space.name)[0]?.toUpperCase()}
-                  </span>
-                  <span className="workspace-row-copy">
-                    <strong>{space.name}</strong>
-                    <small>
-                      {t(roleLabels[space.role])}
-                      {space.status === 'archived' ? ` · ${t('보관됨')}` : ''}
-                    </small>
-                  </span>
-                  {space.id === selected?.id && (
-                    <span className="workspace-selected-check" aria-hidden="true">
-                      ✓
-                    </span>
-                  )}
-                </MenuItem>
-              ))}
-            </MenuSection>
+          <Dialog className="workspace-menu" aria-label={t('워크스페이스 선택')}>
+            <WorkspaceOrderList
+              workspaces={workspaces}
+              selectedId={selected?.id}
+              onRefresh={onRefresh}
+              onSelect={(id) => {
+                setSwitcherOpen(false);
+                onSelect(id);
+              }}
+            />
             <Separator className="workspace-menu-separator" />
-            <MenuSection aria-label={t('워크스페이스 관리')}>
-              <MenuItem
+            <div role="group" aria-label={t('워크스페이스 관리')}>
+              <MenuButton
                 id="workspace-manage"
-                textValue={t('워크스페이스 관리')}
                 isDisabled={!selected}
                 className="workspace-menu-action"
-                onAction={() => {
+                onPress={() => {
+                  setSwitcherOpen(false);
                   setError('');
                   setMode('manage');
                 }}
               >
                 <span aria-hidden="true">⚙</span>
                 {t('워크스페이스 관리')}
-              </MenuItem>
-              <MenuItem
+              </MenuButton>
+              <MenuButton
                 id="workspace-inbox"
-                textValue={t('받은 초대')}
                 className="workspace-menu-action"
-                onAction={() => {
+                onPress={() => {
+                  setSwitcherOpen(false);
                   setError('');
                   setMode('inbox');
                 }}
@@ -327,12 +309,12 @@ export function WorkspacePanel({
                 <span aria-hidden="true">✉</span>
                 {t('받은 초대')}
                 <span className="workspace-invitation-count">{inbox.filter(pending).length}</span>
-              </MenuItem>
-              <MenuItem
+              </MenuButton>
+              <MenuButton
                 id="workspace-create"
-                textValue={t('새 워크스페이스')}
                 className="workspace-menu-action"
-                onAction={() => {
+                onPress={() => {
+                  setSwitcherOpen(false);
                   setName('');
                   setError('');
                   setMode('create');
@@ -340,16 +322,16 @@ export function WorkspacePanel({
               >
                 <span aria-hidden="true">＋</span>
                 {t('새 워크스페이스')}
-              </MenuItem>
-            </MenuSection>
-          </Menu>
+              </MenuButton>
+            </div>
+          </Dialog>
           {error && !mode && (
             <p className="notice error" role="alert">
               {error}
             </p>
           )}
         </Popover>
-      </MenuTrigger>
+      </DialogTrigger>
       {mode &&
         createPortal(
           <dialog

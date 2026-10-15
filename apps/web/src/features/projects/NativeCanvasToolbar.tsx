@@ -164,6 +164,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
             {t('＋ 메모')}
           </Button>
         </div>
+        <span className="toolbar-divider" aria-hidden="true" />
         <div
           className="native-design-mode"
           role="radiogroup"

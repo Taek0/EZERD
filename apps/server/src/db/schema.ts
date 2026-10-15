@@ -132,11 +132,16 @@ export const userWorkspaces = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'no action' }),
     role: workspaceRole('role').notNull().default('viewer'),
+    sortOrder: integer('sort_order'),
     joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.userId] }),
     index('user_workspaces_user_workspace_idx').on(table.userId, table.workspaceId),
+    check(
+      'user_workspaces_sort_order_nonnegative',
+      sql`${table.sortOrder} IS NULL OR ${table.sortOrder} >= 0`,
+    ),
   ],
 );
 

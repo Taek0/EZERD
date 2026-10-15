@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, eq, lte } from 'drizzle-orm';
+import { and, asc, eq, lte, sql } from 'drizzle-orm';
 import type {
   Workspace,
   WorkspaceInvitation,
@@ -140,16 +140,67 @@ export class SpaceService {
     });
   }
 
-  async listWorkspaces(actorId: string): Promise<Workspace[]> {
-    const rows = await this.database.db
+  async listWorkspaces(
+    actorId: string,
+    executor: WorkspaceExecutor = this.database.db,
+  ): Promise<Workspace[]> {
+    const rows = await executor
       .select({ workspace: workspaces, role: userWorkspaces.role })
       .from(workspaces)
       .innerJoin(
         userWorkspaces,
         and(eq(userWorkspaces.workspaceId, workspaces.id), eq(userWorkspaces.userId, actorId)),
       )
-      .orderBy(asc(workspaces.name), asc(workspaces.id));
+      .orderBy(
+        sql`${userWorkspaces.sortOrder} ASC NULLS LAST`,
+        asc(workspaces.name),
+        asc(workspaces.id),
+      );
     return rows.map((row) => workspace(row.workspace, row.role));
+  }
+
+  async reorderWorkspaces(
+    actorId: string,
+    input: { workspaceIds: string[] },
+  ): Promise<Workspace[]> {
+    const ordered = await this.database.db.transaction(async (tx) => {
+      // Serializes this user's concurrent tab/device reorders, not other members' preferences.
+      const [actor] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, actorId))
+        .for('update');
+      if (!actor) throw new NotFoundException('사용자를 찾을 수 없습니다.');
+      const memberships = await tx
+        .select({ workspaceId: userWorkspaces.workspaceId })
+        .from(userWorkspaces)
+        .where(eq(userWorkspaces.userId, actorId))
+        .for('update');
+      const ids = new Set(input.workspaceIds);
+      if (
+        ids.size !== input.workspaceIds.length ||
+        ids.size !== memberships.length ||
+        memberships.some((row) => !ids.has(row.workspaceId))
+      )
+        throw new ConflictException({
+          code: 'workspace.order-membership-changed',
+          message: '워크스페이스 목록이 변경되었습니다. 다시 확인해 주세요.',
+        });
+      if (input.workspaceIds.length) {
+        const positions = input.workspaceIds.map(
+          (id, position) => sql`WHEN ${id}::uuid THEN ${position}::integer`,
+        );
+        await tx
+          .update(userWorkspaces)
+          .set({
+            sortOrder: sql`CASE ${userWorkspaces.workspaceId} ${sql.join(positions, sql` `)} END`,
+          })
+          .where(eq(userWorkspaces.userId, actorId));
+      }
+      return this.listWorkspaces(actorId, tx);
+    });
+    this.events.userChanged({ resource: 'workspaces', userIds: [actorId] });
+    return ordered;
   }
 
   async getWorkspace(actorId: string, id: string): Promise<Workspace> {

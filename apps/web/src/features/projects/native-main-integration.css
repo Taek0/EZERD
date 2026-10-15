@@ -87,6 +87,11 @@
   transform: translateX(100%);
 }
 .native-design-mode button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  text-align: center;
   flex: 1 0 0;
   min-width: 0;
   padding: 0 10px;

@@ -36,7 +36,7 @@ it.each([
     const markup = render(space);
     expect(markup).toContain('Team name');
     expect(markup).toContain(`aria-label="${label}"`);
-    expect(markup).toContain('aria-haspopup="true"');
+    expect(markup).toContain('aria-haspopup="dialog"');
     expect(markup).toContain('aria-expanded="false"');
   },
 );

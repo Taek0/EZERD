@@ -4,6 +4,12 @@ import { usernameSchema } from './workspace.js';
 export const workspaceRoleSchema = z.enum(['owner', 'editor', 'viewer']);
 export const workspaceStatusSchema = z.enum(['active', 'archived']);
 export const createWorkspaceSchema = z.strictObject({ name: z.string().trim().min(1).max(64) });
+export const reorderWorkspacesSchema = z.strictObject({
+  workspaceIds: z
+    .array(z.uuid())
+    .max(1000)
+    .refine((ids) => new Set(ids).size === ids.length, 'workspace.order-duplicate'),
+});
 export const updateWorkspaceSchema = z
   .strictObject({
     name: z.string().trim().min(1).max(64).optional(),

@@ -1,0 +1,2 @@
+ALTER TABLE "user_workspaces" ADD COLUMN "sort_order" integer;--> statement-breakpoint
+ALTER TABLE "user_workspaces" ADD CONSTRAINT "user_workspaces_sort_order_nonnegative" CHECK ("user_workspaces"."sort_order" IS NULL OR "user_workspaces"."sort_order" >= 0);
