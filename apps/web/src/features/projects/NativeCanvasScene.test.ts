@@ -61,7 +61,9 @@ function scene(p: NativeCanvasSceneProps) {
   sceneDriver.cursor = 0;
   driver.active = sceneDriver;
   try {
-    return component(p);
+    const rendered = component(p);
+    for (const effect of sceneDriver.effects.splice(0)) effect();
+    return rendered;
   } finally {
     driver.active = null;
   }
@@ -127,23 +129,57 @@ describe('native scene render boundary', () => {
       onDelete: 'NO ACTION',
       onUpdate: 'NO ACTION',
     };
+    const unrelated = { ...p.base.tables![0]!, id: 'unrelated' };
+    p.base.tables!.push(unrelated);
+    p.base.layout.nodes.push({
+      ...p.base.layout.nodes[0]!,
+      id: 'unrelated-node',
+      objectId: unrelated.id,
+    });
     p.sharedSource = p.base;
     p.mode = 'logical';
     p.drawn = nativeCanvasScene(p.base, '__tables__', 'logical');
     const render = () => descendants(scene(p));
     const highlighted = (nodes: ReturnType<typeof render>) =>
-      nodes.find((node) => node.type === NativeCanvasTableRows)!.props
-        .highlightedColumnIds as ReadonlySet<string>;
+      nodes
+        .filter((node) => node.type === NativeCanvasTableRows)
+        .flatMap((node) => [
+          ...((node.props.highlightedColumnIds as ReadonlySet<string> | undefined) ?? []),
+        ]);
     const initial = render();
     expect([...highlighted(initial)]).toEqual([]);
     const hover = initial.find((node) => node.type === NativeTableLines)!.props.onHover as (
       id: string | null,
     ) => void;
+    const rowsByTable = (nodes: ReturnType<typeof render>) =>
+      new Map(
+        nodes
+          .filter((node) => node.type === NativeCanvasTableRows)
+          .map((node) => [(node.props.table as { id: string }).id, node.props]),
+      );
+    const initialRows = rowsByTable(initial);
     hover('fk');
-    expect([...highlighted(render())].sort()).toEqual(['ca', 'cb']);
+    const hovered = render();
+    expect([...highlighted(hovered)].sort()).toEqual(['ca', 'cb']);
+    const hoveredRows = rowsByTable(hovered);
+    for (const key of Object.keys(initialRows.get('unrelated')!))
+      expect(hoveredRows.get('unrelated')![key]).toBe(initialRows.get('unrelated')![key]);
+    expect([...(hoveredRows.get('a')!.highlightedColumnIds as ReadonlySet<string>)]).toEqual([
+      'ca',
+    ]);
+    expect([...(hoveredRows.get('b')!.highlightedColumnIds as ReadonlySet<string>)]).toEqual([
+      'cb',
+    ]);
     p.selectedRelationId = 'fk';
     hover(null);
-    expect([...highlighted(render())].sort()).toEqual(['ca', 'cb']);
+    const selected = render();
+    expect([...highlighted(selected)].sort()).toEqual(['ca', 'cb']);
+    expect(rowsByTable(selected).get('a')!.highlightedColumnIds).toBe(
+      hoveredRows.get('a')!.highlightedColumnIds,
+    );
+    expect(rowsByTable(selected).get('b')!.highlightedColumnIds).toBe(
+      hoveredRows.get('b')!.highlightedColumnIds,
+    );
     p.selectedRelationId = null;
     expect([...highlighted(render())]).toEqual([]);
   });
