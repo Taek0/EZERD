@@ -13,3 +13,10 @@
 - 공통 helper 계약까지 포함한 집중 검사 159개와 웹 타입 검사가 통과했다.
 - 고급 편집/ENUM의 명시적 재렌더 신호는 onStateChange로 보존했다. i18n snapshot과 갤러리 imperative ref의 특수 모킹은 각 테스트에 명시적으로 남겼다.
 - 같은 의미인 element 순회와 state 생성도 공유했다. 렌더 중단·layout/passive 분리·드래그 DOM 모델을 다루는 특수 실행기는 이번 이관에서 제외했다.
+
+## 실제 React DOM 전환
+
+- NativePrimaryKeyControl 테스트의 React 훅 모킹/수동 element 순회를 제거했다. React createRoot/act와 실제 checkbox DOM click으로 같은 memo 재사용·최신 onSave/sequence·busy 차단을 검증한다.
+- ACK 대기 중 checkbox 비활성화와 중복 클릭 방지도 같은 시나리오에서 확인한다. PK 규칙 자체는 기존 모델 테스트를 유지하고 이 UI 테스트에서는 plan 의존성만 mock한다.
+- jsdom 30.1.2를 개발 의존성으로 고정했다. 이 파일만 jsdom 환경을 사용하며 기본 테스트 환경은 node다. 제품 런타임 의존성은 추가하지 않았다.
+- 전환된 테스트와 웹 타입 검사 통과. 실제 브라우저 레이아웃/성능 검증을 jsdom으로 대체한 것은 아니다.
