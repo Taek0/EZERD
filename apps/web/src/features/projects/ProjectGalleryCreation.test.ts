@@ -116,7 +116,9 @@ describe('gallery native creation callback consumption', () => {
     await option!.onAction();
     expect(driver.confirm).toHaveBeenCalledWith(
       expect.objectContaining({
-        description: expect.stringContaining('DDL 내보내기는 사용할 수 없습니다.'),
+        description: expect.stringMatching(
+          /논리 설계.*기본.*공통 타입.*직접 입력.*DDL 내보내기는 사용할 수 없습니다/,
+        ),
       }),
     );
     await h.handle.current!.flush();

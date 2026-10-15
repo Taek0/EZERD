@@ -106,8 +106,6 @@ it.each(['ko', 'en'] as const)(
   },
 );
 
-const logical = vi.hoisted(() => ({ enabled: false, onEnabledChange: vi.fn() }));
-vi.mock('./NativeLogicalMode.js', () => ({ useNativeLogicalMode: () => logical }));
 vi.mock('../../shared/i18n/index.js', async (original) => {
   const actual = await original<typeof import('../../shared/i18n/index.js')>();
   return { ...actual, useI18n: () => ({ t: actual.translate }) };
@@ -117,7 +115,7 @@ function toolbarNodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
   if (!isValidElement<Record<string, unknown>>(tree)) return [];
   return [tree, ...toolbarNodes(tree.props.children)];
 }
-it('keeps logical design, review and recovery in More, invoking their actions while writes are blocked', () => {
+it('keeps review and recovery in More while mode remains visible', () => {
   const onOpenIssues = vi.fn(),
     onOpenRecovery = vi.fn();
   const tree = (
@@ -137,12 +135,11 @@ it('keeps logical design, review and recovery in More, invoking their actions wh
   });
   const menu = toolbarNodes(tree).find((node) => node.type === Dropdown)!;
   const items = menu.props.items as { id: string; disabled?: boolean; onAction: () => void }[];
-  expect(items.map((item) => item.id)).toEqual(['logical-design', 'design-issues', 'recovery']);
+  expect(items.map((item) => item.id)).toEqual(['design-issues', 'recovery']);
   for (const item of items) {
     expect(item.disabled).not.toBe(true);
     item.onAction();
   }
-  expect(logical.onEnabledChange).toHaveBeenCalledWith(true);
   expect(onOpenIssues).toHaveBeenCalledOnce();
   expect(onOpenRecovery).toHaveBeenCalledOnce();
 });
@@ -167,6 +164,47 @@ it('places explorer on the left and inspector after pins on the right', () => {
   expect(html.indexOf('EXPLORER_MARKER')).toBeLessThan(html.indexOf('toolbar-create'));
   expect(html.indexOf('PIN_MARKER')).toBeLessThan(html.indexOf('native-canvas-inspector'));
   expect(html).not.toContain('모델 보기');
-  expect(html).not.toContain('>물리<');
-  expect(html).not.toContain('>논리<');
+  expect(html).toContain('>물리<');
+  expect(html).toContain('>논리<');
 });
+
+it.each(['physical', 'logical'] as const)(
+  'exposes %s as the selected radio with one tab stop',
+  (mode) => {
+    const onMode = vi.fn();
+    const tree = (
+      NativeCanvasToolbar as unknown as { type: (props: NativeCanvasToolbarProps) => ReactElement }
+    ).type({
+      viewId: '__tables__',
+      views: [],
+      onView() {},
+      onNote() {},
+      editable: false,
+      noteEditable: false,
+      disabled: false,
+      mode,
+      onMode,
+    });
+    const radios = toolbarNodes(tree).filter((node) => node.props.role === 'radio');
+    expect(radios).toHaveLength(2);
+    expect(radios.map((node) => node.props['aria-checked'])).toEqual([
+      mode === 'physical',
+      mode === 'logical',
+    ]);
+    expect(radios.map((node) => node.props.tabIndex)).toEqual(
+      mode === 'physical' ? [0, -1] : [-1, 0],
+    );
+    (radios[1]!.props.onClick as () => void)();
+    expect(onMode).toHaveBeenCalledWith('logical');
+    const focus = vi.fn(),
+      preventDefault = vi.fn();
+    (radios[1]!.props.onKeyDown as (event: unknown) => void)({
+      key: 'ArrowLeft',
+      preventDefault,
+      currentTarget: { parentElement: { querySelector: () => ({ focus }) } },
+    });
+    expect(onMode).toHaveBeenLastCalledWith('physical');
+    expect(focus).toHaveBeenCalledOnce();
+    expect(preventDefault).toHaveBeenCalledOnce();
+  },
+);

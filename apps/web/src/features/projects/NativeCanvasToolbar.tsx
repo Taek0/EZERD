@@ -1,4 +1,3 @@
-import { useNativeLogicalMode } from './NativeLogicalMode.js';
 import './native-main-integration.css';
 import { NativeDomainFilter, type NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { memo, type ReactNode } from 'react';
@@ -8,8 +7,9 @@ import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 
 registerTranslations({
   '더 보기': 'More',
-  '논리 설계 켜기': 'Enable logical design',
-  '논리 설계 끄기': 'Disable logical design',
+  '설계 모드': 'Design mode',
+  물리: 'Physical',
+  논리: 'Logical',
   '설계 확인 항목': 'Design issues',
   '보관된 입력 복구': 'Recover preserved input',
   '전체 테이블': 'All tables',
@@ -81,6 +81,8 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   editable,
   noteEditable,
   disabled,
+  mode,
+  onMode,
   inspectorOpen,
   onToggleInspector,
   exportControl,
@@ -89,7 +91,6 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   navigatorControl,
 }: NativeCanvasToolbarProps) {
   const { t } = useI18n();
-  const logicalMode = useNativeLogicalMode();
   const filteredNames = filter
     ? [
         ...(domains ?? [])
@@ -162,6 +163,41 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
           >
             {t('＋ 메모')}
           </Button>
+        </div>
+        <div
+          className="native-design-mode"
+          role="radiogroup"
+          aria-label={t('설계 모드')}
+          data-active={mode}
+        >
+          {(['physical', 'logical'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              data-mode={value}
+              aria-checked={mode === value}
+              tabIndex={mode === value ? 0 : -1}
+              disabled={!onMode}
+              onClick={() => onMode?.(value)}
+              onKeyDown={(event) => {
+                if (!onMode) return;
+                let next: 'physical' | 'logical';
+                if (event.key === 'Home') next = 'physical';
+                else if (event.key === 'End') next = 'logical';
+                else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key))
+                  next = value === 'physical' ? 'logical' : 'physical';
+                else return;
+                event.preventDefault();
+                onMode(next);
+                event.currentTarget.parentElement
+                  ?.querySelector<HTMLButtonElement>(`[data-mode="${next}"]`)
+                  ?.focus();
+              }}
+            >
+              {t(value === 'physical' ? '물리' : '논리')}
+            </button>
+          ))}
         </div>
         <span className="toolbar-divider" aria-hidden="true" />
         <div className="toolbar-group" role="group" aria-label={t('보기와 내보내기')}>
@@ -254,11 +290,6 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
                 </IconButton>
               }
               items={[
-                {
-                  id: 'logical-design',
-                  label: t(logicalMode.enabled ? '논리 설계 끄기' : '논리 설계 켜기'),
-                  onAction: () => logicalMode.onEnabledChange(!logicalMode.enabled),
-                },
                 ...(onOpenIssues
                   ? [{ id: 'design-issues', label: t('설계 확인 항목'), onAction: onOpenIssues }]
                   : []),
