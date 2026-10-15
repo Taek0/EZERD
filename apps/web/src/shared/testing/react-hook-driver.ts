@@ -27,7 +27,11 @@ const sameDependencies = (
  * rerenders, StrictMode, interrupted work, or layout/passive-effect scheduling.
  * With no active driver, delegate to React (e.g. renderToStaticMarkup).
  */
-export function mockReactHooks(actual: Runtime, active: () => HookDriverState | null): Runtime {
+export function mockReactHooks(
+  actual: Runtime,
+  active: () => HookDriverState | null,
+  options: { onStateChange?: () => void } = {},
+): Runtime {
   const state = ((initial?: unknown) => {
     const driver = active();
     if (!driver) return actual.useState(initial);
@@ -37,7 +41,9 @@ export function mockReactHooks(actual: Runtime, active: () => HookDriverState | 
     return [
       slot.value,
       (next: unknown) => {
-        slot.value = typeof next === 'function' ? next(slot.value) : next;
+        const previous = slot.value;
+        slot.value = typeof next === 'function' ? next(previous) : next;
+        if (!Object.is(previous, slot.value)) options.onStateChange?.();
       },
     ];
   }) as Runtime['useState'];

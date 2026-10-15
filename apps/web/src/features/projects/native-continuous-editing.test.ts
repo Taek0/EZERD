@@ -1,19 +1,16 @@
+import {
+  createHookDriverState,
+  type HookDriverState,
+} from '../../shared/testing/react-hook-driver.js';
+import { elementNodes as nodes } from '../../shared/testing/react-element-tree.js';
 import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
-import { isValidElement, type ReactElement } from 'react';
+
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NativeEditorForm } from './native-editor-form.js';
 import { clipboardActor, clipboardSnapshot } from './native-clipboard-test-fixtures.js';
 import { loadNativeEditorDraft } from './native-editor-draft.js';
 const hooks = vi.hoisted(() => ({
-  active: null as null | {
-    slots: {
-      value?: unknown;
-      deps?: readonly unknown[] | undefined;
-      cleanup?: (() => void) | undefined;
-    }[];
-    cursor: number;
-    effects: (() => void)[];
-  },
+  active: null as HookDriverState | null,
 }));
 vi.mock('./native-export-state.js', () => ({ useNativeExportBlocker() {} }));
 vi.mock('../../shared/i18n/index.js', () => ({
@@ -21,60 +18,12 @@ vi.mock('../../shared/i18n/index.js', () => ({
   useI18n: () => ({ t: (value: string) => value }),
 }));
 vi.mock('react', async (original) => {
-  const react = await original<typeof import('react')>();
-  return {
-    ...react,
-    useState(initial: unknown) {
-      const active = hooks.active!,
-        index = active.cursor++,
-        slot = (active.slots[index] ??= {
-          value: typeof initial === 'function' ? initial() : initial,
-        });
-      return [
-        slot.value,
-        (value: unknown) => {
-          slot.value = typeof value === 'function' ? value(slot.value) : value;
-        },
-      ];
-    },
-    useRef(initial: unknown) {
-      const active = hooks.active!;
-      return (active.slots[active.cursor++] ??= { value: { current: initial } }).value;
-    },
-    useEffect(effect: () => void | (() => void), deps: readonly unknown[]) {
-      const active = hooks.active!,
-        slot = (active.slots[active.cursor++] ??= {});
-      if (!slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
-        active.effects.push(() => {
-          slot.cleanup?.();
-          slot.cleanup = effect() || undefined;
-        });
-        slot.deps = deps;
-      }
-    },
-    useLayoutEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
-      const active = hooks.active!,
-        slot = (active.slots[active.cursor++] ??= {});
-      if (
-        !deps ||
-        !slot.deps ||
-        deps.some((value, index) => !Object.is(value, slot.deps![index]))
-      ) {
-        active.effects.push(() => {
-          slot.cleanup?.();
-          slot.cleanup = effect() || undefined;
-        });
-        slot.deps = deps;
-      }
-    },
-  };
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
+  return mockReactHooks(actual, () => hooks.active);
 });
 function root() {
-  const state = {
-    slots: [] as NonNullable<typeof hooks.active>['slots'],
-    cursor: 0,
-    effects: [] as (() => void)[],
-  };
+  const state = createHookDriverState();
   return {
     render<T>(render: () => T): T {
       hooks.active = state;
@@ -89,11 +38,7 @@ function root() {
     },
   };
 }
-function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
-  if (Array.isArray(tree)) return tree.flatMap(nodes);
-  if (!isValidElement<Record<string, unknown>>(tree)) return [];
-  return [tree, ...nodes(tree.props.children)];
-}
+
 beforeEach(() => {
   vi.useFakeTimers();
   const values = new Map<string, string>();

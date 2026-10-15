@@ -1,5 +1,10 @@
+import {
+  createHookDriverState,
+  type HookDriverState,
+} from '../../shared/testing/react-hook-driver.js';
+import { elementNodes as nodes } from '../../shared/testing/react-element-tree.js';
 import { NATIVE_AUTOSAVE_QUIET_WINDOW_MS } from './use-native-autosave.js';
-import { createElement, isValidElement, type ReactElement } from 'react';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
@@ -20,65 +25,22 @@ import { NativeEditorForm } from './native-editor-form.js';
 import { DomainColorPicker } from '../domains/DomainColorPicker.js';
 
 const hooks = vi.hoisted(() => ({
-  active: null as null | {
-    slots: {
-      value?: unknown;
-      deps?: readonly unknown[] | undefined;
-      cleanup?: (() => void) | undefined;
-    }[];
-    cursor: number;
-    effects: (() => void)[];
-  },
+  active: null as HookDriverState | null,
 }));
 vi.mock('react', async (original) => {
-  const react = await original<typeof import('react')>();
-  function effectHook(effect: () => void | (() => void), deps?: readonly unknown[]) {
-    const active = hooks.active!,
-      slot = (active.slots[active.cursor++] ??= {});
-    if (!deps || !slot.deps || deps.some((value, index) => !Object.is(value, slot.deps![index]))) {
-      active.effects.push(() => {
-        slot.cleanup?.();
-        slot.cleanup = effect() || undefined;
-      });
-      slot.deps = deps;
-    }
-  }
+  const actual = await original<typeof import('react')>();
+  const { mockReactHooks } = await import('../../shared/testing/react-hook-driver.js');
   return {
-    ...react,
-    useState(initial: unknown) {
-      if (!hooks.active) return react.useState(initial);
-      const slot = (hooks.active.slots[hooks.active.cursor++] ??= {
-        value: typeof initial === 'function' ? initial() : initial,
-      });
-      return [
-        slot.value,
-        (value: unknown) => {
-          slot.value = typeof value === 'function' ? value(slot.value) : value;
-        },
-      ];
-    },
-    useRef(initial: unknown) {
-      if (!hooks.active) return react.useRef(initial);
-      return (hooks.active.slots[hooks.active.cursor++] ??= { value: { current: initial } }).value;
-    },
-    useEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
-      return hooks.active ? effectHook(effect, deps) : react.useEffect(effect, deps);
-    },
-    useLayoutEffect(effect: () => void | (() => void), deps?: readonly unknown[]) {
-      return hooks.active ? effectHook(effect, deps) : react.useLayoutEffect(effect, deps);
-    },
-    useSyncExternalStore(...args: Parameters<typeof react.useSyncExternalStore>) {
-      return hooks.active ? args[1]() : react.useSyncExternalStore(...args);
+    ...mockReactHooks(actual, () => hooks.active),
+    // This test reads i18n snapshots; subscription scheduling is tested separately.
+    useSyncExternalStore(...args: Parameters<typeof actual.useSyncExternalStore>) {
+      return hooks.active ? args[1]() : actual.useSyncExternalStore(...args);
     },
   };
 });
-function nodes(tree: unknown): ReactElement<Record<string, unknown>>[] {
-  if (Array.isArray(tree)) return tree.flatMap(nodes);
-  if (!isValidElement<Record<string, unknown>>(tree)) return [];
-  return [tree, ...nodes(tree.props.children)];
-}
+
 function root() {
-  const state: NonNullable<typeof hooks.active> = { slots: [], cursor: 0, effects: [] };
+  const state: NonNullable<typeof hooks.active> = createHookDriverState();
   return {
     render<T>(render: () => T): T {
       hooks.active = state;
