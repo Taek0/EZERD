@@ -353,16 +353,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         expectedSequence: source.sequence,
         expectedDatabaseRevision: source.project.databaseRevision,
       });
-      const own = await call(b, 'get_personal_state', { projectId });
-      await call(b, 'apply_personal_changes', {
-        projectId,
-        expectedVersion: own.version,
-        expectedDatabaseRevision: own.databaseRevision,
-        expectedProjectVersion: own.projectVersion,
-        expectedSyncSequence: own.syncSequence,
-        operationId: randomUUID(),
-        commands: [{ type: 'set_viewport', value: { viewId: 'overview', x: 10, y: 0, zoom: 1 } }],
-      });
       await call(a, 'update_workspace', { workspaceId: id, update: { status: 'archived' } });
       expect(
         (
@@ -401,7 +391,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         'get_project_document_state',
         'get_native_project_history',
         'list_review_threads',
-        'get_personal_state',
         'export_project',
         'diagnose_project',
       ]) {
@@ -447,7 +436,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
   });
 
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
-    'runs %s Native design, DDL, reviews, notifications and personal state through discovered MCP tools',
+    'runs %s Native design, DDL, reviews and notifications through discovered MCP tools',
     async (kind) => {
       const tokenA = await issue(userA.session, `native-${kind}-owner`);
       const tokenB = await issue(userB.session, `native-${kind}-member`);
@@ -466,7 +455,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       };
       try {
         // Real consumers discover schemas first, enabling SDK validation of every output below.
-        expect((await a.instance.listTools()).tools).toHaveLength(52);
+        expect((await a.instance.listTools()).tools).toHaveLength(50);
         await b.instance.listTools();
         const created = await call(a, 'create_project', {
           workspaceId,
@@ -570,21 +559,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
             delete: { expectedUpdatedAt: resolved.updatedAt },
           }),
         ).toEqual({ id: thread.id, deleted: true });
-        const personal = await call(b, 'get_personal_state', { projectId });
-        const changedPersonal = await call(b, 'apply_personal_changes', {
-          projectId,
-          operationId: randomUUID(),
-          expectedVersion: personal.version,
-          expectedDatabaseRevision: personal.databaseRevision,
-          expectedProjectVersion: personal.projectVersion,
-          expectedSyncSequence: personal.syncSequence,
-          commands: [
-            { type: 'set_viewport', value: { viewId: '__tables__', x: 50, y: 30, zoom: 1 } },
-          ],
-        });
-        expect(changedPersonal.state.viewports).toEqual([
-          { viewId: '__tables__', x: 50, y: 30, zoom: 1 },
-        ]);
         expect((await call(a, 'get_native_project_history', { projectId })).history).toEqual(
           expect.arrayContaining([expect.objectContaining({ operationId, format: 'native' })]),
         );
@@ -617,8 +591,10 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     await b.instance.connect(b.transport);
     try {
       const listedTools = await a.instance.listTools();
-      expect(listedTools.tools).toHaveLength(52);
+      expect(listedTools.tools).toHaveLength(50);
       for (const name of [
+        'get_personal_state',
+        'apply_personal_changes',
         'apply_project_changes',
         'get_project_history',
         'undo_project_operation',
@@ -1005,18 +981,18 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
     }
   });
 
-  it('stores combined views per user and exposes them to MCP and the web API', async () => {
+  it('preserves shared tables, changes, layout reads and transfers through MCP', async () => {
     const created = await api(
       '/projects',
       'POST',
-      { workspaceId, name: 'Personal MCP views' },
+      { workspaceId, name: 'Shared MCP views' },
       userA.session,
     );
     expect(created.status).toBe(201);
     const projectId = created.data.id as string;
     projects.push(projectId);
-    const tokenA = await issue(userA.session, 'personal A');
-    const tokenB = await issue(userB.session, 'personal B');
+    const tokenA = await issue(userA.session, 'shared A');
+    const tokenB = await issue(userB.session, 'shared B');
     const a = client(tokenA.token);
     const b = client(tokenB.token);
     await a.instance.connect(a.transport);
@@ -1042,98 +1018,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         },
       });
       expect(shared.isError).not.toBe(true);
-      const before = await a.instance.callTool({
-        name: 'get_personal_state',
-        arguments: { projectId },
-      });
-      expect(before.isError).not.toBe(true);
-      expect(before.structuredContent).toMatchObject({ version: 0, state: { views: [] } });
-      const operationId = randomUUID();
-      const command = {
-        projectId,
-        expectedDatabaseRevision: 0,
-        expectedProjectVersion: 1,
-        expectedSyncSequence: 1,
-        expectedVersion: 0,
-        operationId,
-        commands: [
-          {
-            type: 'upsert_combined_view',
-            value: { id: 'sales-view', name: 'My sales', domainIds: ['sales'] },
-          },
-          { type: 'set_viewport', value: { viewId: 'sales-view', x: 10, y: 20, zoom: 1.2 } },
-        ],
-      };
-      const saved = await a.instance.callTool({
-        name: 'apply_personal_changes',
-        arguments: command,
-      });
-      expect(saved.isError).not.toBe(true);
-      expect(saved.structuredContent).toMatchObject({
-        version: 1,
-        state: { views: [{ id: 'sales-view' }] },
-      });
-      expect(
-        (
-          await a.instance.callTool({
-            name: 'apply_personal_changes',
-            arguments: command,
-          })
-        ).structuredContent,
-      ).toEqual(saved.structuredContent);
-      const ownSummary = await a.instance.callTool({
-        name: 'get_project_summary',
-        arguments: { projectId, includePersonal: true },
-      });
-      expect(
-        (ownSummary.structuredContent as { views: Array<{ id: string }> }).views,
-      ).toContainEqual(expect.objectContaining({ id: 'sales-view' }));
-      const other = await b.instance.callTool({
-        name: 'get_personal_state',
-        arguments: { projectId },
-      });
-      expect(other.structuredContent).toMatchObject({ version: 0, state: { views: [] } });
-      expect(
-        (
-          await b.instance.callTool({
-            name: 'apply_personal_changes',
-            arguments: command,
-          })
-        ).isError,
-      ).toBe(true);
-      const web = await api(
-        `/projects/${projectId}/personal-state`,
-        'GET',
-        undefined,
-        userA.session,
-      );
-      expect(web.status).toBe(200);
-      expect(web.data).toMatchObject({ version: 1, state: { views: [{ id: 'sales-view' }] } });
-      const updated = await api(
-        `/projects/${projectId}/personal-state`,
-        'PUT',
-        {
-          expectedVersion: 1,
-          expectedDatabaseRevision: 0,
-          expectedProjectVersion: 1,
-          expectedSyncSequence: 1,
-          state: {
-            ...web.data.state,
-            viewports: [
-              ...web.data.state.viewports.filter(
-                (item: { viewId: string }) => item.viewId !== 'sales-view',
-              ),
-              { viewId: 'sales-view', x: 30, y: 40, zoom: 1.5 },
-            ],
-          },
-        },
-        userA.session,
-      );
-      expect(updated.status).toBe(200);
-      expect(updated.data.version).toBe(2);
-      expect(
-        (await api(`/projects/${projectId}/personal-state`, 'GET', undefined, userB.session)).data,
-      ).toMatchObject({ version: 0, state: { views: [] } });
       const table = (id: string) => {
         const value = createNativeTable(defaultDatabaseContext('postgresql'), id, 'sales');
         value.logical.name = id;
@@ -1242,60 +1126,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
         id: 'orders',
       });
       expect(delta.structuredContent).not.toHaveProperty('document');
-      const layout = await a.instance.callTool({
-        name: 'apply_personal_changes',
-        arguments: {
-          projectId,
-          expectedVersion: 2,
-          expectedDatabaseRevision: 0,
-          expectedProjectVersion: 3,
-          expectedSyncSequence: 3,
-          operationId: randomUUID(),
-          commands: [
-            {
-              type: 'add_table_reference',
-              tableId: 'orders',
-              viewId: 'sales-view',
-              placement: { x: 0, y: 0, width: 260, height: 190 },
-            },
-            {
-              type: 'add_table_reference',
-              tableId: 'users',
-              viewId: 'sales-view',
-              placement: { x: 310, y: 0 },
-            },
-            {
-              type: 'update_node_layout',
-              nodeId: 'node:orders:sales-view',
-              patch: { x: 20 },
-            },
-            {
-              type: 'upsert_relation_layout',
-              value: { relationId: 'orders-users', viewId: 'sales-view', offset: 12 },
-            },
-            {
-              type: 'upsert_note',
-              value: { id: 'private-note', viewId: 'sales-view', text: 'Personal' },
-              placement: { x: 50, y: 300 },
-            },
-          ],
-        },
-      });
-      expect(layout.isError).not.toBe(true);
-      expect(layout.structuredContent).toMatchObject({
-        version: 3,
-        state: { notes: [{ id: 'private-note' }] },
-      });
-      const personalView = await a.instance.callTool({
-        name: 'get_project_view',
-        arguments: { projectId, viewId: 'sales-view' },
-      });
-      expect((personalView.structuredContent as { tables: unknown[] }).tables).toHaveLength(2);
-      expect(personalView.structuredContent).toHaveProperty('relationLayouts.0.offset', 12);
-      expect(personalView.structuredContent).toMatchObject({
-        protocolVersion: 2,
-        schemaVersion: 2,
-      });
       const sharedState = await a.instance.callTool({
         name: 'get_project',
         arguments: { projectId },
@@ -1303,75 +1133,23 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('MCP PostgreSQL and HTTP integ
       expect(sharedState.isError).not.toBe(true);
       expect(sharedState.structuredContent).toHaveProperty('sourceDocument.schemaVersion', 2);
       expect(sharedState.structuredContent).not.toHaveProperty('personalViewIds');
-      const source = (
-        sharedState.structuredContent as {
-          sourceDocument: { views: Array<{ id: string }>; notes: Array<{ id: string }> };
-        }
-      ).sourceDocument;
-      expect((source.views ?? []).some((view) => view.id === 'sales-view')).toBe(false);
-      expect((source.notes ?? []).some((note) => note.id === 'private-note')).toBe(false);
       const viewRelations = await a.instance.callTool({
         name: 'list_view_relations',
-        arguments: { projectId, viewId: 'sales-view' },
+        arguments: { projectId, viewId: 'sales' },
       });
-      expect(viewRelations.structuredContent).toHaveProperty('relations.0.layout.offset', 12);
+      expect(viewRelations.isError).not.toBe(true);
+      expect(viewRelations.structuredContent).toHaveProperty('relations.0.id', 'orders-users');
       const layoutDiagnosis = await a.instance.callTool({
         name: 'diagnose_layout',
-        arguments: { projectId, viewId: 'sales-view' },
+        arguments: { projectId, viewId: 'sales' },
       });
       expect(layoutDiagnosis.isError).not.toBe(true);
       expect(layoutDiagnosis.structuredContent).toHaveProperty('diagnostics');
       const otherView = await b.instance.callTool({
         name: 'get_project_view',
-        arguments: { projectId, viewId: 'sales-view' },
+        arguments: { projectId, viewId: 'sales' },
       });
-      expect(otherView.isError).toBe(true);
-      const personalPatch = await a.instance.callTool({
-        name: 'apply_personal_changes',
-        arguments: {
-          projectId,
-          expectedVersion: 3,
-          expectedDatabaseRevision: 0,
-          expectedProjectVersion: 3,
-          expectedSyncSequence: 3,
-          operationId: randomUUID(),
-          commands: [
-            { type: 'patch_combined_view', id: 'sales-view', patch: { name: 'Renamed view' } },
-            { type: 'patch_note', id: 'private-note', patch: { text: 'Updated note' } },
-          ],
-        },
-      });
-      expect(personalPatch.isError).not.toBe(true);
-      expect(personalPatch.structuredContent).toMatchObject({
-        version: 4,
-        state: { views: [{ name: 'Renamed view' }], notes: [{ text: 'Updated note' }] },
-      });
-      const removedPersonal = await a.instance.callTool({
-        name: 'apply_personal_changes',
-        arguments: {
-          projectId,
-          expectedVersion: 4,
-          expectedDatabaseRevision: 0,
-          expectedProjectVersion: 3,
-          expectedSyncSequence: 3,
-          operationId: randomUUID(),
-          commands: [
-            { type: 'delete_relation_layout', relationId: 'orders-users', viewId: 'sales-view' },
-            { type: 'remove_table_reference', nodeId: 'node:users:sales-view' },
-            { type: 'delete_note', id: 'private-note' },
-          ],
-        },
-      });
-      expect(removedPersonal.isError).not.toBe(true);
-      expect(removedPersonal.structuredContent).toMatchObject({
-        version: 5,
-        state: { relations: [], notes: [] },
-      });
-      expect(
-        (
-          removedPersonal.structuredContent as { state: { nodes: Array<{ objectId: string }> } }
-        ).state.nodes.some((node) => node.objectId === 'users'),
-      ).toBe(false);
+      expect(otherView.isError).not.toBe(true);
       const transfer = await a.instance.callTool({
         name: 'export_project',
         arguments: { projectId },

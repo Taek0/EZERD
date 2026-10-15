@@ -1,22 +1,13 @@
-import { TABLES_VIEW_ID, type PersonalCanvasDocument } from '@ezerd/model';
+import { TABLES_VIEW_ID, type CanvasDocument } from '@ezerd/model';
 
-/** Shared aliases use canonical coordinates; explicitly authenticated personal views keep their own. */
-export function sharedCanvasSelection(
-  document: PersonalCanvasDocument,
-  viewId: string,
-  personalViewIds: readonly string[] = [],
-) {
+/** Shared domain filters use canonical table-canvas coordinates. */
+export function sharedCanvasSelection(document: CanvasDocument, viewId: string) {
   if (viewId === 'overview') return { layoutViewId: 'overview', tableIds: null };
   if (viewId === TABLES_VIEW_ID) return { layoutViewId: TABLES_VIEW_ID, tableIds: null };
-  const domainIds = document.domains.some((domain) => domain.id === viewId)
-    ? [viewId]
-    : document.views?.find((view) => view.id === viewId)?.domainIds;
+  const domainIds = document.domains.some((domain) => domain.id === viewId) ? [viewId] : undefined;
   if (!domainIds) return undefined;
   return {
-    layoutViewId:
-      personalViewIds.includes(viewId) && document.views?.some((view) => view.id === viewId)
-        ? viewId
-        : TABLES_VIEW_ID,
+    layoutViewId: TABLES_VIEW_ID,
     tableIds: new Set(
       (document.tables ?? [])
         .filter((table) => table.domainId !== null && domainIds.includes(table.domainId))
@@ -25,12 +16,8 @@ export function sharedCanvasSelection(
   };
 }
 
-export function sharedCanvasNodes(
-  document: PersonalCanvasDocument,
-  viewId: string,
-  personalViewIds: readonly string[] = [],
-) {
-  const selection = sharedCanvasSelection(document, viewId, personalViewIds);
+export function sharedCanvasNodes(document: CanvasDocument, viewId: string) {
+  const selection = sharedCanvasSelection(document, viewId);
   if (!selection) return [];
   const noteIds = new Set(
     document.notes.filter((note) => note.viewId === selection.layoutViewId).map((note) => note.id),

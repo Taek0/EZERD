@@ -120,11 +120,7 @@ export async function loadNativeHistoryPending(
     await queue.claim(
       nativeHistoryEntry(old),
       () => {
-        if (
-          storage.getItem(`ezerd.native.pending:${userId}:${projectId}`) !== null ||
-          storage.getItem(`ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`) !==
-            null
-        )
+        if (storage.getItem(`ezerd.native.pending:${userId}:${projectId}`) !== null)
           throw Error('native.pending-exists');
         if (
           JSON.stringify(loadLegacyHistoryPending(userId, projectId, storage)) !==

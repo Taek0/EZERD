@@ -46,7 +46,7 @@ const domainSummarySchema = domainSchema.pick({ id: true, name: true }).extend({
 const viewSummarySchema = z.strictObject({
   id: objectId,
   name: z.string(),
-  kind: z.enum(['overview', 'tables', 'domain', 'combined']),
+  kind: z.enum(['overview', 'tables', 'domain']),
   domainIds: z.array(objectId),
 });
 const baseSchema = z.strictObject({
@@ -210,7 +210,6 @@ export type NativeProjectState = {
   project: z.infer<typeof baseSchema.shape.project>;
   document: NativeDesignDocument;
   syncSequence: number;
-  personalViewIds?: readonly string[];
 };
 export function assertNativeQueryVersion(state: NativeProjectState, input: NativeQueryVersion) {
   if (!pairedQueryVersion(input)) {
@@ -306,14 +305,6 @@ function views(state: NativeProjectState) {
       kind: 'domain' as const,
       domainIds: [domain.id],
     })),
-    ...(state.document.views ?? [])
-      .filter((view) => state.personalViewIds?.includes(view.id))
-      .map((view) => ({
-        id: view.id,
-        name: view.name,
-        kind: 'combined' as const,
-        domainIds: view.domainIds,
-      })),
   ];
 }
 function view(state: NativeProjectState, viewId: string) {
@@ -321,14 +312,14 @@ function view(state: NativeProjectState, viewId: string) {
   if (!result) throw new NotFoundException('화면을 찾을 수 없습니다.');
   return result;
 }
-/** The caller supplies only the authenticated actor's personal IDs and merged document. */
+/** Read only shared canonical canvases and domain filters. */
 export function nativeViewSelection(state: NativeProjectState, viewId: string) {
   view(state, viewId);
-  return sharedCanvasSelection(state.document, viewId, state.personalViewIds)!;
+  return sharedCanvasSelection(state.document, viewId)!;
 }
 export function nativeViewNodes(state: NativeProjectState, viewId: string) {
   nativeViewSelection(state, viewId);
-  return sharedCanvasNodes(state.document, viewId, state.personalViewIds);
+  return sharedCanvasNodes(state.document, viewId);
 }
 function compareId(a: { id: string }, b: { id: string }) {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -442,9 +433,7 @@ export function projectView(
       (relation) =>
         relation.viewId === selection.layoutViewId && relationIds.has(relation.relationId),
     ),
-    viewport:
-      document.layout.viewports.find((viewport) => viewport.viewId === selection.layoutViewId) ??
-      null,
+    viewport: null,
   });
 }
 export function listViewRelations(
@@ -553,9 +542,7 @@ function indexedTableDetails(
 }
 function allowedTableLayouts(state: NativeProjectState) {
   return new Set(
-    views(state).map(
-      (item) => sharedCanvasSelection(state.document, item.id, state.personalViewIds)!.layoutViewId,
-    ),
+    views(state).map((item) => sharedCanvasSelection(state.document, item.id)!.layoutViewId),
   );
 }
 export function tableDetails(state: NativeProjectState, tableId: string) {

@@ -474,7 +474,7 @@ describe('domain forms and overview static UI', () => {
     const f = fixture();
     const html = renderToStaticMarkup(
       createElement(NativeProjectView, {
-        entry: { kind: 'native', ...f, personalUnavailable: false },
+        entry: { kind: 'native', ...f },
         onLeave() {},
         onReload() {},
         projectActions: () => createElement('span', null, 'Main actions'),

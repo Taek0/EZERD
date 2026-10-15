@@ -3,7 +3,6 @@ import { createNativeColumn, createNativeTable, defaultDatabaseContext } from '@
 import { nativeEditorCommandSchema, nativePendingSaveSchema } from './native-edit.js';
 import {
   nativeSharedCanvasCommandSchema,
-  nativePersonalCanvasCommandSchema,
   nativeDomainCommandSchema,
   nativeKeyPatchSchema,
   nativeForeignKeyPatchSchema,
@@ -117,7 +116,6 @@ describe('native structured editor commands', () => {
   it('accepts only strict self-contained format2 clipboard commands with complete fresh UUID remaps', () => {
     const command = clipboardCommand();
     expect(nativeEditorCommandSchema.parse(command)).toEqual(command);
-    expect(nativePersonalCanvasCommandSchema.safeParse(command).success).toBe(false);
     for (const input of [
       { ...command, privilegedBefore: command.clipboard.document },
       { ...command, bindExisting: { a: 'short-existing' } },
@@ -196,7 +194,6 @@ describe('native structured editor commands', () => {
     ]) {
       expect(nativeDomainCommandSchema.parse(command)).toEqual(command);
       expect(nativeEditorCommandSchema.parse(command)).toEqual(command);
-      expect(nativePersonalCanvasCommandSchema.safeParse(command).success).toBe(false);
     }
     for (const command of [
       { type: 'delete_domain', id: 'd' },
@@ -218,7 +215,7 @@ describe('native structured editor commands', () => {
     ])
       expect(nativeDomainCommandSchema.safeParse(command).success).toBe(false);
   });
-  it('bounds native canvas IDs/layouts and separates personal camera/view commands', () => {
+  it('bounds native canvas IDs/layouts and rejects retired camera/view commands', () => {
     const command = {
       type: 'update_node_layout',
       nodeId: 'n'.repeat(160),
@@ -235,9 +232,9 @@ describe('native structured editor commands', () => {
       expect(nativeEditorCommandSchema.safeParse(input).success).toBe(false);
     const camera = { type: 'set_viewport', value: { viewId: '__tables__', x: 0, y: 0, zoom: 4 } };
     expect(nativeSharedCanvasCommandSchema.safeParse(camera).success).toBe(false);
-    expect(nativePersonalCanvasCommandSchema.parse(camera)).toEqual(camera);
+    expect(nativeEditorCommandSchema.safeParse(camera).success).toBe(false);
     expect(
-      nativePersonalCanvasCommandSchema.safeParse({
+      nativeEditorCommandSchema.safeParse({
         ...camera,
         value: { ...camera.value, zoom: 4.1 },
       }).success,

@@ -11,7 +11,6 @@ import {
   deleteThreadSchema,
   notificationSchema,
   versionedProjectTransferSchema,
-  personalStateSnapshotSchema,
   projectQuerySchema,
   projectSchema,
   threadSchema,
@@ -38,7 +37,7 @@ import {
   nativeCancellationInputSchema,
   importNativeProjectSchema,
 } from '@ezerd/contracts';
-import { mergeStoredPersonalState, TABLES_VIEW_ID } from '@ezerd/model';
+import { TABLES_VIEW_ID } from '@ezerd/model';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { ReviewService } from '../review/review.service.js';
 import { WorkspaceService } from '../workspace/workspace.service.js';
@@ -51,7 +50,6 @@ import { NativeHistoryService } from '../sync/native-history.service.js';
 import { NativeSyncService } from '../sync/native-sync.service.js';
 import { NativeCancellationService } from '../sync/native-cancellation.service.js';
 import { NativeTransferService } from '../workspace/native-transfer.service.js';
-import { applyPersonalChangesSchema, McpPersonalService } from './mcp-personal.service.js';
 import {
   applyNativeProjectChangesMetadataSchema,
   McpNativeDocumentService,
@@ -193,7 +191,6 @@ export class McpServerFactory {
     @Inject(WorkspaceService) private readonly workspace: WorkspaceService,
     @Inject(ReviewService) private readonly reviews: ReviewService,
     @Inject(McpLogger) private readonly logger: McpLogger,
-    @Inject(McpPersonalService) private readonly personal: McpPersonalService,
     @Inject(McpNativeDocumentService) private readonly nativeDocuments: McpNativeDocumentService,
     @Inject(SpaceService) private readonly spaces: SpaceService,
     @Inject(McpAuthService) private readonly auth: McpAuthService,
@@ -213,10 +210,10 @@ export class McpServerFactory {
         capabilities: { tools: {} },
         instructions:
           'RDBMS 미지정은 databaseKind:"generic"/profileId:"generic-v1"입니다. 테이블·컬럼·키·관계 등 구조 모델링과 공통 타입을 사용하며 사용자 정의 타입은 {kind:"custom",database:"generic",name:"타입명"}입니다. generic 테이블 namespace는 {kind:"generic"}, 테이블/컬럼 options는 {database:"generic"}입니다. RDBMS 미지정 프로젝트는 DDL 내보내기를 지원하지 않습니다. ' +
-          'get_project_database_capabilities로 DB/profile/revision과 usable 기능을 확인하고 get_project_document_state로 원본을 조회하세요. 원본 schemaVersion 2만 apply_native_project_changes로 편집합니다. v1 전용 조회·편집·이력 도구는 종료되었습니다. v1 원본 조회와 파일 가져오기·내보내기·upgrade는 호환 목적으로 유지합니다. get_personal_state/apply_personal_changes는 자신의 개인 캔버스만 다룹니다. ' +
+          'get_project_database_capabilities로 DB/profile/revision과 usable 기능을 확인하고 get_project_document_state로 원본을 조회하세요. 원본 schemaVersion 2만 apply_native_project_changes로 편집합니다. v1 전용 조회·편집·이력 도구는 종료되었습니다. v1 원본 조회와 파일 가져오기·내보내기·upgrade는 호환 목적으로 유지합니다. ' +
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
-          ' active 공간에서 개인 상태와 리뷰는 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
-          'Native 프로젝트 탐색은 get_project_summary로 시작하고, 배치 전 get_project_view의 모든 페이지로 최신 배치를 확인하세요. 화면 관계는 list_view_relations로 조회하세요. __tables__와 도메인 필터는 공유 좌표를 사용하며 반환된 노드 ID로 apply_native_project_changes를 호출하세요. 자신의 개인 결합 화면은 apply_personal_changes로 변경하고 카메라는 get_personal_state로 조회하세요. 테이블 컬럼·키·인덱스·CHECK·관계는 get_table_details로 확인합니다. 전체 원본이 필요한 경우에만 get_project_document_state 또는 같은 응답을 제공하는 get_project를 사용하세요. ' +
+          ' active 공간에서 리뷰를 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
+          'Native 프로젝트 탐색은 get_project_summary로 시작하고, 배치 전 get_project_view의 모든 페이지로 최신 배치를 확인하세요. 화면 관계는 list_view_relations로 조회하세요. __tables__와 도메인 필터는 공유 좌표를 사용하며 반환된 노드 ID로 apply_native_project_changes를 호출하세요. 테이블 컬럼·키·인덱스·CHECK·관계는 get_table_details로 확인합니다. 전체 원본이 필요한 경우에만 get_project_document_state 또는 같은 응답을 제공하는 get_project를 사용하세요. ' +
           '여러 테이블 상세는 get_tables_details로 최대 20개씩 묶어 조회하세요. 목록의 다음 페이지에는 첫 응답의 syncSequence/databaseRevision을 expectedSequence/expectedDatabaseRevision으로 함께 전달하고 변경 오류가 나면 처음부터 다시 조회하세요. get_project_changes로 since 이후 변경 경로·대상 ID를 확인할 수 있으며 resyncRequired이면 전체 원본을 다시 읽으세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 각 카드 쌍에서 가로 또는 세로 경계가 40px 이상 떨어져 있는지 계산하고, 어느 축으로도 분리되지 않으면 겹침 또는 간격 부족으로 판단하세요. ' +
@@ -237,38 +234,8 @@ export class McpServerFactory {
     );
     const invoke = <T>(tool: string, callback: () => Promise<T>) =>
       this.invoke(tool, user, tokenId, requestId, callback);
-    const projectState = async (
-      projectId: string,
-      options: { viewId?: string | undefined; includePersonal?: boolean } = {},
-    ) => {
-      let shared = await this.workspace.getNativeQueryState(user.id, projectId);
-      const { viewId } = options;
-      const needsPersonal =
-        options.includePersonal ||
-        (viewId &&
-          viewId !== 'overview' &&
-          viewId !== TABLES_VIEW_ID &&
-          !shared.document.domains.some((domain) => domain.id === viewId));
-      if (!needsPersonal) return { ...shared, personalViewIds: [] as string[] };
-      const personal = await this.personal.get(projectId, user);
-      const matches = () =>
-        (personal.projectVersion === undefined ||
-          personal.projectVersion === shared.project.version) &&
-        (personal.syncSequence === undefined || personal.syncSequence === shared.syncSequence) &&
-        (personal.databaseRevision === undefined ||
-          personal.databaseRevision === shared.project.databaseRevision);
-      if (!matches()) shared = await this.workspace.getNativeQueryState(user.id, projectId);
-      if (!matches())
-        throw new ConflictException({
-          code: 'document.read-context-changed',
-          message: '조회 중 설계가 변경되었습니다. 다시 조회해 주세요.',
-        });
-      return {
-        ...shared,
-        document: mergeStoredPersonalState(shared.document, personal.state),
-        personalViewIds: personal.state.views.map((view) => view.id),
-      };
-    };
+    const projectState = (projectId: string, _options: { viewId?: string | undefined } = {}) =>
+      this.workspace.getNativeQueryState(user.id, projectId);
     this.registerWorkspaceTools(server, user, invoke);
 
     server.registerTool(
@@ -295,7 +262,7 @@ export class McpServerFactory {
       'get_project',
       {
         description:
-          '프로젝트의 버전별 원본과 native 상태를 조회합니다. get_project_document_state와 동일한 공유 문서 응답이며 개인 화면은 포함하지 않습니다.',
+          '프로젝트의 버전별 원본과 native 상태를 조회합니다. get_project_document_state와 동일한 공유 문서 응답입니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: versionedProjectOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -311,7 +278,7 @@ export class McpServerFactory {
       'get_project_document_state',
       {
         description:
-          '같은 저장 snapshot의 프로젝트 DB/profile/revision·version·sequence, 원본 sourceDocument와 별도 native preview/진단을 읽습니다. preview available은 편집·DDL 기능이 usable이라는 뜻이 아닙니다. 공유 문서 조회이며 개인 상태를 합치거나 baseline을 발급하지 않습니다. 전체 문서가 필요한 경우 사용하세요.',
+          '같은 저장 snapshot의 프로젝트 DB/profile/revision·version·sequence, 원본 sourceDocument와 별도 native preview/진단을 읽습니다. preview available은 편집·DDL 기능이 usable이라는 뜻이 아닙니다. 공유 문서 조회입니다. 전체 문서가 필요한 경우 사용하세요.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: versionedProjectOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -357,18 +324,15 @@ export class McpServerFactory {
       'get_project_summary',
       {
         description:
-          'Native v2 공유 설계의 DB 컨텍스트·버전·객체 개수와 화면·도메인 목록을 조회합니다. 자신의 개인 화면 목록도 필요하면 includePersonal=true를 지정하세요.',
+          'Native v2 공유 설계의 DB 컨텍스트·버전·객체 개수와 화면·도메인 목록을 조회합니다.',
         inputSchema: z.strictObject({
           projectId: idSchema,
-          includePersonal: z.boolean().default(false),
         }),
         outputSchema: projectSummarySchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, includePersonal }) =>
-        invoke('get_project_summary', async () =>
-          projectSummary(await projectState(projectId, { includePersonal })),
-        ),
+      ({ projectId }) =>
+        invoke('get_project_summary', async () => projectSummary(await projectState(projectId))),
     );
     server.registerTool(
       'list_tables',
@@ -386,7 +350,7 @@ export class McpServerFactory {
       'get_project_view',
       {
         description:
-          'Native v2 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. __tables__와 도메인 필터는 공유 좌표를 사용하며 자신의 개인 화면만 별도 배치·메모·경로를 반환합니다. 테이블 컬럼은 get_table_details로 조회하세요.',
+          'Native v2 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. __tables__와 도메인 필터의 공유 배치·메모·경로를 반환합니다. 테이블 컬럼은 get_table_details로 조회하세요.',
         inputSchema: projectViewInputSchema,
         outputSchema: projectViewSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -402,7 +366,7 @@ export class McpServerFactory {
       'list_view_relations',
       {
         description:
-          'Native v2 화면에 보이는 도메인·테이블 관계와 경로를 최대 100개씩 조회합니다. native 논리·물리 대응관계 및 DB 옵션을 유지하며 도메인 필터는 공유 경로, 자신의 개인 화면은 개인 경로를 반환합니다.',
+          'Native v2 화면에 보이는 도메인·테이블 관계와 경로를 최대 100개씩 조회합니다. native 논리·물리 대응관계 및 DB 옵션을 유지하며 도메인 필터는 공유 경로를 반환합니다.',
         inputSchema: viewRelationsInputSchema,
         outputSchema: viewRelationsSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -415,34 +379,19 @@ export class McpServerFactory {
         }),
     );
     server.registerTool(
-      'get_personal_state',
-      {
-        description: '인증된 사용자 자신의 결합 화면, 화면 배치·뷰포트와 개인 메모를 조회합니다.',
-        inputSchema: z.strictObject({ projectId: idSchema }),
-        outputSchema: personalStateSnapshotSchema,
-        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-      },
-      ({ projectId }) =>
-        invoke('get_personal_state', async () =>
-          personalStateSnapshotSchema.parse(await this.personal.get(projectId, user)),
-        ),
-    );
-    server.registerTool(
       'get_table_details',
       {
-        description:
-          '한 테이블의 컬럼·키·연결 관계·공유 배치를 조회합니다. 자신의 개인 화면 배치도 필요하면 includePersonal=true를 지정하세요.',
+        description: '한 테이블의 컬럼·키·연결 관계·공유 배치를 조회합니다.',
         inputSchema: z.strictObject({
           projectId: idSchema,
           tableId: z.string().min(1).max(160),
-          includePersonal: z.boolean().default(false),
         }),
         outputSchema: tableDetailsMetadataSchema.meta(mcpSchemaMetadata(tableDetailsSchema)),
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       },
-      ({ projectId, tableId, includePersonal }) =>
+      ({ projectId, tableId }) =>
         invoke('get_table_details', async () =>
-          tableDetails(await projectState(projectId, { includePersonal }), tableId),
+          tableDetails(await projectState(projectId), tableId),
         ),
     );
     server.registerTool(
@@ -748,20 +697,6 @@ export class McpServerFactory {
       (input) =>
         invoke('apply_native_project_changes', async () =>
           nativeOperationResult(await this.nativeDocuments.apply(input, user)),
-        ),
-    );
-    server.registerTool(
-      'apply_personal_changes',
-      {
-        description:
-          'native 프로젝트에서 인증된 사용자 자신의 결합 화면·참조 테이블·개인 배치·뷰포트·관계 경로·메모를 개인 버전 기준으로 변경합니다. native 신규 쓰기는 get_personal_state의 databaseRevision/projectVersion/syncSequence를 expectedDatabaseRevision/expectedProjectVersion/expectedSyncSequence로 함께 전달합니다. 기존 operation 재생은 같은 원문을 유지합니다. 공유 설계·DB 문맥·물리 타입은 변경하지 않습니다.',
-        inputSchema: applyPersonalChangesSchema,
-        outputSchema: personalStateSnapshotSchema,
-        annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-      },
-      (input) =>
-        invoke('apply_personal_changes', async () =>
-          personalStateSnapshotSchema.parse(await this.personal.apply(input, user)),
         ),
     );
     server.registerTool(

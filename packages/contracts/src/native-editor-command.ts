@@ -14,7 +14,6 @@ import {
   type NodeLayout,
   type Note,
   type RelationLayout,
-  type CombinedView,
   type Domain,
 } from '@ezerd/model';
 import {
@@ -22,15 +21,7 @@ import {
   nativeStoredTableSchema,
   nativeStoredDesignDocumentSchema,
 } from './native-document.js';
-import {
-  nodeLayoutSchema,
-  noteSchema,
-  relationLayoutSchema,
-  viewportSchema,
-  combinedViewSchema,
-  personalStateSchema,
-  domainSchema,
-} from './workspace.js';
+import { nodeLayoutSchema, noteSchema, relationLayoutSchema, domainSchema } from './workspace.js';
 import {
   nativeTableClipboardSchema,
   nativeClipboardByteLength,
@@ -142,7 +133,7 @@ export const nativeDomainCommandSchema = z.discriminatedUnion('type', [
   }),
 ]);
 export type NativeDomainCommand = z.output<typeof nativeDomainCommandSchema>;
-/** Private combined views and all cameras belong to personal state, never shared sync. */
+/** Shared canvas commands exclude camera and legacy combined-view writes. */
 export const nativeSharedCanvasCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('add_table_reference'),
@@ -175,29 +166,6 @@ export const nativeSharedCanvasCommandSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('delete_relation_layout'), relationId: id, viewId: canvasId }),
 ]);
 export type NativeSharedCanvasCommand = z.output<typeof nativeSharedCanvasCommandSchema>;
-export const nativePersonalCanvasCommandSchema = z.discriminatedUnion('type', [
-  ...nativeSharedCanvasCommandSchema.options,
-  z.strictObject({ type: z.literal('set_viewport'), value: viewportSchema }),
-  z.strictObject({
-    type: z.literal('upsert_combined_view'),
-    value: combinedViewSchema.transform((value) => value as CombinedView),
-  }),
-  z.strictObject({ type: z.literal('delete_combined_view'), id }),
-]);
-export type NativePersonalCanvasCommand = z.output<typeof nativePersonalCanvasCommandSchema>;
-export const nativeCanvasPersonalPendingSchema = z.strictObject({
-  userId: z.uuid(),
-  projectId: z.uuid(),
-  revision: z.uuid(),
-  databaseRevision: z.number().int().nonnegative(),
-  projectVersion: z.number().int().nonnegative(),
-  sequence: z.number().int().nonnegative(),
-  expectedVersion: z.number().int().nonnegative(),
-  before: personalStateSchema,
-  state: personalStateSchema,
-  editorDraft: z.strictObject({ key: z.string().min(1).max(320), revision: z.uuid() }).optional(),
-});
-export type NativeCanvasPersonalPending = z.output<typeof nativeCanvasPersonalPendingSchema>;
 export type NativeKeyPatch = Partial<Omit<NativeTableKey, 'id' | 'tableId' | 'deferrable'>> & {
   deferrable?: NonNullable<NativeTableKey['deferrable']> | null;
 };

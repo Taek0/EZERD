@@ -172,7 +172,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         `/projects/${projectId}/document-state`,
         `/projects/${projectId}/native-transfer`,
         `/projects/${projectId}/threads`,
-        `/projects/${projectId}/personal-state`,
         `/projects/${projectId}/native-history`,
         `/projects/${projectId}/native-sync/events`,
       ]) {
@@ -190,7 +189,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect((await api('/projects', 'POST', { name: 'No workspace' })).status).toBe(400);
     });
 
-    it('allows viewer review and personal state while denying design and project management', async () => {
+    it('allows viewer review while denying design and project management', async () => {
       const op = await operation('owner');
       expect(
         (
@@ -224,32 +223,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(
         (await api('/projects/import', 'POST', { workspaceId, transfer }, 'viewer')).status,
       ).toBe(403);
-      const personal = await api(
-        `/projects/${projectId}/personal-state`,
-        'GET',
-        undefined,
-        'viewer',
-      );
-      const state = {
-        ...personal.data.state,
-        viewports: [{ viewId: 'overview', x: 35, y: 27, zoom: 1 }],
-      };
-      expect(
-        (
-          await api(
-            `/projects/${projectId}/personal-state`,
-            'PUT',
-            {
-              expectedVersion: personal.data.version,
-              expectedDatabaseRevision: personal.data.databaseRevision,
-              expectedProjectVersion: personal.data.projectVersion,
-              expectedSyncSequence: personal.data.syncSequence,
-              state,
-            },
-            'viewer',
-          )
-        ).status,
-      ).toBe(200);
       expect(
         (await api(`/projects/${projectId}/document-state`)).data.sourceDocument.domains,
       ).toEqual([]);
@@ -428,25 +401,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         (await api(`/projects/${projectId}/native-transfer`, 'GET', undefined, 'viewer')).status,
       ).toBe(200);
       expect((await api('/projects', 'POST', { name: 'Denied', workspaceId })).status).toBe(403);
-      const personal = (
-        await api(`/projects/${projectId}/personal-state`, 'GET', undefined, 'viewer')
-      ).data;
-      expect(
-        (
-          await api(
-            `/projects/${projectId}/personal-state`,
-            'PUT',
-            {
-              expectedVersion: personal.version,
-              state: {
-                ...personal.state,
-                viewports: [{ viewId: 'overview', x: 99, y: 0, zoom: 1 }],
-              },
-            },
-            'viewer',
-          )
-        ).status,
-      ).toBe(403);
       expect(
         (
           await api(
@@ -515,10 +469,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         await client.query('ALTER TABLE projects ALTER COLUMN workspace_id DROP NOT NULL');
         await client.query(
           "INSERT INTO projects(id,name,document) SELECT $1,'Legacy fixture',document FROM projects WHERE id=$2",
-          [legacyId, projectId],
-        );
-        await client.query(
-          'INSERT INTO project_personal_states(project_id,user_id,state,version) SELECT $1,user_id,state,version FROM project_personal_states WHERE project_id=$2',
           [legacyId, projectId],
         );
         await client.query(

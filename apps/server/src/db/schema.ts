@@ -15,7 +15,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { StoredDesignDocument, PersonalState, DatabaseProfileId } from '@ezerd/model';
+import type { StoredDesignDocument, DatabaseProfileId } from '@ezerd/model';
 import type { ProjectDatabaseChangeResult } from '@ezerd/contracts';
 import { sql } from 'drizzle-orm';
 
@@ -181,51 +181,6 @@ export const workspaceAuditEvents = pgTable(
   },
   (table) => [
     index('workspace_audit_workspace_created_idx').on(table.workspaceId, table.createdAt),
-  ],
-);
-
-export const projectPersonalStates = pgTable(
-  'project_personal_states',
-  {
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull().default(0),
-    state: jsonb('state')
-      .$type<PersonalState>()
-      .notNull()
-      .default({ views: [], notes: [], nodes: [], viewports: [], relations: [] }),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [primaryKey({ columns: [table.projectId, table.userId] })],
-);
-
-export const projectPersonalOperations = pgTable(
-  'project_personal_operations',
-  {
-    operationId: uuid('operation_id').primaryKey(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
-    result: jsonb('result')
-      .$type<{
-        version: number;
-        state: PersonalState;
-        projectVersion: number;
-        syncSequence: number;
-      }>()
-      .notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index('project_personal_operations_project_user_idx').on(table.projectId, table.userId),
   ],
 );
 

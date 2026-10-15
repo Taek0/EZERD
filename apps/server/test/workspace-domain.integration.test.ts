@@ -18,9 +18,8 @@ import {
 import { WorkspaceEventsService } from '../src/workspace/workspace-events.service.js';
 
 describe('workspace role policy', () => {
-  it('permits viewer reviews/personal state while restricting design and archived writes', () => {
+  it('permits viewer reviews while restricting design and archived writes', () => {
     expect(hasWorkspacePermission('viewer', 'active', 'review')).toBe(true);
-    expect(hasWorkspacePermission('viewer', 'active', 'personal')).toBe(true);
     expect(hasWorkspacePermission('viewer', 'active', 'design')).toBe(false);
     expect(hasWorkspacePermission('editor', 'active', 'deleteProject')).toBe(false);
     expect(hasWorkspacePermission('owner', 'archived', 'manageWorkspace')).toBe(true);
@@ -29,7 +28,6 @@ describe('workspace role policy', () => {
       for (const permission of [
         'design',
         'review',
-        'personal',
         'createProject',
         'manageProject',
         'deleteProject',
@@ -261,7 +259,7 @@ describe.runIf(process.env.EZERD_WORKSPACE_DB_TEST === '1')(
       releaseWrite();
       await Promise.all([write, archive]);
       await expect(
-        access.runWorkspace(owner.id, workspace.id, 'personal', async () => undefined),
+        access.runWorkspace(owner.id, workspace.id, 'review', async () => undefined),
       ).rejects.toBeInstanceOf(ForbiddenException);
       await spaces.updateWorkspace(owner.id, workspace.id, { status: 'active' });
       await database.db

@@ -8,7 +8,6 @@ export type WorkspacePermission =
   | 'read'
   | 'design'
   | 'review'
-  | 'personal'
   | 'createProject'
   | 'manageProject'
   | 'deleteProject'
@@ -25,7 +24,7 @@ export function hasWorkspacePermission(
   if (permission === 'read') return true;
   if (permission === 'manageWorkspace') return role === 'owner';
   if (status === 'archived') return false;
-  if (permission === 'review' || permission === 'personal') return true;
+  if (permission === 'review') return true;
   if (permission === 'deleteProject') return role === 'owner';
   return role === 'owner' || role === 'editor';
 }

@@ -1,7 +1,7 @@
 import {
-  nativePersonalCanvasCommandSchema,
+  nativeSharedCanvasCommandSchema,
   relationLayoutSchema,
-  type NativePersonalCanvasCommand,
+  type NativeSharedCanvasCommand,
 } from '@ezerd/contracts';
 import type { NativeDesignDocument, RelationLayout } from '@ezerd/model';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
@@ -21,11 +21,11 @@ export function nativeRouteCommand(
   relationId: string,
   raw: string,
   reset = false,
-): NativePersonalCanvasCommand {
+): NativeSharedCanvasCommand {
   if (!document.tableRelations?.some((r) => r.id === relationId))
     throw Error('document.object-not-found');
   if (reset)
-    return nativePersonalCanvasCommandSchema.parse({
+    return nativeSharedCanvasCommandSchema.parse({
       type: 'delete_relation_layout',
       relationId,
       viewId,
@@ -33,7 +33,7 @@ export function nativeRouteCommand(
   const route = relationLayoutSchema.parse(JSON.parse(raw));
   if (route.relationId !== relationId || route.viewId !== viewId)
     throw Error('canvas.route-context-changed');
-  return nativePersonalCanvasCommandSchema.parse({ type: 'upsert_relation_layout', value: route });
+  return nativeSharedCanvasCommandSchema.parse({ type: 'upsert_relation_layout', value: route });
 }
 export function nativeRouteGeometry(
   scene: NativeRouteScene,

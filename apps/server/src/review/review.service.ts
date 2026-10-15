@@ -16,24 +16,11 @@ import type {
   updateNotificationSchema,
   updateThreadSchema,
 } from '@ezerd/contracts';
-import {
-  TABLES_VIEW_ID,
-  resolveProjectDatabaseState,
-  mergeStoredPersonalState,
-  reconcilePersonalState,
-} from '@ezerd/model';
+import { TABLES_VIEW_ID, resolveProjectDatabaseState } from '@ezerd/model';
 import { normalizeCurrentServerDocument } from '../shared/native-document-reader.js';
 import { sharedCanvasNodes } from '../shared/table-canvas-view.js';
 import { DatabaseService } from '../db/database.service.js';
-import {
-  messages,
-  notifications,
-  projects,
-  projectPersonalStates,
-  threads,
-  users,
-  userWorkspaces,
-} from '../db/schema.js';
+import { messages, notifications, projects, threads, users, userWorkspaces } from '../db/schema.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import { SyncGateway } from '../sync/sync.gateway.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
@@ -222,23 +209,11 @@ export class ReviewService {
             databaseKind: project.databaseKind ?? 'postgresql',
           }),
         );
-        const [personal] = await tx
-          .select()
-          .from(projectPersonalStates)
-          .where(
-            and(
-              eq(projectPersonalStates.projectId, projectId),
-              eq(projectPersonalStates.userId, actor.id),
-            ),
-          );
-        const doc = personal
-          ? mergeStoredPersonalState(shared, reconcilePersonalState(shared, personal.state))
-          : shared;
+        const doc = shared;
         if (
           input.viewId !== 'overview' &&
           input.viewId !== TABLES_VIEW_ID &&
-          !doc.domains.some((domain) => domain.id === input.viewId) &&
-          !doc.views?.some((view) => view.id === input.viewId)
+          !doc.domains.some((domain) => domain.id === input.viewId)
         )
           throw new BadRequestException('댓글을 남길 화면을 찾을 수 없습니다.');
         if (input.objectId !== null) {

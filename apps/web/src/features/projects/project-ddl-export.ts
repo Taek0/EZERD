@@ -34,10 +34,6 @@ export function assertNativeLocalInputsReady(
     throw Error('project-export.pending');
   if (storage.getItem(`ezerd.native.history:${JSON.stringify([userId, projectId])}`) !== null)
     throw Error('project-export.pending');
-  if (
-    storage.getItem(`ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`) !== null
-  )
-    throw Error('project-export.pending');
   const identity = JSON.stringify([userId, projectId]).slice(0, -1) + ',';
   for (let i = 0; i < storage.length; i++) {
     const key = storage.key(i);

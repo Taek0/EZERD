@@ -11,8 +11,6 @@ import { WorkspaceService } from '../src/workspace/workspace.service.js';
 import { ProjectDatabaseService } from '../src/workspace/project-database.service.js';
 import { DatabaseService } from '../src/db/database.service.js';
 import { RateLimitService } from '../src/shared/rate-limit.service.js';
-import { PersonalStateService } from '../src/workspace/personal-state.service.js';
-import { createEmptyDocument } from '@ezerd/model';
 
 const actor = { id: crypto.randomUUID(), username: 'owner', color: '#4169e1' };
 const projectId = crypto.randomUUID(),
@@ -86,25 +84,13 @@ it('keeps the native operation lookup route separate and bound to the actor', as
   expect(native.lookup).toHaveBeenCalledWith(projectId, operationId, actor);
 });
 
-it('rejects new v1 personal-state writes before invoking a change callback or storage mutation', async () => {
-  const project = {
-    id: projectId,
-    document: createEmptyDocument(),
-    status: 'active',
-    databaseKind: 'postgresql',
-  };
-  const results = [[project], []];
-  const chain: any = {};
-  chain.from = chain.where = () => chain;
-  chain.for = async () => results.shift();
-  const tx = { select: () => chain, insert: vi.fn(), update: vi.fn() };
-  const service = new PersonalStateService(
-    { db: { transaction: (fn: (tx: unknown) => unknown) => fn(tx) } } as never,
-    { requireProject: vi.fn() } as never,
-  );
-  const change = vi.fn();
-  await expect(service.mutate(projectId, actor, 0, change)).rejects.toMatchObject({ status: 410 });
-  expect(change).not.toHaveBeenCalled();
-  expect(tx.insert).not.toHaveBeenCalled();
-  expect(tx.update).not.toHaveBeenCalled();
+it('has no personal-state HTTP routes for reads or writes', async () => {
+  for (const method of ['GET', 'PUT']) {
+    const response = await fetch(`${base}/api/projects/${projectId}/personal-state`, {
+      method,
+      headers: { Authorization: 'Bearer test-session', 'Content-Type': 'application/json' },
+      ...(method === 'PUT' ? { body: JSON.stringify({ state: {} }) } : {}),
+    });
+    expect(response.status).toBe(404);
+  }
 });

@@ -9,11 +9,11 @@ const space = (role: Workspace['role'], status: Workspace['status'] = 'active'):
   updatedAt: '',
 });
 describe('workspace permissions', () => {
-  it('allows active viewers personal state and review only', () => {
+  it('allows active viewers review only', () => {
     expect(workspacePermissions(space('viewer'))).toEqual({
       manage: false,
       edit: false,
-      personal: true,
+
       review: true,
       deleteProject: false,
     });
@@ -31,7 +31,7 @@ describe('workspace permissions', () => {
       expect(workspacePermissions(space(role, 'archived'))).toEqual({
         manage: role === 'owner',
         edit: false,
-        personal: false,
+
         review: false,
         deleteProject: false,
       });
@@ -41,7 +41,7 @@ describe('workspace permissions', () => {
     expect(workspacePermissions(undefined)).toEqual({
       manage: false,
       edit: false,
-      personal: false,
+
       review: false,
       deleteProject: false,
     });

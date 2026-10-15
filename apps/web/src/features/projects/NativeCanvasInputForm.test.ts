@@ -536,7 +536,7 @@ describe('native canvas form gesture-submit registration', () => {
   });
 
   it.each(['personalVersion', 'privateVersion'])(
-    'preserves clean %s mismatch evidence when the shared baseline also advances',
+    'ignores retired %s metadata when a clean shared baseline advances',
     (field) => {
       const ui = fixture();
       ui.props.initial = { ...ui.props.initial, [field]: '5' };
@@ -545,11 +545,11 @@ describe('native canvas form gesture-submit registration', () => {
       ui.props.initial = { ...ui.props.initial, route: 'new route', [field]: '6' };
       ui.render();
       ui.render();
-      expect(ui.values()[field]).toBe('5');
-      expect(ui.values().route).toBe('saved');
+      expect(ui.values()[field]).toBe('6');
+      expect(ui.values().route).toBe('new route');
       expect(ui.draft()).toBeNull();
       ui.change('route', '32');
-      expect(ui.draft()!.expected.sequence).toBe(10);
+      expect(ui.draft()!.expected.sequence).toBe(11);
       ui.unmount();
     },
   );

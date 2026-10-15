@@ -84,7 +84,6 @@ async function harness(kind: 'sqlite' | 'generic' = 'sqlite') {
     {} as never,
     {} as never,
     { write: vi.fn() } as never,
-    {} as never,
     new McpNativeDocumentService(sync as unknown as NativeSyncService),
     {} as never,
     { assertActiveToken: vi.fn() } as never,

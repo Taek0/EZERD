@@ -234,7 +234,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         });
       },
     );
-    it('keeps native polling reset, old histories/tombstones and personal state after a DB boundary', async () => {
+    it('keeps native polling reset, old histories/tombstones after a DB boundary', async () => {
       const source = integerDocument();
       const id = await seed('postgresql', source);
       const clientId = randomUUID();
@@ -252,26 +252,16 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         "INSERT INTO sync_operations (project_id,operation_id,group_id,client_id,actor_id,sequence,base_sequence,baseline_issued_at,baseline_id,kind,fingerprint,changes,result) VALUES ($1,$2,$2,$3,$4,11,10,NOW(),$5,'online',$6,'[]','{}')",
         [id, randomUUID(), clientId, ownerId, randomUUID(), '1'.repeat(64)],
       );
-      await pool.query(
-        "INSERT INTO project_personal_states (project_id,user_id,state) VALUES ($1,$2,'{}')",
-        [id, ownerId],
-      );
       const oldField = (
         await pool.query('SELECT * FROM sync_field_versions WHERE project_id=$1', [id])
       ).rows[0];
       const oldHistory = (
         await pool.query('SELECT * FROM sync_operations WHERE project_id=$1', [id])
       ).rows[0];
-      const oldPersonal = (
-        await pool.query('SELECT * FROM project_personal_states WHERE project_id=$1', [id])
-      ).rows;
       const oldTombstones = (
         await pool.query('SELECT * FROM sync_tombstones WHERE project_id=$1', [id])
       ).rows;
       await service.change(ownerId, id, input());
-      expect(
-        (await pool.query('SELECT * FROM project_personal_states WHERE project_id=$1', [id])).rows,
-      ).toEqual(oldPersonal);
       expect(
         (await pool.query('SELECT * FROM sync_tombstones WHERE project_id=$1', [id])).rows,
       ).toEqual(oldTombstones);
@@ -289,10 +279,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(
         (await pool.query('SELECT COUNT(*) FROM sync_tombstones WHERE project_id=$1', [id])).rows[0]
           .count,
-      ).toBe('1');
-      expect(
-        (await pool.query('SELECT COUNT(*) FROM project_personal_states WHERE project_id=$1', [id]))
-          .rows[0].count,
       ).toBe('1');
       expect((await counts(id)).baselines).toBe('0');
       // No fabricated native sync result: the intentional sequence gap requests a full reload.

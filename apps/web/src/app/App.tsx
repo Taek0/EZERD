@@ -1023,7 +1023,7 @@ export function App() {
           busy={busy}
           userId={user.id}
           canEdit={permissions.edit && !nativeAccessChecking}
-          canPersonalEdit={permissions.personal && !nativeAccessChecking}
+          canComment={permissions.review && !nativeAccessChecking}
           {...(projectWorkspace
             ? { workspaceStatus: projectWorkspace.status, workspaceRole: projectWorkspace.role }
             : {})}

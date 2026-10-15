@@ -119,7 +119,7 @@ function click(tree: unknown, text: string) {
       .onClick as () => void
   )();
 }
-function fixture(canEdit = true, canPersonalEdit = canEdit) {
+function fixture(canEdit = true, canComment = canEdit) {
   const snapshot = clipboardSnapshot();
   if (snapshot.sourceDocument.schemaVersion !== 2) throw Error('native expected');
   const doc = snapshot.sourceDocument;
@@ -135,10 +135,10 @@ function fixture(canEdit = true, canPersonalEdit = canEdit) {
     height: 260,
   });
   return {
-    entry: { kind: 'native' as const, snapshot, document: doc, personalUnavailable: false },
+    entry: { kind: 'native' as const, snapshot, document: doc },
     userId: clipboardActor,
     canEdit,
-    canPersonalEdit,
+    canComment,
     onLeave() {},
     onReload: vi.fn(),
   };
@@ -189,9 +189,9 @@ describe('native root explicit recovery connection', () => {
     ['move:domain:a', NativeDomainEditor, 'move'],
     ['advanced:expression:a:computed:ca', NativeAdvancedEditor, '["computed","ca"]'],
     [
-      'canvas:action:v:note:',
+      'canvas:action:__tables__:note:',
       NativeERDCanvas,
-      { viewId: 'v', action: { action: 'note', target: '' } },
+      { viewId: '__tables__', action: { action: 'note', target: '' } },
     ],
     ['canvas:style:table:a', NativeERDCanvas, { style: 'table:a' }],
   ])(
@@ -233,16 +233,18 @@ describe('native root explicit recovery connection', () => {
     expect(child(render(), NativeStructureEditor).props.table).toBeUndefined();
     root.unmount();
   });
-  it('preserves separate personal permission for a shared-readonly actor', () => {
+  it('keeps comment permission separate from shared draft recovery', () => {
     const root = renderer(),
       props = fixture(false, true),
       { render, panel } = openPanel(root, props);
     expect(panel.canRecover!(input('format:column:ca'))).toBe(false);
-    expect(panel.canRecover!(input('canvas:action:v:note:'))).toBe(true);
-    panel.onRecovered(input('canvas:action:v:note:'));
+    expect(panel.canRecover!(input('canvas:action:v:note:'))).toBe(false);
+    expect(() => panel.onRecovered(input('canvas:action:v:note:'))).toThrow(
+      'native.draft-recovery-unavailable',
+    );
     const canvas = child(render(), NativeERDCanvas);
     expect(canvas.props.editable).toBe(false);
-    expect(canvas.props.personalEditable).toBe(true);
+    expect(canvas.props).not.toHaveProperty('personalEditable');
     props.entry.snapshot.project.status = 'archived';
     render();
     expect(panel.canRecover!(input('canvas:action:v:note:'))).toBe(false);

@@ -16,10 +16,7 @@ import { McpController } from './mcp/mcp.controller.js';
 import { McpAuthService } from './mcp/mcp-auth.service.js';
 import { McpServerFactory } from './mcp/mcp-server.js';
 import { McpLogger } from './mcp/logging.js';
-import { McpPersonalService } from './mcp/mcp-personal.service.js';
 import { LanAccessService } from './network/network-access.js';
-import { PersonalStateController } from './workspace/personal-state.controller.js';
-import { PersonalStateService } from './workspace/personal-state.service.js';
 import { SpaceController } from './workspace/space.controller.js';
 import { SpaceService } from './workspace/space.service.js';
 import { WorkspaceAccessService } from './workspace/workspace-access.service.js';
@@ -56,7 +53,6 @@ import { NativeCancellationController } from './sync/native-cancellation.control
     NativeCancellationController,
     McpTokenController,
     McpController,
-    PersonalStateController,
     SpaceController,
   ],
   providers: [
@@ -79,9 +75,7 @@ import { NativeCancellationController } from './sync/native-cancellation.control
     McpAuthService,
     McpServerFactory,
     McpLogger,
-    McpPersonalService,
     LanAccessService,
-    PersonalStateService,
     SpaceService,
     WorkspaceAccessService,
     WorkspaceEventsService,

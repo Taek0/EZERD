@@ -12,10 +12,7 @@ export function nativeSelectedObjectCommands(
   document: NativeDesignDocument,
   node: NodeLayout,
   values: Record<string, string>,
-  personalVersion?: number,
 ) {
-  if (personalVersion !== undefined && values.personalVersion !== String(personalVersion))
-    throw Error('native.personal-conflict');
   const patch = Object.fromEntries(
     (['x', 'y', 'width', 'height'] as const)
       .filter((field) => Number(values[field]) !== node[field])
@@ -42,13 +39,11 @@ export function NativeSelectedObjectInspector({
   document,
   node,
   viewId,
-  personalVersion,
   context,
 }: {
   document: NativeDesignDocument;
   node: NodeLayout;
   viewId: string;
-  personalVersion: number | undefined;
   context: NativeCanvasInputContext;
 }) {
   const { t } = useI18n();
@@ -75,10 +70,9 @@ export function NativeSelectedObjectInspector({
           height: String(node.height),
           text: note?.text ?? '',
           color: note?.color ?? '#fff3c4',
-          personalVersion: String(personalVersion ?? ''),
         }}
         disabled={false}
-        build={(values) => nativeSelectedObjectCommands(document, node, values, personalVersion)}
+        build={(values) => nativeSelectedObjectCommands(document, node, values)}
       >
         {(values, change) => (
           <>

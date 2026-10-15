@@ -272,14 +272,10 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
     });
 
     it.each(['postgresql', 'mysql', 'sqlite'] as const)(
-      'exports %s raw v1 snapshot, source coordinates and complete shared design without personal state',
+      'exports %s raw v1 snapshot, source coordinates and complete shared design',
       async (kind) => {
         const source = legacyDocument(),
           id = await seed(kind, source);
-        await pool.query(
-          'INSERT INTO project_personal_states (project_id,user_id,state) VALUES ($1,$2,$3::jsonb)',
-          [id, ownerId, JSON.stringify({ notes: [{ id: 'private', text: 'PRIVATE-SECRET' }] })],
-        );
         const before = await row(id);
         const response = await request(`/${id}/native-transfer`);
         expect(response.status).toBe(200);
@@ -296,7 +292,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         });
         expect(output.sourceDocument).toEqual(source);
         expect(output.native.status).toBe('available');
-        expect(JSON.stringify(output)).not.toContain('PRIVATE-SECRET');
         expect(await row(id)).toEqual(before);
         const imported = await upload(output);
         expect(imported.status).toBe(201);
@@ -305,13 +300,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
           sequence: 0,
           project: { status: 'active', version: 0, databaseRevision: 0 },
         });
-        expect(
-          (
-            await pool.query('SELECT COUNT(*) FROM project_personal_states WHERE project_id=$1', [
-              imported.data.project.id,
-            ])
-          ).rows[0].count,
-        ).toBe('0');
       },
     );
 
@@ -374,12 +362,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
             issue.path.includes(issue.objectId),
           ),
         ).toBe(true);
-        for (const table of [
-          'sync_client_baselines',
-          'sync_operations',
-          'sync_field_versions',
-          'project_personal_states',
-        ])
+        for (const table of ['sync_client_baselines', 'sync_operations', 'sync_field_versions'])
           expect(
             (
               await pool.query(`SELECT COUNT(*) FROM ${table} WHERE project_id=$1`, [

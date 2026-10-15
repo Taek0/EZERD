@@ -48,8 +48,6 @@ export class DatabaseService implements OnApplicationShutdown {
     await this.db.select().from(schema.syncClientBaselines).limit(1);
     await this.db.select().from(schema.projectDatabaseOperations).limit(1);
     await this.db.select().from(schema.syncTombstones).limit(1);
-    await this.db.select().from(schema.projectPersonalStates).limit(1);
-    await this.db.select().from(schema.projectPersonalOperations).limit(1);
   }
 
   async onApplicationShutdown(): Promise<void> {

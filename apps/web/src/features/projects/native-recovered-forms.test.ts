@@ -181,7 +181,6 @@ describe('native recovered form initial selections', () => {
         snapshot,
         userId: clipboardActor,
         editable: true,
-        personalEditable: true,
         busy: false,
         mode: 'physical',
         onSave: context.onSave,

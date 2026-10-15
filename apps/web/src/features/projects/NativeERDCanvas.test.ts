@@ -8,8 +8,6 @@ import {
   defaultDatabaseContext,
   addTableReference,
   upsertCombinedView,
-  mergeStoredPersonalState,
-  extractPersonalState,
   type NativeDesignDocument,
 } from '@ezerd/model';
 import type { ProjectDocumentState } from '@ezerd/contracts';
@@ -18,12 +16,8 @@ import {
   nativeCanvasScene,
   nativeCanvasDraftScene,
   nativeCanvasMoveCommand,
-  nativeCanvasPersonalCandidate,
   nativeCanvasWheel,
   nativeCanvasExportBlocker,
-  stageNativeCanvasPersonal,
-  recoverNativeCanvasPersonal,
-  loadNativeCanvasPersonalPending,
 } from './NativeERDCanvas.js';
 import { loadNativeEditorDraft, storeNativeEditorDraft } from './native-editor-draft.js';
 import { request } from '../../shared/api/client.js';
@@ -145,64 +139,7 @@ function memory() {
     },
   };
 }
-function personalFixture() {
-  const f = fixture();
-  const candidate = upsertCombinedView(f.document, { id: 'v', name: 'Private', domainIds: ['d'] });
-  const personal = {
-    databaseRevision: 3,
-    version: 2,
-    projectVersion: 7,
-    syncSequence: 10,
-    state: extractPersonalState(candidate),
-  };
-  return { ...f, candidate, personal };
-}
 describe('native canvas IDs on HTTP LAN crypto', () => {
-  it('creates reference and pending UUIDs without randomUUID or subtle and preserves recovery identity', async () => {
-    const f = personalFixture(),
-      store = memory();
-    const getRandomValues = vi.fn(crypto.getRandomValues.bind(crypto));
-    vi.stubGlobal('crypto', { getRandomValues });
-    vi.stubGlobal('isSecureContext', false);
-    expect(crypto.randomUUID).toBeUndefined();
-    expect(crypto.subtle).toBeUndefined();
-    const node = f.candidate.layout.nodes.find(
-      (node) => node.objectId === 'a' && node.viewId === '__tables__',
-    )!;
-    const absent = {
-      ...f.document,
-      layout: {
-        ...f.document.layout,
-        nodes: f.document.layout.nodes.filter((current) => current.id !== node.id),
-      },
-    };
-    const command = nativeCanvasMoveCommand(absent, node, { x: 50, y: 60 });
-    expect(command.type).toBe('add_table_reference');
-    if (command.type !== 'add_table_reference') throw Error('Expected new reference');
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-    expect(command.nodeId).toMatch(uuid);
-    const changed = nativeCanvasPersonalCandidate(f.candidate, {
-      type: 'set_viewport',
-      value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
-    });
-    const pending = await stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
-    expect(pending.revision).toMatch(uuid);
-    expect(pending.revision).not.toBe(command.nodeId);
-    expect((await loadNativeCanvasPersonalPending(userId, projectId, store))?.revision).toBe(
-      pending.revision,
-    );
-    await recoverNativeCanvasPersonal(
-      pending,
-      f.snapshot,
-      false,
-      store,
-      vi
-        .fn()
-        .mockResolvedValue({ ...f.personal, version: 3, state: pending.state }) as typeof request,
-    );
-    expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toBeNull();
-    expect(getRandomValues.mock.calls.length).toBeGreaterThanOrEqual(2);
-  });
   it('renders recovered canvas action and fresh input revisions with only getRandomValues', () => {
     const f = fixture(),
       before = structuredClone(f.document);
@@ -254,11 +191,24 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
   });
 });
 describe('native ERD consumes raw native payloads', () => {
+  it('does not expose legacy combined views as canvas screens', () => {
+    const { document } = fixture();
+    const legacy = upsertCombinedView(document, {
+      id: 'legacy-private',
+      name: 'Retired',
+      domainIds: ['d'],
+    });
+    const scene = nativeCanvasScene(legacy, 'legacy-private', 'physical');
+    expect(scene.viewId).toBe('__tables__');
+    expect(scene.nodes.every((node) => node.viewId === '__tables__')).toBe(true);
+    expect(legacy.views).toHaveLength(1);
+  });
+
   it.each(['ko', 'en'] as const)(
     'simplifies editable tools while preserving domain filters in %s',
     (locale) => {
       setLocale(locale);
-      const f = personalFixture();
+      const f = fixture();
       const before = structuredClone(f.document);
       const html = renderToStaticMarkup(
         createElement(NativeERDCanvas, {
@@ -266,7 +216,6 @@ describe('native ERD consumes raw native payloads', () => {
           snapshot: f.snapshot,
           userId,
           editable: true,
-          personalEditable: true,
           busy: false,
           mode: 'physical',
           onSave: async () => true,
@@ -361,174 +310,6 @@ describe('native ERD consumes raw native payloads', () => {
     expect(
       nativeCanvasWheel(camera, { ...event, ctrlKey: false, deltaX: -1e12 }, { x: 0, y: 0 }, 500).x,
     ).toBe(1e7);
-  });
-});
-describe('native private canvas stays separate from shared state', () => {
-  it('allows only private layouts/notes/references, preserves native data, and keeps shared cameras personal', () => {
-    const f = personalFixture(),
-      before = structuredClone(f.document);
-    const node = f.candidate.layout.nodes.find((node) => node.viewId === 'v')!;
-    const moved = nativeCanvasPersonalCandidate(f.candidate, {
-      type: 'update_node_layout',
-      nodeId: node.id,
-      patch: { x: 99 },
-    });
-    expect(moved.layout.nodes.find((item) => item.id === node.id)!.x).toBe(99);
-    expect(moved.columns).toEqual(before.columns);
-    expect(moved.tables).toEqual(before.tables);
-    expect(() =>
-      nativeCanvasPersonalCandidate(f.candidate, {
-        type: 'update_node_layout',
-        nodeId: before.layout.nodes[0]!.id,
-        patch: { x: 99 },
-      }),
-    ).toThrow('canvas.personal-view-required');
-    const camera = nativeCanvasPersonalCandidate(f.candidate, {
-      type: 'set_viewport',
-      value: { viewId: '__tables__', x: 80, y: 30, zoom: 4 },
-    });
-    expect(
-      extractPersonalState(camera).viewports.find((viewport) => viewport.viewId === '__tables__')!
-        .zoom,
-    ).toBe(4);
-    expect(camera.columns).toEqual(before.columns);
-  });
-  it('persists personal pending before PUT, isolates users and confirms a lost ACK without sending twice', async () => {
-    const f = personalFixture(),
-      store = memory();
-    const changed = nativeCanvasPersonalCandidate(f.candidate, {
-      type: 'set_viewport',
-      value: { viewId: 'v', x: 70, y: 90, zoom: 2 },
-    });
-    const pending = await stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
-    expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
-    expect(await loadNativeCanvasPersonalPending(projectId, projectId, store)).toBeNull();
-    const saved = { ...f.personal, version: 3, state: pending.state };
-    const api = vi.fn().mockResolvedValue(saved);
-    const archived = {
-      ...f.snapshot,
-      project: { ...f.snapshot.project, status: 'archived' as const, databaseRevision: 4 },
-    };
-    await recoverNativeCanvasPersonal(pending, archived, false, store, api as typeof request);
-    expect(api).toHaveBeenCalledTimes(1);
-    expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toBeNull();
-  });
-  it('only replays an unchanged personal baseline and includes the expected native DB revision', async () => {
-    const f = personalFixture(),
-      store = memory();
-    const changed = nativeCanvasPersonalCandidate(f.candidate, {
-      type: 'set_viewport',
-      value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
-    });
-    const pending = await stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
-    const api = vi
-      .fn()
-      .mockResolvedValueOnce(f.personal)
-      .mockResolvedValueOnce({ ...f.personal, version: 3, state: pending.state });
-    await recoverNativeCanvasPersonal(pending, f.snapshot, true, store, api as typeof request);
-    expect(JSON.parse((api.mock.calls[1]![1] as RequestInit).body as string)).toMatchObject({
-      expectedVersion: 2,
-      expectedDatabaseRevision: 3,
-      state: pending.state,
-    });
-  });
-  it.each(['context', 'sequence', 'version', 'personal', 'readonly'])(
-    'keeps unconfirmed input and refuses a %s replay',
-    async (reason) => {
-      const f = personalFixture(),
-        store = memory();
-      const changed = nativeCanvasPersonalCandidate(f.candidate, {
-        type: 'set_viewport',
-        value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
-      });
-      const pending = await stageNativeCanvasPersonal(
-        userId,
-        f.snapshot,
-        f.personal,
-        changed,
-        store,
-      );
-      const current = structuredClone(f.personal),
-        snapshot = structuredClone(f.snapshot);
-      if (reason === 'context') snapshot.project.databaseRevision++;
-      if (reason === 'sequence') snapshot.sequence++;
-      if (reason === 'version') snapshot.project.version++;
-      if (reason === 'personal') current.version++;
-      const api = vi.fn().mockResolvedValue(current);
-      await expect(
-        recoverNativeCanvasPersonal(
-          pending,
-          snapshot,
-          reason !== 'readonly',
-          store,
-          api as typeof request,
-        ),
-      ).rejects.toThrow();
-      expect(api).toHaveBeenCalledTimes(1);
-      expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
-    },
-  );
-  it('clears only the captured canvas draft revision when a delayed personal ACK is confirmed', async () => {
-    const f = personalFixture(),
-      store = memory(),
-      revision = crypto.randomUUID();
-    const draft = {
-      userId,
-      projectId,
-      key: 'canvas:placement:v',
-      revision,
-      expected: { version: 7, sequence: 10, databaseRevision: 3 },
-      before: { x: '0' },
-      values: { x: '100' },
-    };
-    storeNativeEditorDraft(draft, store);
-    const changed = nativeCanvasPersonalCandidate(f.candidate, {
-      type: 'set_viewport',
-      value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
-    });
-    const pending = await stageNativeCanvasPersonal(
-      userId,
-      f.snapshot,
-      f.personal,
-      changed,
-      store,
-      {
-        key: draft.key,
-        revision,
-      },
-    );
-    const newer = { ...draft, revision: crypto.randomUUID(), values: { x: '150' } };
-    storeNativeEditorDraft(newer, store);
-    await recoverNativeCanvasPersonal(
-      pending,
-      f.snapshot,
-      true,
-      store,
-      vi
-        .fn()
-        .mockResolvedValue({ ...f.personal, version: 3, state: pending.state }) as typeof request,
-    );
-    expect(loadNativeEditorDraft(userId, projectId, draft.key, store)).toEqual(newer);
-  });
-  it('keeps private pending after a malformed ACK and never overwrites a newer personal revision', async () => {
-    const f = personalFixture(),
-      store = memory();
-    const changed = nativeCanvasPersonalCandidate(f.candidate, {
-      type: 'set_viewport',
-      value: { viewId: 'v', x: 12, y: 20, zoom: 1.5 },
-    });
-    const pending = await stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store);
-    const api = vi
-      .fn()
-      .mockResolvedValueOnce(f.personal)
-      .mockResolvedValueOnce({ ...f.personal, version: 4, state: pending.state });
-    await expect(
-      recoverNativeCanvasPersonal(pending, f.snapshot, true, store, api as typeof request),
-    ).rejects.toThrow('native.ack-mismatch');
-    expect(await loadNativeCanvasPersonalPending(userId, projectId, store)).toEqual(pending);
-    await expect(
-      stageNativeCanvasPersonal(userId, f.snapshot, f.personal, changed, store),
-    ).rejects.toThrow('native.pending-exists');
   });
 });
 describe('native input registers export blockers even without a durable storage record', () => {
@@ -699,16 +480,6 @@ describe('native input registers export blockers even without a durable storage 
       true,
       'canvas:canvas:action:__tables__:note:',
     ]);
-    const privateF = personalFixture();
-    await expect(
-      stageNativeCanvasPersonal(
-        userId,
-        privateF.snapshot,
-        privateF.personal,
-        privateF.candidate,
-        store,
-      ),
-    ).rejects.toThrow('Storage denied');
   });
 });
 

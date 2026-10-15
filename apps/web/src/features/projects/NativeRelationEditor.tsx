@@ -30,8 +30,6 @@ registerTranslations({
   '도착 연결점': 'Target connection point',
   '경로 구간': 'Route segment',
   '드래그 또는 방향키로 이동한 뒤 저장하세요.': 'Drag or use arrow keys, then save.',
-  '개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.':
-    'Personal layout changed. Preserve your input before resetting.',
 });
 type Context = ComponentProps<typeof NativeCanvasInputForm>['context'];
 function RouteHandles({
@@ -177,7 +175,6 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
   relationId,
   world,
   context,
-  personalVersion,
   active = true,
   onClose,
 }: {
@@ -187,7 +184,6 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
   relationId: string;
   world: HTMLDivElement | null;
   context: Context;
-  personalVersion: number | undefined;
   active?: boolean;
   onClose: () => void;
 }) {
@@ -236,14 +232,11 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
           initial={{
             route: JSON.stringify(existing),
             reset: 'false',
-            personalVersion: String(personalVersion ?? ''),
           }}
           disabled={false}
           pauseAutosave={dragging && open && active}
           onSubmitReady={registerSubmit}
           build={(values) => {
-            if (values.personalVersion !== String(personalVersion ?? ''))
-              throw Error(t('개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.'));
             return [
               nativeRouteCommand(
                 document,
@@ -287,14 +280,8 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
                   sourceAnchor: editableAnchor('sourceAnchor'),
                   targetAnchor: editableAnchor('targetAnchor'),
                 };
-            const mismatch = values.personalVersion !== String(personalVersion ?? '');
             return (
               <>
-                {mismatch && (
-                  <p role="alert">
-                    {t('개인 배치가 변경되었습니다. 입력을 보관한 뒤 초기화해 주세요.')}
-                  </p>
-                )}
                 {!parsed?.success && <p role="alert">{t('경로 입력을 확인해 주세요.')}</p>}
                 {open && active && parsed?.success && route && world && (
                   <RouteHandles
@@ -302,7 +289,7 @@ export const NativeRelationEditor = memo(function NativeRelationEditor({
                     relationId={relationId}
                     route={values.reset === 'true' ? { viewId, relationId, offset: 0 } : route}
                     world={world}
-                    disabled={context.busy || mismatch}
+                    disabled={context.busy}
                     onDraggingChange={setDragging}
                     onComplete={() => {
                       void submit.current();

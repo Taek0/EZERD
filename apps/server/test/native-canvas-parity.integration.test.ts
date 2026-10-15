@@ -10,9 +10,6 @@ import {
   createNativeColumn,
   defaultDatabaseContext,
   addTableReference,
-  upsertCombinedView,
-  extractPersonalState,
-  updateNodeLayout,
   type DatabaseKind,
   type NativeDesignDocument,
 } from '@ezerd/model';
@@ -223,37 +220,6 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         expect(head.sourceDocument.layout.nodes.find((n: any) => n.objectId === 'hidden')).toEqual(
           doc.layout.nodes[2],
         );
-        const privateDoc = upsertCombinedView(head.sourceDocument, {
-          id: 'mine',
-          name: 'My view',
-          domainIds: ['d'],
-        });
-        const privateMoved = nativeSelectionPlacements(
-          privateDoc.layout.nodes.filter((node) => node.viewId === 'mine'),
-          25,
-          35,
-        );
-        let personalCandidate = privateDoc;
-        for (const node of privateMoved)
-          personalCandidate = updateNodeLayout(personalCandidate, node.id, {
-            x: node.x,
-            y: node.y,
-          });
-        const beforePersonal = (await api(`/projects/${id}/personal-state`)).data;
-        const personal = await api(`/projects/${id}/personal-state`, 'PUT', {
-          expectedVersion: beforePersonal.version,
-          expectedDatabaseRevision: beforePersonal.databaseRevision,
-          expectedProjectVersion: beforePersonal.projectVersion,
-          expectedSyncSequence: beforePersonal.syncSequence,
-          state: extractPersonalState(personalCandidate),
-        });
-        expect(personal.status, JSON.stringify(personal.data)).toBe(200);
-        expect(
-          (await api(`/projects/${id}/personal-state`)).data.state.nodes
-            .filter((n: any) => n.viewId === 'mine')
-            .map((n: any) => [n.x, n.y]),
-        ).toEqual(privateMoved.map((n) => [n.x, n.y]));
-        expect(await state(id)).toEqual(head);
         const relation = head.sourceDocument.tableRelations[0];
         const invalidEndpoint = await api(
           `/projects/${id}/native-sync/commands`,

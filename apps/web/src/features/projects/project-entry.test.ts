@@ -51,9 +51,9 @@ describe('versioned editor entry boundary', () => {
     vi.stubGlobal('fetch', fetcher);
     try {
       await expect(loadProjectEntry('legacy-id')).rejects.toThrow('v1 프로젝트');
-      expect(fetcher.mock.calls.length).toBe(2);
+      expect(fetcher.mock.calls.length).toBe(1);
       for (const [url, init] of fetcher.mock.calls as unknown as [string, RequestInit][]) {
-        expect(url).toMatch(/\/(document-state|personal-state)$/);
+        expect(url).toMatch(/\/document-state$/);
         expect(init.method ?? 'GET').toBe('GET');
       }
     } finally {
@@ -73,37 +73,7 @@ describe('versioned editor entry boundary', () => {
     });
     expect(unavailable).toMatchObject({ kind: 'native', document: null });
   });
-  it('merges only reconciled personal state and falls back safely on identity collisions', () => {
-    const state = snapshot(true);
-    state.native.document.domains = [{ id: 'd', name: '', description: '' }];
-    state.sourceDocument = structuredClone(state.native.document);
-    const personal = {
-      version: 3,
-      projectVersion: 9,
-      syncSequence: 10,
-      state: {
-        views: [{ id: 'v', name: '', domainIds: ['d'] }],
-        notes: [{ id: 'note', viewId: 'v', text: 'private' }],
-        nodes: [],
-        viewports: [],
-        relations: [],
-      },
-    };
-    const entry = projectEntry(state, personal);
-    expect(entry).toMatchObject({
-      kind: 'native',
-      personalUnavailable: false,
-      document: { notes: [{ text: 'private' }] },
-    });
-    personal.state.notes[0]!.id = 'd';
-    expect(projectEntry(state, personal)).toMatchObject({
-      kind: 'native',
-      personalUnavailable: true,
-      document: { notes: [] },
-    });
-    expect(state.native.document.notes).toEqual([]);
-  });
-  it('only fetches snapshot and own personal state; never starts baseline or operation transport', async () => {
+  it('only fetches the shared snapshot; never starts baseline or operation transport', async () => {
     const fetcher = vi.fn(
       async (url: string) =>
         new Response(
@@ -125,7 +95,6 @@ describe('versioned editor entry boundary', () => {
       expect((await loadProjectEntry('project-id')).kind).toBe('native');
       expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
         '/api/projects/project-id/document-state',
-        '/api/projects/project-id/personal-state',
       ]);
     } finally {
       vi.unstubAllGlobals();

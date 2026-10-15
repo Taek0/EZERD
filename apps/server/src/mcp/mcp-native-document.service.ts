@@ -101,8 +101,6 @@ export function nativeEditorCandidate(
       !candidate.domains.some((domain) => domain.id === viewId)
     )
       throw new Error('canvas.shared-view-required');
-    if (candidate.views?.some((view) => view.id === viewId))
-      throw new Error('canvas.personal-command-required');
   };
   for (const raw of commands) {
     const command = nativeEditorCommandSchema.parse(raw);

@@ -7,23 +7,18 @@ import {
   createEmptyDocument,
   createEmptyNativeDocument,
   defaultDatabaseContext,
-  extractPersonalState,
   TABLES_VIEW_ID,
 } from '@ezerd/model';
 import { describe, expect, it, vi } from 'vitest';
 import {
   messages,
   notifications,
-  projectPersonalOperations,
-  projectPersonalStates,
   projects,
   threads,
   userWorkspaces,
   workspaces,
 } from '../src/db/schema.js';
 import { ReviewService } from '../src/review/review.service.js';
-import { McpPersonalService } from '../src/mcp/mcp-personal.service.js';
-import { PersonalStateService } from '../src/workspace/personal-state.service.js';
 import { WorkspaceAccessService } from '../src/workspace/workspace-access.service.js';
 
 const actor = { id: randomUUID(), username: 'viewer', color: '#4169e1' };
@@ -120,7 +115,6 @@ function store(role: 'owner' | 'editor' | 'viewer' | null = 'viewer', status = '
     tx,
     gateway,
     review: new ReviewService(database as never, gateway as never, access),
-    personal: new PersonalStateService(database as never, access),
   };
 }
 
@@ -397,146 +391,3 @@ function nativeStore() {
     },
   };
 }
-
-describe('personal state membership boundaries', () => {
-  it('rejects attempts to change shared global placements through the viewer personal API', async () => {
-    const fixture = nativeStore();
-    fixture.rows.set(projectPersonalStates, [[]]);
-    const state = {
-      ...extractPersonalState(fixture.native),
-      nodes: [
-        {
-          id: 'global',
-          objectId: 'orders',
-          viewId: TABLES_VIEW_ID,
-          x: 500,
-          y: 500,
-          width: 320,
-          height: 260,
-        },
-      ],
-    };
-    await expect(
-      fixture.personal.save(project.id, actor, 0, state, fixture.context),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(fixture.writes).toEqual([]);
-  });
-
-  it('requires membership for reads and permits reads in archived workspaces', async () => {
-    const rejected = store(null);
-    await expect(rejected.personal.get(project.id, actor)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-    expect(rejected.queries.some((query) => query.table === projectPersonalStates)).toBe(false);
-    const fixture = store('viewer', 'archived');
-    fixture.rows.set(projectPersonalStates, [[]]);
-    await expect(fixture.personal.get(project.id, actor)).resolves.toMatchObject({
-      version: 0,
-      projectVersion: 3,
-    });
-    const query = fixture.queries.find((item) => item.table === projectPersonalStates)!;
-    expect(new PgDialect().sqlToQuery(query.condition!).params).toEqual([project.id, actor.id]);
-  });
-
-  it('allows viewer personal layout writes without changing the shared document', async () => {
-    const fixture = nativeStore();
-    fixture.rows.set(projectPersonalStates, [[]]);
-    const original = structuredClone(fixture.native);
-    const state = {
-      ...extractPersonalState(fixture.native),
-      viewports: [{ viewId: 'overview', x: 12, y: 0, zoom: 1 }],
-    };
-    await expect(
-      fixture.personal.save(project.id, actor, 0, state, fixture.context),
-    ).resolves.toMatchObject({
-      version: 1,
-      state,
-    });
-    expect(fixture.writes).toEqual([
-      {
-        table: projectPersonalStates,
-        value: expect.objectContaining({ projectId: project.id, userId: actor.id, state }),
-      },
-    ]);
-    expect(fixture.native).toEqual(original);
-  });
-
-  it('keeps a native trusted current detached from callback mutations when validating personal references', async () => {
-    const fixture = store();
-    const native = createEmptyNativeDocument(defaultDatabaseContext('postgresql'));
-    native.domains = [{ id: 'd', name: '', description: '' }];
-    fixture.rows.set(projects, [
-      [
-        {
-          ...project,
-          document: native,
-          databaseKind: 'postgresql',
-          databaseProfileId: 'postgresql-18-v1',
-          databaseRevision: 0,
-        },
-      ],
-    ]);
-    fixture.rows.set(projectPersonalStates, [[]]);
-    await expect(
-      fixture.personal.mutate(
-        project.id,
-        actor,
-        0,
-        (doc) => {
-          doc.domains[0]!.id = 'forged';
-          doc.views = [{ id: 'view', name: '', domainIds: ['forged'] }];
-          return doc;
-        },
-        undefined,
-        {
-          expectedDatabaseRevision: 0,
-          expectedProjectVersion: project.version,
-          expectedSyncSequence: project.syncSequence,
-        },
-      ),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(native.domains[0]!.id).toBe('d');
-    expect(fixture.writes).toEqual([]);
-  });
-  it('persists a global viewport without changing shared card placements', async () => {
-    const fixture = nativeStore();
-    fixture.rows.set(projectPersonalStates, [[]]);
-    const state = {
-      ...extractPersonalState(fixture.native),
-      viewports: [{ viewId: TABLES_VIEW_ID, x: 12, y: 34, zoom: 0.8 }],
-    };
-    await expect(
-      fixture.personal.save(project.id, actor, 0, state, fixture.context),
-    ).resolves.toMatchObject({
-      version: 1,
-      state,
-    });
-    expect(fixture.writes.some((write) => write.table === projects)).toBe(false);
-  });
-
-  it('rechecks MCP personal permission before loading an operation replay', async () => {
-    for (const [fixture, canRead] of [
-      [store(null), false],
-      [store('owner', 'archived'), true],
-    ] as const) {
-      const mcp = new McpPersonalService(fixture.personal);
-      await expect(
-        mcp.apply(
-          {
-            projectId: project.id,
-            expectedVersion: 0,
-            operationId: randomUUID(),
-            commands: [
-              { type: 'set_viewport', value: { viewId: 'overview', x: 2, y: 0, zoom: 1 } },
-            ],
-          },
-          actor,
-        ),
-      ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(fixture.queries.some((query) => query.table === projectPersonalOperations)).toBe(
-        canRead,
-      );
-      expect(fixture.writes).toEqual([]);
-    }
-  });
-});

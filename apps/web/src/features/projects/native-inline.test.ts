@@ -67,7 +67,6 @@ describe('native inline edits', () => {
     expect(nativeDraftRecoveryTarget(doc, entry)).toEqual({
       kind: 'canvas',
       selection: { viewId: '__tables__', inline: target },
-      personal: false,
     });
     doc.columns = [];
     expect(nativeDraftRecoveryTarget(doc, entry)).toBeNull();

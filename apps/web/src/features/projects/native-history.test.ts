@@ -101,6 +101,32 @@ function result(input: Awaited<ReturnType<typeof stageNativeHistory>>) {
   };
 }
 describe('native history request durability and authority', () => {
+  it('recovers legacy shared history despite inert retired private storage', async () => {
+    const store = storage();
+    const pending = await stageNativeHistory(
+      userId,
+      fixture(),
+      source,
+      'undo',
+      store,
+      vi.fn(async () => baseline()) as unknown as typeof request,
+    );
+    await getNativeDurableQueue().discard({
+      userId,
+      projectId,
+      operationId: pending.request.operationId,
+      kind: 'history',
+      payload: pending,
+    });
+    store.setItem(
+      `ezerd.native.history:${JSON.stringify([userId, projectId])}`,
+      JSON.stringify(pending),
+    );
+    const key = `ezerd.native.canvas.personal:${JSON.stringify([userId, projectId])}`;
+    store.setItem(key, 'retired input');
+    await expect(loadNativeHistoryPending(userId, projectId, store)).resolves.toEqual(pending);
+    expect(store.getItem(key)).toBe('retired input');
+  });
   it('preserves terminal HTTP errors without a recorded server outcome', async () => {
     const store = storage(),
       pending = await stageNativeHistory(

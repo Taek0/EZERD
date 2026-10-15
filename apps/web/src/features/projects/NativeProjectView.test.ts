@@ -164,7 +164,6 @@ describe('native readonly project view', () => {
   it('renders the shared design without a passive personal-view fallback notice', () => {
     setLocale('ko');
     const input = entry();
-    input.personalUnavailable = true;
     const html = renderToStaticMarkup(
       createElement(NativeProjectView, { entry: input, onLeave() {}, onReload() {} }),
     );

@@ -71,13 +71,9 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       return { status: response.status, data: await response.json() };
     }
     async function entry(actor: Actor, id: string): Promise<ProjectEntry> {
-      const [snapshot, personal] = await Promise.all([
-        api(actor, `/projects/${id}/document-state`),
-        api(actor, `/projects/${id}/personal-state`),
-      ]);
+      const snapshot = await api(actor, `/projects/${id}/document-state`);
       expect(snapshot.status).toBe(200);
-      expect(personal.status).toBe(200);
-      return projectEntry(snapshot.data, personal.data);
+      return projectEntry(snapshot.data);
     }
     const input = (entry: ProjectEntry, commands: NativeEditorCommand[]) => ({
       operationId: randomUUID(),

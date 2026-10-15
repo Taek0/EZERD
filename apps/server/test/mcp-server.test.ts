@@ -79,26 +79,10 @@ describe('MCP server tools', () => {
       create: vi.fn(async () => reviewThread),
     };
     const logger = { write: vi.fn(async () => undefined) };
-    const personal = {
-      get: vi.fn(async () => ({
-        version: 0,
-        projectVersion: 0,
-        syncSequence: 0,
-        state: {
-          views: [],
-          notes: [],
-          nodes: [],
-          viewports: document.layout.viewports,
-          relations: [],
-        },
-      })),
-      apply: vi.fn(),
-    };
     const factory = new McpServerFactory(
       workspace as never,
       reviews as never,
       logger as never,
-      personal as never,
       { apply: vi.fn() } as never,
       {} as never,
       { assertActiveToken: vi.fn(async () => undefined) } as never,
@@ -118,7 +102,7 @@ describe('MCP server tools', () => {
     try {
       const tools = await client.listTools();
       const jsonValidator = new AjvJsonSchemaValidator();
-      expect(tools.tools).toHaveLength(52);
+      expect(tools.tools).toHaveLength(50);
       for (const tool of tools.tools) {
         expect(() => jsonValidator.getValidator(tool.inputSchema), tool.name).not.toThrow();
         expect(tool.outputSchema, tool.name).toBeDefined();
@@ -171,7 +155,6 @@ describe('MCP server tools', () => {
         'list_tables',
         'get_project_view',
         'list_view_relations',
-        'get_personal_state',
         'get_table_details',
         'get_tables_details',
         'get_project_changes',
@@ -192,7 +175,6 @@ describe('MCP server tools', () => {
         'diagnose_layout',
         'upgrade_project_document',
         'apply_native_project_changes',
-        'apply_personal_changes',
         'get_native_project_baseline',
         'get_native_project_history',
         'undo_native_project_operation',
@@ -387,11 +369,6 @@ describe('MCP workspace authorization', () => {
       history: vi.fn(async () => ({ history: [], nextSince: null })),
       compensate: vi.fn(),
     };
-    const personal = {
-      get: vi.fn(async () => ({
-        state: { views: [], notes: [], nodes: [], viewports: [], relations: [] },
-      })),
-    };
     const auth = { assertActiveToken: vi.fn(async () => undefined) };
     const transfers = (overrides.transfer ?? {
       importProject: vi.fn(async () => ({ project, sequence: 0, migrationIssues: [], issues: [] })),
@@ -416,7 +393,6 @@ describe('MCP workspace authorization', () => {
       workspace as never,
       reviews as never,
       { write: vi.fn(async () => undefined) } as never,
-      personal as never,
       { apply: vi.fn() } as never,
       spaces as never,
       auth as never,
@@ -439,7 +415,6 @@ describe('MCP workspace authorization', () => {
       spaces,
       reviews,
       nativeHistory,
-      personal,
       auth,
       transfers,
       close: async () => {
@@ -1002,10 +977,9 @@ describe('MCP workspace authorization', () => {
       await harness.close();
     }
   });
-  it('uses lightweight shared reads without fetching personal state or detailed previews', async () => {
+  it('uses lightweight shared reads and rejects the retired includePersonal option', async () => {
     const harness = await connected();
     try {
-      harness.personal.get.mockRejectedValue(new Error('personal unavailable'));
       for (const [name, extra] of [
         ['get_project_summary', {}],
         ['list_tables', {}],
@@ -1023,7 +997,6 @@ describe('MCP workspace authorization', () => {
       }
       expect(harness.workspace.getNativeQueryState).toHaveBeenCalledTimes(5);
       expect(harness.workspace.getVersionedProjectState).not.toHaveBeenCalled();
-      expect(harness.personal.get).not.toHaveBeenCalled();
       expect(
         (
           await harness.client.callTool({
@@ -1032,27 +1005,24 @@ describe('MCP workspace authorization', () => {
           })
         ).isError,
       ).toBe(true);
-      expect(harness.personal.get).toHaveBeenCalledOnce();
     } finally {
       await harness.close();
     }
   });
-  it('refuses to combine a private snapshot with a different shared version', async () => {
+  it('does not register retired personal state tools', async () => {
     const harness = await connected();
     try {
-      harness.personal.get.mockResolvedValue({
-        projectVersion: 9,
-        syncSequence: 9,
-        databaseRevision: 0,
-        state: { views: [], notes: [], nodes: [], viewports: [], relations: [] },
-      } as never);
-      const result = await harness.client.callTool({
-        name: 'get_project_summary',
-        arguments: { projectId: project.id, includePersonal: true },
-      });
-      expect(result.isError).toBe(true);
-      expect(JSON.stringify(result.content)).toContain('document.read-context-changed');
-      expect(harness.workspace.getNativeQueryState).toHaveBeenCalledTimes(2);
+      const { tools } = await harness.client.listTools();
+      expect(tools.map((tool) => tool.name)).not.toContain('get_personal_state');
+      expect(tools.map((tool) => tool.name)).not.toContain('apply_personal_changes');
+      expect(
+        (
+          await harness.client.callTool({
+            name: 'get_project_view',
+            arguments: { projectId: project.id, viewId: 'private' },
+          })
+        ).isError,
+      ).toBe(true);
     } finally {
       await harness.close();
     }

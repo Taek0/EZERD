@@ -52,13 +52,8 @@ import {
 } from 'react';
 import {
   nativeEditorCommandSchema,
-  nativeSharedCanvasCommandSchema,
-  nativePersonalCanvasCommandSchema,
-  personalStateSnapshotSchema,
   viewportSchema,
   nodeLayoutSchema,
-  type NativeCanvasPersonalPending,
-  type NativePersonalCanvasCommand,
   type NativeEditorCommand,
   type ProjectDocumentState,
 } from '@ezerd/contracts';
@@ -66,18 +61,6 @@ import {
   TABLES_VIEW_ID,
   basicCardSize,
   addTableReference,
-  removeTableReference,
-  updateNodeLayout,
-  addNote,
-  updateNote,
-  removeNote,
-  upsertRelationLayout,
-  upsertCombinedView,
-  removeCombinedView,
-  setViewport,
-  extractPersonalState,
-  reconcilePersonalState,
-  mergeStoredPersonalState,
   isVisibleInView,
   nativeColumnTypeDisplay,
   nativeDefaultDisplay,
@@ -91,9 +74,9 @@ import {
 } from '@ezerd/model';
 import { relationGeometry } from '../relations/relation-routing.js';
 import { wheelCamera } from '../canvas/canvas-wheel.js';
-import { Button, ContextMenu, Checkbox, AnimatedDetails } from '../../components/ui/index.js';
+import { Button, ContextMenu, AnimatedDetails } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
-import { message, request } from '../../shared/api/client.js';
+import { message } from '../../shared/api/client.js';
 import { NativeEditorField, type NativeEditorSave } from './native-editor-form.js';
 import {
   loadNativeEditorDraft,
@@ -105,7 +88,6 @@ import {
 import './NativeERDCanvas.css';
 import { useNativeExportBlocker } from './native-export-state.js';
 import { nativeDurableId } from './native-durable-queue.js';
-import { NativePrivateCASRecovery } from './NativePrivateCASRecovery.js';
 import { NativeCanvasStyleEditor } from './NativeCanvasStyleEditor.js';
 import type { NativeCanvasRecoverySelection } from './native-canvas-recovery-types.js';
 import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
@@ -117,19 +99,8 @@ import {
   nativeTableCanvasHeaderHeight,
   nativeRelationLabelWidth,
 } from './native-canvas-style.js';
-import { captureNativeActorApi } from './native-actor-api.js';
-import { getNativeDurableQueue, type NativeDurableState } from './native-durable-queue.js';
-import {
-  nativePrivateCanvasGuardAvailable,
-  nativePrivateSnapshotSchema,
-  loadNativePrivatePending,
-  discardNativePrivatePending,
-  stageNativePrivateCanvas,
-  recoverNativePrivateCanvas,
-} from './native-private-canvas.js';
-type PersonalStateSnapshot = ReturnType<typeof personalStateSnapshotSchema.parse>;
 type DraftRef = { key: string; revision: string };
-type CanvasCommand = NativeEditorCommand | NativePersonalCanvasCommand;
+type CanvasCommand = NativeEditorCommand;
 
 const MemoNativeCanvasPngExport = memo(NativeCanvasPngExport);
 const MemoNativeDomainRelationEditor = memo(NativeDomainRelationEditor);
@@ -143,7 +114,6 @@ registerTranslations({
   '보관된 입력 복구': 'Recover saved input',
   '자동 배치': 'Automatic layout',
   '도메인 개요': 'Domain overview',
-  '개인 화면': 'Personal view',
   화면: 'View',
   '배치 저장': 'Save placement',
   '미저장 배치가 있습니다.': 'There is an unsaved placement.',
@@ -156,12 +126,6 @@ registerTranslations({
   '메모 추가': 'Add note',
   '메모 수정': 'Edit note',
   '메모 삭제': 'Delete note',
-  '화면 생성': 'Create view',
-  '화면 수정': 'Edit view',
-  '화면 삭제': 'Delete view',
-  '개인 저장 결과 확인': 'Check personal save result',
-  '미확인 개인 저장 요청이 있습니다.': 'A personal save request is unconfirmed.',
-  '개인 요청 초기화': 'Reset personal request',
   중앙으로: 'Center view',
   확대: 'Zoom in',
   축소: 'Zoom out',
@@ -174,8 +138,6 @@ registerTranslations({
   메모: 'Note',
   '삭제를 확인했습니다.': 'I confirm this deletion.',
   '배치 재조회 후 비교': 'Review placement against the latest design',
-  '개인 화면 저장은 아직 지원하지 않습니다. 이 프로젝트에서는 공유 캔버스를 사용해 주세요.':
-    'Saving personal views is not available yet. Use the shared canvas in this project.',
   '저장된 배치가 없는 도메인입니다.': 'This domain has no saved placement.',
 });
 
@@ -210,144 +172,8 @@ const expected = (snapshot: ProjectDocumentState) => ({
   sequence: snapshot.sequence,
   databaseRevision: snapshot.project.databaseRevision,
 });
-const privateView = (doc: NativeDesignDocument, viewId: string) =>
-  !!doc.views?.some((view) => view.id === viewId);
-const personalGuardAvailable = nativePrivateCanvasGuardAvailable;
 const viewFor = (doc: NativeDesignDocument, viewId: string) =>
-  doc.domains.some((domain) => domain.id === viewId) ? TABLES_VIEW_ID : viewId;
-type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
-
-export function nativeCanvasPersonalCandidate(
-  document: NativeDesignDocument,
-  raw: NativePersonalCanvasCommand,
-): NativeDesignDocument {
-  const command = nativePersonalCanvasCommandSchema.parse(raw);
-  const requirePrivate = (viewId: string) => {
-    if (!privateView(document, viewId)) throw new Error('canvas.personal-view-required');
-  };
-  switch (command.type) {
-    case 'upsert_combined_view':
-      return upsertCombinedView(document, command.value);
-    case 'delete_combined_view':
-      requirePrivate(command.id);
-      return removeCombinedView(document, command.id);
-    case 'set_viewport':
-      return setViewport(document, command.value);
-    case 'add_table_reference': {
-      requirePrivate(command.viewId);
-      let next = addTableReference(document, command.tableId, command.viewId, command.placement);
-      const node = next.layout.nodes.find(
-        (node) => node.objectId === command.tableId && node.viewId === command.viewId,
-      )!;
-      next = updateNodeLayout(next, node.id, {
-        ...(command.placement.width !== undefined ? { width: command.placement.width } : {}),
-        ...(command.placement.height !== undefined ? { height: command.placement.height } : {}),
-      });
-      if (command.nodeId) {
-        if (document.layout.nodes.some((item) => item.id === command.nodeId))
-          throw new Error('document.duplicate-identities');
-        next = {
-          ...next,
-          layout: {
-            ...next.layout,
-            nodes: next.layout.nodes.map((item) =>
-              item.id === node.id ? { ...item, id: command.nodeId! } : item,
-            ),
-          },
-        };
-      }
-      return next;
-    }
-    case 'update_node_layout':
-    case 'remove_table_reference': {
-      const node = document.layout.nodes.find((node) => node.id === command.nodeId);
-      if (!node) throw new Error('canvas.node-not-found');
-      requirePrivate(node.viewId);
-      return command.type === 'update_node_layout'
-        ? updateNodeLayout(document, node.id, command.patch)
-        : removeTableReference(document, node.id);
-    }
-    case 'upsert_note': {
-      requirePrivate(command.value.viewId);
-      const current = document.notes.find((note) => note.id === command.value.id);
-      if (current && current.viewId !== command.value.viewId)
-        throw new Error('canvas.note-view-immutable');
-      let next = current
-        ? updateNote(document, current.id, command.value)
-        : addNote(document, command.value, command.placement ?? { x: 0, y: 0 });
-      if (command.placement) {
-        const node = next.layout.nodes.find(
-          (node) => node.objectId === command.value.id && node.viewId === command.value.viewId,
-        )!;
-        next = updateNodeLayout(next, node.id, command.placement);
-      }
-      return next;
-    }
-    case 'patch_note':
-    case 'delete_note': {
-      const note = document.notes.find((note) => note.id === command.id);
-      if (!note) throw new Error('canvas.note-not-found');
-      requirePrivate(note.viewId);
-      return command.type === 'patch_note'
-        ? updateNote(document, note.id, command.patch)
-        : removeNote(document, note.id);
-    }
-    case 'upsert_relation_layout':
-      requirePrivate(command.value.viewId);
-      return upsertRelationLayout(document, command.value);
-    case 'delete_relation_layout':
-      requirePrivate(command.viewId);
-      return {
-        ...document,
-        layout: {
-          ...document.layout,
-          relations: (document.layout.relations ?? []).filter(
-            (route) => route.relationId !== command.relationId || route.viewId !== command.viewId,
-          ),
-        },
-      };
-  }
-}
-
-export function loadNativeCanvasPersonalPending(
-  userId: string,
-  projectId: string,
-  storage: Storage = localStorage,
-) {
-  return loadNativePrivatePending(userId, projectId, { storage });
-}
-export function discardNativeCanvasPersonalPending(
-  pending: NativeCanvasPersonalPending,
-  storage: Storage = localStorage,
-) {
-  return discardNativePrivatePending(pending, { storage });
-}
-export function stageNativeCanvasPersonal(
-  userId: string,
-  snapshot: ProjectDocumentState,
-  personal: PersonalStateSnapshot,
-  candidate: NativeDesignDocument,
-  storage: Storage = localStorage,
-  editorDraft?: DraftRef,
-) {
-  return stageNativePrivateCanvas(
-    userId,
-    snapshot,
-    nativePrivateSnapshotSchema.parse(personal),
-    candidate,
-    { storage },
-    editorDraft,
-  );
-}
-export function recoverNativeCanvasPersonal(
-  pending: NativeCanvasPersonalPending,
-  snapshot: ProjectDocumentState,
-  allowReplay: boolean,
-  storage: Storage = localStorage,
-  api: typeof request = request,
-) {
-  return recoverNativePrivateCanvas(pending, snapshot, allowReplay, { storage }, api);
-}
+  viewId === 'overview' ? 'overview' : TABLES_VIEW_ID;
 /** Preview nodes can be reader-generated. Persist a real reference before moving an absent raw node. */
 export function nativeCanvasScene(
   document: NativeDesignDocument,
@@ -566,7 +392,7 @@ export function nativeCanvasDraftScene(
     filter,
   );
 }
-/** Only shared source-document inputs block export; personal cameras/views do not change it. */
+/** Only shared source-document inputs block export; local cameras do not change it. */
 export function nativeCanvasExportBlocker(
   source: NativeDesignDocument,
   draft: NativeEditorDraft | null,
@@ -594,11 +420,8 @@ function NativeCanvasWorkspace({
   snapshot,
   userId,
   editable,
-  personalEditable = editable,
   busy,
-  recoveryBusy = busy,
   onSave: onSaveFromParent,
-  onReload: onReloadFromParent,
   mode,
   selectedTableId,
   selectedDomainId,
@@ -639,8 +462,6 @@ function NativeCanvasWorkspace({
   snapshot: ProjectDocumentState;
   userId?: string;
   editable: boolean;
-  /** Main can pass the workspace's own-personal permission separately from shared editing. */
-  personalEditable?: boolean;
   busy: boolean;
   /** External operations may block recovery; the pending row itself must not. */
   recoveryBusy?: boolean;
@@ -697,7 +518,6 @@ function NativeCanvasWorkspace({
   // Parent panel/resize state must not invalidate the memoized document scene.
   // Event handlers still observe the latest committed permissions and save baseline.
   const onSave = useCommittedEvent(onSaveFromParent);
-  const onReload = useCommittedEvent(onReloadFromParent);
   const onSelect = useCommittedEvent(onSelectFromParent);
   const onSelectDomain = useCommittedEvent(onSelectDomainFromParent);
   const onToggleInspector = useCommittedEvent(onToggleInspectorFromParent);
@@ -776,19 +596,6 @@ function NativeCanvasWorkspace({
   const [viewId, setViewId] = useState(
     recoverySelection?.viewId ?? (selectedDomainId ? 'overview' : TABLES_VIEW_ID),
   );
-  const [personal, setPersonal] = useState<PersonalStateSnapshot | null>(null);
-  const [personalPending, setPersonalPending] = useState<NativeCanvasPersonalPending | null>(null);
-  const [personalBusy, setPersonalBusy] = useState(false);
-  const [privateQueueState, setPrivateQueueState] = useState<NativeDurableState>('unknown');
-  const privateIdentity = JSON.stringify([
-    userId,
-    snapshot.project.id,
-    snapshot.project.databaseRevision,
-    snapshot.project.version,
-    snapshot.sequence,
-  ]);
-  const activeIdentity = useRef(privateIdentity);
-  activeIdentity.current = privateIdentity;
   const [error, setError] = useState('');
   const [storageError, setStorageError] = useState('');
   const [sharedStorageFailure, setSharedStorageFailure] = useState(false);
@@ -868,10 +675,7 @@ function NativeCanvasWorkspace({
     y: 24,
     zoom: 1,
   });
-  const cameraTouched = useRef(false);
-  const cameraInitialized = useRef(false);
   function setCamera(viewport: Viewport) {
-    cameraTouched.current = true;
     commitCamera(viewport);
   }
   const gesture = useRef<{
@@ -899,105 +703,10 @@ function NativeCanvasWorkspace({
     element.addEventListener('wheel', prevent, { passive: false });
     return () => element.removeEventListener('wheel', prevent);
   }, []);
-  useEffect(() => {
-    setPersonal(null);
-    setPersonalPending(null);
-    setPersonalBusy(false);
-    setPrivateQueueState('unknown');
-  }, [userId, snapshot.project.id]);
-  useEffect(() => {
-    setPersonalBusy(false);
-    if (!userId) return;
-    let active = true;
-    const current = () => active && activeIdentity.current === privateIdentity;
-    let unsubscribe = () => {};
-    try {
-      const actorApi = captureNativeActorApi(userId);
-      const queue = getNativeDurableQueue();
-      let refreshing = false;
-      let lastQueueState: NativeDurableState = 'unknown';
-      let queueInitialized = false;
-      const fetchPersonal = async () => {
-        const raw = await actorApi(
-          `/api/projects/${encodeURIComponent(snapshot.project.id)}/personal-state`,
-          { cache: 'no-store' },
-        );
-        const parsed =
-          raw && typeof raw === 'object' && 'databaseRevision' in raw
-            ? nativePrivateSnapshotSchema.parse(raw)
-            : personalStateSnapshotSchema.parse(raw);
-        if (!current()) return;
-        if (
-          parsed.projectVersion !== snapshot.project.version ||
-          parsed.syncSequence !== snapshot.sequence ||
-          ('databaseRevision' in parsed &&
-            parsed.databaseRevision !== snapshot.project.databaseRevision)
-        ) {
-          onReload();
-          return;
-        }
-        setPersonal(parsed);
-      };
-      const refresh = async () => {
-        if (refreshing || !current()) return;
-        refreshing = true;
-        try {
-          const pending = await loadNativeCanvasPersonalPending(userId, snapshot.project.id);
-          if (current()) {
-            setPersonalPending(pending);
-            const state = queue.state(userId, snapshot.project.id);
-            setPrivateQueueState(state);
-            const finished = queueInitialized && state === 'empty' && lastQueueState !== 'empty';
-            queueInitialized = true;
-            lastQueueState = state;
-            if (finished) await fetchPersonal();
-          }
-        } catch (error) {
-          if (current()) {
-            setError(message(error));
-            setStorageError(message(error));
-            setPrivateQueueState('unknown');
-          }
-        } finally {
-          refreshing = false;
-        }
-      };
-      unsubscribe = queue.subscribe(userId, snapshot.project.id, () => {
-        void refresh();
-      });
-      void refresh();
-      void fetchPersonal().catch((error) => {
-        if (current()) setError(message(error));
-      });
-    } catch (error) {
-      if (current()) {
-        setError(message(error));
-        setStorageError(message(error));
-      }
-    }
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [userId, privateIdentity, snapshot.project.id]);
   const sharedSource =
     optimisticSourceDocument ??
     (snapshot.sourceDocument.schemaVersion === 2 ? snapshot.sourceDocument : document);
-  const storedBase = useMemo(
-    () =>
-      personal
-        ? mergeStoredPersonalState(document, reconcilePersonalState(sharedSource, personal.state))
-        : {
-            ...document,
-            views: [],
-            layout: {
-              ...document.layout,
-              nodes: document.layout.nodes.filter((node) => !privateView(document, node.viewId)),
-              viewports: [],
-            },
-          },
-    [document, sharedSource, personal?.state],
-  );
+  const storedBase = document;
   useEffect(() => {
     setSubmittedNodes((entries) => {
       const remaining = entries.filter(({ node, sequence, databaseRevision, accepted }) => {
@@ -1060,28 +769,15 @@ function NativeCanvasWorkspace({
   const effectiveView =
     viewId === TABLES_VIEW_ID ||
     viewId === 'overview' ||
-    base.domains.some((domain) => domain.id === viewId) ||
-    privateView(base, viewId)
+    base.domains.some((domain) => domain.id === viewId)
       ? viewId
       : TABLES_VIEW_ID;
-  const isPrivate = privateView(base, effectiveView);
   const recoveryWaiting =
     !!recoverySelection?.viewId && viewId === recoverySelection.viewId && effectiveView !== viewId;
-  const placementEditable = isPrivate ? personalEditable : editable;
-  const personalReady =
-    personalGuardAvailable() &&
-    !!personal &&
-    'databaseRevision' in personal &&
-    personal.databaseRevision === snapshot.project.databaseRevision &&
-    personal.projectVersion === snapshot.project.version &&
-    personal.syncSequence === snapshot.sequence;
+  const placementEditable = editable;
   const [submittedPlacement, setSubmittedPlacement] = useState<string | null>(null);
-  const placementDraftBlocked = !!draft && (isPrivate || draft.revision !== submittedPlacement);
-  const allBusy =
-    busy ||
-    recoveryWaiting ||
-    (isPrivate &&
-      (personalBusy || !!personalPending || !personalReady || privateQueueState !== 'empty'));
+  const placementDraftBlocked = !!draft && draft.revision !== submittedPlacement;
+  const allBusy = busy || recoveryWaiting;
   const inputKey = `canvas:placement:${effectiveView}`;
   const exportState = nativeCanvasExportBlocker(sharedSource, draft, sharedStorageFailure);
   useNativeExportBlocker(
@@ -1090,25 +786,22 @@ function NativeCanvasWorkspace({
     exportState.dirty,
     exportState.storageFailure,
   );
-  const stale =
-    !!draft &&
-    (draft.expected.databaseRevision !== snapshot.project.databaseRevision ||
-      (isPrivate && String(personal?.version ?? '') !== draft.values.personalVersion));
+  const stale = !!draft && draft.expected.databaseRevision !== snapshot.project.databaseRevision;
   const placementPersistence = useMemo(
     () =>
       createPlacementPersistence<NativeEditorDraft>(
         storeNativeEditorDraft,
         () => {
           setStorageError('');
-          if (!isPrivate) setSharedStorageFailure(false);
+          setSharedStorageFailure(false);
         },
         (error) => {
           setError(message(error));
           setStorageError(message(error));
-          if (!isPrivate) setSharedStorageFailure(true);
+          setSharedStorageFailure(true);
         },
       ),
-    [userId, snapshot.project.id, snapshot.project.databaseRevision, inputKey, isPrivate],
+    [userId, snapshot.project.id, snapshot.project.databaseRevision, inputKey],
   );
   useLayoutEffect(
     () => () => {
@@ -1145,20 +838,12 @@ function NativeCanvasWorkspace({
     } catch (error) {
       setError(message(error));
       setStorageError(message(error));
-      if (!isPrivate) setSharedStorageFailure(true);
+      setSharedStorageFailure(true);
     }
   }, [recoveryWaiting, inputKey, userId, snapshot.project.id, snapshot.project.databaseRevision]);
   useEffect(() => {
-    cameraTouched.current = false;
-    cameraInitialized.current = false;
     commitCamera({ viewId: effectiveView, x: 24, y: 24, zoom: 1 });
   }, [userId, snapshot.project.id, effectiveView]);
-  useEffect(() => {
-    if (!personal || cameraInitialized.current || cameraTouched.current || recoveryWaiting) return;
-    cameraInitialized.current = true;
-    const viewport = personal.state.viewports.find((viewport) => viewport.viewId === effectiveView);
-    if (viewport) commitCamera(viewport);
-  }, [personal, recoveryWaiting, userId, snapshot.project.id, effectiveView]);
   const scene = useMemo(
     () => nativeCanvasScene(base, effectiveView, mode, domainFilter),
     [base, effectiveView, mode, domainFilter],
@@ -1335,7 +1020,7 @@ function NativeCanvasWorkspace({
         return;
       }
       const commands = placements.map((node) =>
-        nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
+        nativeCanvasMoveCommand(sharedSource, node, {
           x: node.x,
           y: node.y,
         }),
@@ -1367,7 +1052,6 @@ function NativeCanvasWorkspace({
           nodeId: node.id,
           viewId: node.viewId,
           commands: JSON.stringify(commands),
-          personalVersion: String(personal?.version ?? ''),
         },
       };
       draftRef.current = next;
@@ -1377,7 +1061,7 @@ function NativeCanvasWorkspace({
     } catch (error) {
       setError(message(error));
       setStorageError(message(error));
-      if (!isPrivate) setSharedStorageFailure(true);
+      setSharedStorageFailure(true);
     }
   }
   function preserve(
@@ -1404,7 +1088,7 @@ function NativeCanvasWorkspace({
       !sharedSource.layout.nodes.some((raw) => raw.id === node.id)
     )
       return;
-    const command = nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
+    const command = nativeCanvasMoveCommand(sharedSource, node, {
       ...(size
         ? {
             width: Math.max(
@@ -1452,7 +1136,6 @@ function NativeCanvasWorkspace({
         nodeId: node.id,
         viewId: node.viewId,
         commands: JSON.stringify([command]),
-        personalVersion: String(personal?.version ?? ''),
       },
     };
     draftRef.current = next;
@@ -1463,67 +1146,8 @@ function NativeCanvasWorkspace({
     } catch (error) {
       setError(message(error));
       setStorageError(message(error));
-      if (!isPrivate) setSharedStorageFailure(true);
+      setSharedStorageFailure(true);
     }
-  }
-  async function savePersonalCommands(
-    commands: NativePersonalCanvasCommand[],
-    editorDraft?: DraftRef,
-  ): Promise<boolean> {
-    if (!userId || !personalEditable || allBusy || !personal || privateQueueState !== 'empty')
-      return false;
-    if (!personalReady) {
-      setError(
-        t(
-          '개인 화면 저장은 아직 지원하지 않습니다. 이 프로젝트에서는 공유 캔버스를 사용해 주세요.',
-        ),
-      );
-      return false;
-    }
-    setPersonalBusy(true);
-    const identity = privateIdentity;
-    const current = () => alive.current && activeIdentity.current === identity;
-    setError('');
-    try {
-      // A reader preview may contain generated shared layout; only original native source is persisted.
-      const personalSource = mergeStoredPersonalState(
-        sharedSource,
-        reconcilePersonalState(sharedSource, personal.state),
-      );
-      const candidate = commands.reduce(nativeCanvasPersonalCandidate, personalSource);
-      let staged: NativeCanvasPersonalPending;
-      try {
-        staged = await stageNativeCanvasPersonal(
-          userId,
-          snapshot,
-          personal,
-          candidate,
-          localStorage,
-          editorDraft,
-        );
-      } catch (error) {
-        if (current()) setStorageError(message(error));
-        throw error;
-      }
-      if (current()) {
-        setStorageError('');
-        setPersonalPending(staged);
-      }
-      const result = await recoverNativeCanvasPersonal(staged, snapshot, personalEditable);
-      if (!current()) return true;
-      setPersonalPending((value) => (value?.revision === staged.revision ? null : value));
-      setPersonal(result);
-      onReload();
-      return true;
-    } catch (error) {
-      if (current()) setError(message(error));
-      return false;
-    } finally {
-      if (current()) setPersonalBusy(false);
-    }
-  }
-  function savePersonalCommand(command: NativePersonalCanvasCommand, editorDraft?: DraftRef) {
-    return savePersonalCommands([command], editorDraft);
   }
   async function savePlacement() {
     groupOrigins.current = null;
@@ -1534,48 +1158,35 @@ function NativeCanvasWorkspace({
       const commands = (JSON.parse(current.values.commands!) as unknown[]).map((command) =>
         nativeEditorCommandSchema.parse(command),
       );
-      let saved: boolean;
-      if (isPrivate) {
-        if (String(personal?.version ?? '') !== current.values.personalVersion)
-          throw new Error('native.personal-conflict');
-        saved = await savePersonalCommands(
-          commands.map((command) => nativePersonalCanvasCommandSchema.parse(command)),
-          {
-            key: current.key,
-            revision: current.revision,
-          },
-        );
-      } else {
-        setSubmittedPlacement(current.revision);
-        const placements = current.values.nodesJSON
-          ? nativeCanvasDraftPlacements(current.values)
-          : drawn.nodes.filter((node) => node.objectId === current.values.objectId);
-        setSubmittedNodes((entries) => [
-          ...entries.filter(({ node }) => !placements.some((next) => next.id === node.id)),
-          ...placements.map((node) => ({
-            revision: current.revision,
-            node,
-            sequence: snapshot.sequence,
-            databaseRevision: snapshot.project.databaseRevision,
-            accepted: false,
-          })),
-        ]);
-        saved = await onSave(commands, current.expected, {
-          key: current.key,
+      setSubmittedPlacement(current.revision);
+      const placements = current.values.nodesJSON
+        ? nativeCanvasDraftPlacements(current.values)
+        : drawn.nodes.filter((node) => node.objectId === current.values.objectId);
+      setSubmittedNodes((entries) => [
+        ...entries.filter(({ node }) => !placements.some((next) => next.id === node.id)),
+        ...placements.map((node) => ({
           revision: current.revision,
-        });
-        setSubmittedPlacement((revision) => (revision === current.revision ? null : revision));
-        if (saved)
-          setSubmittedNodes((entries) =>
-            entries.map((entry) =>
-              entry.revision === current.revision ? { ...entry, accepted: true } : entry,
-            ),
-          );
-        if (!saved)
-          setSubmittedNodes((entries) =>
-            entries.filter(({ revision }) => revision !== current.revision),
-          );
-      }
+          node,
+          sequence: snapshot.sequence,
+          databaseRevision: snapshot.project.databaseRevision,
+          accepted: false,
+        })),
+      ]);
+      const saved = await onSave(commands, current.expected, {
+        key: current.key,
+        revision: current.revision,
+      });
+      setSubmittedPlacement((revision) => (revision === current.revision ? null : revision));
+      if (saved)
+        setSubmittedNodes((entries) =>
+          entries.map((entry) =>
+            entry.revision === current.revision ? { ...entry, accepted: true } : entry,
+          ),
+        );
+      if (!saved)
+        setSubmittedNodes((entries) =>
+          entries.filter(({ revision }) => revision !== current.revision),
+        );
       if (saved) {
         discardNativeEditorDraft(userId, snapshot.project.id, current);
         if (alive.current && draftRef.current?.revision === current.revision) {
@@ -1590,19 +1201,6 @@ function NativeCanvasWorkspace({
       );
       setError(message(error));
     }
-  }
-  async function saveCanvasCommand(
-    command: NativePersonalCanvasCommand,
-    editorDraft?: DraftRef,
-  ): Promise<boolean> {
-    if (
-      isPrivate ||
-      command.type === 'set_viewport' ||
-      command.type === 'upsert_combined_view' ||
-      command.type === 'delete_combined_view'
-    )
-      return savePersonalCommand(command, editorDraft);
-    return onSave([nativeSharedCanvasCommandSchema.parse(command)], expected(snapshot));
   }
   function begin(event: PointerEvent<HTMLElement>, node: NodeLayout) {
     if (
@@ -1688,17 +1286,6 @@ function NativeCanvasWorkspace({
   async function saveCommands(commands: CanvasCommand[], ref?: DraftRef): Promise<boolean> {
     if (!userId || allBusy || placementDraftBlocked || stale || storageError || !commands.length)
       return false;
-    if (
-      isPrivate &&
-      commands.every((command) => nativePersonalCanvasCommandSchema.safeParse(command).success)
-    )
-      return (
-        placementEditable &&
-        savePersonalCommands(
-          commands.map((command) => nativePersonalCanvasCommandSchema.parse(command)),
-          ref,
-        )
-      );
     if (!editable) return false;
     return onSave(
       commands.map((command) => nativeEditorCommandSchema.parse(command)),
@@ -1721,9 +1308,8 @@ function NativeCanvasWorkspace({
       before: {
         objectId: id,
         text: domain?.description ?? note?.text ?? '',
-        personalVersion: String(personal?.version ?? ''),
       },
-      values: { objectId: id, text: value, personalVersion: String(personal?.version ?? '') },
+      values: { objectId: id, text: value },
     };
     try {
       storeNativeEditorDraft(input);
@@ -1769,7 +1355,6 @@ function NativeCanvasWorkspace({
         ];
       else {
         if (!editable) return;
-        if (isPrivate) navigateView(TABLES_VIEW_ID);
         const owner = base.domains.some((d) => d.id === effectiveView)
           ? effectiveView
           : domainFilter?.domainIds.length === 1 && !domainFilter.unassigned
@@ -1814,7 +1399,7 @@ function NativeCanvasWorkspace({
       }
       await saveCommands(
         placements.map((node) =>
-          nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, { x: node.x, y: node.y }),
+          nativeCanvasMoveCommand(sharedSource, node, { x: node.x, y: node.y }),
         ),
       );
     } catch (error) {
@@ -1833,12 +1418,7 @@ function NativeCanvasWorkspace({
     deletionBusy.current = true;
     const scope = operationScope.current;
     try {
-      const commands = nativeCanvasDeleteCommands(
-        isPrivate ? base : sharedSource,
-        ids,
-        effectiveView,
-        isPrivate,
-      );
+      const commands = nativeCanvasDeleteCommands(sharedSource, ids);
       if (!commands.length) return;
       if (
         !(await confirm({
@@ -1846,11 +1426,7 @@ function NativeCanvasWorkspace({
             ids.length > 1
               ? t('선택한 객체 {count}개 삭제', { count: ids.length })
               : t('객체 삭제'),
-          description: t(
-            isPrivate
-              ? '이 화면의 참조와 메모를 삭제할까요? 원본 테이블은 유지됩니다.'
-              : '선택한 객체와 소유 데이터·연결 관계를 삭제할까요?',
-          ),
+          description: t('선택한 객체와 소유 데이터·연결 관계를 삭제할까요?'),
           confirmLabel: t('삭제'),
           destructive: true,
         }))
@@ -2009,11 +1585,6 @@ function NativeCanvasWorkspace({
       expectation.databaseRevision !== snapshot.project.databaseRevision
     )
       return false;
-    if (isPrivate)
-      return savePersonalCommands(
-        commands.map((command) => nativePersonalCanvasCommandSchema.parse(command)),
-        ref,
-      );
     return onSave(
       commands.map((command) => nativeEditorCommandSchema.parse(command)),
       expectation,
@@ -2029,14 +1600,14 @@ function NativeCanvasWorkspace({
       userId: userId ?? '',
       snapshot,
       busy: allBusy || placementDraftBlocked || !placementEditable,
-      affectsSharedDocument: !isPrivate,
+      affectsSharedDocument: true,
       onSave: (
         commands: CanvasCommand[],
         expectation: ReturnType<typeof expected>,
         ref: DraftRef,
       ) => routeSaveRef.current(commands, expectation, ref),
     }),
-    [userId, snapshot, allBusy, placementDraftBlocked, placementEditable, isPrivate],
+    [userId, snapshot, allBusy, placementDraftBlocked, placementEditable],
   );
   const openInline = useCallback((target: NativeInlineTarget, focusTarget?: HTMLElement) => {
     inlineFocusReturn.current = focusTarget ?? null;
@@ -2090,14 +1661,6 @@ function NativeCanvasWorkspace({
     window.addEventListener('keydown', switchCanvasTool);
     return () => window.removeEventListener('keydown', switchCanvasTool);
   }, [switchCanvasTool]);
-  const canvasSaveRef = useRef(saveCanvasCommand);
-  useLayoutEffect(() => {
-    canvasSaveRef.current = saveCanvasCommand;
-  });
-  const saveCanvasLatest = useCallback(
-    (command: NativePersonalCanvasCommand, ref?: DraftRef) => canvasSaveRef.current(command, ref),
-    [],
-  );
   const sceneActions = useRef<NativeSceneActions>({
     zoom: camera.zoom,
     begin,
@@ -2190,12 +1753,8 @@ function NativeCanvasWorkspace({
       { id: TABLES_VIEW_ID, name: t('전체 테이블') },
       { id: 'overview', name: t('도메인 맵') },
       ...base.domains.map((domain) => ({ id: domain.id, name: domain.name })),
-      ...(base.views ?? []).map((view) => ({
-        id: view.id,
-        name: `${t('개인 화면')}: ${view.name}`,
-      })),
     ],
-    [base.domains, base.views, locale],
+    [base.domains, locale],
   );
   const routeEditor =
     selectedRelationId && userId && (placementEditable || recoverySelection?.routeId) ? (
@@ -2207,7 +1766,6 @@ function NativeCanvasWorkspace({
         relationId={selectedRelationId}
         world={worldElement}
         context={routeContext}
-        personalVersion={isPrivate ? personal?.version : undefined}
         active={routeInspectorActive}
         onClose={closeRoute}
       />
@@ -2248,29 +1806,25 @@ function NativeCanvasWorkspace({
             {t('복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.')}
           </p>
         )}
-        {userId &&
-          (editable || personalEditable) &&
-          !recoveryWaiting &&
-          recoverySelection?.action && (
-            <MemoNativeCanvasActions
-              key={JSON.stringify([
-                userId,
-                snapshot.project.id,
-                snapshot.project.databaseRevision,
-                effectiveView,
-              ])}
-              document={base}
-              source={sharedSource}
-              snapshot={snapshot}
-              userId={userId}
-              viewId={effectiveView}
-              busy={allBusy || placementDraftBlocked || (isPrivate && !personal)}
-              onSave={saveCanvasLatest}
-              onSharedSave={onSave}
-              sharedEditable={editable}
-              initialSelection={recoverySelection.action}
-            />
-          )}
+        {userId && editable && !recoveryWaiting && recoverySelection?.action && (
+          <MemoNativeCanvasActions
+            key={JSON.stringify([
+              userId,
+              snapshot.project.id,
+              snapshot.project.databaseRevision,
+              effectiveView,
+            ])}
+            document={base}
+            source={sharedSource}
+            snapshot={snapshot}
+            userId={userId}
+            viewId={effectiveView}
+            busy={allBusy || placementDraftBlocked}
+            onSharedSave={onSave}
+            sharedEditable={editable}
+            initialSelection={recoverySelection.action}
+          />
+        )}
       </div>
     </>
   );
@@ -2282,24 +1836,11 @@ function NativeCanvasWorkspace({
         viewId={effectiveView}
         mode={mode}
         sceneFor={nativeCanvasScene}
-        {...(personal ? { personal } : {})}
-        personalBusy={personalBusy}
-        writerState={privateQueueState}
         filter={domainFilter}
         {...(renderExportActions ? { renderControl: renderExportActions } : {})}
       />
     ),
-    [
-      snapshot,
-      userId,
-      effectiveView,
-      mode,
-      personal,
-      personalBusy,
-      privateQueueState,
-      domainFilter,
-      renderExportActions,
-    ],
+    [snapshot, userId, effectiveView, mode, domainFilter, renderExportActions],
   );
   const reviewCallback = useRef(onReviewContext);
   reviewCallback.current = onReviewContext;
@@ -2377,7 +1918,7 @@ function NativeCanvasWorkspace({
       onOpenRecovery={onOpenRecoveryFromParent ? onOpenRecovery : undefined}
       editable={editable}
       noteEditable={placementEditable}
-      disabled={personalBusy || !!draft}
+      disabled={!!draft}
       mode={mode}
       onMode={onModeChange}
       inspectorOpen={inspectorOpen}
@@ -2387,15 +1928,14 @@ function NativeCanvasWorkspace({
   const selectedObjectNode = scene.nodes.find((node) => node.id === selectedNode);
   const selectionInspector = selectedObjectNode && userId && (
     <NativeSelectedObjectInspector
-      document={isPrivate ? base : sharedSource}
+      document={sharedSource}
       node={selectedObjectNode}
       viewId={effectiveView}
-      personalVersion={isPrivate ? personal?.version : undefined}
       context={{
         userId,
         snapshot,
         busy: allBusy || placementDraftBlocked || !placementEditable,
-        affectsSharedDocument: !isPrivate,
+        affectsSharedDocument: true,
         onSave: (commands, exp, ref) => routeSave(commands, exp, ref),
       }}
     />
@@ -2441,8 +1981,7 @@ function NativeCanvasWorkspace({
                   !placementEditable ||
                   allBusy ||
                   draft.expected.databaseRevision !== snapshot.project.databaseRevision ||
-                  !scene.nodes.some((node) => node.objectId === draft.values.objectId) ||
-                  (isPrivate && !personal)
+                  !scene.nodes.some((node) => node.objectId === draft.values.objectId)
                 }
                 onClick={() => {
                   const node = scene.nodes.find((node) => node.objectId === draft.values.objectId);
@@ -2480,13 +2019,12 @@ function NativeCanvasWorkspace({
                           nodesJSON: JSON.stringify(currentNodes),
                           commands: JSON.stringify(
                             currentNodes.map((current) =>
-                              nativeCanvasMoveCommand(isPrivate ? base : sharedSource, current, {
+                              nativeCanvasMoveCommand(sharedSource, current, {
                                 x: current.x,
                                 y: current.y,
                               }),
                             ),
                           ),
-                          personalVersion: String(personal?.version ?? ''),
                         },
                       };
                       draftRef.current = next;
@@ -2494,10 +2032,10 @@ function NativeCanvasWorkspace({
                       storeNativeEditorDraft(next);
                       setError('');
                       setStorageError('');
-                      if (!isPrivate) setSharedStorageFailure(false);
+                      setSharedStorageFailure(false);
                       return;
                     }
-                    const command = nativeCanvasMoveCommand(isPrivate ? base : sharedSource, node, {
+                    const command = nativeCanvasMoveCommand(sharedSource, node, {
                       x: Number(draft.values.x),
                       y: Number(draft.values.y),
                     });
@@ -2517,7 +2055,6 @@ function NativeCanvasWorkspace({
                         commands: JSON.stringify([command]),
                         nodeId: node.id,
                         viewId: node.viewId,
-                        personalVersion: String(personal?.version ?? ''),
                       },
                     };
                     draftRef.current = next;
@@ -2525,11 +2062,11 @@ function NativeCanvasWorkspace({
                     storeNativeEditorDraft(next);
                     setError('');
                     setStorageError('');
-                    if (!isPrivate) setSharedStorageFailure(false);
+                    setSharedStorageFailure(false);
                   } catch (error) {
                     setError(message(error));
                     setStorageError(message(error));
-                    if (!isPrivate) setSharedStorageFailure(true);
+                    setSharedStorageFailure(true);
                   }
                 }}
               >
@@ -2543,97 +2080,6 @@ function NativeCanvasWorkspace({
           >
             {t('배치 저장')}
           </Button>
-        </div>
-      )}
-      {personalPending && (
-        <div role="status">
-          <p>{t('미확인 개인 저장 요청이 있습니다.')}</p>
-          <Button
-            disabled={personalBusy}
-            onClick={() => {
-              const identity = privateIdentity;
-              const current = () => alive.current && activeIdentity.current === identity;
-              setPersonalBusy(true);
-              void recoverNativeCanvasPersonal(personalPending, snapshot, personalEditable)
-                .then((result) => {
-                  if (current()) {
-                    setPersonalPending((value) =>
-                      value?.revision === personalPending.revision ? null : value,
-                    );
-                    setPersonal(result);
-                    onReload();
-                  }
-                })
-                .catch((error) => {
-                  if (current()) setError(message(error));
-                })
-                .finally(() => {
-                  if (current()) setPersonalBusy(false);
-                });
-            }}
-          >
-            {t('개인 저장 결과 확인')}
-          </Button>
-          <Button
-            disabled={
-              personalBusy || privateQueueState === 'unknown' || privateQueueState === 'sending'
-            }
-            onClick={() => {
-              const identity = privateIdentity;
-              const current = () => alive.current && activeIdentity.current === identity;
-              setPersonalBusy(true);
-              void discardNativeCanvasPersonalPending(personalPending)
-                .then(() => {
-                  if (current())
-                    setPersonalPending((value) =>
-                      value?.revision === personalPending.revision ? null : value,
-                    );
-                })
-                .catch((error) => {
-                  if (current()) setError(message(error));
-                })
-                .finally(() => {
-                  if (current()) setPersonalBusy(false);
-                });
-            }}
-          >
-            {t('개인 요청 초기화')}
-          </Button>
-          {!!userId && (
-            <NativePrivateCASRecovery
-              userId={userId}
-              snapshot={snapshot}
-              pending={personalPending}
-              disabled={recoveryBusy || personalBusy || privateQueueState === 'sending'}
-              options={{
-                assertCurrent: () => {
-                  if (!alive.current || activeIdentity.current !== privateIdentity)
-                    throw Error('native.private-proof-scope-mismatch');
-                },
-              }}
-              onDiscard={(archive) => {
-                if (
-                  !alive.current ||
-                  activeIdentity.current !== privateIdentity ||
-                  archive.pending.revision !== personalPending.revision
-                )
-                  return;
-                setPersonalPending((value) =>
-                  value?.revision === archive.pending.revision ? null : value,
-                );
-                setError('');
-                void getNativeDurableQueue()
-                  .read(userId, snapshot.project.id)
-                  .then(() => {
-                    if (alive.current && activeIdentity.current === privateIdentity) onReload();
-                  })
-                  .catch((error) => {
-                    if (alive.current && activeIdentity.current === privateIdentity)
-                      setError(message(error));
-                  });
-              }}
-            />
-          )}
         </div>
       )}
       <div
@@ -3116,7 +2562,7 @@ function NativeCanvasWorkspace({
                     userId,
                     snapshot,
                     busy: allBusy || placementDraftBlocked || !placementEditable,
-                    affectsSharedDocument: !isPrivate,
+                    affectsSharedDocument: true,
                     onSave: async (commands, exp, ref) => {
                       const saved = await routeSave(commands, exp, ref);
                       if (saved) setDescriptionId(null);
@@ -3128,12 +2574,9 @@ function NativeCanvasWorkspace({
                   initial={{
                     objectId: descriptionId,
                     text: domain?.description ?? note?.text ?? '',
-                    personalVersion: String(personal?.version ?? ''),
                   }}
                   disabled={!placementEditable}
                   build={(values) => {
-                    if (isPrivate && values.personalVersion !== String(personal?.version ?? ''))
-                      throw Error('native.personal-conflict');
                     return [
                       nativeEditorCommandSchema.parse(
                         domain
@@ -3445,7 +2888,6 @@ export function NativeCanvasActions({
   userId,
   viewId,
   busy,
-  onSave,
   onSharedSave,
   sharedEditable,
   initialSelection,
@@ -3456,7 +2898,6 @@ export function NativeCanvasActions({
   userId: string;
   viewId: string;
   busy: boolean;
-  onSave: (command: NativePersonalCanvasCommand, editorDraft?: DraftRef) => Promise<boolean>;
   onSharedSave: NativeEditorSave;
   sharedEditable: boolean;
   initialSelection?: { action: string; target: string };
@@ -3481,10 +2922,8 @@ export function NativeCanvasActions({
     for (const node of document.layout.nodes)
       acceptedReferences.current.delete(referenceKey(node.objectId, node.viewId));
   }, [document.layout.nodes, referenceScope]);
-  const isPrivate = privateView(document, viewId),
-    placementView = viewFor(document, viewId);
+  const placementView = viewFor(document, viewId);
   const note = document.notes.find((note) => note.id === target);
-  const view = document.views?.find((view) => view.id === target);
   const referenceNode =
     action === 'reference'
       ? document.layout.nodes.find(
@@ -3495,7 +2934,7 @@ export function NativeCanvasActions({
     userId,
     snapshot,
     busy,
-    affectsSharedDocument: !isPrivate && !['view', 'view-edit', 'view-delete'].includes(action),
+    affectsSharedDocument: true,
     onSave: async (commands: CanvasCommand[], exp: ReturnType<typeof expected>, ref?: DraftRef) => {
       if (!commands.length) return false;
       const rememberReferences = () => {
@@ -3507,9 +2946,8 @@ export function NativeCanvasActions({
             )
           )
             continue;
-          // Personal saves derive IDs with the same model operation as the server.
           const nodeId =
-            !isPrivate && 'nodeId' in command && command.nodeId
+            'nodeId' in command && command.nodeId
               ? command.nodeId
               : addTableReference(
                   document,
@@ -3522,7 +2960,7 @@ export function NativeCanvasActions({
           acceptedReferences.current.set(referenceKey(command.tableId, command.viewId), nodeId);
         }
       };
-      if (!isPrivate && !['view', 'view-edit', 'view-delete'].includes(action)) {
+      {
         if (!sharedEditable) return false;
         const saved = await onSharedSave(
           commands.map((command) => nativeEditorCommandSchema.parse(command)),
@@ -3532,10 +2970,6 @@ export function NativeCanvasActions({
         if (saved) rememberReferences();
         return saved;
       }
-      const command = nativePersonalCanvasCommandSchema.parse(commands[0]);
-      const saved = await onSave(command, ref);
-      if (saved) rememberReferences();
-      return saved;
     },
   };
   return (
@@ -3551,16 +2985,12 @@ export function NativeCanvasActions({
         }}
         choices={[
           { value: 'reference', label: t('참조 추가'), disabled: placementView === 'overview' },
-          { value: 'remove-reference', label: t('참조 제거'), disabled: !isPrivate },
           { value: 'note', label: t('메모 추가') },
           { value: 'note-edit', label: t('메모 수정') },
           { value: 'note-delete', label: t('메모 삭제') },
-          { value: 'view', label: t('화면 생성'), disabled: !personalGuardAvailable() },
-          { value: 'view-edit', label: t('화면 수정'), disabled: !personalGuardAvailable() },
-          { value: 'view-delete', label: t('화면 삭제'), disabled: !personalGuardAvailable() },
         ]}
       />
-      {!['note', 'view'].includes(action) && (
+      {action !== 'note' && (
         <NativeEditorField
           label="대상"
           value={target}
@@ -3568,25 +2998,14 @@ export function NativeCanvasActions({
           onChange={setTarget}
           choices={[
             { value: '', label: '—' },
-            ...(action.startsWith('view-')
-              ? (document.views ?? []).map((view) => ({ value: view.id, label: view.name }))
-              : action.startsWith('note-')
-                ? document.notes
-                    .filter((note) => note.viewId === placementView)
-                    .map((note) => ({ value: note.id, label: note.text.slice(0, 30) || note.id }))
-                : (document.tables ?? [])
-                    .filter((table) =>
-                      isPrivate
-                        ? table.domainId !== null &&
-                          document
-                            .views!.find((view) => view.id === viewId)!
-                            .domainIds.includes(table.domainId)
-                        : true,
-                    )
-                    .map((table) => ({
-                      value: table.id,
-                      label: table.physical.name || table.logical.name || table.id,
-                    }))),
+            ...(action.startsWith('note-')
+              ? document.notes
+                  .filter((note) => note.viewId === placementView)
+                  .map((note) => ({ value: note.id, label: note.text.slice(0, 30) || note.id }))
+              : (document.tables ?? []).map((table) => ({
+                  value: table.id,
+                  label: table.physical.name || table.logical.name || table.id,
+                }))),
           ]}
         />
       )}
@@ -3597,18 +3016,12 @@ export function NativeCanvasActions({
         draftKey={`canvas:action:${viewId}:${action}:${target}`}
         initial={{
           id,
-          name: view?.name ?? '',
-          domains: view?.domainIds.join('\n') ?? '',
           text: note?.text ?? '',
           x: String(referenceNode?.x ?? 40),
           y: String(referenceNode?.y ?? 40),
           confirm: 'false',
         }}
-        disabled={
-          (['view', 'view-edit'].includes(action) && !document.domains.length) ||
-          (action.startsWith('view') && !personalGuardAvailable()) ||
-          (!isPrivate && !sharedEditable && !action.startsWith('view'))
-        }
+        disabled={!sharedEditable}
         build={(values) => {
           let command: unknown;
           if (action === 'reference') {
@@ -3629,13 +3042,6 @@ export function NativeCanvasActions({
                   nodeId: values.id,
                   placement: { x: Number(values.x), y: Number(values.y) },
                 };
-          } else if (action === 'remove-reference') {
-            if (values.confirm !== 'true') throw new Error('deletion.review-required');
-            const node = document.layout.nodes.find(
-              (node) => node.objectId === target && node.viewId === placementView,
-            );
-            if (!node) throw new Error('canvas.node-not-found');
-            command = { type: 'remove_table_reference', nodeId: node.id };
           } else if (action === 'note')
             command = {
               type: 'upsert_note',
@@ -3647,59 +3053,12 @@ export function NativeCanvasActions({
           else if (action === 'note-delete') {
             if (values.confirm !== 'true') throw new Error('deletion.review-required');
             command = { type: 'delete_note', id: target };
-          } else if (action === 'view-delete') {
-            if (values.confirm !== 'true') throw new Error('deletion.review-required');
-            command = { type: 'delete_combined_view', id: target };
-          } else
-            command = {
-              type: 'upsert_combined_view',
-              value: {
-                id: action === 'view-edit' ? target : values.id,
-                name: values.name,
-                domainIds: (values.domains ?? '').split('\n').filter(Boolean),
-              },
-            };
-          // The shared queue excludes private view commands. Personal forms route directly to PUT.
-          return [
-            ['view', 'view-edit', 'view-delete'].includes(action)
-              ? nativePersonalCanvasCommandSchema.parse(command)
-              : nativeEditorCommandSchema.parse(command),
-          ];
+          } else throw new Error('canvas.action-unsupported');
+          return [nativeEditorCommandSchema.parse(command)];
         }}
       >
         {(values, change) => (
           <>
-            {['view', 'view-edit'].includes(action) && (
-              <>
-                <NativeEditorField
-                  label="이름"
-                  value={values.name ?? ''}
-                  onChange={(value) => change('name', value)}
-                />
-                <fieldset>
-                  <legend>{t('도메인 선택')}</legend>
-                  {document.domains.map((domain) => (
-                    <label key={domain.id}>
-                      <input
-                        type="checkbox"
-                        checked={(values.domains ?? '').split('\n').includes(domain.id)}
-                        onChange={(event) => {
-                          const ids = (values.domains ?? '').split('\n').filter(Boolean);
-                          change(
-                            'domains',
-                            (event.target.checked
-                              ? [...ids, domain.id]
-                              : ids.filter((id) => id !== domain.id)
-                            ).join('\n'),
-                          );
-                        }}
-                      />
-                      {domain.name}
-                    </label>
-                  ))}
-                </fieldset>
-              </>
-            )}
             {['note', 'note-edit'].includes(action) && (
               <NativeEditorField
                 label="메모"
@@ -3724,7 +3083,7 @@ export function NativeCanvasActions({
                 />
               </>
             )}
-            {['note-delete', 'view-delete', 'remove-reference'].includes(action) && (
+            {['note-delete'].includes(action) && (
               <NativeEditorField
                 label="삭제를 확인했습니다."
                 value={values.confirm ?? 'false'}

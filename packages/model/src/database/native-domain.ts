@@ -5,11 +5,6 @@ import {
   type NodeLayout,
   type Position,
 } from '../document.js';
-import {
-  extractPersonalState,
-  mergeStoredPersonalState,
-  reconcilePersonalState,
-} from '../personal.js';
 import { requestFingerprint } from '../sync.js';
 import { getDatabaseProfile } from './profiles.js';
 import { nativeReferenceProblems } from './reference-graph.js';
@@ -173,10 +168,34 @@ export function updateNativeDomain(
   else if (patch.color !== undefined) next.color = patch.color;
   return finish(candidate, document);
 }
-function prunePersonalAndRoutes(document: NativeDesignDocument): NativeDesignDocument {
-  const reconciled = mergeStoredPersonalState(
-    document,
-    reconcilePersonalState(document, extractPersonalState(document)),
+/** Keep legacy imported canvas references valid without restoring a personal-state runtime. */
+function pruneLegacyCanvasAndRoutes(document: NativeDesignDocument): NativeDesignDocument {
+  const reconciled = clone(document);
+  const domainIds = new Set(document.domains.map((domain) => domain.id));
+  const legacyIds = new Set((document.views ?? []).map((view) => view.id));
+  const views = (document.views ?? [])
+    .map((view) => ({ ...view, domainIds: view.domainIds.filter((id) => domainIds.has(id)) }))
+    .filter((view) => view.domainIds.length > 0);
+  reconciled.views = views;
+  const viewsById = new Map(views.map((view) => [view.id, view]));
+  reconciled.notes = document.notes.filter(
+    (note) => !legacyIds.has(note.viewId) || viewsById.has(note.viewId),
+  );
+  const notePairs = new Set(reconciled.notes.map((note) => JSON.stringify([note.viewId, note.id])));
+  const tables = new Map((document.tables ?? []).map((table) => [table.id, table]));
+  reconciled.layout.nodes = document.layout.nodes.filter((node) => {
+    if (!legacyIds.has(node.viewId)) return true;
+    const view = viewsById.get(node.viewId);
+    const table = tables.get(node.objectId);
+    return (
+      !!view &&
+      (notePairs.has(JSON.stringify([node.viewId, node.objectId])) ||
+        (!!table && table.domainId !== null && view.domainIds.includes(table.domainId)))
+    );
+  });
+  const validViewIds = new Set(['overview', TABLES_VIEW_ID, ...domainIds, ...viewsById.keys()]);
+  reconciled.layout.viewports = document.layout.viewports.filter((viewport) =>
+    validViewIds.has(viewport.viewId),
   );
   if (document.views === undefined) delete reconciled.views;
   if (document.layout.relations === undefined) delete reconciled.layout.relations;
@@ -240,7 +259,7 @@ export function moveNativeTableDomain(
   const candidate = moveTableGrouping(document, tableId, targetDomainId);
   return document.tables?.find((table) => table.id === tableId)?.domainId === targetDomainId
     ? candidate
-    : finish(prunePersonalAndRoutes(candidate), document);
+    : finish(pruneLegacyCanvasAndRoutes(candidate), document);
 }
 export function planNativeDomainDeletion(
   document: NativeDesignDocument,
@@ -327,7 +346,7 @@ export function planNativeDomainDeletion(
     candidate.layout.relations = candidate.layout.relations.filter(
       (route) => route.viewId !== domainId,
     );
-  candidate = finish(prunePersonalAndRoutes(candidate), document);
+  candidate = finish(pruneLegacyCanvasAndRoutes(candidate), document);
   const missing = <T extends { id: string }>(before: T[], after: T[]) =>
     before
       .filter((item) => !after.some((current) => current.id === item.id))
