@@ -84,3 +84,17 @@ it('shows verified crowded table names after successful arrangement without a fa
   );
   expect(host.querySelector('button')?.textContent).toBe('실행 취소');
 });
+
+it('announces successful undo as a restored arrangement', async () => {
+  await act(async () =>
+    root.render(
+      h(NativeRelationArrangeToast, {
+        status: { phase: 'saved', reason: 'undo', canUndo: false },
+        onCancel() {},
+        onUndo() {},
+      }),
+    ),
+  );
+  expect(host.querySelector('[role="status"]')?.textContent).toBe('관계선 정리를 되돌렸어요');
+  expect(host.querySelector('button')).toBeNull();
+});

@@ -5,6 +5,7 @@ import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 registerTranslations({
   '관계선 정리 중…': 'Arranging relation lines…',
   '관계선을 정리했어요': 'Relation lines arranged',
+  '관계선 정리를 되돌렸어요': 'Relation arrangement undone',
   '연결 구조가 변경되어 정리를 중단했어요':
     'Arrangement stopped because the connection structure changed',
   '관계선을 정리하지 못했어요. 다시 시도해 주세요.':
@@ -74,6 +75,7 @@ export function NativeRelationArrangeToast({
     cancelled: '관계선 정리를 취소했어요',
   }[status.phase];
   const reasonText: Record<string, string> = {
+    undo: '관계선 정리를 되돌렸어요',
     size: '카드 크기가 변경되어 정리를 중단했어요. 다시 실행해 주세요.',
     structure: '연결 구조가 변경되어 정리를 중단했어요',
     scope: '화면이 변경되어 정리를 중단했어요',

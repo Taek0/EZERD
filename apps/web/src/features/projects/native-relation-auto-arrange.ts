@@ -133,6 +133,7 @@ export interface NativeRelationArrangeStatus {
     | 'save'
     | 'limit'
     | 'compute-limit'
+    | 'undo'
     | 'cancel';
   canUndo: boolean;
   canCancel?: boolean;
@@ -471,7 +472,7 @@ export function createNativeRelationArrangeController(options: {
           clearUndoMarker(storage, state.userId, state.snapshot.project.id, marker.operationId);
           undo = null;
           recoveryRequested = false;
-          emit({ phase: 'saved', canUndo: false });
+          emit({ phase: 'saved', reason: 'undo', canUndo: false });
           options.onReload?.();
           return;
         }
@@ -850,7 +851,7 @@ export function createNativeRelationArrangeController(options: {
           if (storage)
             clearUndoMarker(storage, state.userId, state.snapshot.project.id, target.operationId);
           undo = null;
-          emit({ phase: 'saved', canUndo: false });
+          emit({ phase: 'saved', reason: 'undo', canUndo: false });
           options.onReload?.();
           return;
         }
@@ -876,7 +877,7 @@ export function createNativeRelationArrangeController(options: {
       }
       emit(
         output.result.status === 'accepted'
-          ? { phase: 'saved', canUndo: false }
+          ? { phase: 'saved', reason: 'undo', canUndo: false }
           : { phase: 'failed', reason: 'route', canUndo: true },
       );
     } catch {
