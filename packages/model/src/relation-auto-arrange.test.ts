@@ -36,6 +36,111 @@ describe('relation auto arrangement', () => {
     );
   });
 
+  it.each([
+    [box('fk', 0, 0, 260, 180), box('pk', 600, 40, 260, 260)],
+    [box('fk', 0.127, 21.728, 260.543, 180.234), box('pk', 600.123, 40.238, 260.458, 260.613)],
+    [box('fk', 0.127, 21.728, 260.543, 180.234), box('pk', 40.238, 600.123, 320.458, 180.613)],
+    [box('fk', 0, 0, 260, 180), box('pk', 40, 600, 320, 180)],
+  ])('aligns ports across an obstacle-free overlapping extent', (source, target) => {
+    const result = arrangeRelationRoutes({
+      tables: [source, target],
+      relations: [{ id: 'r', sourceTableId: 'fk', targetTableId: 'pk' }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const saved = result.routes[0]!;
+    expect(saved.waypoints).toEqual([]);
+    const points = relationGeometry(source, target, 90, 0, 0, undefined, [], saved).points;
+    expect(points).toHaveLength(2);
+    expect(points[0]!.x === points[1]!.x || points[0]!.y === points[1]!.y).toBe(true);
+    expect(segmentCrossesBounds(points[0]!, points[1]!, source)).toBe(false);
+    expect(segmentCrossesBounds(points[0]!, points[1]!, target)).toBe(false);
+  });
+
+  it('uses the lower face for a card above-right of the destination, while keeping adjacent row and column links straight', () => {
+    const tables = [
+      box('p', 2750, 3605, 500, 280),
+      box('run', 3450, 3605, 540, 260),
+      box('tbl', 4160, 3605, 640, 300),
+      box('tc', 2750, 4085, 560, 280),
+    ];
+    const relations = [
+      { id: 'p-run', sourceTableId: 'p', targetTableId: 'run' },
+      { id: 'run-tbl', sourceTableId: 'run', targetTableId: 'tbl' },
+      { id: 'tbl-tc', sourceTableId: 'tbl', targetTableId: 'tc' },
+      { id: 'tc-p', sourceTableId: 'tc', targetTableId: 'p' },
+    ];
+    const result = arrangeRelationRoutes({ tables, relations });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.routes.find((r) => r.relationId === 'tbl-tc')!.sourceAnchor.side).toBe('bottom');
+    for (const saved of result.routes) {
+      const relation = relations.find((r) => r.id === saved.relationId)!,
+        source = tables.find((t) => t.id === relation.sourceTableId)!,
+        target = tables.find((t) => t.id === relation.targetTableId)!;
+      const points = relationGeometry(
+        source,
+        target,
+        90,
+        0,
+        0,
+        undefined,
+        tables.filter((t) => t !== source && t !== target),
+        saved,
+      ).points;
+      expect(points.slice(1, -1)).toEqual(saved.waypoints);
+      expect(saved.waypoints.length).toBe(saved.relationId === 'tbl-tc' ? 1 : 0);
+    }
+  });
+
+  it('keeps short launch and landing runs clear of a blocking note without tiny doglegs', () => {
+    const source = box('fk', 0, 0),
+      target = box('pk', 900, 100),
+      note = box('note', 420, -60, 160, 400);
+    const result = arrangeRelationRoutes({
+      tables: [source, target],
+      notes: [note],
+      relations: [{ id: 'r', sourceTableId: 'fk', targetTableId: 'pk' }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const saved = result.routes[0]!,
+      points = relationGeometry(source, target, 90, 0, 0, undefined, [note], saved).points;
+    expect(points.slice(1, -1)).toEqual(saved.waypoints);
+    const distance = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    expect(distance(points[0]!, points[1]!)).toBeGreaterThanOrEqual(24);
+    expect(distance(points.at(-1)!, points.at(-2)!)).toBeGreaterThanOrEqual(24);
+    for (let i = 1; i < points.length; i++)
+      for (const obstacle of [source, target, note])
+        expect(segmentCrossesBounds(points[i - 1]!, points[i]!, obstacle)).toBe(false);
+  });
+
+  it('replays a valid direct route across a gap shorter than automatic stubs', () => {
+    const source = box('fk', 0, 0),
+      target = box('pk', 290, 0);
+    const result = arrangeRelationRoutes({
+      tables: [source, target],
+      relations: [{ id: 'r', sourceTableId: 'fk', targetTableId: 'pk' }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const saved = result.routes[0]!;
+    expect(saved.waypoints).toEqual([]);
+    expect(relationGeometry(source, target, 90, 0, 0, undefined, [], saved).points).toEqual([
+      { x: 268, y: 90 },
+      { x: 282, y: 90 },
+    ]);
+    // An invalid saved route must not add blocked stub pairs to automatic fallback.
+    const invalid = { ...saved, waypoints: [{ x: 100, y: 90 }] };
+    expect(relationGeometry(source, target, 90, 0, 0, undefined, [], invalid)).toEqual(
+      relationGeometry(source, target, 90, 0, 0, undefined, [], {
+        sourceAnchor: saved.sourceAnchor,
+        targetAnchor: saved.targetAnchor,
+      }),
+    );
+  });
+
   it('spills crowded ports across available sides', () => {
     const input: RelationAutoArrangeInput = {
       tables: [box('hub', 0, 0, 120, 90), box('other', 0, -450, 300, 120)],
@@ -117,9 +222,9 @@ describe('relation auto arrangement', () => {
     expect(base.ok && improved.ok).toBe(true);
     if (!base.ok || !improved.ok) return;
     const score = (metrics: typeof base.metrics) =>
-      metrics.crossings * 500 +
-      metrics.overlapLength * 4 +
-      metrics.spacingViolations * 160 +
+      metrics.crossings * 2500 +
+      metrics.overlapLength * 80 +
+      metrics.spacingViolations * 800 +
       metrics.totalBends * 48 +
       metrics.totalLength;
     expect(score(improved.metrics)).toBeLessThanOrEqual(score(base.metrics));

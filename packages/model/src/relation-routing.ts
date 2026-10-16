@@ -453,7 +453,15 @@ export function relationGeometry(
     return true;
   };
   if (options.waypoints && options.waypoints.length <= 128) {
-    for (const { s, t } of candidates) {
+    // Explicit saved anchors can have a valid short outlet even when the automatic
+    // 36-unit stub is obstructed. Keep these pairs out of the fallback candidate pool.
+    const manualCandidates =
+      options.sourceAnchor && options.targetAnchor
+        ? source.flatMap((s) =>
+            target.filter((t) => !self || !same(s.tip, t.tip)).map((t) => ({ s, t })),
+          )
+        : candidates;
+    for (const { s, t } of manualCandidates) {
       const middle = options.waypoints.map((p) => ({ ...p }));
       const startTip = alignedTip(s, middle[0] ?? t.tip),
         endTip = alignedTip(t, middle.at(-1) ?? startTip);
