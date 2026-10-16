@@ -31,3 +31,9 @@
 - Vite의 기존 큰 chunk 경고는 남아 있으며 번들 분할은 이번 범위에 포함하지 않았다.
 - 로그: `artifacts/performance/2026-10-16-priority-format.log`, `2026-10-16-priority-check.log`, `2026-10-16-priority-check-retry.log` (Git 제외).
 - 구현 커밋: 세션 `9bfccaf`, 댓글 `400f04e`, DB 검증 `16ca829`, 캔버스 `56bd63e`, 갤러리 `b9b0b1a`.
+
+## 제품 PR 기준 검증
+
+- origin/main f318b8e 기반 codex/priority-performance에서 제품 변경과 관련 문서만 선별했다. 측정 도구·원시 결과는 포함하지 않았다.
+- `pnpm.cmd check` 통과: 269개 파일, 3,052개 테스트 통과 / 환경 조건부 500개 건너뜀. 포맷·타입·서버/웹 빌드 성공.
+- 새 워크트리 최초 실행의 기존 font-cache 5초 timeout은 소스·제한·skip 변경 없이 동일 전체 명령 재실행으로 통과했다. 구성 검사에는 더미 로컬 DATABASE_URL을 사용했고 실제 DB 동시성 검사는 활성화하지 않았다.
