@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from 'react';
 import type { NativeDesignDocument, NodeLayout } from '@ezerd/model';
-import type { nativeCanvasScene } from './NativeERDCanvas.js';
+import { nativeCanvasSceneMetrics, type nativeCanvasScene } from './NativeERDCanvas.js';
 import { NativeDomainLines } from './native-domain-lines.js';
 import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
 import { NativeTableLines } from './NativeTableLines.js';
@@ -407,6 +407,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
             {table && (
               <>
                 <NativeCanvasTableRows
+                  metrics={nativeCanvasSceneMetrics(drawn)?.(table)}
                   highlightedColumnIds={relationColumns.get(table.id)}
                   document={base}
                   table={table}

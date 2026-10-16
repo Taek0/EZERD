@@ -46,19 +46,74 @@ export const nativeTableCanvasNamespace = (table: NativeTable, mode: 'physical' 
   mode === 'physical' && table.physical.namespace.kind === 'postgresSchema'
     ? table.physical.namespace.name || 'public'
     : '';
+/** Content snapshot shared by card bounds, rows and ports; recreate after content edits. */
+export function createNativeTableCanvasMetrics(
+  document: NativeDesignDocument,
+  mode: 'physical' | 'logical',
+) {
+  const columns = new Map<string, NativeColumn[]>();
+  const keys = new Map<string, NonNullable<NativeDesignDocument['keys']>>();
+  const foreign = new Map<string, Set<string>>();
+  for (const column of document.columns ?? []) {
+    const group = columns.get(column.tableId) ?? [];
+    group.push(column);
+    columns.set(column.tableId, group);
+  }
+  for (const key of document.keys ?? []) {
+    const group = keys.get(key.tableId) ?? [];
+    group.push(key);
+    keys.set(key.tableId, group);
+  }
+  for (const relation of document.tableRelations ?? []) {
+    if (!isVisibleInView(relation.scope, mode)) continue;
+    const group = foreign.get(relation.sourceTableId) ?? new Set<string>();
+    for (const id of relation.physical?.sourceColumnIds ?? []) group.add(id);
+    foreign.set(relation.sourceTableId, group);
+  }
+  const cache = new Map<NativeTable, ReturnType<typeof nativeTableCanvasMetrics>>();
+  return (table: NativeTable) => {
+    let metrics = cache.get(table);
+    if (!metrics) {
+      metrics = nativeTableCanvasMetrics(document, table, mode, {
+        columns: columns.get(table.id) ?? [],
+        keys: keys.get(table.id) ?? [],
+        foreign: foreign.get(table.id) ?? new Set<string>(),
+      });
+      cache.set(table, metrics);
+    }
+    return metrics;
+  };
+}
 export function nativeTableCanvasMetrics(
   document: NativeDesignDocument,
   table: NativeTable,
   mode: 'physical' | 'logical',
+  indexed?: {
+    columns: NativeColumn[];
+    keys: NonNullable<NativeDesignDocument['keys']>;
+    foreign: Set<string>;
+  },
 ) {
-  const foreignColumns = new Set(
-    (document.tableRelations ?? [])
-      .filter(
-        (relation) => relation.sourceTableId === table.id && isVisibleInView(relation.scope, mode),
-      )
-      .flatMap((relation) => relation.physical?.sourceColumnIds ?? []),
-  );
-  const rows = (document.columns ?? [])
+  const foreignColumns =
+    indexed?.foreign ??
+    new Set(
+      (document.tableRelations ?? [])
+        .filter(
+          (relation) =>
+            relation.sourceTableId === table.id && isVisibleInView(relation.scope, mode),
+        )
+        .flatMap((relation) => relation.physical?.sourceColumnIds ?? []),
+    );
+  const columnKeys = new Map<string, Set<string>>();
+  for (const key of indexed?.keys ?? document.keys ?? []) {
+    if (key.tableId !== table.id || !isVisibleInView(key.scope, mode, table.scope)) continue;
+    for (const id of key.columnIds) {
+      const kinds = columnKeys.get(id) ?? new Set<string>();
+      kinds.add(key.kind);
+      columnKeys.set(id, kinds);
+    }
+  }
+  const rows = (indexed?.columns ?? document.columns ?? [])
     .filter(
       (column) => column.tableId === table.id && isVisibleInView(column.scope, mode, table.scope),
     )
@@ -73,16 +128,11 @@ export function nativeTableCanvasMetrics(
           ? nativeColumnTypeDisplay(column.physical.type, document.enums)
           : column.logical.semanticType,
       keys: (() => {
-        const keys = (document.keys ?? []).filter(
-          (key) =>
-            key.tableId === table.id &&
-            key.columnIds.includes(column.id) &&
-            isVisibleInView(key.scope, mode, table.scope),
-        );
+        const keys = columnKeys.get(column.id);
         return [
-          keys.some((key) => key.kind === 'primary') ? 'PK' : '',
+          keys?.has('primary') ? 'PK' : '',
           foreignColumns.has(column.id) ? 'FK' : '',
-          keys.some((key) => key.kind === 'unique') ? 'UQ' : '',
+          keys?.has('unique') ? 'UQ' : '',
         ]
           .filter(Boolean)
           .join(' ');
