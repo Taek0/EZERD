@@ -1,6 +1,11 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import {
@@ -50,11 +55,19 @@ function store(role: 'owner' | 'editor' | 'viewer' | null = 'viewer', status = '
     [userWorkspaces, [role ? [{ role }] : []]],
     [threads, [[thread]]],
   ]);
-  const queries: Array<{ table: unknown; condition?: SQL; joins: unknown[] }> = [];
+  const queries: Array<{
+    table: unknown;
+    fields?: Record<string, unknown>;
+    condition?: SQL;
+    joins: unknown[];
+    joinConditions?: SQL[];
+    order?: SQL[];
+    lock?: string;
+  }> = [];
   const writes: Array<{ table: unknown; value: unknown }> = [];
   const tx = {
-    select: vi.fn(() => {
-      const query: (typeof queries)[number] = { table: null, joins: [] };
+    select: vi.fn((fields?: Record<string, unknown>) => {
+      const query: (typeof queries)[number] = { table: null, fields, joins: [] };
       const builder = {
         from(table: unknown) {
           query.table = table;
@@ -65,17 +78,20 @@ function store(role: 'owner' | 'editor' | 'viewer' | null = 'viewer', status = '
           query.condition = condition;
           return builder;
         },
-        innerJoin(table: unknown) {
+        innerJoin(table: unknown, condition: SQL) {
           query.joins.push(table);
+          (query.joinConditions ??= []).push(condition);
           return builder;
         },
-        orderBy() {
+        orderBy(...order: SQL[]) {
+          query.order = order;
           return builder;
         },
         limit() {
           return builder;
         },
-        for() {
+        for(lock: string) {
+          query.lock = lock;
           return builder;
         },
         then(resolve: (value: unknown[]) => unknown, reject: (reason: unknown) => unknown) {
@@ -103,9 +119,8 @@ function store(role: 'owner' | 'editor' | 'viewer' | null = 'viewer', status = '
     })),
     delete: vi.fn(() => ({ where: async () => undefined })),
   };
-  const database = {
-    db: { ...tx, transaction: async (callback: (executor: typeof tx) => unknown) => callback(tx) },
-  };
+  const transaction = vi.fn(async (callback: (executor: typeof tx) => unknown) => callback(tx));
+  const database = { db: { ...tx, transaction } };
   const access = new WorkspaceAccessService(database as never);
   const gateway = { publishReview: vi.fn() };
   return {
@@ -113,6 +128,7 @@ function store(role: 'owner' | 'editor' | 'viewer' | null = 'viewer', status = '
     queries,
     writes,
     tx,
+    transaction,
     gateway,
     review: new ReviewService(database as never, gateway as never, access),
   };
@@ -391,3 +407,186 @@ function nativeStore() {
     },
   };
 }
+
+describe('bulk review queries and project lock projections', () => {
+  it.each([0, 1, 50, 1_000])(
+    'loads %i REST threads with a constant query budget and preserves message grouping',
+    async (count) => {
+      const fixture = store();
+      const createdAt = new Date('2026-10-16T00:00:00.000Z');
+      const rows = Array.from({ length: count }, (_, index) => ({
+        ...thread,
+        id: `thread-${String(index).padStart(4, '0')}`,
+        // Equal timestamps must retain the database's ID tie-break order.
+        createdAt,
+        updatedAt: createdAt,
+        viewId: index === 0 ? 'private-view' : 'overview',
+        objectId: index === 0 ? 'legacy-object' : null,
+      }));
+      const replies = rows.slice(0, -1).map((row, index) => ({
+        id: `message-${String(index).padStart(4, '0')}`,
+        threadId: row.id,
+        authorId: actor.id,
+        body: `body-${index}`,
+        mentionIds: [],
+        createdAt,
+      }));
+      if (replies.length) {
+        replies.push({ ...replies[0]!, id: 'message-z', body: 'last reply' });
+      }
+      fixture.rows.set(threads, [rows]);
+      fixture.rows.set(messages, [replies]);
+      const result = await fixture.review.list(project.id, actor.id);
+      expect(fixture.transaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: 'repeatable read',
+        accessMode: 'read only',
+      });
+      expect(result).toEqual(
+        rows.map((row) => ({
+          ...row,
+          createdAt: createdAt.toISOString(),
+          updatedAt: createdAt.toISOString(),
+          messages: replies
+            .filter((reply) => reply.threadId === row.id)
+            .map((reply) => ({ ...reply, createdAt: createdAt.toISOString() })),
+        })),
+      );
+      const dataQueries = fixture.queries.filter(
+        (query) => query.table === threads || query.table === messages,
+      );
+      expect(dataQueries).toHaveLength(count ? 2 : 1);
+      // Project/workspace/membership checks remain outside the data query budget.
+      expect(fixture.queries).toHaveLength(count ? 5 : 4);
+      const dialect = new PgDialect();
+      const listQuery = dataQueries[0]!;
+      expect(listQuery.fields).toBeUndefined();
+      expect(dialect.sqlToQuery(listQuery.condition!).params).toEqual([project.id]);
+      expect(listQuery.order!.map((order) => dialect.sqlToQuery(order).sql)).toEqual([
+        '"review_threads"."updated_at" desc',
+        '"review_threads"."id" asc',
+      ]);
+      if (count) {
+        const messageQuery = dataQueries[1]!;
+        expect(messageQuery.fields).toMatchObject({ id: messages.id, threadId: messages.threadId });
+        expect(messageQuery.fields).not.toHaveProperty('document');
+        expect(messageQuery.joins).toEqual([threads]);
+        expect(dialect.sqlToQuery(messageQuery.joinConditions![0]!).sql).toBe(
+          '"review_threads"."id" = "review_messages"."thread_id"',
+        );
+        // Project-scoped join uses one bind parameter even for a large thread list.
+        expect(dialect.sqlToQuery(messageQuery.condition!).params).toEqual([project.id]);
+        expect(messageQuery.order!.map((order) => dialect.sqlToQuery(order).sql)).toEqual([
+          '"review_messages"."created_at" asc',
+          '"review_messages"."id" asc',
+        ]);
+      }
+      expect(fixture.writes).toEqual([]);
+    },
+  );
+
+  it.each(['reply', 'update', 'remove', 'notification'] as const)(
+    'uses a metadata-only project UPDATE lock for %s',
+    async (method) => {
+      const fixture = store();
+      fixture.rows.set(messages, [[]]);
+      const alert = {
+        id: randomUUID(),
+        userId: actor.id,
+        projectId: project.id,
+        threadId: thread.id,
+        read: true,
+        createdAt: new Date(),
+      };
+      fixture.rows.set(notifications, [[alert]]);
+      if (method === 'reply') {
+        await fixture.review.reply(thread.id, { body: 'reply', mentionIds: [] }, actor);
+      } else if (method === 'update') {
+        await fixture.review.update(thread.id, { resolved: true }, actor);
+      } else if (method === 'remove') {
+        await fixture.review.remove(
+          thread.id,
+          { expectedUpdatedAt: thread.updatedAt.toISOString() },
+          actor,
+        );
+      } else {
+        fixture.tx.update.mockReturnValueOnce({
+          set: () => ({
+            where: () => Object.assign(Promise.resolve(), { returning: async () => [alert] }),
+          }),
+        });
+        expect(await fixture.review.updateNotification(alert.id, { read: true }, actor)).toEqual({
+          ...alert,
+          createdAt: alert.createdAt.toISOString(),
+        });
+      }
+      const lock = fixture.queries.find((query) => query.table === projects && query.lock)!;
+      expect(lock.lock).toBe('update');
+      expect(lock.fields).toEqual({ status: projects.status });
+      expect(
+        fixture.queries.filter((query) => query.table === projects).every((query) => query.fields),
+      ).toBe(true);
+      if (method !== 'notification') {
+        expect(
+          fixture.queries.findIndex((query) => query.table === threads && query.lock),
+        ).toBeGreaterThan(fixture.queries.indexOf(lock));
+        expect(fixture.gateway.publishReview).toHaveBeenCalledOnce();
+      }
+    },
+  );
+
+  it('keeps the document-bearing UPDATE lock for create validation', async () => {
+    const fixture = store();
+    fixture.rows.set(messages, [[]]);
+    await fixture.review.create(project.id, pin, actor);
+    const lock = fixture.queries.find((query) => query.table === projects && query.lock)!;
+    expect(lock.lock).toBe('update');
+    expect(lock.fields).toBeUndefined();
+  });
+
+  it.each(['create', 'reply', 'update', 'remove', 'notification'] as const)(
+    'rejects %s after project archival without writing or publishing',
+    async (method) => {
+      const fixture = store();
+      fixture.rows.set(projects, [[project], [{ ...project, status: 'archived' }]]);
+      fixture.rows.set(notifications, [[{ projectId: project.id }]]);
+      const operation =
+        method === 'create'
+          ? fixture.review.create(project.id, pin, actor)
+          : method === 'reply'
+            ? fixture.review.reply(thread.id, { body: 'reply', mentionIds: [] }, actor)
+            : method === 'update'
+              ? fixture.review.update(thread.id, { resolved: true }, actor)
+              : method === 'remove'
+                ? fixture.review.remove(
+                    thread.id,
+                    { expectedUpdatedAt: thread.updatedAt.toISOString() },
+                    actor,
+                  )
+                : fixture.review.updateNotification(randomUUID(), { read: true }, actor);
+      await expect(operation).rejects.toBeInstanceOf(ConflictException);
+      expect(fixture.writes).toEqual([]);
+      expect(fixture.tx.delete).not.toHaveBeenCalled();
+      expect(fixture.gateway.publishReview).not.toHaveBeenCalled();
+    },
+  );
+
+  it('retains stale-delete protection after taking project and thread locks', async () => {
+    const fixture = store();
+    await expect(
+      fixture.review.remove(
+        thread.id,
+        {
+          expectedUpdatedAt: new Date(thread.updatedAt.getTime() - 1).toISOString(),
+        },
+        actor,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(fixture.queries.filter((query) => query.lock).map((query) => query.table)).toEqual([
+      workspaces,
+      projects,
+      threads,
+    ]);
+    expect(fixture.tx.delete).not.toHaveBeenCalled();
+    expect(fixture.gateway.publishReview).not.toHaveBeenCalled();
+  });
+});
