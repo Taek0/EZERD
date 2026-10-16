@@ -38,6 +38,7 @@ function NativeCanvasTableRows({
   document,
   table,
   mode,
+  metrics: measuredMetrics,
   onSelect,
   onEdit,
   selectedColumnId,
@@ -49,6 +50,7 @@ function NativeCanvasTableRows({
   onRequestAction,
   onSelectRelation,
 }: {
+  metrics?: ReturnType<typeof nativeTableCanvasMetrics> | undefined;
   document: NativeDesignDocument;
   table: NativeTable;
   mode: 'physical' | 'logical';
@@ -68,7 +70,7 @@ function NativeCanvasTableRows({
   const { t } = useI18n();
   const showNullable = table.canvasDisplay?.showNullable !== false;
   const showComment = table.canvasDisplay?.showComment !== false;
-  const metrics = nativeTableCanvasMetrics(document, table, mode);
+  const metrics = measuredMetrics ?? nativeTableCanvasMetrics(document, table, mode);
   const edit = (columnId: string, field: NativeInlineTarget['field']) =>
     onEdit?.({ tableId: table.id, columnId, mode, field });
   return (

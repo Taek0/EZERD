@@ -63,6 +63,7 @@ import {
   type ProjectDocumentState,
 } from '@ezerd/contracts';
 import {
+  createNativeTableCanvasMetrics,
   TABLES_VIEW_ID,
   basicCardSize,
   addTableReference,
@@ -100,7 +101,6 @@ import { NativeCanvasScene, type NativeSceneActions } from './NativeCanvasScene.
 import { NativeCanvasPngExport } from './NativeCanvasPngExport.js';
 import {
   nativeTableCanvasRows,
-  nativeTableCanvasMetrics,
   nativeTableCanvasHeaderHeight,
   nativeRelationLabelWidth,
 } from './native-canvas-style.js';
@@ -181,12 +181,15 @@ const expected = (snapshot: ProjectDocumentState) => ({
 });
 const viewFor = (doc: NativeDesignDocument, viewId: string) =>
   viewId === 'overview' ? 'overview' : TABLES_VIEW_ID;
+const sceneMetrics = new WeakMap<object, ReturnType<typeof createNativeTableCanvasMetrics>>();
+export const nativeCanvasSceneMetrics = (scene: object) => sceneMetrics.get(scene);
 /** Preview nodes can be reader-generated. Persist a real reference before moving an absent raw node. */
 export function nativeCanvasScene(
   document: NativeDesignDocument,
   viewId: string,
   mode: 'physical' | 'logical',
   filter?: NativeDomainFilterValue | null,
+  metricsFor = createNativeTableCanvasMetrics(document, mode),
 ) {
   const view = viewFor(document, viewId);
   // Placement changes still reroute every edge, but card measurements are shared by its ports.
@@ -195,15 +198,6 @@ export function nativeCanvasScene(
   const noteIds = new Set(
     document.notes.filter((note) => note.viewId === view).map((note) => note.id),
   );
-  const tableMetrics = new Map<string, ReturnType<typeof nativeTableCanvasMetrics>>();
-  const metricsFor = (table: NonNullable<NativeDesignDocument['tables']>[number]) => {
-    let metrics = tableMetrics.get(table.id);
-    if (!metrics) {
-      metrics = nativeTableCanvasMetrics(document, table, mode);
-      tableMetrics.set(table.id, metrics);
-    }
-    return metrics;
-  };
   const routesByRelation = new Map<
     string,
     NonNullable<NativeDesignDocument['layout']['relations']>[number]
@@ -346,7 +340,9 @@ export function nativeCanvasScene(
     );
     return [{ relation, geometry, label }];
   });
-  return { nodes, relations, viewId: view };
+  const scene = { nodes, relations, viewId: view };
+  sceneMetrics.set(scene, metricsFor);
+  return scene;
 }
 
 /** Reuse the base scene unless a persisted node in this view has a changed draft position. */
@@ -397,6 +393,52 @@ export function nativeCanvasDraftScene(
     viewId,
     mode,
     filter,
+    sceneMetrics.get(scene),
+  );
+}
+/** Choose group or single preview before routing, retaining malformed-draft recovery. */
+export function nativeCanvasPlacementDraftScene(
+  document: NativeDesignDocument,
+  scene: ReturnType<typeof nativeCanvasScene>,
+  viewId: string,
+  mode: 'physical' | 'logical',
+  values: Record<string, string>,
+  filter?: NativeDomainFilterValue | null,
+) {
+  if (values.nodesJSON) {
+    try {
+      const placements = new Map(
+        nativeCanvasDraftPlacements(values).map((node) => [node.id, node]),
+      );
+      const originals = [
+        ...document.layout.nodes,
+        ...scene.nodes.filter((node) => !document.layout.nodes.some((raw) => raw.id === node.id)),
+      ];
+      const display = {
+        ...document,
+        layout: {
+          ...document.layout,
+          nodes: originals.map((node) => placements.get(node.id) ?? node),
+        },
+      };
+      const result = nativeCanvasScene(display, viewId, mode, filter, sceneMetrics.get(scene));
+      result.nodes = result.nodes.map((node) => placements.get(node.id) ?? node);
+      return result;
+    } catch {
+      // Corrupt group drafts retain the existing single-node recovery preview.
+    }
+  }
+  return nativeCanvasDraftScene(
+    document,
+    scene,
+    viewId,
+    mode,
+    values.objectId,
+    values.x,
+    values.y,
+    filter,
+    values.width,
+    values.height,
   );
 }
 /** Only shared source-document inputs block export; local cameras do not change it. */
@@ -871,9 +913,13 @@ function NativeCanvasWorkspace({
   useEffect(() => {
     commitCamera({ viewId: effectiveView, x: 24, y: 24, zoom: 1 });
   }, [userId, snapshot.project.id, effectiveView]);
+  const contentMetrics = useMemo(
+    () => createNativeTableCanvasMetrics(base, mode),
+    [base.tables, base.columns, base.keys, base.tableRelations, base.enums, mode],
+  );
   const scene = useMemo(
-    () => nativeCanvasScene(base, effectiveView, mode, domainFilter),
-    [base, effectiveView, mode, domainFilter],
+    () => nativeCanvasScene(base, effectiveView, mode, domainFilter, contentMetrics),
+    [base, effectiveView, mode, domainFilter, contentMetrics],
   );
   useEffect(() => {
     const node = scene.nodes.find((node) => node.objectId === recoverySelection?.objectId);
@@ -888,53 +934,30 @@ function NativeCanvasWorkspace({
   const draftY = draft?.values.y;
   const draftWidth = draft?.values.width,
     draftHeight = draft?.values.height;
-  const singleDrawn = useMemo(
+  const drawn = useMemo(
     () =>
-      nativeCanvasDraftScene(
+      nativeCanvasPlacementDraftScene(
         base,
         scene,
         effectiveView,
         mode,
-        draftObjectId,
-        draftX,
-        draftY,
+        draft?.values ?? {},
         domainFilter,
-        draftWidth,
-        draftHeight,
       ),
     [
       base,
       scene,
+      draft?.values.nodesJSON,
       effectiveView,
       mode,
+      domainFilter,
       draftObjectId,
       draftX,
       draftY,
-      domainFilter,
       draftWidth,
       draftHeight,
     ],
   );
-  const drawn = useMemo(() => {
-    if (!draft?.values.nodesJSON) return singleDrawn;
-    try {
-      const placements = new Map(
-        nativeCanvasDraftPlacements(draft.values).map((node) => [node.id, node]),
-      );
-      const originals = [
-        ...base.layout.nodes,
-        ...scene.nodes.filter((node) => !base.layout.nodes.some((raw) => raw.id === node.id)),
-      ];
-      const display = {
-        ...base,
-        layout: { ...base.layout, nodes: originals.map((node) => placements.get(node.id) ?? node) },
-      };
-      const result = nativeCanvasScene(display, effectiveView, mode, domainFilter);
-      return { ...result, nodes: result.nodes.map((node) => placements.get(node.id) ?? node) };
-    } catch {
-      return singleDrawn;
-    }
-  }, [base, scene, singleDrawn, draft?.values.nodesJSON, effectiveView, mode, domainFilter]);
   const arrangeEligible =
     !!userId &&
     placementEditable &&
