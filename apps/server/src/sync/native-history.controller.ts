@@ -34,7 +34,11 @@ export class NativeHistoryController {
     const user = await requireSession(this.sessions, authorization),
       parsed = nativeHistoryQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException({ code: 'history.query-invalid' });
-    return this.history.history(id(projectId), parsed.data.since, parsed.data.limit, user);
+    return this.history.history(id(projectId), parsed.data.since, parsed.data.limit, user, {
+      order: parsed.data.order,
+      ...(parsed.data.before !== undefined && { before: parsed.data.before }),
+      compact: parsed.data.compact,
+    });
   }
   @Post(':operationId/undo')
   async undo(

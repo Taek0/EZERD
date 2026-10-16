@@ -15,3 +15,9 @@
 - 빌드 환경 수정과 함께 생성한 index-Cn3Lvk7V.js에서 React 개발 경고/JSXDev가 없고 production 오류 런타임을 확인했다.
 - 현재 3001은 기존 D:/ChatGPT/ERD 빌드를 계속 제공한다. 격리 워크트리의 수정 검증과 실제 3001 반영은 구분한다. 원본 문서 조작, main 변경, 서버 재시작, 원격 push는 하지 않았다.
 - 로그: artifacts/performance/2026-10-16-arrange-lifecycle-check.log (Git 제외).
+
+## 최신 main 기준 PR 검증
+
+- 원격 main 53ff53a에 두 수정 커밋만 충돌 없이 적용했다. PR 브랜치: codex/arrange-lifecycle-fix.
+- pnpm check 통과: 2,979 tests passed / 499 skipped, 포맷·타입·제품 빌드 성공. 신규 PR 워크트리의 첫 실행에서는 기존 폰트 해시 테스트만 5초 timeout이 발생했고, 소스·timeout·skip 변경 없이 동일 명령 재실행으로 통과했다.
+- 구성 검사에는 더미 로컬 DATABASE_URL을 사용했으며 DB 통합 테스트는 실행하지 않았다. 서버 API·DB 스키마·실행 서버 변경은 없다.

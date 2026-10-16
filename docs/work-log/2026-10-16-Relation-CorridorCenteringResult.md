@@ -55,3 +55,8 @@ Queue·Reply 오른쪽 면 2,400과 Session·Snapshot·Document·Paragraph 왼�
 
 원시 기준 소스는 `artifacts/performance/2026-10-16-route-quality/auto-arrange-baseline.ts`, 최종 비교와 집중 측정은 `artifacts/performance/2026-10-16-corridor-center/paired.json`, `focus.json`에 있다. 원시 산출물은 브랜치 지침에 따라 Git 제외 대상이다.
 
+## 제품 PR 검증
+
+- 최신 main 10d5eb3 기준 전용 브랜치에서 pnpm check 통과: 2,997 tests passed / 499 skipped, 포맷·타입·제품 빌드 성공.
+- 최초 기존 font-cache 5초 timeout은 코드·제한·skip 변경 없이 동일 검사 재실행으로 통과했다.
+- 구성 검사에 더미 로컬 DATABASE_URL을 사용했으며 DB 통합 테스트는 실행하지 않았다. 서버/API/schema 변경 없는 모델 후처리 개선이다.

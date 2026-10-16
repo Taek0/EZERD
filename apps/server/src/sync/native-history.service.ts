@@ -8,7 +8,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, asc, eq, gt, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, lt, lte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   MAX_DOCUMENT_BYTES,
@@ -256,15 +256,48 @@ export class NativeHistoryService {
     since: number,
     limit: number,
     user: AuthenticatedUser,
+    options: { order?: 'asc' | 'desc'; before?: number; compact?: boolean } = {},
   ): Promise<NativeHistoryPage> {
     return this.access.runProject(user.id, projectId, 'read', async (tx) => {
-      const [project] = await tx.select().from(projects).where(eq(projects.id, projectId));
+      const [project] = await tx
+        .select({
+          version: projects.version,
+          syncSequence: projects.syncSequence,
+          databaseKind: projects.databaseKind,
+          databaseProfileId: projects.databaseProfileId,
+          databaseRevision: projects.databaseRevision,
+        })
+        .from(projects)
+        .where(eq(projects.id, projectId));
       if (!project) throw new NotFoundException({ code: 'history.project-not-found' });
+      const newest = options.order === 'desc';
       const rows = await tx
-        .select()
+        .select({
+          operationId: syncOperations.operationId,
+          sequence: syncOperations.sequence,
+          clientId: syncOperations.clientId,
+          kind: syncOperations.kind,
+          result: options.compact
+            ? sql<Record<string, unknown>>`${syncOperations.result} - 'document' - 'delta'`
+            : syncOperations.result,
+          changes: syncOperations.changes,
+          deletionSnapshot: options.compact
+            ? sql<unknown>`case when ${syncOperations.deletionSnapshot} ? 'nativeHistory' then jsonb_build_object('nativeHistory', ${syncOperations.deletionSnapshot}->'nativeHistory') else null end`
+            : syncOperations.deletionSnapshot,
+        })
         .from(syncOperations)
-        .where(and(eq(syncOperations.projectId, projectId), gt(syncOperations.sequence, since)))
-        .orderBy(asc(syncOperations.sequence))
+        .where(
+          and(
+            eq(syncOperations.projectId, projectId),
+            lte(syncOperations.sequence, project.syncSequence),
+            newest
+              ? options.before === undefined
+                ? undefined
+                : lt(syncOperations.sequence, options.before)
+              : gt(syncOperations.sequence, since),
+          ),
+        )
+        .orderBy(newest ? desc(syncOperations.sequence) : asc(syncOperations.sequence))
         .limit(limit + 1);
       const page = rows.slice(0, limit);
       return nativeHistoryPageSchema.parse({
@@ -290,7 +323,8 @@ export class NativeHistoryService {
             ? { deletionSnapshot: structuredClone(row.deletionSnapshot) }
             : {}),
         })),
-        nextSince: rows.length > limit ? page.at(-1)!.sequence : null,
+        nextSince: !newest && rows.length > limit ? page.at(-1)!.sequence : null,
+        ...(newest && { nextBefore: rows.length > limit ? page.at(-1)!.sequence : null }),
       });
     });
   }

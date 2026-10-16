@@ -8,7 +8,7 @@ import {
   upsertRelationLayout,
   TABLES_VIEW_ID,
 } from '@ezerd/model';
-import { createNativePerformanceFixture } from '../../shared/performance/native-fixture.js';
+import { createNativeRelationFixture } from '../../shared/testing/native-fixture.js';
 import { nativeEntryAfterAck } from './native-ack-entry.js';
 import { projectEntry } from './project-entry.js';
 import { enqueueNativeSave } from './native-save-intents.js';
@@ -43,7 +43,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('relation arrangement across local projection and history', () => {
   it('restores every table placement from one auto-layout operation with one undo', () => {
-    const { document, snapshot } = createNativePerformanceFixture(10, 5);
+    const { document, snapshot } = createNativeRelationFixture();
     const before = {
       ...document,
       layout: {
@@ -92,7 +92,7 @@ describe('relation arrangement across local projection and history', () => {
   });
 
   it('shows a pending batch, bridges its ACK, then converges to the confirmed document', () => {
-    const { document, snapshot } = createNativePerformanceFixture(10, 5);
+    const { document, snapshot } = createNativeRelationFixture();
     const store = storage();
     const relations = document.tableRelations!.slice(0, 2);
     const routes = relations.map((relation, index) => ({
@@ -172,7 +172,7 @@ describe('relation arrangement across local projection and history', () => {
   });
 
   it('reverses only arranged routes after a later table move', () => {
-    const { document } = createNativePerformanceFixture(10, 5);
+    const { document } = createNativeRelationFixture();
     const relation = document.tableRelations![0]!;
     const arranged = upsertRelationLayout(document, {
       viewId: TABLES_VIEW_ID,

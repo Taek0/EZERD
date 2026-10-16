@@ -16,7 +16,7 @@ import {
 } from './native-save-intents.js';
 import { checkNativeAck, loadNativePending } from './native-save.js';
 import { readNativeLocalEntries, projectNativeLocalColumns } from './native-local-projection.js';
-import { createNativePerformanceFixture } from '../../shared/performance/native-fixture.js';
+import { createNativeRelationFixture } from '../../shared/testing/native-fixture.js';
 import { nativeEditorExportBlocked } from './native-export-state.js';
 beforeEach(() => vi.stubGlobal('indexedDB', createNativeTestIndexedDB()));
 afterEach(() => {
@@ -90,7 +90,7 @@ function ack(operationId: string, status = 'accepted') {
 }
 describe('durable unsent native save intents', () => {
   it('removes a rejected batch projection after a fenced server conflict', async () => {
-    const { document, snapshot: current } = createNativePerformanceFixture(10, 5);
+    const { document, snapshot: current } = createNativeRelationFixture();
     const store = storage();
     const id = enqueueNativeSave(
       userId,

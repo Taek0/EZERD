@@ -1,4 +1,6 @@
+// @vitest-environment jsdom
 import { isValidElement, type ReactElement } from 'react';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeERDCanvas } from './NativeERDCanvas.js';
 import { NativeCanvasScene } from './NativeCanvasScene.js';
@@ -223,6 +225,34 @@ function canvas() {
 }
 
 describe('frame-bounded marquee interaction', () => {
+  it('paints the drag overlay above the scene without intercepting pointers and hides it on release', () => {
+    const fixture = document.createElement('div');
+    fixture.innerHTML =
+      '<style></style><div class="native-erd-world"><div class="canvas-selection-box" hidden></div></div>';
+    document.body.append(fixture);
+    fixture.querySelector('style')!.textContent = readFileSync(
+      'apps/web/src/features/projects/NativeERDCanvas.css',
+      'utf8',
+    );
+    const box = fixture.querySelector<HTMLElement>('.canvas-selection-box')!;
+    const ui = canvas();
+    ui.event('onPointerDownCapture', { clientX: 0, clientY: 0 });
+    ui.event('onPointerMove', { clientX: 400, clientY: 350 });
+    ui.tick();
+    box.hidden = ui.overlay.hidden;
+    Object.assign(box.style, ui.overlay.style);
+    const painted = window.getComputedStyle(box);
+    expect(painted.position).toBe('absolute');
+    expect(painted.pointerEvents).toBe('none');
+    expect(painted.borderTopStyle).toBe('solid');
+    expect(painted.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect(Number(painted.zIndex)).toBeGreaterThan(6);
+    expect(painted.display).not.toBe('none');
+    ui.event('onPointerUp', { clientX: 400, clientY: 350 });
+    box.hidden = ui.overlay.hidden;
+    expect(window.getComputedStyle(box).display).toBe('none');
+    fixture.remove();
+  });
   it('keeps scene selection identity through 120 moves with unchanged hits', () => {
     const ui = canvas();
     ui.event('onPointerDownCapture', { clientX: 0, clientY: 0 });

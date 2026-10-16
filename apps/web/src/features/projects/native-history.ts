@@ -147,14 +147,30 @@ export async function fetchNativeHistory(
   projectId: string,
   since = 0,
   api: typeof request = request,
+  options: { limit?: number; signal?: AbortSignal } = {},
 ) {
   const page = nativeHistoryPageSchema.parse(
     await api(
-      `/api/projects/${encodeURIComponent(projectId)}/native-history?since=${since}&limit=25`,
-      { cache: 'no-store' },
+      `/api/projects/${encodeURIComponent(projectId)}/native-history?since=${since}&limit=${options.limit ?? 25}&compact=true`,
+      { cache: 'no-store', ...(options.signal && { signal: options.signal }) },
     ),
   );
   if (page.projectId !== projectId) throw Error('native.history-identity-invalid');
+  return page;
+}
+export async function fetchRecentNativeHistory(
+  projectId: string,
+  options: { before?: number; signal?: AbortSignal } = {},
+  api: typeof request = request,
+) {
+  const page = nativeHistoryPageSchema.parse(
+    await api(
+      `/api/projects/${encodeURIComponent(projectId)}/native-history?order=desc&compact=true&limit=25${options.before === undefined ? '' : `&before=${options.before}`}`,
+      { cache: 'no-store', ...(options.signal && { signal: options.signal }) },
+    ),
+  );
+  if (page.projectId !== projectId || page.nextBefore === undefined)
+    throw Error('native.history-identity-invalid');
   return page;
 }
 export async function stageNativeHistory(

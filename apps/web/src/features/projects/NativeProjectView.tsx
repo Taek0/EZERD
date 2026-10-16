@@ -1070,6 +1070,15 @@ export function NativeProjectView({
     ? nativeInspectorOutline(doc, mode, canvasScope, canvasView)
     : { tables: [], relations: [] };
   const selectedTable = doc?.tables?.find((table) => table.id === selected && visible(table.scope));
+  const selectedTableKeys = (doc?.keys ?? []).filter(
+    (key) => key.tableId === selectedTable?.id && visible(key.scope),
+  );
+  const selectedTableRelations = (doc?.tableRelations ?? []).filter(
+    (relation) =>
+      visible(relation.scope) &&
+      (relation.sourceTableId === selectedTable?.id ||
+        relation.targetTableId === selectedTable?.id),
+  );
   const selectedCanvasNode = canvasScope?.selectedNode ?? null;
   const selectedNote = (reviewDocument ?? doc)?.notes.find(
     (note) => note.id === canvasScope?.selectedObjectId,
@@ -2466,70 +2475,63 @@ export function NativeProjectView({
                           </PanelSection>
                           <PanelSection
                             title={t('키 · PK / UNIQUE')}
-                            count={
-                              (doc.keys ?? []).filter((item) => item.tableId === selectedTable.id)
-                                .length
-                            }
+                            count={selectedTableKeys.length}
                           >
                             <PanelList empty={t('키가 없습니다.')}>
-                              {(doc.keys ?? [])
-                                .filter(
-                                  (key) => key.tableId === selectedTable.id && visible(key.scope),
-                                )
-                                .map((key) => (
-                                  <Fragment key={key.id}>
-                                    <PanelRow
-                                      title={key.name || (key.kind === 'primary' ? 'PK' : 'UNIQUE')}
-                                      meta={`${key.columnIds.map(columnName).join(', ')}${key.deferrable ? ` · DEFERRABLE ${key.deferrable.initially}` : ''}${key.nullsNotDistinct ? ' · NULLS NOT DISTINCT' : ''}`}
-                                      badge={key.kind === 'primary' ? 'PK' : 'UNIQUE'}
-                                      active={editingConstraint === key.id}
-                                      expanded={editingConstraint === key.id}
-                                      controls={`native-key-${key.id}`}
-                                      onSelect={() =>
-                                        setEditingConstraint(
-                                          editingConstraint === key.id ? null : key.id,
-                                        )
-                                      }
-                                    />
-                                    <PanelListDetail
-                                      id={`native-key-${key.id}`}
-                                      open={editingConstraint === key.id}
-                                    >
-                                      {editable && (
-                                        <>
-                                          <NativeStructureEditor
-                                            focused
-                                            context={{
-                                              userId: userId!,
-                                              snapshot,
-                                              busy: editorBusy,
-                                              onSave: save,
-                                            }}
-                                            document={doc}
-                                            table={selectedTable}
-                                            initialSelection={{
-                                              action: 'patch',
-                                              target: JSON.stringify(['keys', key.id]),
-                                            }}
-                                          />
-                                          <Button
-                                            variant="danger"
-                                            disabled={editorBusy}
-                                            onClick={() =>
-                                              requestStructure(
-                                                'delete',
-                                                JSON.stringify(['keys', key.id]),
-                                                selectedTable.id,
-                                              )
-                                            }
-                                          >
-                                            {t('키 삭제')}
-                                          </Button>
-                                        </>
-                                      )}
-                                    </PanelListDetail>
-                                  </Fragment>
-                                ))}
+                              {selectedTableKeys.map((key) => (
+                                <Fragment key={key.id}>
+                                  <PanelRow
+                                    title={key.name || (key.kind === 'primary' ? 'PK' : 'UNIQUE')}
+                                    meta={`${key.columnIds.map(columnName).join(', ')}${key.deferrable ? ` · DEFERRABLE ${key.deferrable.initially}` : ''}${key.nullsNotDistinct ? ' · NULLS NOT DISTINCT' : ''}`}
+                                    badge={key.kind === 'primary' ? 'PK' : 'UNIQUE'}
+                                    active={editingConstraint === key.id}
+                                    expanded={editingConstraint === key.id}
+                                    controls={`native-key-${key.id}`}
+                                    onSelect={() =>
+                                      setEditingConstraint(
+                                        editingConstraint === key.id ? null : key.id,
+                                      )
+                                    }
+                                  />
+                                  <PanelListDetail
+                                    id={`native-key-${key.id}`}
+                                    open={editingConstraint === key.id}
+                                  >
+                                    {editable && (
+                                      <>
+                                        <NativeStructureEditor
+                                          focused
+                                          context={{
+                                            userId: userId!,
+                                            snapshot,
+                                            busy: editorBusy,
+                                            onSave: save,
+                                          }}
+                                          document={doc}
+                                          table={selectedTable}
+                                          initialSelection={{
+                                            action: 'patch',
+                                            target: JSON.stringify(['keys', key.id]),
+                                          }}
+                                        />
+                                        <Button
+                                          variant="danger"
+                                          disabled={editorBusy}
+                                          onClick={() =>
+                                            requestStructure(
+                                              'delete',
+                                              JSON.stringify(['keys', key.id]),
+                                              selectedTable.id,
+                                            )
+                                          }
+                                        >
+                                          {t('키 삭제')}
+                                        </Button>
+                                      </>
+                                    )}
+                                  </PanelListDetail>
+                                </Fragment>
+                              ))}
                             </PanelList>
                             {editable && (
                               <Button
@@ -2548,68 +2550,55 @@ export function NativeProjectView({
                           </PanelSection>
                           <PanelSection
                             title={t('테이블 관계')}
-                            count={
-                              (doc.tableRelations ?? []).filter(
-                                (item) =>
-                                  item.sourceTableId === selectedTable.id ||
-                                  item.targetTableId === selectedTable.id,
-                              ).length
-                            }
+                            count={selectedTableRelations.length}
                           >
                             <PanelList empty={t('표시할 관계가 없습니다.')}>
-                              {(doc.tableRelations ?? [])
-                                .filter(
-                                  (relation) =>
-                                    visible(relation.scope) &&
-                                    (relation.sourceTableId === selectedTable.id ||
-                                      relation.targetTableId === selectedTable.id),
-                                )
-                                .map((relation) => (
-                                  <Fragment key={relation.id}>
-                                    <PanelRow
-                                      title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
-                                      meta={
-                                        logicalEnabled
-                                          ? `${relation.logical.name}${relation.physical ? ` · ${relation.physical.name}` : ''}`
-                                          : (relation.physical?.name ?? '')
-                                      }
-                                      badge={relation.physical ? 'FK' : undefined}
-                                      active={editingConstraint === relation.id}
-                                      expanded={editingConstraint === relation.id}
-                                      controls={`native-related-${relation.id}`}
-                                      onSelect={() =>
-                                        setEditingConstraint(
-                                          editingConstraint === relation.id ? null : relation.id,
-                                        )
-                                      }
+                              {selectedTableRelations.map((relation) => (
+                                <Fragment key={relation.id}>
+                                  <PanelRow
+                                    title={`${tableName(relation.targetTableId)} (PK) → ${tableName(relation.sourceTableId)} (FK)`}
+                                    meta={
+                                      logicalEnabled
+                                        ? `${relation.logical.name}${relation.physical ? ` · ${relation.physical.name}` : ''}`
+                                        : (relation.physical?.name ?? '')
+                                    }
+                                    badge={relation.physical ? 'FK' : undefined}
+                                    active={editingConstraint === relation.id}
+                                    expanded={editingConstraint === relation.id}
+                                    controls={`native-related-${relation.id}`}
+                                    onSelect={() =>
+                                      setEditingConstraint(
+                                        editingConstraint === relation.id ? null : relation.id,
+                                      )
+                                    }
+                                  />
+                                  <PanelListDetail
+                                    id={`native-related-${relation.id}`}
+                                    open={editingConstraint === relation.id}
+                                  >
+                                    <NativeTableRelationInspector
+                                      document={doc}
+                                      relation={relation}
+                                      {...(editable
+                                        ? {
+                                            context: {
+                                              userId: userId!,
+                                              snapshot,
+                                              busy: editorBusy,
+                                              onSave: save,
+                                            },
+                                            onDelete: () =>
+                                              requestStructure(
+                                                'delete',
+                                                JSON.stringify(['tableRelations', relation.id]),
+                                                selectedTable.id,
+                                              ),
+                                          }
+                                        : {})}
                                     />
-                                    <PanelListDetail
-                                      id={`native-related-${relation.id}`}
-                                      open={editingConstraint === relation.id}
-                                    >
-                                      <NativeTableRelationInspector
-                                        document={doc}
-                                        relation={relation}
-                                        {...(editable
-                                          ? {
-                                              context: {
-                                                userId: userId!,
-                                                snapshot,
-                                                busy: editorBusy,
-                                                onSave: save,
-                                              },
-                                              onDelete: () =>
-                                                requestStructure(
-                                                  'delete',
-                                                  JSON.stringify(['tableRelations', relation.id]),
-                                                  selectedTable.id,
-                                                ),
-                                            }
-                                          : {})}
-                                      />
-                                    </PanelListDetail>
-                                  </Fragment>
-                                ))}
+                                  </PanelListDetail>
+                                </Fragment>
+                              ))}
                             </PanelList>
                             {editable && (
                               <Button

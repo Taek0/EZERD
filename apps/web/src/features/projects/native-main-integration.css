@@ -86,7 +86,8 @@
 .native-design-mode[data-active='logical']::before {
   transform: translateX(100%);
 }
-.native-design-mode button {
+/* The segmented track is 26px high; override the shell's 32px button minimum. */
+.app-shell.editor-shell .canvas-toolbar .native-design-mode > button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -94,6 +95,7 @@
   text-align: center;
   flex: 1 0 0;
   min-width: 0;
+  min-height: 0;
   padding: 0 10px;
   border: 0;
   border-radius: 5px;
@@ -104,28 +106,28 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.native-design-mode button[aria-checked='true'] {
+.app-shell.editor-shell .canvas-toolbar .native-design-mode > button[aria-checked='true'] {
   color: #254fbf;
   font-weight: 650;
 }
-.native-design-mode button:hover {
+.app-shell.editor-shell .canvas-toolbar .native-design-mode > button:hover {
   color: #254fbf;
 }
-.native-design-mode button:active {
+.app-shell.editor-shell .canvas-toolbar .native-design-mode > button:active {
   background: #315ed40d;
 }
-.native-design-mode button:focus-visible {
+.app-shell.editor-shell .canvas-toolbar .native-design-mode > button:focus-visible {
   outline: 2px solid #315ed4;
   outline-offset: 3px;
 }
-.native-design-mode button:disabled {
+.app-shell.editor-shell .canvas-toolbar .native-design-mode > button:disabled {
   cursor: default;
 }
 @media (prefers-reduced-motion: no-preference) {
   .native-design-mode::before {
     transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
-  .native-design-mode button {
+  .app-shell.editor-shell .canvas-toolbar .native-design-mode > button {
     transition:
       color 120ms,
       background-color 120ms;
@@ -135,7 +137,7 @@
   .native-design-mode {
     outline: 1px solid currentColor;
   }
-  .native-design-mode button[aria-checked='true'] {
+  .app-shell.editor-shell .canvas-toolbar .native-design-mode > button[aria-checked='true'] {
     outline: 1px solid currentColor;
   }
 }

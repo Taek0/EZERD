@@ -22,6 +22,18 @@
   position: absolute;
   transform-origin: 0 0;
 }
+.native-erd-world > .canvas-selection-box {
+  position: absolute;
+  pointer-events: none;
+  border: 1px solid;
+  border-color: var(--accent, #4169e1);
+  background: #4169e11a;
+  box-sizing: border-box;
+  z-index: 20;
+}
+.native-erd-world > .canvas-selection-box[hidden] {
+  display: none;
+}
 .native-erd-lines {
   position: absolute;
   width: 1px;
