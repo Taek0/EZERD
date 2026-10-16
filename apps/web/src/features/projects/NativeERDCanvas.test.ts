@@ -2,6 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  createNativeTableCanvasMetrics,
+  nativeTableCanvasMetrics,
   createEmptyNativeDocument,
   createNativeTable,
   createNativeColumn,
@@ -14,6 +16,8 @@ import type { ProjectDocumentState } from '@ezerd/contracts';
 import {
   NativeERDCanvas,
   nativeCanvasScene,
+  nativeCanvasSceneMetrics,
+  nativeCanvasPlacementDraftScene,
   nativeCanvasDraftScene,
   nativeCanvasMoveCommand,
   nativeCanvasWheel,
@@ -39,10 +43,156 @@ describe('native scene measurement reuse', () => {
     const relationsFilter = vi.spyOn(document.tableRelations, 'filter');
     const scene = nativeCanvasScene(document, '__tables__', 'physical');
     expect(scene.relations).toHaveLength(12);
-    expect(columnsFilter).toHaveBeenCalledTimes(2);
-    expect(relationsFilter).toHaveBeenCalledTimes(2);
+    expect(columnsFilter).not.toHaveBeenCalled();
+    expect(relationsFilter).not.toHaveBeenCalled();
     columnsFilter.mockRestore();
     relationsFilter.mockRestore();
+  });
+
+  it('reuses measured rows across layout previews while rerouting edges', () => {
+    const { document } = fixture();
+    const scene = nativeCanvasScene(document, '__tables__', 'physical');
+    const table = document.tables![0]!;
+    const metrics = nativeCanvasSceneMetrics(scene)!(table);
+    const drawn = nativeCanvasDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      table.id,
+      '420',
+      '300',
+    );
+    expect(nativeCanvasSceneMetrics(drawn)!(table)).toBe(metrics);
+    expect(drawn.relations[0]!.geometry.path).not.toEqual(scene.relations[0]!.geometry.path);
+    expect(metrics).toEqual(nativeTableCanvasMetrics(document, table, 'physical'));
+  });
+
+  it.each(['physical', 'logical'] as const)(
+    'indexed metrics match standalone metrics in %s mode and refresh content',
+    (mode) => {
+      const { document } = fixture();
+      const indexed = createNativeTableCanvasMetrics(document, mode);
+      for (const table of document.tables!) {
+        expect(indexed(table)).toEqual(nativeTableCanvasMetrics(document, table, mode));
+        expect(indexed(table)).toBe(indexed(table));
+      }
+      const table = document.tables![0]!;
+      const before = indexed(table);
+      document.columns![0]!.physical.comment = 'long comment '.repeat(70);
+      document.columns![0]!.logical.definition = 'long definition '.repeat(70);
+      const after = createNativeTableCanvasMetrics(document, mode)(table);
+      expect(after.height).toBeGreaterThan(before.height);
+      table.canvasDisplay = { showComment: false, showNullable: false };
+      const hidden = createNativeTableCanvasMetrics(document, mode)(table);
+      expect(hidden.widths).toHaveLength(3);
+      expect(hidden.height).toBeLessThan(after.height);
+    },
+  );
+
+  it('builds a group draft once and falls back to single placement for malformed groups', () => {
+    const { document } = fixture();
+    const scene = nativeCanvasScene(document, '__tables__', 'physical');
+    const placements = scene.nodes.map((node) => ({ ...node, x: node.x + 100, y: node.y + 200 }));
+    const values = {
+      objectId: 'a',
+      x: String(placements[0]!.x),
+      y: String(placements[0]!.y),
+      nodesJSON: JSON.stringify(placements),
+    };
+    const routing = vi.spyOn(document.tableRelations!, 'flatMap');
+    const drawn = nativeCanvasPlacementDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      values,
+    );
+    expect(routing).toHaveBeenCalledTimes(1);
+    expect(drawn.nodes).toEqual(placements);
+    expect(nativeCanvasSceneMetrics(drawn)).toBe(nativeCanvasSceneMetrics(scene));
+    routing.mockRestore();
+    const expected = nativeCanvasDraftScene(
+      document,
+      scene,
+      '__tables__',
+      'physical',
+      'a',
+      values.x,
+      values.y,
+    );
+    for (const nodesJSON of ['{', '{}', '[{}]']) {
+      expect(
+        nativeCanvasPlacementDraftScene(document, scene, '__tables__', 'physical', {
+          ...values,
+          nodesJSON,
+        }),
+      ).toEqual(expected);
+    }
+  });
+
+  it('refreshes key and visibility changes and separates display modes', () => {
+    const { document } = fixture();
+    const table = document.tables![0]!;
+    const original = createNativeTableCanvasMetrics(document, 'physical')(table);
+    expect(original.rows[0]!.keys).toBe('FK');
+    const changed = {
+      ...document,
+      keys: [
+        ...document.keys!,
+        {
+          id: 'new-key',
+          tableId: table.id,
+          kind: 'unique' as const,
+          scope: 'physical' as const,
+          name: 'uq',
+          columnIds: ['c'],
+        },
+      ],
+    };
+    expect(createNativeTableCanvasMetrics(changed, 'physical')(table).rows[0]!.keys).toBe('FK UQ');
+    expect(createNativeTableCanvasMetrics(changed, 'logical')(table).rows[0]!.keys).toBe('FK');
+    const hidden = {
+      ...changed,
+      columns: changed.columns!.map((column) => ({ ...column, scope: 'logical' as const })),
+    };
+    expect(createNativeTableCanvasMetrics(hidden, 'physical')(table).rows).toHaveLength(0);
+    expect(createNativeTableCanvasMetrics(hidden, 'logical')(table).rows).toHaveLength(1);
+  });
+
+  it('refreshes enum display names and column types with new content', () => {
+    const { document } = fixture();
+    const table = document.tables![0]!;
+    document.columns![0]!.physical.type = {
+      kind: 'projectEnum',
+      database: 'postgresql',
+      enumId: 'e',
+    };
+    document.enums = [{ id: 'e', name: 'state', values: ['open'], schema: 'public' }];
+    const before = createNativeTableCanvasMetrics(document, 'physical')(table);
+    const renamed = { ...document, enums: [{ ...document.enums[0]!, name: 'renamed_state' }] };
+    expect(createNativeTableCanvasMetrics(renamed, 'physical')(table).rows[0]!.type).toBe(
+      'renamed_state',
+    );
+    expect(before.rows[0]!.type).toBe('state');
+    const changed = {
+      ...renamed,
+      columns: renamed.columns!.map((column) => ({
+        ...column,
+        physical: {
+          ...column.physical,
+          type: {
+            kind: 'projectEnum' as const,
+            database: 'postgresql' as const,
+            enumId: 'e',
+            array: { dimensions: 2 },
+          },
+        },
+      })),
+    };
+    expect(createNativeTableCanvasMetrics(changed, 'physical')(table).rows[0]!.type).toBe(
+      'renamed_state[][]',
+    );
   });
 
   it('remeasures mutated column data on the next build', () => {

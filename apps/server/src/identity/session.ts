@@ -10,7 +10,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import { usernameSchema } from '@ezerd/contracts';
 import { DatabaseService } from '../db/database.service.js';
@@ -23,6 +23,7 @@ const createSessionSchema = z.union([
   z.strictObject({ username: usernameSchema, pin: pinSchema }),
 ]);
 const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_TOUCH_INTERVAL_MS = 60_000;
 export type AuthenticatedUser = { id: string; username: string; color: string };
 
 function hash(value: string): string {
@@ -86,21 +87,25 @@ export class SessionService {
   }
 
   async authenticateToken(token: string): Promise<AuthenticatedUser> {
+    const now = new Date();
     const [row] = await this.database.db
       .select({
         sessionId: sessions.id,
+        lastSeenAt: sessions.lastSeenAt,
         id: users.id,
         username: users.username,
         color: users.color,
       })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
-      .where(and(eq(sessions.tokenHash, hash(token)), gt(sessions.expiresAt, new Date())));
+      .where(and(eq(sessions.tokenHash, hash(token)), gt(sessions.expiresAt, now)));
     if (!row) throw new UnauthorizedException('세션이 만료되었습니다. 다시 로그인해주세요.');
-    await this.database.db
-      .update(sessions)
-      .set({ lastSeenAt: new Date() })
-      .where(eq(sessions.id, row.sessionId));
+    const touchBefore = new Date(now.getTime() - SESSION_TOUCH_INTERVAL_MS);
+    if (row.lastSeenAt.getTime() < touchBefore.getTime())
+      await this.database.db
+        .update(sessions)
+        .set({ lastSeenAt: now })
+        .where(and(eq(sessions.id, row.sessionId), lt(sessions.lastSeenAt, touchBefore)));
     return { id: row.id, username: row.username, color: row.color };
   }
 }

@@ -7,7 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gt, inArray, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type {
   createMessageSchema,
@@ -42,14 +42,10 @@ async function operation<T>(callback: () => Promise<T>) {
 function notification(row: typeof notifications.$inferSelect) {
   return { ...row, createdAt: row.createdAt.toISOString() };
 }
-async function loadThread(db: Store, id: string) {
-  const [row] = await db.select().from(threads).where(eq(threads.id, id));
-  if (!row) throw new NotFoundException('댓글을 찾을 수 없습니다.');
-  const replies = await db
-    .select()
-    .from(messages)
-    .where(eq(messages.threadId, id))
-    .orderBy(asc(messages.createdAt), asc(messages.id));
+function serializeThread(
+  row: typeof threads.$inferSelect,
+  replies: (typeof messages.$inferSelect)[],
+) {
   return {
     ...row,
     createdAt: row.createdAt.toISOString(),
@@ -59,6 +55,16 @@ async function loadThread(db: Store, id: string) {
       createdAt: message.createdAt.toISOString(),
     })),
   };
+}
+async function loadThread(db: Store, id: string) {
+  const [row] = await db.select().from(threads).where(eq(threads.id, id));
+  if (!row) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+  const replies = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.threadId, id))
+    .orderBy(asc(messages.createdAt), asc(messages.id));
+  return serializeThread(row, replies);
 }
 function accessibleNotification(userId: string) {
   return sql`exists (
@@ -95,12 +101,23 @@ async function addMessage(
       .values(recipientIds.map((userId) => ({ userId, projectId, threadId })));
   await db.update(threads).set({ updatedAt: nextThreadTimestamp }).where(eq(threads.id, threadId));
 }
-async function lockActiveProject(db: Transaction, projectId: string) {
+async function lockActiveProjectDocument(db: Transaction, projectId: string) {
   const [project] = await db
     .select()
     .from(projects)
     .where(eq(projects.id, projectId))
     .for('update');
+  return requireActiveProject(project);
+}
+async function lockActiveProject(db: Transaction, projectId: string) {
+  const [project] = await db
+    .select({ status: projects.status })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .for('update');
+  return requireActiveProject(project);
+}
+function requireActiveProject<T extends { status: string }>(project: T | undefined): T {
   if (!project) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
   if (project.status === 'archived')
     throw new ConflictException('보관된 프로젝트는 변경할 수 없습니다.');
@@ -137,11 +154,24 @@ export class ReviewService {
     return operation(() =>
       this.access.runProject(userId, projectId, 'read', async (tx) => {
         const rows = await tx
-          .select({ id: threads.id })
+          .select()
           .from(threads)
           .where(eq(threads.projectId, projectId))
           .orderBy(desc(threads.updatedAt), asc(threads.id));
-        return Promise.all(rows.map((row) => loadThread(tx, row.id)));
+        if (!rows.length) return [];
+        const replies = await tx
+          .select(getTableColumns(messages))
+          .from(messages)
+          .innerJoin(threads, eq(threads.id, messages.threadId))
+          .where(eq(threads.projectId, projectId))
+          .orderBy(asc(messages.createdAt), asc(messages.id));
+        const repliesByThread = new Map<string, (typeof messages.$inferSelect)[]>();
+        for (const reply of replies) {
+          const bucket = repliesByThread.get(reply.threadId);
+          if (bucket) bucket.push(reply);
+          else repliesByThread.set(reply.threadId, [reply]);
+        }
+        return rows.map((row) => serializeThread(row, repliesByThread.get(row.id) ?? []));
       }),
     );
   }
@@ -203,7 +233,7 @@ export class ReviewService {
     return operation(async () => {
       const result = await this.database.db.transaction(async (tx) => {
         await this.access.requireProject(actor.id, projectId, 'review', tx);
-        const project = await lockActiveProject(tx, projectId);
+        const project = await lockActiveProjectDocument(tx, projectId);
         const shared = normalizeCurrentServerDocument(
           project.document,
           resolveProjectDatabaseState({
