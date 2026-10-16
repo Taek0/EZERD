@@ -112,13 +112,16 @@ describe('MCP server tools', () => {
           openWorldHint: false,
         });
       }
-      expect(client.getInstructions()).toContain('최소 40px');
+      expect(client.getInstructions()).toContain('권장 간격을 캔버스 좌표 기준 200px 이상');
+      expect(client.getInstructions()).toContain('핵심/상위 테이블을 위에');
+      expect(client.getInstructions()).toContain('종속/하위 테이블을 아래에');
+      expect(client.getInstructions()).toContain('진단 임계값은 기존 40px');
       expect(client.getInstructions()).toContain('databaseKind:"generic"');
       expect(client.getInstructions()).toContain(
         '{kind:"custom",database:"generic",name:"타입명"}',
       );
       expect(client.getInstructions()).toContain('DDL 내보내기를 지원하지 않습니다');
-      expect(client.getInstructions()).toContain('PK→FK 방향');
+      expect(client.getInstructions()).toContain('PK→FK 또는 소유·참조·의존 관계');
       expect(client.getInstructions()).toContain('관계선 교차');
       expect(client.getInstructions()).toContain('브라우저 스킬이나 스크린샷 대신');
       expect(client.getInstructions()).toContain('x·y·width·height');
