@@ -1,4 +1,5 @@
 import { NativeNavigatorTable } from './NativeNavigatorTable.js';
+import { PanelSection, PanelRow } from '../../shared/editor/panel.js';
 import { isValidElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -210,6 +211,82 @@ describe('native blank selection on HTTP LAN', () => {
     (keyField.props.onChange as (value: string) => void)('');
     expect(changes.generatedColumnIds).toBe('');
   });
+});
+
+it('counts exactly the visible keys and incoming/outgoing relations when changing modeling mode', () => {
+  const snapshot = clipboardSnapshot();
+  if (snapshot.native?.status !== 'available') throw Error('Expected native snapshot');
+  const document = snapshot.native.document;
+  document.tables!.forEach((table) => {
+    table.scope = 'both';
+  });
+  const key = document.keys![0]!;
+  document.keys = ['logical', 'physical', 'both'].map((scope) => ({
+    ...key,
+    id: scope,
+    name: scope,
+    scope: scope as typeof key.scope,
+  }));
+  document.keys.push({ ...key, id: 'unrelated', tableId: 'b', scope: 'both' });
+  const relation = document.tableRelations![0]!;
+  document.tableRelations = ['logical', 'physical', 'both'].flatMap((scope) => [
+    { ...relation, id: `${scope}-incoming`, scope: scope as typeof relation.scope },
+    {
+      ...relation,
+      id: `${scope}-outgoing`,
+      scope: scope as typeof relation.scope,
+      sourceTableId: 'a',
+      targetTableId: 'b',
+    },
+  ]);
+  document.tableRelations.push({
+    ...relation,
+    id: 'unrelated-relation',
+    scope: 'both',
+    sourceTableId: 'b',
+    targetTableId: 'b',
+  });
+  const entry = projectEntry(snapshot);
+  if (entry.kind !== 'native') throw Error('Expected native project');
+  const render = () => {
+    parent.active = true;
+    parent.cursor = 0;
+    try {
+      return nodes(NativeProjectView({ entry, onLeave() {}, onReload() {} }));
+    } finally {
+      parent.active = false;
+    }
+  };
+  let tree = render();
+  for (const mode of ['physical', 'logical', 'physical']) {
+    if (
+      mode !== 'physical' ||
+      tree.find((node) => node.type === NativeERDCanvas)!.props.mode !== mode
+    ) {
+      (
+        tree.find((node) => node.type === NativeLogicalModeProvider)!.props.onEnabledChange as (
+          enabled: boolean,
+        ) => void
+      )(mode === 'logical');
+      tree = render();
+    }
+    (tree.find((node) => node.type === NativeERDCanvas)!.props.onSelect as (id: string) => void)(
+      'a',
+    );
+    tree = render();
+    for (const [title, count] of [
+      ['키 · PK / UNIQUE', 2],
+      ['테이블 관계', 4],
+    ] as const) {
+      const section = tree.findLast(
+        (node) => node.type === PanelSection && node.props.title === title,
+      )!;
+      expect(section.props.count).toBe(count);
+      expect(nodes(section.props.children).filter((node) => node.type === PanelRow)).toHaveLength(
+        count,
+      );
+    }
+  }
 });
 
 it('switches logical-only selection and editing on, then hides it without changing the document', () => {
