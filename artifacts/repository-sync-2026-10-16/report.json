@@ -1,0 +1,31 @@
+{
+  "tables": 17,
+  "columns": 132,
+  "foreignKeys": 24,
+  "keys": 20,
+  "indexes": 15,
+  "checks": 2,
+  "commands": 0,
+  "changes": [],
+  "limitations": [
+    {
+      "table": "workspace_invitations",
+      "name": "workspace_invitations_pending_unique",
+      "sql": "\"workspace_invitations\".\"status\" = 'pending'",
+      "reason": "Native enum/string predicate comparison unsupported; exact partial index retained in table metadata."
+    },
+    {
+      "table": "projects",
+      "name": "projects_database_profile_matches",
+      "sql": "\"projects\".\"database_profile_id\" IS NULL OR\n      (\"projects\".\"database_kind\" = 'postgresql' AND \"projects\".\"database_profile_id\" = 'postgresql-18-v1') OR\n      (\"projects\".\"database_kind\" = 'mysql' AND \"projects\".\"database_profile_id\" = 'mysql-8.4-innodb-v1') OR\n      (\"projects\".\"database_kind\" = 'sqlite' AND \"projects\".\"database_profile_id\" = 'sqlite-3.45-v1') OR\n      (\"projects\".\"database_kind\"::text = 'generic' AND \"projects\".\"database_profile_id\" = 'generic-v1')",
+      "reason": "Native enum/string comparison unsupported; exact CHECK retained in table metadata."
+    },
+    {
+      "table": "users",
+      "name": "users_username_normalized",
+      "sql": "\"users\".\"username\" = lower(btrim(\"users\".\"username\"))",
+      "reason": "Native expression catalog has no btrim; exact SQL retained in table metadata."
+    }
+  ],
+  "issues": []
+}
