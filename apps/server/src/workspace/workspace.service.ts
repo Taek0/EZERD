@@ -7,7 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gt, ilike, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, inArray, lt, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import {
   projectTransferSchema,
@@ -47,13 +47,31 @@ import { WorkspaceEventsService } from './workspace-events.service.js';
 import { WorkspaceAccessService } from './workspace-access.service.js';
 import type { ProjectRow } from '../db/schema.js';
 import { projectPreview } from './project-preview.js';
+import { ProjectPreviewCache } from './project-preview-cache.js';
 import { nextAutomaticProjectName } from './project-name.js';
 import { decodeUpdatedCursor, encodeUpdatedCursor } from '../shared/updated-cursor.js';
 import { NativeQueryCache } from '../mcp/native-query-cache.js';
 import type { NativeProjectState } from '../mcp/mcp-native-read.js';
 
+const projectListFields = {
+  id: projects.id,
+  workspaceId: projects.workspaceId,
+  name: projects.name,
+  databaseKind: projects.databaseKind,
+  databaseProfileId: projects.databaseProfileId,
+  databaseRevision: projects.databaseRevision,
+  status: projects.status,
+  version: projects.version,
+  syncSequence: projects.syncSequence,
+  createdAt: projects.createdAt,
+  updatedAt: projects.updatedAt,
+};
+
 function project(
-  row: Omit<ProjectRow, 'document'> & { document?: ProjectRow['document'] },
+  row: Omit<ProjectRow, 'document'> & {
+    document?: ProjectRow['document'];
+    preview?: ReturnType<typeof projectPreview>;
+  },
 ): Project {
   const database = resolveProjectDatabaseState({
     ...row,
@@ -66,7 +84,11 @@ function project(
     databaseKind: row.databaseKind,
     databaseProfileId: database.profileId,
     databaseRevision: database.revision,
-    ...(row.document ? { preview: projectPreview(row.document) } : {}),
+    ...(row.preview
+      ? { preview: row.preview }
+      : row.document
+        ? { preview: projectPreview(row.document) }
+        : {}),
     status: row.status,
     version: row.version,
     createdAt: row.createdAt.toISOString(),
@@ -88,6 +110,7 @@ async function operation<T>(callback: () => Promise<T>): Promise<T> {
 @Injectable()
 export class WorkspaceService {
   private readonly nativeQueryCache = new NativeQueryCache();
+  private readonly projectPreviewCache = new ProjectPreviewCache();
 
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
@@ -152,75 +175,127 @@ export class WorkspaceService {
   }
 
   listProjects(actorId: string, input: z.infer<typeof projectQuerySchema>) {
-    return operation(async () => {
-      const escapedSearch = input.search?.replace(/[\\%_]/g, '\\$&');
-      const rows = await this.database.db
-        .select({ project: projects })
-        .from(projects)
-        .innerJoin(
-          userWorkspaces,
-          and(
-            eq(userWorkspaces.workspaceId, projects.workspaceId),
-            eq(userWorkspaces.userId, actorId),
-          ),
-        )
-        .where(
-          and(
-            eq(projects.status, input.status ?? 'active'),
-            input.workspaceId ? eq(projects.workspaceId, input.workspaceId) : undefined,
-            escapedSearch ? ilike(projects.name, `%${escapedSearch}%`) : undefined,
-          ),
-        )
-        .orderBy(desc(projects.updatedAt), asc(projects.id));
-      return rows.map((row) => project(row.project));
-    });
+    return operation(() =>
+      this.database.db.transaction(
+        async (tx) => {
+          const escapedSearch = input.search?.replace(/[\\%_]/g, '\\$&');
+          const rows = await tx
+            .select({
+              project: projectListFields,
+            })
+            .from(projects)
+            .innerJoin(
+              userWorkspaces,
+              and(
+                eq(userWorkspaces.workspaceId, projects.workspaceId),
+                eq(userWorkspaces.userId, actorId),
+              ),
+            )
+            .where(
+              and(
+                eq(projects.status, input.status ?? 'active'),
+                input.workspaceId ? eq(projects.workspaceId, input.workspaceId) : undefined,
+                escapedSearch ? ilike(projects.name, `%${escapedSearch}%`) : undefined,
+              ),
+            )
+            .orderBy(desc(projects.updatedAt), asc(projects.id));
+          return this.addProjectPreviews(
+            tx,
+            rows.map((row) => row.project),
+          );
+        },
+        { isolationLevel: 'repeatable read', accessMode: 'read only' },
+      ),
+    );
   }
 
   listProjectsPage(
     actorId: string,
     input: z.infer<typeof projectQuerySchema> & { limit: number; cursor?: string | undefined },
   ) {
-    return operation(async () => {
-      const cursor = decodeUpdatedCursor(input.cursor);
-      const escapedSearch = input.search?.replace(/[\\%_]/g, '\\$&');
-      const orderedTime = sql<Date>`date_trunc('milliseconds', ${projects.updatedAt})`;
-      const rows = await this.database.db
-        .select({ project: projects })
-        .from(projects)
-        .innerJoin(
-          userWorkspaces,
-          and(
-            eq(userWorkspaces.workspaceId, projects.workspaceId),
-            eq(userWorkspaces.userId, actorId),
-          ),
-        )
-        .where(
-          and(
-            eq(projects.status, input.status ?? 'active'),
-            input.workspaceId ? eq(projects.workspaceId, input.workspaceId) : undefined,
-            escapedSearch ? ilike(projects.name, `%${escapedSearch}%`) : undefined,
-            cursor
-              ? or(
-                  lt(orderedTime, new Date(cursor.updatedAt)),
-                  and(eq(orderedTime, new Date(cursor.updatedAt)), gt(projects.id, cursor.id)),
-                )
-              : undefined,
-          ),
-        )
-        .orderBy(desc(orderedTime), asc(projects.id))
-        .limit(input.limit + 1);
-      const page = rows.slice(0, input.limit).map((row) => row.project);
-      return {
-        projects: page.map(project),
-        nextCursor:
-          rows.length > input.limit
-            ? encodeUpdatedCursor({
-                updatedAt: page.at(-1)!.updatedAt.toISOString(),
-                id: page.at(-1)!.id,
-              })
-            : null,
-      };
+    return operation(() =>
+      this.database.db.transaction(
+        async (tx) => {
+          const cursor = decodeUpdatedCursor(input.cursor);
+          const escapedSearch = input.search?.replace(/[\\%_]/g, '\\$&');
+          const orderedTime = sql<Date>`date_trunc('milliseconds', ${projects.updatedAt})`;
+          const rows = await tx
+            .select({
+              project: projectListFields,
+            })
+            .from(projects)
+            .innerJoin(
+              userWorkspaces,
+              and(
+                eq(userWorkspaces.workspaceId, projects.workspaceId),
+                eq(userWorkspaces.userId, actorId),
+              ),
+            )
+            .where(
+              and(
+                eq(projects.status, input.status ?? 'active'),
+                input.workspaceId ? eq(projects.workspaceId, input.workspaceId) : undefined,
+                escapedSearch ? ilike(projects.name, `%${escapedSearch}%`) : undefined,
+                cursor
+                  ? or(
+                      lt(orderedTime, new Date(cursor.updatedAt)),
+                      and(eq(orderedTime, new Date(cursor.updatedAt)), gt(projects.id, cursor.id)),
+                    )
+                  : undefined,
+              ),
+            )
+            .orderBy(desc(orderedTime), asc(projects.id))
+            .limit(input.limit + 1);
+          const page = rows.slice(0, input.limit).map((row) => row.project);
+          return {
+            projects: await this.addProjectPreviews(tx, page),
+            nextCursor:
+              rows.length > input.limit
+                ? encodeUpdatedCursor({
+                    updatedAt: page.at(-1)!.updatedAt.toISOString(),
+                    id: page.at(-1)!.id,
+                  })
+                : null,
+          };
+        },
+        { isolationLevel: 'repeatable read', accessMode: 'read only' },
+      ),
+    );
+  }
+
+  private async addProjectPreviews(
+    tx: Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0],
+    rows: Omit<ProjectRow, 'document'>[],
+  ) {
+    const previews = new Map<string, ReturnType<typeof projectPreview>>();
+    const missing = rows.filter((row) => {
+      const cached = this.projectPreviewCache.get(row);
+      if (!cached) return true;
+      previews.set(row.id, cached);
+      return false;
     });
+    // A cold/unbounded REST list must not build a second unbounded document result.
+    for (let offset = 0; offset < missing.length; offset += 16) {
+      const batch = missing.slice(offset, offset + 16);
+      const documents = await tx
+        .select({ id: projects.id, document: projects.document })
+        .from(projects)
+        .where(
+          inArray(
+            projects.id,
+            batch.map((row) => row.id),
+          ),
+        );
+      const byId = new Map(documents.map((row) => [row.id, row.document]));
+      for (const row of batch) {
+        const document = byId.get(row.id);
+        if (!document) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+        const preview = projectPreview(document);
+        this.projectPreviewCache.set(row, preview);
+        previews.set(row.id, preview);
+      }
+    }
+    return rows.map((row) => project({ ...row, preview: previews.get(row.id)! }));
   }
 
   private readLegacyExportDocument(actorId: string, id: string) {
