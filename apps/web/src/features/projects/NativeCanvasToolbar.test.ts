@@ -66,6 +66,7 @@ describe('native canvas chrome', () => {
           disabled: true,
           mode: 'physical',
           inspectorOpen: true,
+          panelToggle: createElement('button', { 'data-testid': 'pin-toggle' }, 'Pins'),
         }),
       );
       expect(html).toContain(locale === 'ko' ? '전체 테이블 · Sales' : 'All tables · Sales');
@@ -75,6 +76,9 @@ describe('native canvas chrome', () => {
       expect(html).toContain(locale === 'ko' ? '도메인 맵' : 'Domain map');
       setLocale('ko');
       expect(html).toContain('aria-controls="native-canvas-inspector"');
+      expect(html.indexOf('class="inspector-toggle')).toBeLessThan(
+        html.indexOf('data-testid="pin-toggle"'),
+      );
     },
   );
 });
@@ -144,7 +148,7 @@ it('keeps review and recovery in More while mode remains visible', () => {
   expect(onOpenRecovery).toHaveBeenCalledOnce();
 });
 
-it('places explorer on the left and inspector after pins on the right', () => {
+it('places explorer on the left and inspector before pins on the right', () => {
   const html = renderToStaticMarkup(
     createElement(NativeCanvasToolbar, {
       viewId: '__tables__',
@@ -162,7 +166,7 @@ it('places explorer on the left and inspector after pins on the right', () => {
     }),
   );
   expect(html.indexOf('EXPLORER_MARKER')).toBeLessThan(html.indexOf('toolbar-create'));
-  expect(html.indexOf('PIN_MARKER')).toBeLessThan(html.indexOf('native-canvas-inspector'));
+  expect(html.indexOf('native-canvas-inspector')).toBeLessThan(html.indexOf('PIN_MARKER'));
   expect(html).not.toContain('모델 보기');
   expect(html).toContain('>물리<');
   expect(html).toContain('>논리<');
