@@ -98,6 +98,44 @@ afterEach(() => {
 });
 
 describe('native blank selection on HTTP LAN', () => {
+  it('shows the selected table owning domain and neutral fallback, but no table dot for a domain header', () => {
+    const snapshot = clipboardSnapshot();
+    if (snapshot.native.status !== 'available') throw Error('Expected native snapshot');
+    const document = snapshot.native.document;
+    document.tables!.forEach((table) => {
+      table.scope = 'both';
+    });
+    document.domains[0]!.color = '#123456';
+    const entry = projectEntry(snapshot);
+    if (entry.kind !== 'native') throw Error('Expected native project');
+    const render = () => {
+      parent.active = true;
+      parent.cursor = 0;
+      try {
+        return nodes(
+          NativeProjectView({
+            entry,
+            userId: clipboardActor,
+            canEdit: true,
+            onLeave() {},
+            onReload() {},
+          }),
+        );
+      } finally {
+        parent.active = false;
+      }
+    };
+    const dot = () => render().find((node) => node.props.className === 'selection-domain-dot');
+    expect(dot()?.props.style).toEqual({ backgroundColor: '#123456' });
+    expect(dot()?.props['aria-label']).toBe('소속 도메인: Domain');
+    delete entry.document!.domains[0]!.color;
+    expect(dot()?.props.style).toEqual({ backgroundColor: '#8993a3' });
+    entry.document!.tables![0]!.domainId = null;
+    expect(dot()?.props.title).toBe('소속 도메인: 미소속');
+    const canvas = render().find((node) => node.type === NativeERDCanvas)!;
+    (canvas.props.onSelectDomain as (id: string) => void)('d');
+    expect(dot()).toBeUndefined();
+  });
   it('mounts the newly revealed table form without the secure-context-only randomUUID API', () => {
     const snapshot = clipboardSnapshot();
     if (snapshot.native?.status !== 'available') throw Error('Expected native snapshot');

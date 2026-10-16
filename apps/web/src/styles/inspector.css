@@ -78,6 +78,12 @@
   white-space: nowrap;
   font-size: 14px;
 }
+.inspector-selection .selection-domain-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
 .inspector-selection .ui-icon-button {
   flex: none;
   width: 26px;
