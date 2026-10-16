@@ -52,3 +52,9 @@ Hwp의 p→run, run→tbl, tc→p는 waypoints 없이 직선으로 연결한다.
 - 전체 검사 로그: artifacts/performance/2026-10-16-route-quality-check.log (Git 제외).
 - 원격 main f17f784와 기존 알고리즘의 차이가 없음을 확인한 뒤 진행했다. MCP 조회 Hwp version/sequence 19의 전체 49개 테이블·75개 논리 관계를 복제 입력으로 사용했으며 원본 프로젝트는 쓰지 않았다.
 - 수정은 codex/performance-lab에 커밋했다. 로컬 main 및 실행 서버 변경, 원격 push는 하지 않았다.
+
+## 제품 PR 기준 검증
+
+- origin/main f17f784 기반 codex/relation-route-quality에 이번 개선 커밋만 선별했다.
+- pnpm check 통과: 2,986 tests passed / 499 skipped, 포맷·전체 타입·제품 빌드 성공. 최초 실행의 기존 font-cache 5초 timeout은 코드·제한·skip 변경 없이 동일 검사 재실행으로 통과했다.
+- 구성 검사에는 더미 로컬 DATABASE_URL을 사용했으며 DB 통합 테스트는 활성화하지 않았다. 제품 schema/API 변경이 없는 모델 개선이다.
