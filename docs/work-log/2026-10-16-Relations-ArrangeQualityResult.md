@@ -45,3 +45,10 @@ Hwp의 p→run, run→tbl, tc→p는 waypoints 없이 직선으로 연결한다.
 - 일반 자동 routing 기준 사본과 5개 사례(기본·대각·자기참조·메모·잘못된 저장 경로) 결과가 일치한다. 200회 호출의 5회 중앙값은 이전 6.949ms / 이후 6.939ms였다. 해당 작은 측정으로 전체 UI 팬·이동 성능을 단정하지 않는다.
 
 전체 제품 검사는 상위 통합 작업에서 별도 수행한다. 이 변경은 제품 schema, 저장 payload, renderer replay 형식, Worker 수명/취소 계약을 바꾸지 않는다.
+
+## 통합 검사 및 적용 상태
+
+- pnpm check 통과: 2,998 tests passed / 499 skipped, 269 files passed / 28 skipped. 포맷·전체 타입·제품 빌드 성공. 기존 번들 크기 경고는 유지한다.
+- 전체 검사 로그: artifacts/performance/2026-10-16-route-quality-check.log (Git 제외).
+- 원격 main f17f784와 기존 알고리즘의 차이가 없음을 확인한 뒤 진행했다. MCP 조회 Hwp version/sequence 19의 전체 49개 테이블·75개 논리 관계를 복제 입력으로 사용했으며 원본 프로젝트는 쓰지 않았다.
+- 수정은 codex/performance-lab에 커밋했다. 로컬 main 및 실행 서버 변경, 원격 push는 하지 않았다.
