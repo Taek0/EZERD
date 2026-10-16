@@ -89,10 +89,17 @@ describe('native history contracts', () => {
       expect(nativeHistoryCommandSchema.safeParse({ ...input(), [key]: {} }).success).toBe(false);
   });
   it('bounds pagination and rejects unknown options', () => {
-    expect(nativeHistoryQuerySchema.parse({})).toEqual({ since: 0, limit: 25 });
+    expect(nativeHistoryQuerySchema.parse({})).toEqual({
+      since: 0,
+      limit: 25,
+      order: 'asc',
+      compact: false,
+    });
     expect(nativeHistoryQuerySchema.parse({ since: '12', limit: '10' })).toEqual({
       since: 12,
       limit: 10,
+      order: 'asc',
+      compact: false,
     });
     for (const invalid of [
       { since: -1 },
@@ -102,6 +109,18 @@ describe('native history contracts', () => {
       { cursor: 'unknown' },
     ])
       expect(nativeHistoryQuerySchema.safeParse(invalid).success).toBe(false);
+  });
+  it('validates latest-page cursors separately from ascending history', () => {
+    expect(
+      nativeHistoryQuerySchema.parse({ order: 'desc', before: '30', compact: 'true' }),
+    ).toEqual({ since: 0, limit: 25, order: 'desc', before: 30, compact: true });
+    for (const input of [
+      { order: 'desc', since: 1 },
+      { order: 'asc', before: 30 },
+      { order: 'desc', before: '-1' },
+      { compact: 'yes' },
+    ])
+      expect(nativeHistoryQuerySchema.safeParse(input).success).toBe(false);
   });
   it('preserves legacy/upgrade raw evidence alongside native ledger records', () => {
     const old = result(1);

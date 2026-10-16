@@ -9,10 +9,21 @@ import { syncOperationResultReadSchema } from './sync-read.js';
 import { syncChangeSchema } from './sync-base.js';
 
 const counter = z.number().int().nonnegative().max(2147483647);
-export const nativeHistoryQuerySchema = z.strictObject({
-  since: z.coerce.number().int().nonnegative().max(2147483647).default(0),
-  limit: z.coerce.number().int().min(1).max(100).default(25),
-});
+export const nativeHistoryQuerySchema = z
+  .strictObject({
+    since: z.coerce.number().int().nonnegative().max(2147483647).default(0),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    order: z.enum(['asc', 'desc']).default('asc'),
+    before: counter.optional().or(z.string().regex(/^\d+$/).transform(Number).pipe(counter)),
+    compact: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+  })
+  .refine(
+    (value) => (value.order === 'desc' ? value.since === 0 : value.before === undefined),
+    'history.cursor-invalid',
+  );
 /** No client before/after/document, identity map or trusted-origin claims. */
 export const nativeHistoryCommandSchema = z.strictObject({
   operationId: z.uuid(),
@@ -58,6 +69,7 @@ export const nativeHistoryPageSchema = z.strictObject({
   database: projectDatabaseStateSchema,
   history: z.array(nativeHistoryEntrySchema).max(100),
   nextSince: counter.nullable(),
+  nextBefore: counter.nullable().optional(),
 });
 export type NativeHistoryPage = z.infer<typeof nativeHistoryPageSchema>;
 export const nativeHistoryCommandResultSchema = z.strictObject({

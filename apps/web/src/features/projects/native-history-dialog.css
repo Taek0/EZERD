@@ -9,12 +9,9 @@
 .native-history-dialog {
   max-height: calc(100dvh - 40px);
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .native-history-list.native-history-list {
-  max-height: min(380px, 45dvh);
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   padding: 0;
   list-style: none;
   border-block: 1px solid var(--line);
@@ -38,9 +35,10 @@
   margin: 8px 0;
 }
 .native-history-changes {
-  max-height: 240px;
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.undo-controls .native-history-trigger {
+  margin-inline-start: 8px;
 }
 .native-history-filter-bar {
   display: flex;

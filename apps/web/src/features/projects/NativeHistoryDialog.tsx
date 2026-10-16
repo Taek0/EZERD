@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { NativeHistoryPage, ProjectDocumentState } from '@ezerd/contracts';
 import { Button, Collapse, DisclosureButton, Select } from '../../components/ui/index.js';
 import { message } from '../../shared/api/client.js';
@@ -7,7 +7,7 @@ import { describeChanges, nativeHistoryPreview } from './native-history-labels.j
 import { nativeEditorExportBlocked } from './native-export-state.js';
 import './native-history-dialog.css';
 import {
-  fetchNativeHistory,
+  fetchRecentNativeHistory,
   loadNativeHistoryPending,
   sendNativeHistory,
   stageNativeHistory,
@@ -48,6 +48,8 @@ registerTranslations({
   '{shown} / {total}개': '{shown} / {total}',
   '일치하는 이력이 없습니다.': 'No matching history.',
   '최근 편집 순': 'Newest first',
+  '이력을 불러오는 중입니다.': 'Loading history.',
+  '다시 시도': 'Retry',
 });
 export function NativeHistoryChanges({ lines }: { lines: readonly string[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -99,64 +101,99 @@ export function NativeHistoryDialog({
   onClose: () => void;
   onReload: () => void;
 }) {
-  const { t } = useI18n(),
+  const { t, locale } = useI18n(),
     dialog = useRef<HTMLDialogElement>(null);
   const [page, setPage] = useState<NativeHistoryPage | null>(null),
     [pending, setPending] = useState<NativeHistoryPending | null>(null),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [loading, setLoading] = useState(true),
+    [retry, setRetry] = useState(0);
   const active = useRef(true);
+  const request = useRef<AbortController | null>(null);
   const filterId = useId();
   const [filter, setFilter] = useState<NativeHistoryFilter>('all');
-  // Presentation only: preserve the server's ascending page/cursor and undo ordering.
   const history = [...filterNativeHistory(page?.history ?? [], filter)].sort(
     (a, b) => b.sequence - a.sequence,
   );
-  async function load(since = 0) {
-    const next = await fetchNativeHistory(snapshot.project.id, since);
-    setPage((old) =>
-      since && old ? { ...next, history: [...old.history, ...next.history] } : next,
-    );
+  const descriptions = useMemo(
+    () =>
+      new Map(
+        page?.history.map((entry) => [
+          entry.operationId,
+          describeChanges(entry.changes, snapshot.sourceDocument, page.history),
+        ]) ?? [],
+      ),
+    [page, snapshot.sourceDocument, locale],
+  );
+  async function loadOlder(before: number) {
+    const controller = request.current;
+    if (!controller || controller.signal.aborted || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const next = await fetchRecentNativeHistory(snapshot.project.id, {
+        before,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      setPage((old) =>
+        old
+          ? {
+              ...next,
+              history: [
+                ...new Map(
+                  [...old.history, ...next.history].map((entry) => [entry.operationId, entry]),
+                ).values(),
+              ],
+            }
+          : next,
+      );
+    } catch (cause) {
+      if (!controller.signal.aborted) setError(message(cause));
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
   }
   async function act(source?: string, command?: 'undo' | 'restore') {
+    const controller = request.current;
+    const current = () =>
+      active.current && controller === request.current && !controller?.signal.aborted;
     setBusy(true);
     setError('');
     try {
       const input = pending ?? (await stageNativeHistory(userId, snapshot, source!, command!));
+      if (!current()) return;
       setPending(input);
       const output = await sendNativeHistory(input);
-      if (!active.current) return;
+      if (!current()) return;
       setPending(null);
       onReload();
       if (output.result.status === 'accepted') onClose();
       else setError(t('변경 요청이 적용되지 않았습니다. 최신 이력을 확인해 주세요.'));
     } catch (cause) {
-      if (!active.current) return;
+      if (!current()) return;
       setError(message(cause));
       try {
         const stored = await loadNativeHistoryPending(userId, snapshot.project.id);
-        if (active.current) setPending(stored);
+        if (current()) setPending(stored);
       } catch (storageCause) {
-        setError(message(storageCause));
+        if (current()) setError(message(storageCause));
       }
     } finally {
-      if (active.current) setBusy(false);
+      if (current()) setBusy(false);
     }
   }
   useEffect(() => {
     if (!embedded) dialog.current?.showModal();
     active.current = true;
     let alive = true;
+    setPage(null);
+    setPending(null);
+    setError('');
     void loadNativeHistoryPending(userId, snapshot.project.id)
       .then((stored) => {
         if (alive) setPending(stored);
-      })
-      .catch((cause) => {
-        if (alive) setError(message(cause));
-      });
-    void fetchNativeHistory(snapshot.project.id)
-      .then((result) => {
-        if (alive) setPage(result);
       })
       .catch((cause) => {
         if (alive) setError(message(cause));
@@ -166,11 +203,49 @@ export function NativeHistoryDialog({
       alive = false;
       dialog.current?.close();
     };
-  }, [userId, snapshot.project.id]);
+  }, [userId, snapshot.project.id, embedded]);
+  useEffect(() => {
+    const controller = new AbortController();
+    request.current = controller;
+    setBusy(false);
+    setLoading(true);
+    setError('');
+    void fetchRecentNativeHistory(snapshot.project.id, { signal: controller.signal })
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setPage((old) => {
+          if (!old) return result;
+          const existing = new Set(old.history.map((entry) => entry.operationId));
+          // Keep the contiguous older range only when the new head joins it.
+          // A gap must restart pagination, otherwise intermediate edits disappear.
+          if (!result.history.some((entry) => existing.has(entry.operationId))) return result;
+          return {
+            ...result,
+            nextBefore: old.nextBefore,
+            history: [
+              ...new Map(
+                [...old.history, ...result.history].map((entry) => [entry.operationId, entry]),
+              ).values(),
+            ],
+          };
+        });
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) setError(message(cause));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [userId, snapshot.project.id, snapshot.sequence, retry]);
   const content = (
     <>
       <h2 id="native-history-title">{t('설계 이력')}</h2>
       {error && <p role="alert">{error}</p>}
+      {loading && <p role="status">{t('이력을 불러오는 중입니다.')}</p>}
+      {!loading && error && (
+        <Button onClick={() => setRetry((value) => value + 1)}>{t('다시 시도')}</Button>
+      )}
       {pending && (
         <div role="status">
           <p>{t('확인되지 않은 이력 변경 요청이 있습니다.')}</p>
@@ -180,20 +255,23 @@ export function NativeHistoryDialog({
           <Button
             disabled={busy}
             onClick={() => {
+              const controller = request.current;
+              const current = () =>
+                active.current && controller === request.current && !controller?.signal.aborted;
               setBusy(true);
               setError('');
               void cancelNativeHistory(pending)
                 .then(() => {
-                  if (active.current) {
+                  if (current()) {
                     setPending(null);
                     onReload();
                   }
                 })
                 .catch((cause) => {
-                  if (active.current) setError(message(cause));
+                  if (current()) setError(message(cause));
                 })
                 .finally(() => {
-                  if (active.current) setBusy(false);
+                  if (current()) setBusy(false);
                 });
             }}
           >
@@ -247,9 +325,7 @@ export function NativeHistoryDialog({
                 {t(accepted ? '처리됨' : '거부됨')}
               </span>
               {!native && <span> · {t('형식 변경 이전 이력')}</span>}
-              <NativeHistoryChanges
-                lines={describeChanges(entry.changes, snapshot.sourceDocument, page?.history ?? [])}
-              />
+              <NativeHistoryChanges lines={descriptions.get(entry.operationId) ?? []} />
               {deleted && (
                 <Button disabled={blocked} onClick={() => void act(entry.operationId, 'restore')}>
                   {t('삭제 복원')}
@@ -259,16 +335,8 @@ export function NativeHistoryDialog({
           );
         })}
       </ol>
-      {page?.nextSince !== null && page?.nextSince !== undefined && (
-        <Button
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            void load(page.nextSince!)
-              .catch((cause) => setError(message(cause)))
-              .finally(() => setBusy(false));
-          }}
-        >
+      {page?.nextBefore !== null && page?.nextBefore !== undefined && (
+        <Button disabled={busy || loading} onClick={() => void loadOlder(page.nextBefore!)}>
           {t('이력 더 보기')}
         </Button>
       )}
@@ -278,12 +346,15 @@ export function NativeHistoryDialog({
     </>
   );
   return embedded ? (
-    <div className="native-history-content">{content}</div>
+    <div className="native-history-content" onWheel={(event) => event.stopPropagation()}>
+      {content}
+    </div>
   ) : (
     <dialog
       ref={dialog}
       className="project-ddl-dialog native-history-dialog"
       aria-labelledby="native-history-title"
+      onWheel={(event) => event.stopPropagation()}
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onClose();

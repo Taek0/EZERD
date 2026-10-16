@@ -72,7 +72,8 @@ it('displays newest loaded edits first without mutating cursor data or source or
     protocolVersion: 2,
     version: fixture.snapshot.project.version,
     sequence: 30,
-    nextSince: 30,
+    nextSince: null,
+    nextBefore: 10,
     history: [10, 30, 20].map((sequence) => ({
       ...base,
       operationId: `operation-${sequence}`,

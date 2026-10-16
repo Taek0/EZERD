@@ -74,6 +74,10 @@ export function NativeHistoryControls({
     previousSequence = useRef(snapshot.sequence),
     mounted = useRef(true),
     sending = useRef(false);
+  const scope = `${userId}:${snapshot.project.id}`;
+  const previousScope = useRef(scope);
+  const currentContext = useRef('');
+  currentContext.current = `${scope}:${snapshot.sequence}`;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -82,7 +86,16 @@ export function NativeHistoryControls({
   }, []);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setReady(false);
+    setError('');
+    if (previousScope.current !== scope) {
+      setUndo([]);
+      setRedo([]);
+      localUndo.current = [];
+      ownSequence.current = null;
+      previousScope.current = scope;
+    }
     if (
       previousSequence.current !== snapshot.sequence &&
       ownSequence.current !== snapshot.sequence
@@ -95,7 +108,10 @@ export function NativeHistoryControls({
       let since = Math.max(0, snapshot.sequence - 100);
       const entries: NativeHistoryPage['history'] = [];
       for (let pages = 0; pages < 5; pages++) {
-        const page = await fetchNativeHistory(snapshot.project.id, since);
+        const page = await fetchNativeHistory(snapshot.project.id, since, undefined, {
+          limit: 100,
+          signal: controller.signal,
+        });
         if (!active) return;
         if (page.sequence !== snapshot.sequence || page.version !== snapshot.project.version)
           return;
@@ -113,6 +129,7 @@ export function NativeHistoryControls({
     });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [
     userId,
@@ -122,6 +139,8 @@ export function NativeHistoryControls({
     snapshot.project.databaseRevision,
   ]);
   async function act(kind: 'undo' | 'redo') {
+    const context = currentContext.current;
+    const current = () => mounted.current && currentContext.current === context;
     const source = (kind === 'undo' ? undo : redo).at(-1);
     if (
       !source ||
@@ -136,8 +155,9 @@ export function NativeHistoryControls({
     setError('');
     try {
       const pending = await stageNativeHistory(userId, snapshot, source, 'undo');
+      if (!current()) return;
       const output = await sendNativeHistory(pending);
-      if (!mounted.current) return;
+      if (!current()) return;
       if (output.result.status !== 'accepted') {
         setError(t('변경 요청이 적용되지 않았습니다. 최신 이력을 확인해 주세요.'));
         return;
@@ -153,7 +173,7 @@ export function NativeHistoryControls({
       setReady(false);
       onReload();
     } catch (cause) {
-      if (mounted.current) {
+      if (current()) {
         setError(message(cause));
         onHistory();
       }
@@ -230,7 +250,9 @@ export function NativeHistoryControls({
           isOpen={historyOpen}
           onOpenChange={(open) => (open ? onHistory() : onCloseHistory())}
         >
-          <Button disabled={busy}>{t('히스토리')}</Button>
+          <Button className="native-history-trigger" disabled={busy}>
+            {t('히스토리')}
+          </Button>
           <UntitledPopover
             className="native-history-popover"
             placement="bottom end"
