@@ -13,6 +13,7 @@ import {
   validateDatabaseDocument,
 } from './validation.js';
 import type { DatabaseKind } from './definitions.js';
+import { createNativeColumn, createNativeTable } from './editing.js';
 
 const metadata = { common: {}, logical: {}, physical: {} };
 const pg = defaultDatabaseContext('postgresql');
@@ -629,5 +630,161 @@ describe('generation, defaults and FK conditions use the full candidate', () => 
     ];
     expect(codes(doc)).toContain('expression.function-not-supported');
     expect(codes(doc)).toContain('expression.non-deterministic');
+  });
+});
+
+describe('validation collection indexes preserve peer and key semantics', () => {
+  it.each(['postgresql', 'mysql', 'sqlite', 'generic'] as const)(
+    'keeps %s name folding, table visibility and diagnostic order',
+    (kind) => {
+      const context = defaultDatabaseContext(kind);
+      const doc = createEmptyNativeDocument(context);
+      const owner = createNativeTable(context, 't');
+      owner.scope = 'both';
+      owner.physical.name = 'items';
+      const other = createNativeTable(context, 'other');
+      other.scope = 'both';
+      other.physical.name = 'other_items';
+      const empty = createNativeTable(context, 'empty');
+      empty.physical.name = 'empty_items';
+      doc.tables = [owner, other, empty];
+      doc.columns = ['first', 'second', 'third/~'].map((id) =>
+        createNativeColumn(context, owner, id),
+      );
+      doc.columns[0]!.physical.name = 'Code';
+      doc.columns[1]!.physical.name = 'code';
+      doc.columns[2]!.physical.name = 'Code';
+      const hidden = createNativeColumn(context, empty, 'hidden');
+      hidden.scope = 'logical';
+      hidden.physical.name = 'Code';
+      const unrelated = createNativeColumn(context, other, 'unrelated');
+      unrelated.physical.name = 'Code';
+      doc.columns.push(hidden, unrelated);
+      const issues = inspectNativeDatabaseDocument(doc, context);
+      expect(issues.filter((issue) => issue.code === 'ddl.empty-table')).toEqual([
+        {
+          code: 'ddl.empty-table',
+          category: 'incomplete',
+          severity: 'error',
+          objectId: 'empty',
+          path: '/tables/empty/physical',
+          params: {},
+        },
+      ]);
+      expect(issues.filter((issue) => issue.code === 'column.duplicate-name')).toEqual(
+        (kind === 'postgresql' ? ['first', 'third/~'] : ['first', 'second', 'third/~']).map(
+          (id) => ({
+            code: 'column.duplicate-name',
+            category: 'invalid',
+            severity: 'error',
+            objectId: id,
+            path: `/columns/${id.replaceAll('~', '~0').replaceAll('/', '~1')}/physical/name`,
+            params: {},
+          }),
+        ),
+      );
+    },
+  );
+  it('keeps duplicate-name causes local to each current and trusted previous collection', () => {
+    const before = fixture();
+    const second = column('postgresql', 'second');
+    second.physical.name = 'c';
+    before.columns!.push(second);
+    const candidate = structuredClone(before);
+    candidate.columns![0]!.physical.comment = 'description repair';
+    expect(validateDatabaseDocument(candidate, pg, { mode: 'write', previous: before })).toEqual(
+      [],
+    );
+    for (const item of candidate.columns!) item.physical.name = 'renamed';
+    expect(validateDatabaseDocument(candidate, pg, { mode: 'write', previous: before })).toEqual([
+      {
+        code: 'column.duplicate-name',
+        category: 'invalid',
+        severity: 'error',
+        objectId: 'c',
+        path: '/columns/c/physical/name',
+        params: {},
+      },
+      {
+        code: 'column.duplicate-name',
+        category: 'invalid',
+        severity: 'error',
+        objectId: 'second',
+        path: '/columns/second/physical/name',
+        params: {},
+      },
+    ]);
+    expect(validateDatabaseDocument(candidate, pg, { mode: 'write', previous: candidate })).toEqual(
+      [],
+    );
+  });
+  it('preserves visible key order in causes while excluding logical keys', () => {
+    const before = fixture();
+    before.keys!.push({ ...structuredClone(before.keys![0]!), id: 'second', scope: 'logical' });
+    expect(codes(before)).not.toContain('key.multiple-primary-keys');
+    before.keys![1]!.scope = 'physical';
+    const candidate = structuredClone(before);
+    expect(validateDatabaseDocument(candidate, pg, { mode: 'write', previous: before })).toEqual(
+      [],
+    );
+    candidate.keys!.reverse();
+    expect(
+      validateDatabaseDocument(candidate, pg, { mode: 'write', previous: before })
+        .filter((issue) => issue.code === 'key.multiple-primary-keys')
+        .map((issue) => issue.objectId),
+    ).toEqual(['second', 'pk']);
+    expect(validateDatabaseDocument(candidate, pg, { mode: 'write', previous: candidate })).toEqual(
+      [],
+    );
+  });
+  it('keeps first peer order when validating MySQL generated references', () => {
+    const doc = fixture('mysql');
+    const first = column('mysql', 'first');
+    first.physical.generation = {
+      kind: 'computed',
+      database: 'mysql',
+      storage: 'stored',
+      expression: { kind: 'column', columnId: 'c' },
+    };
+    const second = column('mysql', 'second');
+    second.physical.generation = {
+      kind: 'computed',
+      database: 'mysql',
+      storage: 'stored',
+      expression: { kind: 'column', columnId: 'first' },
+    };
+    doc.columns!.push(first, second);
+    expect(codes(doc)).not.toContain('generation.reference-not-supported');
+    doc.columns = [doc.columns![0]!, second, first];
+    expect(
+      inspectNativeDatabaseDocument(doc, doc.database)
+        .filter((issue) => issue.code === 'generation.reference-not-supported')
+        .map((issue) => issue.objectId),
+    ).toEqual(['second']);
+  });
+  it('retains raw peer names while resolving duplicate IDs through the final entry', () => {
+    const doc = fixture();
+    doc.tables!.push(table('postgresql', 'other'));
+    doc.keys = [];
+    const stale = column('postgresql', 'same');
+    stale.scope = 'logical';
+    stale.physical.name = 'shared';
+    const latest = column('postgresql', 'same', 'other');
+    latest.physical.name = 'different';
+    const peer = column('postgresql', 'peer', 'other');
+    peer.physical.name = 'shared';
+    doc.columns = [stale, latest, peer];
+    const issues = inspectNativeDatabaseDocument(doc, pg);
+    expect(
+      issues.filter((issue) => issue.code === 'ddl.empty-table').map((issue) => issue.objectId),
+    ).toEqual(['t']);
+    expect(
+      issues
+        .filter((issue) => issue.code === 'column.duplicate-name')
+        .map((issue) => issue.objectId),
+    ).toEqual(['peer']);
+    doc.columns = [stale, latest];
+    latest.physical.name = 'shared';
+    expect(codes(doc)).not.toContain('column.duplicate-name');
   });
 });

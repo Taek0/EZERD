@@ -238,8 +238,39 @@ function collect(
   const folded = (name: string) =>
     context.kind === 'postgresql' ? name : name.replace(/[A-Z]/g, (c) => c.toLowerCase());
   const tableNames = new Set<string>();
-  const tableKeys = (id: string) =>
-    (doc.keys ?? []).filter((key) => key.tableId === id && physical(key.scope));
+  const visibleColumnsByTable = new Map<
+    string,
+    { columns: NativeColumn[]; nameIds: Map<string, Set<string>> }
+  >();
+  // Resolve visibility by ID, but retain raw entries and order as the previous peer filters did.
+  for (const column of doc.columns ?? []) {
+    const resolved = columns.get(column.id)!;
+    if (!visibleColumn(column.id, resolved.tableId)) continue;
+    let entry = visibleColumnsByTable.get(resolved.tableId);
+    if (!entry) {
+      entry = { columns: [], nameIds: new Map() };
+      visibleColumnsByTable.set(resolved.tableId, entry);
+    }
+    entry.columns.push(column);
+    const name = folded(column.physical.name);
+    let ids = entry.nameIds.get(name);
+    if (!ids) {
+      ids = new Set();
+      entry.nameIds.set(name, ids);
+    }
+    ids.add(column.id);
+  }
+  const keysByTable = new Map<string, NonNullable<NativeDesignDocument['keys']>>();
+  for (const key of doc.keys ?? []) {
+    if (!physical(key.scope)) continue;
+    let keys = keysByTable.get(key.tableId);
+    if (!keys) {
+      keys = [];
+      keysByTable.set(key.tableId, keys);
+    }
+    keys.push(key);
+  }
+  const tableKeys = (id: string) => keysByTable.get(id) ?? [];
 
   function expression(
     value: NativeExpression,
@@ -384,7 +415,7 @@ function collect(
     if (tableNames.has(name))
       add('table.duplicate-name', table.id, `${path}/name`, [namespace, table.physical.name]);
     tableNames.add(name);
-    if (!(doc.columns ?? []).some((column) => visibleColumn(column.id, table.id)))
+    if (!visibleColumnsByTable.get(table.id)?.columns.length)
       add('ddl.empty-table', table.id, path, table.id, 'incomplete');
     if (table.physical.options.database === 'sqlite') {
       if (table.physical.options.strict)
@@ -415,12 +446,9 @@ function collect(
     identifier(column.physical.name, column.id, `${path}/name`);
     if (column.physical.comment.includes('\0'))
       add('comment.invalid', column.id, `${path}/comment`, column.physical.comment);
-    const peers = (doc.columns ?? []).filter((c) => visibleColumn(c.id, table.id));
-    if (
-      peers.some(
-        (c) => c.id !== column.id && folded(c.physical.name) === folded(column.physical.name),
-      )
-    )
+    const tableColumns = visibleColumnsByTable.get(table.id)!;
+    const peers = tableColumns.columns;
+    if (tableColumns.nameIds.get(folded(column.physical.name))!.size > 1)
       add('column.duplicate-name', column.id, `${path}/name`, [
         column.tableId,
         folded(column.physical.name),
