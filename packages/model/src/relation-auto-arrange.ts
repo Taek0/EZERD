@@ -1,3 +1,4 @@
+import { centerRelationRouteCorridors } from './relation-corridor-centering.js';
 import type { RelationAnchor } from './document-base.js';
 import {
   createRelationRoutingContext,
@@ -970,6 +971,21 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
     }
     if (!improved) break;
   }
+  const centered = centerRelationRouteCorridors(
+    routed.map(({ placement, points, segments: routeSegments }) => ({
+      id: placement.relation.id,
+      sourceId: placement.source.id,
+      targetId: placement.target.id,
+      points,
+      segments: routeSegments,
+    })),
+    boxes,
+  );
+  routed.forEach((item, index) => {
+    if (item.points === centered[index]) return;
+    item.points = centered[index]!;
+    item.segments = segments(item.points);
+  });
   return {
     ok: true,
     routes: routed
