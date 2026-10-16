@@ -950,16 +950,8 @@ function NativeCanvasWorkspace({
     snapshot,
     ...(userId ? { userId } : {}),
   });
-  const arrangeController = useMemo(
-    () =>
-      createNativeRelationArrangeController({
-        getState: () => arrangeState.current,
-        save: (commands: NativeEditorCommand[], expectation: ReturnType<typeof expected>) =>
-          onArrangeSave?.(commands, expectation) ?? onSave(commands, expectation),
-        onReload,
-        onStatus: setArrangeStatus,
-      }),
-    [snapshot.project.id, userId, onSave, onArrangeSave, onReload],
+  const arrangeController = useRef<ReturnType<typeof createNativeRelationArrangeController> | null>(
+    null,
   );
   useLayoutEffect(() => {
     arrangeState.current = {
@@ -971,9 +963,23 @@ function NativeCanvasWorkspace({
       snapshot,
       ...(userId ? { userId } : {}),
     };
-    arrangeController.update();
-  }, [arrangeController, base, drawn, effectiveView, mode, arrangeEligible, snapshot, userId]);
-  useEffect(() => () => arrangeController.dispose(), [arrangeController]);
+    arrangeController.current?.update();
+  }, [base, drawn, effectiveView, mode, arrangeEligible, snapshot, userId]);
+  useLayoutEffect(() => {
+    const controller = createNativeRelationArrangeController({
+      getState: () => arrangeState.current,
+      save: (commands: NativeEditorCommand[], expectation: ReturnType<typeof expected>) =>
+        onArrangeSave?.(commands, expectation) ?? onSave(commands, expectation),
+      onReload,
+      onStatus: setArrangeStatus,
+    });
+    arrangeController.current = controller;
+    controller.update();
+    return () => {
+      controller.dispose();
+      arrangeController.current = null;
+    };
+  }, [snapshot.project.id, userId, onSave, onArrangeSave, onReload]);
   useEffect(() => {
     onRelationArrangeBusyChange?.(arranging);
     return () => onRelationArrangeBusyChange?.(false);
@@ -2702,8 +2708,8 @@ function NativeCanvasWorkspace({
                     : table.physical.name || table.logical.name
                   : id;
               })}
-              onCancel={() => arrangeController.cancel()}
-              onUndo={() => arrangeController.undo()}
+              onCancel={() => arrangeController.current?.cancel()}
+              onUndo={() => arrangeController.current?.undo()}
             />
           }
           tool={tool}
@@ -2870,7 +2876,7 @@ function NativeCanvasWorkspace({
                             id: 'auto-layout-relations',
                             label: t('관계선 배치'),
                             disabled: arranging || !arrangeEligible,
-                            onAction: () => arrangeController.start(),
+                            onAction: () => arrangeController.current?.start(),
                           },
                         ],
                       },
