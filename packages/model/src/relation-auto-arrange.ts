@@ -841,7 +841,77 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
   );
   for (const placement of routingOrder) {
     searches++;
-    const points = route(placement, boxes, contexts, budget, routed);
+    let points = route(placement, boxes, contexts, budget, routed);
+    if (!points) {
+      // A globally assigned port may be unreachable even when the cards have room.
+      // Reserve all other endpoints, including relations not routed yet.
+      const alternatives = (box: AutoArrangeBox) =>
+        sides.map((side) => {
+          const extent = span(box, side),
+            margin = Math.min(16, extent / 4);
+          const occupied = placements
+            .filter((item) => item !== placement)
+            .flatMap(
+              (item) =>
+                [
+                  [item.source, item.sourceEnd],
+                  [item.target, item.targetEnd],
+                ] as const,
+            )
+            .filter(([card, end]) => card.id === box.id && end.side === side)
+            .map(([, end]) => end.anchor!.ratio * extent)
+            .sort((a, b) => a - b);
+          const boundaries = [margin, ...occupied, extent - margin];
+          let low = margin,
+            high = margin,
+            gap = -1;
+          for (let i = 1; i < boundaries.length; i++) {
+            const a = boundaries[i - 1]!,
+              b = boundaries[i]!;
+            if (b - a > gap) {
+              low = a;
+              high = b;
+              gap = b - a;
+            }
+          }
+          return { side, ratio: (low + high) / 2 / extent };
+        });
+      const candidates = alternatives(placement.source)
+        .flatMap((sourceAnchor) =>
+          alternatives(placement.target).map((targetAnchor) => ({ sourceAnchor, targetAnchor })),
+        )
+        .filter(
+          ({ sourceAnchor, targetAnchor }) =>
+            placement.source.id !== placement.target.id || sourceAnchor.side !== targetAnchor.side,
+        )
+        .sort(
+          (a, b) =>
+            length(
+              portPoint(placement.source, a.sourceAnchor),
+              portPoint(placement.target, a.targetAnchor),
+            ) -
+            length(
+              portPoint(placement.source, b.sourceAnchor),
+              portPoint(placement.target, b.targetAnchor),
+            ),
+        );
+      for (const { sourceAnchor, targetAnchor } of candidates) {
+        // Leave one initial search for each remaining relation.
+        if (searches >= maxSearches - (routingOrder.length - routed.length - 1)) break;
+        searches++;
+        const candidate: Placement = {
+          ...placement,
+          sourceEnd: { ...placement.sourceEnd, side: sourceAnchor.side, anchor: sourceAnchor },
+          targetEnd: { ...placement.targetEnd, side: targetAnchor.side, anchor: targetAnchor },
+        };
+        const retry = route(candidate, boxes, contexts, budget, routed);
+        if (!retry) continue;
+        Object.assign(placement.sourceEnd, candidate.sourceEnd);
+        Object.assign(placement.targetEnd, candidate.targetEnd);
+        points = retry;
+        break;
+      }
+    }
     if (!points)
       return {
         ok: false,
