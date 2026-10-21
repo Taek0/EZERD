@@ -78,7 +78,17 @@ describe('native PNG uses semantic source and common geometry', () => {
       nativeCanvasScene(source, '__tables__', 'physical'),
       'physical',
     );
-    expect(svg).toContain('color-mix(in srgb, #abcdef 24%, white)');
+    expect(svg).toContain('fill="#abcdef"');
+    expect(svg).toContain('class="native-png-note-body" style="color:#000000"');
+    expect(svg).not.toContain('stroke-width:4');
+    source.notes[0]!.color = '#123456';
+    const darkNoteSvg = nativeCanvasSvg(
+      source,
+      nativeCanvasScene(source, '__tables__', 'physical'),
+      'physical',
+    ).svg;
+    expect(darkNoteSvg).toContain('fill="#123456"');
+    expect(darkNoteSvg).toContain('class="native-png-note-body" style="color:#ffffff"');
     expect(svg).not.toContain('>메모</text>');
     ({ svg } = nativeCanvasSvg(
       source,

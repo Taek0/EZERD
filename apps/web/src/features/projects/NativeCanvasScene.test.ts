@@ -285,6 +285,15 @@ describe('native scene render boundary', () => {
     const note = html.split('data-object-id="n"')[1]!;
     expect(note).toContain('class="note-content"');
     expect(note).not.toContain('<header');
+    expect(note).toContain('--native-note-color:#abcdef');
+    expect(note).toContain('--native-note-text-color:#000000');
+    expect(note).not.toContain('border-top-color');
+    p.base.notes[0]!.color = '#123456';
+    const darkNote = renderToStaticMarkup(createElement(NativeCanvasScene, p)).split(
+      'data-object-id="n"',
+    )[1]!;
+    expect(darkNote).toContain('--native-note-color:#123456');
+    expect(darkNote).toContain('--native-note-text-color:#ffffff');
   });
   it('reuses original domain/note editor and disables edits and movement on an unsaved domain preview', () => {
     const p = props();
