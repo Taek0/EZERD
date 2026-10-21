@@ -1,4 +1,4 @@
-import { createPathClear } from './relation-obstacle-queries.js';
+import { createAutoObstacleQueries, createPathClear } from './relation-obstacle-queries.js';
 import type { RelationAnchor, RelationLayout } from './document-base.js';
 export type Point = { x: number; y: number };
 export type RelationBounds = Point & { width: number; height: number };
@@ -220,6 +220,10 @@ function score(points: Point[]) {
     Math.max(0, points.length - 2) * 48
   );
 }
+/** Monotonic clock shared by the worker/browser arrangement scheduler. */
+export const relationSearchNow = () =>
+  (globalThis as unknown as { performance?: { now(): number } }).performance?.now() ?? Date.now();
+
 /** Sparse visibility grid, with a direction penalty to prefer fewer orthogonal bends. */
 function search(
   start: Point,
@@ -229,24 +233,29 @@ function search(
   endAxis?: 0 | 1,
   budget?: RelationSearchBudget,
   selection?: RelationRoutingSelection,
+  optimized?: AutoSearchGrid,
 ): Point[] | null {
   if (same(start, end)) return [start];
-  const xs = [
-    ...new Set([
-      start.x,
-      end.x,
-      ...boxes.flatMap((r) => [r.x, r.x + r.width]),
-      ...(selection?.corridorXs ?? []),
-    ]),
-  ].sort((a, b) => a - b);
-  const ys = [
-    ...new Set([
-      start.y,
-      end.y,
-      ...boxes.flatMap((r) => [r.y, r.y + r.height]),
-      ...(selection?.corridorYs ?? []),
-    ]),
-  ].sort((a, b) => a - b);
+  const xs =
+    optimized?.xs ??
+    [
+      ...new Set([
+        start.x,
+        end.x,
+        ...boxes.flatMap((r) => [r.x, r.x + r.width]),
+        ...(selection?.corridorXs ?? []),
+      ]),
+    ].sort((a, b) => a - b);
+  const ys =
+    optimized?.ys ??
+    [
+      ...new Set([
+        start.y,
+        end.y,
+        ...boxes.flatMap((r) => [r.y, r.y + r.height]),
+        ...(selection?.corridorYs ?? []),
+      ]),
+    ].sort((a, b) => a - b);
   const point = (index: number): Point => ({
     x: xs[index % xs.length]!,
     y: ys[Math.floor(index / xs.length)]!,
@@ -289,13 +298,30 @@ function search(
     costs.set(key, 0);
     push({ key, cost: 0, priority: distance(start, end) });
   }
+  let explored = 0;
   while (heap.length) {
+    if (optimized) {
+      if (explored >= optimized.maxNodes) return null;
+      if (
+        (explored & 63) === 0 &&
+        budget?.deadline !== undefined &&
+        relationSearchNow() >= budget.deadline
+      ) {
+        budget.limitReached = true;
+        if (budget.diagnostics) budget.diagnostics.deadlineReached = true;
+        return null;
+      }
+    }
     if (budget) {
       if (budget.exploredNodes >= budget.maxNodes) {
         budget.limitReached = true;
         return null;
       }
       budget.exploredNodes++;
+    }
+    if (optimized) {
+      explored++;
+      if (budget?.diagnostics) budget.diagnostics.exploredStates++;
     }
     const current = pop();
     if (current.cost !== costs.get(current.key)) continue;
@@ -323,7 +349,20 @@ function search(
       if (at === from && startAxis !== undefined && nextAxis !== startAxis) continue;
       const next = ny! * xs.length + nx!,
         q = point(next);
-      if (boxes.some((r) => inside(q, r) || segmentCrossesBounds(p, q, r))) continue;
+      if (optimized?.sourcePort && at === from && nextAxis === optimized.sourcePort.axis) {
+        const { tip, stub } = optimized.sourcePort;
+        if ((q.x - p.x) * (stub.x - tip.x) + (q.y - p.y) * (stub.y - tip.y) < 0) continue;
+      }
+      if (optimized?.targetPort && next === to && nextAxis === optimized.targetPort.axis) {
+        const { tip, stub } = optimized.targetPort;
+        if ((p.x - q.x) * (stub.x - tip.x) + (p.y - q.y) * (stub.y - tip.y) < 0) continue;
+      }
+      if (
+        optimized
+          ? !optimized.queries.pointClear(q) || !optimized.queries.segmentClear(p, q)
+          : boxes.some((r) => inside(q, r) || segmentCrossesBounds(p, q, r))
+      )
+        continue;
       const key = next * 2 + nextAxis!,
         cost =
           current.cost +
@@ -336,6 +375,88 @@ function search(
       push({ key, cost, priority: cost + distance(q, end) });
     }
   }
+  return null;
+}
+type AutoSearchQueries = ReturnType<typeof createAutoObstacleQueries>;
+type AutoSearchGrid = {
+  xs: number[];
+  ys: number[];
+  queries: AutoSearchQueries;
+  maxNodes: number;
+  sourcePort?: Port | undefined;
+  targetPort?: Port | undefined;
+};
+type AutoRelationRoutingSearch = {
+  queries: AutoSearchQueries;
+  xs: number[];
+  ys: number[];
+};
+/** Progressive coordinate grids still test every edge against the complete obstacle set. */
+function searchRoute(
+  start: Point,
+  end: Point,
+  boxes: RelationBounds[],
+  startAxis?: 0 | 1,
+  endAxis?: 0 | 1,
+  context?: RelationRoutingContext,
+  selection?: RelationRoutingSelection,
+  sourcePort?: Port,
+  targetPort?: Port,
+): Point[] | null {
+  const auto = context?.autoSearch,
+    budget = context?.budget;
+  if (!auto) return search(start, end, boxes, startAxis, endAxis, budget, selection);
+  if (budget?.diagnostics) budget.diagnostics.searchCalls++;
+  const initial = budget?.exploredNodes ?? 0;
+  const maxNodes = Math.max(
+    0,
+    Math.min(budget?.maxNodesPerSearch ?? 12_000, (budget?.maxNodes ?? 12_000) - initial),
+  );
+  let spent = 0;
+  for (const [attempt, margin] of [128, 512, Infinity].entries()) {
+    if (spent >= maxNodes || budget?.limitReached) break;
+    if (attempt && budget?.diagnostics) budget.diagnostics.localRetries++;
+    const nearby = Number.isFinite(margin)
+      ? boxes.filter(
+          (box) =>
+            box.x <= Math.max(start.x, end.x) + margin &&
+            box.x + box.width >= Math.min(start.x, end.x) - margin &&
+            box.y <= Math.max(start.y, end.y) + margin &&
+            box.y + box.height >= Math.min(start.y, end.y) - margin,
+        )
+      : undefined;
+    const coordinates = (axis: 'x' | 'y', extra: readonly number[] = []) =>
+      [
+        ...new Set([
+          start[axis],
+          end[axis],
+          ...extra,
+          ...(nearby
+            ? nearby.flatMap((box) => [
+                box[axis],
+                box[axis] + (axis === 'x' ? box.width : box.height),
+              ])
+            : auto[axis === 'x' ? 'xs' : 'ys']),
+        ]),
+      ].sort((a, b) => a - b);
+    const remaining = maxNodes - spent;
+    const allowance =
+      attempt === 2
+        ? remaining
+        : Math.min(remaining, Math.max(64, Math.floor(maxNodes * (attempt ? 0.3 : 0.2))));
+    const before = budget?.exploredNodes ?? 0;
+    const result = search(start, end, boxes, startAxis, endAxis, budget, selection, {
+      xs: coordinates('x', selection?.corridorXs),
+      ys: coordinates('y', selection?.corridorYs),
+      queries: auto.queries,
+      maxNodes: allowance,
+      sourcePort,
+      targetPort,
+    });
+    if (result) return result;
+    spent += budget ? budget.exploredNodes - before : allowance;
+  }
+  if (budget && budget.exploredNodes >= budget.maxNodes) budget.limitReached = true;
   return null;
 }
 function outsidePoint(point: Point, boxes: RelationBounds[]): Point {
@@ -361,13 +482,31 @@ export interface RelationSearchBudget {
   maxNodes: number;
   exploredNodes: number;
   limitReached: boolean;
+  /** Absolute monotonic deadline, in performance.now() milliseconds; automatic routing only. */
+  deadline?: number;
+  maxNodesPerSearch?: number;
+  diagnostics?: RelationSearchDiagnostics;
+}
+export interface RelationSearchDiagnostics {
+  searchCalls: number;
+  exploredStates: number;
+  localRetries: number;
+  deadlineReached: boolean;
+}
+export interface RelationRoutingContext {
+  raw: RelationBounds[];
+  boxes: RelationBounds[];
+  rawClear: (points: readonly Point[]) => boolean;
+  expandedClear: (points: readonly Point[]) => boolean;
+  budget?: RelationSearchBudget | undefined;
+  autoSearch?: AutoRelationRoutingSearch;
 }
 export function createRelationRoutingContext(
   a: RelationBounds,
   b: RelationBounds,
   obstacles: RelationBounds[] = [],
   budget?: RelationSearchBudget,
-) {
+): RelationRoutingContext {
   const self =
     a === b || (a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
   const raw = [a, ...(self ? [] : [b]), ...obstacles];
@@ -380,7 +519,28 @@ export function createRelationRoutingContext(
     budget,
   };
 }
-export type RelationRoutingContext = ReturnType<typeof createRelationRoutingContext>;
+/** Opt-in arrangement context. allBoxes includes both endpoint cards and every obstacle. */
+export function createAutoRelationRoutingContext(
+  allBoxes: RelationBounds[],
+  budget?: RelationSearchBudget,
+): RelationRoutingContext {
+  const raw = allBoxes;
+  const boxes = raw.map((box) => expand(box, 18));
+  const rawQueries = createAutoObstacleQueries(raw, segmentCrossesBounds);
+  const queries = createAutoObstacleQueries(boxes, segmentCrossesBounds);
+  return {
+    raw,
+    boxes,
+    rawClear: rawQueries.pathClear,
+    expandedClear: queries.pathClear,
+    budget,
+    autoSearch: {
+      queries,
+      xs: [...new Set(boxes.flatMap((box) => [box.x, box.x + box.width]))].sort((a, b) => a - b),
+      ys: [...new Set(boxes.flatMap((box) => [box.y, box.y + box.height]))].sort((a, b) => a - b),
+    },
+  };
+}
 export interface RelationRoutingSelection {
   corridorXs?: readonly number[];
   corridorYs?: readonly number[];
@@ -388,6 +548,8 @@ export interface RelationRoutingSelection {
   additionalScore?: (points: readonly Point[]) => number;
   edgePenalty?: (a: Point, b: Point) => number;
   searchEvenWithCandidate?: boolean;
+  /** Arrangement already tried its bounded cheap candidates; proceed directly to graph search. */
+  skipCandidates?: boolean;
 }
 
 export function relationGeometry(
@@ -409,23 +571,27 @@ export function relationGeometry(
   const source = options.sourceAnchor ? [anchorPort(a, options.sourceAnchor)] : ports(a, lane),
     target = options.targetAnchor ? [anchorPort(b, options.targetAnchor)] : ports(b, lane);
   const requested = bend && !options.waypoints ? outsidePoint(bend, boxes) : undefined;
-  const xs = [
-    ...new Set([
-      ...boxes.flatMap((r) => [r.x, r.x + r.width]),
-      (a.x + a.width + b.x) / 2,
-      ...(selection?.corridorXs ?? []),
-    ]),
-  ];
-  const ys = [
-    ...new Set([
-      ...boxes.flatMap((r) => [
-        r.y - 36 - lane * 22 - offset,
-        r.y + r.height + 36 + lane * 22 + offset,
-      ]),
-      (a.y + a.height / 2 + b.y + b.height / 2) / 2,
-      ...(selection?.corridorYs ?? []),
-    ]),
-  ];
+  const xs = selection?.skipCandidates
+    ? []
+    : [
+        ...new Set([
+          ...boxes.flatMap((r) => [r.x, r.x + r.width]),
+          (a.x + a.width + b.x) / 2,
+          ...(selection?.corridorXs ?? []),
+        ]),
+      ];
+  const ys = selection?.skipCandidates
+    ? []
+    : [
+        ...new Set([
+          ...boxes.flatMap((r) => [
+            r.y - 36 - lane * 22 - offset,
+            r.y + r.height + 36 + lane * 22 + offset,
+          ]),
+          (a.y + a.height / 2 + b.y + b.height / 2) / 2,
+          ...(selection?.corridorYs ?? []),
+        ]),
+      ];
   let best: Point[] | undefined,
     bestScore = Infinity;
   const candidates: Array<{ s: Port; t: Port }> = [];
@@ -433,7 +599,13 @@ export function relationGeometry(
     for (const [ti, t] of target.entries()) {
       if (self && same(s.tip, t.tip)) continue;
       if (!rawClear([s.tip, s.stub]) || !rawClear([t.stub, t.tip])) continue;
-      if (boxes.some((r) => inside(s.stub, r) || inside(t.stub, r))) continue;
+      if (
+        prepared?.autoSearch
+          ? !prepared.autoSearch.queries.pointClear(s.stub) ||
+            !prepared.autoSearch.queries.pointClear(t.stub)
+          : boxes.some((r) => inside(s.stub, r) || inside(t.stub, r))
+      )
+        continue;
       candidates.push({ s, t });
     }
   const consider = (s: Port, t: Port, middle: Point[]) => {
@@ -511,11 +683,11 @@ export function relationGeometry(
         const sk = s.stub.x + ',' + s.stub.y + ':' + axis,
           tk = t.stub.x + ',' + t.stub.y + ':' + axis;
         if (!sourcePaths.has(sk))
-          sourcePaths.set(sk, search(s.stub, requested, boxes, undefined, axis, prepared?.budget));
+          sourcePaths.set(sk, searchRoute(s.stub, requested, boxes, undefined, axis, prepared));
         if (!targetPaths.has(tk))
           targetPaths.set(
             tk,
-            search(requested, t.stub, boxes, axis === 0 ? 1 : 0, undefined, prepared?.budget),
+            searchRoute(requested, t.stub, boxes, axis === 0 ? 1 : 0, undefined, prepared),
           );
         const first = sourcePaths.get(sk),
           last = targetPaths.get(tk);
@@ -525,6 +697,7 @@ export function relationGeometry(
       }
       continue;
     }
+    if (selection?.skipCandidates) continue;
     consider(s, t, [s.stub, { x: s.stub.x, y: t.stub.y }, t.stub]);
     consider(s, t, [s.stub, { x: t.stub.x, y: s.stub.y }, t.stub]);
     for (const x of xs) consider(s, t, [s.stub, { x, y: s.stub.y }, { x, y: t.stub.y }, t.stub]);
@@ -532,14 +705,16 @@ export function relationGeometry(
   }
   if (!best || selection?.searchEvenWithCandidate)
     for (const { s, t } of candidates) {
-      const middle = search(
+      const middle = searchRoute(
         s.stub,
         t.stub,
         boxes,
         undefined,
         undefined,
-        prepared?.budget,
+        prepared,
         selection,
+        s,
+        t,
       );
       if (middle) consider(s, t, middle);
     }
