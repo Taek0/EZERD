@@ -1,8 +1,9 @@
 import { centerRelationRouteCorridors } from './relation-corridor-centering.js';
 import type { RelationAnchor } from './document-base.js';
 import {
-  createRelationRoutingContext,
+  createAutoRelationRoutingContext,
   relationGeometry,
+  relationSearchNow,
   segmentCrossesBounds,
   type Point,
   type RelationBounds,
@@ -23,13 +24,36 @@ export interface RelationAutoArrangeInput {
   tables: AutoArrangeBox[];
   notes?: AutoArrangeBox[];
   relations: AutoArrangeRelation[];
-  options?: { maxImprovementPasses?: number; maxSearches?: number; maxSearchNodes?: number };
+  options?: {
+    maxImprovementPasses?: number;
+    /** Expensive routing attempts; validated cheap candidates do not spend this budget. */
+    maxSearches?: number;
+    maxSearchNodes?: number;
+    /** Automatic arrangement only. Zero expires before routing begins. */
+    maxDurationMs?: number;
+    diagnostics?: boolean;
+  };
 }
 export interface AutoArrangedRoute {
   relationId: string;
   sourceAnchor: RelationAnchor;
   targetAnchor: RelationAnchor;
   waypoints: Point[];
+}
+export interface AutoArrangeDiagnostics {
+  searchAttempts: number;
+  exploredStates: number;
+  deferredRelations: number;
+  deadlineReached: boolean;
+  completedRelations: number;
+  attempts?: {
+    relationId: string;
+    sourceAnchor: RelationAnchor;
+    targetAnchor: RelationAnchor;
+    stateLimit: number;
+    exploredStates: number;
+    found: boolean;
+  }[];
 }
 export interface AutoArrangeMetrics {
   crossings: number;
@@ -39,6 +63,7 @@ export interface AutoArrangeMetrics {
   totalLength: number;
   crowdedTableIds: string[];
   searchLimitReached: boolean;
+  diagnostics?: AutoArrangeDiagnostics;
 }
 export type RelationAutoArrangeResult =
   | { ok: true; routes: AutoArrangedRoute[]; metrics: AutoArrangeMetrics }
@@ -48,6 +73,11 @@ export type RelationAutoArrangeResult =
         code: 'invalid-input' | 'no-valid-route' | 'search-limit';
         relationId?: string;
         message: string;
+        /** Available only when explicitly requested, for failed-baseline comparisons. */
+        diagnostics?: AutoArrangeDiagnostics & {
+          completedRoutes: AutoArrangedRoute[];
+          metrics: AutoArrangeMetrics;
+        };
       };
     };
 
@@ -444,8 +474,8 @@ function tidyRoute(
 function route(
   placement: Placement,
   boxes: readonly AutoArrangeBox[],
-  contexts: Map<string, RelationRoutingContext>,
-  budget: RelationSearchBudget,
+  context: RelationRoutingContext,
+  beginSearch: () => boolean,
   occupied: readonly Routed[],
   bend?: Point,
   searchEvenWithCandidate = false,
@@ -478,28 +508,19 @@ function route(
       );
     return [...new Set([...preferred, ...nearby])].slice(0, 48);
   };
+  const occupiedSegments = occupied
+    .filter((item) => item.placement.relation.id !== relation.id)
+    .flatMap((item) => item.segments);
   const selection: RelationRoutingSelection = {
     searchEvenWithCandidate,
-    edgePenalty: (a, b) => {
-      const edge = segments([a, b]);
-      let penalty = 0;
-      for (const item of occupied) {
-        if (item.placement.relation.id === relation.id) continue;
-        const pair = pairMetrics(edge, item.segments);
-        penalty += conflictCost(pair);
-      }
-      return penalty;
-    },
-    additionalScore: (points) => {
-      const candidate = segments(points);
-      let penalty = 0;
-      for (const item of occupied) {
-        if (item.placement.relation.id === relation.id) continue;
-        const pair = pairMetrics(candidate, item.segments);
-        penalty += conflictCost(pair);
-      }
-      return penalty;
-    },
+    skipCandidates: true,
+    ...(current
+      ? {
+          edgePenalty: (a: Point, b: Point) =>
+            conflictCost(pairMetrics(segments([a, b]), occupiedSegments)),
+        }
+      : {}),
+    additionalScore: (points) => conflictCost(pairMetrics(segments(points), occupiedSegments)),
   };
   const sourceSide = sourceEnd.side,
     targetSide = targetEnd.side;
@@ -527,7 +548,8 @@ function route(
     }
     if (
       best &&
-      (selection.additionalScore!(best) === 0 ||
+      (!searchEvenWithCandidate ||
+        selection.additionalScore!(best) === 0 ||
         (current &&
           bestScore <
             routeQuality(
@@ -539,15 +561,11 @@ function route(
     )
       return best;
   }
-  selection.corridorXs = nearbyLanes(false);
-  selection.corridorYs = nearbyLanes(true);
-  const key = `${source.id}\0${target.id}`;
-  let context = contexts.get(key);
-  if (!context) {
-    const obstacles = boxes.filter((box) => box.id !== source.id && box.id !== target.id);
-    context = createRelationRoutingContext(source, target, obstacles, budget);
-    contexts.set(key, context);
+  if (current) {
+    selection.corridorXs = nearbyLanes(false);
+    selection.corridorYs = nearbyLanes(true);
   }
+  if (!beginSearch()) return null;
   const points = relationGeometry(
     source,
     target,
@@ -560,7 +578,7 @@ function route(
     context,
     selection,
   ).points;
-  if (!validPoints(points, boxes)) return null;
+  if (!validPoints(points, boxes) || !respectsPorts(points, sourceSide, targetSide)) return null;
   return tidyRoute(
     points,
     boxes,
@@ -673,6 +691,7 @@ function routeQuality(
 
 /** Pure, serializable, all-or-nothing layout of relation anchors and orthogonal waypoints. */
 export function arrangeRelationRoutes(input: RelationAutoArrangeInput): RelationAutoArrangeResult {
+  const started = relationSearchNow();
   const invalid = (message: string): RelationAutoArrangeResult => ({
     ok: false,
     error: { code: 'invalid-input', message },
@@ -719,23 +738,47 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
     return invalid('A relation ID, endpoint, or label width is invalid.');
   const requestedPasses = input.options?.maxImprovementPasses ?? 1,
     maxSearches = input.options?.maxSearches ?? relations.length + 40,
-    maxSearchNodes = input.options?.maxSearchNodes ?? 300_000;
+    maxSearchNodes = input.options?.maxSearchNodes ?? 300_000,
+    maxDurationMs = input.options?.maxDurationMs ?? 10_000;
   if (
     !Number.isInteger(requestedPasses) ||
     requestedPasses < 0 ||
     requestedPasses > 3 ||
     !Number.isInteger(maxSearches) ||
-    maxSearches < relations.length ||
+    maxSearches < 0 ||
     maxSearches > 2048 ||
     !Number.isInteger(maxSearchNodes) ||
     maxSearchNodes < 0 ||
-    maxSearchNodes > 1_000_000
+    maxSearchNodes > 1_000_000 ||
+    !Number.isFinite(maxDurationMs) ||
+    maxDurationMs < 0 ||
+    maxDurationMs > 60_000
   )
     return invalid('The search budget is invalid.');
+  const deadline = started + maxDurationMs;
+  const expired = () => relationSearchNow() >= deadline;
+  let failureDiagnostics:
+    | (() => AutoArrangeDiagnostics & {
+        completedRoutes: AutoArrangedRoute[];
+        metrics: AutoArrangeMetrics;
+      })
+    | undefined;
+  const exhausted = (relationId?: string): RelationAutoArrangeResult => ({
+    ok: false,
+    error: {
+      code: 'search-limit',
+      ...(relationId ? { relationId } : {}),
+      message: 'The automatic routing budget was exhausted.',
+      ...(input.options?.diagnostics && failureDiagnostics
+        ? { diagnostics: failureDiagnostics() }
+        : {}),
+    },
+  });
   const counts = new Map<string, number>(),
     endpointGroups = new Map<string, Endpoint[]>(),
     placements: Placement[] = [];
   for (const relation of relations) {
+    if (expired()) return exhausted(relation.id);
     const source = tableById.get(relation.sourceTableId)!,
       target = tableById.get(relation.targetTableId)!;
     if (
@@ -826,102 +869,269 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
       targetEnd.anchor = targetAnchor;
     }
   }
-  let searches = 0;
+  const attemptDiagnostics: NonNullable<AutoArrangeDiagnostics['attempts']> = [];
+  let localLimitReached = false;
+  let searches = 0,
+    deferredRelations = 0,
+    candidateLimitReached = false;
   const budget: RelationSearchBudget = {
     maxNodes: maxSearchNodes,
     exploredNodes: 0,
     limitReached: false,
+    deadline,
   };
-  const contexts = new Map<string, RelationRoutingContext>();
+  const context = createAutoRelationRoutingContext(boxes, budget);
+  const beginSearch = () => {
+    if (expired() || searches >= maxSearches || budget.exploredNodes >= budget.maxNodes) {
+      candidateLimitReached = true;
+      return false;
+    }
+    searches++;
+    return true;
+  };
   const routed: Routed[] = [];
   const routingOrder = [...placements].sort(
     (a, b) =>
       length(center(a.source), center(a.target)) - length(center(b.source), center(b.target)) ||
       a.relation.id.localeCompare(b.relation.id, 'en'),
   );
+  const serializeRoutes = () =>
+    routed
+      .map(({ placement, points }) => ({
+        relationId: placement.relation.id,
+        sourceAnchor: placement.sourceEnd.anchor!,
+        targetAnchor: placement.targetEnd.anchor!,
+        waypoints: points.slice(1, -1),
+      }))
+      .sort((a, b) => a.relationId.localeCompare(b.relationId, 'en'));
+  failureDiagnostics = () => ({
+    searchAttempts: searches,
+    exploredStates: budget.exploredNodes,
+    deferredRelations,
+    deadlineReached: expired(),
+    completedRelations: routed.length,
+    attempts: attemptDiagnostics,
+    completedRoutes: serializeRoutes(),
+    metrics: metrics(routed, [...crowded].sort(), true),
+  });
+  const saveRoute = (placement: Placement, points: Point[]) =>
+    routed.push({ placement, points, segments: segments(points) });
+  const alternativePlacements = (placement: Placement) => {
+    const alternatives = (box: AutoArrangeBox) =>
+      sides.map((side) => {
+        const extent = span(box, side),
+          margin = Math.min(16, extent / 4);
+        const occupied = placements
+          .filter((item) => item !== placement)
+          .flatMap(
+            (item) =>
+              [
+                [item.source, item.sourceEnd],
+                [item.target, item.targetEnd],
+              ] as const,
+          )
+          .filter(([card, end]) => card.id === box.id && end.side === side)
+          .map(([, end]) => end.anchor!.ratio * extent)
+          .sort((a, b) => a - b);
+        const boundaries = [margin, ...occupied, extent - margin];
+        const gaps = boundaries
+          .slice(1)
+          .map((high, index) => ({ low: boundaries[index]!, high }))
+          .sort((a, b) => b.high - b.low - (a.high - a.low));
+        const available =
+          gaps.find(({ low, high }) => {
+            const anchor = { side, ratio: (low + high) / 2 / extent },
+              tip = portPoint(box, anchor),
+              delta = direction(side),
+              outlet = { x: tip.x + delta.x * 28, y: tip.y + delta.y * 28 };
+            return (
+              validPoints([tip, outlet], boxes) && clearInterior([tip, outlet], boxes, box, box)
+            );
+          }) ?? gaps[0]!;
+        return { side, ratio: (available.low + available.high) / 2 / extent };
+      });
+    return alternatives(placement.source)
+      .flatMap((sourceAnchor) =>
+        alternatives(placement.target).map((targetAnchor) => ({ sourceAnchor, targetAnchor })),
+      )
+      .filter(
+        ({ sourceAnchor, targetAnchor }) =>
+          placement.source.id !== placement.target.id || sourceAnchor.side !== targetAnchor.side,
+      )
+      .sort(
+        (a, b) =>
+          length(
+            portPoint(placement.source, a.sourceAnchor),
+            portPoint(placement.target, a.targetAnchor),
+          ) -
+          length(
+            portPoint(placement.source, b.sourceAnchor),
+            portPoint(placement.target, b.targetAnchor),
+          ),
+      );
+  };
+  // Secure inexpensive, valid paths for every relation before spending states on any graph.
+  const unresolved: Placement[] = [];
   for (const placement of routingOrder) {
-    searches++;
-    let points = route(placement, boxes, contexts, budget, routed);
-    if (!points) {
-      // A globally assigned port may be unreachable even when the cards have room.
-      // Reserve all other endpoints, including relations not routed yet.
-      const alternatives = (box: AutoArrangeBox) =>
-        sides.map((side) => {
-          const extent = span(box, side),
-            margin = Math.min(16, extent / 4);
-          const occupied = placements
-            .filter((item) => item !== placement)
-            .flatMap(
-              (item) =>
-                [
-                  [item.source, item.sourceEnd],
-                  [item.target, item.targetEnd],
-                ] as const,
-            )
-            .filter(([card, end]) => card.id === box.id && end.side === side)
-            .map(([, end]) => end.anchor!.ratio * extent)
-            .sort((a, b) => a - b);
-          const boundaries = [margin, ...occupied, extent - margin];
-          let low = margin,
-            high = margin,
-            gap = -1;
-          for (let i = 1; i < boundaries.length; i++) {
-            const a = boundaries[i - 1]!,
-              b = boundaries[i]!;
-            if (b - a > gap) {
-              low = a;
-              high = b;
-              gap = b - a;
-            }
-          }
-          return { side, ratio: (low + high) / 2 / extent };
-        });
-      const candidates = alternatives(placement.source)
-        .flatMap((sourceAnchor) =>
-          alternatives(placement.target).map((targetAnchor) => ({ sourceAnchor, targetAnchor })),
-        )
-        .filter(
+    if (expired()) return exhausted(placement.relation.id);
+    const points = route(placement, boxes, context, () => false, routed);
+    if (points) saveRoute(placement, points);
+    else unresolved.push(placement);
+  }
+  const attempt = (placement: Placement, stateAllowance: number) => {
+    budget.maxNodes = Math.min(maxSearchNodes, budget.exploredNodes + stateAllowance);
+    budget.maxNodesPerSearch = stateAllowance;
+    budget.limitReached = false;
+    const before = budget.exploredNodes;
+    const points = route(placement, boxes, context, beginSearch, routed);
+    localLimitReached ||= budget.limitReached;
+    if (input.options?.diagnostics)
+      attemptDiagnostics.push({
+        relationId: placement.relation.id,
+        sourceAnchor: placement.sourceEnd.anchor!,
+        targetAnchor: placement.targetEnd.anchor!,
+        stateLimit: stateAllowance,
+        exploredStates: budget.exploredNodes - before,
+        found: !!points,
+      });
+    budget.maxNodes = maxSearchNodes;
+    delete budget.maxNodesPerSearch;
+    // A temporary per-relation cap must not poison later relations or pooled retries.
+    budget.limitReached = budget.exploredNodes >= maxSearchNodes || expired();
+    return points;
+  };
+  // Exhaust inexpensive alternate faces across ALL deferred relations first. Each
+  // face choice reserves the slots of every other relation, including pending ones.
+  const needsSearch: Placement[] = [];
+  for (const placement of unresolved) {
+    let points: Point[] | null = null;
+    for (const { sourceAnchor, targetAnchor } of alternativePlacements(placement)) {
+      if (expired()) return exhausted(placement.relation.id);
+      const candidate: Placement = {
+        ...placement,
+        sourceEnd: { ...placement.sourceEnd, side: sourceAnchor.side, anchor: sourceAnchor },
+        targetEnd: { ...placement.targetEnd, side: targetAnchor.side, anchor: targetAnchor },
+      };
+      points = route(candidate, boxes, context, () => false, routed);
+      if (!points) continue;
+      Object.assign(placement.sourceEnd, candidate.sourceEnd);
+      Object.assign(placement.targetEnd, candidate.targetEnd);
+      break;
+    }
+    if (points) saveRoute(placement, points);
+    else needsSearch.push(placement);
+  }
+  // No difficult relation can consume the initial state allocation of a later one.
+  const initialAllowance = Math.min(
+    1_000,
+    Math.floor(maxSearchNodes / Math.max(1, needsSearch.length)),
+  );
+  const pendingGraph: Placement[] = [];
+  for (const placement of needsSearch) {
+    if (expired()) return exhausted(placement.relation.id);
+    const points = attempt(placement, initialAllowance);
+    if (points) saveRoute(placement, points);
+    else pendingGraph.push(placement);
+  }
+  deferredRelations = pendingGraph.length;
+  // Continue all difficult relations before redistributing unused state allocations.
+  // Exhausting one temporary share defers that candidate rather than failing the batch.
+  type Pending = {
+    placement: Placement;
+    candidate: Placement;
+    alternatives: ReturnType<typeof alternativePlacements>;
+    nextAlternative: number;
+  };
+  let pending: Pending[] = pendingGraph.map((placement) => ({
+    placement,
+    candidate: placement,
+    alternatives: alternativePlacements(placement),
+    nextAlternative: 0,
+  }));
+  let lastFailed: Placement | undefined;
+  while (
+    pending.length &&
+    !expired() &&
+    searches < maxSearches &&
+    budget.exploredNodes < maxSearchNodes
+  ) {
+    const next: Pending[] = [];
+    const previousSearches = searches,
+      previousStates = budget.exploredNodes;
+    for (let index = 0; index < pending.length; index++) {
+      const item = pending[index]!,
+        { placement } = item;
+      // Earlier successful retries may have moved another endpoint onto this face.
+      // Refresh its available gap while keeping the candidate's selected face pair.
+      if (item.candidate !== placement) {
+        const anchors = alternativePlacements(placement).find(
           ({ sourceAnchor, targetAnchor }) =>
-            placement.source.id !== placement.target.id || sourceAnchor.side !== targetAnchor.side,
-        )
-        .sort(
-          (a, b) =>
-            length(
-              portPoint(placement.source, a.sourceAnchor),
-              portPoint(placement.target, a.targetAnchor),
-            ) -
-            length(
-              portPoint(placement.source, b.sourceAnchor),
-              portPoint(placement.target, b.targetAnchor),
-            ),
-        );
-      for (const { sourceAnchor, targetAnchor } of candidates) {
-        // Leave one initial search for each remaining relation.
-        if (searches >= maxSearches - (routingOrder.length - routed.length - 1)) break;
-        searches++;
-        const candidate: Placement = {
+            sourceAnchor.side === item.candidate.sourceEnd.side &&
+            targetAnchor.side === item.candidate.targetEnd.side,
+        )!;
+        item.candidate = {
+          ...placement,
+          sourceEnd: {
+            ...placement.sourceEnd,
+            side: anchors.sourceAnchor.side,
+            anchor: anchors.sourceAnchor,
+          },
+          targetEnd: {
+            ...placement.targetEnd,
+            side: anchors.targetAnchor.side,
+            anchor: anchors.targetAnchor,
+          },
+        };
+      }
+      if (expired()) return exhausted(placement.relation.id);
+      const allowance = Math.floor(
+        (maxSearchNodes - budget.exploredNodes) / (pending.length - index),
+      );
+      const before = budget.exploredNodes;
+      const points = attempt(item.candidate, allowance);
+      if (points) {
+        Object.assign(placement.sourceEnd, item.candidate.sourceEnd);
+        Object.assign(placement.targetEnd, item.candidate.targetEnd);
+        saveRoute(placement, points);
+        continue;
+      }
+      lastFailed = placement;
+      // A fully explored candidate can move to another face. A capped candidate
+      // retains its port choice and receives the redistributed pool next round.
+      const capped = budget.exploredNodes - before >= allowance;
+      if (!capped && item.nextAlternative < item.alternatives.length) {
+        const { sourceAnchor, targetAnchor } = item.alternatives[item.nextAlternative++]!;
+        item.candidate = {
           ...placement,
           sourceEnd: { ...placement.sourceEnd, side: sourceAnchor.side, anchor: sourceAnchor },
           targetEnd: { ...placement.targetEnd, side: targetAnchor.side, anchor: targetAnchor },
         };
-        const retry = route(candidate, boxes, contexts, budget, routed);
-        if (!retry) continue;
-        Object.assign(placement.sourceEnd, candidate.sourceEnd);
-        Object.assign(placement.targetEnd, candidate.targetEnd);
-        points = retry;
-        break;
-      }
+      } else if (!capped) continue;
+      next.push(item);
     }
-    if (!points)
-      return {
-        ok: false,
-        error: {
-          code: budget.limitReached ? 'search-limit' : 'no-valid-route',
-          relationId: placement.relation.id,
-          message: 'No clear orthogonal route exists for this relation.',
-        },
-      };
-    routed.push({ placement, points, segments: segments(points) });
+    pending = next;
+    if (searches === previousSearches && budget.exploredNodes === previousStates) break;
+  }
+  if (routed.length !== placements.length) {
+    const relationId = pending[0]?.placement.relation.id ?? lastFailed?.relation.id;
+    return {
+      ok: false,
+      error: {
+        code:
+          candidateLimitReached ||
+          budget.limitReached ||
+          localLimitReached ||
+          expired() ||
+          searches >= maxSearches ||
+          budget.exploredNodes >= maxSearchNodes
+            ? 'search-limit'
+            : 'no-valid-route',
+        ...(relationId ? { relationId } : {}),
+        message:
+          'No clear orthogonal route exists for this relation within the automatic routing budget.',
+        ...(input.options?.diagnostics ? { diagnostics: failureDiagnostics!() } : {}),
+      },
+    };
   }
   const crowdedTableIds = [...crowded].sort((a, b) => a.localeCompare(b, 'en'));
   // Separate colliding interior lanes with constant-sized shifts before invoking graph search.
@@ -943,6 +1153,10 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
       for (let segment = 1; segment + 2 < original.length; segment++) {
         const axis = original[segment]!.x === original[segment + 1]!.x ? 'x' : 'y';
         for (const shift of [-16, 16, -32, 32]) {
+          if (expired()) {
+            candidateLimitReached = true;
+            break localRoutes;
+          }
           if (laneShifts++ >= 2048) break localRoutes;
           const candidate = original.map((point) => ({ ...point }));
           candidate[segment]![axis] += shift;
@@ -975,9 +1189,8 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
     }
   }
   // Only troubled routes are retried, with a fixed pass and candidate budget.
-  let candidateLimitReached = false;
   for (let pass = 0; pass < requestedPasses; pass++) {
-    if (searches >= maxSearches) {
+    if (expired() || searches >= maxSearches || budget.exploredNodes >= maxSearchNodes) {
       candidateLimitReached = true;
       break;
     }
@@ -1011,16 +1224,15 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
         { x: midpoint.x, y: midpoint.y - 36 },
         { x: midpoint.x, y: midpoint.y + 36 },
       ]) {
-        if (searches >= maxSearches) {
+        if (expired() || searches >= maxSearches || budget.exploredNodes >= maxSearchNodes) {
           candidateLimitReached = true;
           break;
         }
-        searches++;
         const candidate = route(
           item.placement,
           boxes,
-          contexts,
-          budget,
+          context,
+          beginSearch,
           routed,
           bend,
           bend === undefined,
@@ -1041,16 +1253,18 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
     }
     if (!improved) break;
   }
-  const centered = centerRelationRouteCorridors(
-    routed.map(({ placement, points, segments: routeSegments }) => ({
-      id: placement.relation.id,
-      sourceId: placement.source.id,
-      targetId: placement.target.id,
-      points,
-      segments: routeSegments,
-    })),
-    boxes,
-  );
+  const centered = expired()
+    ? routed.map((item) => item.points)
+    : centerRelationRouteCorridors(
+        routed.map(({ placement, points, segments: routeSegments }) => ({
+          id: placement.relation.id,
+          sourceId: placement.source.id,
+          targetId: placement.target.id,
+          points,
+          segments: routeSegments,
+        })),
+        boxes,
+      );
   routed.forEach((item, index) => {
     if (item.points === centered[index]) return;
     item.points = centered[index]!;
@@ -1058,14 +1272,24 @@ export function arrangeRelationRoutes(input: RelationAutoArrangeInput): Relation
   });
   return {
     ok: true,
-    routes: routed
-      .map(({ placement, points }) => ({
-        relationId: placement.relation.id,
-        sourceAnchor: placement.sourceEnd.anchor!,
-        targetAnchor: placement.targetEnd.anchor!,
-        waypoints: points.slice(1, -1),
-      }))
-      .sort((a, b) => a.relationId.localeCompare(b.relationId, 'en')),
-    metrics: metrics(routed, crowdedTableIds, candidateLimitReached || budget.limitReached),
+    routes: serializeRoutes(),
+    metrics: {
+      ...metrics(
+        routed,
+        crowdedTableIds,
+        candidateLimitReached || budget.limitReached || expired(),
+      ),
+      ...(input.options?.diagnostics
+        ? {
+            diagnostics: {
+              searchAttempts: searches,
+              exploredStates: budget.exploredNodes,
+              deferredRelations,
+              deadlineReached: expired(),
+              completedRelations: routed.length,
+            },
+          }
+        : {}),
+    },
   };
 }
