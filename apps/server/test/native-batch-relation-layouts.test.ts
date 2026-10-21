@@ -9,6 +9,7 @@ import {
 } from '@ezerd/model';
 import { nativeEditorCandidate } from '../src/mcp/mcp-native-document.service.js';
 import { deferrableFixture } from './native-deferrable-fixture.js';
+import { normalizeNativeServerDocument } from '../src/shared/native-document-reader.js';
 
 function fixture(count: number): NativeDesignDocument {
   let document = deferrableFixture();
@@ -36,6 +37,26 @@ const command = (count: number) => ({
 });
 
 describe('native batch relation layout candidate', () => {
+  it('materializes missing shared placements using the same geometry as the preview', () => {
+    const before = fixture(2);
+    before.layout.nodes = before.layout.nodes.filter((node) => node.objectId !== 'child');
+    const original = structuredClone(before);
+    const preview = normalizeNativeServerDocument(before);
+    const after = nativeEditorCandidate(before, [command(2)]);
+    expect(after.layout.nodes).toEqual(preview.layout.nodes);
+    expect(after.layout.relations).toHaveLength(2);
+    expect(after.tables).toEqual(before.tables);
+    expect(before).toEqual(original);
+    const single = nativeEditorCandidate(before, [
+      { type: 'upsert_relation_layout', value: { ...command(1).routes[0]!, viewId: '__tables__' } },
+    ]);
+    expect(single.layout.nodes).toEqual(preview.layout.nodes);
+    const changes = deriveOperationChanges(before, after);
+    expect(applyChanges(after, inverseChanges(changes))).toEqual({
+      ...before,
+      layout: { ...before.layout, relations: before.layout.relations ?? [] },
+    });
+  });
   it('applies 150 routes atomically and leaves relation meaning and card placement untouched', () => {
     const before = fixture(150);
     const after = nativeEditorCandidate(before, [command(150)]);
@@ -70,6 +91,7 @@ describe('native batch relation layout candidate', () => {
     withoutEndpoint.layout.nodes = withoutEndpoint.layout.nodes.filter(
       (node) => node.objectId !== 'child',
     );
+    withoutEndpoint.tables = withoutEndpoint.tables!.filter((table) => table.id !== 'child');
     expect(() => nativeEditorCandidate(withoutEndpoint, [command(2)])).toThrow();
     expect(before).toEqual(snapshot);
   });
