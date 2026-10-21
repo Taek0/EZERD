@@ -884,8 +884,8 @@
   color: var(--muted);
   font-size: 11px;
 }
-.native-erd-node.note,
-.native-erd-node.note[data-selected='true'] {
+/* Outrank shared .canvas-node.note-node styles even when the note is not selected. */
+.native-erd-node.canvas-node.note {
   border-radius: 3px;
   border-top-width: 1px;
   background: var(--native-note-color, #fff3c4);
