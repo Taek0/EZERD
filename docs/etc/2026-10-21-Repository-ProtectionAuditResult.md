@@ -4,6 +4,7 @@
 - 대상: [Taek0/EZERD](https://github.com/Taek0/EZERD), 공개 저장소, 기본 브랜치 `main`
 - 점검한 원격 main: `5aebbee852f8d142a5ed0215948e53e0691b0cdf`
 - [계획](./2026-10-21-Repository-ProtectionAuditPlan.md)에 따른 읽기 전용 점검이다. 원격 설정·제품 코드·`docs/EZERD.txt`는 변경하지 않는다.
+- 후속 변경: 사용자 요청에 따라 [모든 외부 기여자의 fork PR Actions 실행 승인](./2026-10-21-Repository-ForkApprovalResult.md)을 적용했다. 아래 점검표는 변경 전 관찰 기록이며, main 보호·CI와 PR 승인 요구 0명은 유지했다.
 
 ## 판단
 
