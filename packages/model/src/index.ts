@@ -38,3 +38,4 @@ export * from './native-table-canvas.js';
 export * from './relation-routing.js';
 export * from './relation-auto-arrange.js';
 export { createPathClear } from './relation-obstacle-queries.js';
+export * from './native-table-auto-layout.js';
