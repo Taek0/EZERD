@@ -19,18 +19,25 @@ vi.mock('../../components/ui/index.js', async (original) => {
       if (!position) return null;
       const action = items
         .flatMap((item) => item.children ?? [])
-        .find((item) => item.id === 'auto-layout-relations');
-      return action
-        ? h('button', { disabled: action.disabled, onClick: action.onAction }, 'arrange relations')
-        : null;
+        .filter((item) => item.id === 'auto-layout-relations' || item.id === 'auto-layout-tables');
+      return action.map((item) =>
+        h(
+          'button',
+          { key: item.id, disabled: item.disabled, onClick: item.onAction },
+          item.id === 'auto-layout-relations' ? 'arrange relations' : 'arrange tables',
+        ),
+      );
     },
   };
 });
 
 let root: Root;
 let host: HTMLDivElement;
-const workers: { postMessage: ReturnType<typeof vi.fn>; terminate: ReturnType<typeof vi.fn> }[] =
-  [];
+const workers: {
+  postMessage: ReturnType<typeof vi.fn>;
+  terminate: ReturnType<typeof vi.fn>;
+  onmessage: Worker['onmessage'];
+}[] = [];
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal(
@@ -112,3 +119,65 @@ it('starts an enabled relation arrangement after StrictMode replays effects and 
   await act(async () => root.unmount());
   expect(workers[0]!.terminate).toHaveBeenCalledOnce();
 });
+
+it('saves a table Worker result once and discards results after a mode change', async () => {
+  const snapshot = clipboardSnapshot();
+  if (snapshot.native.status !== 'available') throw Error('Expected native fixture');
+  const save = vi.fn(async (..._args: unknown[]) => true);
+  const render = (mode: 'logical' | 'physical') =>
+    root.render(
+      h(
+        StrictMode,
+        null,
+        h(NativeERDCanvas, {
+          document:
+            snapshot.native.status === 'available' ? snapshot.native.document : neverDocument(),
+          snapshot,
+          userId: clipboardActor,
+          editable: true,
+          busy: false,
+          mode,
+          onSave: save,
+          onReload: vi.fn(),
+          onSelect: vi.fn(),
+        }),
+      ),
+    );
+  await act(async () => render('logical'));
+  const start = async () => {
+    await act(async () =>
+      host
+        .querySelector('.native-erd-surface')!
+        .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 30, clientY: 30 })),
+    );
+    const button = [...host.querySelectorAll('button')].find(
+      (item) => item.textContent === 'arrange tables',
+    )!;
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+  };
+  await start();
+  const first = workers[0]!;
+  const payload = first.postMessage.mock.calls[0]![0];
+  expect(payload).not.toHaveProperty('document');
+  await act(async () =>
+    first.onmessage!.call(
+      first as unknown as Worker,
+      { data: { nodes: payload.nodes } } as MessageEvent,
+    ),
+  );
+  expect(save).toHaveBeenCalledOnce();
+  expect(save.mock.calls[0]![0]).toHaveLength(payload.nodes.length);
+  await start();
+  const second = workers[1]!,
+    late = second.onmessage!;
+  await act(async () => render('physical'));
+  await act(async () =>
+    late.call(second as unknown as Worker, { data: { nodes: payload.nodes } } as MessageEvent),
+  );
+  expect(second.terminate).toHaveBeenCalledOnce();
+  expect(save).toHaveBeenCalledOnce();
+});
+function neverDocument(): never {
+  throw Error('Expected native fixture');
+}

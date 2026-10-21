@@ -1,3 +1,4 @@
+import { runNativeTableLayout } from './native-table-auto-layout.js';
 import { createNativeRelationArrangeController } from './native-relation-auto-arrange.js';
 import {
   NativeRelationArrangeToast,
@@ -19,6 +20,7 @@ import {
   nativeCanvasMoveCommand,
   nativeSelectionPlacements,
   nativeAutoLayoutPlacements,
+  nativeTableLayoutInput,
   nativeCanvasDraftPlacements,
   nativeZoomAt,
 } from './native-canvas-selection.js';
@@ -119,6 +121,12 @@ registerTranslations({
   '보관된 입력 복구': 'Recover saved input',
   '자동 배치': 'Automatic layout',
   '테이블 배치': 'Arrange tables',
+  '테이블 배치 중…': 'Arranging tables…',
+  '테이블을 배치했어요': 'Tables arranged',
+  '문서가 변경되어 테이블 배치를 중단했어요':
+    'Table arrangement stopped because the document changed',
+  '테이블 배치를 취소했어요': 'Table arrangement cancelled',
+  '테이블을 배치하지 못했어요': 'Could not arrange tables',
   '관계선 배치': 'Arrange relation lines',
   '도메인 개요': 'Domain overview',
   화면: 'View',
@@ -597,7 +605,15 @@ function NativeCanvasWorkspace({
     phase: 'idle',
     canUndo: false,
   });
-  const arranging = arrangeStatus.phase === 'computing';
+  const [tableArranging, setTableArranging] = useState(false);
+  const [tableArrangeNotice, setTableArrangeNotice] = useState('');
+  useEffect(() => {
+    if (!tableArrangeNotice) return;
+    const timer = setTimeout(() => setTableArrangeNotice(''), 8000);
+    return () => clearTimeout(timer);
+  }, [tableArrangeNotice]);
+  const tableLayoutJob = useRef<AbortController | null>(null);
+  const arranging = tableArranging || arrangeStatus.phase === 'computing';
   const confirm = useConfirm();
   const [descriptionId, setDescriptionId] = useState<string | null>(
     recoverySelection?.descriptionId ?? null,
@@ -958,6 +974,25 @@ function NativeCanvasWorkspace({
       draftHeight,
     ],
   );
+  useLayoutEffect(() => {
+    if (tableLayoutJob.current) setTableArrangeNotice('문서가 변경되어 테이블 배치를 중단했어요');
+    tableLayoutJob.current?.abort();
+    tableLayoutJob.current = null;
+    setTableArranging(false);
+    return () => {
+      tableLayoutJob.current?.abort();
+    };
+  }, [
+    base,
+    scene,
+    effectiveView,
+    mode,
+    userId,
+    snapshot,
+    placementEditable,
+    allBusy,
+    placementDraftBlocked,
+  ]);
   const arrangeEligible =
     !!userId &&
     placementEditable &&
@@ -1489,20 +1524,54 @@ function NativeCanvasWorkspace({
     }
   }
   async function arrangeVisibleNodes() {
-    if (!placementEditable || allBusy || placementDraftBlocked) return;
+    if (
+      !placementEditable ||
+      allBusy ||
+      placementDraftBlocked ||
+      arranging ||
+      tableLayoutJob.current
+    )
+      return;
+    const count = scene.nodes.filter(
+      (node) => !base.notes.some((note) => note.id === node.objectId),
+    ).length;
+    if (count > 100) {
+      setError(t('한 번에 저장할 객체가 너무 많습니다. 나누어서 이동해 주세요.'));
+      return;
+    }
+    const job = new AbortController();
+    tableLayoutJob.current = job;
+    setTableArrangeNotice('');
     try {
-      const placements = nativeAutoLayoutPlacements(base, scene.nodes, effectiveView);
-      if (placements.length > 100) {
-        setError(t('한 번에 저장할 객체가 너무 많습니다. 나누어서 이동해 주세요.'));
-        return;
+      let placements: NodeLayout[];
+      if (effectiveView === 'overview') {
+        placements = nativeAutoLayoutPlacements(base, scene.nodes, effectiveView, mode);
+      } else {
+        setTableArranging(true);
+        placements = await runNativeTableLayout(
+          nativeTableLayoutInput(base, scene.nodes, mode),
+          job.signal,
+        );
       }
-      await saveCommands(
+      if (job.signal.aborted || tableLayoutJob.current !== job) return;
+      tableLayoutJob.current = null;
+      setTableArranging(false);
+      const savedScope = operationScope.current;
+      // One normal save preserves the existing one-operation history/undo semantics.
+      const saved = await saveCommands(
         placements.map((node) =>
           nativeCanvasMoveCommand(sharedSource, node, { x: node.x, y: node.y }),
         ),
       );
+      if (alive.current && operationScope.current === savedScope)
+        setTableArrangeNotice(saved ? '테이블을 배치했어요' : '테이블을 배치하지 못했어요');
     } catch (error) {
-      setError(message(error));
+      if (!job.signal.aborted) setTableArrangeNotice('테이블을 배치하지 못했어요');
+    } finally {
+      if (tableLayoutJob.current === job) {
+        tableLayoutJob.current = null;
+        setTableArranging(false);
+      }
     }
   }
   async function deleteSelection(ids = selectionIds) {
@@ -2721,19 +2790,43 @@ function NativeCanvasWorkspace({
         </div>
         <NativeCameraControls
           notice={
-            <NativeRelationArrangeToast
-              status={arrangeStatus}
-              crowdedTableNames={(arrangeStatus.crowdedTableIds ?? []).map((id) => {
-                const table = base.tables?.find((item) => item.id === id);
-                return table
-                  ? mode === 'logical'
-                    ? table.logical.name || table.physical.name
-                    : table.physical.name || table.logical.name
-                  : id;
-              })}
-              onCancel={() => arrangeController.current?.cancel()}
-              onUndo={() => arrangeController.current?.undo()}
-            />
+            tableArranging || tableArrangeNotice ? (
+              <div className="native-arrange-toast" role="status" aria-live="polite">
+                <span
+                  className="native-arrange-spinner"
+                  aria-hidden="true"
+                  hidden={!tableArranging}
+                />
+                <span className="native-arrange-toast-message">
+                  {t(tableArranging ? '테이블 배치 중…' : tableArrangeNotice)}
+                </span>
+                <Button
+                  hidden={!tableArranging}
+                  onClick={() => {
+                    tableLayoutJob.current?.abort();
+                    tableLayoutJob.current = null;
+                    setTableArranging(false);
+                    setTableArrangeNotice('테이블 배치를 취소했어요');
+                  }}
+                >
+                  {t('취소')}
+                </Button>
+              </div>
+            ) : (
+              <NativeRelationArrangeToast
+                status={arrangeStatus}
+                crowdedTableNames={(arrangeStatus.crowdedTableIds ?? []).map((id) => {
+                  const table = base.tables?.find((item) => item.id === id);
+                  return table
+                    ? mode === 'logical'
+                      ? table.logical.name || table.physical.name
+                      : table.physical.name || table.logical.name
+                    : id;
+                })}
+                onCancel={() => arrangeController.current?.cancel()}
+                onUndo={() => arrangeController.current?.undo()}
+              />
+            )
           }
           tool={tool}
           onTool={setTool}
@@ -2899,7 +2992,10 @@ function NativeCanvasWorkspace({
                             id: 'auto-layout-relations',
                             label: t('관계선 배치'),
                             disabled: arranging || !arrangeEligible,
-                            onAction: () => arrangeController.current?.start(),
+                            onAction: () => {
+                              setTableArrangeNotice('');
+                              arrangeController.current?.start();
+                            },
                           },
                         ],
                       },

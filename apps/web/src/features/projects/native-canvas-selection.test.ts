@@ -12,6 +12,7 @@ import {
   nativeCanvasMoveCommand,
   nativeSelectionPlacements,
   nativeAutoLayoutPlacements,
+  nativeTableLayoutInput,
   nativeZoomAt,
   nativeCanvasDraftPlacements,
 } from './native-canvas-selection.js';
@@ -101,7 +102,7 @@ describe('restored native canvas interactions', () => {
     const visible = source.layout.nodes.filter((n) => n.objectId !== 'hidden');
     const placements = nativeAutoLayoutPlacements(source, visible, '__tables__');
     expect(placements.map((n) => n.objectId)).toEqual(['a', 'b']);
-    expect(placements.every((n) => n.y >= 474)).toBe(true);
+    expect(placements.every((n) => n.y >= 610)).toBe(true);
     expect(source.layout.nodes.find((n) => n.objectId === 'hidden')!.x).toBe(900);
   });
   it('materializes generated table positions but rejects generated domain positions', () => {
@@ -147,4 +148,25 @@ describe('restored native canvas interactions', () => {
     ]);
     expect(doc).toEqual(original);
   });
+});
+
+it('matches physical/logical scene relation filtering and retains measured card sizes', () => {
+  const source = fixture();
+  source.tableRelations = [
+    {
+      id: 'edge',
+      sourceTableId: 'b',
+      targetTableId: 'a',
+      scope: 'both',
+      physical: null,
+      logical: { name: '', cardinality: 'one-to-many', required: false },
+    },
+  ];
+  const nodes = source.layout.nodes
+    .filter((node) => node.objectId !== 'hidden')
+    .map((node) => ({ ...node, width: 451, height: 679 }));
+  expect(nativeTableLayoutInput(source, nodes).relations).toEqual([]);
+  const logical = nativeTableLayoutInput(source, nodes, 'logical');
+  expect(logical.relations).toEqual([{ sourceTableId: 'b', targetTableId: 'a' }]);
+  expect(logical.nodes.every((node) => node.width === 451 && node.height === 679)).toBe(true);
 });
