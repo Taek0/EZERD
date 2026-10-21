@@ -211,7 +211,8 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                     '--native-table-footer-size': nativeTableCanvasTypography.footer + 'px',
                   }
                 : {}),
-              borderColor: selected ? 'var(--accent)' : nativeCardColor(base, node.objectId),
+              borderColor:
+                selected && !note ? 'var(--accent)' : nativeCardColor(base, node.objectId),
               ...(domain
                 ? {
                     '--native-domain-color': domain.color ?? '#8993a3',

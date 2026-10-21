@@ -295,6 +295,22 @@ describe('native scene render boundary', () => {
     expect(darkNote).toContain('--native-note-color:#123456');
     expect(darkNote).toContain('--native-note-text-color:#ffffff');
   });
+  it.each([undefined, '#abcdef', '#123456'])(
+    'keeps note fill and border matched for %s',
+    (color) => {
+      const p = props();
+      if (color) p.base.notes[0]!.color = color;
+      else delete p.base.notes[0]!.color;
+      for (const selected of [false, true, false]) {
+        p.selectedObjectIds = selected ? ['n'] : [];
+        const note = renderToStaticMarkup(createElement(NativeCanvasScene, p)).split(
+          'data-object-id="n"',
+        )[1]!;
+        expect(note).toContain(`border-color:${color ?? '#fff3c4'}`);
+        expect(note).toContain(`--native-note-color:${color ?? '#fff3c4'}`);
+      }
+    },
+  );
   it('reuses original domain/note editor and disables edits and movement on an unsaved domain preview', () => {
     const p = props();
     p.onDescriptionCommit = vi.fn();

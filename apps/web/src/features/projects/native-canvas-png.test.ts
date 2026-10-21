@@ -13,6 +13,17 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('native PNG uses semantic source and common geometry', () => {
+  it.each([undefined, '#abcdef', '#123456'])('matches note fill and border for %s', (color) => {
+    const source = decorationFixture();
+    if (color) source.notes[0]!.color = color;
+    else delete source.notes[0]!.color;
+    const { svg } = nativeCanvasSvg(
+      source,
+      nativeCanvasScene(source, '__tables__', 'physical'),
+      'physical',
+    );
+    expect(svg).toContain(`fill="${color ?? '#fff3c4'}" stroke="${color ?? '#fff3c4'}"`);
+  });
   it('serializes native labels/legacy data and common styles with XML escaping independent of camera', () => {
     const source = decorationFixture(),
       before = structuredClone(source),

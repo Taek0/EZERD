@@ -37,8 +37,9 @@ export {
   nativeCanvasRowComment,
 } from '@ezerd/model';
 export function nativeCardColor(document: NativeDesignDocument, objectId: string) {
-  // Source palettes tint headers/top accents; neutral side borders remain legible.
-  return document.notes.some((item) => item.id === objectId) ? '#ded9bf' : '#c8d0de';
+  // Notes use one solid color; table and domain side borders stay neutral.
+  const note = document.notes.find((item) => item.id === objectId);
+  return note ? (note.color ?? '#fff3c4') : '#c8d0de';
 }
 
 /** Pick the higher-contrast ink for the note's opaque six-digit sRGB background. */

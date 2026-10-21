@@ -6,6 +6,7 @@ afterEach(() => document.body.replaceChildren());
 
 describe('native note color cascade', () => {
   it.each([
+    ['#fff3c4', '#000000', 'rgb(255, 243, 196)', 'rgb(0, 0, 0)'],
     ['#abcdef', '#000000', 'rgb(171, 205, 239)', 'rgb(0, 0, 0)'],
     ['#123456', '#ffffff', 'rgb(18, 52, 86)', 'rgb(255, 255, 255)'],
   ])('keeps %s visible before selection and after deselection', (background, ink, rgb, textRgb) => {
