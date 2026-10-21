@@ -1,6 +1,8 @@
 import { nativeEditorCommandSchema, type NativeEditorCommand } from '@ezerd/contracts';
 import {
   autoLayoutView,
+  arrangeNativeTableNodes,
+  isVisibleInView,
   TABLES_VIEW_ID,
   type NativeDesignDocument,
   type NodeLayout,
@@ -53,12 +55,50 @@ export function nativeSelectionPlacements(
   return nodes.map((node) => ({ ...node, x: node.x + dx, y: node.y + dy }));
 }
 
-/** The original flow layout is given only the visible scene, never hidden nodes. */
+/** Worker payload contains measured visible cards and scoped edges only. */
+export function nativeTableLayoutInput(
+  source: NativeDesignDocument,
+  nodes: NodeLayout[],
+  mode: 'physical' | 'logical' = 'physical',
+) {
+  const tables = new Set(
+    (source.tables ?? [])
+      .filter((table) => isVisibleInView(table.scope, mode))
+      .map((table) => table.id),
+  );
+  const visible = nodes.filter((node) => tables.has(node.objectId));
+  const ids = new Set(visible.map((node) => node.objectId));
+  const notes = new Set(source.notes.map((note) => note.id));
+  const bottoms = nodes
+    .filter((node) => notes.has(node.objectId))
+    .map((node) => node.y + node.height + 200);
+  const minY = visible.length ? Math.min(...visible.map((node) => node.y)) : 0;
+  const shift = Math.max(0, ...bottoms.map((bottom) => bottom - minY));
+  return {
+    nodes: visible.map((node) => ({ ...node, y: node.y + shift })),
+    relations: (source.tableRelations ?? [])
+      .filter(
+        (relation) =>
+          isVisibleInView(relation.scope, mode) &&
+          (mode !== 'physical' || relation.physical !== null) &&
+          ids.has(relation.sourceTableId) &&
+          ids.has(relation.targetTableId),
+      )
+      .map(({ sourceTableId, targetTableId }) => ({ sourceTableId, targetTableId })),
+  };
+}
+
+/** Overview preserves the domain layout; table views use measured compact placement. */
 export function nativeAutoLayoutPlacements(
   source: NativeDesignDocument,
   nodes: NodeLayout[],
   viewId: string,
+  mode: 'physical' | 'logical' = 'physical',
 ): NodeLayout[] {
+  if (viewId !== 'overview') {
+    const input = nativeTableLayoutInput(source, nodes, mode);
+    return arrangeNativeTableNodes(input.nodes, input.relations);
+  }
   const view = source.domains.some((d) => d.id === viewId) ? TABLES_VIEW_ID : viewId;
   const ids = new Set(nodes.map((node) => node.objectId));
   const document = {
