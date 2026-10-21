@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { arrangeRelationRoutes, type RelationAutoArrangeInput } from './relation-auto-arrange.js';
 import {
   createRelationRoutingContext,
@@ -15,6 +16,50 @@ const box = (id: string, x: number, y: number, width = 260, height = 180) => ({
 });
 
 describe('relation auto arrangement', () => {
+  it('retries unreachable globally assigned ports in a dense multi-domain layout', () => {
+    // Anonymized geometry only: the original assignment fails despite a clear
+    // route existing when the affected relation is routed on its own.
+    const input: RelationAutoArrangeInput = JSON.parse(
+      readFileSync(new URL('./relation-auto-arrange-dense.fixture.json', import.meta.url), 'utf8'),
+    );
+    const original = JSON.stringify(input);
+    const result = arrangeRelationRoutes(input);
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(input)).toBe(original);
+    if (!result.ok) return;
+    expect(result.routes).toHaveLength(input.relations.length);
+    for (const saved of result.routes) {
+      const relation = input.relations.find((item) => item.id === saved.relationId)!;
+      const source = input.tables.find((item) => item.id === relation.sourceTableId)!;
+      const target = input.tables.find((item) => item.id === relation.targetTableId)!;
+      const tip = (box: typeof source, anchor: typeof saved.sourceAnchor) => ({
+        x:
+          anchor.side === 'left'
+            ? box.x - 8
+            : anchor.side === 'right'
+              ? box.x + box.width + 8
+              : box.x + box.width * anchor.ratio,
+        y:
+          anchor.side === 'top'
+            ? box.y - 8
+            : anchor.side === 'bottom'
+              ? box.y + box.height + 8
+              : box.y + box.height * anchor.ratio,
+      });
+      const points = [
+        tip(source, saved.sourceAnchor),
+        ...saved.waypoints,
+        tip(target, saved.targetAnchor),
+      ];
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1]!,
+          b = points[i]!;
+        expect(a.x === b.x || a.y === b.y).toBe(true);
+        expect(input.tables.some((box) => segmentCrossesBounds(a, b, box))).toBe(false);
+      }
+    }
+  }, 20000);
+
   it('places FK and PK ports in stable, evenly spaced order', () => {
     const input: RelationAutoArrangeInput = {
       tables: [box('fk', 0, 0), box('pk', 0, -500)],

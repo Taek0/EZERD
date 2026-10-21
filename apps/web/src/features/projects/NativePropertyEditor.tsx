@@ -421,6 +421,35 @@ export function NativePropertyEditor({
                 </>
               }
             />
+          ) : !column ? (
+            <>
+              <label hidden={mode === 'physical'}>
+                {t('논리 이름')}
+                <Input
+                  value={logicalName}
+                  maxLength={120}
+                  onChange={(event) => change('logicalName', event.target.value)}
+                />
+              </label>
+              <PanelSection title={t('설명')} defaultOpen={false}>
+                <label hidden={mode === 'logical'}>
+                  {t(mode ? '설명' : '물리 설명')}
+                  <NativeAutoTextarea
+                    value={comment}
+                    maxLength={10000}
+                    onChange={(event) => change('comment', event.target.value)}
+                  />
+                </label>
+                <label hidden={mode === 'physical'}>
+                  {t('논리 정의')}
+                  <NativeAutoTextarea
+                    value={definition}
+                    maxLength={10000}
+                    onChange={(event) => change('definition', event.target.value)}
+                  />
+                </label>
+              </PanelSection>
+            </>
           ) : (
             <>
               <label hidden={mode === 'logical'}>

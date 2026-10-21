@@ -308,7 +308,6 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
           role="group"
           aria-label={t('협업과 속성 패널')}
         >
-          {panelToggle}
           {onToggleInspector && (
             <IconButton
               className="inspector-toggle panel-toggle"
@@ -325,6 +324,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
               </svg>
             </IconButton>
           )}
+          {panelToggle}
         </div>
       </div>
     </div>

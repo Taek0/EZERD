@@ -1070,6 +1070,7 @@ export function NativeProjectView({
     ? nativeInspectorOutline(doc, mode, canvasScope, canvasView)
     : { tables: [], relations: [] };
   const selectedTable = doc?.tables?.find((table) => table.id === selected && visible(table.scope));
+  const selectedTableDomain = doc?.domains.find((domain) => domain.id === selectedTable?.domainId);
   const selectedTableKeys = (doc?.keys ?? []).filter(
     (key) => key.tableId === selectedTable?.id && visible(key.scope),
   );
@@ -1970,6 +1971,19 @@ export function NativeProjectView({
                                   : '테이블',
                           )}
                         </span>
+                        {selectedTable &&
+                          !selectedNote &&
+                          !selectedRelation &&
+                          !selectedDomainRelation &&
+                          !selectedDomain && (
+                            <span
+                              className="selection-domain-dot"
+                              role="img"
+                              aria-label={`${t('소속 도메인')}: ${selectedTableDomain?.name ?? t('미소속')}`}
+                              title={`${t('소속 도메인')}: ${selectedTableDomain?.name ?? t('미소속')}`}
+                              style={{ backgroundColor: selectedTableDomain?.color ?? '#8993a3' }}
+                            />
+                          )}
                         <strong>
                           {selectedNote
                             ? selectedNote.text.slice(0, 80) || t('메모')
@@ -2302,11 +2316,17 @@ export function NativeProjectView({
                             ) : (
                               <>
                                 <strong>{tableName(selectedTable.id)}</strong>
-                                <p>
-                                  {mode === 'physical'
-                                    ? selectedTable.physical.comment
-                                    : selectedTable.logical.definition}
-                                </p>
+                                <PanelSection
+                                  key={selectedTable.id}
+                                  title={t('설명')}
+                                  defaultOpen={false}
+                                >
+                                  <p>
+                                    {mode === 'physical'
+                                      ? selectedTable.physical.comment
+                                      : selectedTable.logical.definition}
+                                  </p>
+                                </PanelSection>
                               </>
                             )}
                           </PanelSection>

@@ -4,6 +4,7 @@ import { isValidElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NativeEditorForm } from './native-editor-form.js';
 import { NativePropertyEditor } from './NativePropertyEditor.js';
+import { PanelSection } from '../../shared/editor/panel.js';
 import { clipboardSnapshot } from './native-clipboard-test-fixtures.js';
 import { nativeTestDeferred } from './native-durable-test-environment.js';
 import type { NativeWebCommand } from './native-save.js';
@@ -118,7 +119,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
-function editor(kind: 'generic' | 'property') {
+function editor(kind: 'generic' | 'property', description?: 'comment' | 'definition') {
   const snapshot = clipboardSnapshot();
   if (snapshot.native?.status !== 'available') throw Error('Expected native document');
   const table = {
@@ -171,10 +172,17 @@ function editor(kind: 'generic' | 'property') {
           snapshot: context.snapshot,
           onSave,
         });
-        const input = nodes(tree).find(
+        const descriptionSection = nodes(tree).find(
+          (node) => node.type === PanelSection && node.props.title === '설명',
+        );
+        if (description) {
+          expect(descriptionSection?.props.defaultOpen).toBe(false);
+        }
+        const inputs = nodes(description ? descriptionSection : tree).filter(
           (node) =>
             typeof node.props.value === 'string' && typeof node.props.onChange === 'function',
-        )!;
+        );
+        const input = inputs[description === 'definition' ? 1 : 0]!;
         value = input.props.value as string;
         change = (next) =>
           (input.props.onChange as (event: unknown) => void)({ target: { value: next } });
@@ -213,6 +221,29 @@ function editor(kind: 'generic' | 'property') {
     render,
   };
 }
+it.each(['comment', 'definition'] as const)(
+  'preserves and autosaves %s inside the closed table description section',
+  async (field) => {
+    const ui = editor('property', field);
+    ui.change('Draft description');
+    ui.unrelatedSnapshot();
+    expect(ui.value()).toBe('Draft description');
+    await ui.settleDebounce();
+    expect(ui.onSave.mock.calls[0]![0]).toMatchObject([
+      {
+        patch:
+          field === 'comment'
+            ? { physical: { comment: 'Draft description' } }
+            : { logical: { definition: 'Draft description' } },
+      },
+    ]);
+    ui.change('Newer draft');
+    await ui.accept(0);
+    expect(ui.value()).toBe('Newer draft');
+    await ui.settleDebounce();
+    await ui.accept(1);
+  },
+);
 for (const kind of ['generic', 'property'] as const) {
   describe(`${kind} form concurrent save`, () => {
     it('preserves a return to the original value through an unrelated snapshot and earlier ACK', async () => {
