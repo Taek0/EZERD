@@ -102,7 +102,20 @@ describe('MCP server tools', () => {
     try {
       const tools = await client.listTools();
       const jsonValidator = new AjvJsonSchemaValidator();
-      expect(tools.tools).toHaveLength(50);
+      expect(tools.tools).toHaveLength(51);
+      const guide = await client.callTool({
+        name: 'get_native_command_guide',
+        arguments: { command: 'add_table', databaseKind: 'postgresql' },
+      });
+      expect(guide.isError).not.toBe(true);
+      expect(guide.structuredContent).toMatchObject({
+        examples: [
+          {
+            type: 'add_table',
+            value: { physical: { namespace: { kind: 'postgresSchema', name: 'public' } } },
+          },
+        ],
+      });
       for (const tool of tools.tools) {
         expect(() => jsonValidator.getValidator(tool.inputSchema), tool.name).not.toThrow();
         expect(tool.outputSchema, tool.name).toBeDefined();
@@ -177,6 +190,7 @@ describe('MCP server tools', () => {
         'diagnose_project',
         'diagnose_layout',
         'upgrade_project_document',
+        'get_native_command_guide',
         'apply_native_project_changes',
         'get_native_project_baseline',
         'get_native_project_history',
