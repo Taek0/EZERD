@@ -673,11 +673,27 @@ export function NativeCreateForm({
               {logicalEnabled &&
                 ['table', 'column', 'foreignKey'].includes(action) &&
                 field('logicalName', '논리 이름')}
-              {action === 'table' &&
-                field('domainId', '도메인', [
-                  { value: '', label: t('미소속') },
-                  ...document.domains.map((domain) => ({ value: domain.id, label: domain.name })),
-                ])}
+              {action === 'table' && (
+                <NativeEditorField
+                  label="도메인"
+                  value={values.domainId ?? ''}
+                  onChange={(value) => change('domainId', value)}
+                  choices={[
+                    { value: '', label: t('미소속') },
+                    ...document.domains.map((domain) => ({ value: domain.id, label: domain.name })),
+                  ]}
+                  renderOptionLeading={(id) => (
+                    <span
+                      className="native-domain-option-dot"
+                      style={{
+                        backgroundColor:
+                          document.domains.find((domain) => domain.id === id)?.color ?? '#8993a3',
+                      }}
+                      aria-hidden="true"
+                    />
+                  )}
+                />
+              )}
               {action === 'key' &&
                 field(
                   'keyKind',
