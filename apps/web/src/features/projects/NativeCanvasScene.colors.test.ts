@@ -21,6 +21,16 @@ describe('native note color cascade', () => {
     // jsdom does not resolve custom properties in background shorthands. Substitute
     // the scene's values while retaining the real selectors and stylesheet order.
     style.textContent = css
+      // jsdom assigns the highest specificity of a selector list to every match.
+      // Separate note selectors so selected-state specificity cannot hide a regression.
+      .replace(/([^{}]+)\{([^{}]*)\}/g, (rule, selectors: string, declarations: string) =>
+        selectors.includes('.native-erd-node.note')
+          ? selectors
+              .split(',')
+              .map((selector) => `${selector}{${declarations}}`)
+              .join('\n')
+          : rule,
+      )
       .replaceAll('var(--native-note-color, #fff3c4)', background)
       .replaceAll('var(--native-note-text-color, #000000)', ink);
     const note = document.createElement('article');
