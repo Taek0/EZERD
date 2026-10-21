@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as routing from './relation-routing.js';
 import { readFileSync } from 'node:fs';
 import { arrangeRelationRoutes, type RelationAutoArrangeInput } from './relation-auto-arrange.js';
 import {
@@ -324,5 +325,205 @@ describe('relation auto arrangement', () => {
     expect(Number.isFinite(result.metrics.totalLength)).toBe(true);
     // Keep the measurement visible in Vitest's normal output for performance review.
     console.info(`relation-auto-arrange 121 edges: ${duration.toFixed(1)} ms`);
+  });
+
+  it('keeps valid cheap crossing routes with no graph budget and reports soft improvement exhaustion', () => {
+    const result = arrangeRelationRoutes({
+      tables: [box('a', 0, 0), box('b', 700, 0), box('c', 0, 400), box('d', 700, 400)],
+      relations: [
+        { id: 'ad', sourceTableId: 'a', targetTableId: 'd' },
+        { id: 'cb', sourceTableId: 'c', targetTableId: 'b' },
+      ],
+      options: { maxSearches: 0, maxSearchNodes: 0, diagnostics: true },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.routes).toHaveLength(2);
+    expect(result.metrics.searchLimitReached).toBe(true);
+    expect(result.metrics.diagnostics).toMatchObject({
+      searchAttempts: 0,
+      exploredStates: 0,
+      completedRelations: 2,
+    });
+  });
+
+  it('rejects an already expired automatic deadline without reporting partial success', () => {
+    const result = arrangeRelationRoutes({
+      tables: [box('a', 0, 0), box('b', 700, 0)],
+      relations: [{ id: 'ab', sourceTableId: 'a', targetTableId: 'b' }],
+      options: { maxDurationMs: 0 },
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: 'search-limit' } });
+    expect(result).not.toHaveProperty('routes');
+  });
+
+  it('returns every cheap route when all expensive retries are disabled', () => {
+    const result = arrangeRelationRoutes({
+      tables: [box('a', 0, 0), box('b', 700, 0)],
+      relations: Array.from({ length: 12 }, (_, i) => ({
+        id: `r${i}`,
+        sourceTableId: 'a',
+        targetTableId: 'b',
+      })),
+      options: { maxSearches: 0, maxSearchNodes: 0, maxImprovementPasses: 0, diagnostics: true },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.routes).toHaveLength(12);
+    expect(result.metrics.diagnostics?.searchAttempts).toBe(0);
+  });
+
+  it('defers a capped initial search without poisoning the next relation or pooled retry', () => {
+    const input: RelationAutoArrangeInput = JSON.parse(
+      readFileSync(new URL('./relation-auto-arrange-dense.fixture.json', import.meta.url), 'utf8'),
+    );
+    const original = routing.relationGeometry;
+    const attempts: { limited: boolean; allowance: number; sourceAnchor: unknown }[] = [];
+    const spy = vi.spyOn(routing, 'relationGeometry').mockImplementation((...args) => {
+      const budget = args[8]!.budget!;
+      attempts.push({
+        limited: budget.limitReached,
+        allowance: budget.maxNodes - budget.exploredNodes,
+        sourceAnchor: args[7]!.sourceAnchor,
+      });
+      const result = original(...args);
+      if (attempts.length === 1) {
+        budget.exploredNodes = budget.maxNodes;
+        budget.limitReached = true;
+        return { ...result, points: [] };
+      }
+      return result;
+    });
+    try {
+      const result = arrangeRelationRoutes({
+        ...input,
+        options: { maxImprovementPasses: 0, diagnostics: true },
+      });
+      expect(result.ok).toBe(true);
+      expect(attempts.length).toBeGreaterThan(2);
+      expect(attempts.every((attempt) => !attempt.limited)).toBe(true);
+      expect(attempts[0]!.allowance).toBeLessThanOrEqual(1000);
+      expect(attempts[1]!.sourceAnchor).not.toBe(attempts[0]!.sourceAnchor);
+      expect(
+        attempts.some(
+          (attempt, index) =>
+            index > 1 &&
+            attempt.sourceAnchor === attempts[0]!.sourceAnchor &&
+            attempt.allowance > attempts[0]!.allowance,
+        ),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('returns a complete valid batch when the deadline expires during optional improvement', () => {
+    let clockReads = 0;
+    const spy = vi
+      .spyOn(routing, 'relationSearchNow')
+      .mockImplementation(() => (++clockReads <= 5 ? 0 : 1000));
+    try {
+      const result = arrangeRelationRoutes({
+        tables: [box('a', 0, 0), box('b', 700, 0), box('c', 0, 400), box('d', 700, 400)],
+        relations: [
+          { id: 'ad', sourceTableId: 'a', targetTableId: 'd' },
+          { id: 'cb', sourceTableId: 'c', targetTableId: 'b' },
+        ],
+        options: { maxDurationMs: 100, diagnostics: true },
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.routes).toHaveLength(2);
+      expect(result.metrics.searchLimitReached).toBe(true);
+      expect(result.metrics.diagnostics?.deadlineReached).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('reports a budget failure atomically when a bounded batch remains incomplete', () => {
+    const input: RelationAutoArrangeInput = JSON.parse(
+      readFileSync(new URL('./relation-auto-arrange-dense.fixture.json', import.meta.url), 'utf8'),
+    );
+    const result = arrangeRelationRoutes({
+      ...input,
+      options: { maxSearchNodes: 1, diagnostics: true },
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: 'search-limit' } });
+    expect(result).not.toHaveProperty('routes');
+    if (result.ok) return;
+    expect(result.error.diagnostics?.exploredStates).toBeLessThanOrEqual(1);
+    expect(result.error.diagnostics?.completedRelations).toBeLessThan(input.relations.length);
+  });
+
+  it('keeps endpoint slots distinct when multiple deferred relations share a card', () => {
+    const input: RelationAutoArrangeInput = JSON.parse(
+      readFileSync(new URL('./relation-auto-arrange-dense.fixture.json', import.meta.url), 'utf8'),
+    );
+    const original = routing.relationGeometry;
+    const blockedOriginals = new Set<string>();
+    const spy = vi.spyOn(routing, 'relationGeometry').mockImplementation((...args) => {
+      const budget = args[8]!.budget!;
+      const key = JSON.stringify([args[0], args[1], args[7]!.sourceAnchor, args[7]!.targetAnchor]);
+      if ((budget.maxNodesPerSearch ?? Infinity) <= 1000) blockedOriginals.add(key);
+      const result = original(...args);
+      return blockedOriginals.has(key) ? { ...result, points: [] } : result;
+    });
+    try {
+      const result = arrangeRelationRoutes({
+        ...input,
+        options: { maxImprovementPasses: 0, maxSearches: 2048, diagnostics: true },
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.metrics.diagnostics!.deferredRelations).toBeGreaterThan(1);
+      const slots = new Map<string, Set<string>>();
+      for (const route of result.routes) {
+        const relation = input.relations.find((item) => item.id === route.relationId)!;
+        for (const [tableId, anchor] of [
+          [relation.sourceTableId, route.sourceAnchor],
+          [relation.targetTableId, route.targetAnchor],
+        ] as const) {
+          const key = `${anchor.side}:${anchor.ratio}`;
+          const used = slots.get(tableId) ?? new Set<string>();
+          expect(used.has(key)).toBe(false);
+          used.add(key);
+          slots.set(tableId, used);
+        }
+      }
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('classifies an exact expensive-attempt boundary as a search limit while alternatives remain', () => {
+    const original = routing.relationGeometry;
+    const spy = vi.spyOn(routing, 'relationGeometry').mockImplementation((...args) => {
+      const before = args[8]!.budget!.exploredNodes;
+      const result = original(...args);
+      args[8]!.budget!.exploredNodes = before + 1;
+      // Simulate a fully explored but invalid candidate without exhausting its node cap.
+      args[8]!.budget!.limitReached = false;
+      return { ...result, points: [] };
+    });
+    try {
+      const input: RelationAutoArrangeInput = JSON.parse(
+        readFileSync(
+          new URL('./relation-auto-arrange-dense.fixture.json', import.meta.url),
+          'utf8',
+        ),
+      );
+      const result = arrangeRelationRoutes({
+        ...input,
+        relations: input.relations.filter((relation) => relation.id === 'r003'),
+        options: { maxSearches: 1, diagnostics: true },
+      });
+      expect(result).toMatchObject({ ok: false, error: { code: 'search-limit' } });
+      if (result.ok) return;
+      expect(result.error.diagnostics?.searchAttempts).toBe(1);
+      expect(result.error.diagnostics?.exploredStates).toBeLessThan(1000);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
