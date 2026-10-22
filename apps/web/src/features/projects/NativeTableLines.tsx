@@ -1,5 +1,5 @@
 import { nativeRelationEnds, nativeRelationEndPath } from './native-relation-presentation.js';
-import { useId } from 'react';
+import { memo, useId, useMemo } from 'react';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { useI18n } from '../../shared/i18n/index.js';
 import { nativeRelationLabelWidth } from './native-canvas-style.js';
@@ -7,7 +7,7 @@ import { nativeTableCanvasTitle } from './native-canvas-style.js';
 import type { NativeDesignDocument } from '@ezerd/model';
 
 /** Presentational cardinalities follow the existing canvas' logical endpoint metadata. */
-export function NativeTableLines({
+export const NativeTableLines = memo(function NativeTableLines({
   relations,
   mode,
   selectedId,
@@ -24,6 +24,45 @@ export function NativeTableLines({
 }) {
   const id = useId().replaceAll(':', '');
   const { t } = useI18n();
+  // Index content once per array revision; selection and hover do not change names.
+  const tables = document?.tables;
+  const columns = document?.columns;
+  const names = useMemo(() => {
+    const tableNames = new Map(
+      tables?.map((table) => [table.id, nativeTableCanvasTitle(table, mode)]),
+    );
+    const columnNames = new Map<string, Map<string, string>>();
+    for (const column of columns ?? []) {
+      let names = columnNames.get(column.tableId);
+      if (!names) columnNames.set(column.tableId, (names = new Map()));
+      names.set(
+        column.id,
+        mode === 'physical'
+          ? column.physical.name || column.logical.name
+          : column.logical.name || column.physical.name,
+      );
+    }
+    return { tableNames, columnNames };
+  }, [tables, columns, mode]);
+  const prepared = useMemo(() => {
+    const endpoint = (tableId: string, ids: string[]) => {
+      const name = names.tableNames.get(tableId) ?? tableId;
+      const columns = ids.map((id) => names.columnNames.get(tableId)?.get(id) ?? id);
+      return `${name}${columns.length ? ` (${columns.join(', ')})` : ''}`;
+    };
+    return relations.map((item) => ({
+      ...item,
+      ends: nativeRelationEnds(item.relation),
+      width: nativeRelationLabelWidth(item.label),
+      description: [
+        item.relation.logical.name || item.label,
+        `${endpoint(item.relation.targetTableId, item.relation.physical?.targetColumnIds ?? [])} → ${endpoint(item.relation.sourceTableId, item.relation.physical?.sourceColumnIds ?? [])}`,
+        item.relation.logical.description,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }));
+  }, [relations, names]);
   const marker = (min: number, max: number | 'many') => `${id}-crow-${min}-${max}`;
   return (
     <svg className={`native-erd-lines native-table-lines ${mode}`} aria-label={t('테이블 관계')}>
@@ -53,31 +92,7 @@ export function NativeTableLines({
           )),
         )}
       </defs>
-      {relations.map(({ relation, geometry, label }) => {
-        const [source, target] = nativeRelationEnds(relation);
-        const width = nativeRelationLabelWidth(label);
-        const endpoint = (tableId: string, ids: string[]) => {
-          const table = document?.tables?.find((table) => table.id === tableId);
-          const name = table ? nativeTableCanvasTitle(table, mode) : tableId;
-          const columns = ids.map((id) => {
-            const column = document?.columns?.find(
-              (column) => column.id === id && column.tableId === tableId,
-            );
-            return column
-              ? mode === 'physical'
-                ? column.physical.name || column.logical.name
-                : column.logical.name || column.physical.name
-              : id;
-          });
-          return `${name}${columns.length ? ` (${columns.join(', ')})` : ''}`;
-        };
-        const description = [
-          relation.logical.name || label,
-          `${endpoint(relation.targetTableId, relation.physical?.targetColumnIds ?? [])} → ${endpoint(relation.sourceTableId, relation.physical?.sourceColumnIds ?? [])}`,
-          relation.logical.description,
-        ]
-          .filter(Boolean)
-          .join('\n');
+      {prepared.map(({ relation, geometry, label, ends: [source, target], width, description }) => {
         return (
           <g
             key={relation.id}
@@ -133,4 +148,4 @@ export function NativeTableLines({
       })}
     </svg>
   );
-}
+});
