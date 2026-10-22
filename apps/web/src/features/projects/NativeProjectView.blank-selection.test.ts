@@ -30,6 +30,14 @@ vi.mock('react', async (original) => {
   const actual = await original<typeof import('react')>();
   return {
     ...actual,
+    useMemo<T>(factory: () => T, deps: readonly unknown[]) {
+      if (!parent.active) return actual.useMemo(factory, deps);
+      const index = parent.cursor++;
+      const slot = parent.slots[index] as { value: T; deps: readonly unknown[] } | undefined;
+      if (!slot || deps.some((value, i) => !Object.is(value, slot.deps[i])))
+        parent.slots[index] = { value: factory(), deps };
+      return (parent.slots[index] as { value: T }).value;
+    },
     useCallback<T extends (...args: never[]) => unknown>(callback: T, deps: readonly unknown[]) {
       if (!parent.active) return actual.useCallback(callback, deps);
       const index = parent.cursor++;

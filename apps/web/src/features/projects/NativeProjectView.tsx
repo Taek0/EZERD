@@ -1,4 +1,5 @@
 import './generic-translations.js';
+import { useNativePanelDerived } from './use-native-panel-derived.js';
 import { shareNativeJson } from './native-ack-entry.js';
 import {
   projectNativeLocalDraftNames,
@@ -9,11 +10,7 @@ import { projectNativeLocalColumns, type NativeLocalEntry } from './native-local
 import { useInspectorResize } from './use-inspector-resize.js';
 import { NativeNavigatorDomain } from './NativeNavigatorDomain.js';
 import { useNavigatorResize } from './use-navigator-resize.js';
-import {
-  NativeNavigatorTable,
-  navigatorTableMatches,
-  type NativeNavigatorColumn,
-} from './NativeNavigatorTable.js';
+import { NativeNavigatorTable } from './NativeNavigatorTable.js';
 import './native-project-navigator.css';
 import { NativeDesignDetails } from './NativeDesignDetails.js';
 import {
@@ -36,8 +33,8 @@ import type { ProjectEntry } from './project-entry.js';
 import type { Thread, NativeSyncOperationResult, NativeEditorCommand } from '@ezerd/contracts';
 import {
   getDatabaseProfile,
-  moveNativeTableDomain,
   nativeColumnTypeDisplay,
+  moveNativeTableDomain,
   planNativeDeletion,
 } from '@ezerd/model';
 import { Button, IconButton, Input, Select, Textarea } from '../../components/ui/index.js';
@@ -80,13 +77,10 @@ import {
   shouldStackInspector,
 } from '../canvas/inspector-state.js';
 import {
-  nativeInspectorMatches,
-  nativeInspectorOutline,
   nativeInspectorLocation,
   nativeInspectorSaveStatus,
   type NativeCanvasScope,
 } from './native-inspector-state.js';
-import { nativeTableCanvasRows } from './native-canvas-style.js';
 import { NativeTableRelationInspector } from './NativeTableRelationInspector.js';
 import { NativeEnumDialog } from './NativeEnumDialog.js';
 
@@ -1071,96 +1065,37 @@ export function NativeProjectView({
     }
   }
   const visible = (scope: string) => scope === 'both' || scope === mode;
-  const outline = doc
-    ? nativeInspectorOutline(doc, mode, canvasScope, canvasView)
-    : { tables: [], relations: [] };
-  const selectedTable = doc?.tables?.find((table) => table.id === selected && visible(table.scope));
-  const selectedTableDomain = doc?.domains.find((domain) => domain.id === selectedTable?.domainId);
-  const selectedTableKeys = (doc?.keys ?? []).filter(
-    (key) => key.tableId === selectedTable?.id && visible(key.scope),
-  );
-  const selectedTableRelations = (doc?.tableRelations ?? []).filter(
-    (relation) =>
-      visible(relation.scope) &&
-      (relation.sourceTableId === selectedTable?.id ||
-        relation.targetTableId === selectedTable?.id),
-  );
+  const {
+    outline,
+    selectedTable,
+    selectedTableDomain,
+    selectedTableKeys,
+    selectedTableRelations,
+    selectedRelation,
+    selectedRows,
+    tableName,
+    columnName,
+    navigatorColumns,
+    tables,
+    matches,
+    filteredDomainRelations,
+    filteredTableRelations,
+    tablesByDomain,
+  } = useNativePanelDerived({
+    doc,
+    mode,
+    canvasScope,
+    canvasView,
+    selected,
+    selectedTableRelation,
+    logicalEnabled,
+    search,
+    domain,
+    untitledTable: t('이름 없는 테이블'),
+  });
   const selectedCanvasNode = canvasScope?.selectedNode ?? null;
   const selectedNote = (reviewDocument ?? doc)?.notes.find(
     (note) => note.id === canvasScope?.selectedObjectId,
-  );
-  const selectedRelation = doc?.tableRelations?.find(
-    (relation) => relation.id === selectedTableRelation && visible(relation.scope),
-  );
-  const selectedRows = doc && selectedTable ? nativeTableCanvasRows(doc, selectedTable, mode) : [];
-  const tableName = (id: string) => {
-    const table = doc?.tables?.find((table) => table.id === id);
-    return (
-      (mode === 'physical' ? table?.physical.name : table?.logical.name) ||
-      table?.physical.name ||
-      (logicalEnabled && table?.logical.name) ||
-      t('이름 없는 테이블')
-    );
-  };
-  const columnName = (id: string) =>
-    (mode === 'physical'
-      ? doc?.columns?.find((column) => column.id === id)?.physical.name
-      : doc?.columns?.find((column) => column.id === id)?.logical.name) ||
-    doc?.columns?.find((column) => column.id === id)?.physical.name ||
-    (logicalEnabled && doc?.columns?.find((column) => column.id === id)?.logical.name) ||
-    id;
-  const navigatorColumns = new Map<string, NativeNavigatorColumn[]>();
-  for (const column of doc?.columns ?? []) {
-    if (!visible(column.scope)) continue;
-    const list = navigatorColumns.get(column.tableId) ?? [];
-    list.push({
-      id: column.id,
-      name:
-        (mode === 'physical' ? column.physical.name : column.logical.name) ||
-        column.physical.name ||
-        (logicalEnabled && column.logical.name) ||
-        column.id,
-      physicalName: column.physical.name,
-      logicalName: column.logical.name,
-      type:
-        mode === 'physical'
-          ? nativeColumnTypeDisplay(column.physical.type, doc?.enums ?? [])
-          : column.logical.semanticType,
-    });
-    navigatorColumns.set(column.tableId, list);
-  }
-  const tables = (canvasView === 'overview' ? (doc?.tables ?? []) : outline.tables).filter(
-    (table) =>
-      visible(table.scope) &&
-      (domain === '*' || (domain === '' ? table.domainId === null : table.domainId === domain)) &&
-      (nativeInspectorMatches(
-        search,
-        doc?.domains.find((item) => item.id === table.domainId)?.name,
-      ) ||
-        navigatorTableMatches(
-          search,
-          table.physical.name,
-          table.logical.name,
-          navigatorColumns.get(table.id) ?? [],
-        )),
-  );
-  const matches = (...values: (string | undefined)[]) => nativeInspectorMatches(search, ...values);
-  const filteredDomainRelations = (doc?.domainRelations ?? []).filter((relation) =>
-    matches(
-      relation.name,
-      relation.description,
-      doc?.domains.find((item) => item.id === relation.sourceDomainId)?.name,
-      doc?.domains.find((item) => item.id === relation.targetDomainId)?.name,
-    ),
-  );
-  const filteredTableRelations = outline.relations.filter((relation) =>
-    matches(
-      relation.logical.name,
-      relation.logical.description,
-      relation.physical?.name,
-      tableName(relation.sourceTableId),
-      tableName(relation.targetTableId),
-    ),
   );
   const currentViewName = doc
     ? nativeInspectorLocation(
@@ -1692,13 +1627,13 @@ export function NativeProjectView({
                             (group) =>
                               (domain === '*' ||
                                 (domain === '' ? group.id === null : group.id === domain)) &&
-                              (tables.some((table) => table.domainId === group.id) ||
+                              (tablesByDomain.has(group.id) ||
                                 (group.id !== null &&
                                   (canvasView === 'overview' || canvasView === '__tables__') &&
                                   (!search.trim() || matches(group.name)))),
                           )
                           .map((group) => {
-                            const members = tables.filter((table) => table.domainId === group.id);
+                            const members = tablesByDomain.get(group.id) ?? [];
                             return (
                               <NativeNavigatorDomain
                                 key={group.id ?? '__unassigned__'}
