@@ -260,7 +260,12 @@ export function NativeProjectView({
   canComment?: boolean;
   projectActions?: (
     focus: (id: string) => void,
-    png?: { run: () => Promise<void>; disabled: boolean; busy: boolean },
+    png?: {
+      run: () => Promise<void>;
+      runPdf?: () => Promise<void>;
+      disabled: boolean;
+      busy: boolean;
+    },
   ) => ReactNode;
   workspaceStatus?: 'active' | 'archived';
   workspaceRole?: 'owner' | 'admin' | 'editor' | 'reviewer' | 'viewer';
@@ -1838,6 +1843,7 @@ export function NativeProjectView({
                     ? {
                         renderExportActions: (png: {
                           run: () => Promise<void>;
+                          runPdf?: () => Promise<void>;
                           disabled: boolean;
                           busy: boolean;
                         }) => projectActions(focusIssue, png),

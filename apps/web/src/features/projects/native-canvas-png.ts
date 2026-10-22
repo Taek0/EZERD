@@ -3,6 +3,7 @@ import { translate } from '../../shared/i18n/index.js';
 import { nativeDomainGeometry } from './native-domain-lines.js';
 import {
   nativeCardColor,
+  nativeNoteTextColor,
   nativeTableCanvasMetrics,
   nativeTableCanvasHeaderHeight,
   nativeTableCanvasFooterHeight,
@@ -29,7 +30,7 @@ const pathPoints = (path: string) => {
     y: values[i * 2 + 1]!,
   }));
 };
-export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
+export function nativeCanvasBounds(document: NativeDesignDocument, scene: Scene) {
   if (!scene.nodes.length) throw Error('canvas.export-empty');
   const geometry = nativeDomainGeometry(document, scene.nodes);
   const points = [
@@ -65,10 +66,17 @@ export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
   const width = Math.ceil(maxX - x + 64),
     height = Math.ceil(maxY - y + 64),
     scale = 2;
-  // The same bounded browser raster budget as the existing common canvas PNG exporter.
-  if (width * height * scale * scale > 120000000 || Math.max(width, height) * scale > 32760)
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
     throw Error('canvas.export-size-limit');
   return { x, y, width, height, scale };
+}
+export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
+  const bounds = nativeCanvasBounds(document, scene);
+  const { width, height, scale } = bounds;
+  // Raster limits do not apply to the vector PDF exporter.
+  if (width * height * scale * scale > 120000000 || Math.max(width, height) * scale > 32760)
+    throw Error('canvas.export-size-limit');
+  return bounds;
 }
 const text = (x: number, y: number, value: string, size = 12, anchor = 'start') =>
   `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}">${xml(value)}</text>`;
@@ -102,8 +110,9 @@ export function nativeCanvasSvg(
   document: NativeDesignDocument,
   scene: Scene,
   mode: 'physical' | 'logical',
+  format: 'png' | 'pdf' = 'png',
 ) {
-  const bounds = nativePngBounds(document, scene),
+  const bounds = (format === 'png' ? nativePngBounds : nativeCanvasBounds)(document, scene),
     domains = nativeDomainGeometry(document, scene.nodes);
   const globalView = (scene.effectiveView ?? scene.viewId) === '__tables__';
   const cards = scene.nodes
@@ -230,8 +239,7 @@ export function nativeCanvasSvg(
           24.8,
         )}</g>`;
       } else if (note) {
-        contents = `<path d="M ${node.x} ${node.y + 2} H ${node.x + node.width}" style="stroke:${xml(note.color ?? '#fff3c4')};stroke-width:4"/>`;
-        contents += `<g class="native-png-note-body">${wrappedText(
+        contents = `<g class="native-png-note-body" style="color:${nativeNoteTextColor(note.color)}">${wrappedText(
           node.x + 20,
           node.y + 38,
           note.text || translate('더블클릭하여 메모를 작성하세요'),
@@ -240,7 +248,7 @@ export function nativeCanvasSvg(
           25.5,
         )}</g>`;
       }
-      return `<g data-object-id="${xml(node.objectId)}"><defs>${clips.join('')}</defs><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${note ? 3 : table ? 5 : 12}" fill="${note ? `color-mix(in srgb, ${xml(note.color ?? '#fff3c4')} 24%, white)` : domain ? `color-mix(in srgb, ${xml(domain.color ?? '#8993a3')} 8%, #f5f7fa)` : '#ffffff'}" stroke="${xml(nativeCardColor(document, node.objectId))}"/><g clip-path="url(#${cardClip})">${contents}</g></g>`;
+      return `<g data-object-id="${xml(node.objectId)}"><defs>${clips.join('')}</defs><rect x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}" rx="${note ? 3 : table ? 5 : 12}" fill="${note ? xml(note.color ?? '#fff3c4') : domain ? `color-mix(in srgb, ${xml(domain.color ?? '#8993a3')} 8%, #f5f7fa)` : '#ffffff'}" stroke="${xml(nativeCardColor(document, node.objectId))}"/><g clip-path="url(#${cardClip})">${contents}</g></g>`;
     })
     .join('');
   const paths =
@@ -267,7 +275,7 @@ export function nativeCanvasSvg(
       ),
     )
     .join('');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}"><style>text{fill:#243248;font-family:${nativeCanvasFontFamily}}path{stroke:#617087;stroke-width:1.5;fill:none}.native-png-header text{fill:currentColor}.native-png-title text{font-weight:700}.native-png-column-head text{font-weight:600;fill:#617087}.native-png-domain-overline text{fill:#667995;letter-spacing:1.7px}.native-png-domain-body text{fill:#617087}.native-png-note-body text{fill:#555447}.native-png-relation>path{stroke:${relationColor};stroke-width:2}marker[id^="native-png-crow"] path{stroke:${relationColor};stroke-width:1.7}marker path{fill:none}.native-png-keys text{fill:#59749a;font-weight:700}.native-png-type text{fill:#607592;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.native-png-null path{stroke:#fff;stroke-width:2}.native-png-domain-relation>path{stroke:#74829a;stroke-width:1.7}.native-png-domain-relation .native-png-domain-leader{stroke-width:1;stroke-dasharray:3 3;opacity:.55}.native-png-domain-relation text{fill:#526582;stroke:#fafcfe;stroke-width:5;paint-order:stroke}#native-png-arrow path{fill:#74829a;stroke:none}</style><defs>${crowDefs}<marker id="native-png-arrow" viewBox="0 0 10 10" markerWidth="7" markerHeight="7" refX="9" refY="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#fafcfe"/>${paths}${cards}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.width}" height="${bounds.height}" viewBox="${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}"><style>text{fill:#243248;font-family:${nativeCanvasFontFamily}}path{stroke:#617087;stroke-width:1.5;fill:none}.native-png-header text{fill:currentColor}.native-png-title text{font-weight:700}.native-png-column-head text{font-weight:600;fill:#617087}.native-png-domain-overline text{fill:#667995;letter-spacing:1.7px}.native-png-domain-body text{fill:#617087}.native-png-note-body text{fill:currentColor}.native-png-relation>path{stroke:${relationColor};stroke-width:2}marker[id^="native-png-crow"] path{stroke:${relationColor};stroke-width:1.7}marker path{fill:none}.native-png-keys text{fill:#59749a;font-weight:700}.native-png-type text{fill:#607592;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.native-png-null path{stroke:#fff;stroke-width:2}.native-png-domain-relation>path{stroke:#74829a;stroke-width:1.7}.native-png-domain-relation .native-png-domain-leader{stroke-width:1;stroke-dasharray:3 3;opacity:.55}.native-png-domain-relation text{fill:#526582;stroke:#fafcfe;stroke-width:5;paint-order:stroke}#native-png-arrow path{fill:#74829a;stroke:none}</style><defs>${crowDefs}<marker id="native-png-arrow" viewBox="0 0 10 10" markerWidth="7" markerHeight="7" refX="9" refY="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><rect x="${bounds.x}" y="${bounds.y}" width="${bounds.width}" height="${bounds.height}" fill="#fafcfe"/>${paths}${cards}</svg>`;
   return { svg, bounds };
 }
 export async function exportNativeCanvasPng(

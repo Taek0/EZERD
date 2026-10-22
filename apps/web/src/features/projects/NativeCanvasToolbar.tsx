@@ -30,6 +30,7 @@ registerTranslations({
   '프로젝트 내보내기': 'Export project',
   'DDL 내보내기': 'Export DDL',
   '고화질 PNG': 'High resolution PNG',
+  'PDF 내보내기 · 한 페이지': 'Export PDF · Single page',
   공유: 'Share',
 });
 
@@ -50,6 +51,7 @@ export interface NativeCanvasToolbarProps {
   onOpenIssues?: (() => void) | undefined;
   onExportProject?: (() => void) | undefined;
   onExportDDL?: (() => void) | undefined;
+  onExportPDF?: (() => void) | undefined;
   onExportPNG?: (() => void) | undefined;
   onOpenEnums?: (() => void) | undefined;
   exportBusy?: boolean;
@@ -77,6 +79,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
   onExportProject,
   onExportDDL,
   onExportPNG,
+  onExportPDF,
   onOpenEnums,
   exportBusy = false,
   editable,
@@ -134,6 +137,12 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
       label: t('DDL 내보내기'),
       disabled: disabled || exportBusy || !onExportDDL,
       onAction: () => onExportDDL?.(),
+    },
+    {
+      id: 'pdf-export',
+      label: t('PDF 내보내기 · 한 페이지'),
+      disabled: disabled || exportBusy || !onExportPDF,
+      onAction: () => onExportPDF?.(),
     },
     {
       id: 'png-export',
@@ -252,7 +261,7 @@ export const NativeCanvasToolbar = memo(function NativeCanvasToolbar({
           aria-label={t('프로젝트 내보내기')}
         >
           {exportControl ??
-            ((onExportProject || onExportDDL || onExportPNG) && (
+            ((onExportProject || onExportDDL || onExportPNG || onExportPDF) && (
               <Dropdown
                 label={t('공유')}
                 trigger={

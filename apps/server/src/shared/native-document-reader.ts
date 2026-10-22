@@ -2,6 +2,7 @@ import { designDocumentReadSchema, nativeStoredDesignDocumentSchema } from '@eze
 import {
   migrateDesignDocumentV1,
   normalizeSharedTableCanvas,
+  ensureTableCanvasLayout,
   resolveProjectDatabaseState,
   validateDatabaseDocument,
   TABLES_VIEW_ID,
@@ -50,13 +51,20 @@ export type NativeDocumentReadPreview = NativeDocumentReadBase &
   );
 
 /** Read-only canonicalization. All native physical fields survive; v1 output is unaffected. */
+const nativeCanvasNodeId = (tableId: string) => `node:${tableId.slice(0, 128)}:${TABLES_VIEW_ID}`;
+
+/** Materialize only missing table placements; leave notes and existing routes untouched. */
+export function ensureNativeTableCanvasLayout(document: NativeDesignDocument) {
+  return ensureTableCanvasLayout(document, { nodeId: nativeCanvasNodeId });
+}
+
 export function normalizeNativeServerDocument(
   document: NativeDesignDocument,
 ): NativeDesignDocument {
   return normalizeSharedTableCanvas(document, {
     // The canonical v1 ID can exceed the 160-char contract limit for long imported table IDs.
     // Sorted placement + the existing collision suffix preserves deterministic uniqueness.
-    nodeId: (tableId) => `node:${tableId.slice(0, 128)}:${TABLES_VIEW_ID}`,
+    nodeId: nativeCanvasNodeId,
   });
 }
 

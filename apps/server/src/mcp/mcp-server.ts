@@ -83,6 +83,12 @@ import {
   assertNativeQueryVersion,
 } from './mcp-native-read.js';
 import { mcpSchemaMetadata } from './mcp-schema-metadata.js';
+import {
+  commandGuideInput,
+  commandGuideOutput,
+  nativeCommandGuide,
+  nativeWriteGuidance,
+} from './mcp-command-guide.js';
 import { projectChangesInputSchema, projectChangesSchema } from './mcp-native-changes.js';
 
 const idSchema = z.uuid();
@@ -209,6 +215,7 @@ export class McpServerFactory {
       {
         capabilities: { tools: {} },
         instructions:
+          nativeWriteGuidance +
           'RDBMS 미지정은 databaseKind:"generic"/profileId:"generic-v1"입니다. 테이블·컬럼·키·관계 등 구조 모델링과 공통 타입을 사용하며 사용자 정의 타입은 {kind:"custom",database:"generic",name:"타입명"}입니다. generic 테이블 namespace는 {kind:"generic"}, 테이블/컬럼 options는 {database:"generic"}입니다. RDBMS 미지정 프로젝트는 DDL 내보내기를 지원하지 않습니다. ' +
           'get_project_database_capabilities로 DB/profile/revision과 usable 기능을 확인하고 get_project_document_state로 원본을 조회하세요. 원본 schemaVersion 2만 apply_native_project_changes로 편집합니다. v1 전용 조회·편집·이력 도구는 종료되었습니다. v1 원본 조회와 파일 가져오기·내보내기·upgrade는 호환 목적으로 유지합니다. ' +
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
@@ -686,10 +693,22 @@ export class McpServerFactory {
         ),
     );
     server.registerTool(
+      'get_native_command_guide',
+      {
+        description:
+          'Native v2 쓰기 명령 하나의 정확한 JSON Schema와 검증된 요청 예시를 조회합니다. command와 프로젝트 databaseKind를 지정하세요. 생성·수정 전 또는 native.command-invalid 발생 시 사용하세요. 프로젝트 데이터를 읽거나 변경하지 않습니다.',
+        inputSchema: commandGuideInput,
+        outputSchema: commandGuideOutput,
+        annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      },
+      (input) => invoke('get_native_command_guide', async () => nativeCommandGuide(input)),
+    );
+    server.registerTool(
       'apply_native_project_changes',
       {
         description:
-          'schemaVersion 2로 저장된 프로젝트의 native 객체 추가·부분 수정·삭제 및 PK 기반 FK 생성을 수행합니다. 명령별 입력 스키마를 따르세요. generic 테이블 namespace는 {kind:"generic"}, 테이블/컬럼 options는 {database:"generic"}, 사용자 정의 타입은 {kind:"custom",database:"generic",name:"타입명"}입니다. add_table은 {type:"add_table",value:NativeTable}이며 컬럼과 placement를 포함하지 않습니다. SQLite 테이블의 physical.namespace는 {kind:"sqliteMain"}, options는 {database:"sqlite",strict:false,withoutRowid:false}입니다. 배치는 같은 commands 배열에 {type:"add_table_reference",tableId:"새 테이블 ID",viewId:"__tables__",placement:{x:1500,y:180,width:400,height:260}}를 추가하세요. 컬럼은 별도 add_column 명령입니다. get_project_document_state로 version/sequence/databaseRevision과 원본 형식을 먼저 확인하세요. 같은 DB 변경 번호에서는 이전 version/sequence의 명령도 현재 문서에 적용하며, 다른 속성은 병합하고 같은 속성은 서버에서 나중에 처리한 명령의 값으로 저장합니다. 입력에 명시한 속성만 수정하세요. expectedDatabaseRevision은 정확히 일치해야 하며 삭제된 대상, 유효하지 않은 구조, 신규 미검증 타입·기능과 신규 legacy는 차단됩니다. 기존 legacy 원문을 그대로 보존하는 관계없는 신규 객체 추가는 허용합니다. 승인/거부 ACK와 필요 시 native 문서를 반환하고 operationId로 재생합니다.',
+          nativeWriteGuidance +
+          'schemaVersion 2 프로젝트만 편집합니다. get_project_document_state로 최신 version/sequence/databaseRevision을 확인하세요. add_table은 컬럼과 placement를 포함하지 않습니다. 배치는 별도 add_table_reference, 컬럼은 add_column을 같은 commands 배열에 추가하세요. generic 사용자 정의 타입은 {kind:"custom",database:"generic",name:"타입명"}입니다. 같은 DB 변경 번호에서는 이전 version/sequence 명령도 현재 문서에 적용하며 다른 속성은 병합하고 같은 속성은 후속 명령을 우선합니다. expectedDatabaseRevision은 정확히 일치해야 합니다. 유효하지 않은 구조·신규 미검증 기능·신규 legacy는 차단합니다. 기존 legacy 원문은 보존하세요. operationId로 결과를 재조회할 수 있습니다.',
         inputSchema: applyNativeProjectChangesMetadataSchema,
         outputSchema: nativeOperationOutputSchema,
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },

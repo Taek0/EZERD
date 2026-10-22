@@ -102,7 +102,20 @@ describe('MCP server tools', () => {
     try {
       const tools = await client.listTools();
       const jsonValidator = new AjvJsonSchemaValidator();
-      expect(tools.tools).toHaveLength(50);
+      expect(tools.tools).toHaveLength(51);
+      const guide = await client.callTool({
+        name: 'get_native_command_guide',
+        arguments: { command: 'add_table', databaseKind: 'postgresql' },
+      });
+      expect(guide.isError).not.toBe(true);
+      expect(guide.structuredContent).toMatchObject({
+        examples: [
+          {
+            type: 'add_table',
+            value: { physical: { namespace: { kind: 'postgresSchema', name: 'public' } } },
+          },
+        ],
+      });
       for (const tool of tools.tools) {
         expect(() => jsonValidator.getValidator(tool.inputSchema), tool.name).not.toThrow();
         expect(tool.outputSchema, tool.name).toBeDefined();
@@ -113,6 +126,23 @@ describe('MCP server tools', () => {
         });
       }
       expect(client.getInstructions()).toContain('권장 간격을 캔버스 좌표 기준 200px 이상');
+      for (const guidance of [
+        '요청당 1~100개',
+        '병렬 전송하지 말고',
+        'status:"accepted"',
+        'get_project_summary 또는 get_project_document_state',
+        'expectedVersion은 project.version',
+        'expectedSequence는 summary의 syncSequence',
+        '후속 배치를 중단',
+      ]) {
+        expect(client.getInstructions()).toContain(guidance);
+        expect(
+          tools.tools.find((tool) => tool.name === 'apply_native_project_changes')!.description,
+        ).toContain(guidance);
+        expect((guide.structuredContent as { notes: string[] }).notes.join(' ')).toContain(
+          guidance,
+        );
+      }
       expect(client.getInstructions()).toContain('핵심/상위 테이블을 위에');
       expect(client.getInstructions()).toContain('종속/하위 테이블을 아래에');
       expect(client.getInstructions()).toContain('진단 임계값은 기존 40px');
@@ -177,6 +207,7 @@ describe('MCP server tools', () => {
         'diagnose_project',
         'diagnose_layout',
         'upgrade_project_document',
+        'get_native_command_guide',
         'apply_native_project_changes',
         'get_native_project_baseline',
         'get_native_project_history',

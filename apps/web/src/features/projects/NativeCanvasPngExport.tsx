@@ -3,11 +3,15 @@ import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { requestFingerprint, sharedDocument } from '@ezerd/model';
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
+import { exportNativeCanvasPdf } from './native-canvas-pdf.js';
 import { exportNativeCanvasPng } from './native-canvas-png.js';
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 registerTranslations({
   'PNG 내보내기': 'Export PNG',
+  'PDF 내보내기 · 한 페이지': 'Export PDF · Single page',
+  'PDF 만드는 중…': 'Creating PDF…',
+  'PDF를 만들지 못했습니다. 다시 시도해 주세요.': 'Could not create the PDF. Try again.',
   'PNG 만드는 중…': 'Creating PNG…',
   '내보낼 카드가 없습니다.': 'There are no cards to export.',
   '이미지가 너무 큽니다. 내보낼 범위를 줄여 주세요.':
@@ -34,6 +38,7 @@ export function NativeCanvasPngExport({
   filter?: NativeDomainFilterValue | null;
   renderControl?: (png: {
     run: () => Promise<void>;
+    runPdf: () => Promise<void>;
     disabled: boolean;
     busy: boolean;
   }) => ReactNode;
@@ -56,6 +61,9 @@ export function NativeCanvasPngExport({
       mode,
       filter,
       requestFingerprint(sharedDocument(snapshot.sourceDocument)),
+      snapshot.native.status === 'available'
+        ? requestFingerprint(sharedDocument(snapshot.native.document))
+        : null,
     ]),
     active = useRef({ identity, generation: 0 });
   if (active.current.identity !== identity)
@@ -75,15 +83,21 @@ export function NativeCanvasPngExport({
     <>
       {(() => {
         const disabled = busy || !shared;
-        const run = async () => {
+        const run = async (format: 'png' | 'pdf' = 'png') => {
+          if (busy) return;
           if (snapshot.sourceDocument.schemaVersion !== 2 || !shared) return;
           const nativeSource = snapshot.sourceDocument;
           const current = () => alive.current && active.current.generation === generation;
           setBusy(true);
           setError('');
           await (async () => {
-            const source = sharedDocument(nativeSource);
-            return exportNativeCanvasPng(
+            // The read model includes normalized shared placements also used by the canvas.
+            const source = sharedDocument(
+              format === 'pdf' && snapshot.native.status === 'available'
+                ? snapshot.native.document
+                : nativeSource,
+            );
+            return (format === 'pdf' ? exportNativeCanvasPdf : exportNativeCanvasPng)(
               source,
               sceneFor(source, viewId, mode, filter),
               mode,
@@ -100,7 +114,9 @@ export function NativeCanvasPngExport({
                       ? '이미지가 너무 큽니다. 내보낼 범위를 줄여 주세요.'
                       : error instanceof Error && error.message === 'canvas.export-context-changed'
                         ? '화면 문맥이 바뀌어 내보내기를 중단했습니다.'
-                        : '이미지를 만들지 못했습니다. 다시 시도해 주세요.',
+                        : format === 'pdf'
+                          ? 'PDF를 만들지 못했습니다. 다시 시도해 주세요.'
+                          : '이미지를 만들지 못했습니다. 다시 시도해 주세요.',
                 );
             })
             .finally(() => {
@@ -108,11 +124,16 @@ export function NativeCanvasPngExport({
             });
         };
         return renderControl ? (
-          renderControl({ run, disabled, busy })
+          renderControl({ run: () => run('png'), runPdf: () => run('pdf'), disabled, busy })
         ) : (
-          <Button disabled={disabled} onClick={() => void run().catch(() => {})}>
-            {t(busy ? 'PNG 만드는 중…' : 'PNG 내보내기')}
-          </Button>
+          <>
+            <Button disabled={disabled} onClick={() => void run().catch(() => {})}>
+              {t(busy ? 'PNG 만드는 중…' : 'PNG 내보내기')}
+            </Button>
+            <Button disabled={disabled} onClick={() => void run('pdf').catch(() => {})}>
+              {t(busy ? 'PDF 만드는 중…' : 'PDF 내보내기 · 한 페이지')}
+            </Button>
+          </>
         );
       })()}
       {!shared && <small>{t('공유 화면을 선택해 내보내 주세요.')}</small>}

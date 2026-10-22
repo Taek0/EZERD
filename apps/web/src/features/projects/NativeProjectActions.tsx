@@ -17,7 +17,9 @@ export function NativeProjectActions({
   ddlDisabled?: boolean;
   userId: string;
   projectId: string;
-  png?: { run: () => Promise<void>; disabled: boolean; busy: boolean } | undefined;
+  png?:
+    | { run: () => Promise<void>; runPdf?: () => Promise<void>; disabled: boolean; busy: boolean }
+    | undefined;
 }) {
   const { t } = useI18n(),
     [busy, setBusy] = useState(false),
@@ -83,6 +85,16 @@ export function NativeProjectActions({
                   label: t('고화질 PNG'),
                   disabled: busy || png.disabled,
                   onAction: () => void run(png.run),
+                },
+              ]
+            : []),
+          ...(png?.runPdf
+            ? [
+                {
+                  id: 'pdf-export',
+                  label: t('PDF 내보내기 · 한 페이지'),
+                  disabled: busy || png.disabled,
+                  onAction: () => void run(png.runPdf!),
                 },
               ]
             : []),

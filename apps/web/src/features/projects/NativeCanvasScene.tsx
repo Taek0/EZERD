@@ -16,6 +16,7 @@ import { NativeCanvasTableRows } from './NativeCanvasTableRows.js';
 import { NativeTableLines } from './NativeTableLines.js';
 import {
   nativeCardColor,
+  nativeNoteTextColor,
   nativeTableHeaderColor,
   nativeTableHeaderTextColor,
   nativeTableCanvasTypography,
@@ -210,7 +211,8 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
                     '--native-table-footer-size': nativeTableCanvasTypography.footer + 'px',
                   }
                 : {}),
-              borderColor: selected ? 'var(--accent)' : nativeCardColor(base, node.objectId),
+              borderColor:
+                selected && !note ? 'var(--accent)' : nativeCardColor(base, node.objectId),
               ...(domain
                 ? {
                     '--native-domain-color': domain.color ?? '#8993a3',
@@ -220,7 +222,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               ...(note
                 ? {
                     '--native-note-color': note.color ?? '#fff3c4',
-                    borderTopColor: note.color ?? '#fff3c4',
+                    '--native-note-text-color': nativeNoteTextColor(note.color),
                   }
                 : {}),
             }}

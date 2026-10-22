@@ -336,6 +336,7 @@ export function NativeEditorField({
   value,
   onChange,
   choices,
+  renderOptionLeading,
   disabled = false,
   multiline = false,
   type = 'text',
@@ -344,6 +345,7 @@ export function NativeEditorField({
   value: string;
   onChange: (value: string) => void;
   choices?: readonly { value: string; label: string; disabled?: boolean | undefined }[];
+  renderOptionLeading?: (value: string) => ReactNode;
   disabled?: boolean;
   multiline?: boolean;
   type?: string;
@@ -353,7 +355,13 @@ export function NativeEditorField({
     <label>
       {t(label)}
       {choices ? (
-        <Select aria-label={t(label)} value={value} disabled={disabled} onValueChange={onChange}>
+        <Select
+          aria-label={t(label)}
+          value={value}
+          disabled={disabled}
+          onValueChange={onChange}
+          {...(renderOptionLeading ? { renderOptionLeading } : {})}
+        >
           {choices.map((choice) => (
             <option key={choice.value} value={choice.value} disabled={choice.disabled}>
               {choice.label}

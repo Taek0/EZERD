@@ -31,6 +31,7 @@ import {
   type NativeDesignDocument,
 } from '@ezerd/model';
 import { NativeSyncService } from '../sync/native-sync.service.js';
+import { ensureNativeTableCanvasLayout } from '../shared/native-document-reader.js';
 import type { AuthenticatedUser } from '../identity/session.js';
 import {
   applyNativeDomainEditorCommand,
@@ -212,10 +213,13 @@ export function nativeEditorCandidate(
       }
       case 'upsert_relation_layout':
         sharedView(command.value.viewId);
+        if (command.value.viewId === TABLES_VIEW_ID)
+          candidate = ensureNativeTableCanvasLayout(candidate);
         candidate = upsertRelationLayout(candidate, command.value);
         break;
       case 'batch_upsert_relation_layouts':
         sharedView(command.viewId);
+        if (command.viewId === TABLES_VIEW_ID) candidate = ensureNativeTableCanvasLayout(candidate);
         candidate = upsertRelationLayouts(
           candidate,
           command.routes.map((route) => ({ ...route, viewId: command.viewId })),
