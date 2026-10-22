@@ -221,6 +221,40 @@ beforeEach(() => {
 });
 
 describe('native inline cell lifecycle', () => {
+  it('resolves each document collection once across the wrapper and editable render', () => {
+    const props = fixture();
+    const tables = vi.spyOn(props.document.tables!, 'find');
+    const columns = vi.spyOn(props.document.columns!, 'find');
+    const cell = mount(props);
+    expect(tables).toHaveBeenCalledTimes(1);
+    expect(columns).toHaveBeenCalledTimes(1);
+    tables.mockClear();
+    columns.mockClear();
+    cell.render();
+    expect(tables).toHaveBeenCalledTimes(1);
+    expect(columns).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders nothing for deleted or mismatched objects', () => {
+    const props = fixture();
+    expect(
+      NativeCanvasInlineCell({ ...props, document: { ...props.document, columns: [] } }),
+    ).toBeNull();
+    expect(
+      NativeCanvasInlineCell({ ...props, document: { ...props.document, tables: [] } }),
+    ).toBeNull();
+    expect(
+      NativeCanvasInlineCell({ ...props, target: { ...props.target, columnId: 'missing' } }),
+    ).toBeNull();
+    const column = props.document.columns![0]!;
+    expect(
+      NativeCanvasInlineCell({
+        ...props,
+        document: { ...props.document, columns: [{ ...column, tableId: 'another' }] },
+      }),
+    ).toBeNull();
+  });
+
   it.each(['Enter', 'Tab', 'IME'] as const)(
     'saves custom input with %s and waits for composition',
     async (key) => {
