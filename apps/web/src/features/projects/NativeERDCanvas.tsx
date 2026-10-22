@@ -566,6 +566,7 @@ function NativeCanvasWorkspace({
   }) => void;
   renderExportActions?: (png: {
     run: () => Promise<void>;
+    runPdf?: () => Promise<void>;
     disabled: boolean;
     busy: boolean;
   }) => ReactNode;

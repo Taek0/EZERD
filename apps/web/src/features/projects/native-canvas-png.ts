@@ -30,7 +30,7 @@ const pathPoints = (path: string) => {
     y: values[i * 2 + 1]!,
   }));
 };
-export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
+export function nativeCanvasBounds(document: NativeDesignDocument, scene: Scene) {
   if (!scene.nodes.length) throw Error('canvas.export-empty');
   const geometry = nativeDomainGeometry(document, scene.nodes);
   const points = [
@@ -66,10 +66,17 @@ export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
   const width = Math.ceil(maxX - x + 64),
     height = Math.ceil(maxY - y + 64),
     scale = 2;
-  // The same bounded browser raster budget as the existing common canvas PNG exporter.
-  if (width * height * scale * scale > 120000000 || Math.max(width, height) * scale > 32760)
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
     throw Error('canvas.export-size-limit');
   return { x, y, width, height, scale };
+}
+export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
+  const bounds = nativeCanvasBounds(document, scene);
+  const { width, height, scale } = bounds;
+  // Raster limits do not apply to the vector PDF exporter.
+  if (width * height * scale * scale > 120000000 || Math.max(width, height) * scale > 32760)
+    throw Error('canvas.export-size-limit');
+  return bounds;
 }
 const text = (x: number, y: number, value: string, size = 12, anchor = 'start') =>
   `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}">${xml(value)}</text>`;
@@ -103,8 +110,9 @@ export function nativeCanvasSvg(
   document: NativeDesignDocument,
   scene: Scene,
   mode: 'physical' | 'logical',
+  format: 'png' | 'pdf' = 'png',
 ) {
-  const bounds = nativePngBounds(document, scene),
+  const bounds = (format === 'png' ? nativePngBounds : nativeCanvasBounds)(document, scene),
     domains = nativeDomainGeometry(document, scene.nodes);
   const globalView = (scene.effectiveView ?? scene.viewId) === '__tables__';
   const cards = scene.nodes
