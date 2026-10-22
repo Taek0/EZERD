@@ -30,3 +30,9 @@
 - [패널 파생 데이터](2026-10-22-Canvas-PanelDerivedResult.md): 50986c6
 
 검증 수치는 jsdom의 실제 React 실행과 순수 helper 작업 횟수이며, 사용자의 Chrome에서 FPS 또는 입력 지연 개선율을 측정한 결과는 아니다. 원본 문서·main checkout·실행 서버·원격 브랜치는 변경하지 않았다. 최종 브라우저 체감 확인은 별도 후속 검증이다.
+
+## 제품 PR 검증
+
+- origin/main 0e901fd 기반 codex/canvas-interactive-performance에서 제품 변경과 관련 문서만 선별했다. lab 전용 측정 도구와 low-zoom 추가 테스트 블록은 포함하지 않았다.
+- pnpm check 통과: 279개 파일, 3,132개 테스트 통과 / 환경 조건부 500개 건너뜀. 포맷·전체 타입·제품 빌드 성공.
+- 최초 기존 font-cache 5초 timeout은 소스·제한·skip 변경 없이 동일 명령 재실행으로 통과했다. 더미 로컬 DATABASE_URL을 사용했으며 실제 DB 동시성 검사는 활성화하지 않았다.
