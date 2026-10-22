@@ -10,6 +10,7 @@ import type { CommentContext } from '../comments/CommentsPanel.js';
 import { pinPosition, reviewCanvasView, type ReviewTarget } from '../comments/comments-state.js';
 import type { NativeDomainFilterValue } from './NativeDomainFilter.js';
 import { selectionRect, intersectingObjects } from '../canvas/canvas-selection.js';
+import { createCameraFrame } from '../canvas/camera-frame.js';
 import { createSelectionFrame, retainSelection } from '../canvas/selection-frame.js';
 import {
   canvasToolShortcut,
@@ -761,8 +762,24 @@ function NativeCanvasWorkspace({
     y: 24,
     zoom: 1,
   });
+  const cameraRef = useRef(camera);
+  const [panFrame] = useState(() => createCameraFrame(commitCamera));
   function setCamera(viewport: Viewport) {
+    panFrame.cancel();
+    panGesture.current = null;
+    cameraRef.current = viewport;
     commitCamera(viewport);
+  }
+  function schedulePan(clientX: number, clientY: number) {
+    const pan = panGesture.current;
+    if (!pan) return;
+    const next = {
+      ...pan.camera,
+      x: limit(pan.camera.x + clientX - pan.x),
+      y: limit(pan.camera.y + clientY - pan.y),
+    };
+    cameraRef.current = next;
+    panFrame.schedule(next);
   }
   const gesture = useRef<{
     node: NodeLayout;
@@ -927,9 +944,13 @@ function NativeCanvasWorkspace({
       setSharedStorageFailure(true);
     }
   }, [recoveryWaiting, inputKey, userId, snapshot.project.id, snapshot.project.databaseRevision]);
-  useEffect(() => {
-    commitCamera({ viewId: effectiveView, x: 24, y: 24, zoom: 1 });
-  }, [userId, snapshot.project.id, effectiveView]);
+  useLayoutEffect(() => {
+    setCamera({ viewId: effectiveView, x: 24, y: 24, zoom: 1 });
+    return () => {
+      panFrame.cancel();
+      panGesture.current = null;
+    };
+  }, [userId, snapshot.project.id, effectiveView, panFrame]);
   const contentMetrics = useMemo(
     () => createNativeTableCanvasMetrics(base, mode),
     [base.tables, base.columns, base.keys, base.tableRelations, base.enums, mode],
@@ -1061,6 +1082,10 @@ function NativeCanvasWorkspace({
   });
   const [marqueeFrame] = useState(() => createSelectionFrame(applyMarqueePoint));
   useEffect(() => () => marqueeFrame.cancel(), [marqueeFrame]);
+  const scopeVisibleObjectIds = useMemo(
+    () => scene.nodes.map((node) => node.objectId),
+    [scene.nodes],
+  );
   const scopeCallback = useRef(onCanvasScopeChange);
   scopeCallback.current = onCanvasScopeChange;
   useEffect(
@@ -1068,7 +1093,7 @@ function NativeCanvasWorkspace({
       scopeCallback.current?.({
         viewId: effectiveView,
         filter: domainFilter,
-        visibleObjectIds: scene.nodes.map((node) => node.objectId),
+        visibleObjectIds: scopeVisibleObjectIds,
         selectedObjectId: blankSelection
           ? null
           : (selectedRelationId ??
@@ -1081,6 +1106,7 @@ function NativeCanvasWorkspace({
       }),
     [
       scene,
+      scopeVisibleObjectIds,
       effectiveView,
       domainFilter,
       selectedNode,
@@ -1364,8 +1390,8 @@ function NativeCanvasWorkspace({
   function canvasPoint(clientX: number, clientY: number) {
     const rect = surface.current?.getBoundingClientRect();
     return {
-      x: limit((clientX - (rect?.left ?? 0) - camera.x) / camera.zoom),
-      y: limit((clientY - (rect?.top ?? 0) - camera.y) / camera.zoom),
+      x: limit((clientX - (rect?.left ?? 0) - cameraRef.current.x) / cameraRef.current.zoom),
+      y: limit((clientY - (rect?.top ?? 0) - cameraRef.current.y) / cameraRef.current.zoom),
     };
   }
   function contextMenu(
@@ -2025,7 +2051,7 @@ function NativeCanvasWorkspace({
           selectedDomainId ??
           selectedTableId ??
           null,
-        visibleObjectIds: scene.nodes.map((node) => node.objectId),
+        visibleObjectIds: scopeVisibleObjectIds,
         position: (() => {
           const node = scene.nodes.find((node) => node.id === selectedNode);
           const rect = surface.current?.getBoundingClientRect();
@@ -2361,7 +2387,7 @@ function NativeCanvasWorkspace({
             onCreatePin({
               viewId: effectiveView,
               selectedObjectId: null,
-              visibleObjectIds: scene.nodes.map((node) => node.objectId),
+              visibleObjectIds: scopeVisibleObjectIds,
               position: {
                 x: (event.clientX - rect.left - camera.x) / camera.zoom,
                 y: (event.clientY - rect.top - camera.y) / camera.zoom,
@@ -2404,11 +2430,12 @@ function NativeCanvasWorkspace({
           event.preventDefault();
           event.stopPropagation();
           event.currentTarget.setPointerCapture(event.pointerId);
+          panFrame.flush();
           panGesture.current = {
             pointerId: event.pointerId,
             x: event.clientX,
             y: event.clientY,
-            camera,
+            camera: cameraRef.current,
           };
         }}
         onPointerMove={(event) => {
@@ -2421,11 +2448,7 @@ function NativeCanvasWorkspace({
           const pan = panGesture.current;
           if (pan?.pointerId !== event.pointerId) return;
           event.stopPropagation();
-          setCamera({
-            ...pan.camera,
-            x: limit(pan.camera.x + event.clientX - pan.x),
-            y: limit(pan.camera.y + event.clientY - pan.y),
-          });
+          schedulePan(event.clientX, event.clientY);
         }}
         onPointerUp={(event) => {
           if (marqueeGesture.current?.pointerId === event.pointerId) {
@@ -2441,12 +2464,15 @@ function NativeCanvasWorkspace({
           }
           if (panGesture.current?.pointerId !== event.pointerId) return;
           event.stopPropagation();
+          schedulePan(event.clientX, event.clientY);
+          panFrame.flush();
           panGesture.current = null;
           if (event.currentTarget.hasPointerCapture(event.pointerId))
             event.currentTarget.releasePointerCapture(event.pointerId);
         }}
         onPointerCancel={() => {
           placementPersistence.flush();
+          panFrame.flush();
           panGesture.current = null;
           marqueeGesture.current = null;
           marqueeFrame.cancel();
@@ -2456,7 +2482,10 @@ function NativeCanvasWorkspace({
         }}
         onLostPointerCapture={(event) => {
           placementPersistence.flush();
-          if (panGesture.current?.pointerId === event.pointerId) panGesture.current = null;
+          if (panGesture.current?.pointerId === event.pointerId) {
+            panFrame.flush();
+            panGesture.current = null;
+          }
           if (marqueeGesture.current?.pointerId === event.pointerId) {
             marqueeFrame.cancel();
             marqueeGesture.current = null;
@@ -2599,6 +2628,7 @@ function NativeCanvasWorkspace({
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
             placementPersistence.flush();
             spacePan.current = false;
+            panFrame.flush();
             panGesture.current = null;
           }
         }}
@@ -2610,7 +2640,7 @@ function NativeCanvasWorkspace({
             return;
           const rect = event.currentTarget.getBoundingClientRect();
           const next = nativeCanvasWheel(
-            camera,
+            cameraRef.current,
             event,
             { x: event.clientX - rect.left, y: event.clientY - rect.top },
             rect.height,
@@ -2835,7 +2865,7 @@ function NativeCanvasWorkspace({
           onZoom={(factor) => {
             const rect = surface.current?.getBoundingClientRect();
             setCamera(
-              nativeZoomAt(camera, zoomLimit(camera.zoom * factor), {
+              nativeZoomAt(cameraRef.current, zoomLimit(cameraRef.current.zoom * factor), {
                 x: (rect?.width ?? 800) / 2,
                 y: (rect?.height ?? 600) / 2,
               }),
@@ -2844,7 +2874,7 @@ function NativeCanvasWorkspace({
           onReset={() => {
             const rect = surface.current?.getBoundingClientRect();
             setCamera(
-              nativeZoomAt(camera, 1, {
+              nativeZoomAt(cameraRef.current, 1, {
                 x: (rect?.width ?? 800) / 2,
                 y: (rect?.height ?? 600) / 2,
               }),

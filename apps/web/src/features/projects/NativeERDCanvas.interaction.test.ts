@@ -494,6 +494,7 @@ describe('native canvas clipboard storage integration', () => {
       expect(ui.surface.setPointerCapture).toHaveBeenCalledOnce();
       expect(ui.hasMarquee()).toBe(tool === 'select');
       ui.event('onPointerMove', { clientX: 1100 });
+      ui.tick();
       if (tool === 'hand') expect(ui.transform()).not.toBe(start);
       ui.event('onPointerUp');
     },
@@ -775,7 +776,7 @@ describe('native blank canvas pointer interaction', () => {
     ui.render();
     ui.event('onPointerDownCapture');
     ui.event('onPointerMove', { clientX: 1100, clientY: 1050 });
-    ui.event('onPointerUp');
+    ui.event('onPointerUp', { clientX: 1100, clientY: 1050 });
     expect(ui.transform()).not.toBe(before);
     expect(ui.worldStyle().willChange).toBe('auto');
     (ui.controls().onZoom as (factor: number) => void)(1.4);
@@ -1063,6 +1064,7 @@ describe('native blank canvas pointer interaction', () => {
       const start = ui.transform();
       ui.event('onPointerDownCapture');
       ui.event('onPointerMove', { clientX: 1100 });
+      ui.tick();
       const moved = ui.transform();
       expect(moved).not.toBe(start);
       expect(ui.hasMarquee()).toBe(false);
@@ -1071,6 +1073,7 @@ describe('native blank canvas pointer interaction', () => {
       expect(ui.transform()).toBe(moved);
       ui.event('onPointerDownCapture');
       ui.event('onPointerMove', { clientX: 1100 });
+      ui.tick();
       expect(ui.transform()).not.toBe(moved);
       ui.event('onPointerUp');
     },
