@@ -18,11 +18,18 @@ export interface NativeInlineTarget {
 export const nativeInlineKey = (target: NativeInlineTarget) =>
   `canvas:inline:${JSON.stringify([target.tableId, target.columnId ?? '', target.mode, target.field])}`;
 export function nativeInlineInput(document: NativeDesignDocument, target: NativeInlineTarget) {
+  const input = findNativeInlineInput(document, target);
+  if (!input) throw Error('document.object-not-found');
+  return input;
+}
+
+/** Resolve once for rendering; absent/deleted objects render no cell. */
+export function findNativeInlineInput(document: NativeDesignDocument, target: NativeInlineTarget) {
   const table = document.tables?.find((t) => t.id === target.tableId);
   const column = target.columnId
     ? document.columns?.find((c) => c.id === target.columnId && c.tableId === target.tableId)
     : undefined;
-  if (!table || (target.columnId && !column)) throw Error('document.object-not-found');
+  if (!table || (target.columnId && !column)) return null;
   const item = column ?? table;
   const value =
     target.field === 'name'

@@ -20,6 +20,7 @@ import { useNativeAutosave } from './use-native-autosave.js';
 import { nativeFormatInitial } from './native-editor-format.js';
 import { nativeTypeCurrentLabel } from './native-editor-policy.js';
 import {
+  findNativeInlineInput,
   nativeInlineCommand,
   nativeInlineInput,
   nativeInlineKey,
@@ -54,12 +55,9 @@ export interface NativeCanvasInlineCellProps {
 /** The key isolates hook state and pending callbacks across actor/project/field changes. */
 export function NativeCanvasInlineCell(props: NativeCanvasInlineCellProps) {
   const { document, target, context } = props;
-  const table = document.tables?.find((item) => item.id === target.tableId);
-  const column = target.columnId
-    ? document.columns?.find((item) => item.id === target.columnId && item.tableId === table?.id)
-    : undefined;
-  if (!table || (target.columnId && !column)) return null;
-  const input = nativeInlineInput(document, target);
+  const input = findNativeInlineInput(document, target);
+  if (!input) return null;
+  const { column } = input;
   const display =
     props.display ??
     (target.field === 'format' && column ? nativeTypeCurrentLabel(column, document) : input.value);
@@ -73,6 +71,7 @@ export function NativeCanvasInlineCell(props: NativeCanvasInlineCellProps) {
     <EditableNativeCanvasInlineCell
       {...props}
       context={context}
+      input={input}
       display={display}
       key={JSON.stringify([context.userId, context.snapshot.project.id, nativeInlineKey(target)])}
     />
@@ -83,15 +82,19 @@ function EditableNativeCanvasInlineCell({
   document,
   target,
   context,
+  input,
   onSelect,
   onAdvancedFormat,
   label,
   display,
   title = false,
   className,
-}: NativeCanvasInlineCellProps & { context: NativeEditorContext; display: string }) {
+}: NativeCanvasInlineCellProps & {
+  context: NativeEditorContext;
+  display: string;
+  input: ReturnType<typeof nativeInlineInput>;
+}) {
   const { t } = useI18n();
-  const input = nativeInlineInput(document, target);
   const key = nativeInlineKey(target);
   const typeCell = target.mode === 'physical' && target.field === 'format' && !!input.column;
 
