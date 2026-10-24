@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addNote, addTableReference, upsertCombinedView } from '../document.js';
+import { addNote, addTableReference } from '../document.js';
 import { createEmptyNativeDocument, type NativeDesignDocument } from './native-document.js';
 import { createNativeColumn, createNativeTable } from './editing.js';
 import { defaultDatabaseContext } from './profiles.js';
@@ -101,16 +101,45 @@ function fixture(kind: 'postgresql' | 'mysql' | 'sqlite' = 'postgresql'): Native
   document = addTableReference(document, 'b', '__tables__', { x: 500, y: 60 });
   document = addTableReference(document, 'a', 'd1', { x: 10, y: 20 });
   document = addTableReference(document, 'a', 'd2', { x: 100, y: 120 });
-  document = upsertCombinedView(document, {
-    id: 'only-first',
-    name: 'Private first',
-    domainIds: ['d1'],
-  });
-  document = upsertCombinedView(document, {
-    id: 'mixed',
-    name: 'Private mixed',
-    domainIds: ['d1', 'd2'],
-  });
+  document = {
+    ...document,
+    views: [
+      {
+        id: 'only-first',
+        name: 'Private first',
+        domainIds: ['d1'],
+      },
+    ],
+    layout: {
+      ...document.layout,
+      nodes: [
+        ...document.layout.nodes,
+        ...document.layout.nodes
+          .filter((node) => node.viewId === '__tables__' && node.objectId === 'a')
+          .flatMap((node) => [{ ...node, id: node.id + ':' + 'only-first', viewId: 'only-first' }]),
+      ],
+    },
+  };
+  document = {
+    ...document,
+    views: [
+      ...(document.views ?? []),
+      {
+        id: 'mixed',
+        name: 'Private mixed',
+        domainIds: ['d1', 'd2'],
+      },
+    ],
+    layout: {
+      ...document.layout,
+      nodes: [
+        ...document.layout.nodes,
+        ...document.layout.nodes
+          .filter((node) => node.viewId === '__tables__')
+          .flatMap((node) => [{ ...node, id: node.id + ':' + 'mixed', viewId: 'mixed' }]),
+      ],
+    },
+  };
   document = addNote(
     document,
     { id: 'domain-note', viewId: 'd1', text: 'owned' },

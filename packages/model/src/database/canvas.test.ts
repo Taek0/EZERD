@@ -1,16 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addDomain,
   addNote,
   addTableReference,
-  createEmptyDocument,
-  removeCombinedView,
   removeNote,
   removeTableReference,
   setViewport,
   updateNodeLayout,
   updateNote,
-  upsertCombinedView,
   upsertRelationLayout,
 } from '../document.js';
 import { createEmptyNativeDocument } from './native-document.js';
@@ -89,7 +85,19 @@ describe('version-preserving common canvas commands', () => {
     (kind) => {
       const original = fixture(kind),
         before = structuredClone(original);
-      let document = upsertCombinedView(original, { id: 'v', name: 'Private', domainIds: ['d'] });
+      let document = {
+        ...original,
+        views: [{ id: 'v', name: 'Private', domainIds: ['d'] }],
+        layout: {
+          ...original.layout,
+          nodes: [
+            ...original.layout.nodes,
+            ...original.layout.nodes
+              .filter((node) => node.viewId === '__tables__')
+              .flatMap((node) => [{ ...node, id: node.id + ':' + 'v', viewId: 'v' }]),
+          ],
+        },
+      };
       expect(document.layout.nodes.filter((node) => node.viewId === 'v')).toHaveLength(2);
       document = addNote(document, { id: 'note', viewId: 'v', text: 'original' }, { x: 10, y: 20 });
       document = updateNote(document, 'note', { text: 'changed', color: '#123456' });
@@ -118,59 +126,31 @@ describe('version-preserving common canvas commands', () => {
       ] as const)
         expect(document[key]).toEqual(before[key]);
       document = removeNote(document, 'note');
-      document = removeCombinedView(document, 'v');
-      expect(document.views).toEqual([]);
-      expect(document.layout.nodes).toEqual(before.layout.nodes);
-      expect(document.layout.viewports).toEqual([]);
+      expect(document.notes).toEqual([]);
+      expect(document.views).toEqual([{ id: 'v', name: 'Private', domainIds: ['d'] }]);
       expect(original).toEqual(before);
     },
   );
-  it('uses legacy owner placements first and canonical shared placements as fallback for v1', () => {
-    const native = fixture('postgresql');
-    const original = {
-      ...createEmptyDocument(),
-      domains: native.domains,
-      tables: [],
-      layout: native.layout,
-    };
-    // Common canvas commands need only table ownership, without importing a native type into v1.
-    const source = {
-      ...original,
-      tables: native.tables.map((table) => ({
-        ...table,
-        physical: { name: table.id, schema: 'public', comment: '' },
-      })),
-    };
-    let result = upsertCombinedView(source, { id: 'v', name: 'View', domainIds: ['d'] });
-    expect(
-      result.layout.nodes.filter((node) => node.viewId === 'v').map((node) => node.id),
-    ).toEqual(['node:a:v', 'node:b:v']);
-    source.layout = {
-      ...source.layout,
-      nodes: [
-        ...source.layout.nodes,
-        { id: 'old', objectId: 'a', viewId: 'd', x: 10, y: 20, width: 700, height: 260 },
-      ],
-    };
-    result = upsertCombinedView(source, { id: 'v', name: 'View', domainIds: ['d'] });
-    expect(
-      result.layout.nodes.find((node) => node.viewId === 'v' && node.objectId === 'a')!.width,
-    ).toBe(700);
-    const note = addNote(result, { id: 'note', viewId: 'v', text: 'V1' }, { x: 0, y: 0 });
-    expect(note.layout.nodes.find((node) => node.objectId === 'note')!.id).toBe('node:note');
-    expect(
-      addDomain(createEmptyDocument(), { id: 'd', name: 'D', description: '' }, { x: 0, y: 0 })
-        .layout.nodes[0]!.id,
-    ).toBe('node:d');
-  });
-  it('bounds long native generated IDs and resolves prefix collisions without changing references', () => {
+  it('bounds long native note IDs without changing historical references', () => {
     const source = fixture('sqlite');
     const tableIds = ['x'.repeat(159) + 'a', 'x'.repeat(159) + 'b'];
     source.tables.forEach((table, index) => (table.id = tableIds[index]!));
     source.columns[0]!.tableId = tableIds[0]!;
     source.layout.nodes.forEach((node, index) => (node.objectId = tableIds[index]!));
     const viewId = 'v'.repeat(160);
-    let result = upsertCombinedView(source, { id: viewId, name: 'Long', domainIds: ['d'] });
+    let result = {
+      ...source,
+      views: [{ id: viewId, name: 'Long', domainIds: ['d'] }],
+      layout: {
+        ...source.layout,
+        nodes: [
+          ...source.layout.nodes,
+          ...source.layout.nodes
+            .filter((node) => node.viewId === '__tables__')
+            .flatMap((node) => [{ ...node, id: node.id + ':legacy', viewId }]),
+        ],
+      },
+    };
     result = addNote(result, { id: '😀'.repeat(80), viewId, text: 'Long note' }, { x: 0, y: 0 });
     const nodes = result.layout.nodes.filter((node) => node.viewId === viewId);
     expect(new Set(nodes.map((node) => node.id)).size).toBe(3);
@@ -181,7 +161,7 @@ describe('version-preserving common canvas commands', () => {
       addNote(result, { id: 'i', viewId, text: 'Cannot reuse index ID' }, { x: 0, y: 0 }),
     ).toThrow();
     expect(() =>
-      upsertCombinedView(result, { id: 'q', name: 'Cannot reuse check ID', domainIds: ['d'] }),
+      addNote(result, { id: 'q', viewId, text: 'Cannot reuse check ID' }, { x: 0, y: 0 }),
     ).toThrow();
   });
 });

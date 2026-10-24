@@ -13,7 +13,6 @@ import {
   updateColumn,
   updateTable,
   upsertKey,
-  upsertCombinedView,
   upsertRelationLayout,
   upsertTableRelation,
   type Table,
@@ -165,8 +164,19 @@ describe('relational ownership and independent properties', () => {
         onUpdate: 'NO ACTION',
       },
     });
-    doc = upsertCombinedView(doc, { id: 'old', name: 'old', domainIds: ['a'] });
-    doc = upsertCombinedView(doc, { id: 'both', name: 'both', domainIds: ['a', 'b'] });
+    doc = {
+      ...doc,
+      views: [{ id: 'both', name: 'both', domainIds: ['a', 'b'] }],
+      layout: {
+        ...doc.layout,
+        nodes: [
+          ...doc.layout.nodes,
+          ...doc.layout.nodes
+            .filter((node) => node.viewId === '__tables__')
+            .flatMap((node) => [{ ...node, id: node.id + ':' + 'both', viewId: 'both' }]),
+        ],
+      },
+    };
     doc = upsertRelationLayout(doc, { relationId: 'fk', viewId: 'a', offset: 20 });
     doc = upsertRelationLayout(doc, { relationId: 'fk', viewId: 'b', offset: 40 });
     const moved = updateTable(doc, 't', { domainId: 'b' });
@@ -184,10 +194,7 @@ describe('relational ownership and independent properties', () => {
     expect(diagnoseDocument(moved)).toEqual([]);
     expect(doc.layout.nodes.some((node) => node.id === 'node:t:a')).toBe(true);
     const deleted = removeTable(moved, 't');
-    const refreshed = upsertCombinedView(
-      deleted,
-      deleted.views!.find((view) => view.id === 'both')!,
-    );
+    const refreshed = deleted;
     expect(refreshed.layout.nodes.some((node) => node.objectId === 't')).toBe(false);
     expect(() => updateTable(refreshed, 't', { domainId: 'a' })).toThrow();
   });

@@ -146,8 +146,8 @@ registerTranslations({
   확대: 'Zoom in',
   축소: 'Zoom out',
   '이 화면에 표시할 노드가 없습니다.': 'There are no nodes to display in this view.',
-  '공유 도메인 화면은 공유 테이블 배치를 사용합니다.':
-    'Shared domain views use shared table placements.',
+  '도메인 화면은 프로젝트의 테이블 배치를 사용합니다.':
+    'Domain views use the project table placements.',
   '도메인 선택': 'Select domains',
   작업: 'Action',
   이름: 'Name',
@@ -2149,7 +2149,7 @@ function NativeCanvasWorkspace({
         <p role="alert">{error}</p>
       )}
       {base.domains.some((domain) => domain.id === effectiveView) && (
-        <p>{t('공유 도메인 화면은 공유 테이블 배치를 사용합니다.')}</p>
+        <p>{t('도메인 화면은 프로젝트의 테이블 배치를 사용합니다.')}</p>
       )}
 
       {draft && (recoveryOpen || stale) && (

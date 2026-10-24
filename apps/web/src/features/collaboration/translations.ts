@@ -67,10 +67,6 @@ registerTranslations({
   '변경 대상이 삭제되어 자동 반영할 수 없습니다.':
     'The edited object was deleted; the edit cannot be applied automatically.',
   '실시간 변경을 해석하지 못했습니다.': 'Could not read the live changes.',
-  '개인 화면이 다른 곳에서 변경되었습니다. 프로젝트를 다시 열어 주세요.':
-    'Your personal view was changed elsewhere. Reopen the project.',
-  '개인 화면을 저장하지 못했습니다': 'Could not save the personal view',
-  '개인 화면을 저장하지 못했습니다.': 'Could not save the personal view.',
   도메인: 'Domain',
   테이블: 'Table',
   컬럼: 'Column',
@@ -219,8 +215,8 @@ registerTranslations({
   '프로젝트 이름': 'Project name',
   관계: 'Relationship',
   '저장된 뷰': 'Saved views',
-  '계정, PIN, 대화, 변경 이력 및 개인 화면 설정은 포함되지 않습니다.':
-    'Accounts, PINs, conversations, change history, and personal view settings are not included.',
+  '계정, PIN, 대화 및 변경 이력은 포함되지 않습니다.':
+    'Accounts, PINs, conversations, and change history are not included.',
   취소: 'Cancel',
   '가져오는 중…': 'Importing…',
   '새 프로젝트로 가져오기': 'Import as a new project',
@@ -239,7 +235,6 @@ registerTranslations({
   '설계 데이터를 확인해 주세요: {message}': 'Check the design data: {message}',
   '작업 처리 상태를 확인하지 못했습니다 ({status}).':
     'Could not check the operation status ({status}).',
-  '개인 화면을 저장하지 못했습니다 ({status}).': 'Could not save the personal view ({status}).',
   '동기화 요청을 완료하지 못했습니다 ({status}).':
     'Could not complete the sync request ({status}).',
 });

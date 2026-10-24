@@ -6,7 +6,6 @@ import {
   createNativeColumn,
   defaultDatabaseContext,
   type NativeDesignDocument,
-  upsertCombinedView,
   addTableReference,
 } from '@ezerd/model';
 import {
@@ -84,22 +83,24 @@ describe('native editor candidate and MCP ordering', () => {
     const doc = fixture();
     doc.domains = [{ id: 'd', name: 'D', description: '' }];
     doc.tables![0]!.domainId = 'd';
-    const personal = upsertCombinedView(addTableReference(doc, 't', '__tables__', { x: 0, y: 0 }), {
-      id: 'v',
-      name: 'Private',
-      domainIds: ['d'],
+    const personal = addTableReference(doc, 't', '__tables__', { x: 0, y: 0 });
+    personal.views = [{ id: 'v', name: 'Legacy', domainIds: ['d'] }];
+    personal.layout.nodes.push({
+      ...personal.layout.nodes.find((node) => node.objectId === 't')!,
+      id: 'legacy-node',
+      viewId: 'v',
     });
     const node = personal.layout.nodes.find((node) => node.viewId === 'v')!;
     expect(() =>
       nativeEditorCandidate(personal, [
         { type: 'update_node_layout', nodeId: node.id, patch: { x: 0 } },
       ]),
-    ).toThrow('canvas.shared-view-required');
+    ).toThrow('canvas.unsupported-view');
     expect(() =>
       nativeEditorCandidate(personal, [
         { type: 'upsert_note', value: { id: 'note', viewId: 'v', text: 'private' } },
       ]),
-    ).toThrow('canvas.shared-view-required');
+    ).toThrow('canvas.unsupported-view');
     expect(() =>
       nativeEditorCandidate(doc, [
         { type: 'set_viewport', value: { viewId: '__tables__', x: 0, y: 0, zoom: 1 } } as never,

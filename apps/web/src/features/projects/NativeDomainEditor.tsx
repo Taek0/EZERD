@@ -62,6 +62,8 @@ registerTranslations({
     'Column types, defaults, generation rules and foreign keys are preserved.',
   '현재 화면에서 확인한 참조 정리 영향입니다.':
     'Reference cleanup shown here covers the current view.',
+  '테이블 캔버스': 'Table canvas',
+  '이전 형식의 보기': 'Legacy view',
   배치: 'Placement',
   '화면 위치': 'Camera',
   '도메인 연결': 'Domain relationship',
@@ -188,7 +190,7 @@ const domainLabel = (document: NativeDesignDocument, id: string | null) =>
   id === null
     ? '미소속'
     : id === '__tables__'
-      ? '공유 캔버스'
+      ? '테이블 캔버스'
       : id === 'overview'
         ? '도메인 개요'
         : document.domains.find((domain) => domain.id === id)?.name ||
@@ -754,7 +756,7 @@ export function NativeDomainDeletionImpact({
             ))}
             {plan.removedViewIds.map((id) => (
               <li key={`view:${id}`}>
-                {t('개인 화면')}: {objectLabel(document, 'views', id)}
+                {t('이전 형식의 보기')}: {objectLabel(document, 'views', id)}
               </li>
             ))}
             {plan.removedNodeIds.map((id) => {

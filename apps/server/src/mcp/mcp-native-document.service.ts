@@ -107,7 +107,7 @@ export function nativeEditorCandidate(
       viewId !== TABLES_VIEW_ID &&
       !candidate.domains.some((domain) => domain.id === viewId)
     )
-      throw new Error('canvas.shared-view-required');
+      throw new Error('canvas.unsupported-view');
   };
   for (const raw of commands) {
     const command = nativeEditorCommandSchema.parse(raw);

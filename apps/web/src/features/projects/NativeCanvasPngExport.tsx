@@ -23,7 +23,8 @@ registerTranslations({
   '화면 문맥이 바뀌어 내보내기를 중단했습니다.':
     'Export stopped because the active context changed.',
   '이미지를 만들지 못했습니다. 다시 시도해 주세요.': 'Could not create the image. Try again.',
-  '공유 화면을 선택해 내보내 주세요.': 'Select a shared view to export.',
+  '도메인 맵 또는 테이블 캔버스를 선택해 내보내 주세요.':
+    'Select the domain map or table canvas to export.',
 });
 export function NativeCanvasPngExport({
   snapshot,
@@ -51,7 +52,7 @@ export function NativeCanvasPngExport({
   const { t } = useI18n(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const shared =
+  const exportable =
     snapshot.sourceDocument.schemaVersion === 2 &&
     (['overview', '__tables__'].includes(viewId) ||
       snapshot.sourceDocument.domains.some((domain) => domain.id === viewId));
@@ -87,10 +88,10 @@ export function NativeCanvasPngExport({
   return (
     <>
       {(() => {
-        const disabled = busy || !shared;
+        const disabled = busy || !exportable;
         const run = async (format: 'png' | 'pdf' | 'svg' = 'png') => {
           if (busy) return;
-          if (snapshot.sourceDocument.schemaVersion !== 2 || !shared) return;
+          if (snapshot.sourceDocument.schemaVersion !== 2 || !exportable) return;
           const nativeSource = snapshot.sourceDocument;
           const current = () => alive.current && active.current.generation === generation;
           setBusy(true);
@@ -157,7 +158,7 @@ export function NativeCanvasPngExport({
           </>
         );
       })()}
-      {!shared && <small>{t('공유 화면을 선택해 내보내 주세요.')}</small>}
+      {!exportable && <small>{t('도메인 맵 또는 테이블 캔버스를 선택해 내보내 주세요.')}</small>}
       {error && <p role="alert">{t(error)}</p>}
     </>
   );
