@@ -73,7 +73,7 @@ export function nativeCanvasBounds(document: NativeDesignDocument, scene: Scene)
 export function nativePngBounds(document: NativeDesignDocument, scene: Scene) {
   const bounds = nativeCanvasBounds(document, scene);
   const { width, height, scale } = bounds;
-  // Raster limits do not apply to the vector PDF exporter.
+  // Raster limits do not apply to vector PDF and SVG exporters.
   if (width * height * scale * scale > 120000000 || Math.max(width, height) * scale > 32760)
     throw Error('canvas.export-size-limit');
   return bounds;
@@ -110,7 +110,7 @@ export function nativeCanvasSvg(
   document: NativeDesignDocument,
   scene: Scene,
   mode: 'physical' | 'logical',
-  format: 'png' | 'pdf' = 'png',
+  format: 'png' | 'pdf' | 'svg' = 'png',
 ) {
   const bounds = (format === 'png' ? nativePngBounds : nativeCanvasBounds)(document, scene),
     domains = nativeDomainGeometry(document, scene.nodes);

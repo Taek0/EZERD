@@ -257,6 +257,7 @@ export function NativeProjectView({
     png?: {
       run: () => Promise<void>;
       runPdf?: () => Promise<void>;
+      runSvg?: () => Promise<void>;
       disabled: boolean;
       busy: boolean;
     },
@@ -1779,6 +1780,7 @@ export function NativeProjectView({
                         renderExportActions: (png: {
                           run: () => Promise<void>;
                           runPdf?: () => Promise<void>;
+                          runSvg?: () => Promise<void>;
                           disabled: boolean;
                           busy: boolean;
                         }) => projectActions(focusIssue, png),
