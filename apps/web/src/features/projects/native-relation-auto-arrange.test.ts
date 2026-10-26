@@ -624,3 +624,107 @@ it('blocks startup when recovery storage cannot be read', () => {
   expect(controller.getStatus()).toMatchObject({ phase: 'failed', reason: 'save' });
   controller.dispose();
 });
+
+describe('semantic arrangement diffs and no-op saves', () => {
+  const stored = () => ({ ...arranged, viewId: '__tables__', offset: 0 });
+  const reordered = () => ({
+    waypoints: [{ y: 200, x: 100 }],
+    targetAnchor: { ratio: 0.5, side: 'top' as const },
+    sourceAnchor: { ratio: 0.5, side: 'bottom' as const },
+    offset: 0,
+    viewId: '__tables__',
+    relationId,
+  });
+
+  it('ignores property order and explicit undefined optional values', () => {
+    const state = fixture();
+    state.document.layout.relations = [reordered()];
+    expect(nativeRelationArrangeBatch(state, [{ ...stored(), bend: undefined }]).routes).toEqual(
+      [],
+    );
+    state.document.layout.relations = [];
+    expect(
+      nativeRelationArrangeBatch(state, [{ relationId, viewId: '__tables__', offset: 0 }]).routes,
+    ).toEqual([]);
+  });
+
+  it('keeps exact coordinates, anchors, bends and waypoint order meaningful', () => {
+    const state = fixture();
+    const original = {
+      ...stored(),
+      waypoints: [
+        { x: 100, y: 180 },
+        { x: 100, y: 220 },
+      ],
+    };
+    state.document.layout.relations = [original];
+    const variants = [
+      { ...original, offset: 1e-8 },
+      { ...original, bend: { x: 100, y: 200 } },
+      { ...original, sourceAnchor: { ...original.sourceAnchor, ratio: 0.5 + 1e-8 } },
+      { ...original, targetAnchor: { ...original.targetAnchor, side: 'left' as const } },
+      { ...original, waypoints: [{ x: 100 + 1e-8, y: 180 }, original.waypoints[1]!] },
+      { ...original, waypoints: [...original.waypoints].reverse() },
+    ];
+    for (const variant of variants)
+      expect(nativeRelationArrangeBatch(state, [variant]).routes).toHaveLength(1);
+    const { waypoints: _points, ...automatic } = original;
+    state.document.layout.relations = [automatic];
+    expect(
+      nativeRelationArrangeBatch(state, [{ ...automatic, waypoints: [] }]).routes,
+    ).toHaveLength(1);
+  });
+
+  it('submits only the changed route in a mixed batch', () => {
+    const state = fixture();
+    const other = { ...stored(), relationId: 'other', offset: 2 };
+    state.document.layout.relations = [reordered(), other];
+    const batch = nativeRelationArrangeBatch(state, [stored(), { ...other, offset: 3 }]);
+    expect(batch.routes).toEqual([{ ...arranged, relationId: 'other', offset: 3 }]);
+  });
+
+  it('does not save or create an undo marker when a completed result is unchanged', async () => {
+    const state = fixture();
+    state.document.layout.relations = [stored()];
+    const worker = fakeWorker(),
+      save = vi.fn(async () => true),
+      storage = markerStorage();
+    const controller = createNativeRelationArrangeController({
+      getState: () => state,
+      createWorker: () => worker,
+      save,
+      storage,
+      onStatus: vi.fn(),
+    });
+    controller.start();
+    // A fresh snapshot may have the same fields in a different object order.
+    state.document.layout.relations = [reordered()];
+    worker.result();
+    await Promise.resolve();
+    expect(save).not.toHaveBeenCalled();
+    expect(storage.size).toBe(0);
+    expect(controller.getStatus()).toMatchObject({ phase: 'saved', canUndo: false });
+    controller.dispose();
+  });
+
+  it('still treats route removal during computation as a conflicting edit', async () => {
+    const state = fixture();
+    state.document.layout.relations = [{ relationId, viewId: '__tables__', offset: 0 }];
+    const worker = fakeWorker(),
+      save = vi.fn(async () => true);
+    const controller = createNativeRelationArrangeController({
+      getState: () => state,
+      createWorker: () => worker,
+      save,
+      storage: markerStorage(),
+      onStatus: vi.fn(),
+    });
+    controller.start();
+    state.document.layout.relations = [];
+    worker.result();
+    await Promise.resolve();
+    expect(save).not.toHaveBeenCalled();
+    expect(controller.getStatus()).toMatchObject({ phase: 'invalidated', reason: 'route' });
+    controller.dispose();
+  });
+});

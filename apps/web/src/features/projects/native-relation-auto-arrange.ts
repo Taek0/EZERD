@@ -156,10 +156,31 @@ type WorkerLike = Pick<Worker, 'postMessage' | 'terminate' | 'onmessage' | 'oner
 
 const routeValue = (route: Route | undefined, relationId: string, viewId: string): Route =>
   route ?? { relationId, viewId, offset: 0 };
+const samePoint = (a: Route['bend'], b: Route['bend']) =>
+  a === undefined || b === undefined ? a === b : a.x === b.x && a.y === b.y;
+const sameAnchor = (a: Route['sourceAnchor'], b: Route['sourceAnchor']) =>
+  a === undefined || b === undefined ? a === b : a.side === b.side && a.ratio === b.ratio;
+/** Compare stored meaning, not object property order or an approximate rendered shape. */
+const sameStoredRoute = (a: Route | undefined, b: Route | undefined): boolean => {
+  if (a === undefined || b === undefined) return a === b;
+  return (
+    a.relationId === b.relationId &&
+    a.viewId === b.viewId &&
+    a.offset === b.offset &&
+    samePoint(a.bend, b.bend) &&
+    sameAnchor(a.sourceAnchor, b.sourceAnchor) &&
+    sameAnchor(a.targetAnchor, b.targetAnchor) &&
+    // Missing waypoints requests automatic routing; [] is an explicit direct path.
+    (a.waypoints === undefined || b.waypoints === undefined
+      ? a.waypoints === b.waypoints
+      : a.waypoints.length === b.waypoints.length &&
+        a.waypoints.every((point, index) => samePoint(point, b.waypoints![index])))
+  );
+};
+// The legacy implicit zero-offset route is equivalent only for diff/undo comparison.
+// Conflict detection above must still distinguish removal from an explicit stored route.
 const sameRoute = (a: Route | undefined, b: Route | undefined, id: string, viewId: string) =>
-  JSON.stringify(routeValue(a, id, viewId)) === JSON.stringify(routeValue(b, id, viewId));
-const sameStoredRoute = (a: Route | undefined, b: Route | undefined) =>
-  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  sameStoredRoute(routeValue(a, id, viewId), routeValue(b, id, viewId));
 const routesOf = (document: NativeDesignDocument, viewId: string) =>
   new Map(
     (document.layout.relations ?? [])
