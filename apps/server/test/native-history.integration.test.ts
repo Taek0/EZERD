@@ -1176,7 +1176,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       ).toBe('0');
     });
 
-    it('restores only a proven virtual relation placement pair, while ordinary writes still reject the retired pair', async () => {
+    it('restores proven routes and allows regeneration for a still-existing relationship', async () => {
       const id = await seed(),
         source = await acceptedEdit(id, (doc) => {
           doc.layout.relations = [];
@@ -1186,21 +1186,20 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(restored.status, JSON.stringify(restored.data)).toBe(201);
       expect(restored.data.identityMap).toEqual([]);
       expect((await row(id)).document.layout.relations).toEqual(fixture().layout.relations);
-      const deletion = await acceptedEdit(id, (doc) => {
+      await acceptedEdit(id, (doc) => {
         doc.layout.relations = [];
       });
       const ordinary = await edit(id, (doc) => {
         doc.layout.relations = structuredClone(fixture().layout.relations);
       });
       expect(ordinary.response.data).toMatchObject({
-        status: 'rejected',
-        reasonCode: 'sync.identity-retired',
+        status: 'accepted',
       });
-      expect((await row(id)).document.layout.relations).toEqual([]);
+      expect((await row(id)).document.layout.relations).toEqual(fixture().layout.relations);
       expect(
-        (await compensate(id, deletion.input.operationId, 'restore', await commandInput(id)))
-          .status,
+        (await compensate(id, ordinary.input.operationId, 'undo', await commandInput(id))).status,
       ).toBe(201);
+      expect((await row(id)).document.layout.relations).toEqual([]);
     });
 
     it('protects restored placement reference reads against later structural relationship edits', async () => {

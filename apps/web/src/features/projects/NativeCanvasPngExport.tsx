@@ -4,11 +4,15 @@ import { requestFingerprint, sharedDocument } from '@ezerd/model';
 import type { ProjectDocumentState } from '@ezerd/contracts';
 import type { nativeCanvasScene } from './NativeERDCanvas.js';
 import { exportNativeCanvasPdf } from './native-canvas-pdf.js';
+import { exportNativeCanvasSvg } from './native-canvas-svg.js';
 import { exportNativeCanvasPng } from './native-canvas-png.js';
 import { Button } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
 registerTranslations({
   'PNG 내보내기': 'Export PNG',
+  'SVG 내보내기': 'Export SVG',
+  'SVG 만드는 중…': 'Creating SVG…',
+  'SVG를 만들지 못했습니다. 다시 시도해 주세요.': 'Could not create the SVG. Try again.',
   'PDF 내보내기 · 한 페이지': 'Export PDF · Single page',
   'PDF 만드는 중…': 'Creating PDF…',
   'PDF를 만들지 못했습니다. 다시 시도해 주세요.': 'Could not create the PDF. Try again.',
@@ -19,7 +23,8 @@ registerTranslations({
   '화면 문맥이 바뀌어 내보내기를 중단했습니다.':
     'Export stopped because the active context changed.',
   '이미지를 만들지 못했습니다. 다시 시도해 주세요.': 'Could not create the image. Try again.',
-  '공유 화면을 선택해 내보내 주세요.': 'Select a shared view to export.',
+  '도메인 맵 또는 테이블 캔버스를 선택해 내보내 주세요.':
+    'Select the domain map or table canvas to export.',
 });
 export function NativeCanvasPngExport({
   snapshot,
@@ -39,6 +44,7 @@ export function NativeCanvasPngExport({
   renderControl?: (png: {
     run: () => Promise<void>;
     runPdf: () => Promise<void>;
+    runSvg: () => Promise<void>;
     disabled: boolean;
     busy: boolean;
   }) => ReactNode;
@@ -46,7 +52,7 @@ export function NativeCanvasPngExport({
   const { t } = useI18n(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const shared =
+  const exportable =
     snapshot.sourceDocument.schemaVersion === 2 &&
     (['overview', '__tables__'].includes(viewId) ||
       snapshot.sourceDocument.domains.some((domain) => domain.id === viewId));
@@ -82,10 +88,10 @@ export function NativeCanvasPngExport({
   return (
     <>
       {(() => {
-        const disabled = busy || !shared;
-        const run = async (format: 'png' | 'pdf' = 'png') => {
+        const disabled = busy || !exportable;
+        const run = async (format: 'png' | 'pdf' | 'svg' = 'png') => {
           if (busy) return;
-          if (snapshot.sourceDocument.schemaVersion !== 2 || !shared) return;
+          if (snapshot.sourceDocument.schemaVersion !== 2 || !exportable) return;
           const nativeSource = snapshot.sourceDocument;
           const current = () => alive.current && active.current.generation === generation;
           setBusy(true);
@@ -93,11 +99,16 @@ export function NativeCanvasPngExport({
           await (async () => {
             // The read model includes normalized shared placements also used by the canvas.
             const source = sharedDocument(
-              format === 'pdf' && snapshot.native.status === 'available'
+              format !== 'png' && snapshot.native.status === 'available'
                 ? snapshot.native.document
                 : nativeSource,
             );
-            return (format === 'pdf' ? exportNativeCanvasPdf : exportNativeCanvasPng)(
+            const exporter = {
+              png: exportNativeCanvasPng,
+              pdf: exportNativeCanvasPdf,
+              svg: exportNativeCanvasSvg,
+            }[format];
+            return exporter(
               source,
               sceneFor(source, viewId, mode, filter),
               mode,
@@ -114,9 +125,11 @@ export function NativeCanvasPngExport({
                       ? '이미지가 너무 큽니다. 내보낼 범위를 줄여 주세요.'
                       : error instanceof Error && error.message === 'canvas.export-context-changed'
                         ? '화면 문맥이 바뀌어 내보내기를 중단했습니다.'
-                        : format === 'pdf'
-                          ? 'PDF를 만들지 못했습니다. 다시 시도해 주세요.'
-                          : '이미지를 만들지 못했습니다. 다시 시도해 주세요.',
+                        : format === 'svg'
+                          ? 'SVG를 만들지 못했습니다. 다시 시도해 주세요.'
+                          : format === 'pdf'
+                            ? 'PDF를 만들지 못했습니다. 다시 시도해 주세요.'
+                            : '이미지를 만들지 못했습니다. 다시 시도해 주세요.',
                 );
             })
             .finally(() => {
@@ -124,11 +137,20 @@ export function NativeCanvasPngExport({
             });
         };
         return renderControl ? (
-          renderControl({ run: () => run('png'), runPdf: () => run('pdf'), disabled, busy })
+          renderControl({
+            run: () => run('png'),
+            runPdf: () => run('pdf'),
+            runSvg: () => run('svg'),
+            disabled,
+            busy,
+          })
         ) : (
           <>
             <Button disabled={disabled} onClick={() => void run().catch(() => {})}>
               {t(busy ? 'PNG 만드는 중…' : 'PNG 내보내기')}
+            </Button>
+            <Button disabled={disabled} onClick={() => void run('svg').catch(() => {})}>
+              {t(busy ? 'SVG 만드는 중…' : 'SVG 내보내기')}
             </Button>
             <Button disabled={disabled} onClick={() => void run('pdf').catch(() => {})}>
               {t(busy ? 'PDF 만드는 중…' : 'PDF 내보내기 · 한 페이지')}
@@ -136,7 +158,7 @@ export function NativeCanvasPngExport({
           </>
         );
       })()}
-      {!shared && <small>{t('공유 화면을 선택해 내보내 주세요.')}</small>}
+      {!exportable && <small>{t('도메인 맵 또는 테이블 캔버스를 선택해 내보내 주세요.')}</small>}
       {error && <p role="alert">{t(error)}</p>}
     </>
   );

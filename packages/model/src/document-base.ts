@@ -97,6 +97,7 @@ export interface Viewport extends Position {
   zoom: number;
 }
 
+/** Legacy personal-view payload retained for reading saved documents and history; creation is unsupported. */
 export interface CombinedView {
   id: string;
   name: string;

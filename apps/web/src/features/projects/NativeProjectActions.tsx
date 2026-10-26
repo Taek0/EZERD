@@ -18,7 +18,13 @@ export function NativeProjectActions({
   userId: string;
   projectId: string;
   png?:
-    | { run: () => Promise<void>; runPdf?: () => Promise<void>; disabled: boolean; busy: boolean }
+    | {
+        run: () => Promise<void>;
+        runPdf?: () => Promise<void>;
+        runSvg?: () => Promise<void>;
+        disabled: boolean;
+        busy: boolean;
+      }
     | undefined;
 }) {
   const { t } = useI18n(),
@@ -95,6 +101,16 @@ export function NativeProjectActions({
                   label: t('PDF 내보내기 · 한 페이지'),
                   disabled: busy || png.disabled,
                   onAction: () => void run(png.runPdf!),
+                },
+              ]
+            : []),
+          ...(png?.runSvg
+            ? [
+                {
+                  id: 'svg-export',
+                  label: t('SVG 내보내기'),
+                  disabled: busy || png.disabled,
+                  onAction: () => void run(png.runSvg!),
                 },
               ]
             : []),

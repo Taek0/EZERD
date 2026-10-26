@@ -18,6 +18,8 @@ import {
   type NativeSyncSnapshot,
 } from '@ezerd/contracts';
 import {
+  compactNativeDocumentForStorage,
+  restoreNativeDocumentFromStorage,
   deletionSnapshots,
   requestFingerprint,
   resolveProjectDatabaseState,
@@ -41,12 +43,16 @@ import {
 } from '../shared/native-sync-candidate.js';
 import { SyncGateway } from './sync.gateway.js';
 import { readNativeCancellation } from './native-cancellation-record.js';
+import { restoreNativeStoredResult } from '../shared/native-storage-read.js';
 
 function nativeDocument(value: unknown) {
   const parsed = nativeStoredDesignDocumentSchema.safeParse(value);
   if (!parsed.success) throw new ConflictException({ code: 'document.native-upgrade-required' });
   // Issuing a baseline is not a format migration or a license to rewrite a raw stored payload.
-  if (requestFingerprint(parsed.data) !== requestFingerprint(value))
+  if (
+    requestFingerprint(parsed.data) !==
+    requestFingerprint(restoreNativeDocumentFromStorage(value as typeof parsed.data))
+  )
     throw new ConflictException({ code: 'document.native-normalization-required' });
   return parsed.data;
 }
@@ -54,7 +60,7 @@ const resultFrom = (value: unknown) => {
   const result = nativeSyncOperationResultSchema.safeParse(value);
   if (!result.success) throw new ConflictException({ code: 'sync.protocol-mismatch' });
   // An ACK is historical evidence: validation must not trim or rewrite the stored payload.
-  return structuredClone(value) as NativeSyncOperationResult;
+  return restoreNativeStoredResult(value as NativeSyncOperationResult);
 };
 type NativeTransaction = Parameters<Parameters<DatabaseService['db']['transaction']>[0]>[0];
 type ExpectedNativeHead = { version: number; sequence: number; databaseRevision: number };
@@ -146,7 +152,7 @@ export class NativeSyncService {
       lastSequence: project.syncSequence,
       databaseRevision: database.revision,
       lastSuccessfulSyncAt: now,
-      document: sql`${JSON.stringify(document)}::jsonb`,
+      document: sql`${JSON.stringify(compactNativeDocumentForStorage(document))}::jsonb`,
     });
     onIssued?.({
       projectId: project.id,
@@ -320,7 +326,7 @@ export class NativeSyncService {
           ...(accepted
             ? {
                 version: sql`${projects.version} + 1`,
-                document: sql`${JSON.stringify(prepared.document)}::jsonb`,
+                document: sql`${JSON.stringify(compactNativeDocumentForStorage(prepared.document))}::jsonb`,
               }
             : {}),
         })
@@ -339,7 +345,12 @@ export class NativeSyncService {
         kind: input.kind,
         fingerprint,
         changes,
-        result: result as unknown as Record<string, unknown>,
+        result: {
+          ...result,
+          ...(result.document && {
+            document: compactNativeDocumentForStorage(result.document),
+          }),
+        } as unknown as Record<string, unknown>,
         deletionSnapshot: snapshots.length ? { items: snapshots } : null,
         createdAt: now,
       });
@@ -397,7 +408,7 @@ export class NativeSyncService {
           lastSequence: sequence,
           databaseRevision: database.revision,
           lastSuccessfulSyncAt: now,
-          document: sql`${JSON.stringify(sharedDocument(prepared.document))}::jsonb`,
+          document: sql`${JSON.stringify(compactNativeDocumentForStorage(sharedDocument(prepared.document)))}::jsonb`,
         });
       }
       return {

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createEmptyDocument, defaultDatabaseContext, migrateDesignDocumentV1 } from '@ezerd/model';
+import {
+  createEmptyDocument,
+  createEmptyNativeDocument,
+  createNativeTable,
+  compactNativeDocumentForStorage,
+  defaultDatabaseContext,
+  migrateDesignDocumentV1,
+} from '@ezerd/model';
 import {
   importNativeProjectSchema,
   nativeTransferReadSchema,
@@ -34,6 +41,26 @@ function envelope() {
 }
 
 describe('versioned project transfer contracts', () => {
+  it('uses compact storage size and restores omitted metadata for native transfers', () => {
+    const database = defaultDatabaseContext('postgresql');
+    const document = createEmptyNativeDocument(database);
+    document.tables = Array.from({ length: 4000 }, (_, index) => {
+      const table = createNativeTable(database, `t:${index}`);
+      table.logical.definition = 'x'.repeat(140);
+      return table;
+    });
+    const file = {
+      format: 'ezerd-project',
+      formatVersion: 2,
+      exportedAt: envelope().exportedAt,
+      project: envelope().project,
+      document,
+    };
+    expect(Buffer.byteLength(JSON.stringify(document))).toBeGreaterThan(1_500_000);
+    expect(nativeTransferReadSchema.safeParse(file).success).toBe(true);
+    const compact = compactNativeDocumentForStorage(document);
+    expect(nativeTransferReadSchema.parse({ ...file, document: compact })).toEqual(file);
+  });
   it('preserves exact raw source independently of the native preview and counters', () => {
     const input = envelope();
     input.sourceDocument.domains = [{ id: ' raw-id ', name: 'raw', description: '' }];

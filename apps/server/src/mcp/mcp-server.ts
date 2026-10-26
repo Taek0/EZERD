@@ -216,11 +216,12 @@ export class McpServerFactory {
         capabilities: { tools: {} },
         instructions:
           nativeWriteGuidance +
+          '현재 캔버스는 도메인 맵(overview)과 테이블 캔버스(__tables__)입니다. 도메인 선택은 동일한 테이블 배치를 좁혀 보는 필터이며 별도 저장 화면이 아닙니다. 사용자별 개인 조합 뷰 생성·저장 API는 제공하지 않습니다. 과거 원본에 views가 남아 있어도 새 편집 대상으로 사용하지 마세요. ' +
           'RDBMS 미지정은 databaseKind:"generic"/profileId:"generic-v1"입니다. 테이블·컬럼·키·관계 등 구조 모델링과 공통 타입을 사용하며 사용자 정의 타입은 {kind:"custom",database:"generic",name:"타입명"}입니다. generic 테이블 namespace는 {kind:"generic"}, 테이블/컬럼 options는 {database:"generic"}입니다. RDBMS 미지정 프로젝트는 DDL 내보내기를 지원하지 않습니다. ' +
           'get_project_database_capabilities로 DB/profile/revision과 usable 기능을 확인하고 get_project_document_state로 원본을 조회하세요. 원본 schemaVersion 2만 apply_native_project_changes로 편집합니다. v1 전용 조회·편집·이력 도구는 종료되었습니다. v1 원본 조회와 파일 가져오기·내보내기·upgrade는 호환 목적으로 유지합니다. ' +
           'EZERD 공간, 프로젝트와 리뷰를 조회하고 변경합니다. whoami로 현재 사용자를 확인하고 list_workspaces로 접근 가능한 공간과 역할을 확인하세요. 프로젝트 생성과 가져오기에는 workspaceId가 필요합니다. viewer는 설계 변경을 할 수 없으며' +
           ' active 공간에서 리뷰를 사용할 수 있습니다. 보관된 공간에서는 쓰기가 제한됩니다. 쓰기 도구에는 최신 동시성 기준을 사용하세요. ' +
-          'Native 프로젝트 탐색은 get_project_summary로 시작하고, 배치 전 get_project_view의 모든 페이지로 최신 배치를 확인하세요. 화면 관계는 list_view_relations로 조회하세요. __tables__와 도메인 필터는 공유 좌표를 사용하며 반환된 노드 ID로 apply_native_project_changes를 호출하세요. 테이블 컬럼·키·인덱스·CHECK·관계는 get_table_details로 확인합니다. 전체 원본이 필요한 경우에만 get_project_document_state 또는 같은 응답을 제공하는 get_project를 사용하세요. ' +
+          'Native 프로젝트 탐색은 get_project_summary로 시작하고, 배치 전 get_project_view의 모든 페이지로 최신 배치를 확인하세요. 화면 관계는 list_view_relations로 조회하세요. __tables__와 도메인 필터는 동일한 테이블 캔버스 좌표를 사용하며 반환된 노드 ID로 apply_native_project_changes를 호출하세요. 테이블 컬럼·키·인덱스·CHECK·관계는 get_table_details로 확인합니다. 전체 원본이 필요한 경우에만 get_project_document_state 또는 같은 응답을 제공하는 get_project를 사용하세요. ' +
           '여러 테이블 상세는 get_tables_details로 최대 20개씩 묶어 조회하세요. 목록의 다음 페이지에는 첫 응답의 syncSequence/databaseRevision을 expectedSequence/expectedDatabaseRevision으로 함께 전달하고 변경 오류가 나면 처음부터 다시 조회하세요. get_project_changes로 since 이후 변경 경로·대상 ID를 확인할 수 있으며 resyncRequired이면 전체 원본을 다시 읽으세요. ' +
           '배치 검증에는 브라우저 스킬이나 스크린샷 대신 문서의 x·y·width·height 좌표값 계산을 우선 사용하세요. ' +
           '같은 viewId의 테이블 카드 쌍은 테두리 간 권장 간격을 캔버스 좌표 기준 200px 이상으로 확보하세요. 중심점 간 거리나 화면 배율이 적용된 픽셀 수가 아닙니다. 가로 또는 세로 축 중 하나에서 카드 경계가 200px 이상 떨어지는지 x·y·width·height로 계산하세요. ' +
@@ -269,7 +270,7 @@ export class McpServerFactory {
       'get_project',
       {
         description:
-          '프로젝트의 버전별 원본과 native 상태를 조회합니다. get_project_document_state와 동일한 공유 문서 응답입니다.',
+          '프로젝트의 버전별 원본과 native 상태를 조회합니다. get_project_document_state와 동일한 프로젝트 문서 응답입니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: versionedProjectOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -285,7 +286,7 @@ export class McpServerFactory {
       'get_project_document_state',
       {
         description:
-          '같은 저장 snapshot의 프로젝트 DB/profile/revision·version·sequence, 원본 sourceDocument와 별도 native preview/진단을 읽습니다. preview available은 편집·DDL 기능이 usable이라는 뜻이 아닙니다. 공유 문서 조회입니다. 전체 문서가 필요한 경우 사용하세요.',
+          '같은 저장 snapshot의 프로젝트 DB/profile/revision·version·sequence, 원본 sourceDocument와 별도 native preview/진단을 읽습니다. preview available은 편집·DDL 기능이 usable이라는 뜻이 아닙니다. 프로젝트 문서 조회입니다. 전체 문서가 필요한 경우 사용하세요.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: versionedProjectOutputSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -331,7 +332,7 @@ export class McpServerFactory {
       'get_project_summary',
       {
         description:
-          'Native v2 공유 설계의 DB 컨텍스트·버전·객체 개수와 화면·도메인 목록을 조회합니다.',
+          'Native v2 프로젝트 설계의 DB 컨텍스트·버전·객체 개수와 화면·도메인 목록을 조회합니다.',
         inputSchema: z.strictObject({
           projectId: idSchema,
         }),
@@ -357,7 +358,7 @@ export class McpServerFactory {
       'get_project_view',
       {
         description:
-          'Native v2 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. __tables__와 도메인 필터의 공유 배치·메모·경로를 반환합니다. 테이블 컬럼은 get_table_details로 조회하세요.',
+          'Native v2 화면의 카드 요약·좌표와 페이지 내 연결 관계를 최대 100개 카드씩 조회합니다. __tables__와 도메인 필터의 프로젝트 배치·메모·경로를 반환합니다. 테이블 컬럼은 get_table_details로 조회하세요.',
         inputSchema: projectViewInputSchema,
         outputSchema: projectViewSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -373,7 +374,7 @@ export class McpServerFactory {
       'list_view_relations',
       {
         description:
-          'Native v2 화면에 보이는 도메인·테이블 관계와 경로를 최대 100개씩 조회합니다. native 논리·물리 대응관계 및 DB 옵션을 유지하며 도메인 필터는 공유 경로를 반환합니다.',
+          'Native v2 화면에 보이는 도메인·테이블 관계와 경로를 최대 100개씩 조회합니다. native 논리·물리 대응관계 및 DB 옵션을 유지하며 도메인 필터는 동일한 테이블 관계 경로를 반환합니다.',
         inputSchema: viewRelationsInputSchema,
         outputSchema: viewRelationsSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -388,7 +389,7 @@ export class McpServerFactory {
     server.registerTool(
       'get_table_details',
       {
-        description: '한 테이블의 컬럼·키·연결 관계·공유 배치를 조회합니다.',
+        description: '한 테이블의 컬럼·키·연결 관계·캔버스 배치를 조회합니다.',
         inputSchema: z.strictObject({
           projectId: idSchema,
           tableId: z.string().min(1).max(160),
@@ -405,7 +406,7 @@ export class McpServerFactory {
       'get_tables_details',
       {
         description:
-          '최대 20개 테이블 ID의 Native 상세를 한 번에 조회합니다. ID 중복은 제거하며 없는 대상이 있으면 전체 요청을 거부합니다. 공유 조회이며 expectedSequence/expectedDatabaseRevision으로 동일 버전을 확인할 수 있습니다.',
+          '최대 20개 테이블 ID의 Native 상세를 한 번에 조회합니다. ID 중복은 제거하며 없는 대상이 있으면 전체 요청을 거부합니다. 프로젝트 조회이며 expectedSequence/expectedDatabaseRevision으로 동일 버전을 확인할 수 있습니다.',
         inputSchema: batchTableDetailsInputSchema,
         outputSchema: batchTableDetailsMetadataSchema.meta(
           mcpSchemaMetadata(batchTableDetailsSchema),
@@ -421,7 +422,7 @@ export class McpServerFactory {
       'get_project_changes',
       {
         description:
-          'since 이후 공유 Native 변경의 경로·대상 ID·삭제 ID를 최대 100건씩 조회합니다. 값·전체 문서·삭제 스냅샷은 반환하지 않습니다. 다음 페이지는 nextCursor의 since/untilSequence/databaseRevision을 그대로 전달하세요. resyncRequired=true이면 변경 목록을 적용하지 말고 전체 문서를 다시 조회하세요.',
+          'since 이후 Native 프로젝트 변경의 경로·대상 ID·삭제 ID를 최대 100건씩 조회합니다. 값·전체 문서·삭제 스냅샷은 반환하지 않습니다. 다음 페이지는 nextCursor의 since/untilSequence/databaseRevision을 그대로 전달하세요. resyncRequired=true이면 변경 목록을 적용하지 말고 전체 문서를 다시 조회하세요.',
         inputSchema: projectChangesInputSchema,
         outputSchema: projectChangesSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -539,7 +540,7 @@ export class McpServerFactory {
       'export_project',
       {
         description:
-          '프로젝트의 공유 원본과 Native 미리보기를 버전 2 전송 파일로 내보냅니다. 기존 v1 원본도 손실 없이 포함합니다.',
+          '프로젝트 원본과 Native 미리보기를 버전 2 전송 파일로 내보냅니다. 기존 v1 원본도 손실 없이 포함합니다.',
         inputSchema: z.strictObject({ projectId: idSchema }),
         outputSchema: z
           .object({ format: z.literal('ezerd-project'), formatVersion: z.literal(2) })
@@ -657,7 +658,7 @@ export class McpServerFactory {
       'diagnose_layout',
       {
         description:
-          'Native 카드 겹침·40px 미만 간격·자동 확장과 테이블 관계선의 카드 관통·선분 겹침·교차를 좌표로 진단합니다. mode 기본 physical, 논리 화면은 logical을 지정하세요. 자동/수동 경로를 공유 라우터로 재구성하며 coverage의 검사 한도·미검증 경로를 반드시 확인하세요. 도메인 관계 경로는 별도 검증이 필요합니다. 배치는 변경하지 않습니다.',
+          'Native 카드 겹침·40px 미만 간격·자동 확장과 테이블 관계선의 카드 관통·선분 겹침·교차를 좌표로 진단합니다. mode 기본 physical, 논리 화면은 logical을 지정하세요. 자동/수동 경로를 공통 라우터로 재구성하며 coverage의 검사 한도·미검증 경로를 반드시 확인하세요. 도메인 관계 경로는 별도 검증이 필요합니다. 배치는 변경하지 않습니다.',
         inputSchema: layoutDiagnosisInputSchema,
         outputSchema: layoutDiagnosisSchema,
         annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },

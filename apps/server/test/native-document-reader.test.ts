@@ -222,14 +222,14 @@ describe('read-only native project preview', () => {
     expect(server.columns![0]!.physical.type).toEqual({ name: 'real', isArray: false });
     expect(source.columns![0]!.physical.type.name).toBe(' FLOAT4 ');
   });
-  it('preserves a readable original when preview expansion exceeds the native budget', () => {
+  it('keeps a near-limit original readable when empty native metadata is omitted from the budget', () => {
     const source = createEmptyDocument();
     source.domains = Array.from({ length: 137 }, (_, i) => ({
       id: 'd-' + i,
       name: '',
       description: 'x'.repeat(10000),
     }));
-    // Native metadata and canonical table placements push this otherwise valid v1 near-limit file over budget.
+    // Restored runtime defaults no longer consume the compact storage budget.
     source.tables = Array.from({ length: 170 }, (_, i) => ({
       id: 't-' + i,
       domainId: null,
@@ -257,8 +257,7 @@ describe('read-only native project preview', () => {
       revision: 0,
     });
     expect(result).toMatchObject({
-      status: 'unavailable',
-      code: 'document.native-preview-invalid',
+      status: 'available',
       rawSource: source,
     });
     expect(source.schemaVersion).toBe(1);

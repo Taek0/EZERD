@@ -236,7 +236,7 @@ function ProjectImportDialog({
         />
         <ProjectTransferSummary file={file} />
         <p className="project-transfer-hint">
-          {t('계정, PIN, 대화, 변경 이력 및 개인 화면 설정은 포함되지 않습니다.')}
+          {t('계정, PIN, 대화 및 변경 이력은 포함되지 않습니다.')}
         </p>
         {error && (
           <p className="notice error" role="alert">

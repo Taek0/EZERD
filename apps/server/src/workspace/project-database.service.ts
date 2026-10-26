@@ -20,6 +20,8 @@ import {
   type changeProjectDatabaseSchema,
 } from '@ezerd/contracts';
 import {
+  compactNativeDocumentForStorage,
+  restoreNativeDocumentFromStorage,
   defaultDatabaseContext,
   hasPhysicalDatabaseDesign,
   nextDatabaseRevision,
@@ -66,10 +68,19 @@ function nativePlan(row: ProjectRow, source: DatabaseContext, target: DatabaseCo
       code: 'database.document-invalid',
       issues: shape.error.issues,
     });
-  if (Buffer.byteLength(JSON.stringify(raw), 'utf8') > MAX_DOCUMENT_BYTES)
+  if (
+    Buffer.byteLength(
+      JSON.stringify(compactNativeDocumentForStorage(raw as NativeDesignDocument)),
+      'utf8',
+    ) > MAX_DOCUMENT_BYTES
+  )
     throw new BadRequestException({ code: 'database.document-size-limit' });
   // Validate shape without persisting parser normalization of raw names, comments or metadata.
-  const plan = planNativeDatabaseConversion(raw as NativeDesignDocument, source, target);
+  const plan = planNativeDatabaseConversion(
+    restoreNativeDocumentFromStorage(raw as NativeDesignDocument),
+    source,
+    target,
+  );
   const candidate = plan.candidate ?? plan.document;
   if (candidate) {
     const targetShape = nativeStoredDesignDocumentSchema.safeParse(candidate);
@@ -78,7 +89,10 @@ function nativePlan(row: ProjectRow, source: DatabaseContext, target: DatabaseCo
         code: 'database.document-invalid',
         issues: targetShape.error.issues,
       });
-    if (Buffer.byteLength(JSON.stringify(candidate), 'utf8') > MAX_DOCUMENT_BYTES)
+    if (
+      Buffer.byteLength(JSON.stringify(compactNativeDocumentForStorage(candidate)), 'utf8') >
+      MAX_DOCUMENT_BYTES
+    )
       throw new BadRequestException({ code: 'database.document-size-limit' });
   }
   return plan;
@@ -243,7 +257,7 @@ export class ProjectDatabaseService {
               databaseRevision: revision,
               version: sql`${projects.version} + 1`,
               ...(document && {
-                document: sql`${JSON.stringify(document)}::jsonb`,
+                document: sql`${JSON.stringify(compactNativeDocumentForStorage(document))}::jsonb`,
                 syncSequence: sequence,
               }),
               updatedAt: now,

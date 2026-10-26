@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, addTable, addColumn, defaultDatabaseContext } from '@ezerd/model';
+import { nativeStoredDesignDocumentSchema } from '@ezerd/contracts';
 import { NativeTransferController } from '../src/workspace/native-transfer.controller.js';
 import { nativeTransferStore } from './native-transfer-store.js';
 
@@ -52,6 +53,31 @@ function file(kind: 'postgresql' | 'mysql' | 'sqlite' = 'postgresql') {
 }
 
 describe('all import entry points create Native projects', () => {
+  it('omits empty metadata from persisted Native JSON and restores defaults on read', async () => {
+    const store = nativeTransferStore();
+    const input = file();
+    const before = structuredClone(input);
+    await store.service.importProject(actor.id, { workspaceId, transfer: input });
+    const stored = store.stored[0].document;
+    expect(stored.tables[0]).not.toHaveProperty('customProperties');
+    expect(stored.columns[0]).not.toHaveProperty('customProperties');
+    const loaded = nativeStoredDesignDocumentSchema.parse(stored);
+    expect(loaded.tables[0]!.customProperties).toEqual({ common: {}, logical: {}, physical: {} });
+    expect(loaded.columns[0]!.customProperties).toEqual({ common: {}, logical: {}, physical: {} });
+    expect(input).toEqual(before);
+  });
+  it('preserves nonempty table and column metadata in persisted Native JSON', async () => {
+    const store = nativeTransferStore();
+    const input = file();
+    const tableProperties = { common: { owner: 'billing' }, logical: {}, physical: {} };
+    const columnProperties = { common: {}, logical: { sensitivity: 'private' }, physical: {} };
+    input.document.tables![0]!.customProperties = tableProperties;
+    input.document.columns![0]!.customProperties = columnProperties;
+    await store.service.importProject(actor.id, { workspaceId, transfer: input });
+    expect(store.stored[0].document.tables[0].customProperties).toEqual(tableProperties);
+    expect(store.stored[0].document.columns[0].customProperties).toEqual(columnProperties);
+    expect(store.audits[0].details.importProvenance.sourceDocument).toEqual(input.document);
+  });
   it.each(['postgresql', 'mysql', 'sqlite'] as const)(
     'derives %s v2 from raw v1 and preserves migration evidence',
     async (kind) => {

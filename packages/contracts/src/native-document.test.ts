@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   createEmptyDocument,
   createEmptyNativeDocument,
+  compactNativeDocumentForStorage,
+  createNativeTable,
+  createNativeColumn,
   defaultDatabaseContext,
   migrateDesignDocumentV1,
   type Column,
@@ -157,6 +160,36 @@ describe('native type and expression wire contracts', () => {
 });
 
 describe('versioned document and transfer reads', () => {
+  it('restores omitted metadata and roundtrips nonempty metadata', () => {
+    const database = defaultDatabaseContext('generic');
+    const document = createEmptyNativeDocument(database);
+    const table = createNativeTable(database, 't');
+    const column = createNativeColumn(database, table, 'c');
+    column.customProperties = { common: { label: '한글' }, logical: { meaning: '' }, physical: {} };
+    document.tables = [table];
+    document.columns = [column];
+    const compact = compactNativeDocumentForStorage(document);
+    expect(compact.tables?.[0]).not.toHaveProperty('customProperties');
+    expect(compact.columns?.[0]?.customProperties).toEqual(column.customProperties);
+    expect(nativeStoredDesignDocumentSchema.parse(JSON.parse(JSON.stringify(compact)))).toEqual(
+      document,
+    );
+  });
+
+  it('measures the native document limit after omitting redundant metadata', () => {
+    const database = defaultDatabaseContext('generic');
+    const document = createEmptyNativeDocument(database);
+    document.tables = Array.from({ length: 4000 }, (_, index) => {
+      const table = createNativeTable(database, `t:${index}`);
+      table.logical.definition = 'x'.repeat(140);
+      return table;
+    });
+    const compact = compactNativeDocumentForStorage(document);
+    expect(Buffer.byteLength(JSON.stringify(document))).toBeGreaterThan(1_500_000);
+    expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(1_500_000);
+    expect(nativeStoredDesignDocumentSchema.safeParse(document).success).toBe(true);
+    expect(nativeStoredDesignDocumentSchema.safeParse(compact).success).toBe(true);
+  });
   const metadata = { common: {}, logical: {}, physical: {} };
   const column: Column = {
     id: 'c',

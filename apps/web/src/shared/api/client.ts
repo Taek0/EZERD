@@ -9,11 +9,64 @@ registerTranslations({
   '연결을 확인하고 다시 시도해 주세요.': 'Check your connection and try again.',
 });
 
+export interface ApiDiagnostic {
+  code?: string | undefined;
+  requestId?: string;
+  issues?: Array<{ code?: string | undefined; path?: string }>;
+}
+const diagnosticToken = (value: unknown) =>
+  typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,120}$/.test(value) ? value : undefined;
+/** Retain identifiers only, never server messages, submitted values or nested errors. */
+export function apiDiagnostic(value: unknown): ApiDiagnostic {
+  if (!value || typeof value !== 'object') return {};
+  const data = value as Record<string, unknown>;
+  const code = diagnosticToken(data.code);
+  const requestId = diagnosticToken(data.requestId);
+  const issues = Array.isArray(data.issues)
+    ? data.issues.slice(0, 3).flatMap((issue: unknown) => {
+        if (!issue || typeof issue !== 'object') return [];
+        const item = issue as Record<string, unknown>;
+        const issueCode = diagnosticToken(item.code);
+        // Zod custom issue messages sometimes carry a stable application reason code.
+        const custom =
+          item.code === 'custom' &&
+          typeof item.message === 'string' &&
+          /^[a-z][a-z-]*\.[a-z][a-z.-]*$/.test(item.message)
+            ? diagnosticToken(item.message)
+            : undefined;
+        const path = Array.isArray(item.path)
+          ? item.path
+              .slice(0, 8)
+              .map((part) =>
+                typeof part === 'number' && Number.isSafeInteger(part)
+                  ? String(part)
+                  : (diagnosticToken(part) ?? '?'),
+              )
+              .join('.')
+              .slice(0, 180)
+          : typeof item.path === 'string' && /^[a-zA-Z0-9_./:~\[\]-]{1,180}$/.test(item.path)
+            ? item.path
+            : undefined;
+        return [
+          {
+            ...(custom || issueCode ? { code: custom ?? issueCode } : {}),
+            ...(path ? { path } : {}),
+          },
+        ];
+      })
+    : [];
+  return {
+    ...(code ? { code } : {}),
+    ...(requestId ? { requestId } : {}),
+    ...(issues.length ? { issues } : {}),
+  };
+}
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
     public code?: string,
+    public diagnostic: ApiDiagnostic = {},
   ) {
     super(message);
   }
@@ -51,17 +104,10 @@ export async function request<T>(
     },
   });
   if (!response.ok) {
-    let code: string | undefined;
+    let diagnostic: ApiDiagnostic = {};
     try {
       const payload: unknown = await response.json();
-      if (
-        payload &&
-        typeof payload === 'object' &&
-        'code' in payload &&
-        typeof payload.code === 'string'
-      ) {
-        code = payload.code;
-      }
+      diagnostic = apiDiagnostic(payload);
     } catch {
       // Proxies can return empty or non-JSON failures; keep the HTTP status usable.
     }
@@ -72,7 +118,8 @@ export async function request<T>(
         : t('요청을 완료하지 못했습니다 ({status}). 다시 시도해 주세요.', {
             status: response.status,
           }),
-      code,
+      diagnostic.code,
+      diagnostic,
     );
   }
   return (await response.json()) as T;

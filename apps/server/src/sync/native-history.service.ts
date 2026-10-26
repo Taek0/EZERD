@@ -1,3 +1,4 @@
+import { restoreNativeStoredResult } from '../shared/native-storage-read.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -24,6 +25,8 @@ import {
 } from '@ezerd/contracts';
 import {
   applyChanges,
+  compactNativeDocumentForStorage,
+  restoreNativeDocumentFromStorage,
   deletionSnapshots,
   deriveOperationChanges,
   deriveStructuralDependencyPaths,
@@ -77,9 +80,15 @@ const entityCollections = [
 
 function nativeDocument(raw: unknown): NativeDesignDocument {
   const parsed = nativeStoredDesignDocumentSchema.safeParse(raw);
-  if (!parsed.success || Buffer.byteLength(JSON.stringify(raw), 'utf8') > MAX_DOCUMENT_BYTES)
+  if (
+    !parsed.success ||
+    Buffer.byteLength(
+      JSON.stringify(compactNativeDocumentForStorage(raw as NativeDesignDocument)),
+      'utf8',
+    ) > MAX_DOCUMENT_BYTES
+  )
     throw new ConflictException({ code: 'history.document-invalid' });
-  if (!same(parsed.data, raw))
+  if (!same(parsed.data, restoreNativeDocumentFromStorage(raw as NativeDesignDocument)))
     throw new ConflictException({ code: 'document.native-normalization-required' });
   return structuredClone(parsed.data);
 }
@@ -379,7 +388,7 @@ export class NativeHistoryService {
         const metadata = row.deletionSnapshot as { nativeHistory?: unknown } | null;
         const output = nativeHistoryCommandResultSchema.safeParse({
           ...(metadata?.nativeHistory as object),
-          result: row.result,
+          result: restoreNativeStoredResult(row.result),
         });
         if (
           !output.success ||
@@ -389,7 +398,7 @@ export class NativeHistoryService {
           throw new ConflictException({ code: 'sync.replay-mismatch' });
         return structuredClone({
           ...(metadata?.nativeHistory as object),
-          result: row.result,
+          result: restoreNativeStoredResult(row.result),
         }) as NativeHistoryCommandResult;
       };
       const old = await replay();
@@ -447,7 +456,10 @@ export class NativeHistoryService {
         baseline.lastSuccessfulSyncAt.getTime() !== new Date(request.baselineIssuedAt).getTime() ||
         now.getTime() < baseline.lastSuccessfulSyncAt.getTime() ||
         now.getTime() - baseline.lastSuccessfulSyncAt.getTime() > BASELINE_MAX_AGE_MS ||
-        !same(baseline.document, sharedDocument(current))
+        !same(
+          restoreNativeDocumentFromStorage(baseline.document as NativeDesignDocument),
+          sharedDocument(current),
+        )
       )
         throw new ConflictException({ code: 'history.baseline-invalid' });
       const [source] = await tx
@@ -533,7 +545,10 @@ export class NativeHistoryService {
         sourceAck.databaseRevision !== sourceResult.databaseRevision ||
         sourceAck.lastSuccessfulSyncAt.getTime() !==
           new Date(sourceResult.nextBaseline.baselineIssuedAt).getTime() ||
-        !same(sourceAck.document, sharedDocument(after))
+        !same(
+          restoreNativeDocumentFromStorage(sourceAck.document as NativeDesignDocument),
+          sharedDocument(after),
+        )
       )
         throw new ConflictException({ code: 'history.source-provenance-invalid' });
       let before: NativeDesignDocument;
@@ -799,7 +814,7 @@ export class NativeHistoryService {
       await tx
         .update(projects)
         .set({
-          document: sql`${JSON.stringify(candidate)}::jsonb`,
+          document: sql`${JSON.stringify(compactNativeDocumentForStorage(candidate))}::jsonb`,
           version: sql`${projects.version} + 1`,
           syncSequence: sequence,
           updatedAt: now,
@@ -818,7 +833,12 @@ export class NativeHistoryService {
         kind: 'online',
         fingerprint,
         changes,
-        result: result as unknown as Record<string, unknown>,
+        result: {
+          ...result,
+          ...(result.document && {
+            document: compactNativeDocumentForStorage(result.document),
+          }),
+        } as unknown as Record<string, unknown>,
         deletionSnapshot: {
           ...(deleted.length ? { items: deleted } : {}),
           nativeHistory: { command, sourceOperationId, identityMap },
@@ -876,7 +896,7 @@ export class NativeHistoryService {
         lastSequence: sequence,
         databaseRevision: database.revision,
         lastSuccessfulSyncAt: now,
-        document: sql`${JSON.stringify(sharedDocument(candidate))}::jsonb`,
+        document: sql`${JSON.stringify(compactNativeDocumentForStorage(sharedDocument(candidate)))}::jsonb`,
       });
       return { output, event: nativeSyncEventSchema.parse({ ...result, changes }) };
     });

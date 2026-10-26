@@ -9,7 +9,6 @@ import {
   createNativeColumn,
   defaultDatabaseContext,
   addTableReference,
-  upsertCombinedView,
   type NativeDesignDocument,
 } from '@ezerd/model';
 import type { ProjectDocumentState } from '@ezerd/contracts';
@@ -343,11 +342,19 @@ describe('native canvas IDs on HTTP LAN crypto', () => {
 describe('native ERD consumes raw native payloads', () => {
   it('does not expose legacy combined views as canvas screens', () => {
     const { document } = fixture();
-    const legacy = upsertCombinedView(document, {
-      id: 'legacy-private',
-      name: 'Retired',
-      domainIds: ['d'],
-    });
+    const legacy: NativeDesignDocument = {
+      ...document,
+      views: [{ id: 'legacy-private', name: 'Retired', domainIds: ['d'] }],
+      layout: {
+        ...document.layout,
+        nodes: [
+          ...document.layout.nodes,
+          ...document.layout.nodes
+            .filter((node) => document.tables?.some((table) => table.id === node.objectId))
+            .map((node) => ({ ...node, id: `legacy:${node.id}`, viewId: 'legacy-private' })),
+        ],
+      },
+    };
     const scene = nativeCanvasScene(legacy, 'legacy-private', 'physical');
     expect(scene.viewId).toBe('__tables__');
     expect(scene.nodes.every((node) => node.viewId === '__tables__')).toBe(true);

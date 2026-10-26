@@ -38,6 +38,8 @@ pnpm dev
 
 LAN 호스팅과 MCP 연결은 [호스팅 안내](./docs/work-log/LAN_HOSTING.md)를 참고하세요. MCP는 기본적으로 비활성화되어 있습니다.
 
+호스팅은 Docker 실행 및 의존성 설치 후 `pnpm host`로 시작합니다. 기존 `.env`를 보존하면서 DB 컨테이너 준비·빌드·마이그레이션을 자동 진행합니다. 기존 Compose DB는 재사용하고, 중지된 DB는 시작하며, 없는 경우 생성합니다.
+
 ## 개발 명령
 
 | 명령 | 용도 |
@@ -47,7 +49,7 @@ LAN 호스팅과 MCP 연결은 [호스팅 안내](./docs/work-log/LAN_HOSTING.md
 | `pnpm build` | 공유 패키지·서버·웹 빌드 |
 | `pnpm format` / `pnpm format:check` | 포맷 적용 / 검사 |
 | `pnpm db:generate` / `pnpm db:migrate` | 마이그레이션 생성 / 적용 |
-| `pnpm host:start` | 빌드·마이그레이션 후 LAN 서비스 실행 |
+| `pnpm host` / `pnpm host:start` | DB 자동 준비·빌드·마이그레이션 후 LAN 서비스 실행 |
 
 회귀 테스트에는 로컬 PostgreSQL과 임시 DB 생성 권한이 필요합니다. 전체 명령은 [package.json](./package.json)을 참고하세요.
 

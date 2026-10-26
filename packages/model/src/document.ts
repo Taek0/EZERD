@@ -10,7 +10,6 @@ import type {
   Position,
   NodeLayout,
   Viewport,
-  CombinedView,
   RelationLayout,
   DocumentBase,
   TableBase,
@@ -224,13 +223,33 @@ export function updateDomain(
 }
 export function removeDomain(doc: DesignDocument, id: string): DesignDocument {
   for (const table of doc.tables ?? []) if (table.domainId === id) doc = removeTable(doc, table.id);
-  for (const view of doc.views ?? []) {
-    if (!view.domainIds.includes(id)) continue;
-    const remaining = view.domainIds.filter((domainId) => domainId !== id);
-    doc = remaining.length
-      ? upsertCombinedView(doc, { ...view, domainIds: remaining })
-      : removeCombinedView(doc, view.id);
-  }
+  const removedViewIds = new Set(
+    (doc.views ?? [])
+      .filter(
+        (view) =>
+          view.domainIds.includes(id) && view.domainIds.every((domainId) => domainId === id),
+      )
+      .map((view) => view.id),
+  );
+  if (doc.views)
+    doc = {
+      ...doc,
+      views: doc.views
+        .filter((view) => !removedViewIds.has(view.id))
+        .map((view) => ({
+          ...view,
+          domainIds: view.domainIds.filter((domainId) => domainId !== id),
+        })),
+      notes: doc.notes.filter((note) => !removedViewIds.has(note.viewId)),
+      layout: {
+        ...doc.layout,
+        nodes: doc.layout.nodes.filter((node) => !removedViewIds.has(node.viewId)),
+        viewports: doc.layout.viewports.filter((viewport) => !removedViewIds.has(viewport.viewId)),
+        ...(doc.layout.relations && {
+          relations: doc.layout.relations.filter((route) => !removedViewIds.has(route.viewId)),
+        }),
+      },
+    };
   const removedNotes = new Set(doc.notes.filter((n) => n.viewId === id).map((n) => n.id));
   return {
     ...doc,
@@ -628,9 +647,6 @@ export function addTable(
   if (table.domainId !== null && placementViewId === TABLES_VIEW_ID)
     next = addTableReference(next, table.id, table.domainId, point);
   if (table.domainId !== null) next = ensureTableCanvasLayout(next);
-  for (const view of next.views ?? [])
-    if (table.domainId !== null && view.domainIds.includes(table.domainId))
-      next = upsertCombinedView(next, view);
   return next;
 }
 
@@ -682,8 +698,23 @@ export function updateTable(
       previous ?? { x: 0, y: 0 },
     ) as typeof updated;
   }
-  for (const view of updated.views ?? [])
-    updated = upsertCombinedView(updated, view) as typeof updated;
+  if (ownershipChanged && updated.views?.length) {
+    const views = new Map(updated.views.map((view) => [view.id, view]));
+    updated = {
+      ...updated,
+      layout: {
+        ...updated.layout,
+        nodes: updated.layout.nodes.filter((node) => {
+          const view = views.get(node.viewId);
+          return (
+            node.objectId !== id ||
+            !view ||
+            (next.domainId !== null && view.domainIds.includes(next.domainId))
+          );
+        }),
+      },
+    };
+  }
   if (ownershipChanged && updated.layout.relations) {
     updated = {
       ...updated,
@@ -981,85 +1012,6 @@ export function createForeignKeyFromPrimaryKey(
         },
       },
     ],
-  };
-}
-
-export function removeCombinedView<T extends CanvasDocument>(doc: T, id: string): T {
-  return {
-    ...doc,
-    views: (doc.views ?? []).filter((v) => v.id !== id),
-    notes: doc.notes.filter((n) => n.viewId !== id),
-    layout: {
-      ...doc.layout,
-      nodes: doc.layout.nodes.filter((n) => n.viewId !== id),
-      viewports: doc.layout.viewports.filter((v) => v.viewId !== id),
-      ...(doc.layout.relations && {
-        relations: doc.layout.relations.filter((r) => r.viewId !== id),
-      }),
-    },
-  };
-}
-
-/** Combined views contain owner tables, never copies imported into a selected domain. */
-export function upsertCombinedView<T extends CanvasDocument>(doc: T, view: CombinedView): T {
-  if (
-    !view.domainIds.length ||
-    new Set(view.domainIds).size !== view.domainIds.length ||
-    view.domainIds.some((id) => !doc.domains.some((d) => d.id === id))
-  )
-    throw new Error('함께 볼 도메인을 선택해 주세요.');
-  if (!doc.views?.some((v) => v.id === view.id)) requireNewId(doc, view.id);
-  const tables = (doc.tables ?? []).filter(
-    (t) => t.domainId !== null && view.domainIds.includes(t.domainId),
-  );
-  const tableIds = new Set(tables.map((t) => t.id));
-  const nodes = doc.layout.nodes.filter(
-    (n) =>
-      n.viewId !== view.id ||
-      tableIds.has(n.objectId) ||
-      doc.notes.some((note) => note.id === n.objectId && note.viewId === view.id),
-  );
-  let right = 0;
-  for (const domainId of view.domainIds) {
-    const owned = tables.filter((t) => t.domainId === domainId);
-    const originals = owned.flatMap((t) => {
-      const placement =
-        doc.layout.nodes.find((n) => n.objectId === t.id && n.viewId === domainId) ??
-        doc.layout.nodes.find((n) => n.objectId === t.id && n.viewId === TABLES_VIEW_ID);
-      return placement ? [placement] : [];
-    });
-    const originX = originals.length ? Math.min(...originals.map((n) => n.x)) : 0;
-    const originY = originals.length ? Math.min(...originals.map((n) => n.y)) : 0;
-    for (const original of originals)
-      if (!nodes.some((n) => n.viewId === view.id && n.objectId === original.objectId))
-        nodes.push({
-          ...original,
-          id: canvasNodeId(doc, `node:${original.objectId}:${view.id}`, nodes),
-          viewId: view.id,
-          x: original.x - originX + right,
-          y: original.y - originY,
-        });
-    if (originals.length) right += Math.max(...originals.map((n) => n.x - originX + n.width)) + 160;
-  }
-  return {
-    ...doc,
-    views: [...(doc.views ?? []).filter((v) => v.id !== view.id), cloneModel(view)],
-    layout: {
-      ...doc.layout,
-      nodes,
-      ...(doc.layout.relations && {
-        relations: doc.layout.relations.filter(
-          (r) =>
-            r.viewId !== view.id ||
-            doc.tableRelations?.some(
-              (t) =>
-                t.id === r.relationId &&
-                tableIds.has(t.sourceTableId) &&
-                tableIds.has(t.targetTableId),
-            ),
-        ),
-      }),
-    },
   };
 }
 

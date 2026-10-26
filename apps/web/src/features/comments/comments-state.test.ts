@@ -4,7 +4,6 @@ import {
   addDomain,
   addTable,
   addNote,
-  upsertCombinedView,
   normalizeSharedTableCanvas,
   TABLES_VIEW_ID,
   removeDomain,
@@ -119,7 +118,21 @@ describe('unified canvas legacy pins', () => {
       { x: 100, y: 200 },
       TABLES_VIEW_ID,
     );
-    doc = upsertCombinedView(doc, { id: 'legacy', name: 'Personal', domainIds: ['d'] });
+    doc = {
+      ...doc,
+      views: [{ id: 'legacy', name: 'Retired', domainIds: ['d'] }],
+      layout: {
+        ...doc.layout,
+        nodes: [
+          ...doc.layout.nodes,
+          {
+            ...doc.layout.nodes.find((node) => node.objectId === 't')!,
+            id: 'legacy:t',
+            viewId: 'legacy',
+          },
+        ],
+      },
+    };
     doc = addNote(doc, { id: 'shared', viewId: 'd', text: 'Shared' }, { x: 120, y: 220 });
     doc = addNote(doc, { id: 'private', viewId: 'legacy', text: 'Private' }, { x: 8000, y: 8000 });
     return normalizeSharedTableCanvas(doc);

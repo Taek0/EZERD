@@ -19,6 +19,7 @@ import {
   type VersionedProjectTransfer,
 } from '@ezerd/contracts';
 import {
+  compactNativeDocumentForStorage,
   defaultDatabaseContext,
   migrateDesignDocumentV1,
   nativeReferenceProblems,
@@ -222,7 +223,8 @@ export class NativeTransferService {
           const shape = nativeStoredDesignDocumentSchema.safeParse(document);
           if (
             !shape.success ||
-            Buffer.byteLength(JSON.stringify(document), 'utf8') > MAX_DOCUMENT_BYTES
+            Buffer.byteLength(JSON.stringify(compactNativeDocumentForStorage(document)), 'utf8') >
+              MAX_DOCUMENT_BYTES
           )
             throw new UnprocessableEntityException({
               code: 'project-transfer.document-invalid',
@@ -257,7 +259,7 @@ export class NativeTransferService {
               name: transfer.project.name.trim(),
               databaseKind: context.kind,
               databaseProfileId: context.profileId,
-              document: sql`${JSON.stringify(document)}::jsonb`,
+              document: sql`${JSON.stringify(compactNativeDocumentForStorage(document))}::jsonb`,
             })
             .returning();
           await tx.insert(workspaceAuditEvents).values({

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, request, savedRevision, storedAuthorization } from './client.js';
+import { ApiError, apiDiagnostic, request, savedRevision, storedAuthorization } from './client.js';
 describe('document save acknowledgements', () => {
   it('keeps changes made while a snapshot is saving dirty', () => {
     expect(savedRevision(4, 3)).toBe(false);
@@ -7,6 +7,50 @@ describe('document save acknowledgements', () => {
   });
 });
 describe('API failures', () => {
+  it('keeps bounded JSON pointers and rejects malformed diagnostic identifiers', () => {
+    expect(
+      apiDiagnostic({
+        code: 'x'.repeat(121),
+        requestId: 'Bearer secret',
+        issues: [
+          { code: 'sync.identity-retired', path: '/tableRelations/route-1' },
+          { code: '<script>', path: 'value with secret text', message: 'raw details' },
+        ],
+      }),
+    ).toEqual({ issues: [{ code: 'sync.identity-retired', path: '/tableRelations/route-1' }, {}] });
+  });
+  it('retains bounded diagnostics without input values or arbitrary server messages', async () => {
+    const error = await request('/api/save', undefined, (async () =>
+      Response.json(
+        {
+          code: 'document.invalid',
+          requestId: 'req-123',
+          secret: 'secret-value',
+          issues: [
+            {
+              code: 'custom',
+              message: 'document.size-limit',
+              path: ['commands', 0, 'patch'],
+              input: 'secret-value',
+            },
+            { code: 'invalid_type', message: 'secret-value', path: ['columns', 0] },
+            { code: 'too_big', path: ['name'] },
+            { code: 'custom', message: 'must be omitted' },
+          ],
+        },
+        { status: 400 },
+      )) as typeof fetch).catch((error) => error);
+    expect((error as ApiError).diagnostic).toEqual({
+      code: 'document.invalid',
+      requestId: 'req-123',
+      issues: [
+        { code: 'document.size-limit', path: 'commands.0.patch' },
+        { code: 'invalid_type', path: 'columns.0' },
+        { code: 'too_big', path: 'name' },
+      ],
+    });
+    expect(JSON.stringify(error)).not.toContain('secret-value');
+  });
   it('exposes a structured error code without displaying raw server details', async () => {
     const fetcher = async () =>
       Response.json({ code: 'sync.no-changes', message: 'internal detail' }, { status: 400 });

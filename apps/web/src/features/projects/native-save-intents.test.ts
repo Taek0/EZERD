@@ -365,7 +365,12 @@ describe('durable unsent native save intents', () => {
     const api = vi
       .fn()
       .mockRejectedValueOnce(new ApiError(404, 'missing'))
-      .mockRejectedValueOnce(new ApiError(400, 'invalid'))
+      .mockRejectedValueOnce(
+        new ApiError(400, 'invalid', 'document.invalid', {
+          requestId: 'req-123',
+          issues: [{ code: 'document.size-limit' }],
+        }),
+      )
       .mockResolvedValueOnce({
         outcome: 'cancelled',
         result: {
@@ -378,6 +383,11 @@ describe('durable unsent native save intents', () => {
     expect(await flushNativeSaveIntent(userId, snapshot(), store, api as typeof request)).toEqual({
       operationId: id,
       accepted: false,
+      rejection: {
+        code: 'document.invalid',
+        requestId: 'req-123',
+        issues: [{ code: 'document.size-limit' }],
+      },
     });
     expect(api.mock.calls[2]?.[0]).toContain('/native-sync/cancel');
     expect(await loadNativePending(userId, projectId, store)).toBeNull();
@@ -406,6 +416,47 @@ describe('durable unsent native save intents', () => {
     expect(await loadNativePending(userId, projectId, store)).toBeNull();
     expect(nativeRejectedSaveIntents(userId, projectId, store)).toHaveLength(0);
   });
+  it.each([false, true])(
+    'preserves a recovery rejection unless cancellation finds an accepted save (%s)',
+    async (accepted) => {
+      const store = storage();
+      const id = enqueueNativeSave(userId, snapshot(), [command], undefined, undefined, store);
+      const offline = vi
+        .fn()
+        .mockRejectedValueOnce(new ApiError(404, 'missing'))
+        .mockRejectedValueOnce(Error('offline'));
+      await expect(
+        flushNativeSaveIntent(userId, snapshot(), store, offline as typeof request),
+      ).rejects.toThrow('offline');
+      const api = vi
+        .fn()
+        .mockRejectedValueOnce(new ApiError(404, 'missing'))
+        .mockRejectedValueOnce(
+          new ApiError(409, 'conflict', 'sync.identity-retired', { requestId: 'req-recovery' }),
+        )
+        .mockResolvedValueOnce({
+          outcome: accepted ? 'recorded' : 'cancelled',
+          result: accepted
+            ? ack(id)
+            : {
+                ...ack(id, 'rejected'),
+                changedPaths: [],
+                reason: 'operation.cancelled',
+                reasonCode: 'operation.cancelled',
+              },
+        });
+      expect(await flushNativeSaveIntent(userId, snapshot(), store, api as typeof request)).toEqual(
+        {
+          operationId: id,
+          accepted,
+          ...(!accepted
+            ? { rejection: { code: 'sync.identity-retired', requestId: 'req-recovery' } }
+            : {}),
+        },
+      );
+      expect(nativeRejectedSaveIntents(userId, projectId, store)).toHaveLength(accepted ? 0 : 1);
+    },
+  );
   it('deduplicates repeated clicks for the same immutable input', () => {
     const store = storage();
     const first = enqueueNativeSave(userId, snapshot(), [command], undefined, undefined, store);
