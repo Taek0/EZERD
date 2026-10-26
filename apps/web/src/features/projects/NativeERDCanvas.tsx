@@ -1,5 +1,8 @@
 import { runNativeTableLayout } from './native-table-auto-layout.js';
-import { createNativeRelationArrangeController } from './native-relation-auto-arrange.js';
+import {
+  createNativeRelationArrangeController,
+  nativeRelationArrangePreflight,
+} from './native-relation-auto-arrange.js';
 import {
   NativeRelationArrangeToast,
   type RelationArrangeNotice,
@@ -1022,12 +1025,15 @@ function NativeCanvasWorkspace({
     effectiveView === TABLES_VIEW_ID &&
     !domainFilter &&
     drawn.relations.length > 0;
+  const arrangeReady =
+    !allBusy && !placementDraftBlocked && !stale && !storageError && !sharedStorageFailure;
   const arrangeState = useRef({
     document: base,
     scene: drawn,
     viewId: effectiveView,
     mode,
     eligible: arrangeEligible,
+    ready: arrangeReady,
     snapshot,
     ...(userId ? { userId } : {}),
   });
@@ -1041,11 +1047,12 @@ function NativeCanvasWorkspace({
       viewId: effectiveView,
       mode,
       eligible: arrangeEligible,
+      ready: arrangeReady,
       snapshot,
       ...(userId ? { userId } : {}),
     };
     arrangeController.current?.update();
-  }, [base, drawn, effectiveView, mode, arrangeEligible, snapshot, userId]);
+  }, [base, drawn, effectiveView, mode, arrangeEligible, arrangeReady, snapshot, userId]);
   useLayoutEffect(() => {
     const controller = createNativeRelationArrangeController({
       getState: () => arrangeState.current,
@@ -3023,7 +3030,18 @@ function NativeCanvasWorkspace({
                           {
                             id: 'auto-layout-relations',
                             label: t('관계선 배치'),
-                            disabled: arranging || !arrangeEligible,
+                            disabled:
+                              arranging ||
+                              nativeRelationArrangePreflight({
+                                document: base,
+                                scene: drawn,
+                                viewId: effectiveView,
+                                mode,
+                                eligible: arrangeEligible,
+                                ready: arrangeReady,
+                                snapshot,
+                                ...(userId ? { userId } : {}),
+                              }) !== null,
                             onAction: () => {
                               setTableArrangeNotice('');
                               arrangeController.current?.start();

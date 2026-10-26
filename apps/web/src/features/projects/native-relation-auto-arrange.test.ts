@@ -34,7 +34,14 @@ const relation = {
   sourceTableId: sourceId,
   targetTableId: targetId,
   scope: 'both',
-  logical: { name: 'references' },
+  physical: {
+    name: 'fk',
+    sourceColumnIds: [],
+    targetColumnIds: [],
+    onDelete: 'no-action',
+    onUpdate: 'no-action',
+  },
+  logical: { name: 'references', cardinality: 'one-to-many', required: false },
 };
 const arranged = {
   relationId,
@@ -45,7 +52,10 @@ const arranged = {
 function fixture(): NativeRelationArrangeState {
   const document = createEmptyNativeDocument(defaultDatabaseContext('postgresql'));
   const nodes = [{ ...source }, { ...target }];
-  document.tables = [{ id: sourceId }, { id: targetId }] as typeof document.tables;
+  document.tables = [
+    { id: sourceId, scope: 'both' },
+    { id: targetId, scope: 'both' },
+  ] as typeof document.tables;
   document.tableRelations = [relation] as typeof document.tableRelations;
   document.layout.nodes = nodes;
   const scene = {
@@ -221,17 +231,21 @@ describe('relation arrange worker and durable handoff', () => {
 
     const statuses: string[] = [];
     const retry = vi.fn().mockRejectedValueOnce(Error('offline')).mockResolvedValueOnce(accepted);
+    state.ready = false;
+    const recoveryWorker = vi.fn(fakeWorker);
     const second = createNativeRelationArrangeController({
       getState: () => state,
       onStatus: (status) => statuses.push(status.phase),
       save,
-      createWorker: () => fakeWorker(),
+      createWorker: recoveryWorker,
       cancelSave: retry,
       storage,
     });
     second.update();
     await vi.waitFor(() => expect(statuses.at(-1)).toBe('offline'));
     expect(storage.size).toBe(1);
+    second.start();
+    expect(recoveryWorker).not.toHaveBeenCalled();
     second.cancel();
     await vi.waitFor(() => expect(retry).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(statuses.at(-1)).toBe('saving'));
@@ -280,6 +294,8 @@ describe('relation arrange worker and durable handoff', () => {
     });
     controller.start();
     worker.result();
+    state.ready = false;
+    controller.update();
     controller.cancel();
     await vi.waitFor(() => expect(statuses.at(-1)).toBe('saving'));
     resolve(true);
@@ -408,4 +424,203 @@ describe('relation arrange worker and durable handoff', () => {
     }));
     expect(() => nativeRelationArrangeBatch(state, tooMany)).toThrow('relation.auto-arrange-limit');
   });
+});
+
+describe('local arrangement preflight', () => {
+  it.each([
+    [
+      'deleted relation',
+      (state: NativeRelationArrangeState) => {
+        state.document.tableRelations = [];
+      },
+    ],
+    [
+      'deleted endpoint',
+      (state: NativeRelationArrangeState) => {
+        state.document.tables = state.document.tables!.slice(1);
+      },
+    ],
+    [
+      'stale endpoint',
+      (state: NativeRelationArrangeState) => {
+        state.document.tableRelations = [
+          { ...state.document.tableRelations![0]!, sourceTableId: targetId },
+        ];
+      },
+    ],
+    [
+      'permission',
+      (state: NativeRelationArrangeState) => {
+        state.eligible = false;
+      },
+    ],
+    [
+      'busy or pending draft',
+      (state: NativeRelationArrangeState) => {
+        state.ready = false;
+      },
+    ],
+    [
+      'actor',
+      (state: NativeRelationArrangeState) => {
+        delete state.userId;
+      },
+    ],
+    [
+      'view mismatch',
+      (state: NativeRelationArrangeState) => {
+        state.viewId = 'overview';
+      },
+    ],
+    [
+      'placement view',
+      (state: NativeRelationArrangeState) => {
+        state.scene.nodes[0]!.viewId = 'other';
+      },
+    ],
+    [
+      'duplicate placement',
+      (state: NativeRelationArrangeState) => {
+        state.scene.nodes.push({ ...state.scene.nodes[0]! });
+      },
+    ],
+    [
+      'missing placement',
+      (state: NativeRelationArrangeState) => {
+        state.scene.nodes = state.scene.nodes.slice(1);
+      },
+    ],
+    [
+      'invalid bounds',
+      (state: NativeRelationArrangeState) => {
+        state.scene.nodes[0]!.x = Infinity;
+      },
+    ],
+    [
+      'zero size',
+      (state: NativeRelationArrangeState) => {
+        state.scene.nodes[0]!.width = 0;
+      },
+    ],
+    [
+      'count limit',
+      (state: NativeRelationArrangeState) => {
+        state.scene.nodes = Array.from({ length: 257 }, (_, i) => ({
+          ...state.scene.nodes[0]!,
+          objectId: String(i),
+        }));
+      },
+    ],
+  ] as const)('does not create a Worker for %s', (_name, change) => {
+    const state = fixture();
+    change(state);
+    const createWorker = vi.fn(fakeWorker);
+    const save = vi.fn(async () => true);
+    const controller = createNativeRelationArrangeController({
+      getState: () => state,
+      createWorker,
+      save,
+      onStatus: vi.fn(),
+      storage: markerStorage(),
+    });
+    controller.start();
+    expect(createWorker).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(controller.getStatus().phase).toBe('invalidated');
+    controller.dispose();
+  });
+
+  it.each(['deletion', 'permission', 'readiness'] as const)(
+    'rejects a late result after %s',
+    async (change) => {
+      const state = fixture();
+      const worker = fakeWorker();
+      const save = vi.fn(async () => true);
+      const controller = createNativeRelationArrangeController({
+        getState: () => state,
+        createWorker: () => worker,
+        save,
+        onStatus: vi.fn(),
+        storage: markerStorage(),
+      });
+      controller.start();
+      if (change === 'deletion') state.document.tableRelations = [];
+      if (change === 'permission') state.eligible = false;
+      if (change === 'readiness') state.ready = false;
+      worker.result();
+      await Promise.resolve();
+      expect(save).not.toHaveBeenCalled();
+      expect(controller.getStatus().phase).toBe('invalidated');
+      controller.dispose();
+    },
+  );
+
+  it('allows generated visible placements without raw layout nodes', async () => {
+    const state = fixture();
+    state.document.layout.nodes = [];
+    const worker = fakeWorker();
+    const save = vi.fn(async () => true);
+    const controller = createNativeRelationArrangeController({
+      getState: () => state,
+      createWorker: () => worker,
+      save,
+      onStatus: vi.fn(),
+      storage: markerStorage(),
+    });
+    controller.start();
+    worker.result();
+    await Promise.resolve();
+    expect(save).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
+
+  it('does not invalidate its own pending save when readiness changes', async () => {
+    const state = fixture();
+    const worker = fakeWorker();
+    let finish!: (value: boolean) => void;
+    const save = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const controller = createNativeRelationArrangeController({
+      getState: () => state,
+      createWorker: () => worker,
+      save,
+      onStatus: vi.fn(),
+      storage: markerStorage(),
+    });
+    controller.start();
+    worker.result();
+    state.ready = false;
+    controller.update();
+    expect(controller.getStatus().phase).toBe('saving');
+    finish(true);
+    await Promise.resolve();
+    expect(controller.getStatus().phase).toBe('saved');
+    controller.dispose();
+  });
+});
+
+it('blocks startup when recovery storage cannot be read', () => {
+  const state = fixture();
+  const createWorker = vi.fn(fakeWorker);
+  const storage = {
+    ...markerStorage(),
+    getItem: () => {
+      throw Error('storage unavailable');
+    },
+  };
+  const controller = createNativeRelationArrangeController({
+    getState: () => state,
+    createWorker,
+    save: vi.fn(async () => true),
+    onStatus: vi.fn(),
+    storage,
+  });
+  controller.start();
+  expect(createWorker).not.toHaveBeenCalled();
+  expect(controller.getStatus()).toMatchObject({ phase: 'failed', reason: 'save' });
+  controller.dispose();
 });

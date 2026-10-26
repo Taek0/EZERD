@@ -124,6 +124,8 @@ export interface NativeRelationArrangeState {
   viewId: string;
   mode: 'physical' | 'logical';
   eligible: boolean;
+  /** Transient readiness is deliberately excluded from the semantic job signature. */
+  ready?: boolean;
   snapshot: ProjectDocumentState;
   userId?: string;
 }
@@ -164,6 +166,79 @@ const routesOf = (document: NativeDesignDocument, viewId: string) =>
       .filter((route) => route.viewId === viewId)
       .map((route) => [route.relationId, route]),
   );
+
+/** Shared local gate for the menu, computation and submission boundaries. */
+export function nativeRelationArrangePreflight(
+  state: NativeRelationArrangeState,
+  requireReady = true,
+): NativeRelationArrangeStatus['reason'] | null {
+  if (
+    !state.eligible ||
+    !state.userId ||
+    state.viewId !== '__tables__' ||
+    state.scene.viewId !== state.viewId
+  )
+    return 'scope';
+  if (requireReady && state.ready === false) return 'save';
+  const tables = new Map((state.document.tables ?? []).map((table) => [table.id, table]));
+  const relations = new Map(
+    (state.document.tableRelations ?? []).map((relation) => [relation.id, relation]),
+  );
+  const nodes = new Map(state.scene.nodes.map((node) => [node.objectId, node]));
+  if (
+    state.scene.nodes.length > 256 ||
+    state.scene.relations.length > 1000 ||
+    state.scene.relations.length > MAX_BATCH_RELATION_LAYOUTS
+  )
+    return 'limit';
+  if (
+    !state.scene.relations.length ||
+    nodes.size !== state.scene.nodes.length ||
+    new Set(state.scene.relations.map((item) => item.relation.id)).size !==
+      state.scene.relations.length ||
+    state.scene.nodes.some((node) => !node.objectId || node.viewId !== state.viewId)
+  )
+    return 'structure';
+  if (
+    state.scene.nodes.some(
+      (node) =>
+        ![node.x, node.y, node.width, node.height].every(
+          (value) => Number.isFinite(value) && Math.abs(value) <= 1e7,
+        ) ||
+        node.width <= 0 ||
+        node.height <= 0 ||
+        node.x + node.width > 1e7 ||
+        node.y + node.height > 1e7,
+    )
+  )
+    return 'size';
+  const visible = (scope: string) => scope === 'both' || scope === state.mode;
+  for (const item of state.scene.relations) {
+    const current = relations.get(item.relation.id);
+    if (
+      !current ||
+      !visible(current.scope) ||
+      (state.mode === 'physical' && !current.physical) ||
+      current.sourceTableId !== item.relation.sourceTableId ||
+      current.targetTableId !== item.relation.targetTableId ||
+      current.scope !== item.relation.scope ||
+      JSON.stringify([current.physical?.sourceColumnIds, current.physical?.targetColumnIds]) !==
+        JSON.stringify([
+          item.relation.physical?.sourceColumnIds,
+          item.relation.physical?.targetColumnIds,
+        ])
+    )
+      return 'structure';
+    for (const id of [current.sourceTableId, current.targetTableId]) {
+      const table = tables.get(id);
+      // Generated visible placements are valid: save materializes them for live tables.
+      if (!table || !visible(table.scope) || !nodes.has(id)) return 'structure';
+    }
+    const width = nativeRelationLabelWidth(item.label);
+    if (!Number.isFinite(width) || width < 0) return 'size';
+  }
+  return null;
+}
 
 /** Geometry and structural identity are separate so ordinary moves can be corrected once. */
 export function nativeRelationArrangeSignature(state: NativeRelationArrangeState) {
@@ -229,6 +304,8 @@ export function nativeRelationArrangeInvalidation(
   initial: ReturnType<typeof nativeRelationArrangeSignature>,
   state: NativeRelationArrangeState,
 ): NativeRelationArrangeStatus['reason'] | null {
+  const preflight = nativeRelationArrangePreflight(state, false);
+  if (preflight) return preflight;
   const current = nativeRelationArrangeSignature(state);
   if (current.scope !== initial.scope) return 'scope';
   if (current.structure !== initial.structure) return 'structure';
@@ -542,7 +619,9 @@ export function createNativeRelationArrangeController(options: {
     }, 4000);
   };
   const retryRejected = async (currentJob: Job, state: NativeRelationArrangeState) => {
-    const reason = nativeRelationArrangeInvalidation(currentJob.initial, state);
+    const reason =
+      nativeRelationArrangePreflight(state) ??
+      nativeRelationArrangeInvalidation(currentJob.initial, state);
     if (reason) return invalidate(reason);
     if (state.snapshot.sourceDocument.schemaVersion !== 2) return invalidate('structure');
     const confirmed = routesOf(state.snapshot.sourceDocument, state.scene.viewId);
@@ -554,7 +633,9 @@ export function createNativeRelationArrangeController(options: {
   };
   const persist = async (currentJob: Job, layouts: readonly Route[]) => {
     const state = options.getState();
-    const reason = nativeRelationArrangeInvalidation(currentJob.initial, state);
+    const reason =
+      nativeRelationArrangePreflight(state) ??
+      nativeRelationArrangeInvalidation(currentJob.initial, state);
     if (reason) return invalidate(reason);
     const current = routesOf(state.document, state.scene.viewId);
     for (const [id, before] of currentJob.before)
@@ -686,8 +767,11 @@ export function createNativeRelationArrangeController(options: {
         return;
       }
     }
-    if (!state.eligible || state.scene.viewId === 'overview') {
-      emit({ phase: 'invalidated', reason: 'scope', canUndo: false });
+    if (recoveryRequested || recoveryInFlight || pendingHistoryUndo || nextRecoveryAt > Date.now())
+      return;
+    const reason = nativeRelationArrangePreflight(state);
+    if (reason) {
+      emit({ phase: 'invalidated', reason, canUndo: false });
       return;
     }
     const initial = nativeRelationArrangeSignature(state);
@@ -721,7 +805,9 @@ export function createNativeRelationArrangeController(options: {
       }
       worker.terminate();
       const latest = options.getState();
-      const reason = nativeRelationArrangeInvalidation(initial, latest);
+      const reason =
+        nativeRelationArrangePreflight(latest) ??
+        nativeRelationArrangeInvalidation(initial, latest);
       if (reason) return invalidate(reason);
       if (message.type === 'error' || !message.result.ok) {
         job = null;
