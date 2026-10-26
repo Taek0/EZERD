@@ -1,4 +1,5 @@
 import './generic-translations.js';
+import { nativeSaveErrorMessage, nativeSaveRejectionMessage } from './native-save-error.js';
 import { useNativePanelDerived } from './use-native-panel-derived.js';
 import { shareNativeJson } from './native-ack-entry.js';
 import {
@@ -55,7 +56,7 @@ import {
   type NativeWebCommand,
   type NativeSaveExpected,
 } from './native-save.js';
-import { message, request } from '../../shared/api/client.js';
+import { apiDiagnostic, message, request } from '../../shared/api/client.js';
 import {
   enqueueNativeSave,
   flushNativeSaveIntent,
@@ -690,7 +691,7 @@ export function NativeProjectView({
           setEditingColumn((current) => (current === id ? null : current));
       });
     } catch (error) {
-      setSaveError(message(error));
+      setSaveError(nativeSaveErrorMessage(error));
     }
     return true;
   }
@@ -776,7 +777,7 @@ export function NativeProjectView({
       setPendingBlocked(false);
       setSaveError('');
     } catch (error) {
-      if (currentEditor()) setSaveError(message(error));
+      if (currentEditor()) setSaveError(nativeSaveErrorMessage(error));
     }
   }
   useEffect(() => {
@@ -798,7 +799,7 @@ export function NativeProjectView({
         setPendingBlocked(false);
       })
       .catch((error) => {
-        if (active && currentEditor()) setSaveError(message(error));
+        if (active && currentEditor()) setSaveError(nativeSaveErrorMessage(error));
       });
     return () => {
       active = false;
@@ -826,7 +827,7 @@ export function NativeProjectView({
       try {
         if (!nativeSaveIntents(userId, snapshot.project.id).length) return;
       } catch (error) {
-        setSaveError(message(error));
+        setSaveError(nativeSaveErrorMessage(error));
         return;
       }
     }
@@ -877,11 +878,7 @@ export function NativeProjectView({
           setPending(null);
           if (!result.accepted) refreshRejectedIntents();
           setPendingBlocked(false);
-          setSaveError(
-            result.accepted
-              ? ''
-              : t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'),
-          );
+          setSaveError(result.accepted ? '' : nativeSaveRejectionMessage(result.rejection));
           if (!confirmedLocally) onReload();
         }
         // The accepted request has already completed its durable cleanup. Do not
@@ -893,7 +890,7 @@ export function NativeProjectView({
       }
     } catch (error) {
       if (currentEditor()) {
-        setSaveError(message(error));
+        setSaveError(nativeSaveErrorMessage(error));
         try {
           setPending(await loadNativePending(userId, snapshot.project.id));
         } catch {
@@ -1015,7 +1012,7 @@ export function NativeProjectView({
       }
       return accepted;
     } catch (error) {
-      if (currentEditor()) setSaveError(message(error));
+      if (currentEditor()) setSaveError(nativeSaveErrorMessage(error));
       return false;
     }
   }
@@ -1030,9 +1027,14 @@ export function NativeProjectView({
       if (result.status === 'accepted') {
         setPending(null);
         onReload();
-      } else setSaveError(t('저장이 거부되었습니다. 입력을 보관한 뒤 최신 설계를 확인해 주세요.'));
+      } else
+        setSaveError(
+          nativeSaveRejectionMessage(
+            apiDiagnostic({ code: result.reasonCode ?? result.reason, issues: result.issues }),
+          ),
+        );
     } catch (error) {
-      if (currentEditor()) setSaveError(message(error));
+      if (currentEditor()) setSaveError(nativeSaveErrorMessage(error));
     } finally {
       if (currentEditor()) {
         savingRef.current = false;
@@ -1055,7 +1057,7 @@ export function NativeProjectView({
       }
     } catch (error) {
       if (currentEditor()) {
-        setSaveError(message(error));
+        setSaveError(nativeSaveErrorMessage(error));
         setPendingBlocked(true);
       }
     } finally {
@@ -1512,7 +1514,7 @@ export function NativeProjectView({
                       localStorage.removeItem(key);
                       setRejectedIntents((items) => items.filter((item) => item.key !== key));
                     } catch (error) {
-                      setSaveError(message(error));
+                      setSaveError(nativeSaveErrorMessage(error));
                     }
                   }}
                 >
