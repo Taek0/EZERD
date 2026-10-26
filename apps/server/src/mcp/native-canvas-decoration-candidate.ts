@@ -78,7 +78,7 @@ export function applyNativeCanvasStyle(
       note.viewId,
     )
   )
-    throw Error('canvas.shared-view-required');
+    throw Error('canvas.unsupported-view');
   let next = updateNote(document, note.id, { color: patch.color ?? undefined });
   if (patch.color === null)
     next = {

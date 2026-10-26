@@ -2,6 +2,7 @@ import {
   nativeStoredDesignDocumentSchema,
   designDocumentReadSchema,
   nativeSyncOperationInputSchema,
+  relationLayoutSchema,
   type NativeSyncOperationInput,
 } from '@ezerd/contracts';
 import {
@@ -13,6 +14,8 @@ import {
   requestFingerprint,
   resolveProjectDatabaseState,
   sharedDocument,
+  upsertRelationLayout,
+  TABLES_VIEW_ID,
   validateDatabaseDocument,
   type DatabaseIssue,
   type DocumentChange,
@@ -160,10 +163,23 @@ export function prepareValidatedNativeSyncCandidate(
     requestFingerprint(sharedDocument(trusted.data)) !== requestFingerprint(input.baselineDocument)
   )
     return reject('sync.baseline-invalid');
+  const routeDependencies: string[] = [];
+  const segment = (id: string) => id.replaceAll('~', '~0').replaceAll('/', '~1');
+  for (const change of derived) {
+    if (!/^\/layout\/relations\/[^/]+$/.test(change.path) || change.before !== null) continue;
+    const route = relationLayoutSchema.safeParse(change.after);
+    if (!route.success) continue;
+    const relation = current.data.tableRelations?.find((item) => item.id === route.data.relationId);
+    if (!relation) continue;
+    routeDependencies.push(`/tableRelations/${segment(relation.id)}`);
+    for (const tableId of [relation.sourceTableId, relation.targetTableId])
+      routeDependencies.push(`/tables/${segment(tableId)}/@exists`);
+  }
   const dependencyPaths = [
     ...new Set([
       ...deriveStructuralDependencyPaths(input.document, derived),
       ...input.dependencyPaths,
+      ...routeDependencies,
     ]),
   ];
   const conflictingPaths = findFieldVersionConflicts(
@@ -176,7 +192,33 @@ export function prepareValidatedNativeSyncCandidate(
       code: 'sync.field-conflict',
       conflictingPaths: [...new Set(conflictingPaths)],
     };
-  // A later trusted restore path must prove deletion provenance instead of relaxing this rule.
+  // Route geometry is reproducible metadata of a live relationship, not an entity identity.
+  // Never use the submitted candidate to prove that deleted endpoints still exist.
+  const canRegenerateRoute = (change: DocumentChange): boolean => {
+    if (!/^\/layout\/relations\/[^/]+$/.test(change.path)) return false;
+    const route = relationLayoutSchema.safeParse(change.after);
+    if (!route.success || route.data.viewId !== TABLES_VIEW_ID) return false;
+    const key = change.path
+      .slice('/layout/relations/'.length)
+      .replaceAll('~1', '/')
+      .replaceAll('~0', '~');
+    if (key !== `${route.data.viewId}:${route.data.relationId}`) return false;
+    const relation = current.data.tableRelations?.find((item) => item.id === route.data.relationId);
+    if (
+      !relation ||
+      ![relation.sourceTableId, relation.targetTableId].every((id) =>
+        current.data.tables?.some((table) => table.id === id),
+      )
+    )
+      return false;
+    try {
+      upsertRelationLayout(current.data, route.data);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // Entity and node restoration still requires the trusted history path.
   for (const change of derived) {
     const entity =
       /^\/(?:domains|domainRelations|tables|columns|keys|tableRelations|notes|enums|views|indexes|checks)\/[^/]+$/.test(
@@ -186,7 +228,13 @@ export function prepareValidatedNativeSyncCandidate(
       'get' in versions && typeof versions.get === 'function'
         ? versions.get(change.path) !== undefined
         : Object.hasOwn(versions, change.path);
-    if (entity && change.before === null && change.beforeExists !== true && versionKnown)
+    if (
+      entity &&
+      change.before === null &&
+      change.beforeExists !== true &&
+      versionKnown &&
+      !canRegenerateRoute(change)
+    )
       return reject('sync.identity-retired');
   }
   let candidate: NativeDesignDocument;

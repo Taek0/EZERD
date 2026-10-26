@@ -6,7 +6,7 @@ import {
   type NativeEditorDraftRef,
   type NativeSyncOperationResult,
 } from '@ezerd/contracts';
-import { ApiError, request } from '../../shared/api/client.js';
+import { ApiError, apiDiagnostic, type ApiDiagnostic, request } from '../../shared/api/client.js';
 import { captureNativeActorApi } from './native-actor-api.js';
 import { loadNativeEditorDraft } from './native-editor-draft.js';
 import { getNativeDurableQueue, nativeDurableId } from './native-durable-queue.js';
@@ -223,6 +223,18 @@ export async function cancelNativeSaveIntent(
   return result;
 }
 
+function rejectionDiagnostic(result: NativeSyncOperationResult, original?: unknown) {
+  if (result.status === 'accepted') return {};
+  const diagnostic = apiDiagnostic(
+    original instanceof ApiError
+      ? { ...original.diagnostic, code: original.code }
+      : original instanceof Error
+        ? { code: original.message }
+        : { code: result.reasonCode ?? result.reason, issues: result.issues },
+  );
+  return Object.keys(diagnostic).length ? { rejection: diagnostic } : {};
+}
+
 /** At most one immutable durable request is transmitted. Unknown delivery is recovered first. */
 export async function flushNativeSaveIntent(
   user: string,
@@ -231,13 +243,14 @@ export async function flushNativeSaveIntent(
   api: typeof request = request,
   canTransmit: () => boolean = () => true,
   onResult?: (result: NativeSyncOperationResult) => void,
-): Promise<{ operationId: string; accepted: boolean } | null> {
+): Promise<{ operationId: string; accepted: boolean; rejection?: ApiDiagnostic } | null> {
   const actorApi = captureNativeActorApi(user, api);
   updateNativeIntentBlocker(user, snapshot.project.id, storage);
   const existing = await loadNativePending(user, snapshot.project.id, storage);
   if (existing) {
     let result;
     let noChanges = false;
+    let originalRejection: unknown;
     try {
       result = await recoverNativePending(existing, snapshot, storage, actorApi, true, canTransmit);
     } catch (error) {
@@ -247,6 +260,7 @@ export async function flushNativeSaveIntent(
       )
         throw error;
       noChanges = error instanceof ApiError && error.code === 'sync.no-changes';
+      originalRejection = error;
       // HTTP validation errors alone do not prove late delivery impossible: fence the request.
       result = await cancelNativePending(existing, storage, actorApi);
     }
@@ -261,6 +275,7 @@ export async function flushNativeSaveIntent(
     return {
       operationId: existing.request.operationId,
       accepted: noChanges || result.status === 'accepted',
+      ...(!noChanges ? rejectionDiagnostic(result, originalRejection) : {}),
     };
   }
   if (await getNativeDurableQueue().read(user, snapshot.project.id)) return null;
@@ -278,7 +293,11 @@ export async function flushNativeSaveIntent(
     checkNativeAck(pending, result);
     finishIntent(intent, result.status === 'accepted', storage, result.sequence);
     onResult?.(result);
-    return { operationId: pending.request.operationId, accepted: result.status === 'accepted' };
+    return {
+      operationId: pending.request.operationId,
+      accepted: result.status === 'accepted',
+      ...rejectionDiagnostic(result),
+    };
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
   }
@@ -294,7 +313,11 @@ export async function flushNativeSaveIntent(
     const result = await cancelNativePending(pending, storage, actorApi);
     finishIntent(intent, result.status === 'accepted', storage, result.sequence);
     onResult?.(result);
-    return { operationId: pending.request.operationId, accepted: result.status === 'accepted' };
+    return {
+      operationId: pending.request.operationId,
+      accepted: result.status === 'accepted',
+      ...rejectionDiagnostic(result),
+    };
   }
   let editorDraft = pending.editorDraft;
   if (
@@ -320,11 +343,13 @@ export async function flushNativeSaveIntent(
   if (!canTransmit()) throw Error('project.read-only');
   let result;
   let noChanges = false;
+  let originalRejection: unknown;
   try {
     result = await sendNativePending(staged, storage, actorApi);
   } catch (error) {
     if (!(error instanceof ApiError) || ![400, 409, 422].includes(error.status)) throw error;
     noChanges = error instanceof ApiError && error.code === 'sync.no-changes';
+    originalRejection = error;
     result = await cancelNativePending(staged, storage, actorApi);
   }
   if (result.status === 'rejected')
@@ -334,5 +359,6 @@ export async function flushNativeSaveIntent(
   return {
     operationId: staged.request.operationId,
     accepted: noChanges || result.status === 'accepted',
+    ...(!noChanges ? rejectionDiagnostic(result, originalRejection) : {}),
   };
 }

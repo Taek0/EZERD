@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   databaseKinds,
+  compactNativeDocumentForStorage,
   getDatabaseType,
   nativeBuiltinFunctionIds,
   validateDatabaseTypeParameters,
@@ -16,6 +17,7 @@ import {
   tableSchema,
   tableKeySchema,
   tableRelationSchema,
+  customPropertiesSchema,
 } from './relational.js';
 import {
   MAX_DOCUMENT_BYTES,
@@ -334,6 +336,11 @@ const columnOptions = z.union([
   }),
 ]);
 export const nativeStoredTableSchema = tableSchema.omit({ physical: true }).extend({
+  customProperties: customPropertiesSchema.default(() => ({
+    common: {},
+    logical: {},
+    physical: {},
+  })),
   physical: z.strictObject({
     name,
     namespace: storedNamespace,
@@ -342,6 +349,11 @@ export const nativeStoredTableSchema = tableSchema.omit({ physical: true }).exte
   }),
 });
 export const nativeStoredColumnSchema = columnSchema.omit({ physical: true }).extend({
+  customProperties: customPropertiesSchema.default(() => ({
+    common: {},
+    logical: {},
+    physical: {},
+  })),
   physical: z.strictObject({
     name,
     type: nativeStoredColumnTypeSchema,
@@ -432,7 +444,7 @@ export const nativeStoredDesignDocumentSchema = z
     checks: z.array(nativeCheck).max(10000).optional(),
   })
   .superRefine((document, ctx) => {
-    if (!withinJsonBudget(document, MAX_DOCUMENT_BYTES))
+    if (!withinJsonBudget(compactNativeDocumentForStorage(document), MAX_DOCUMENT_BYTES))
       ctx.addIssue({ code: 'custom', message: 'document.size-limit' });
     const identities = [
       ...document.domains,

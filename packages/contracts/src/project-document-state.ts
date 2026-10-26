@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import type { DesignDocument, NativeDesignDocument } from '@ezerd/model';
+import {
+  restoreNativeDocumentFromStorage,
+  type DesignDocument,
+  type NativeDesignDocument,
+} from '@ezerd/model';
 import { projectSchema } from './workspace.js';
 import {
   databaseContextSchema,
@@ -9,10 +13,12 @@ import {
 import { designDocumentReadSchema, nativeStoredDesignDocumentSchema } from './native-document.js';
 
 /** Validate the source shape while keeping raw aliases/identifiers, rather than returning a preview. */
-export const rawDesignDocumentReadSchema = z.custom<DesignDocument | NativeDesignDocument>(
-  (value) => designDocumentReadSchema.safeParse(value).success,
-  'document.source-invalid',
-);
+export const rawDesignDocumentReadSchema = z
+  .custom<DesignDocument | NativeDesignDocument>(
+    (value) => designDocumentReadSchema.safeParse(value).success,
+    'document.source-invalid',
+  )
+  .transform(restoreNativeDocumentFromStorage);
 export const databaseIssueSchema = z.strictObject({
   code: z.string().max(160),
   category: z.enum(['unsupported', 'invalid', 'incomplete', 'environment']),

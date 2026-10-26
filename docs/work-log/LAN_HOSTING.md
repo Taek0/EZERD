@@ -34,18 +34,23 @@ MCP_LOG_DIR=.data/logs/mcp
 ## 실행
 
 ```powershell
-pnpm setup
-pnpm db:up
-pnpm host:start
+pnpm install --frozen-lockfile
+pnpm host
 ```
 
-`host:start`는 build, DB migration, LAN 실행을 순서대로 수행한다. build와 migration이 준비되어 있으면 다음 명령을 사용한다.
+Docker Engine(또는 Docker Desktop)과 Compose가 실행 가능해야 한다. `pnpm host`와 `pnpm host:start`는 setup, DB 컨테이너 준비와 health 확인, build, DB migration, LAN 실행을 순서대로 수행한다. 기존 `.env`는 덮어쓰지 않으며 없을 때만 예시 파일로 생성한다. 실제 허용 CIDR 등 환경 설정은 위 안내에 따라 준비한다.
+
+DB 준비는 `docker compose up -d --no-recreate --wait --wait-timeout 90 postgres`를 사용한다. 이 프로젝트 Compose의 기존 DB 컨테이너는 재생성하지 않고 재사용하며, 중지됐으면 시작하고 없으면 생성한다. 다른 프로젝트의 임의 PostgreSQL 컨테이너를 자동 선택하지 않는다. 기존 `.data/postgres` 데이터는 보존한다. DB가 준비되지 않으면 이후 단계는 실행하지 않는다.
+
+컨테이너 이미지·포트 등 Compose 설정 변경을 반영하려면 기존 `pnpm db:up`을 명시적으로 실행한다. 호스팅을 Ctrl+C로 종료해도 DB는 유지되며, 별도 종료는 `pnpm db:stop`으로 한다.
+
+build와 migration 및 DB 실행이 준비되어 있으면 다음 명령을 사용한다.
 
 ```powershell
 pnpm host:serve
 ```
 
-출력에는 loopback health URL, 발견한 LAN 후보 URL, 허용 CIDR과 MCP 공개 URL이 나온다. `LAN_ALLOWED_CIDRS`가 없거나 유효하지 않으면 외부 연결을 열기 전에 종료한다. 스크립트는 `.env`, 방화벽과 네트워크 설정을 변경하지 않는다.
+출력에는 loopback health URL, 발견한 LAN 후보 URL, 허용 CIDR과 MCP 공개 URL이 나온다. `LAN_ALLOWED_CIDRS`가 없거나 유효하지 않으면 외부 연결을 열기 전에 종료한다. 실행 스크립트는 기존 `.env`, 방화벽과 네트워크 설정을 변경하지 않는다.
 
 ## Windows 방화벽
 

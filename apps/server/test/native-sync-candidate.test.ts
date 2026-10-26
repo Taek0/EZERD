@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import {
   createEmptyDocument,
+  compactNativeDocumentForStorage,
   defaultDatabaseContext,
   deriveOperationChanges,
   migrateDesignDocumentV1,
@@ -105,6 +106,140 @@ function badRequestCode(run: () => unknown): string | undefined {
   return undefined;
 }
 describe('server native candidate preparation under trusted context', () => {
+  function routeFixture() {
+    const f = fixture();
+    f.document.tableRelations = [
+      {
+        id: 'r',
+        scope: 'logical',
+        sourceTableId: 't',
+        targetTableId: 't',
+        logical: { name: 'self', required: false, cardinality: 'one-to-many' },
+        physical: null,
+      },
+    ];
+    f.project.document = structuredClone(f.document);
+    f.baseline.document = sharedDocument(f.document);
+    return f;
+  }
+  const routePath = '/layout/relations/__tables__:r';
+  const addRoute = (doc: NativeDesignDocument) => {
+    doc.layout.relations = [
+      { viewId: '__tables__', relationId: 'r', offset: 0, waypoints: [{ x: 500, y: 200 }] },
+    ];
+  };
+  it('regenerates a retired route of an existing relationship without restoring entities', () => {
+    const f = routeFixture();
+    const result = prepareNativeSyncCandidate(
+      f.request(addRoute),
+      f.project,
+      f.baseline,
+      actorId,
+      new Map([[routePath, 0]]),
+      now,
+    );
+    expect(result.status).toBe('prepared');
+    if (result.status !== 'prepared') return;
+    expect(result.changes.map((c) => c.path)).toEqual([routePath]);
+    expect(result.document.tables).toEqual(f.document.tables);
+    expect(result.document.tableRelations).toEqual(f.document.tableRelations);
+  });
+  it.each(['relation', 'table', 'placement'] as const)(
+    'does not recreate a route when its current %s is missing',
+    (target) => {
+      const f = routeFixture();
+      const input = f.request(addRoute);
+      const current = f.project.document as NativeDesignDocument;
+      if (target === 'relation') current.tableRelations = [];
+      if (target === 'table') current.tables = [];
+      if (target === 'placement') current.layout.nodes = [];
+      expect(
+        code(
+          prepareNativeSyncCandidate(
+            input,
+            f.project,
+            f.baseline,
+            actorId,
+            new Map([[routePath, 0]]),
+            now,
+          ),
+        ),
+      ).toBe('sync.identity-retired');
+    },
+  );
+  it('keeps newer relationship changes protected before route regeneration', () => {
+    const f = routeFixture();
+    f.project.syncSequence = 1;
+    expect(
+      code(
+        prepareNativeSyncCandidate(
+          f.request(addRoute),
+          f.project,
+          f.baseline,
+          actorId,
+          new Map([
+            [routePath, 0],
+            ['/tableRelations/r', 1],
+          ]),
+          now,
+        ),
+      ),
+    ).toBe('sync.field-conflict');
+  });
+  it.each(['tables', 'tableRelations'] as const)(
+    'does not revive a deleted %s entity alongside its route',
+    (collection) => {
+      const f = routeFixture();
+      const oldTable = structuredClone(f.document.tables![0]!);
+      const oldRelation = structuredClone(f.document.tableRelations![0]!);
+      f.document.tableRelations = [];
+      if (collection === 'tables') {
+        f.document.tables = [];
+        f.document.columns = [];
+        f.document.layout.nodes = [];
+      }
+      f.project.document = structuredClone(f.document);
+      f.baseline.document = sharedDocument(f.document);
+      const input = f.request((doc) => {
+        if (collection === 'tables') doc.tables = [oldTable];
+        doc.tableRelations = [oldRelation];
+        addRoute(doc);
+      });
+      const retiredPath = collection === 'tables' ? '/tables/t' : '/tableRelations/r';
+      expect(
+        code(
+          prepareNativeSyncCandidate(
+            input,
+            f.project,
+            f.baseline,
+            actorId,
+            new Map([
+              [routePath, 0],
+              [retiredPath, 0],
+            ]),
+            now,
+          ),
+        ),
+      ).toBe('sync.identity-retired');
+    },
+  );
+  it('accepts expanded edits against compact persisted documents and baselines', () => {
+    const { project, baseline, request } = fixture();
+    const input = request((doc) => {
+      doc.tables![0]!.physical.comment = 'updated';
+    });
+    project.document = compactNativeDocumentForStorage(project.document as NativeDesignDocument);
+    baseline.document = compactNativeDocumentForStorage(baseline.document as NativeDesignDocument);
+    const result = prepareNativeSyncCandidate(input, project, baseline, actorId, new Map(), now);
+    expect(result.status).toBe('prepared');
+    if (result.status !== 'prepared') return;
+    expect(result.changes.map((change) => change.path)).toEqual(['/tables/t/physical/comment']);
+    expect(result.document.tables![0]!.customProperties).toEqual({
+      common: {},
+      logical: {},
+      physical: {},
+    });
+  });
   it('merges only changed fields onto current, preserves remote repairs and all original inputs', () => {
     const { project, baseline, request } = fixture();
     const current = project.document as NativeDesignDocument;

@@ -9,7 +9,6 @@ import {
   normalizeSharedTableCanvas,
   sharedDocument,
   updateNodeLayout,
-  upsertCombinedView,
   upsertRelationLayout,
   upsertTableRelation,
   type Table,
@@ -96,11 +95,26 @@ describe('unified shared table canvas normalization', () => {
   });
 
   it('preserves existing global routes and does not publish personal view annotations', () => {
-    let doc = upsertCombinedView(fixture(), {
-      id: 'personal',
-      name: 'Private',
-      domainIds: ['sales'],
-    });
+    const source = fixture();
+    let doc = {
+      ...source,
+      views: [
+        {
+          id: 'personal',
+          name: 'Private',
+          domainIds: ['sales'],
+        },
+      ],
+      layout: {
+        ...source.layout,
+        nodes: [
+          ...source.layout.nodes,
+          ...source.layout.nodes
+            .filter((node) => node.viewId === '__tables__')
+            .flatMap((node) => [{ ...node, id: node.id + ':' + 'personal', viewId: 'personal' }]),
+        ],
+      },
+    };
     doc = addNote(
       doc,
       { id: 'private-note', viewId: 'personal', text: 'Personal annotation' },

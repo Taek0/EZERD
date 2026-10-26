@@ -130,7 +130,7 @@ describe('native canvas decoration ordinary commands', () => {
           patch: { color: '#112233' },
         },
       ]),
-    ).toThrow('canvas.shared-view-required');
+    ).toThrow('canvas.unsupported-view');
     for (const patch of [
       { color: 'red' },
       { physical: { name: 'changed' } },

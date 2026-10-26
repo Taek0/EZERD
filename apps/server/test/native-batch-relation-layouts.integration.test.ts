@@ -149,6 +149,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('native relation layout batch 
     expect(created.status, JSON.stringify(created.data)).toBe(201);
     const projectId = created.data.id as string;
     const original = fixture();
+    original.tables![0]!.customProperties.physical.source = '  preserve metadata  ';
     await pool.query('UPDATE projects SET document=$2::jsonb WHERE id=$1', [
       projectId,
       JSON.stringify(original),
@@ -163,6 +164,18 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')('native relation layout batch 
       accepted.data.changedPaths.every((path: string) => path.startsWith('/layout/relations/')),
     ).toBe(true);
     const saved = await state(projectId);
+    const persisted = (await pool.query('SELECT document FROM projects WHERE id=$1', [projectId]))
+      .rows[0].document;
+    expect(persisted.tables[0].customProperties).toEqual(original.tables![0]!.customProperties);
+    expect(persisted.tables[1]).not.toHaveProperty('customProperties');
+    expect(saved.sourceDocument.tables).toEqual(original.tables);
+    const storedAck = (
+      await pool.query(
+        'SELECT result FROM sync_operations WHERE project_id=$1 AND operation_id=$2',
+        [projectId, request.operationId],
+      )
+    ).rows[0].result;
+    expect(storedAck.document.tables[1]).not.toHaveProperty('customProperties');
     expect(saved.sourceDocument.layout.relations).toHaveLength(150);
     expect(saved.sourceDocument.tableRelations).toEqual(original.tableRelations);
     expect(saved.sourceDocument.layout.nodes).toEqual(original.layout.nodes);

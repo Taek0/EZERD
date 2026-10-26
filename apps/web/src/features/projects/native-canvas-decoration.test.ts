@@ -174,7 +174,7 @@ describe('native common style/domain relation UI and geometry', () => {
         sceneFor: nativeCanvasScene,
       }),
     );
-    expect(privateHtml).toContain('공유 화면을 선택해 내보내 주세요.');
+    expect(privateHtml).toContain('도메인 맵 또는 테이블 캔버스를 선택해 내보내 주세요.');
     expect(privateHtml).toContain('disabled=""');
   });
   it.each(['overview', '__tables__', 'a'])(

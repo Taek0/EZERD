@@ -8,6 +8,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  restoreNativeDocumentFromStorage,
   createEmptyDocument,
   createEmptyNativeDocument,
   createNativeTable,
@@ -436,7 +437,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(saved.checks[0].expression.right.value).toBe('parent-column');
       expect(
         (await request(`/${imported.data.project.id}/native-transfer`)).data.sourceDocument,
-      ).toEqual(saved);
+      ).toEqual(restoreNativeDocumentFromStorage(saved));
     });
 
     it('remaps PostgreSQL enum references only through server-derived v1 recovery', async () => {
@@ -450,7 +451,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
       expect(saved.enums[0].values).toEqual(['parent-column']);
       expect(saved.columns[0].physical.type.enumId).toBe(saved.enums[0].id);
       const exported = await request(`/${imported.data.project.id}/native-transfer`);
-      expect(exported.data.sourceDocument).toEqual(saved);
+      expect(exported.data.sourceDocument).toEqual(restoreNativeDocumentFromStorage(saved));
       expect((await upload(exported.data)).status).toBe(422);
     });
 
@@ -660,7 +661,7 @@ describe.runIf(process.env.EZERD_DB_TEST === '1')(
         database_revision: 0,
         status: 'active',
       });
-      expect(saved.document).toEqual(
+      expect(restoreNativeDocumentFromStorage(saved.document)).toEqual(
         migrateDesignDocumentV1(document, defaultDatabaseContext('mysql')).document,
       );
       expect(nativeReferenceProblems(saved.document)).toEqual([]);

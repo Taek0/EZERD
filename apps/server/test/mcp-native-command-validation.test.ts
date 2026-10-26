@@ -206,14 +206,7 @@ describe('native MCP command discovery and diagnostics', () => {
       expect(table.required).toEqual(['type', 'value']);
       expect(table.properties).not.toHaveProperty('placement');
       expect(resolve(table.properties.value).required).toEqual(
-        expect.arrayContaining([
-          'id',
-          'domainId',
-          'scope',
-          'logical',
-          'physical',
-          'customProperties',
-        ]),
+        expect.arrayContaining(['id', 'domainId', 'scope', 'logical', 'physical']),
       );
       expect(JSON.stringify(tool.inputSchema)).toContain('sqliteMain');
       const reference = options

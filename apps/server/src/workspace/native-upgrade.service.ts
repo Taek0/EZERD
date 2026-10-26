@@ -1,3 +1,4 @@
+import { restoreNativeStoredResult } from '../shared/native-storage-read.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -14,6 +15,7 @@ import {
   upgradeProjectDocumentSchema,
 } from '@ezerd/contracts';
 import {
+  compactNativeDocumentForStorage,
   migrateDesignDocumentV1,
   nextDatabaseRevision,
   requestFingerprint,
@@ -70,7 +72,7 @@ export class NativeUpgradeService {
         const checked = nativeSyncOperationResultSchema.safeParse(row.result);
         if (!checked.success) throw new ConflictException({ code: 'sync.protocol-mismatch' });
         // Validate the historical ACK without applying current trim/default transformations.
-        return structuredClone(row.result) as typeof checked.data;
+        return restoreNativeStoredResult(row.result) as typeof checked.data;
       };
       const old = await replay();
       if (old) return { result: old, changed: false };
@@ -154,7 +156,7 @@ export class NativeUpgradeService {
       await tx
         .update(projects)
         .set({
-          document: sql`${JSON.stringify(document)}::jsonb`,
+          document: sql`${JSON.stringify(compactNativeDocumentForStorage(document))}::jsonb`,
           version: sql`${projects.version} + 1`,
           syncSequence: sequence,
           databaseProfileId: database.profileId,
@@ -171,7 +173,7 @@ export class NativeUpgradeService {
         lastSequence: sequence,
         databaseRevision: revision,
         lastSuccessfulSyncAt: now,
-        document: sql`${JSON.stringify(sharedDocument(document))}::jsonb`,
+        document: sql`${JSON.stringify(compactNativeDocumentForStorage(sharedDocument(document)))}::jsonb`,
       });
       // Preserve per-entity versions/tombstones, including retired v1 identities; only add boundary guards.
       for (const path of paths)
@@ -195,7 +197,12 @@ export class NativeUpgradeService {
         kind: 'online',
         fingerprint,
         changes: [],
-        result: result as unknown as Record<string, unknown>,
+        result: {
+          ...result,
+          ...(result.document && {
+            document: compactNativeDocumentForStorage(result.document),
+          }),
+        } as unknown as Record<string, unknown>,
         deletionSnapshot: {
           command: 'upgrade',
           sourceDocument: structuredClone(project.document),

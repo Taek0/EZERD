@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  compactNativeDocumentForStorage,
+  restoreNativeDocumentFromStorage,
+  type NativeDesignDocument,
+} from '@ezerd/model';
 import { databaseContextSchema, databaseRevisionSchema } from './database-state.js';
 import {
   nativeProjectTransferSchema,
@@ -23,7 +28,14 @@ function transferBudget(input: unknown, ctx: z.RefinementCtx) {
     for (const document of [file?.document, file?.sourceDocument, file?.native?.document]) {
       if (document !== undefined) {
         let bytes = 0;
-        for (const character of JSON.stringify(document)) {
+        const stored =
+          document !== null &&
+          typeof document === 'object' &&
+          'schemaVersion' in document &&
+          document.schemaVersion === 2
+            ? compactNativeDocumentForStorage(document as NativeDesignDocument)
+            : document;
+        for (const character of JSON.stringify(stored)) {
           const code = character.codePointAt(0)!;
           bytes += code <= 127 ? 1 : code <= 2047 ? 2 : code <= 65535 ? 3 : 4;
           if (bytes > MAX_DOCUMENT_BYTES) {
@@ -108,10 +120,15 @@ export const nativeTransferReadSchema = z.preprocess(
   z.union([
     versionedTransfer,
     // Keep the original source evidence even when the structural parser trims identifiers/aliases.
-    z.custom<ProjectTransferRead>(
-      (value) => projectTransferReadSchema.safeParse(value).success,
-      'project-transfer.source-invalid',
-    ),
+    z
+      .custom<ProjectTransferRead>(
+        (value) => projectTransferReadSchema.safeParse(value).success,
+        'project-transfer.source-invalid',
+      )
+      .transform((file) => {
+        const document = restoreNativeDocumentFromStorage(file.document);
+        return document === file.document ? file : { ...file, document };
+      }),
   ]),
 );
 export type NativeTransferRead = z.infer<typeof nativeTransferReadSchema>;

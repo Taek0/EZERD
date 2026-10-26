@@ -14,7 +14,6 @@ import {
   sharedDocument,
   updateNodeLayout,
   updateTable,
-  upsertCombinedView,
   upsertKey,
   upsertTableRelation,
   upsertRelationLayout,
@@ -95,11 +94,25 @@ describe('direct table canvas', () => {
     doc = addTable(doc, { ...table('t'), color: '#465fff' }, { x: 123, y: 456 });
     const global = doc.layout.nodes.find((node) => node.viewId === TABLES_VIEW_ID)!;
     const assigned = updateTable(doc, 't', { domainId: 'a' });
-    let viewed = upsertCombinedView(assigned, {
-      id: 'combined',
-      name: 'Together',
-      domainIds: ['a'],
-    });
+    let viewed = {
+      ...assigned,
+      views: [
+        {
+          id: 'combined',
+          name: 'Together',
+          domainIds: ['a'],
+        },
+      ],
+      layout: {
+        ...assigned.layout,
+        nodes: [
+          ...assigned.layout.nodes,
+          ...assigned.layout.nodes
+            .filter((node) => node.viewId === '__tables__')
+            .flatMap((node) => [{ ...node, id: node.id + ':' + 'combined', viewId: 'combined' }]),
+        ],
+      },
+    };
     const owner = viewed.layout.nodes.find((node) => node.viewId === 'a' && node.objectId === 't')!;
     viewed = updateNodeLayout(viewed, owner.id, { x: 900, y: 800 });
     const moved = updateTable(viewed, 't', { domainId: 'b' });

@@ -9,8 +9,8 @@ import {
   createForeignKeyFromPrimaryKey,
   diagnoseDocument,
   removeDomain,
-  upsertCombinedView,
   upsertKey,
+  updateTable,
   upsertRelationLayout,
   type Column,
   type Table,
@@ -85,9 +85,21 @@ it('copies PK to a new FK column without defaults or name collisions and preserv
     }),
   ).toThrow();
 });
-it('persists combined placements from owners only and cleans deleted domain views', () => {
+it('preserves historical combined placements and cleans deleted domain views', () => {
   const doc = addTableReference(seed(), 'tb', 'a', { x: 999, y: 999 });
-  let next = upsertCombinedView(doc, { id: 'combined', name: '함께 보기', domainIds: ['a', 'b'] });
+  let next: typeof doc = {
+    ...doc,
+    views: [{ id: 'combined', name: '함께 보기', domainIds: ['a', 'b'] }],
+    layout: {
+      ...doc.layout,
+      nodes: [
+        ...doc.layout.nodes,
+        ...doc.layout.nodes
+          .filter((node) => node.viewId === '__tables__')
+          .flatMap((node) => [{ ...node, id: node.id + ':' + 'combined', viewId: 'combined' }]),
+      ],
+    },
+  };
   expect(next.layout.nodes.filter((n) => n.viewId === 'combined')).toHaveLength(2);
   expect(next.tables).toEqual(doc.tables);
   expect(diagnoseDocument(autoLayoutView(next, 'combined'))).toEqual([]);
@@ -106,7 +118,19 @@ it('stores independent route offsets by view', () => {
     relationId: 'fk',
     columnIds: ['fkc'],
   });
-  doc = upsertCombinedView(doc, { id: 'combined', name: '함께 보기', domainIds: ['a', 'b'] });
+  doc = {
+    ...doc,
+    views: [{ id: 'combined', name: '함께 보기', domainIds: ['a', 'b'] }],
+    layout: {
+      ...doc.layout,
+      nodes: [
+        ...doc.layout.nodes,
+        ...doc.layout.nodes
+          .filter((node) => node.viewId === '__tables__')
+          .flatMap((node) => [{ ...node, id: node.id + ':' + 'combined', viewId: 'combined' }]),
+      ],
+    },
+  };
   doc = upsertRelationLayout(doc, { relationId: 'fk', viewId: 'combined', offset: 60 });
   expect(doc.layout.relations).toEqual([{ relationId: 'fk', viewId: 'combined', offset: 60 }]);
 });
@@ -145,12 +169,6 @@ it('copies ordered composite PK type parameters and enum identities; validates e
   ).toThrow();
   expect(JSON.stringify(doc)).toBe(before);
 });
-it('keeps combined views synchronized when an owned table is added', () => {
-  let doc = upsertCombinedView(seed(), { id: 'combined', name: '함께 보기', domainIds: ['a'] });
-  doc = addTable(doc, table('new', 'a'), { x: 400, y: 200 });
-  expect(doc.layout.nodes.some((n) => n.objectId === 'new' && n.viewId === 'combined')).toBe(true);
-  expect(diagnoseDocument(doc)).toEqual([]);
-});
 it('uses the established NOT NULL default and distinct FK constraint names for repeated connections', () => {
   const first = createForeignKeyFromPrimaryKey(seed(), {
     primaryTableId: 'ta',
@@ -177,7 +195,19 @@ it('stores independent draggable bends and rejects invalid coordinates', () => {
     relationId: 'fk',
     columnIds: ['fc'],
   });
-  doc = upsertCombinedView(doc, { id: 'combined', name: '도메인 뷰', domainIds: ['a', 'b'] });
+  doc = {
+    ...doc,
+    views: [{ id: 'combined', name: '도메인 뷰', domainIds: ['a', 'b'] }],
+    layout: {
+      ...doc.layout,
+      nodes: [
+        ...doc.layout.nodes,
+        ...doc.layout.nodes
+          .filter((node) => node.viewId === '__tables__')
+          .flatMap((node) => [{ ...node, id: node.id + ':' + 'combined', viewId: 'combined' }]),
+      ],
+    },
+  };
   const bend = { x: 125, y: -75 };
   const next = upsertRelationLayout(doc, { relationId: 'fk', viewId: 'combined', offset: 0, bend });
   bend.x = 999;
@@ -199,4 +229,37 @@ it('stores independent draggable bends and rejects invalid coordinates', () => {
       bend: { x: 0, y: 1e8 },
     }),
   ).toThrow();
+});
+
+it('does not generate personal-view placements when tables are added or change domains', () => {
+  const source = seed();
+  const legacy = {
+    ...source,
+    views: [{ id: 'combined', name: 'Historical', domainIds: ['a'] }],
+    layout: {
+      ...source.layout,
+      nodes: [
+        ...source.layout.nodes,
+        {
+          ...source.layout.nodes.find((node) => node.objectId === 'ta' && node.viewId === 'a')!,
+          id: 'historical-ta',
+          viewId: 'combined',
+        },
+      ],
+    },
+  };
+  const added = addTable(legacy, table('new', 'a'), { x: 400, y: 200 });
+  expect(added.views).toEqual(legacy.views);
+  expect(added.layout.nodes.filter((node) => node.viewId === 'combined')).toEqual(
+    legacy.layout.nodes.filter((node) => node.viewId === 'combined'),
+  );
+  const movedIn = updateTable(added, 'tb', { domainId: 'a' });
+  expect(movedIn.layout.nodes.filter((node) => node.viewId === 'combined')).toEqual(
+    legacy.layout.nodes.filter((node) => node.viewId === 'combined'),
+  );
+  const movedOut = updateTable(movedIn, 'ta', { domainId: 'b' });
+  expect(movedOut.views).toEqual(legacy.views);
+  expect(movedOut.layout.nodes.filter((node) => node.viewId === 'combined')).toEqual([]);
+  expect(diagnoseDocument(movedOut)).toEqual([]);
+  expect(source.views).toBeUndefined();
 });

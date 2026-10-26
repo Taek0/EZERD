@@ -126,6 +126,10 @@ describe('MCP server tools', () => {
         });
       }
       expect(client.getInstructions()).toContain('권장 간격을 캔버스 좌표 기준 200px 이상');
+      expect(client.getInstructions()).toContain('별도 저장 화면이 아닙니다');
+      for (const tool of tools.tools) {
+        expect(tool.description).not.toMatch(/공유 화면|공유화면|공유 배치|공유 문서/);
+      }
       for (const guidance of [
         '요청당 1~100개',
         '병렬 전송하지 말고',
