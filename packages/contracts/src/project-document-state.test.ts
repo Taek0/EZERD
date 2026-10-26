@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   createEmptyDocument,
   createEmptyNativeDocument,
+  createNativeTable,
+  compactNativeDocumentForStorage,
   defaultDatabaseContext,
 } from '@ezerd/model';
-import { projectDocumentStateSchema } from './project-document-state.js';
+import {
+  projectDocumentStateSchema,
+  rawDesignDocumentReadSchema,
+} from './project-document-state.js';
 const context = defaultDatabaseContext('postgresql');
 function fixture() {
   return {
@@ -32,6 +37,19 @@ function fixture() {
   };
 }
 describe('versioned project snapshot contract', () => {
+  it('restores compact native source metadata while preserving raw identifiers', () => {
+    const source = createEmptyNativeDocument(context);
+    source.tables = [{ ...createNativeTable(context, 'raw-id'), id: ' raw-id ' }];
+    const compact = compactNativeDocumentForStorage(source);
+    expect(rawDesignDocumentReadSchema.parse(compact)).toEqual(source);
+    expect(compact.tables?.[0]).not.toHaveProperty('customProperties');
+    expect(
+      rawDesignDocumentReadSchema.safeParse({
+        ...source,
+        tables: [{ ...source.tables[0], customProperties: null }],
+      }).success,
+    ).toBe(false);
+  });
   it('keeps raw v1 aliases and identifiers unchanged while parsing the native preview separately', () => {
     const input = fixture();
     input.sourceDocument.columns = [

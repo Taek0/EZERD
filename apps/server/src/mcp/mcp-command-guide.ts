@@ -24,6 +24,7 @@ export const nativeWriteGuidance =
   'list_tables/get_project_view의 logicalName/physicalName은 조회 요약이며 쓰기 value에 복사하지 마세요. ' +
   'add_table은 완전한 value(id,domainId,scope,logical:{name,definition},physical:{name,namespace,comment,options},customProperties:{common:{},logical:{},physical:{}})가 필요합니다. ' +
   'logicalName 및 최상위 comment는 금지하며 각각 logical.name, physical.comment를 사용하세요. ' +
+  '생성 시 customProperties를 생략하면 빈 common/logical/physical로 복원합니다. 저장 시 완전히 빈 customProperties만 생략하며 값이 있는 메타데이터는 유지합니다. patch_table/patch_column에서 customProperties 생략은 기존 값을 유지한다는 의미입니다. ' +
   '기존 테이블 수정은 {type:"patch_table",id:"기존ID",patch:{logical:{name:"새 이름"},physical:{comment:"설명"}}}처럼 변경할 속성만 보내세요. ' +
   'PostgreSQL namespace/options는 {kind:"postgresSchema",name:"public"}/{database:"postgresql"}, MySQL은 {kind:"mysqlCurrentDatabase"}/{database:"mysql",engine:"InnoDB"}, SQLite는 {kind:"sqliteMain"}/{database:"sqlite",strict:false,withoutRowid:false}, generic은 {kind:"generic"}/{database:"generic"}입니다. ';
 

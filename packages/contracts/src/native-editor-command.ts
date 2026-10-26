@@ -22,6 +22,7 @@ import {
   nativeStoredDesignDocumentSchema,
 } from './native-document.js';
 import { nodeLayoutSchema, noteSchema, relationLayoutSchema, domainSchema } from './workspace.js';
+import { customPropertiesSchema } from './relational.js';
 import {
   nativeTableClipboardSchema,
   nativeClipboardByteLength,
@@ -46,7 +47,7 @@ export const nativeColumnPatchSchema = z
     scope: nativeStoredColumnSchema.shape.scope.optional(),
     logical: nativeStoredColumnSchema.shape.logical.partial().strict().optional(),
     physical: nativeStoredColumnSchema.shape.physical.partial().strict().optional(),
-    customProperties: nativeStoredColumnSchema.shape.customProperties.optional(),
+    customProperties: customPropertiesSchema.optional(),
   })
   .transform((value) => value as NativeColumnPatch);
 export const nativeTablePatchSchema = z
@@ -55,7 +56,7 @@ export const nativeTablePatchSchema = z
     color: nativeStoredTableSchema.shape.color,
     logical: nativeStoredTableSchema.shape.logical.partial().strict().optional(),
     physical: nativeStoredTableSchema.shape.physical.partial().strict().optional(),
-    customProperties: nativeStoredTableSchema.shape.customProperties.optional(),
+    customProperties: customPropertiesSchema.optional(),
     canvasDisplay: nativeStoredTableSchema.shape.canvasDisplay,
   })
   .transform((value) => value as NativeTablePatch);

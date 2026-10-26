@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import {
   createEmptyDocument,
+  compactNativeDocumentForStorage,
   defaultDatabaseContext,
   deriveOperationChanges,
   migrateDesignDocumentV1,
@@ -105,6 +106,23 @@ function badRequestCode(run: () => unknown): string | undefined {
   return undefined;
 }
 describe('server native candidate preparation under trusted context', () => {
+  it('accepts expanded edits against compact persisted documents and baselines', () => {
+    const { project, baseline, request } = fixture();
+    const input = request((doc) => {
+      doc.tables![0]!.physical.comment = 'updated';
+    });
+    project.document = compactNativeDocumentForStorage(project.document as NativeDesignDocument);
+    baseline.document = compactNativeDocumentForStorage(baseline.document as NativeDesignDocument);
+    const result = prepareNativeSyncCandidate(input, project, baseline, actorId, new Map(), now);
+    expect(result.status).toBe('prepared');
+    if (result.status !== 'prepared') return;
+    expect(result.changes.map((change) => change.path)).toEqual(['/tables/t/physical/comment']);
+    expect(result.document.tables![0]!.customProperties).toEqual({
+      common: {},
+      logical: {},
+      physical: {},
+    });
+  });
   it('merges only changed fields onto current, preserves remote repairs and all original inputs', () => {
     const { project, baseline, request } = fixture();
     const current = project.document as NativeDesignDocument;
