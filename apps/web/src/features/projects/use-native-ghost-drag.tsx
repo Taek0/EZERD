@@ -51,15 +51,22 @@ export function useNativeGhostDrag(options: {
         cancel();
       }
     };
-    if (typeof window !== 'undefined' && window.addEventListener)
+    const blur = () => {
+      if (active.current?.phase === 'dragging') cancel();
+    };
+    if (typeof window !== 'undefined' && window.addEventListener) {
       window.addEventListener('keydown', escape);
+      window.addEventListener('blur', blur);
+    }
     return () => {
       active.current?.controller.abort();
       active.current = null;
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
-      if (typeof window !== 'undefined' && window.removeEventListener)
+      if (typeof window !== 'undefined' && window.removeEventListener) {
         window.removeEventListener('keydown', escape);
+        window.removeEventListener('blur', blur);
+      }
     };
   }, options.scope);
   const paint = (session: Session) => {
