@@ -249,3 +249,15 @@ it('discards a pending drop when only the project version changes', async () => 
   expect(save).not.toHaveBeenCalled();
   expect(host.querySelector('.native-ghost-overlay')).toBeNull();
 });
+
+it('cancels an active ghost drag when the window loses focus', async () => {
+  await render();
+  await pointer('pointerdown', 100, 100);
+  await pointer('pointermove', 130, 140);
+  expect(host.querySelector('.native-ghost-overlay')).not.toBeNull();
+  await act(async () => window.dispatchEvent(new Event('blur')));
+  await pointer('pointerup', 150, 160);
+  expect(host.querySelector('.native-ghost-overlay')).toBeNull();
+  expect(workers).toHaveLength(0);
+  expect(save).not.toHaveBeenCalled();
+});
