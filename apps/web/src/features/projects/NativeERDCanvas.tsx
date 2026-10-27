@@ -71,9 +71,7 @@ import {
 import {
   createNativeTableCanvasMetrics,
   TABLES_VIEW_ID,
-  basicCardSize,
   addTableReference,
-  isVisibleInView,
   nativeColumnTypeDisplay,
   nativeDefaultDisplay,
   nativeGenerationDisplay,
@@ -84,7 +82,6 @@ import {
   type NodeLayout,
   type Viewport,
 } from '@ezerd/model';
-import { relationGeometry } from '../relations/relation-routing.js';
 import { wheelCamera } from '../canvas/canvas-wheel.js';
 import { Button, ContextMenu, AnimatedDetails } from '../../components/ui/index.js';
 import { registerTranslations, useI18n } from '../../shared/i18n/index.js';
@@ -106,10 +103,26 @@ import { NativeDomainRelationEditor } from './NativeDomainRelationEditor.js';
 import { NativeCanvasScene, type NativeSceneActions } from './NativeCanvasScene.js';
 import { NativeCanvasPngExport } from './NativeCanvasPngExport.js';
 import {
-  nativeTableCanvasRows,
-  nativeTableCanvasHeaderHeight,
-  nativeRelationLabelWidth,
+  nativeCardColor,
+  nativeTableCanvasTitle,
+  nativeTableHeaderColor,
+  nativeNoteTextColor,
 } from './native-canvas-style.js';
+import {
+  nativeCanvasScene,
+  nativeCanvasPlacementDraftScene,
+  createNativeSceneRoutingCache,
+  prepareNativeCanvasPlacementScene,
+  completeNativeCanvasScene,
+} from './native-canvas-scene.js';
+export {
+  nativeCanvasScene,
+  nativeCanvasDraftScene,
+  nativeCanvasPlacementDraftScene,
+  nativeCanvasSceneMetrics,
+} from './native-canvas-scene.js';
+import { routeNativeSceneInWorker } from './native-ghost-routing.js';
+import { useNativeGhostDrag } from './use-native-ghost-drag.js';
 type DraftRef = { key: string; revision: string };
 type CanvasCommand = NativeEditorCommand;
 
@@ -122,6 +135,7 @@ registerTranslations({
   '복구할 화면을 불러오는 중입니다. 원문은 보관된 입력에서 다운로드할 수 있습니다.':
     'Loading the recovery view. You can download its source from preserved input.',
   'Native ERD': 'Native ERD',
+  '배치 계산 중…': 'Calculating placement…',
   '보관된 입력 복구': 'Recover saved input',
   '자동 배치': 'Automatic layout',
   '테이블 배치': 'Arrange tables',
@@ -193,266 +207,6 @@ const expected = (snapshot: ProjectDocumentState) => ({
 });
 const viewFor = (doc: NativeDesignDocument, viewId: string) =>
   viewId === 'overview' ? 'overview' : TABLES_VIEW_ID;
-const sceneMetrics = new WeakMap<object, ReturnType<typeof createNativeTableCanvasMetrics>>();
-export const nativeCanvasSceneMetrics = (scene: object) => sceneMetrics.get(scene);
-/** Preview nodes can be reader-generated. Persist a real reference before moving an absent raw node. */
-export function nativeCanvasScene(
-  document: NativeDesignDocument,
-  viewId: string,
-  mode: 'physical' | 'logical',
-  filter?: NativeDomainFilterValue | null,
-  metricsFor = createNativeTableCanvasMetrics(document, mode),
-) {
-  const view = viewFor(document, viewId);
-  // Placement changes still reroute every edge, but card measurements are shared by its ports.
-  const tablesById = new Map((document.tables ?? []).map((table) => [table.id, table]));
-  const domainIds = new Set(document.domains.map((domain) => domain.id));
-  const noteIds = new Set(
-    document.notes.filter((note) => note.viewId === view).map((note) => note.id),
-  );
-  const routesByRelation = new Map<
-    string,
-    NonNullable<NativeDesignDocument['layout']['relations']>[number]
-  >();
-  for (const route of document.layout.relations ?? [])
-    if (route.viewId === view && !routesByRelation.has(route.relationId))
-      routesByRelation.set(route.relationId, route);
-  const sceneNodes = [...document.layout.nodes];
-  if (view === 'overview') {
-    const ids = new Set(sceneNodes.map((node) => node.id));
-    const bottom = sceneNodes
-      .filter((node) => node.viewId === view)
-      .reduce(
-        (max, node) =>
-          Math.max(max, node.y + basicCardSize('domain', node.width, node.height).height),
-        -240,
-      );
-    document.domains
-      .filter(
-        (domain) => !sceneNodes.some((node) => node.viewId === view && node.objectId === domain.id),
-      )
-      .forEach((domain, index) => {
-        let id = `native-domain-preview:${index}`;
-        while (ids.has(id)) id += ':';
-        ids.add(id);
-        sceneNodes.push({
-          id,
-          objectId: domain.id,
-          viewId: view,
-          x: (index % 3) * 280,
-          y: limit(bottom + 280 + Math.floor(index / 3) * 250),
-          width: 240,
-          height: 210,
-        });
-      });
-  }
-  const nodes = sceneNodes
-    .filter((node) => {
-      if (node.viewId !== view) return false;
-      const table = tablesById.get(node.objectId);
-      if (table)
-        return (
-          view !== 'overview' &&
-          (!filter ||
-            (table.domainId === null
-              ? filter.unassigned
-              : filter.domainIds.includes(table.domainId))) &&
-          isVisibleInView(table.scope, mode) &&
-          (!domainIds.has(viewId) || table.domainId === viewId)
-        );
-      return noteIds.has(node.objectId) || (view === 'overview' && domainIds.has(node.objectId));
-    })
-    .map((node) => {
-      const table = tablesById.get(node.objectId);
-      const kind = table ? 'table' : domainIds.has(node.objectId) ? 'domain' : 'note';
-      const size = basicCardSize(kind, node.width, node.height);
-      const metrics = table ? metricsFor(table) : null;
-      // Native labels drive rows; no v1 type/DDL/metrics adapter is involved.
-      return {
-        ...node,
-        width: Math.min(
-          nodeLayoutSchema.shape.width.maxValue!,
-          Math.max(size.width, metrics?.width ?? size.width),
-        ),
-        height: Math.min(
-          nodeLayoutSchema.shape.height.maxValue!,
-          Math.max(size.height, metrics?.height ?? size.height),
-        ),
-      };
-    });
-  const byObject = new Map(nodes.map((node) => [node.objectId, node]));
-  const relations = (document.tableRelations ?? []).flatMap((relation, lane) => {
-    const source = byObject.get(relation.sourceTableId),
-      target = byObject.get(relation.targetTableId);
-    if (
-      !source ||
-      !target ||
-      !isVisibleInView(relation.scope, mode) ||
-      (mode === 'physical' && !relation.physical)
-    )
-      return [];
-    const route = routesByRelation.get(relation.id);
-    const label = mode === 'physical' ? (relation.physical?.name ?? '') : relation.logical.name;
-    const columnAnchor = (
-      node: NodeLayout,
-      columnId: string | undefined,
-      side: 'left' | 'right',
-    ) => {
-      const table = tablesById.get(node.objectId)!;
-      const rows = metricsFor(table).rows;
-      const index = rows.findIndex((row) => row.column.id === columnId);
-      return index < 0
-        ? undefined
-        : {
-            side,
-            ratio: Math.max(
-              0,
-              Math.min(
-                1,
-                (nativeTableCanvasHeaderHeight +
-                  rows.slice(0, index).reduce((height, row) => height + row.height, 0) +
-                  rows[index]!.height / 2) /
-                  node.height,
-              ),
-            ),
-          };
-    };
-    const towardRight = target.x >= source.x;
-    const sourceAnchor =
-      route?.sourceAnchor ??
-      (mode === 'physical'
-        ? columnAnchor(
-            source,
-            relation.physical?.sourceColumnIds[0],
-            towardRight ? 'right' : 'left',
-          )
-        : undefined);
-    const targetAnchor =
-      route?.targetAnchor ??
-      (mode === 'physical'
-        ? columnAnchor(
-            target,
-            relation.physical?.targetColumnIds[0],
-            towardRight ? 'left' : 'right',
-          )
-        : undefined);
-    const geometry = relationGeometry(
-      source,
-      target,
-      nativeRelationLabelWidth(label),
-      lane,
-      route?.offset ?? 0,
-      route?.bend,
-      nodes.filter((node) => node !== source && node !== target),
-      {
-        ...(route ?? {}),
-        ...(sourceAnchor ? { sourceAnchor } : {}),
-        ...(targetAnchor ? { targetAnchor } : {}),
-      },
-    );
-    return [{ relation, geometry, label }];
-  });
-  const scene = { nodes, relations, viewId: view };
-  sceneMetrics.set(scene, metricsFor);
-  return scene;
-}
-
-/** Reuse the base scene unless a persisted node in this view has a changed draft position. */
-export function nativeCanvasDraftScene(
-  document: NativeDesignDocument,
-  scene: ReturnType<typeof nativeCanvasScene>,
-  viewId: string,
-  mode: 'physical' | 'logical',
-  objectId?: string,
-  x?: string,
-  y?: string,
-  filter?: NativeDomainFilterValue | null,
-  width?: string,
-  height?: string,
-) {
-  const moved = scene.nodes.find((node) => node.objectId === objectId);
-  if (
-    !moved ||
-    !document.layout.nodes.some((node) => node.id === moved.id) ||
-    (moved.x === Number(x) &&
-      moved.y === Number(y) &&
-      (width === undefined || moved.width === Number(width)) &&
-      (height === undefined || moved.height === Number(height)))
-  )
-    return scene;
-  const displayed = new Map(
-    scene.nodes.map((node) => [
-      node.id,
-      node.objectId === objectId
-        ? {
-            ...node,
-            x: Number(x),
-            y: Number(y),
-            ...(width === undefined ? {} : { width: Number(width) }),
-            ...(height === undefined ? {} : { height: Number(height) }),
-          }
-        : node,
-    ]),
-  );
-  return nativeCanvasScene(
-    {
-      ...document,
-      layout: {
-        ...document.layout,
-        nodes: document.layout.nodes.map((node) => displayed.get(node.id) ?? node),
-      },
-    },
-    viewId,
-    mode,
-    filter,
-    sceneMetrics.get(scene),
-  );
-}
-/** Choose group or single preview before routing, retaining malformed-draft recovery. */
-export function nativeCanvasPlacementDraftScene(
-  document: NativeDesignDocument,
-  scene: ReturnType<typeof nativeCanvasScene>,
-  viewId: string,
-  mode: 'physical' | 'logical',
-  values: Record<string, string>,
-  filter?: NativeDomainFilterValue | null,
-) {
-  if (values.nodesJSON) {
-    try {
-      const placements = new Map(
-        nativeCanvasDraftPlacements(values).map((node) => [node.id, node]),
-      );
-      const originals = [
-        ...document.layout.nodes,
-        ...scene.nodes.filter((node) => !document.layout.nodes.some((raw) => raw.id === node.id)),
-      ];
-      const display = {
-        ...document,
-        layout: {
-          ...document.layout,
-          nodes: originals.map((node) => placements.get(node.id) ?? node),
-        },
-      };
-      const result = nativeCanvasScene(display, viewId, mode, filter, sceneMetrics.get(scene));
-      result.nodes = result.nodes.map((node) => placements.get(node.id) ?? node);
-      return result;
-    } catch {
-      // Corrupt group drafts retain the existing single-node recovery preview.
-    }
-  }
-  return nativeCanvasDraftScene(
-    document,
-    scene,
-    viewId,
-    mode,
-    values.objectId,
-    values.x,
-    values.y,
-    filter,
-    values.width,
-    values.height,
-  );
-}
 /** Only shared source-document inputs block export; local cameras do not change it. */
 export function nativeCanvasExportBlocker(
   source: NativeDesignDocument,
@@ -959,8 +713,17 @@ function NativeCanvasWorkspace({
     () => createNativeTableCanvasMetrics(base, mode),
     [base.tables, base.columns, base.keys, base.tableRelations, base.enums, mode],
   );
+  const routingCache = useRef(createNativeSceneRoutingCache());
   const scene = useMemo(
-    () => nativeCanvasScene(base, effectiveView, mode, domainFilter, contentMetrics),
+    () =>
+      nativeCanvasScene(
+        base,
+        effectiveView,
+        mode,
+        domainFilter,
+        contentMetrics,
+        routingCache.current,
+      ),
     [base, effectiveView, mode, domainFilter, contentMetrics],
   );
   useEffect(() => {
@@ -1000,6 +763,54 @@ function NativeCanvasWorkspace({
       draftHeight,
     ],
   );
+  const ghost = useNativeGhostDrag({
+    scope: [
+      base,
+      effectiveView,
+      mode,
+      domainFilter,
+      userId,
+      snapshot.project.id,
+      snapshot.project.version,
+      snapshot.sequence,
+      snapshot.project.databaseRevision,
+      placementEditable,
+      allBusy,
+      placementDraftBlocked,
+      stale,
+      storageError,
+      sharedStorageFailure,
+      camera.x,
+      camera.y,
+      camera.zoom,
+    ],
+    camera,
+    describe: (node) => {
+      const table = base.tables?.find((table) => table.id === node.objectId);
+      return {
+        title: table
+          ? nativeTableCanvasTitle(table, mode)
+          : (base.notes.find((note) => note.id === node.objectId)?.text ?? ''),
+        color: table ? nativeTableHeaderColor(base, table) : nativeCardColor(base, node.objectId),
+        textColor: table ? '#ffffff' : nativeNoteTextColor(nativeCardColor(base, node.objectId)),
+      };
+    },
+    commit: async (placements, signal) => {
+      const prepared = prepareNativeCanvasPlacementScene(
+        base,
+        scene,
+        effectiveView,
+        mode,
+        placements,
+        domainFilter,
+      );
+      const geometries = await routeNativeSceneInWorker(prepared.routing, signal);
+      if (signal.aborted) return;
+      completeNativeCanvasScene(prepared, geometries, routingCache.current);
+      if (preservePlacements(placements)) void savePlacement();
+    },
+    onError: (error) => setError(message(error)),
+  });
   useLayoutEffect(() => {
     if (tableLayoutJob.current) setTableArrangeNotice('문서가 변경되어 테이블 배치를 중단했어요');
     tableLayoutJob.current?.abort();
@@ -1227,6 +1038,7 @@ function NativeCanvasWorkspace({
       setDraft(next);
       placementPersistence.enqueue(next);
       setError('');
+      return true;
     } catch (error) {
       setError(message(error));
       setStorageError(message(error));
@@ -1377,15 +1189,31 @@ function NativeCanvasWorkspace({
       !placementEditable ||
       allBusy ||
       stale ||
+      ghost.active ||
+      placementDraftBlocked ||
+      !!storageError ||
+      sharedStorageFailure ||
       (event.target instanceof Element &&
         event.target.closest('button,input,select,textarea,[contenteditable=true]'))
     )
       return;
-    event.currentTarget.setPointerCapture(event.pointerId);
     groupOrigins.current =
       selectedObjectsRef.current.includes(node.objectId) && selectedObjectsRef.current.length > 1
         ? scene.nodes.filter((item) => selectedObjectsRef.current.includes(item.objectId))
         : null;
+    if (effectiveView !== 'overview' && base.tables?.some((table) => table.id === node.objectId)) {
+      const origins = groupOrigins.current ?? [node];
+      if (origins.length > 100) {
+        setError(t('한 번에 저장할 객체가 너무 많습니다. 나누어서 이동해 주세요.'));
+        groupOrigins.current = null;
+        return;
+      }
+      groupOrigins.current = null;
+      ghost.begin(event, origins);
+      setSelectedNode(node.id);
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
     gesture.current = {
       node,
       x: event.clientX,
@@ -1853,7 +1681,8 @@ function NativeCanvasWorkspace({
         (event.target instanceof Element &&
           !!event.target.closest(`${toolShortcutInputSelector},.native-inline-editor`)),
       overlayOpen: !!globalThis.document?.querySelector(toolShortcutOverlaySelector),
-      dragging: !!gesture.current || !!panGesture.current || !!marqueeGesture.current,
+      dragging:
+        ghost.active || !!gesture.current || !!panGesture.current || !!marqueeGesture.current,
     });
     if (next) {
       event.preventDefault();
@@ -1870,9 +1699,20 @@ function NativeCanvasWorkspace({
     begin,
     preserve,
     savePlacement,
+    ghostMove: ghost.move,
+    ghostEnd: ghost.end,
+    ghostCancel: ghost.cancelPointer,
   });
   useLayoutEffect(() => {
-    sceneActions.current = { zoom: camera.zoom, begin, preserve, savePlacement };
+    sceneActions.current = {
+      zoom: camera.zoom,
+      begin,
+      preserve,
+      savePlacement,
+      ghostMove: ghost.move,
+      ghostEnd: ghost.end,
+      ghostCancel: ghost.cancelPointer,
+    };
   });
   const sceneCallbacks = useRef({
     selectNode,
@@ -2643,7 +2483,7 @@ function NativeCanvasWorkspace({
         ref={surface}
         tabIndex={0}
         onWheel={(event) => {
-          if (gesture.current || panGesture.current) return;
+          if (ghost.active || gesture.current || panGesture.current) return;
           if (event.target instanceof Element && event.target.closest('input,select,textarea'))
             return;
           const rect = event.currentTarget.getBoundingClientRect();
@@ -2743,6 +2583,7 @@ function NativeCanvasWorkspace({
               ) : null;
             })()}
         </div>
+        {ghost.overlay}
         {inlineTarget && userId && (
           <NativeCanvasInlineEditor
             key={`${userId}:${snapshot.project.id}`}

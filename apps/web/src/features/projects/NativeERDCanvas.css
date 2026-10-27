@@ -1093,3 +1093,39 @@
     max-width: calc(100vw - 48px);
   }
 }
+
+.native-ghost-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 8;
+}
+.native-ghost-layer {
+  position: absolute;
+  transform-origin: 0 0;
+}
+.native-ghost-card {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, white) 75%, transparent);
+  opacity: 0.8;
+  overflow: hidden;
+}
+.native-ghost-card strong {
+  display: block;
+  padding: 10px;
+  color: #fff;
+}
+.native-ghost-progress {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  padding: 8px 12px;
+  background: var(--surface, white);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  pointer-events: auto;
+}
