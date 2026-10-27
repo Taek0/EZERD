@@ -1,0 +1,15 @@
+.ghost-fixture-canvas {
+  height: calc(100vh - 100px);
+}
+.ghost-fixture-canvas > .native-erd {
+  height: 100%;
+}
+.ghost-fixture-positions {
+  padding: 4px 8px;
+  font: 12px monospace;
+  background: #fff;
+  color: #111827;
+}
+.ghost-fixture-positions output {
+  display: block;
+}

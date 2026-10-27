@@ -87,6 +87,8 @@ export function measurementPlugin(
           'nativeCanvasScene',
           'nativeCanvasWheel',
         ];
+      if (path.endsWith('/features/projects/native-canvas-scene.ts'))
+        names = ['nativeCanvasScene', 'prepareNativeCanvasScene', 'completeNativeCanvasScene'];
       if (path.endsWith('/features/projects/NativeProjectView.tsx')) names = ['NativeProjectView'];
       if (path.endsWith('/features/projects/NativeCanvasInlineCell.tsx'))
         names = ['EditableNativeCanvasInlineCell'];
