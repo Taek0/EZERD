@@ -43,6 +43,9 @@ export interface NativeSceneActions {
     size?: { width: number; height: number },
   ) => void;
   savePlacement: () => Promise<void>;
+  ghostMove?: (event: PointerEvent<HTMLElement>) => boolean;
+  ghostEnd?: (event: PointerEvent<HTMLElement>) => boolean;
+  ghostCancel?: (event: PointerEvent<HTMLElement>) => void;
 }
 export interface NativeCanvasSceneProps {
   base: NativeDesignDocument;
@@ -284,6 +287,7 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               if (!unsavedDomain) actions.current.begin(event, node);
             }}
             onPointerMove={(event) => {
+              if (actions.current.ghostMove?.(event)) return;
               const active = gesture.current;
               if (active?.pointerId !== event.pointerId) return;
               actions.current.preserve(
@@ -293,15 +297,18 @@ export const NativeCanvasScene = memo(function NativeCanvasScene({
               );
             }}
             onPointerUp={(event) => {
+              if (actions.current.ghostEnd?.(event)) return;
               if (gesture.current?.pointerId !== event.pointerId) return;
               gesture.current = null;
               if (event.currentTarget.hasPointerCapture(event.pointerId))
                 event.currentTarget.releasePointerCapture(event.pointerId);
               void actions.current.savePlacement();
             }}
-            onPointerCancel={() => {
+            onPointerCancel={(event) => {
+              actions.current.ghostCancel?.(event);
               gesture.current = null;
             }}
+            onLostPointerCapture={(event) => actions.current.ghostCancel?.(event)}
             onKeyDown={(event) => {
               if (event.target !== event.currentTarget) return;
               const delta = {
