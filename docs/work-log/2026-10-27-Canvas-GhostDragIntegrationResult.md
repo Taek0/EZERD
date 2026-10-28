@@ -34,7 +34,7 @@ version407의 단일/5개 이동을 준비1회 후 5회 측정한 중앙값이�
 - Worker 완료 뒤 ghost=false, t0=(80,80), saveCount=1, pending ACK=1을 확인했다. 수동 ACK 뒤 pending=0이며 저장 횟수는1이다.
 - 계산 중 문서 변경 및 Escape는 ghost를 제거하고 saveCount=0/원본 위치를 유지했다. 늦은 결과도 저장하지 않았다.
 - 10% 배율에서20px 이동은200 world-unit 위치로 반영됐다. 브라우저 error 로그는0이었다.
-- 최종 빌드에서 카드 header 팔레트와 대기 표시를 재확인하고 [화면](../../artifacts/performance/2026-10-27-ghost-implementation/ghost-worker-waiting.jpg)을 보존했다. 내장 Chromium의 합성 fixture 검증이며 대형 실문서 Chrome FPS/전체 GPU 회귀 측정은 아니다. 임시 탭과 서버는 종료했다.
+- 최종 빌드에서 카드 header 팔레트와 대기 표시를 재확인하고 화면(성능 워크트리의 Git 제외 경로: artifacts/performance/2026-10-27-ghost-implementation/ghost-worker-waiting.jpg)을 보존했다. 내장 Chromium의 합성 fixture 검증이며 대형 실문서 Chrome FPS/전체 GPU 회귀 측정은 아니다. 임시 탭과 서버는 종료했다.
 
 ## 전체 검사와 한계
 
@@ -42,6 +42,6 @@ version407의 단일/5개 이동을 준비1회 후 5회 측정한 중앙값이�
 - 첫 통합 검사에서 고스트가 없는 팬에도 상태 초기화가 추가 commit을 만들던 회귀를 수정했다. 후속 기존 font-cache 5초 timeout은 제한/skip 변경 없이 재실행으로 통과했고, 최종 blur 보완 후 전체 검사도 통과했다.
 - 장면 함수 추출로 lab 계측 target이 이동한 부분을 갱신했다. 기존 큰 main chunk 경고는 남아 있다. 구성용 더미 DATABASE_URL을 사용했고 실제 DB 동시성 검사는 활성화하지 않았다.
 - 실제 reader-generated ACK가 노드 순서나 fallback 위치를 변경하면 geometry 자체가 달라져 캐시는 안전하게 무효화되고 기존 동기 재계산이 발생할 수 있다. 정확히 같은 geometry의 ACK와 구분한다. 일반 원격 갱신 전체를 Worker로 전환한 변경은 아니다.
-- 제품 커밋0345090, blur 보완d28857b. lab fixture/계측 보정은7083867로 분리했다. 상세 기록: [UI](2026-10-27-Canvas-GhostDragUIResult.md), [Worker](2026-10-27-Canvas-GhostSceneWorkerResult.md), [fixture](2026-10-27-Canvas-GhostBrowserFixture.md).
+- 제품 커밋0345090, blur 보완d28857b. lab fixture/계측 보정은7083867로 분리했다. 상세 기록: [UI](2026-10-27-Canvas-GhostDragUIResult.md), [Worker](2026-10-27-Canvas-GhostSceneWorkerResult.md), [fixture](https://github.com/Taek0/EZERD/blob/6bd481f/docs/work-log/2026-10-27-Canvas-GhostBrowserFixture.md).
 
 원본 프로젝트·main checkout·기존 실행 서버·원격 브랜치는 변경하지 않았다. 실제 서버 배포/재시작이나 push/PR은 수행하지 않았다. 원시 결과와 전체 검사·빌드 로그는 artifacts/performance/2026-10-27-ghost-implementation 및 2026-10-27-ghost-drag에 Git 제외 상태로 보존했다.
