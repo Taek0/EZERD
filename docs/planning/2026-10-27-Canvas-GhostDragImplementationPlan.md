@@ -1,6 +1,6 @@
 # 고스트 드래그·Worker 드롭 구현 계획
 
-[검증 결과](../work-log/2026-10-27-Canvas-GhostDragValidationResult.md)에 따라 성능 워크트리에 제품 연결을 구현한다.
+[검증 결과](https://github.com/Taek0/EZERD/blob/6bd481f/docs/work-log/2026-10-27-Canvas-GhostDragValidationResult.md)에 따라 성능 워크트리에 제품 연결을 구현한다.
 
 - 테이블 카드 포인터 드래그에서는 원본 위치/관계선·문서를 유지하고 단순 고스트만 RAF로 이동한다. 다중 선택의 상대 위치·줌·잡은 위치·기존 저장 한도를 유지한다.
 - release의 마지막 좌표로 순수 장면 라우팅 입력을 준비하고 Worker에서 기존 일반 경로 알고리즘을 실행한다. 고비용 관계선 자동 정리 알고리즘은 호출하지 않는다.

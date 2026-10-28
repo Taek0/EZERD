@@ -12,7 +12,7 @@
 
 집중 회귀 테스트 `native-canvas-scene.test.ts`, `native-ghost-routing.test.ts`, 기존 `NativeERDCanvas.test.ts` 합계 **49개 통과**, 웹 `tsc --noEmit` 통과. 일반 physical/logical 장면, metrics 유지, 문서 불변성, 캐시 적중/무효화·최신 한 건 제한, 정상/비정상 Worker 응답, 취소/시간 제한/오류 정리를 확인했다. 최종 전체 검사와 제품 빌드는 통합 담당 범위다.
 
-기존 HEAD의 순수 장면 코드를 임시 reference로 추출하여 원본 장면, 단일 이동, 5개 이동을 새 DTO 계산 결과와 정확하게 비교했다. 비교 입력은 복제본만 읽었고 실제 문서와 main 서버를 변경하지 않았다. 임시 reference와 테스트는 검증 후 제거했다. [원시 결과](../../artifacts/performance/2026-10-27-ghost-drag/scene-worker-parity.json)는 Git 제외 artifacts에 남겼다.
+기존 HEAD의 순수 장면 코드를 임시 reference로 추출하여 원본 장면, 단일 이동, 5개 이동을 새 DTO 계산 결과와 정확하게 비교했다. 비교 입력은 복제본만 읽었고 실제 문서와 main 서버를 변경하지 않았다. 임시 reference와 테스트는 검증 후 제거했다. 원시 결과(성능 워크트리 Git 제외 경로: artifacts/performance/2026-10-27-ghost-drag/scene-worker-parity.json)는 Git 제외 artifacts에 남겼다.
 
 | 입력 | 장면 노드 | physical 관계 | 단일/5개 최종 장면 일치 | 동일 geometry의 새 layout ID ACK 캐시 | DTO JSON 크기 |
 | --- | ---: | ---: | --- | --- | ---: |
@@ -44,4 +44,4 @@ UI 읽기 전용 검토에서는 Worker 완료까지 마지막 고스트를 유�
 
 routing 단계는 Node 안에서 일반 알고리즘을 별도로 실행한 CPU/wall 측정으로, Worker 계산 부분에 해당하는 비교다. 실제 Worker 시작·IPC·구조 복제·브라우저 render/paint·저장·ACK·전체 pointer release 시간을 포함하지 않는다. 구조 복제와 동등성 검증은 단계 시간 밖에서 수행했다. `process.cpuUsage`는 프로세스 CPU 집계이므로 wall과 다를 수 있으며, 짧은 메인 단계의 CPU가 0으로 기록되는 해상도 한계 때문에 해당 단계는 wall을 보고했다. 합계 중앙값은 sample별 합계를 먼저 계산한 값이다.
 
-[원시 sample·환경·선택 목록](../../artifacts/performance/2026-10-27-ghost-drag/scene-worker-phase.json), [재현 runner](../../artifacts/performance/2026-10-27-ghost-drag/scene-worker-phase.ts), [측정 시 기존 HEAD reference](../../artifacts/performance/2026-10-27-ghost-drag/scene-worker-phase.reference.ts)를 Git 제외 artifacts에 보존했다. 워크트리 루트에서 재현 명령은 `pnpm.cmd --filter @ezerd/server exec tsx ../../artifacts/performance/2026-10-27-ghost-drag/scene-worker-phase.ts`다. 실제 generated ACK에서 geometry/노드 순서가 바뀌는 경우는 위 캐시 적중 결과에 포함하지 않으며, 앞 절의 안전한 캐시 무효화 조건이 그대로 적용된다.
+원시 sample·환경·선택 목록(성능 워크트리 Git 제외 경로: artifacts/performance/2026-10-27-ghost-drag/scene-worker-phase.json), 재현 runner(성능 워크트리 Git 제외 경로: artifacts/performance/2026-10-27-ghost-drag/scene-worker-phase.ts), 측정 시 기존 HEAD reference(성능 워크트리 Git 제외 경로: artifacts/performance/2026-10-27-ghost-drag/scene-worker-phase.reference.ts)를 Git 제외 artifacts에 보존했다. 워크트리 루트에서 재현 명령은 `pnpm.cmd --filter @ezerd/server exec tsx ../../artifacts/performance/2026-10-27-ghost-drag/scene-worker-phase.ts`다. 실제 generated ACK에서 geometry/노드 순서가 바뀌는 경우는 위 캐시 적중 결과에 포함하지 않으며, 앞 절의 안전한 캐시 무효화 조건이 그대로 적용된다.
